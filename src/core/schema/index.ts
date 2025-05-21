@@ -19,26 +19,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.*/
-import { Validator, Schema as JsonSchema } from '@cfworker/json-schema';
-import { Schema, FromSchema } from '../../index.js';
 
-/**
- * Creates a function which can wrap another function and validate the input against a JSON Schema.
- */
-export function withValidation<T extends Schema>(schema: T) {
-    const validator = new Validator(schema as JsonSchema);
-
-    return function <F extends (arg: FromSchema<T>) => any>(fn: F): F {
-        return function (this: any, arg: FromSchema<T>) {
-            const validation = validator.validate(arg);
-
-            if (!validation.valid) {
-                throw new Error(
-                    `Validation failed: ${JSON.stringify(validation.errors)}`
-                );
-            }
-
-            return fn.call(this, arg);
-        } as F;
-    };
-}
+export * from "./schema.js";
+export * from "./schemas.js";

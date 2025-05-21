@@ -20,7 +20,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.*/
 import { Column, createECS } from "../ecs/index.js";
-import { Float32Schema, TrueSchema, Uint32Schema } from "../schemas/schemas.js";
+import { Float32Schema, TrueSchema, Uint32Schema } from "../core/schema/schemas.js";
 import { PerformanceTest } from "./perf-test.js";
 import * as assembly from "../../dist/assembly/index.js";
 import { createWasmMemoryAllocator } from "../cache/memory-allocator.js";
@@ -111,7 +111,7 @@ function createECSWithParticles(count: number, batch = true) {
 
     const particle_count_per_table = Math.ceil(count / 4);
     const particle_tables = particle_archetypes.map(archetype => ecs.createBatch(archetype, particle_count_per_table));
-  
+
     for (let tableIndex = 0; tableIndex < particle_tables.length; tableIndex++) {
       const table = particle_tables[tableIndex];
       const positionX = table.columns.positionX.native as TypedArray;

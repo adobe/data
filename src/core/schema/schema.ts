@@ -20,14 +20,52 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.*/
 
-import { DeepReadonly, EquivalentTypes, True } from "../types/types.js";
+import { DeepReadonly, EquivalentTypes, True } from "../../types/types.js";
+
+type JSONPath = string;
+type JSONMergePatch = unknown;
+
+/**
+ * Conditional patch applied to the path when the enclosing schema branch is active
+ * and `match` is not present or validates against the root.
+ * This is used for dynamic schemas which change in response to the value of the data.
+ */
+type Conditional = {
+  match?: Schema;
+  // // root-anchored JSONPath
+  path: JSONPath;
+  // // JSON-Merge-Patch fragment
+  value: JSONMergePatch;
+}
+
+type UIProperties = {
+  name?: string;
+  icon?: string; // url? or icon name?
+  summary?: string;
+  placeholder?: string;
+  details?: string;
+  visible?: boolean;
+  enabled?: boolean;
+  infoUrl?: string;
+  group?: string;
+  order?: number;
+  groups?: {
+    readonly [key: string]: UIProperties;
+  };
+}
 
 export type Schema = {
   type?: 'number' | 'integer' | 'string' | 'boolean' | 'null' | 'array' | 'object';
-  minimum?: number;
-  precision?: 1 | 2;
+  conditionals?: readonly Conditional[];
+  ui?: UIProperties;
   default?: any;
+  precision?: 1 | 2;
+  minimum?: number;
   maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+  exclusiveMinimum?: number;
+  exclusiveMaximum?: number;
   pattern?: string;
   minItems?: number;
   maxItems?: number;

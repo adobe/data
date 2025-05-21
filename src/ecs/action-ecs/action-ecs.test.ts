@@ -25,7 +25,7 @@ import { createActionECS } from "./action-ecs.js";
 import { ActionECS, ActionFor } from "./action-types.js";
 import { EquivalentTypes, True } from "../../types/types.js";
 import { Transaction } from "../transaction-ecs/transaction-types.js";
-import { Float32Schema, Tuple } from "../../schemas/schemas.js";
+import { Float32Schema, Tuple } from "../../core/schema/schemas.js";
 import { Archetype } from "../index.js";
 import { FromSchema } from "../../index.js";
 

@@ -45,7 +45,7 @@ import {
   ECSJSON,
   CoreResources,
 } from "./core-ecs-types.js";
-import { Uint32Schema } from "../../schemas/schemas.js";
+import { Uint32Schema } from "../../core/schema/schemas.js";
 
 //  This is a sentinel value used to indicate a component should be deleted.
 export const DELETE: unknown = "_@_DELETE_@_";

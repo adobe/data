@@ -19,4 +19,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.*/
-export * from "./schemas.js";
+import { Schema } from "../schema.js";
+import { validate } from "./validate.js";
+
+export function isValid(schema: Schema, data: any) {
+    return validate(schema, data).length === 0;
+}

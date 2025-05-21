@@ -19,7 +19,23 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.*/
+import { Validator, Schema as JsonSchema } from '@cfworker/json-schema';
+import { Schema } from "../schema.js";
 
-export * from './array-equals.js';
-export * from './is-async-generator.js';
-export * from './deep-merge.js'
+// Cache of validators using WeakMap to avoid memory leaks
+const validatorCache = new WeakMap<Schema, Validator>();
+
+export function validate(schema: Schema, data: any): string[] {
+    // Get or create validator from cache
+    let validator = validatorCache.get(schema);
+    if (!validator) {
+        validator = new Validator(schema as JsonSchema);
+        validatorCache.set(schema, validator);
+    }
+
+    const result = validator.validate(data);
+    if (result.valid) {
+        return [];
+    }
+    return result.errors.map((error) => error.error);
+}

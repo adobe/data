@@ -23,7 +23,7 @@ SOFTWARE.*/
 import { assert } from "riteway/vitest";
 import { describe, expect, test } from "vitest";
 import { createCoreECS } from "./core-ecs.js";
-import { Float32Schema, Tuple } from "../../schemas/schemas.js";
+import { Float32Schema, Tuple } from "../../core/schema/schemas.js";
 import { CoreECS, ECSJSON } from "./core-ecs-types.js";
 import { EquivalentTypes, True } from "../../types/types.js";
 
@@ -358,8 +358,8 @@ describe("Core ECS", () => {
     const count = 3;
     const table = ecs.createBatch(idMassAndSizeArchetype, 3);
     for (let row = table.rows - count; row < table.rows; row++) {
-        table.columns.mass.set(row, row + 1);
-        table.columns.size.set(row, "small");
+      table.columns.mass.set(row, row + 1);
+      table.columns.size.set(row, "small");
     }
     const entities = ecs.selectEntities(idMassAndSizeArchetype);
     expect(entities.length).toEqual(3);
@@ -435,12 +435,12 @@ describe("Core ECS", () => {
       time: 0,
     })
 
-    type Components = typeof ecs2 extends CoreECS<infer C, any> ? C : never;
-    type CheckComponents = True<EquivalentTypes<Components, {
-        id: number;
-        position: readonly [number, number, number];
-        size: number;
-    }>>;
-    type Resources = typeof ecs2 extends CoreECS<any, infer R> ? R : never;
-    type CheckResources = True<EquivalentTypes<Resources, { gravity: number; time: number }>>;
+  type Components = typeof ecs2 extends CoreECS<infer C, any> ? C : never;
+  type CheckComponents = True<EquivalentTypes<Components, {
+    id: number;
+    position: readonly [number, number, number];
+    size: number;
+  }>>;
+  type Resources = typeof ecs2 extends CoreECS<any, infer R> ? R : never;
+  type CheckResources = True<EquivalentTypes<Resources, { gravity: number; time: number }>>;
 }

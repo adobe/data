@@ -22,7 +22,7 @@ SOFTWARE.*/
 
 import { describe, expect, test } from "vitest";
 import { createECS } from "./ecs.js";
-import { TrueSchema } from "../../schemas/schemas.js";
+import { TrueSchema } from "../../core/schema/schemas.js";
 import { Archetype, ECS } from "./ecs-types.js";
 import { EquivalentTypes, True } from "../../types/types.js";
 
@@ -225,7 +225,7 @@ describe("ECS", () => {
       mass: 30,
       size: "large",
     });
-    
+
     expect(
       ecs.selectEntityValues(ecs.archetypes.physical, {
         components: ["id", "mass"],
@@ -236,7 +236,7 @@ describe("ECS", () => {
       { id: c, mass: 30 }
     ]);
   });
-  
+
   test("selectEntityValues: where with order", () => {
     const ecs = createEcsWithMassAndSize();
     const a = ecs.createEntity(ecs.archetypes.physical, {
@@ -251,7 +251,7 @@ describe("ECS", () => {
       mass: 30,
       size: "large",
     });
-    
+
     expect(
       ecs.selectEntityValues(ecs.archetypes.physical, {
         where: { size: "large" },
@@ -262,7 +262,7 @@ describe("ECS", () => {
       { id: b, mass: 20, size: "large" }
     ]);
   });
-  
+
   test("selectEntityValues: where with components and order", () => {
     const ecs = createEcsWithMassAndSize();
     const a = ecs.createEntity(ecs.archetypes.physical, {
@@ -277,7 +277,7 @@ describe("ECS", () => {
       mass: 30,
       size: "large",
     });
-    
+
     expect(
       ecs.selectEntityValues(ecs.archetypes.physical, {
         components: ["id", "mass"],
@@ -289,7 +289,7 @@ describe("ECS", () => {
       { id: b, mass: 20 }
     ]);
   });
-  
+
   test("selectEntityValues: where with without option", () => {
     const ecs = createEcsWithMassAndSize()
       .withComponents({
@@ -298,7 +298,7 @@ describe("ECS", () => {
       .withArchetypes({
         physical_deleted: ["id", "mass", "size", "deleted"],
       });
-      
+
     const a = ecs.createEntity(ecs.archetypes.physical, {
       mass: 10,
       size: "medium",
@@ -317,7 +317,7 @@ describe("ECS", () => {
       size: "small",
       deleted: true
     });
-    
+
     // where + without
     expect(
       ecs.selectEntityValues(ecs.archetypes.physical, {
@@ -327,34 +327,36 @@ describe("ECS", () => {
     ).toEqual([
       { id: c, mass: 30, size: "large" }
     ]);
-    
+
     // where + without + components
     expect(
       ecs.selectEntityValues(ecs.archetypes.physical, {
         components: ["id", "size"],
-        where: { 
-          mass: { 
-            ">": 15 
-          } },
+        where: {
+          mass: {
+            ">": 15
+          }
+        },
         without: ["deleted"]
       })
     ).toEqual([
       { id: c, size: "large" }
     ]);
-    
+
     // where + without + order
     expect(
       ecs.selectEntities(ecs.archetypes.physical, {
-        where: { 
-          mass: { 
-            ">": 15 
-          } },
+        where: {
+          mass: {
+            ">": 15
+          }
+        },
         without: ["deleted"],
         order: { size: true }
       })
     ).toEqual([c]);
   });
-  
+
   test("selectEntityValues: edge cases for where function", () => {
     const ecs = createEcsWithMassAndSize();
     const a = ecs.createEntity(ecs.archetypes.physical, {
@@ -365,20 +367,20 @@ describe("ECS", () => {
       mass: 20,
       size: "large",
     });
-    
+
     // Empty result with where
     expect(
       ecs.selectEntityValues(ecs.archetypes.physical, {
         where: { size: "small" }
       })
     ).toEqual([]);
-    
+
     // Where with complex condition
     expect(
       ecs.selectEntityValues(ecs.archetypes.physical, {
-        where: { 
-          mass: { 
-            ">": 5, 
+        where: {
+          mass: {
+            ">": 5,
             "<": 15
           },
           size: {
@@ -443,17 +445,17 @@ describe("ECS", () => {
 
   type Components = typeof ecs extends ECS<infer C, any, any> ? C : never;
   type CheckComponents = True<EquivalentTypes<Components, {
-      id: number;
-      position: string;
-      size: number;
+    id: number;
+    position: string;
+    size: number;
   }>>;
   type Resources = typeof ecs extends ECS<any, any, infer R> ? R : never;
   type CheckResources = True<EquivalentTypes<Resources, { gravity: number; time: number }>>;
 
   type Archetypes = typeof ecs extends ECS<any, infer A, any> ? A : never;
   type CheckArchetypes = True<EquivalentTypes<Archetypes, {
-      position_size: Archetype<{ size: number; id: number; position: string; }>;
-      position: Archetype<{ id: number; position: string; }>;
+    position_size: Archetype<{ size: number; id: number; position: string; }>;
+    position: Archetype<{ id: number; position: string; }>;
   }>>;
 
 }

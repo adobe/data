@@ -20,5 +20,7 @@ export default defineConfig({
       name: 'chrome', // browser name is required
       headless: true,
     },
+    silent: false,
+    reporters: 'verbose',
   }
 })

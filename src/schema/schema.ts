@@ -99,10 +99,10 @@ export interface Schema {
    * Used to categorize data collection and processing for privacy compliance.
    * Useful resource:
    * https://www.onetrust.com/products/cookie-consent/
-   * 
+   *
    * @remarks
    * - `strictlyNecessary`: Essential data required for basic functionality and security
-   * - `performance`: Data used for analytics, performance monitoring, and site optimization  
+   * - `performance`: Data used for analytics, performance monitoring, and site optimization
    * - `functional`: Data used for enhanced features and user experience improvements
    * - `advertising`: Data used for advertising, marketing, and personalized content
    */
@@ -321,7 +321,7 @@ type TestNoPropsUndefinedAdditional = FromSchema<{
 }>; // {} - no additional properties allowed by default
 type CheckNoPropsUndefinedAdditional = True<EquivalentTypes<TestNoPropsUndefinedAdditional, {}>>;
 
-// Test object with no properties but explicit additionalProperties: true  
+// Test object with no properties but explicit additionalProperties: true
 type TestNoPropsExplicitTrue = FromSchema<{
   type: 'object';
   additionalProperties: true;

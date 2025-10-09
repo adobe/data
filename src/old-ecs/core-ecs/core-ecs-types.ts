@@ -24,6 +24,7 @@ import { Data } from "../../index.js";
 import { FromSchema, Schema } from "../../schema/index.js";
 import { DeepReadonly, Simplify } from "../../types/types.js";
 import { NativeArray } from "../../cache/managed-array.js";
+import { PrivacyOptions } from "../../privacy/types.js";
 
 /**
  * An Entity represents a single object within the ECS.
@@ -111,7 +112,9 @@ export interface CoreECSRead<
   selectEntities<T extends CoreComponents>(
     archetype: CoreArchetype<T>
   ): Entity[];
-  toJSON(): ECSJSON;
+  toJSON(options?: {
+    privacy: PrivacyOptions
+  }): ECSJSON;
 }
 
 export interface CoreECSWrite<

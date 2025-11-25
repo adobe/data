@@ -38,7 +38,7 @@ interface Transaction<
     R extends ResourceComponents = never,
     A extends ArchetypeComponents<StringKeyof<C>> = never,
 > extends Store<C, R, A> {
-    // readonly transient: boolean;
+    readonly transient?: boolean;
 }
 
 export function createTransactionalStore<
@@ -163,10 +163,16 @@ export function createTransactionalStore<
         const resourceId = name as keyof C;
         const archetype = store.ensureArchetype(["id", resourceId] as StringKeyof<C>[]);
         const entityId = archetype.columns.id.get(0);
+        const resourceSchema = store.componentSchemas[resourceId as StringKeyof<C>];
+        const isTransient = resourceSchema?.transient ?? false;
+        
         Object.defineProperty(resources, name, {
             get: Object.getOwnPropertyDescriptor(store.resources, name)!.get,
             set: (newValue) => {
                 updateEntity(entityId, { [resourceId]: newValue } as any);
+                if (isTransient) {
+                    (transactionStore as any).transient = true;
+                }
             },
             enumerable: true,
         });
@@ -184,7 +190,7 @@ export function createTransactionalStore<
         },
         update: updateEntity,
         delete: deleteEntity,
-        // transient: false as boolean,
+        transient: undefined,
         undoable: undefined,
     } satisfies Transaction<C, R, A>;
 
@@ -196,6 +202,7 @@ export function createTransactionalStore<
         }
     ): TransactionResult<C> => {
         transactionStore.undoable = undefined;
+        transactionStore.transient = undefined;
         // Reset transaction state
         undoOperationsInReverseOrder = [];
         redoOperations = [];
@@ -210,7 +217,7 @@ export function createTransactionalStore<
             // Return the transaction result
             const result: TransactionResult<C> = {
                 value: value ?? undefined,
-                transient: options?.transient ?? false,
+                transient: options?.transient ?? transactionStore.transient ?? false,
                 undoable: transactionStore.undoable ?? null,
                 redo: [...redoOperations],
                 undo: [...undoOperationsInReverseOrder.reverse()],

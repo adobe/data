@@ -10,7 +10,7 @@
     "build:code": "tsc -b",
     "build:apidocs": "typedoc",
     "build-assembly": "run-p asbuild:release",
-    "copy": "mkdir -p dist && cp README.md dist && cp LICENSE dist && sed '/\"publish-public\":/d;/\"link\":/d;/\"copy\":/d' package.json > dist/package.json",
+    "copy": "mkdir -p dist && cp README.md dist && cp LICENSE dist && sed '/\"publish-public\":/d;/\"link\":/d;/\"copy\":/d;/\"prepublish\":/d' package.json > dist/package.json",
     "clean": "rm -rf dist build node_modules",
     "clean-cache": "rm -rf node_modules/.cache",
     "deploy-docs": "pnpm build && ./scripts/deploy-docs.sh",

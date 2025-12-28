@@ -220,6 +220,7 @@ export function createActionECS<
 
           const createdTime = getUniqueTimeMs();
           apply({ type: "commit", createdTime, createdBy: user, name, args });
+          return;
         };
         actionSequences[name] = (...originalArgs: any) => {
           const createdTime = getUniqueTimeMs();

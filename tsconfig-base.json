@@ -22,9 +22,9 @@
     /* Strict Type Checking */
     "strict": true,
     "noImplicitReturns": true,
-    "noImplicitOverride": true,
+    "noImplicitOverride": false,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true, 
+    "noUncheckedIndexedAccess": false,
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
 

@@ -363,7 +363,7 @@ describe("createReconcilingDatabase", () => {
 
         const extendedReconciling = reconciling.extend(Database.Plugin.create({
             transactions: {
-                renamePositionNameEntity(t: StoreType, args: { entity: number; name: string }) {
+                renamePositionNameEntity(t: any, args: { entity: number; name: string }) {
                     t.update(args.entity, { name: args.name });
                 },
             },

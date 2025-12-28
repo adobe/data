@@ -22,33 +22,26 @@ SOFTWARE.*/
 
 import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";
-import { Simplify } from "../../types/types.js";
+import { IntersectTuple, UnionTuple } from "../../types/types.js";
 import { Entity } from "../entity.js";
 import { Store } from "../store/store.js";
-import type { Database } from "./database.js";
+import type { Database, SystemDeclarations } from "./database.js";
 
-// Helper to intersect all elements of a tuple
-type IntersectAll<T extends readonly unknown[]> = Simplify<
-  T extends readonly [infer H, ...infer R] ? H & IntersectAll<R> : unknown
->;
-type UnionAll<T extends readonly unknown[]> = Simplify<
-  T extends readonly [infer H, ...infer R] ? H | UnionAll<R> : never
->;
-
-export type CombinePlugins<Plugins extends readonly Database.Plugin[]> = {
-  components: IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<infer C, any, any, any, any> ? C : never }>;
-  resources: IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, infer R, any, any, any> ? R : never }>;
-  archetypes: IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, infer A, any, any> ? A : never }>;
-  transactions: IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, infer TD, any> ? TD : never }>;
-  systems: UnionAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, infer S> ? S : never }>;
-};
+type CombinePlugins<Plugins extends readonly Database.Plugin[]> =
+    Database.Plugin<
+        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<infer C, any, any, any, any> ? C : never }>,
+        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, infer R, any, any, any> ? R : never }>,
+        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, infer A, any, any> ? A : never }>,
+        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, infer TD, any> ? TD : never }>,
+        Extract<UnionTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, infer S> ? S : never }>, string>
+    >
 
 type CombinedPlugins = CombinePlugins<[
     Database.Plugin<{a: { readonly type: "number" }}, { c: { readonly default: boolean } }, { readonly A: readonly ["a"]}, { readonly doFoo: (store: Store, args: { a: number }) => Entity }, "system1">,
     Database.Plugin<{b: { readonly type: "string" }}, { d: { readonly default: boolean } }, { readonly B: readonly ["b"]}, { readonly doBar: (store: Store) => void }, "system2">,
 ]>;
 type CheckCombinedPlugins = Assert<Equal<CombinedPlugins, {
-    components: {
+    readonly components: {
         a: {
             readonly type: "number";
         };
@@ -56,7 +49,7 @@ type CheckCombinedPlugins = Assert<Equal<CombinedPlugins, {
             readonly type: "string";
         };
     };
-    resources: {
+    readonly resources: {
         c: {
             readonly default: boolean;
         };
@@ -64,15 +57,17 @@ type CheckCombinedPlugins = Assert<Equal<CombinedPlugins, {
             readonly default: boolean;
         };
     };
-    archetypes: {
+    readonly archetypes: {
         readonly A: readonly ["a"];
         readonly B: readonly ["b"];
     };
-    transactions: {
-        readonly doFoo: (store: Store, args: { a: number }) => Entity;
+    readonly transactions: {
+        readonly doFoo: (store: Store, args: {
+            a: number;
+        }) => Entity;
         readonly doBar: (store: Store) => void;
     };
-    systems: "system1" | "system2";
+    readonly systems: SystemDeclarations<"system1" | "system2">;
 }>>;
 
 /**

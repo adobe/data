@@ -181,6 +181,9 @@ export type NoInfer<T> = [T][T extends any ? 0 : never];
 
 export type IntersectTuple<T extends readonly unknown[]> =
   T extends readonly [infer H, ...infer R] ? Simplify<H & IntersectTuple<R>> : unknown;
+export type UnionTuple<T extends readonly unknown[]> = Simplify<
+  T extends readonly [infer H, ...infer R] ? H | UnionTuple<R> : never
+>;
 
 type C = IntersectTuple<[{ a: number }, { b: string }, { c: boolean }]>;
 

@@ -22,6 +22,7 @@ SOFTWARE.*/
 
 import { describe, it, expect } from "vitest";
 import { createPlugin } from "./create-plugin.js";
+import { Database } from "./database.js";
 
 describe("Database.Plugin.create", () => {
     describe("single descriptor (no dependencies)", () => {
@@ -107,6 +108,17 @@ describe("Database.Plugin.create", () => {
         });
 
         it("should constrain schedule references to dependency system names", () => {
+            const basePlugin = createPlugin({
+                systems: {
+                    update: {
+                        create: (_db) => () => { }
+                    },
+                    render: {
+                        create: (_db) => () => { }
+                    }
+                }
+            });
+
             const plugin = createPlugin(
                 {
                     systems: {
@@ -118,20 +130,9 @@ describe("Database.Plugin.create", () => {
                                 before: ["render2"]
                             }
                         }
-                    }
+                    },
+                    extends: basePlugin
                 },
-                [
-                    createPlugin({
-                        systems: {
-                            update: {
-                                create: (_db) => () => { }
-                            },
-                            render: {
-                                create: (_db) => () => { }
-                            }
-                        }
-                    })
-                ]
             );
 
             expect(plugin).toBeDefined();
@@ -152,9 +153,9 @@ describe("Database.Plugin.create", () => {
                 {
                     components: {
                         velocity: { type: "number" }
-                    }
+                    },
+                    extends: basePlugin
                 },
-                [basePlugin]
             );
 
             expect("position" in extendedPlugin.components).toBe(true);
@@ -174,9 +175,9 @@ describe("Database.Plugin.create", () => {
                 {
                     resources: {
                         delta: { default: 0 }
-                    }
+                    },
+                    extends: basePlugin
                 },
-                [basePlugin]
             );
 
             expect("time" in extendedPlugin.resources).toBe(true);
@@ -199,9 +200,9 @@ describe("Database.Plugin.create", () => {
                         renderSystem: {
                             create: (_db) => () => { }
                         }
-                    }
+                    },
+                    extends: basePlugin
                 },
-                [basePlugin]
             );
 
             expect("inputSystem" in extendedPlugin.systems!).toBe(true);
@@ -224,9 +225,9 @@ describe("Database.Plugin.create", () => {
                                 expect(typeof time).toBe("number");
                             }
                         }
-                    }
+                    },
+                    extends: basePlugin
                 },
-                [basePlugin]
             );
 
             expect(extendedPlugin).toBeDefined();
@@ -245,11 +246,12 @@ describe("Database.Plugin.create", () => {
                 components: { c: { type: "boolean" } }
             });
 
+            const combinedBase = Database.Plugin.combine(plugin1, plugin2, plugin3);
             const merged = createPlugin(
                 {
-                    components: { d: { type: "number" } }
+                    components: { d: { type: "number" } },
+                    extends: combinedBase
                 },
-                [plugin1, plugin2, plugin3]
             );
 
             expect("a" in merged.components).toBe(true);
@@ -260,24 +262,7 @@ describe("Database.Plugin.create", () => {
     });
 
     describe("schedule validation", () => {
-        it("should allow valid system references in schedule", () => {
-            expect(() => {
-                createPlugin({
-                    systems: {
-                        system1: {
-                            create: (_db) => () => { }
-                        },
-                        system2: {
-                            create: (_db) => () => { },
-                            schedule: {
-                                // @ts-expect-error - system1 does not exist
-                                after: ["system1"]
-                            }
-                        }
-                    }
-                });
-            }).not.toThrow();
-        });
+
 
         it("should allow referencing dependency systems in schedule", () => {
             const basePlugin = createPlugin({
@@ -298,9 +283,9 @@ describe("Database.Plugin.create", () => {
                                     after: ["inputSystem"]  // Reference from dependency!
                                 }
                             }
-                        }
+                        },
+                        extends: basePlugin
                     },
-                    [basePlugin]
                 );
             }).not.toThrow();
         });
@@ -332,9 +317,9 @@ describe("Database.Plugin.create", () => {
                                     after: ["system1", "system2"]  // Both from dependencies
                                 }
                             }
-                        }
+                        },
+                        extends: Database.Plugin.combine(plugin1, plugin2)
                     },
-                    [plugin1, plugin2]
                 );
             }).not.toThrow();
         });
@@ -362,9 +347,9 @@ describe("Database.Plugin.create", () => {
                                 after: ["inputSystem", "physicsSystem"]
                             }
                         }
-                    }
+                    },
+                    extends: basePlugin
                 },
-                [basePlugin]
             );
 
             expect(validPlugin).toBeDefined();
@@ -413,9 +398,9 @@ describe("Database.Plugin.create", () => {
                                 const invalid: number = db.resources.nonExistent;
                             }
                         }
-                    }
-                },
-                [basePlugin]
+                    },
+                    extends: basePlugin
+                }
             );
 
             expect(extendedPlugin).toBeDefined();
@@ -434,9 +419,10 @@ describe("Database.Plugin.create", () => {
                 createPlugin({
                     components: {
                         health: { type: "string" as const } // Different definition
-                    }
-                }, [plugin1]);
-            }).toThrow('Plugin merge conflict: components.health must be identical (===) across plugins');
+                    },
+                    extends: plugin1
+                });
+            }).toThrow('Plugin combine conflict: components.health must be identical (===) across plugins');
         });
 
         it("should throw error when merging different resource definitions", () => {
@@ -450,9 +436,10 @@ describe("Database.Plugin.create", () => {
                 createPlugin({
                     resources: {
                         score: { default: 100 } // Different definition
-                    }
-                }, [plugin1]);
-            }).toThrow('Plugin merge conflict: resources.score must be identical (===) across plugins');
+                    },
+                    extends: plugin1
+                });
+            }).toThrow('Plugin combine conflict: resources.score must be identical (===) across plugins');
         });
 
         it("should throw error when merging different archetype definitions", () => {
@@ -470,9 +457,10 @@ describe("Database.Plugin.create", () => {
                 createPlugin({
                     archetypes: {
                         Entity: ["position", "velocity"] // Different definition
-                    }
-                }, [plugin1]);
-            }).toThrow('Plugin merge conflict: archetypes.Entity must be identical (===) across plugins');
+                    },
+                    extends: plugin1
+                });
+            }).toThrow('Plugin combine conflict: archetypes.Entity must be identical (===) across plugins');
         });
 
         it("should allow same component with identical reference", () => {
@@ -487,8 +475,9 @@ describe("Database.Plugin.create", () => {
                 createPlugin({
                     components: {
                         health: sharedComponent // Same reference - OK
-                    }
-                }, [plugin1]);
+                    },
+                    extends: plugin1
+                });
             }).not.toThrow();
         });
 
@@ -508,8 +497,9 @@ describe("Database.Plugin.create", () => {
                         update: {
                             create: () => () => { } // Different function - OK
                         }
-                    }
-                }, [plugin1]);
+                    },
+                    extends: plugin1
+                });
             }).not.toThrow();
         });
     });

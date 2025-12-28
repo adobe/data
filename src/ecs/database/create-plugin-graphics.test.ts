@@ -117,16 +117,13 @@ export const graphicsPlugin = createPlugin({
                 }
             }
         }
-    }
-},
-[
-    scheduler
-]
-)
+    },
+    extends: scheduler
+});
 // type checks
 function typeCheck() {
     const database = Database.create(graphicsPlugin);
-    // @ts -expect-error - bar does not exist, should error
+    // @ts-expect-error - bar does not exist, should error
     database.componentSchemas.bar;
 
     // this should be fine.

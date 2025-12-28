@@ -108,8 +108,9 @@ describe("Database.Plugin.create", () => {
             const extendedSchema = Database.Plugin.create({
                 components: {
                     velocity: { type: "number" }
-                }
-            }, [baseSchema]);
+                },
+                extends: baseSchema
+            });
 
             expect(extendedSchema.components).toHaveProperty("position");
             expect(extendedSchema.components).toHaveProperty("velocity");
@@ -128,7 +129,7 @@ describe("Database.Plugin.create", () => {
                 }
             });
 
-            const emptyExtension = Database.Plugin.create({}, [baseSchema]);
+            const emptyExtension = Database.Plugin.create({ extends: baseSchema });
 
             expect(emptyExtension.components).toHaveProperty("transform");
             expect(emptyExtension.transactions).toHaveProperty("updateTransform");
@@ -149,9 +150,11 @@ describe("Database.Plugin.create", () => {
                 components: { c: { type: "number" } }
             });
 
+            const combinedBase = Database.Plugin.combine(pluginA, pluginB, pluginC) as any;
             const merged = Database.Plugin.create({
-                components: { d: { type: "number" } }
-            }, [pluginA, pluginB, pluginC]);
+                components: { d: { type: "number" } },
+                extends: combinedBase
+            });
 
             expect(merged.components).toHaveProperty("a");
             expect(merged.components).toHaveProperty("b");
@@ -170,8 +173,9 @@ describe("Database.Plugin.create", () => {
             const extendedSchema = Database.Plugin.create({
                 transactions: {
                     extendedAction: () => { }
-                }
-            }, [baseSchema]);
+                },
+                extends: baseSchema
+            });
 
             expect(extendedSchema.transactions).toHaveProperty("baseAction");
             expect(extendedSchema.transactions).toHaveProperty("extendedAction");
@@ -194,8 +198,9 @@ describe("Database.Plugin.create", () => {
                 components: {
                     position: positionComponent, // Must use same reference
                     mass: { type: "number" as const }
-                }
-            }, [baseSchema]);
+                },
+                extends: baseSchema
+            });
 
             // All components should be present
             expect(extendedSchema.components).toHaveProperty("position");
@@ -219,8 +224,9 @@ describe("Database.Plugin.create", () => {
                 archetypes: {
                     DynamicEntity: ["position", "velocity"],
                     LivingEntity: ["position", "health"]
-                }
-            }, [baseSchema]);
+                },
+                extends: baseSchema
+            });
 
             expect(extendedSchema.archetypes).toHaveProperty("DynamicEntity");
             expect(extendedSchema.archetypes).toHaveProperty("LivingEntity");

@@ -27,7 +27,7 @@ import { Entity } from "../entity.js";
 import { EntityReadValues } from "../store/core/index.js";
 import { Observe } from "../../observe/index.js";
 import { TransactionResult } from "./transactional-store/index.js";
-import { IntersectTuple, NoInfer, StringKeyof } from "../../types/types.js";
+import { StringKeyof } from "../../types/types.js";
 import { Components } from "../store/components.js";
 import { ArchetypeComponents } from "../store/archetype-components.js";
 import { RequiredComponents } from "../required-components.js";
@@ -37,8 +37,6 @@ import { createDatabase } from "./public/create-database.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
 import { FromSchemas } from "../../schema/index.js";
-import { Assert } from "../../types/assert.js";
-import { Equal } from "../../types/equal.js";
 import type {
   ActionDeclarations,
   ActionFunctions,
@@ -48,6 +46,21 @@ import { createPlugin } from "./create-plugin.js";
 import { combinePlugins } from "./combine-plugins.js";
 
 export type SystemFunction = () => void | Promise<void>;
+export type SystemDeclaration = {
+  readonly create: (db: Database<any, any, any, any, any>) => SystemFunction;
+  /**
+   * Scheduling constraints for system execution order.
+   * - `before`: Hard constraint - this system must run before the listed systems
+   * - `after`: Hard constraint - this system must run after the listed systems
+   * - `during`: Soft constraint - prefer to run in the same tier as the listed systems, if dependencies allow
+   */
+  readonly schedule?: {
+    readonly before?: readonly string[];
+    readonly after?: readonly string[];
+    readonly during?: readonly string[];
+  }
+}
+export type SystemDeclarations<S extends string> = { readonly [K in S]: SystemDeclaration }
 
 export interface Database<
   C extends Components,
@@ -111,115 +124,12 @@ export namespace Database {
     readonly resources: RS;
     readonly archetypes: A;
     readonly transactions: TD;
-    readonly systems: { readonly [K in S]: {
-      readonly create: (db: Database<FromSchemas<CS>, FromSchemas<RS>, A, ToActionFunctions<TD>, S>) => SystemFunction;
-      /**
-       * Scheduling constraints for system execution order.
-       * - `before`: Hard constraint - this system must run before the listed systems
-       * - `after`: Hard constraint - this system must run after the listed systems
-       * - `during`: Soft constraint - prefer to run in the same tier as the listed systems, if dependencies allow
-       */
-      readonly schedule?: {
-        readonly before?: readonly NoInfer<Exclude<S, K>>[];
-        readonly after?: readonly NoInfer<Exclude<S, K>>[];
-        readonly during?: readonly NoInfer<Exclude<S, K>>[];
-      }
-    } };
+    readonly systems: SystemDeclarations<S>;
   };
 
   export namespace Plugin {
-
-    export type Intersect<T extends readonly Plugin<any, any, any, any, any>[]> =
-      Database.Plugin<
-        {} & IntersectTuple<{ [K in keyof T]: T[K] extends Plugin<infer C, any, any, any, any> ? (C extends undefined ? {} : C) : never }>,
-        {} & IntersectTuple<{ [K in keyof T]: T[K] extends Plugin<any, infer R, any, any, any> ? (R extends undefined ? {} : R) : never }>,
-        {} & IntersectTuple<{ [K in keyof T]: T[K] extends Plugin<any, any, infer A, any, any> ? (A extends undefined ? {} : A) : never }>,
-        {} & IntersectTuple<{ [K in keyof T]: T[K] extends Plugin<any, any, any, infer TD, any> ? (TD extends undefined ? Record<never, never> : TD) : never }>,
-        Extract<{ [K in keyof T]: T[K] extends Plugin<any, any, any, any, infer S> ? S : never }[number], string>
-      >
-
     export const create = createPlugin;
     export const combine = combinePlugins;
   }
 
 }
-
-// Type tests for Database.Plugin.Intersect
-type TestPlugin1 = Database.Plugin<
-  { position: { type: "number" } },
-  { mousePos: { default: 0 } },
-  {},
-  {},
-  never
->;
-type TestPlugin2 = Database.Plugin<
-  { velocity: { type: "number" } },
-  { delta: { default: 0 } },
-  {},
-  {},
-  never
->;
-type TestPlugin3 = Database.Plugin<
-  { mass: { type: "number" } },
-  { gravity: { default: 0 } },
-  {},
-  {},
-  never
->;
-
-type TestIntersect = Database.Plugin.Intersect<[TestPlugin1, TestPlugin2, TestPlugin3]>;
-type CheckIntersectComponents = Assert<Equal<TestIntersect["components"], {
-  position: { type: "number" };
-  velocity: { type: "number" };
-  mass: { type: "number" };
-}>>;
-type CheckIntersectResources = Assert<Equal<TestIntersect["resources"], {
-  mousePos: { default: 0 };
-  delta: { default: 0 };
-  gravity: { default: 0 };
-}>>;
-
-// Test that archetypes can reference components from dependencies
-type BasePlugin = Database.Plugin<
-  { position: { type: "number" }, health: { type: "number" } },
-  {},
-  {},
-  {},
-  never
->;
-
-// Test type inference with new overload pattern
-const testBasePlugin = Database.Plugin.create({
-  components: {
-    position: { type: "number" },
-    health: { type: "number" }
-  }
-});
-
-const testExtendedPlugin = Database.Plugin.create(
-  {
-    components: {
-      velocity: { type: "number" }
-    },
-    archetypes: {
-      DynamicEntity: ["position", "velocity"],
-      LivingEntity: ["position", "health"]
-    }
-  },
-  [testBasePlugin]
-);
-
-type ExtendedPluginResult = typeof testExtendedPlugin;
-type Ignore = ExtendedPluginResult["components"]
-
-// TODO: Fix type test after World->Database merge
-// type CheckExtendedHasAllComponents = Assert<Equal<ExtendedPluginResult["components"], {
-//   position: { type: "number" };
-//   health: { type: "number" };
-//   velocity: { type: "number" };
-// }>>;
-
-type TestTransactionFunctions = ToActionFunctions<{
-  test1: (db: Store<any, any>, arg: number) => void;
-  test2: (db: Store<any, any>) => void;
-}>

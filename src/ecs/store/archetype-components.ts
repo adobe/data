@@ -20,4 +20,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.*/
 
-export type ArchetypeComponents<ComponentNames> = { readonly [K: string]: readonly ComponentNames[] };
+import { StringKeyof } from "../../types/types.js";
+import { OptionalComponents } from "../optional-components.js";
+
+export type ArchetypeComponents<ComponentNames> = { readonly [ACK: string]: readonly (ComponentNames | StringKeyof<OptionalComponents>)[] };

@@ -16,7 +16,7 @@ export type AsyncArgsProvider<T> = () => Promise<T> | AsyncGenerator<T>;
 export type ActionDeclarations<
     C extends Components,
     R extends ResourceComponents,
-    A extends ArchetypeComponents<StringKeyof<C>>> = { readonly [K: string]: ActionDeclaration<C, R, A> };
+    A extends ArchetypeComponents<StringKeyof<C>>> = { readonly [Q: string]: ActionDeclaration<C, R, A> };
 
 /**
  * Converts from TransactionDeclarations to TransactionFunctions by removing the initial store argument.
@@ -35,4 +35,4 @@ export type ToActionFunctions<T> = {
 };
 
 export type ActionFunction = (args?: any) => void | Entity;
-export type ActionFunctions = { readonly [K: string]: ActionFunction };
+export type ActionFunctions = { readonly [AF: string]: ActionFunction };

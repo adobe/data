@@ -62,7 +62,7 @@ type ExtractSystemNames<P> = P extends Database.Plugin<any, any, any, any, infer
 type PluginDatabase<
     CS extends ComponentSchemas,
     RS extends ResourceSchemas,
-    A extends ArchetypeComponents<StringKeyof<CS & OptionalComponents>>,
+    A extends ArchetypeComponents<StringKeyof<CS>>,
     TD extends ActionDeclarations<any, any, any>,
     S extends string
 > = Database<
@@ -70,7 +70,7 @@ type PluginDatabase<
     FromSchemas<RemoveIndexSignature<RS>>,
     RemoveIndexSignature<{
         readonly [K in keyof A as string extends K ? never : K]: A[K]
-    } & ArchetypeComponents<StringKeyof<FromSchemas<RemoveIndexSignature<CS>> & OptionalComponents>>>,
+    } & ArchetypeComponents<StringKeyof<FromSchemas<RemoveIndexSignature<CS>>>>>,
     ToActionFunctions<TD>,
     S
 >;
@@ -88,7 +88,7 @@ type MergeDependencies<D extends readonly Database.Plugin<any, any, any, any, an
 export function createPlugin<
     const CS extends ComponentSchemas,
     const RS extends ResourceSchemas,
-    const A extends ArchetypeComponents<StringKeyof<CS & OptionalComponents>>,
+    const A extends ArchetypeComponents<StringKeyof<CS>>,
     const TD extends ActionDeclarations<any, any, any>,
     const SYS extends { readonly [K in string]: {
         readonly create: (db: PluginDatabase<CS, RS, A, TD, string>) => SystemFunction;
@@ -97,7 +97,7 @@ export function createPlugin<
             readonly after?: readonly Extract<keyof SYS, string>[];
             readonly during?: readonly Extract<keyof SYS, string>[];
         };
-    } },
+    } }
 >(
     descriptor: {
         components?: CS;
@@ -106,14 +106,22 @@ export function createPlugin<
         transactions?: TD;
         systems?: SYS;
     }
-): Required<Database.Plugin<CS, RS, A, TD, StringKeyof<SYS>>>;
+): Required<
+    Database.Plugin<
+        CS,
+        RS,
+        A,
+        TD,
+        StringKeyof<SYS>
+    >
+>;
 
 // Overload for with dependencies
 export function createPlugin<
     const D extends readonly any[],
     const CS extends ComponentSchemas,
     const RS extends ResourceSchemas,
-    const A extends ArchetypeComponents<StringKeyof<CS & MergeDependencies<D>['components'] & OptionalComponents>>,
+    const A extends ArchetypeComponents<StringKeyof<CS & MergeDependencies<D>['components']>>,
     const TD extends ActionDeclarations<any, any, any>,
     const SYS extends { readonly [K in string]: {
         readonly create: (db: PluginDatabase<

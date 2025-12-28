@@ -50,10 +50,10 @@ interface BaseStore<C extends object = never> {
 export interface ReadonlyStore<
     C extends Components = never,
     R extends ResourceComponents = never,
-    A extends ArchetypeComponents<StringKeyof<C & OptionalComponents>> = never,
+    A extends ArchetypeComponents<StringKeyof<C>> = never,
 > extends BaseStore<C>, ReadonlyCore<C> {
     readonly resources: { readonly [K in StringKeyof<R>]: R[K] };
-    readonly archetypes: { -readonly [K in StringKeyof<A>]: ReadonlyArchetype<RequiredComponents & { [P in A[K][number]]: (C & RequiredComponents & OptionalComponents)[P] }> }
+    readonly archetypes: { readonly [K in StringKeyof<A>]: ReadonlyArchetype<RequiredComponents & { [P in A[K][number]]: (C & RequiredComponents & OptionalComponents)[P] }> }
 }
 
 export type ToReadonlyStore<T extends Store> = T extends Store<infer C, infer R> ? ReadonlyStore<C, R> : never;
@@ -64,7 +64,7 @@ export type ToReadonlyStore<T extends Store> = T extends Store<infer C, infer R>
 export interface Store<
     C extends Components = {},
     R extends ResourceComponents = {},
-    A extends ArchetypeComponents<StringKeyof<C & OptionalComponents>> = {},
+    A extends ArchetypeComponents<StringKeyof<C>> = {},
 > extends BaseStore<C>, Core<C> {
     /**
      * This is used when a store is used to represent a transaction.
@@ -88,7 +88,7 @@ export namespace Store {
     export type Schema<
         CS extends ComponentSchemas = any,
         RS extends ResourceSchemas = any,
-        A extends ArchetypeComponents<StringKeyof<CS & OptionalComponents>> = any,
+        A extends ArchetypeComponents<StringKeyof<CS>> = any,
     > = {
         readonly components: CS;
         readonly resources: RS;
@@ -162,7 +162,7 @@ export namespace Store {
         export function create<
             const CS extends ComponentSchemas = {},
             const RS extends ResourceSchemas = {},
-            const A extends ArchetypeComponents<StringKeyof<CS & OptionalComponents & Intersect<D>["components"]>> = {},
+            const A extends ArchetypeComponents<StringKeyof<CS& Intersect<D>["components"]>> = {},
             const D extends readonly Store.Schema<any, any, any>[] = [],
         >(
             schema: Partial<{

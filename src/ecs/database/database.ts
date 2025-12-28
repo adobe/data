@@ -33,7 +33,6 @@ import { ArchetypeComponents } from "../store/archetype-components.js";
 import { RequiredComponents } from "../required-components.js";
 import { EntitySelectOptions } from "../store/entity-select-options.js";
 import { Service } from "../../service/service.js";
-import { OptionalComponents } from "../optional-components.js";
 import { createDatabase } from "./public/create-database.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
@@ -47,12 +46,12 @@ import type {
 } from "../store/action-functions.js";
 import { createPlugin } from "./create-plugin.js";
 
-type SystemFunction = () => void | Promise<void>;
+export type SystemFunction = () => void | Promise<void>;
 
 export interface Database<
   C extends Components,
   R extends ResourceComponents,
-  A extends ArchetypeComponents<StringKeyof<C & OptionalComponents>>,
+  A extends ArchetypeComponents<StringKeyof<C>>,
   F extends ActionFunctions,
   S extends string = never,
 > extends ReadonlyStore<C, R, A>, Service {
@@ -103,7 +102,7 @@ export namespace Database {
   export type Plugin<
     CS extends ComponentSchemas = any,
     RS extends ResourceSchemas = any,
-    A extends ArchetypeComponents<StringKeyof<CS & OptionalComponents>> = any,
+    A extends ArchetypeComponents<StringKeyof<CS>> = any,
     TD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, any> = any,
     S extends string = any
   > = {

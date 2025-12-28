@@ -38,7 +38,7 @@ import { OptionalComponents } from "../../optional-components.js";
 export function createStore<
     CS extends ComponentSchemas = {},
     RS extends ResourceSchemas = {},
-    A extends ArchetypeComponents<StringKeyof<CS & OptionalComponents>> = {}
+    A extends ArchetypeComponents<StringKeyof<CS>> = {}
 >(
     schema?: Store.Schema<CS, RS, A>,
 ): Store<FromSchemas<CS>, FromSchemas<RS>, A> {

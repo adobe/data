@@ -93,5 +93,113 @@
   },
   "peerDependencies": {
     "lit": "^3.3.1"
+  },
+  "typesVersions": {
+    "*": {
+      "*": [
+        "./index.d.ts"
+      ],
+      "functions": [
+        "./functions/index.d.ts"
+      ],
+      "observe": [
+        "./observe/index.d.ts"
+      ],
+      "cache": [
+        "./cache/index.d.ts"
+      ],
+      "schema": [
+        "./schema/index.d.ts"
+      ],
+      "types": [
+        "./types/index.d.ts"
+      ],
+      "blob": [
+        "./blob/index.d.ts"
+      ],
+      "ecs": [
+        "./ecs/index.d.ts"
+      ],
+      "old-ecs": [
+        "./old-ecs/index.d.ts"
+      ],
+      "lit": [
+        "./lit/index.d.ts"
+      ],
+      "service": [
+        "./service/index.d.ts"
+      ],
+      "table": [
+        "./table/index.d.ts"
+      ],
+      "typed-buffer": [
+        "./typed-buffer/index.d.ts"
+      ],
+      "math": [
+        "./math/index.d.ts"
+      ]
+    }
+  },
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "types": "./index.d.ts"
+    },
+    "./functions": {
+      "import": "./functions/index.js",
+      "types": "./functions/index.d.ts"
+    },
+    "./blob": {
+      "import": "./blob/index.js",
+      "types": "./blob/index.d.ts"
+    },
+    "./cache": {
+      "import": "./cache/index.js",
+      "types": "./cache/index.d.ts"
+    },
+    "./schema": {
+      "import": "./schema/index.js",
+      "types": "./schema/index.d.ts"
+    },
+    "./types": {
+      "import": "./types/index.js",
+      "types": "./types/index.d.ts"
+    },
+    "./observe": {
+      "import": "./observe/index.js",
+      "types": "./observe/index.d.ts"
+    },
+    "./ecs": {
+      "import": "./ecs/index.js",
+      "types": "./ecs/index.d.ts"
+    },
+    "./old-ecs": {
+      "import": "./old-ecs/index.js",
+      "types": "./old-ecs/index.d.ts"
+    },
+    "./lit": {
+      "import": "./lit/index.js",
+      "types": "./lit/index.d.ts"
+    },
+    "./service": {
+      "import": "./service/index.js",
+      "types": "./service/index.d.ts"
+    },
+    "./table": {
+      "import": "./table/index.js",
+      "types": "./table/index.d.ts"
+    },
+    "./typed-buffer": {
+      "import": "./typed-buffer/index.js",
+      "types": "./typed-buffer/index.d.ts"
+    },
+    "./math": {
+      "import": "./math/index.js",
+      "types": "./math/index.d.ts"
+    },
+    "./*": {
+      "types": "./*.d.ts",
+      "import": "./*.js"
+    }
   }
 }

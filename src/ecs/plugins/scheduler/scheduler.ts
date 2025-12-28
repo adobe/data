@@ -36,9 +36,20 @@ export const scheduler = createPlugin({
                     if (db.resources.schedulerState === "running") {
                         // Execute all systems in order (excluding schedulerSystem itself)
                         for (const tier of db.system.order) {
-                            // Execute tier in parallel
+                            // Execute tier in parallel, filtering out schedulerSystem
                             await Promise.all(
-                                tier.map((name: string) => db.system.functions[name]())
+                                tier
+                                    .filter((name: string) => name !== "schedulerSystem")
+                                    .map((name: string) => {
+                                        const systemFn = db.system.functions[name];
+                                        if (!systemFn) {
+                                            throw new Error(
+                                                `System "${name}" not found in db.system.functions. ` +
+                                                `Available systems: ${Object.keys(db.system.functions).join(", ")}`
+                                            );
+                                        }
+                                        return systemFn();
+                                    })
                             );
                         }
                     }
@@ -48,7 +59,8 @@ export const scheduler = createPlugin({
                     }
                 };
 
-                executeFrame();
+                // Defer execution until after all systems are created and db.system.functions is populated
+                requestAnimationFrame(executeFrame);
 
                 // Return a no-op system function (the real work happens in the RAF loop)
                 return () => {

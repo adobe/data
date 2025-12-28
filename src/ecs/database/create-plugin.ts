@@ -117,14 +117,12 @@ function compileTimeTypeChecks() {
 
     // test invalid archetype component reference
     createPlugin({
-        resources: {},
         archetypes: {
             // valid archetype component reference to optional component
             Transient: ["transient"],
             // @ts-expect-error - invalid archetype reference
             InvalidArchetype: ["bar"],
-        },
-        transactions: {}, systems: {}
+        }
     });
 
     // test valid and invalid transactions and systems

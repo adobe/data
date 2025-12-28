@@ -481,7 +481,42 @@ describe("Database.Plugin.create", () => {
             }).not.toThrow();
         });
 
-        it("should allow overwriting systems", () => {
+        it("should throw error when merging different transaction definitions", () => {
+            const plugin1 = createPlugin({
+                transactions: {
+                    updateEntity: (store: any) => {}
+                }
+            });
+
+            expect(() => {
+                createPlugin({
+                    transactions: {
+                        updateEntity: (store: any) => {} // Different function reference - error
+                    },
+                    extends: plugin1
+                });
+            }).toThrow('Plugin combine conflict: transactions.updateEntity must be identical (===) across plugins');
+        });
+
+        it("should allow same transaction with identical reference", () => {
+            const sharedTransaction = (store: any) => {};
+            const plugin1 = createPlugin({
+                transactions: {
+                    updateEntity: sharedTransaction
+                }
+            });
+
+            expect(() => {
+                createPlugin({
+                    transactions: {
+                        updateEntity: sharedTransaction // Same reference - OK
+                    },
+                    extends: plugin1
+                });
+            }).not.toThrow();
+        });
+
+        it("should throw error when merging different system definitions", () => {
             const plugin1 = createPlugin({
                 systems: {
                     update: {
@@ -490,13 +525,32 @@ describe("Database.Plugin.create", () => {
                 }
             });
 
-            // Should not throw - systems can be overwritten
             expect(() => {
                 createPlugin({
                     systems: {
                         update: {
-                            create: () => () => { } // Different function - OK
+                            create: () => () => { } // Different function - error
                         }
+                    },
+                    extends: plugin1
+                });
+            }).toThrow('Plugin combine conflict: systems.update must be identical (===) across plugins');
+        });
+
+        it("should allow same system with identical reference", () => {
+            const sharedSystem = {
+                create: () => () => { }
+            };
+            const plugin1 = createPlugin({
+                systems: {
+                    update: sharedSystem
+                }
+            });
+
+            expect(() => {
+                createPlugin({
+                    systems: {
+                        update: sharedSystem // Same reference - OK
                     },
                     extends: plugin1
                 });

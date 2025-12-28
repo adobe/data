@@ -72,15 +72,14 @@ type CheckCombinedPlugins = Assert<Equal<CombinedPlugins, {
 
 /**
  * Combines multiple plugins into a single plugin.
- * Components, resources, archetypes, and transactions are intersected.
- * Systems are merged (all system definitions from all plugins are included).
+ * All plugin properties (components, resources, archetypes, transactions, systems)
+ * require identity (===) when the same key exists across plugins.
  */
 export function combinePlugins<
   const Plugins extends readonly Database.Plugin[]
 >(
   ...plugins: Plugins
 ): CombinePlugins<Plugins> {
-  const requireIdentity = new Set(['components', 'resources', 'archetypes']);
   const keys = ['components', 'resources', 'archetypes', 'transactions', 'systems'] as const;
   
   const merge = (base: any, next: any) => 
@@ -88,21 +87,17 @@ export function combinePlugins<
       const baseObj = base[key] ?? {};
       const nextObj = next[key] ?? {};
       
-      if (requireIdentity.has(key)) {
-        const merged = { ...baseObj };
-        for (const [k, v] of Object.entries(nextObj)) {
-          if (k in baseObj && baseObj[k] !== v) {
-            throw new Error(
-              `Plugin combine conflict: ${key}.${k} must be identical (===) across plugins`
-            );
-          }
-          merged[k] = v;
+      // All keys require identity (===) check
+      const merged = { ...baseObj };
+      for (const [k, v] of Object.entries(nextObj)) {
+        if (k in baseObj && baseObj[k] !== v) {
+          throw new Error(
+            `Plugin combine conflict: ${key}.${k} must be identical (===) across plugins`
+          );
         }
-        return [key, merged];
+        merged[k] = v;
       }
-      
-      // For transactions and systems, merge objects
-      return [key, { ...baseObj, ...nextObj }];
+      return [key, merged];
     }));
   
   const emptyPlugin = { components: {}, resources: {}, archetypes: {}, transactions: {}, systems: {} };

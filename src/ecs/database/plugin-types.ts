@@ -2,54 +2,6 @@ import { Assert, Equal, Simplify, StringKeyof } from "../../types/index.js";
 import { ActionDeclarations, ResourceSchemas, ArchetypeComponents, ComponentSchemas, FromSchemas, ToActionFunctions, Store, Entity } from "../index.js";
 import type { Database, SystemFunction } from "./database.js";
 
-// Helper to intersect all elements of a tuple
-type IntersectAll<T extends readonly unknown[]> = Simplify<
-  T extends readonly [infer H, ...infer R] ? H & IntersectAll<R> : unknown
->;
-type UnionAll<T extends readonly unknown[]> = Simplify<
-  T extends readonly [infer H, ...infer R] ? H | UnionAll<R> : never
->;
-
-export type CombinePlugins<Plugins extends readonly Database.Plugin[]> = {
-  components: IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<infer C, any, any, any, any> ? C : never }>;
-  resources: IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, infer R, any, any, any> ? R : never }>;
-  archetypes: IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, infer A, any, any> ? A : never }>;
-  transactions: IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, infer TD, any> ? TD : never }>;
-  systems: UnionAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, infer S> ? S : never }>;
-};
-
-type CombinedPlugins = CombinePlugins<[
-    Database.Plugin<{a: { readonly type: "number" }}, { c: { readonly default: boolean } }, { readonly A: readonly ["a"]}, { readonly doFoo: (store: Store, args: { a: number }) => Entity }, "system1">,
-    Database.Plugin<{b: { readonly type: "string" }}, { d: { readonly default: boolean } }, { readonly B: readonly ["b"]}, { readonly doBar: (store: Store) => void }, "system2">,
-]>;
-type CheckCombinedPlugins = Assert<Equal<CombinedPlugins, {
-    components: {
-        a: {
-            readonly type: "number";
-        };
-        b: {
-            readonly type: "string";
-        };
-    };
-    resources: {
-        c: {
-            readonly default: boolean;
-        };
-        d: {
-            readonly default: boolean;
-        };
-    };
-    archetypes: {
-        readonly A: readonly ["a"];
-        readonly B: readonly ["b"];
-    };
-    transactions: {
-        readonly doFoo: (store: Store, args: { a: number }) => Entity;
-        readonly doBar: (store: Store) => void;
-    };
-    systems: "system1" | "system2";
-}>>;
-
 type RemoveIndex<T> = Simplify<{
     [K in keyof T as
       string extends K ? never :

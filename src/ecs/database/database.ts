@@ -45,6 +45,7 @@ import type {
   ToActionFunctions,
 } from "../store/action-functions.js";
 import { createPlugin } from "./create-plugin.js";
+import { combinePlugins } from "./combine-plugins.js";
 
 export type SystemFunction = () => void | Promise<void>;
 
@@ -138,6 +139,7 @@ export namespace Database {
       >
 
     export const create = createPlugin;
+    export const combine = combinePlugins;
   }
 
 }

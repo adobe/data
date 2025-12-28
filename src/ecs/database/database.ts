@@ -106,11 +106,11 @@ export namespace Database {
     TD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, any> = any,
     S extends string = any
   > = {
-    readonly components?: CS;
-    readonly resources?: RS;
-    readonly archetypes?: A;
-    readonly transactions?: TD;
-    readonly systems?: { readonly [K in S]: {
+    readonly components: CS;
+    readonly resources: RS;
+    readonly archetypes: A;
+    readonly transactions: TD;
+    readonly systems: { readonly [K in S]: {
       readonly create: (db: Database<FromSchemas<CS>, FromSchemas<RS>, A, ToActionFunctions<TD>, S>) => SystemFunction;
       /**
        * Scheduling constraints for system execution order.
@@ -129,13 +129,13 @@ export namespace Database {
   export namespace Plugin {
 
     export type Intersect<T extends readonly Plugin<any, any, any, any, any>[]> =
-      Required<Database.Plugin<
+      Database.Plugin<
         {} & IntersectTuple<{ [K in keyof T]: T[K] extends Plugin<infer C, any, any, any, any> ? (C extends undefined ? {} : C) : never }>,
         {} & IntersectTuple<{ [K in keyof T]: T[K] extends Plugin<any, infer R, any, any, any> ? (R extends undefined ? {} : R) : never }>,
         {} & IntersectTuple<{ [K in keyof T]: T[K] extends Plugin<any, any, infer A, any, any> ? (A extends undefined ? {} : A) : never }>,
         {} & IntersectTuple<{ [K in keyof T]: T[K] extends Plugin<any, any, any, infer TD, any> ? (TD extends undefined ? Record<never, never> : TD) : never }>,
         Extract<{ [K in keyof T]: T[K] extends Plugin<any, any, any, any, infer S> ? S : never }[number], string>
-      >>
+      >
 
     export const create = createPlugin;
   }

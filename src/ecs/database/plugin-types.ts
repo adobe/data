@@ -10,7 +10,7 @@ type UnionAll<T extends readonly unknown[]> = Simplify<
   T extends readonly [infer H, ...infer R] ? H | UnionAll<R> : never
 >;
 
-export type CombinePlugins<Plugins extends readonly Required<Database.Plugin>[]> = {
+export type CombinePlugins<Plugins extends readonly Database.Plugin[]> = {
   components: IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<infer C, any, any, any, any> ? C : never }>;
   resources: IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, infer R, any, any, any> ? R : never }>;
   archetypes: IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, infer A, any, any> ? A : never }>;
@@ -19,8 +19,8 @@ export type CombinePlugins<Plugins extends readonly Required<Database.Plugin>[]>
 };
 
 type CombinedPlugins = CombinePlugins<[
-    Required<Database.Plugin<{a: { readonly type: "number" }}, { c: { readonly default: boolean } }, { readonly A: readonly ["a"]}, { readonly doFoo: (store: Store, args: { a: number }) => Entity }, "system1">>,
-    Required<Database.Plugin<{b: { readonly type: "string" }}, { d: { readonly default: boolean } }, { readonly B: readonly ["b"]}, { readonly doBar: (store: Store) => void }, "system2">>,
+    Database.Plugin<{a: { readonly type: "number" }}, { c: { readonly default: boolean } }, { readonly A: readonly ["a"]}, { readonly doFoo: (store: Store, args: { a: number }) => Entity }, "system1">,
+    Database.Plugin<{b: { readonly type: "string" }}, { d: { readonly default: boolean } }, { readonly B: readonly ["b"]}, { readonly doBar: (store: Store) => void }, "system2">,
 ]>;
 type CheckCombinedPlugins = Assert<Equal<CombinedPlugins, {
     components: {

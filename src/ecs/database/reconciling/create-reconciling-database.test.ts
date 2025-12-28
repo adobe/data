@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createReconcilingDatabase } from "./create-reconciling-database.js";
 import { Store } from "../../store/index.js";
+import { Database } from "../database.js";
 
 const createTestReconcilingDatabase = () => {
     const store = Store.create({
@@ -360,16 +361,13 @@ describe("createReconcilingDatabase", () => {
 
         const createdId = created?.value as number;
 
-        const extendedReconciling = reconciling.extend({
-            components: {},
-            resources: {},
-            archetypes: {},
+        const extendedReconciling = reconciling.extend(Database.Plugin.create({
             transactions: {
                 renamePositionNameEntity(t: StoreType, args: { entity: number; name: string }) {
                     t.update(args.entity, { name: args.name });
                 },
             },
-        });
+        }));
 
         extendedReconciling.apply({
             id: 201,
@@ -388,7 +386,7 @@ describe("createReconcilingDatabase", () => {
 
     it("should return the same instance when extended", () => {
         const reconciling = createTestReconcilingDatabase();
-        const extended = reconciling.extend({ components: {}, resources: {}, archetypes: {}, transactions: {} });
+        const extended = reconciling.extend(Database.Plugin.create({}));
         expect(extended).toBe(reconciling);
     });
 });

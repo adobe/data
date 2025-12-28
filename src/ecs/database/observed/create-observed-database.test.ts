@@ -3,6 +3,7 @@ import { createObservedDatabase } from "./create-observed-database.js";
 import { Store } from "../../store/index.js";
 import { Schema } from "../../../schema/index.js";
 import { Entity } from "../../entity.js";
+import { Database } from "../database.js";
 
 const positionSchema = {
     type: "object",
@@ -750,14 +751,12 @@ describe("createObservedDatabase", () => {
         const unsubscribePosition = observed.observe.components.position(positionObserver);
         positionObserver.mockClear();
 
-        const extended = observed.extend({
-            components: { velocity: velocitySchema },
-            resources: {},
+        const extended = observed.extend(Database.Plugin.create({
+            components: { position: positionSchema, velocity: velocitySchema },
             archetypes: {
                 MovingEntity: ["position", "velocity"],
-            },
-            transactions: {},
-        });
+            }
+        }));
 
         expect(extended).toBe(observed);
         // Verify that extending triggers reload notification for observed components

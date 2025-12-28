@@ -106,7 +106,7 @@ export function createPlugin<
         transactions?: TD;
         systems?: SYS;
     }
-): Required<
+): 
     Database.Plugin<
         CS,
         RS,
@@ -114,7 +114,7 @@ export function createPlugin<
         TD,
         StringKeyof<SYS>
     >
->;
+;
 
 // Overload for with dependencies
 export function createPlugin<
@@ -186,5 +186,5 @@ export function createPlugin(
     return merge(mergedDeps, descriptor);
 }
 const keys = ['components', 'resources', 'archetypes', 'transactions', 'systems'] as const;
-const emptyPlugin: Required<PluginSchema> = { components: {}, resources: {}, archetypes: {}, transactions: {}, systems: {} };
+const emptyPlugin: PluginSchema = { components: {}, resources: {}, archetypes: {}, transactions: {}, systems: {} };
 

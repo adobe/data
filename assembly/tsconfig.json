@@ -1,17 +1,18 @@
 {
+  "extends": "assemblyscript/std/assembly.json",
   "compilerOptions": {
     "target": "esnext",
     "module": "esnext",
+    "moduleResolution": "node",
     "noEmit": true,
-    "types": [],
-    "strict": false,
-    "noImplicitAny": false,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false,
-    "experimentalDecorators": true
+    "strict": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "experimentalDecorators": true,
+    "types": []
   },
   "include": [
     "./**/*.ts"
-  ],
-  "extends": "../../node_modules/.pnpm/assemblyscript@0.27.30/node_modules/assemblyscript/std/assembly.json"
+  ]
 }

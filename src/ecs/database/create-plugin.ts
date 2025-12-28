@@ -28,6 +28,8 @@ import type { ActionDeclarations, ToActionFunctions } from "../store/action-func
 import type { FromSchemas } from "../../schema/index.js";
 import type { StringKeyof, Simplify, NoInfer } from "../../types/types.js";
 import { combinePlugins } from "./combine-plugins.js";
+import { Assert } from "../../types/assert.js";
+import { Equal } from "../../types/equal.js";
 
 type RemoveIndex<T> = Simplify<{
     [K in keyof T as
@@ -93,3 +95,162 @@ export function createPlugin<
     return plugin as any;
 }
 
+function compileTimeTypeChecks() {
+    // empty plugin
+    const emptyPlugin = createPlugin({});
+    type CheckEmptyPlugin = Assert<Equal<typeof emptyPlugin, Database.Plugin<{}, {}, {}, {}, never>>>;
+
+    const componentsOnlyPlugin = createPlugin({
+        components: {
+            a: { type: "number" },
+            b: { type: "string" }
+        }
+    });
+    type CheckComponentsOnlyPlugin = Assert<Equal<typeof componentsOnlyPlugin, Database.Plugin<{
+        readonly a: {
+            readonly type: "number";
+        };
+        readonly b: {
+            readonly type: "string";
+        };
+    }, {}, {}, {}, never>>>;
+
+    // test invalid archetype component reference
+    createPlugin({
+        resources: {},
+        archetypes: {
+            // valid archetype component reference to optional component
+            Transient: ["transient"],
+            // @ts-expect-error - invalid archetype reference
+            InvalidArchetype: ["bar"],
+        },
+        transactions: {}, systems: {}
+    });
+
+    // test valid and invalid transactions and systems
+    createPlugin({
+        components: {
+            a: { type: "number" },
+            b: { type: "string" }
+        },
+        resources: {
+            c: { default: false as boolean }
+        },
+        archetypes: {
+            A: ["a", "b"],
+            ABTransient: ["a", "b", "transient"],
+        },
+        transactions: {
+            testChanges: (store) => {
+                // valid resource assignment
+                store.resources.c = true;
+                // @ts-expect-error - invalid resource assignment
+                store.resources.d = true;
+                // @ts-expect-error - invalid archetype reference
+                store.archetypes.foo
+                // valid archetype 
+                store.archetypes.A.insert({ a: 1, b: "2" });
+                // valid update
+                store.update(0, { a: 2 });
+                // @ts-expect-error - invalid update
+                store.update(0, { d: 10 });
+            }
+        },
+        systems: {
+            update: {
+                create: (db) => () => {}
+            },
+            render: {
+                create: (db) => () => {},
+                schedule: {
+                    after: ["update"],
+                    // @ts-expect-error - render would be a self-reference
+                    before: ["render"],
+                    // @ts-expect-error - invalid system reference
+                    during: ["invalid"]
+                }
+            }
+        }
+    });
+
+    const basePlugin = createPlugin({
+        components: {
+            alpha: { type: "number" },
+            beta: { type: "string" }
+        },
+        resources: {
+            charlie: { default: false as boolean }
+        },
+        archetypes: {
+            Foo: ["alpha", "beta"],
+            FooTransient: ["alpha", "beta", "transient"],
+        },
+        transactions: {
+            doAlpha: (store, input: { a: number, b: string }) => {},
+            doBeta: (store, input: { c: number }) => {}
+        },
+        systems: {
+            input: {
+                create: (db) => () => {}
+            },
+            output: {
+                create: (db) => () => {}
+            }
+        }
+    });
+
+    // test valid and invalid transactions and systems that use an extended plugin.
+    const extendedPlugin = createPlugin({
+        components: {
+            a: { type: "number" },
+            b: { type: "string" }
+        },
+        resources: {
+            c: { default: false as boolean }
+        },
+        archetypes: {
+            // test referencing components from the base plugin
+            A: ["a", "b", "alpha", "beta"],
+            ABTransient: ["a", "b", "alpha", "beta", "transient"],
+        },
+        transactions: {
+            testChanges: (store) => {
+                // assign to resource from the base plugin
+                store.resources.charlie = true;
+                // assignt to resources from this plugin
+                store.resources.c = true;
+                // @ts-expect-error - invalid resource assignment
+                store.resources.delta = true;
+                // @ts-expect-error - invalid archetype reference
+                store.archetypes.foo
+                // valid archetype 
+                store.archetypes.A.insert({ a: 1, b: "2", alpha: 3, beta: "4" });
+                // valid update using base components
+                store.update(0, { a: 2, alpha: 3 });
+            }
+        },
+        systems: {
+            update: {
+                create: (db) => () => {},
+                schedule: {
+                    // test referencing systems from the base plugin
+                    after: ["input"],
+                    before: ["output"],
+                    during: ["render"],
+                }
+            },
+            render: {
+                create: (db) => () => {},
+                schedule: {
+                    after: ["update"],
+                    // @ts-expect-error - render would be a self-reference
+                    before: ["render"],
+                    // @ts-expect-error - invalid system reference
+                    during: ["invalid"]
+                }
+            }
+        },
+        extends: basePlugin
+    });
+
+}

@@ -6,32 +6,63 @@
   "sideEffects": false,
   "private": false,
   "scripts": {
-    "build": "pnpm copy && pnpm build-assembly && run-p build:*",
-    "build:code": "tsc -b",
+    "build": "pnpm run copy && pnpm run build-assembly && run-p build:*",
     "build:apidocs": "typedoc",
+    "build:code": "tsc -b",
     "build-assembly": "run-p asbuild:release",
-    "copy": "mkdir -p dist && cp README.md dist && cp LICENSE dist && sed '/\"publish-public\":/d;/\"link\":/d;/\"copy\":/d' package.json > dist/package.json",
-    "clean": "rm -rf dist build node_modules",
-    "clean-cache": "rm -rf node_modules/.cache",
-    "deploy-docs": "pnpm build && ./scripts/deploy-docs.sh",
-    "dev": "pnpm clean-cache && run-p dev:* dev:serve",
-    "dev:serve": "vite",
-    "dev:build": "tsc -b -w --preserveWatchOutput",
-    "dev:test": "pnpm test",
+    "clean": "shx rm -rf dist build node_modules coverage",
+    "clean-cache": "shx rm -rf node_modules/.cache",
+    "copy": "shx mkdir -p dist && shx cp README.md LICENSE dist && node scripts/prepare-dist.js",
+    "deploy-docs": "pnpm run build && ./scripts/deploy-docs.sh",
+    "dev": "pnpm run clean-cache && run-p dev:* dev:serve",
     "dev:apidocs": "nodemon -w README.md -w dist -x typedoc --delay 100",
     "dev:assembly": "nodemon -w assembly -e ts -x pnpm run asbuild:release --delay 100",
-    "lint": "pnpm eslint .",
-    "lint-fix": "pnpm eslint . --fix",
+    "dev:build": "tsc -b -w --preserveWatchOutput",
+    "dev:serve": "vite",
+    "dev:test": "vitest",
     "debug": "vitest --inspect-brk --no-file-parallelism --test-timeout 1000000",
-    "link": "pnpm build && cd dist && ln -sf ../node_modules node_modules && pnpm link --global",
-    "pre-commit": "lint-staged",
-    "prepublish": "echo DO NOT PUBLISH FROM ROOT, use pnpm run publish-public instead. && exit 1",
-    "publish-public": "pnpm build && cd dist && pnpm publish --no-git-checks --access public",
-    "perftest": "node dist/perftest/index.js",
-    "test": "vitest",
+    "lint": "run-p lint:*",
+    "lint:css": "stylelint \"**/*.css\"",
+    "lint:fix": "run-p \"lint:*:fix\"",
+    "lint:js:fix": "eslint . --fix",
+    "lint:packagejson": "prettier-package-json --write package.json",
+    "lint:ts": "eslint . --ext .ts,.tsx",
+    "link": "pnpm run build && cd dist && ln -sf ../node_modules node_modules && pnpm link --global",
     "asbuild:debug": "asc assembly/index.ts -o dist/assembly/index.wasm --target debug --enable simd && echo built dist/assembly/index.wasm",
     "asbuild:release": "asc assembly/index.ts -o dist/assembly/index.wasm --target release --enable simd --optimize && echo built dist/assembly/index.wasm",
-    "start": "npx serve ."
+    "perftest": "node dist/perftest/index.js",
+    "pre-commit": "lint-staged",
+    "prepublishOnly": "echo \"DO NOT PUBLISH FROM ROOT, use pnpm run publish-public instead.\" && exit 1",
+    "publish-public": "pnpm run build && cd dist && pnpm publish --no-git-checks --access public",
+    "start": "npx serve .",
+    "test": "vitest run"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix"
+    ],
+    "*.css": [
+      "stylelint --fix"
+    ],
+    "package.json": [
+      "prettier-package-json --write"
+    ]
+  },
+  "dependencies": {
+    "@cfworker/json-schema": "^4.1.1",
+    "@lit/context": "^1.1.5",
+    "@spectrum-web-components/action-button": "^1.7.0",
+    "@spectrum-web-components/action-group": "^1.7.0",
+    "@spectrum-web-components/button": "^1.7.0",
+    "@spectrum-web-components/card": "^1.7.0",
+    "@spectrum-web-components/checkbox": "^1.7.0",
+    "@spectrum-web-components/icons-workflow": "^1.7.0",
+    "@spectrum-web-components/styles": "^1.7.0",
+    "@spectrum-web-components/theme": "^1.7.0",
+    "jsonpath": "^1.1.1"
+  },
+  "peerDependencies": {
+    "lit": "^3.3.1"
   },
   "devDependencies": {
     "@assemblyscript/loader": "^0.27.30",
@@ -64,34 +95,14 @@
     "prettier-package-json": "^2.8.0",
     "pretty-quick": "^4.0.0",
     "riteway": "v8.0.0-RC4",
+    "shx": "^0.3.4",
     "stylelint": "^16.2.1",
     "stylelint-config-standard": "^36.0.0",
     "typedoc": "^0.28.9",
-    "typescript": "^5.8.3",
+    "typescript": "^5.4.0",
     "uuid": "^10.0.0",
     "vite": "^5.1.1",
     "vitest": "^1.6.0",
     "webdriverio": "^9.0.9"
-  },
-  "lint-staged": {
-    "*.ts": "pnpm lint:ts && pnpm lint:css",
-    "*.css": "pnpm lint:css",
-    "package.json": "pnpm lint:packagejson"
-  },
-  "dependencies": {
-    "@cfworker/json-schema": "^4.1.1",
-    "@lit/context": "^1.1.5",
-    "@spectrum-web-components/action-button": "^1.7.0",
-    "@spectrum-web-components/action-group": "^1.7.0",
-    "@spectrum-web-components/button": "^1.7.0",
-    "@spectrum-web-components/card": "^1.7.0",
-    "@spectrum-web-components/checkbox": "^1.7.0",
-    "@spectrum-web-components/icons-workflow": "^1.7.0",
-    "@spectrum-web-components/styles": "^1.7.0",
-    "@spectrum-web-components/theme": "^1.7.0",
-    "jsonpath": "^1.1.1"
-  },
-  "peerDependencies": {
-    "lit": "^3.3.1"
   }
 }

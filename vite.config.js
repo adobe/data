@@ -1,6 +1,6 @@
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vitest/config'
 
-// we have to turn off the webdriverio test runner when running in vscode debug mode
+// Detect if running in VS Code Debug mode to switch test runners
 const IS_RUNNING_VSCODE_DEBUG = typeof process.env.VSCODE_INSPECTOR_OPTIONS === 'string';
 
 export default defineConfig({
@@ -14,16 +14,18 @@ export default defineConfig({
   },
   test: {
     tsconfig: './tsconfig-base.json',
-    browser: IS_RUNNING_VSCODE_DEBUG ? {} : {
+    reporters: 'verbose',
+    silent: false,
+    
+    browser: {
+      // Disable browser runner when debugging in VS Code to allow the extension to attach correctly
+      enabled: !IS_RUNNING_VSCODE_DEBUG,
       provider: 'playwright',
-      enabled: true,
-      name: 'chromium', // browser name is required
+      name: 'chromium',
       headless: true,
       options: {
         launch: {},
       },
     },
-    silent: false,
-    reporters: 'verbose',
   }
 })

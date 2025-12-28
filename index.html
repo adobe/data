@@ -5,21 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Adobe Data Library - Samples</title>
     
-    <!-- Spectrum Web Components - Core components and theme -->
     <script type="module" src="./node_modules/@spectrum-web-components/theme/sp-theme.js"></script>
     <script type="module" src="./node_modules/@spectrum-web-components/theme/theme-light.js"></script>
     <script type="module" src="./node_modules/@spectrum-web-components/theme/scale-medium.js"></script>
     <script type="module" src="./node_modules/@spectrum-web-components/button/sp-button.js"></script>
-    <script type="module" src="./node_modules/@spectrum-web-components/card/sp-card.js"></script>
-    
-    <!-- Spectrum CSS -->
-    <link rel="stylesheet" href="./node_modules/@spectrum-web-components/styles/all-medium-light.css">
+    <script type="module" src="./node_modules/@spectrum-web-components/icon/sp-icon.js"></script>
     
     <style>
+        :root {
+            --spectrum-global-color-gray-50: #f8f8f8;
+            --spectrum-global-color-gray-100: #e0e0e0;
+            --spectrum-global-color-gray-800: #4b4b4b;
+        }
+
         body {
             margin: 0;
             font-family: adobe-clean, system-ui, sans-serif;
             background-color: var(--spectrum-global-color-gray-50);
+            color: var(--spectrum-global-color-gray-800);
         }
         
         .container {
@@ -28,45 +31,116 @@
             padding: 2rem;
         }
         
+        /* Header Styles */
         .header {
             text-align: center;
             margin-bottom: 3rem;
         }
-        
+        .header h1 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            margin: 0 0 0.5rem 0;
+        }
+        .header p {
+            font-size: 1.1rem;
+            color: #6a6a6a;
+            margin: 0;
+        }
+
+        /* Empty State Styles */
         .placeholder-content {
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            min-height: 50vh;
+            min-height: 40vh;
             text-align: center;
+            animation: fadeIn 0.5s ease-out;
         }
-        
         .placeholder-icon {
-            width: 80px;
-            height: 80px;
-            margin-bottom: 2rem;
-            opacity: 0.6;
+            width: 64px;
+            height: 64px;
+            margin-bottom: 1.5rem;
+            color: #b3b3b3;
+        }
+
+        /* Sample Accordion Styles */
+        .sample-section {
+            background: #fff;
+            border: 1px solid var(--spectrum-global-color-gray-100);
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            overflow: hidden;
+            transition: box-shadow 0.2s ease;
         }
         
-        .samples-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 1.5rem;
-            margin-top: 2rem;
+        .sample-section:hover {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
-        
-        .sample-card {
-            height: 200px;
+
+        .sample-header {
+            padding: 1rem 1.5rem;
+            background: #fff;
+            cursor: pointer;
             display: flex;
-            flex-direction: column;
-            justify-content: center;
+            justify-content: space-between;
             align-items: center;
-            text-align: center;
+            user-select: none;
+        }
+
+        .sample-header:hover {
+            background-color: #fcfcfc;
+        }
+
+        .sample-info h3 {
+            margin: 0;
+            font-size: 1.125rem;
+            color: #2c2c2c;
         }
         
-        .no-samples {
-            opacity: 0.7;
+        .sample-info p {
+            margin: 0.25rem 0 0 0;
+            color: #6e6e6e;
+            font-size: 0.875rem;
+        }
+
+        .toggle-icon {
+            font-size: 0.8rem;
+            color: #6e6e6e;
+            transition: transform 0.3s ease;
+        }
+
+        .sample-content {
+            display: none;
+            padding: 1.5rem;
+            border-top: 1px solid var(--spectrum-global-color-gray-100);
+            background: #fafafa;
+            /* Ensure components inside have space */
+            min-height: 200px;
+        }
+
+        /* Expanded State Classes */
+        .sample-section.expanded .sample-header {
+            background-color: #f5f5f5;
+        }
+        
+        .sample-section.expanded .toggle-icon {
+            transform: rotate(180deg);
+        }
+
+        .sample-section.expanded .sample-content {
+            display: block;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
         }
     </style>
 </head>
@@ -74,83 +148,124 @@
     <sp-theme scale="medium" color="light" system="spectrum">
         <div class="container">
             <div class="header">
-                <h1 style="color: var(--spectrum-global-color-gray-900); font-size: var(--spectrum-global-dimension-font-size-1300); font-weight: var(--spectrum-global-font-weight-bold);">Adobe Data Library</h1>
-                <p style="color: var(--spectrum-global-color-gray-700); font-size: 1.1rem; margin-top: 0.5rem;">
-                    Interactive samples and demonstrations
-                </p>
+                <h1>Adobe Data Library</h1>
+                <p>Interactive samples and demonstrations</p>
             </div>
             
             <div id="samples-container">
                 <div class="placeholder-content">
-                    <!-- Adobe-style placeholder icon -->
-                    <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                        <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-                        <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                    <svg class="placeholder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke-linejoin="round"/>
+                        <path d="M2 17L12 22L22 17" stroke-linejoin="round"/>
+                        <path d="M2 12L12 17L22 12" stroke-linejoin="round"/>
                     </svg>
                     
-                    <h2 style="color: var(--spectrum-global-color-gray-800); font-size: var(--spectrum-global-dimension-font-size-700); font-weight: var(--spectrum-global-font-weight-bold); margin-bottom: 1rem;">Ready for Samples</h2>
-                    <p style="color: var(--spectrum-global-color-gray-600); max-width: 500px; line-height: 1.6; margin-bottom: 2rem;">
-                        This page will automatically display interactive samples as you create them. Each sample will demonstrate different features of the Adobe Data library.
+                    <h2 style="margin-bottom: 0.5rem;">Waiting for Samples</h2>
+                    <p style="color: #666; max-width: 450px; margin-bottom: 2rem;">
+                        Build the project to generate the samples manifest. Once available, they will appear here automatically.
                     </p>
-                    <sp-button variant="primary" disabled>
-                        No samples available yet
-                    </sp-button>
+                    <sp-button variant="secondary" disabled>No samples found</sp-button>
                 </div>
             </div>
-            
         </div>
     </sp-theme>
 
     <script type="module">
-        import { samples } from './dist/samples/index.js';
-        
-        // Render samples as collapsible sections
-        const samplesContainer = document.getElementById('samples-container');
-        if (samplesContainer) {
-            samplesContainer.innerHTML = samples.map(sample => `
-                <div class="sample-section" style="margin-bottom: 1rem;">
-                    <div class="sample-header" onclick="toggleSample('${sample.id}', '${sample.elementTag}')" 
-                         style="background: #f8f9fa; padding: 1rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none; border: 1px solid #e0e0e0; border-radius: 8px;">
-                        <div>
-                            <h3 style="margin: 0; color: var(--spectrum-global-color-gray-800); font-size: var(--spectrum-global-dimension-font-size-500);">${sample.title}</h3>
-                            <p style="margin: 0.5rem 0 0 0; color: var(--spectrum-global-color-gray-600); font-size: var(--spectrum-global-dimension-font-size-300);">${sample.description}</p>
+        // Attempt to load samples dynamically
+        let samplesData = [];
+        const container = document.getElementById('samples-container');
+
+        try {
+            // Import from the build output
+            const module = await import('./dist/samples/index.js');
+            samplesData = module.samples || [];
+            
+            if (samplesData.length > 0) {
+                renderSamples(samplesData);
+            }
+        } catch (error) {
+            console.warn('Samples manifest not found. This is expected if the project hasn\'t been built yet.', error);
+            // We keep the placeholder visible
+        }
+
+        /**
+         * Renders the list of samples into the DOM
+         */
+        function renderSamples(samples) {
+            container.innerHTML = samples.map(sample => `
+                <div class="sample-section" id="section-${sample.id}">
+                    <div class="sample-header" role="button" tabindex="0" 
+                         aria-expanded="false" aria-controls="content-${sample.id}"
+                         data-id="${sample.id}" data-tag="${sample.elementTag}">
+                        
+                        <div class="sample-info">
+                            <h3>${escapeHtml(sample.title)}</h3>
+                            <p>${escapeHtml(sample.description)}</p>
                         </div>
-                        <span id="toggle-${sample.id}" style="color: var(--spectrum-global-color-gray-600); font-size: 1.2rem;">▶</span>
+                        <span class="toggle-icon">▼</span>
                     </div>
-                    <div id="sample-content-${sample.id}" class="sample-content" style="display: none; background: white; height: 400px; overflow: hidden; border: 1px solid #e0e0e0; border-top: none; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; margin-top: -1px;">
-                        <!-- Sample content will be inserted here -->
-                    </div>
+                    <div id="content-${sample.id}" class="sample-content" role="region">
+                        </div>
                 </div>
             `).join('');
+
+            attachEventListeners();
         }
-        
-        // Show the samples container
-        document.getElementById('samples-container').style.display = 'block';
-        
-        const openSamples = new Set();
-        
-        window.toggleSample = function(sampleId, elementTag) {
-            const contentDiv = document.getElementById(`sample-content-${sampleId}`);
-            const toggleIcon = document.getElementById(`toggle-${sampleId}`);
-            const headerDiv = document.querySelector(`[onclick*="'${sampleId}'"]`);
+
+        /**
+         * Attaches event delegation for accordion toggling
+         */
+        function attachEventListeners() {
+            container.addEventListener('click', (e) => {
+                const header = e.target.closest('.sample-header');
+                if (!header) return;
+
+                const section = header.parentElement;
+                const contentDiv = section.querySelector('.sample-content');
+                const sampleTag = header.dataset.tag;
+                
+                const isExpanded = section.classList.contains('expanded');
+
+                // Toggle State
+                if (isExpanded) {
+                    closeSample(section, header, contentDiv);
+                } else {
+                    openSample(section, header, contentDiv, sampleTag);
+                }
+            });
+        }
+
+        function openSample(section, header, content, tag) {
+            // Close others (Accordion behavior - optional, currently allows multiple open)
+            // document.querySelectorAll('.sample-section.expanded').forEach(s => s.classList.remove('expanded'));
+
+            section.classList.add('expanded');
+            header.setAttribute('aria-expanded', 'true');
             
-            if (openSamples.has(sampleId)) {
-                // Close the sample
-                contentDiv.style.display = 'none';
-                contentDiv.innerHTML = '';
-                toggleIcon.textContent = '▶';
-                headerDiv.style.borderRadius = '8px';
-                openSamples.delete(sampleId);
-            } else {
-                // Open the sample
-                contentDiv.style.display = 'block';
-                contentDiv.innerHTML = `<${elementTag}></${elementTag}>`;
-                toggleIcon.textContent = '▼';
-                headerDiv.style.borderRadius = '8px 8px 0 0';
-                openSamples.add(sampleId);
+            // Lazy load the custom element
+            if (content.children.length === 0) {
+                const element = document.createElement(tag);
+                content.appendChild(element);
             }
-        };
+        }
+
+        function closeSample(section, header, content) {
+            section.classList.remove('expanded');
+            header.setAttribute('aria-expanded', 'false');
+            
+            // Optional: Remove content to save memory if these are heavy WebGL/Canvas elements
+            content.innerHTML = ''; 
+        }
+
+        // Utility to prevent XSS in titles/descriptions
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
     </script>
 </body>
 </html>

@@ -66,6 +66,8 @@ export function render(args: RenderArgs) {
           finalIndex,
         };
       }
+      // Explicitly return undefined for unhandled events
+      return undefined as unknown as void;
     },
   }, [dragTodo, todo.id, index]);
 

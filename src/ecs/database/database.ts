@@ -47,7 +47,7 @@ import { combinePlugins } from "./combine-plugins.js";
 
 export type SystemFunction = () => void | Promise<void>;
 export type SystemDeclaration = {
-  readonly create: (db: Database<any, any, any, any, any>) => SystemFunction;
+  readonly create: (db: Database<any, any, any, any, any>) => SystemFunction | void;
   /**
    * Scheduling constraints for system execution order.
    * - `before`: Hard constraint - this system must run before the listed systems
@@ -73,13 +73,7 @@ export interface Database<
   /**
    * Provides direct mutable access to the underlying store.
    */
-  readonly store: Store<C, R, A> & {
-    /**
-     * Provides fast access to the action functions without a transaction wrapper.
-     * This means any calls to them will NOT be observable or undoable.
-     */
-    readonly actions: F;
-  }
+  readonly store: Store<C, R, A>
   readonly observe: {
     readonly components: { readonly [K in StringKeyof<C>]: Observe<void> };
     readonly resources: { readonly [K in StringKeyof<R>]: Observe<R[K]> };

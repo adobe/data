@@ -63,7 +63,7 @@ export function createDatabase<
     store: Store<C, R, A>,
     transactionDeclarations: TD,
     systemDeclarations: { readonly [K in S]: {
-        readonly create: (db: Database<C, R, A, ToActionFunctions<TD>, S>) => () => void | Promise<void>;
+        readonly create: (db: Database<C, R, A, ToActionFunctions<TD>, S>) => (() => void | Promise<void>) | void;
         readonly schedule?: { readonly before?: readonly S[]; readonly after?: readonly S[]; readonly during?: readonly S[] };
     } },
 ): Database<C, R, A, ToActionFunctions<TD>, S>
@@ -113,7 +113,7 @@ function createDatabaseFromStoreTransactionsAndSystems<
     store: Store<C, R, A>,
     transactionDeclarations: TD,
     systemDeclarations: { readonly [K in S]: {
-        readonly create: (db: Database<C, R, A, ToActionFunctions<TD>, S>) => () => void | Promise<void>;
+        readonly create: (db: Database<C, R, A, ToActionFunctions<TD>, S>) => (() => void | Promise<void>) | void;
         readonly schedule?: { readonly before?: readonly S[]; readonly after?: readonly S[]; readonly during?: readonly S[] };
     } }
 ): Database<C, R, A, ToActionFunctions<TD>, S> {
@@ -227,15 +227,6 @@ function createDatabaseFromStoreTransactionsAndSystems<
         serviceName: "ecs-database-transactions-service",
     } satisfies Service as T;
 
-    // Create unwrapped actions that execute directly on the store
-    const actions = {} as T;
-    for (const name of Object.keys(transactionDeclarations)) {
-        (actions as any)[name] = transactionDeclarations[name].bind(null, store);
-    }
-
-    // Assign unwrapped actions to store
-    (store as any).actions = actions;
-
     const addTransactionWrappers = (transactionDecls: Record<string, any>) => {
         for (const name of Object.keys(transactionDecls)) {
             (transactions as any)[name] = createTransactionWrapper(name as any);
@@ -251,7 +242,7 @@ function createDatabaseFromStoreTransactionsAndSystems<
     const partialDatabase: any = {
         serviceName: "ecs-database-service",
         ...reconcilingDatabase,
-        store: store as Store<C, R, A> & { readonly actions: T },
+        store: store as Store<C, R, A>,
         transactions,
         system: {
             functions: {},  // Empty initially
@@ -279,11 +270,6 @@ function createDatabaseFromStoreTransactionsAndSystems<
         
         // Add transaction wrappers for the new transactions
         addTransactionWrappers(pluginTransactions);
-
-        // Add unwrapped actions to store.actions
-        for (const name of Object.keys(pluginTransactions)) {
-            ((store as any).actions as any)[name] = pluginTransactions[name].bind(null, store);
-        }
 
         // If plugin has new systems, we need to recreate the database with merged systems
         if (plugin.systems && Object.keys(plugin.systems).length > 0) {
@@ -429,15 +415,6 @@ function createDatabaseFromStoreAndTransactions<
         serviceName: "ecs-database-transactions-service",
     } satisfies Service as T;
 
-    // Create unwrapped actions that execute directly on the store
-    const actions = {} as T;
-    for (const name of Object.keys(transactionDeclarations)) {
-        (actions as any)[name] = transactionDeclarations[name].bind(null, store);
-    }
-
-    // Assign unwrapped actions to store
-    (store as any).actions = actions;
-
     const addTransactionWrappers = (transactionDecls: Record<string, any>) => {
         for (const name of Object.keys(transactionDecls)) {
             (transactions as any)[name] = createTransactionWrapper(name as any);
@@ -456,11 +433,6 @@ function createDatabaseFromStoreAndTransactions<
         // Add transaction wrappers for the new transactions
         addTransactionWrappers(schema.transactions);
 
-        // Add unwrapped actions to store.actions
-        for (const name of Object.keys(schema.transactions)) {
-            ((store as any).actions as any)[name] = schema.transactions[name].bind(null, store);
-        }
-
         return database as unknown as Database<
             C & (S extends Database.Plugin<infer XC, any, any, any, any> ? FromSchemas<XC> : never),
             R & (S extends Database.Plugin<any, infer XR, any, any, any> ? FromSchemas<XR> : never),
@@ -473,7 +445,7 @@ function createDatabaseFromStoreAndTransactions<
     const database = {
         serviceName: "ecs-database-service",
         ...reconcilingDatabase,
-        store: store as Store<C, R, A> & { readonly actions: T },
+        store: store as Store<C, R, A>,
         transactions,
         system: {
             functions: {} as any,

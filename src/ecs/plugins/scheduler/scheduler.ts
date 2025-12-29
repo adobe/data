@@ -36,17 +36,19 @@ export const scheduler = createPlugin({
                     if (db.resources.schedulerState === "running") {
                         // Execute all systems in order (excluding schedulerSystem itself)
                         for (const tier of db.system.order) {
-                            // Execute tier in parallel, filtering out schedulerSystem
+                            // Execute tier in parallel, filtering out schedulerSystem and systems that returned void
                             await Promise.all(
                                 tier
                                     .filter((name: string) => name !== "schedulerSystem")
                                     .map((name: string) => {
                                         const systemFn = db.system.functions[name];
-                                        if (!systemFn) {
-                                            throw new Error(
-                                                `System "${name}" not found in db.system.functions. ` +
-                                                `Available systems: ${Object.keys(db.system.functions).join(", ")}`
-                                            );
+                                        if (typeof systemFn !== "function") {
+                                            if (systemFn !== undefined) {
+                                                throw new Error(
+                                                    `System "${name}" is not a function. ` +
+                                                    `Available systems: ${Object.keys(db.system.functions).join(", ")}`
+                                                );
+                                            }
                                         }
                                         return systemFn();
                                     })

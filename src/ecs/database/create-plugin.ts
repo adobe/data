@@ -64,7 +64,7 @@ export function createPlugin<
                 RemoveIndex<A> & AX,
                 ToActionFunctions<RemoveIndex<TD> & TDX>,
                 string
-            >) => SystemFunction;
+            >) => SystemFunction | void;
             readonly schedule?: {
                 readonly before?: readonly NoInfer<Exclude<S | SX, K>>[];
                 readonly after?: readonly NoInfer<Exclude<S | SX, K>>[];

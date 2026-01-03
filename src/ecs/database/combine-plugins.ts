@@ -29,16 +29,17 @@ import type { Database, SystemDeclarations } from "./database.js";
 
 type CombinePlugins<Plugins extends readonly Database.Plugin[]> =
     Database.Plugin<
-        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<infer C, any, any, any, any> ? C : never }>,
-        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, infer R, any, any, any> ? R : never }>,
-        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, infer A, any, any> ? A : never }>,
-        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, infer TD, any> ? TD : never }>,
-        Extract<UnionTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, infer S> ? S : never }>, string>
+        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<infer C, any, any, any, any, any> ? C : never }>,
+        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, infer R, any, any, any, any> ? R : never }>,
+        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, infer A, any, any, any> ? A : never }>,
+        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, infer TD, any, any> ? TD : never }>,
+        Extract<UnionTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, infer S, any> ? S : never }>, string>,
+        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, any, infer AD> ? AD : never }>
     >
 
 type CombinedPlugins = CombinePlugins<[
-    Database.Plugin<{a: { readonly type: "number" }}, { c: { readonly default: boolean } }, { readonly A: readonly ["a"]}, { readonly doFoo: (store: Store, args: { a: number }) => Entity }, "system1">,
-    Database.Plugin<{b: { readonly type: "string" }}, { d: { readonly default: boolean } }, { readonly B: readonly ["b"]}, { readonly doBar: (store: Store) => void }, "system2">,
+    Database.Plugin<{a: { readonly type: "number" }}, { c: { readonly default: boolean } }, { readonly A: readonly ["a"]}, { readonly doFoo: (store: Store, args: { a: number }) => Entity }, "system1", {}>,
+    Database.Plugin<{b: { readonly type: "string" }}, { d: { readonly default: boolean } }, { readonly B: readonly ["b"]}, { readonly doBar: (store: Store) => void }, "system2", {}>,
 ]>;
 type CheckCombinedPlugins = Assert<Equal<CombinedPlugins, {
     readonly components: {
@@ -68,11 +69,12 @@ type CheckCombinedPlugins = Assert<Equal<CombinedPlugins, {
         readonly doBar: (store: Store) => void;
     };
     readonly systems: SystemDeclarations<"system1" | "system2">;
+    readonly actions: {};
 }>>;
 
 /**
  * Combines multiple plugins into a single plugin.
- * All plugin properties (components, resources, archetypes, transactions, systems)
+ * All plugin properties (components, resources, archetypes, transactions, systems, actions)
  * require identity (===) when the same key exists across plugins.
  */
 export function combinePlugins<
@@ -80,7 +82,7 @@ export function combinePlugins<
 >(
   ...plugins: Plugins
 ): CombinePlugins<Plugins> {
-  const keys = ['components', 'resources', 'archetypes', 'transactions', 'systems'] as const;
+  const keys = ['components', 'resources', 'archetypes', 'transactions', 'systems', 'actions'] as const;
   
   const merge = (base: any, next: any) => 
     Object.fromEntries(keys.map(key => {
@@ -100,7 +102,7 @@ export function combinePlugins<
       return [key, merged];
     }));
   
-  const emptyPlugin = { components: {}, resources: {}, archetypes: {}, transactions: {}, systems: {} };
+  const emptyPlugin = { components: {}, resources: {}, archetypes: {}, transactions: {}, systems: {}, actions: {} };
   
   // Merge all plugins together
   const result = plugins.reduce(merge, emptyPlugin);

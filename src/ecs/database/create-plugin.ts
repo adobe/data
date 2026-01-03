@@ -25,6 +25,7 @@ import type { ComponentSchemas } from "../component-schemas.js";
 import type { ResourceSchemas } from "../resource-schemas.js";
 import type { ArchetypeComponents } from "../store/archetype-components.js";
 import type { TransactionDeclarations, ToTransactionFunctions } from "../store/transaction-functions.js";
+import type { ActionDeclarations, ToActionFunctions } from "../store/action-functions.js";
 import type { FromSchemas } from "../../schema/index.js";
 import type { StringKeyof, Simplify, NoInfer } from "../../types/types.js";
 import { combinePlugins } from "./combine-plugins.js";
@@ -46,11 +47,13 @@ export function createPlugin<
     const A extends ArchetypeComponents<StringKeyof<RemoveIndex<CS> & CSX>>,
     const TD extends TransactionDeclarations<FromSchemas<RemoveIndex<CS> & CSX>, FromSchemas<RemoveIndex<RS> & RSX>, RemoveIndex<A>>,
     const S extends string = never,
+    const AD extends ActionDeclarations<FromSchemas<RemoveIndex<CS> & CSX>, FromSchemas<RemoveIndex<RS> & RSX>, RemoveIndex<A>, ToTransactionFunctions<RemoveIndex<TD> & TDX>, S | SX> = {},
     const CSX extends ComponentSchemas = {},
     const RSX extends ResourceSchemas = {},
     const AX extends ArchetypeComponents<StringKeyof<CSX>> = {},
     const TDX extends TransactionDeclarations<FromSchemas<CSX>, FromSchemas<RSX>, AX> = {},
     const SX extends string = never,
+    const ADX extends ActionDeclarations<FromSchemas<CSX>, FromSchemas<RSX>, AX, ToTransactionFunctions<TDX>, S | SX> = {},
 >(
     plugins: {
         components?: CS,
@@ -63,7 +66,8 @@ export function createPlugin<
                 FromSchemas<RemoveIndex<RS> & RSX>,
                 RemoveIndex<A> & AX,
                 ToTransactionFunctions<RemoveIndex<TD> & TDX>,
-                string
+                string,
+                ToActionFunctions<RemoveIndex<AD> & ADX>
             >) => SystemFunction | void;
             readonly schedule?: {
                 readonly before?: readonly NoInfer<Exclude<S | SX, K>>[];
@@ -72,13 +76,17 @@ export function createPlugin<
             }
             }
         }
-        extends?: Database.Plugin<CSX, RSX, AX, TDX, SX>
+        actions?: AD
+        extends?: Database.Plugin<CSX, RSX, AX, TDX, SX, any>
     },
 ): Database.Plugin<
     Simplify<RemoveIndex<CS> & CSX>,
     Simplify<RemoveIndex<RS> & RSX>,
     Simplify<RemoveIndex<A> & AX>,
-    Simplify<RemoveIndex<TD> & TDX>, S | SX>
+    Simplify<RemoveIndex<TD> & TDX>,
+    S | SX,
+    Simplify<RemoveIndex<AD> & ADX>
+>
 {
     // Normalize plugins descriptor to a plugin object
     const plugin: any = {
@@ -87,6 +95,7 @@ export function createPlugin<
         archetypes: plugins.archetypes ?? {},
         transactions: plugins.transactions ?? {},
         systems: plugins.systems ?? {},
+        actions: plugins.actions ?? {},
     };
 
     if (plugins.extends) {
@@ -98,7 +107,7 @@ export function createPlugin<
 function compileTimeTypeChecks() {
     // empty plugin
     const emptyPlugin = createPlugin({});
-    type CheckEmptyPlugin = Assert<Equal<typeof emptyPlugin, Database.Plugin<{}, {}, {}, {}, never>>>;
+    type CheckEmptyPlugin = Assert<Equal<typeof emptyPlugin, Database.Plugin<{}, {}, {}, {}, never, {}>>>;
 
     const componentsOnlyPlugin = createPlugin({
         components: {
@@ -113,7 +122,7 @@ function compileTimeTypeChecks() {
         readonly b: {
             readonly type: "string";
         };
-    }, {}, {}, {}, never>>>;
+    }, {}, {}, {}, never, {}>>>;
 
     // test invalid archetype component reference
     createPlugin({

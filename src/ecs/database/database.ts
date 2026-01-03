@@ -42,12 +42,17 @@ import type {
   TransactionFunctions,
   ToTransactionFunctions,
 } from "../store/transaction-functions.js";
+import type {
+  ActionDeclarations,
+  ActionFunctions,
+  ToActionFunctions,
+} from "../store/action-functions.js";
 import { createPlugin } from "./create-plugin.js";
 import { combinePlugins } from "./combine-plugins.js";
 
 export type SystemFunction = () => void | Promise<void>;
 export type SystemDeclaration = {
-  readonly create: (db: Database<any, any, any, any, any>) => SystemFunction | void;
+  readonly create: (db: Database<any, any, any, any, any, any>) => SystemFunction | void;
   /**
    * Scheduling constraints for system execution order.
    * - `before`: Hard constraint - this system must run before the listed systems
@@ -68,8 +73,10 @@ export interface Database<
   A extends ArchetypeComponents<StringKeyof<C>>,
   F extends TransactionFunctions,
   S extends string = never,
+  AF extends ActionFunctions = {},
 > extends ReadonlyStore<C, R, A>, Service {
   readonly transactions: F & Service;
+  readonly actions: AF & Service;
   /**
    * Provides direct mutable access to the underlying store.
    */
@@ -95,12 +102,13 @@ export interface Database<
   }
   toData(): unknown
   fromData(data: unknown): void
-  extend<P extends Database.Plugin<any, any, any, any, any>>(plugin: P): Database<
-    C & (P extends Database.Plugin<infer XC, any, any, any, any> ? FromSchemas<XC> : never),
-    R & (P extends Database.Plugin<any, infer XR, any, any, any> ? FromSchemas<XR> : never),
-    A & (P extends Database.Plugin<any, any, infer XA, any, any> ? XA : never),
-    F & (P extends Database.Plugin<any, any, any, infer XTD, any> ? ToTransactionFunctions<XTD> : never),
-    S | (P extends Database.Plugin<any, any, any, any, infer XS> ? XS : never)
+  extend<P extends Database.Plugin<any, any, any, any, any, any>>(plugin: P): Database<
+    C & (P extends Database.Plugin<infer XC, any, any, any, any, any> ? FromSchemas<XC> : never),
+    R & (P extends Database.Plugin<any, infer XR, any, any, any, any> ? FromSchemas<XR> : never),
+    A & (P extends Database.Plugin<any, any, infer XA, any, any, any> ? XA : never),
+    F & (P extends Database.Plugin<any, any, any, infer XTD, any, any> ? ToTransactionFunctions<XTD> : never),
+    S | (P extends Database.Plugin<any, any, any, any, infer XS, any> ? XS : never),
+    AF & (P extends Database.Plugin<any, any, any, any, any, infer XAD> ? ToActionFunctions<XAD> : never)
   >;
 }
 
@@ -112,13 +120,15 @@ export namespace Database {
     RS extends ResourceSchemas = any,
     A extends ArchetypeComponents<StringKeyof<CS>> = any,
     TD extends TransactionDeclarations<FromSchemas<CS>, FromSchemas<RS>, any> = any,
-    S extends string = any
+    S extends string = any,
+    AD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S> = any
   > = {
     readonly components: CS;
     readonly resources: RS;
     readonly archetypes: A;
     readonly transactions: TD;
     readonly systems: SystemDeclarations<S>;
+    readonly actions: AD;
   };
 
   export namespace Plugin {

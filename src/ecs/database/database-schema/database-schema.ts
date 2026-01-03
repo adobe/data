@@ -25,7 +25,7 @@ import { ComponentSchemas } from "../../component-schemas.js";
 import { ResourceSchemas } from "../../resource-schemas.js";
 import { StringKeyof } from "../../../types/types.js";
 import { Database } from "../database.js";
-import type { AsyncArgsProvider, ToActionFunctions, ActionDeclarations } from "../../store/action-functions.js";
+import type { AsyncArgsProvider, ToTransactionFunctions, TransactionDeclarations } from "../../store/transaction-functions.js";
 import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { Assert } from "../../../types/assert.js";
 import { Equal } from "../../../types/equal.js";
@@ -36,7 +36,7 @@ export type DatabaseSchema<
     CS extends ComponentSchemas,
     RS extends ResourceSchemas,
     A extends ArchetypeComponents<StringKeyof<CS>>,
-    TD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A>
+    TD extends TransactionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A>
 > = {
     readonly components: CS;
     readonly resources: RS;
@@ -44,7 +44,7 @@ export type DatabaseSchema<
     readonly transactions: TD;
 };
 
-export type DatabaseFromSchema<T> = T extends DatabaseSchema<infer CS, infer RS, infer A, infer TD> ? Database<FromSchemas<CS>, FromSchemas<RS>, A, ToActionFunctions<TD>> : never;
+export type DatabaseFromSchema<T> = T extends DatabaseSchema<infer CS, infer RS, infer A, infer TD> ? Database<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>> : never;
 
 type CheckDatabaseFromSchema = DatabaseFromSchema<DatabaseSchema<{
     velocity: { type: "number" },

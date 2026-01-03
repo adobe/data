@@ -22,7 +22,7 @@ SOFTWARE.*/
 
 import { DragEnd, DragMove, DragObserveProps, useDragObserve } from './use-drag-observe.js';
 import { useEffect } from "./use-effect.js";
-import type { AsyncArgsProvider } from '../../ecs/store/action-functions.js';
+import type { AsyncArgsProvider } from '../../ecs/store/transaction-functions.js';
 import { Observe } from '../../observe/index.js';
 
 export type DragTransactionProps<T> = DragObserveProps & {

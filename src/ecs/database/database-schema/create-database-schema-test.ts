@@ -24,7 +24,7 @@ import { Assert } from "../../../types/assert.js";
 import { Equal } from "../../../types/equal.js";
 import { ReadonlyArchetype } from "../../archetype/archetype.js";
 import { RequiredComponents } from "../../required-components.js";
-import type { AsyncArgsProvider } from "../../store/action-functions.js";
+import type { AsyncArgsProvider } from "../../store/transaction-functions.js";
 import { DatabaseFromSchema } from "./database-schema.js";
 import { createDatabaseSchema } from "./create-database-schema.js";
 

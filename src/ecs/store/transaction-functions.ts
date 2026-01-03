@@ -5,7 +5,7 @@ import { ResourceComponents } from "./resource-components.js";
 import { ArchetypeComponents } from "./archetype-components.js";
 import { StringKeyof } from "../../types/types.js";
 
-export type ActionDeclaration<
+export type TransactionDeclaration<
     C extends Components,
     R extends ResourceComponents,
     A extends ArchetypeComponents<StringKeyof<C>>,
@@ -13,15 +13,15 @@ export type ActionDeclaration<
 
 export type AsyncArgsProvider<T> = () => Promise<T> | AsyncGenerator<T>;
 
-export type ActionDeclarations<
+export type TransactionDeclarations<
     C extends Components,
     R extends ResourceComponents,
-    A extends ArchetypeComponents<StringKeyof<C>>> = { readonly [Q: string]: ActionDeclaration<C, R, A> };
+    A extends ArchetypeComponents<StringKeyof<C>>> = { readonly [Q: string]: TransactionDeclaration<C, R, A> };
 
 /**
  * Converts from TransactionDeclarations to TransactionFunctions by removing the initial store argument.
  */
-export type ToActionFunctions<T> = {
+export type ToTransactionFunctions<T> = {
     [K in keyof T]:
     T[K] extends (t: infer S) => infer R
     ? R extends void | Entity
@@ -34,5 +34,5 @@ export type ToActionFunctions<T> = {
     : never;
 };
 
-export type ActionFunction = (args?: any) => void | Entity;
-export type ActionFunctions = { readonly [AF: string]: ActionFunction };
+export type TransactionFunction = (args?: any) => void | Entity;
+export type TransactionFunctions = { readonly [AF: string]: TransactionFunction };

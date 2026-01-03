@@ -22,7 +22,7 @@ SOFTWARE.*/
 import { StringKeyof } from "../../../types/types.js";
 import { TransactionResult } from "../transactional-store/index.js";
 import { applyOperations } from "../transactional-store/apply-operations.js";
-import type { ActionDeclarations } from "../../store/action-functions.js";
+import type { TransactionDeclarations } from "../../store/transaction-functions.js";
 import { ResourceComponents } from "../../store/resource-components.js";
 import { Store } from "../../store/index.js";
 import { Components } from "../../store/components.js";
@@ -36,14 +36,14 @@ export function createReconcilingDatabase<
     const C extends Components,
     const R extends ResourceComponents,
     const A extends ArchetypeComponents<StringKeyof<C>>,
-    const TD extends ActionDeclarations<C, R, A>
+    const TD extends TransactionDeclarations<C, R, A>
 >(
     store: Store<C, R, A>,
     transactionDeclarations: TD,
 ): ReconcilingDatabase<C, R, A, TD> {
     type TransactionName = Extract<keyof TD, string>;
 
-    const transactionDeclarationsRef: ActionDeclarations<C, R, A> = {
+    const transactionDeclarationsRef: TransactionDeclarations<C, R, A> = {
         ...transactionDeclarations,
     };
 

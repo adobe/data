@@ -38,10 +38,10 @@ import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
 import { FromSchemas } from "../../schema/index.js";
 import type {
-  ActionDeclarations,
-  ActionFunctions,
-  ToActionFunctions,
-} from "../store/action-functions.js";
+  TransactionDeclarations,
+  TransactionFunctions,
+  ToTransactionFunctions,
+} from "../store/transaction-functions.js";
 import { createPlugin } from "./create-plugin.js";
 import { combinePlugins } from "./combine-plugins.js";
 
@@ -66,7 +66,7 @@ export interface Database<
   C extends Components,
   R extends ResourceComponents,
   A extends ArchetypeComponents<StringKeyof<C>>,
-  F extends ActionFunctions,
+  F extends TransactionFunctions,
   S extends string = never,
 > extends ReadonlyStore<C, R, A>, Service {
   readonly transactions: F & Service;
@@ -99,7 +99,7 @@ export interface Database<
     C & (P extends Database.Plugin<infer XC, any, any, any, any> ? FromSchemas<XC> : never),
     R & (P extends Database.Plugin<any, infer XR, any, any, any> ? FromSchemas<XR> : never),
     A & (P extends Database.Plugin<any, any, infer XA, any, any> ? XA : never),
-    F & (P extends Database.Plugin<any, any, any, infer XTD, any> ? ToActionFunctions<XTD> : never),
+    F & (P extends Database.Plugin<any, any, any, infer XTD, any> ? ToTransactionFunctions<XTD> : never),
     S | (P extends Database.Plugin<any, any, any, any, infer XS> ? XS : never)
   >;
 }
@@ -111,7 +111,7 @@ export namespace Database {
     CS extends ComponentSchemas = any,
     RS extends ResourceSchemas = any,
     A extends ArchetypeComponents<StringKeyof<CS>> = any,
-    TD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, any> = any,
+    TD extends TransactionDeclarations<FromSchemas<CS>, FromSchemas<RS>, any> = any,
     S extends string = any
   > = {
     readonly components: CS;

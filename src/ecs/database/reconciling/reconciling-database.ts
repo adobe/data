@@ -23,7 +23,7 @@ import { TransactionResult } from "../transactional-store/index.js";
 import { StringKeyof } from "../../../types/types.js";
 import { Components } from "../../store/components.js";
 import { ArchetypeComponents } from "../../store/archetype-components.js";
-import type { ActionDeclarations } from "../../store/action-functions.js";
+import type { TransactionDeclarations } from "../../store/transaction-functions.js";
 import { ResourceComponents } from "../../store/resource-components.js";
 import { ObservedDatabase } from "../observed/observed-database.js";
 import type { Database } from "../database.js";
@@ -44,7 +44,7 @@ export interface ReconcilingDatabase<
     C extends Components,
     R extends ResourceComponents,
     A extends ArchetypeComponents<StringKeyof<C>>,
-    TD extends ActionDeclarations<C, R, A>,
+    TD extends TransactionDeclarations<C, R, A>,
 > extends Omit<ObservedDatabase<C, R, A>, "extend"> {
     readonly apply: (envelope: TransactionEnvelope<Extract<keyof TD, string>>) => TransactionResult<C> | undefined;
     readonly cancel: (id: number) => void;

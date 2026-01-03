@@ -24,7 +24,7 @@ import type { Database, SystemFunction } from "./database.js";
 import type { ComponentSchemas } from "../component-schemas.js";
 import type { ResourceSchemas } from "../resource-schemas.js";
 import type { ArchetypeComponents } from "../store/archetype-components.js";
-import type { ActionDeclarations, ToActionFunctions } from "../store/action-functions.js";
+import type { TransactionDeclarations, ToTransactionFunctions } from "../store/transaction-functions.js";
 import type { FromSchemas } from "../../schema/index.js";
 import type { StringKeyof, Simplify, NoInfer } from "../../types/types.js";
 import { combinePlugins } from "./combine-plugins.js";
@@ -44,12 +44,12 @@ export function createPlugin<
     const CS extends ComponentSchemas,
     const RS extends ResourceSchemas,
     const A extends ArchetypeComponents<StringKeyof<RemoveIndex<CS> & CSX>>,
-    const TD extends ActionDeclarations<FromSchemas<RemoveIndex<CS> & CSX>, FromSchemas<RemoveIndex<RS> & RSX>, RemoveIndex<A>>,
+    const TD extends TransactionDeclarations<FromSchemas<RemoveIndex<CS> & CSX>, FromSchemas<RemoveIndex<RS> & RSX>, RemoveIndex<A>>,
     const S extends string = never,
     const CSX extends ComponentSchemas = {},
     const RSX extends ResourceSchemas = {},
     const AX extends ArchetypeComponents<StringKeyof<CSX>> = {},
-    const TDX extends ActionDeclarations<FromSchemas<CSX>, FromSchemas<RSX>, AX> = {},
+    const TDX extends TransactionDeclarations<FromSchemas<CSX>, FromSchemas<RSX>, AX> = {},
     const SX extends string = never,
 >(
     plugins: {
@@ -62,7 +62,7 @@ export function createPlugin<
                 FromSchemas<RemoveIndex<CS> & CSX>,
                 FromSchemas<RemoveIndex<RS> & RSX>,
                 RemoveIndex<A> & AX,
-                ToActionFunctions<RemoveIndex<TD> & TDX>,
+                ToTransactionFunctions<RemoveIndex<TD> & TDX>,
                 string
             >) => SystemFunction | void;
             readonly schedule?: {

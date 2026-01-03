@@ -27,14 +27,14 @@ import { Store } from "../../index.js";
 import { ResourceSchemas } from "../../resource-schemas.js";
 import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { Database } from "../database.js";
-import type { ActionDeclarations } from "../../store/action-functions.js";
+import type { TransactionDeclarations } from "../../store/transaction-functions.js";
 import { DatabaseFromSchema, DatabaseSchema } from "./database-schema.js";
 
 export function createDatabaseSchema<
     const CS extends ComponentSchemas,
     const RS extends ResourceSchemas,
     const A extends ArchetypeComponents<StringKeyof<CS>>,
-    const TD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A>
+    const TD extends TransactionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A>
 >(
     components: CS,
     resources: RS,
@@ -48,7 +48,7 @@ export function createDatabaseFromSchema<
     const CS extends ComponentSchemas,
     const RS extends ResourceSchemas,
     const A extends ArchetypeComponents<StringKeyof<CS>>,
-    const TD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A>
+    const TD extends TransactionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A>
 >(
     schema: DatabaseSchema<CS, RS, A, TD>,
 ): DatabaseFromSchema<typeof schema> {

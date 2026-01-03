@@ -22,7 +22,7 @@ SOFTWARE.*/
 import { ResourceComponents } from "../../store/resource-components.js";
 import { Store } from "../../store/index.js";
 import { Database } from "../database.js";
-import type { ToActionFunctions, ActionDeclarations } from "../../store/action-functions.js";
+import type { ToTransactionFunctions, TransactionDeclarations } from "../../store/transaction-functions.js";
 import { StringKeyof } from "../../../types/types.js";
 import { isPromise } from "../../../internal/promise/is-promise.js";
 import { isAsyncGenerator } from "../../../internal/async-generator/is-async-generator.js";
@@ -41,32 +41,32 @@ export function createDatabase<
     CS extends ComponentSchemas,
     RS extends ResourceSchemas,
     A extends ArchetypeComponents<StringKeyof<CS>>,
-    TD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A>,
+    TD extends TransactionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A>,
     S extends string
->(plugin: Database.Plugin<CS, RS, A, TD, S>): Database<FromSchemas<CS>, FromSchemas<RS>, A, ToActionFunctions<TD>, S>
+>(plugin: Database.Plugin<CS, RS, A, TD, S>): Database<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S>
 export function createDatabase<
     const C extends Components,
     const R extends ResourceComponents,
     const A extends ArchetypeComponents<StringKeyof<C>>,
-    const TD extends ActionDeclarations<C, R, A>
+    const TD extends TransactionDeclarations<C, R, A>
 >(
     store: Store<C, R, A>,
     transactionDeclarations: TD,
-): Database<C, R, A, ToActionFunctions<TD>, never>
+): Database<C, R, A, ToTransactionFunctions<TD>, never>
 export function createDatabase<
     const C extends Components,
     const R extends ResourceComponents,
     const A extends ArchetypeComponents<StringKeyof<C>>,
-    const TD extends ActionDeclarations<C, R, A>,
+    const TD extends TransactionDeclarations<C, R, A>,
     const S extends string
 >(
     store: Store<C, R, A>,
     transactionDeclarations: TD,
     systemDeclarations: { readonly [K in S]: {
-        readonly create: (db: Database<C, R, A, ToActionFunctions<TD>, S>) => (() => void | Promise<void>) | void;
+        readonly create: (db: Database<C, R, A, ToTransactionFunctions<TD>, S>) => (() => void | Promise<void>) | void;
         readonly schedule?: { readonly before?: readonly S[]; readonly after?: readonly S[]; readonly during?: readonly S[] };
     } },
-): Database<C, R, A, ToActionFunctions<TD>, S>
+): Database<C, R, A, ToTransactionFunctions<TD>, S>
 export function createDatabase(
     storeOrPlugin?: Store<any, any, any> | Database.Plugin<any, any, any, any, any>,
     transactionDeclarations?: any,
@@ -90,9 +90,9 @@ function createDatabaseFromPlugin<
     CS extends ComponentSchemas,
     RS extends ResourceSchemas,
     A extends ArchetypeComponents<StringKeyof<CS>>,
-    TD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A>,
+    TD extends TransactionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A>,
     S extends string
->(plugin: Database.Plugin<CS, RS, A, TD, S>): Database<FromSchemas<CS>, FromSchemas<RS>, A, ToActionFunctions<TD>, S> {
+>(plugin: Database.Plugin<CS, RS, A, TD, S>): Database<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S> {
     const systems = plugin.systems ?? ({} as any);
     const transactions = plugin.transactions ?? ({} as any);
     const storeSchema: Store.Schema<CS, RS, A> = {
@@ -107,17 +107,17 @@ function createDatabaseFromStoreTransactionsAndSystems<
     const C extends Components,
     const R extends ResourceComponents,
     const A extends ArchetypeComponents<StringKeyof<C>>,
-    const TD extends ActionDeclarations<C, R, A>,
+    const TD extends TransactionDeclarations<C, R, A>,
     const S extends string
 >(
     store: Store<C, R, A>,
     transactionDeclarations: TD,
     systemDeclarations: { readonly [K in S]: {
-        readonly create: (db: Database<C, R, A, ToActionFunctions<TD>, S>) => (() => void | Promise<void>) | void;
+        readonly create: (db: Database<C, R, A, ToTransactionFunctions<TD>, S>) => (() => void | Promise<void>) | void;
         readonly schedule?: { readonly before?: readonly S[]; readonly after?: readonly S[]; readonly during?: readonly S[] };
     } }
-): Database<C, R, A, ToActionFunctions<TD>, S> {
-    type T = ToActionFunctions<TD> & Service;
+): Database<C, R, A, ToTransactionFunctions<TD>, S> {
+    type T = ToTransactionFunctions<TD> & Service;
     type TransactionName = Extract<keyof TD, string>;
 
     const reconcilingDatabase = createReconcilingDatabase(store, transactionDeclarations);
@@ -300,12 +300,12 @@ function createDatabaseFromStoreAndTransactions<
     const C extends Components,
     const R extends ResourceComponents,
     const A extends ArchetypeComponents<StringKeyof<C>>,
-    const TD extends ActionDeclarations<C, R, A>
+    const TD extends TransactionDeclarations<C, R, A>
 >(
     store: Store<C, R, A>,
     transactionDeclarations: TD,
-): Database<C, R, A, ToActionFunctions<TD>, never> {
-    type T = ToActionFunctions<TD> & Service;
+): Database<C, R, A, ToTransactionFunctions<TD>, never> {
+    type T = ToTransactionFunctions<TD> & Service;
     type TransactionName = Extract<keyof TD, string>;
 
     const reconcilingDatabase = createReconcilingDatabase(store, transactionDeclarations);
@@ -437,7 +437,7 @@ function createDatabaseFromStoreAndTransactions<
             C & (S extends Database.Plugin<infer XC, any, any, any, any> ? FromSchemas<XC> : never),
             R & (S extends Database.Plugin<any, infer XR, any, any, any> ? FromSchemas<XR> : never),
             A & (S extends Database.Plugin<any, any, infer XA, any, any> ? XA : never),
-            T & (S extends Database.Plugin<any, any, any, infer XTD, any> ? ToActionFunctions<XTD> : never),
+            T & (S extends Database.Plugin<any, any, any, infer XTD, any> ? ToTransactionFunctions<XTD> : never),
             never
         >;
     };

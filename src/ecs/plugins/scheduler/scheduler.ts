@@ -42,13 +42,15 @@ export const scheduler = createPlugin({
                                     .filter((name: string) => name !== "schedulerSystem")
                                     .map((name: string) => {
                                         const systemFn = db.system.functions[name];
+                                        if (systemFn === undefined) {
+                                            // System returned void - skip execution (initialization-only system)
+                                            return Promise.resolve();
+                                        }
                                         if (typeof systemFn !== "function") {
-                                            if (systemFn !== undefined) {
-                                                throw new Error(
-                                                    `System "${name}" is not a function. ` +
-                                                    `Available systems: ${Object.keys(db.system.functions).join(", ")}`
-                                                );
-                                            }
+                                            throw new Error(
+                                                `System "${name}" is not a function. ` +
+                                                `Available systems: ${Object.keys(db.system.functions).join(", ")}`
+                                            );
                                         }
                                         return systemFn();
                                     })

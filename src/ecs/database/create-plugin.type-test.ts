@@ -610,3 +610,123 @@ function validActionCallInActionFromExtended() {
     });
 }
 
+// Test: Valid use of return types from inherited actions in new actions
+function validInheritedActionReturnTypes() {
+    const basePlugin = createPlugin({
+        actions: {
+            getUserId: (db) => {
+                return 42 as number;
+            },
+            getUserName: (db) => {
+                return "Alice" as string;
+            },
+            getUserData: (db) => {
+                return { id: 1, name: "Bob" } as { id: number; name: string };
+            },
+        },
+    });
+
+    createPlugin({
+        actions: {
+            extendedAction: (db) => {
+                // Valid - can use return types from inherited actions
+                const userId: number = db.actions.getUserId();
+                const userName: string = db.actions.getUserName();
+                const userData: { id: number; name: string } = db.actions.getUserData();
+                
+                // Valid - can use return values in expressions
+                const combined = `${userName} (${userId})`;
+                const isValid = userData.id > 0;
+                
+                return { userId, userName, userData, combined, isValid };
+            },
+            anotherExtendedAction: (db) => {
+                // Valid - can chain return values
+                const id = db.actions.getUserId();
+                const name = db.actions.getUserName();
+                return { id, name };
+            }
+        },
+        extends: basePlugin
+    });
+}
+
+// Test: Valid async actions that await inherited async actions with return types
+function validAsyncInheritedActionReturnTypes() {
+    const basePlugin = createPlugin({
+        actions: {
+            async fetchUserData(db) {
+                return { id: 1, name: "Alice" };
+            },
+            async fetchUserId(db) {
+                return 42;
+            },
+            async fetchUserName(db) {
+                return "Bob";
+            },
+        },
+    });
+
+    createPlugin({
+        actions: {
+            async extendedAsyncAction(db): Promise<{ user: { id: number; name: string }; combined: string }> {
+                // Valid - can await inherited async actions and use their return types
+                const userData: { id: number; name: string } = await db.actions.fetchUserData();
+                const userId: number = await db.actions.fetchUserId();
+                const userName: string = await db.actions.fetchUserName();
+                
+                // Valid - can use awaited return values in expressions
+                const combined = `${userName} (${userId})`;
+                
+                return { user: userData, combined };
+            },
+            async anotherExtendedAsyncAction(db): Promise<number> {
+                // Valid - can await and chain async actions
+                const user = await db.actions.fetchUserData();
+                const id = await db.actions.fetchUserId();
+                return user.id + id;
+            },
+            async mixedAsyncAction(db): Promise<string> {
+                // Valid - can mix async and sync inherited actions
+                const userData = await db.actions.fetchUserData();
+                return userData.name;
+            }
+        },
+        extends: basePlugin
+    });
+}
+
+// Test: Valid mixed sync and async inherited actions with return types
+function validMixedSyncAsyncInheritedActions() {
+    const basePlugin = createPlugin({
+        actions: {
+            syncAction: (db) => {
+                return "sync" as string;
+            },
+            async asyncAction(db): Promise<number> {
+                return 100;
+            },
+        },
+    });
+
+    createPlugin({
+        actions: {
+            async extendedMixedAction(db): Promise<{ sync: string; async: number }> {
+                // Valid - can use sync inherited action return type
+                const syncValue: string = db.actions.syncAction();
+                
+                // Valid - can await async inherited action and use return type
+                const asyncValue: number = await db.actions.asyncAction();
+                
+                return { sync: syncValue, async: asyncValue };
+            },
+            syncExtendedAction: (db) => {
+                // Valid - can use sync inherited action return type in sync action
+                const syncValue: string = db.actions.syncAction();
+                return syncValue.toUpperCase();
+            }
+        },
+        extends: basePlugin
+    });
+}
+

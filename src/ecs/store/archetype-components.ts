@@ -23,4 +23,4 @@ SOFTWARE.*/
 import { StringKeyof } from "../../types/types.js";
 import { OptionalComponents } from "../optional-components.js";
 
-export type ArchetypeComponents<ComponentNames> = { readonly [ACK: string]: readonly (ComponentNames | StringKeyof<OptionalComponents>)[] };
+export type ArchetypeComponents<ComponentNames extends string> = { readonly [ACK: string]: readonly (ComponentNames | StringKeyof<OptionalComponents>)[] };

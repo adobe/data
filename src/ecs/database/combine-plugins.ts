@@ -27,7 +27,7 @@ import { Entity } from "../entity.js";
 import { Store } from "../store/store.js";
 import type { Database, SystemDeclarations } from "./database.js";
 
-type CombinePlugins<Plugins extends readonly Database.Plugin[]> =
+export type CombinePlugins<Plugins extends readonly Database.Plugin[]> =
     Database.Plugin<
         {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<infer C, any, any, any, any, any> ? C : never }>,
         {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, infer R, any, any, any, any> ? R : never }>,

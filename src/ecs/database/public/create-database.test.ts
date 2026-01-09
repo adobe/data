@@ -1032,6 +1032,45 @@ describe("createDatabase", () => {
         const extended = database.extend(Database.Plugin.create({}));
         expect(extended).toBe(database);
     });
+
+    it("should return the same instance when extended with systems", () => {
+        // Create a database with initial systems
+        const { baseStore, actions } = createStoreConfig();
+        
+        const systemOneCalled = vi.fn();
+        const database = Database.create(baseStore, actions, {
+            systemOne: {
+                create: (db) => {
+                    return () => {
+                        systemOneCalled();
+                    };
+                }
+            }
+        });
+
+        // Extend with a plugin that includes a new system
+        const systemTwoCalled = vi.fn();
+        const extensionPlugin = Database.Plugin.create({
+            systems: {
+                systemTwo: {
+                    create: (db) => {
+                        return () => {
+                            systemTwoCalled();
+                        };
+                    }
+                }
+            }
+        });
+
+        const extended = database.extend(extensionPlugin);
+        
+        // This should pass - same database instance
+        expect(extended).toBe(database);
+        
+        // Verify both systems are available and functional
+        expect((extended.system as any).functions.systemOne).toBeDefined();
+        expect((extended.system as any).functions.systemTwo).toBeDefined();
+    });
 });
 
 describe("database.transactions", () => {

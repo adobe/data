@@ -298,8 +298,11 @@ function createDatabaseFromStoreTransactionsAndSystems<
         }
     };
 
+    // Track all system declarations mutably for extension
+    const allSystemDeclarations = { ...systemDeclarations } as any;
+
     // Calculate system execution order
-    const systemOrder = calculateSystemOrder(systemDeclarations as any);
+    let systemOrder = calculateSystemOrder(allSystemDeclarations);
 
     // Create partial database for system initialization (two-phase)
     const partialDatabase: any = {
@@ -322,52 +325,58 @@ function createDatabaseFromStoreTransactionsAndSystems<
 
     // Instantiate system functions with partial database
     const systemFunctions: any = {};
-    for (const name in systemDeclarations) {
-        systemFunctions[name] = systemDeclarations[name].create(partialDatabase);
+    for (const name in allSystemDeclarations) {
+        systemFunctions[name] = allSystemDeclarations[name].create(partialDatabase);
     }
     partialDatabase.system.functions = systemFunctions;
+
+    // Track extended plugins to avoid duplicate processing
+    const extendedPlugins = new Set<Database.Plugin<any, any, any, any, any, any>>();
 
     const extend = <
         P extends Database.Plugin<any, any, any, any, any, any>
     >(
         plugin: P,
     ) => {
-        // Delegate to reconcilingDatabase which handles store/transactionalStore extension
-        reconcilingDatabase.extend(plugin);
-        
-        const pluginTransactions = plugin.transactions ?? {};
-        const pluginActions = plugin.actions ?? {};
-        
-        // Add transaction wrappers for the new transactions
-        addTransactionWrappers(pluginTransactions);
-        
-        // Add action wrappers for the new actions
-        addActionWrappers(pluginActions, partialDatabase);
+        // Early exit if plugin already extended
+        if (!extendedPlugins.has(plugin)) {
+            extendedPlugins.add(plugin);
 
-        // If plugin has new systems, we need to recreate the database with merged systems
-        if (plugin.systems && Object.keys(plugin.systems).length > 0) {
-            // Merge system declarations
-            const mergedSystemDeclarations = {
-                ...systemDeclarations,
-                ...plugin.systems
-            } as any;
+            // Delegate to reconcilingDatabase which handles store/transactionalStore extension
+            reconcilingDatabase.extend(plugin);
 
-            // Merge action declarations
-            const mergedActionDeclarations = {
-                ...(actionDeclarations ?? {}),
-                ...pluginActions
-            } as any;
+            const pluginTransactions = plugin.transactions ?? {};
+            const pluginActions = plugin.actions ?? {};
 
-            // Create new database with merged systems and actions
-            return createDatabaseFromStoreTransactionsAndSystems(
-                store,
-                { ...transactionDeclarations, ...pluginTransactions } as any,
-                mergedSystemDeclarations,
-                Object.keys(mergedActionDeclarations).length > 0 ? mergedActionDeclarations : undefined
-            ) as any;
+            // Add transaction wrappers for the new transactions
+            addTransactionWrappers(pluginTransactions);
+
+            // Add action wrappers for the new actions
+            addActionWrappers(pluginActions, partialDatabase);
+
+            // If plugin has new systems, extend in place rather than recreating
+            if (plugin.systems && Object.keys(plugin.systems).length > 0) {
+                // Merge new systems into tracked declarations
+                Object.assign(allSystemDeclarations, plugin.systems);
+
+                // Recalculate system order with all systems
+                systemOrder = calculateSystemOrder(allSystemDeclarations);
+
+                // Instantiate only the new systems
+                for (const name in plugin.systems) {
+                    if (!systemFunctions[name]) {
+                        systemFunctions[name] = plugin.systems[name].create(partialDatabase);
+                    }
+                }
+
+                // Update system order in place
+                partialDatabase.system.order = systemOrder;
+                partialDatabase.system.functions = systemFunctions;
+            }
         }
 
-        // No new systems, return the same database instance
+
+        // Always return the same database instance
         return partialDatabase as any;
     };
 
@@ -387,181 +396,15 @@ function createDatabaseFromStoreAndTransactions<
     transactionDeclarations: TD,
     actionDeclarations?: AD,
 ): Database<C, R, A, ToTransactionFunctions<TD>, never, ToActionFunctions<AD>> {
-    type T = ToTransactionFunctions<TD> & Service;
-    type TransactionName = Extract<keyof TD, string>;
-
-    const reconcilingDatabase = createReconcilingDatabase(store, transactionDeclarations);
-
-    let nextTransactionId = 1;
-
-    const applyEnvelope = (envelope: TransactionEnvelope<TransactionName>) => reconcilingDatabase.apply(envelope);
-
-    const createTransactionWrapper = (name: TransactionName) => (args: unknown) => {
-        const transactionId = nextTransactionId;
-        nextTransactionId += 1;
-
-        let hasTransient = false;
-
-        const applyTransient = (payload: unknown) => {
-            hasTransient = true;
-            const timestamp = Date.now();
-            applyEnvelope({
-                id: transactionId,
-                name,
-                args: payload,
-                time: -timestamp,
-            });
-        };
-
-        const applyCommit = (payload: unknown) => {
-            const timestamp = Date.now();
-            const result = applyEnvelope({
-                id: transactionId,
-                name,
-                args: payload,
-                time: timestamp,
-            });
-            hasTransient = false;
-            return result;
-        };
-
-        const cancelPending = () => {
-            if (!hasTransient) {
-                return;
-            }
-            applyEnvelope({
-                id: transactionId,
-                name,
-                args: undefined,
-                time: 0,
-            });
-            hasTransient = false;
-        };
-
-        if (typeof args === "function") {
-            const asyncArgsProvider = args as () => Promise<unknown> | AsyncGenerator<unknown>;
-            const providerResult = asyncArgsProvider();
-
-            if (isAsyncGenerator(providerResult)) {
-                return new Promise((resolve, reject) => {
-                    (async () => {
-                        let lastArgs: unknown;
-                        try {
-                            let iteration = await providerResult.next();
-
-                            while (!iteration.done) {
-                                lastArgs = iteration.value;
-                                applyTransient(iteration.value);
-                                iteration = await providerResult.next();
-                            }
-
-                            const finalArgs = iteration.value !== undefined ? iteration.value : lastArgs;
-
-                            if (finalArgs !== undefined) {
-                                const commitResult = applyCommit(finalArgs);
-                                resolve(commitResult?.value);
-                            } else {
-                                cancelPending();
-                                resolve(undefined);
-                            }
-                        } catch (error) {
-                            cancelPending();
-                            reject(error);
-                        }
-                    })();
-                });
-            }
-
-            if (isPromise(providerResult)) {
-                return (async () => {
-                    try {
-                        const resolved = await providerResult;
-                        const commitResult = applyCommit(resolved);
-                        return commitResult?.value;
-                    } catch (error) {
-                        cancelPending();
-                        throw error;
-                    }
-                })();
-            }
-
-            const syncResult = applyCommit(providerResult);
-            return syncResult?.value;
-        }
-
-        const result = applyCommit(args);
-        return result?.value;
-    };
-
-    const transactions = {
-        serviceName: "ecs-database-transactions-service",
-    } satisfies Service as T;
-
-    const addTransactionWrappers = (transactionDecls: Record<string, any>) => {
-        for (const name of Object.keys(transactionDecls)) {
-            (transactions as any)[name] = createTransactionWrapper(name as any);
-        }
-    };
-
-    addTransactionWrappers(transactionDeclarations);
-
-    // Create actions wrapper
-    type AF = ToActionFunctions<AD> & Service;
-    const actions = {
-        serviceName: "ecs-database-actions-service",
-    } satisfies Service as AF;
-
-    const addActionWrappers = (actionDecls: Record<string, any>, db: Database<C, R, A, T, never, AF>) => {
-        for (const name of Object.keys(actionDecls)) {
-            const actionDecl = actionDecls[name];
-            (actions as any)[name] = (args: unknown) => {
-                return actionDecl(db, args);
-            };
-        }
-    };
-
-    // Create partial database for action initialization
-    const partialDatabaseForActions: any = {
-        serviceName: "ecs-database-service",
-        ...reconcilingDatabase,
-        store: store as Store<C, R, A>,
-        transactions,
-        actions, // Set actions before adding wrappers
-        system: {
-            functions: {} as any,
-            order: [] as never[][]
-        },
-    };
-
-    if (actionDeclarations) {
-        addActionWrappers(actionDeclarations, partialDatabaseForActions);
-    }
-
-    const extend = <
-        S extends Database.Plugin<any, any, any, any, any, any>
-    >(
-        schema: S,
-    ) => {
-        // Delegate to reconcilingDatabase which handles store/transactionalStore extension
-        reconcilingDatabase.extend(schema);
-        // Add transaction wrappers for the new transactions
-        addTransactionWrappers(schema.transactions);
-        
-        // Add action wrappers for the new actions
-        addActionWrappers(schema.actions ?? {}, partialDatabaseForActions);
-
-        return partialDatabaseForActions as unknown as Database<
-            C & (S extends Database.Plugin<infer XC, any, any, any, any, any> ? FromSchemas<XC> : never),
-            R & (S extends Database.Plugin<any, infer XR, any, any, any, any> ? FromSchemas<XR> : never),
-            A & (S extends Database.Plugin<any, any, infer XA, any, any, any> ? XA : never),
-            T & (S extends Database.Plugin<any, any, any, infer XTD, any, any> ? ToTransactionFunctions<XTD> : never),
-            never,
-            AF & (S extends Database.Plugin<any, any, any, any, any, infer XAD> ? ToActionFunctions<XAD> : never)
-        >;
-    };
-
-    partialDatabaseForActions.extend = extend;
-
-    return partialDatabaseForActions as Database<C, R, A, T, never, AF> & { extend: typeof extend };
+    // Delegate to the systems-aware version with empty systems
+    return createDatabaseFromStoreTransactionsAndSystems<C, R, A, TD, never, any>(
+        store,
+        transactionDeclarations,
+        {} as { readonly [K in never]: {
+            readonly create: (db: any) => (() => void | Promise<void>) | void;
+            readonly schedule?: { readonly before?: readonly never[]; readonly after?: readonly never[]; readonly during?: readonly never[] };
+        } },
+        actionDeclarations as any
+    ) as any;
 }
 

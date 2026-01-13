@@ -28,7 +28,7 @@ import type { TransactionDeclarations, ToTransactionFunctions } from "../store/t
 import type { ActionDeclarations, ToActionFunctions } from "../store/action-functions.js";
 import type { FromSchemas } from "../../schema/index.js";
 import type { StringKeyof, Simplify, NoInfer } from "../../types/types.js";
-import { CombinePlugins, combinePlugins } from "./combine-plugins.js";
+import { Combine2, combinePlugins } from "./combine-plugins.js";
 
 type RemoveIndex<T> = Simplify<{
     [K in keyof T as
@@ -79,14 +79,14 @@ export function createPlugin<
         },
         extends?: XP
     },
-): CombinePlugins<[XP, Database.Plugin<
+): Combine2<XP, Database.Plugin<
     RemoveIndex<CS>,
     RemoveIndex<RS>,
     RemoveIndex<A>,
     RemoveIndex<TD>,
     S,
     AD & ActionDeclarations<FromSchemas<RemoveIndex<CS>>, FromSchemas<RemoveIndex<RS>>, RemoveIndex<A>, ToTransactionFunctions<RemoveIndex<TD>>, S>>
-]>
+>
 {
     // Normalize plugins descriptor to a plugin object
     const plugin: any = {

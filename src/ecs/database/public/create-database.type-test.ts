@@ -22,7 +22,7 @@ SOFTWARE.*/
 
 import { Assert } from "../../../types/assert.js";
 import { Equal } from "../../../types/equal.js";
-import { Database } from "../database.js";
+import { Database, SystemFunction } from "../database.js";
 import { Store } from "../../store/index.js";
 import { Entity } from "../../entity.js";
 import { AsyncArgsProvider } from "../../store/transaction-functions.js";
@@ -38,9 +38,7 @@ import { AsyncArgsProvider } from "../../store/transaction-functions.js";
  * These tests verify that Database.create correctly infers types from plugins, including
  * complex nested plugin declarations created by the `extends` clause (which uses Combine2).
  * 
- * The tests verify type correctness by:
- * - Assigning inferred types to variables with explicit type annotations (compiles if types match)
- * - Using the inferred types in function calls and property access (compiles if types are correct)
+ * The tests verify type correctness using Assert<Equal<...>> to catch type-breaking changes early.
  * 
  * Note: These are compile-time type checks only - they don't need to execute.
  * These tests would fail with the old type system that couldn't handle Combine2 nested types.
@@ -70,17 +68,22 @@ function testSimplePluginInference() {
 
     const db = Database.create(plugin);
 
-    // Verify resources are inferred correctly (type works, not exact equality)
-    const timeResource: number = db.resources.time;
+    // Verify resources are inferred correctly
+    type CheckResources = Assert<Equal<typeof db.resources, {
+        readonly time: number;
+    }>>;
 
     // Verify transaction parameter types and return types
-    const createPositionFn: (args: { position: number }) => number = db.transactions.createPosition;
+    type CheckTransactionCreatePosition = Assert<Equal<
+        typeof db.transactions.createPosition,
+        (args: { position: number } | AsyncArgsProvider<{ position: number }>) => number
+    >>;
 
-    // Verify transaction can be called with correct parameter types and returns correct type
-    const entityId: number = db.transactions.createPosition({ position: 1 });
-    // Verify incorrect parameter types would fail (commented out - would cause compile error)
-    // const _badCall = db.transactions.createPosition({ position: "wrong" }); // Should fail
-    // const _badCall2 = db.transactions.createPosition({ wrong: 1 }); // Should fail
+    // @ts-expect-error - invalid transaction type check (wrong return type)
+    type ExpectErrorTransactionCreatePosition = Assert<Equal<
+        typeof db.transactions.createPosition,
+        (args: { position: number } | AsyncArgsProvider<{ position: number }>) => string
+    >>;
 }
 
 // ============================================================================
@@ -125,21 +128,27 @@ function testSingleExtendsInference() {
 
     const db = Database.create(extendedPlugin);
 
-    // Verify merged resources are inferred correctly (type works, not exact equality)
-    const timeResource: number = db.resources.time;
-    const deltaTimeResource: number = db.resources.deltaTime;
+    // Verify merged resources are inferred correctly
+    type CheckResources = Assert<Equal<typeof db.resources, {
+        readonly time: number;
+        readonly deltaTime: number;
+    }>>;
 
-    // Verify transaction parameter types and return types
-    const createPositionFn: (args: { position: number }) => number = db.transactions.createPosition;
-    const createMovingFn: (args: { position: number; velocity: number }) => number = db.transactions.createMoving;
+    // Verify merged transactions are inferred correctly with parameter and return types
+    type CheckTransactionCreatePosition = Assert<Equal<
+        typeof db.transactions.createPosition,
+        (args: { position: number } | AsyncArgsProvider<{ position: number }>) => number
+    >>;
+    type CheckTransactionCreateMoving = Assert<Equal<
+        typeof db.transactions.createMoving,
+        (args: { position: number; velocity: number } | AsyncArgsProvider<{ position: number; velocity: number }>) => number
+    >>;
 
-    // Verify transactions can be called with correct parameter types and return correct types
-    const posId: number = db.transactions.createPosition({ position: 1 });
-    const movId: number = db.transactions.createMoving({ position: 2, velocity: 3 });
-    // Verify incorrect parameter types would fail (commented out - would cause compile error)
-    // const _badCall1 = db.transactions.createPosition({ position: "wrong" }); // Should fail
-    // const _badCall2 = db.transactions.createMoving({ position: 1 }); // Missing velocity - should fail
-    // const _badCall3 = db.transactions.createMoving({ position: 1, velocity: "wrong" }); // Wrong type - should fail
+    // @ts-expect-error - invalid transaction type check (createPosition has wrong parameter type)
+    type ExpectErrorTransactionCreatePosition = Assert<Equal<
+        typeof db.transactions.createPosition,
+        (args: { position: string } | AsyncArgsProvider<{ position: string }>) => number
+    >>;
 }
 
 // ============================================================================
@@ -187,7 +196,7 @@ function testDeepNestingInference() {
 
     const db = Database.create(level3);
 
-    // Verify all resources are inferred from deep nesting (type works, not exact equality)
+    // Verify all resources are inferred from deep nesting
     type CheckResources = Assert<Equal<typeof db.resources, {
         readonly r1: number;
         readonly r2: string;
@@ -199,10 +208,91 @@ function testDeepNestingInference() {
     type CheckTransactionT2 = Assert<Equal<typeof db.transactions.t2, (arg: number | AsyncArgsProvider<number>) => void>>;
     type CheckTransactionT3 = Assert<Equal<typeof db.transactions.t3, (args: boolean | AsyncArgsProvider<boolean>) => Entity>>;
 
-    // @ts-expect-error - invalid transaction call (t4 does not exist)
-    type ExpectErrorTransactionT2 = Assert<Equal<typeof db.transactions.t2, (arg: number | AsyncArgsProvider<number>) => number>>;1
+    // @ts-expect-error - invalid transaction type check (t2 has wrong return type)
+    type ExpectErrorTransactionT2 = Assert<Equal<
+        typeof db.transactions.t2,
+        (arg: number | AsyncArgsProvider<number>) => number
+    >>;
 }
 
 // ============================================================================
 // SYSTEMS AND ACTIONS TESTS
 // ============================================================================
+
+function testSystemsAndActionsInference() {
+    const basePlugin = Database.Plugin.create({
+        actions: {
+            baseAction: (db) => {},
+            baseActionWithInput: (db, input: { value: number }) => {},
+        },
+        systems: {
+            input: {
+                create: (db) => () => {},
+            },
+        },
+    });
+
+    const extendedPlugin = Database.Plugin.create({
+        actions: {
+            extendedAction: (db) => {},
+            extendedActionWithInput: (db, input: { name: string }) => {},
+        },
+        systems: {
+            render: {
+                create: (db) => () => {},
+                schedule: { after: ["input"] },
+            },
+        },
+        extends: basePlugin,
+    });
+
+    const db = Database.create(extendedPlugin);
+
+    // Verify systems are inferred correctly
+    type CheckSystemInput = Assert<Equal<
+        typeof db.system.functions.input,
+        SystemFunction
+    >>;
+    type CheckSystemRender = Assert<Equal<
+        typeof db.system.functions.render,
+        SystemFunction
+    >>;
+
+    // @ts-expect-error - invalid system type check (input has wrong return type)
+    type ExpectErrorSystemInput = Assert<Equal<
+        typeof db.system.functions.input,
+        () => number
+    >>;
+
+    // Verify actions are inferred correctly with parameter and return types
+    // Actions without input: (db) => {} becomes () => any
+    type CheckActionBaseAction = Assert<Equal<
+        typeof db.actions.baseAction,
+        () => void
+    >>;
+    // Actions with input: (db, input: T) => {} becomes (arg: T) => any
+    type CheckActionBaseActionWithInput = Assert<Equal<
+        typeof db.actions.baseActionWithInput,
+        (arg: { value: number }) => void
+    >>;
+    type CheckActionExtendedAction = Assert<Equal<
+        typeof db.actions.extendedAction,
+        () => void
+    >>;
+    type CheckActionExtendedActionWithInput = Assert<Equal<
+        typeof db.actions.extendedActionWithInput,
+        (arg: { name: string }) => void
+    >>;
+
+    // @ts-expect-error - invalid action type check (baseActionWithInput has wrong parameter type)
+    type ExpectErrorActionBaseActionWithInput = Assert<Equal<
+        typeof db.actions.baseActionWithInput,
+        (arg: { value: string }) => any
+    >>;
+
+    // @ts-expect-error - invalid action type check (extendedActionWithInput has wrong parameter type)
+    type ExpectErrorActionExtendedActionWithInput = Assert<Equal<
+        typeof db.actions.extendedActionWithInput,
+        (arg: { name: number }) => any
+    >>;
+}

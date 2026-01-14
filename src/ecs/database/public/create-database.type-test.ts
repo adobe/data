@@ -109,6 +109,7 @@ function testSingleExtendsInference() {
     });
 
     const extendedPlugin = Database.Plugin.create({
+        extends: basePlugin,
         components: {
             velocity: { type: "number" },
         },
@@ -123,7 +124,6 @@ function testSingleExtendsInference() {
                 return store.archetypes.Moving.insert(args);
             },
         },
-        extends: basePlugin,
     });
 
     const db = Database.create(extendedPlugin);
@@ -169,6 +169,7 @@ function testDeepNestingInference() {
     });
 
     const level2 = Database.Plugin.create({
+        extends: level1,
         components: {
             b: { type: "string" },
         },
@@ -178,10 +179,10 @@ function testDeepNestingInference() {
         transactions: {
             t2: (store, arg: number) => {},
         },
-        extends: level1,
     });
 
     const level3 = Database.Plugin.create({
+        extends: level2,
         components: {
             c: { type: "boolean" },
         },
@@ -191,7 +192,6 @@ function testDeepNestingInference() {
         transactions: {
             t3: (store, args: boolean): Entity => 12,
         },
-        extends: level2,
     });
 
     const db = Database.create(level3);
@@ -221,6 +221,11 @@ function testDeepNestingInference() {
 
 function testSystemsAndActionsInference() {
     const basePlugin = Database.Plugin.create({
+        extends: undefined,
+        components: {},
+        resources: {},
+        archetypes: {},
+        transactions: {},
         actions: {
             baseAction: (db) => {},
             baseActionWithInput: (db, input: { value: number }) => {},
@@ -233,6 +238,11 @@ function testSystemsAndActionsInference() {
     });
 
     const extendedPlugin = Database.Plugin.create({
+        extends: basePlugin,
+        components: {},
+        resources: {},
+        archetypes: {},
+        transactions: {},
         actions: {
             extendedAction: (db) => {},
             extendedActionWithInput: (db, input: { name: string }) => {},
@@ -243,7 +253,6 @@ function testSystemsAndActionsInference() {
                 schedule: { after: ["input"] },
             },
         },
-        extends: basePlugin,
     });
 
     const db = Database.create(extendedPlugin);

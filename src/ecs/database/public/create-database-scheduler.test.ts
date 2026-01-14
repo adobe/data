@@ -43,6 +43,7 @@ describe("createDatabase with scheduler plugin extension", () => {
         const basePlugin = scheduler;
         
         const extendedPlugin = Database.Plugin.create({
+            extends: basePlugin,
             systems: {
                 testSystem: {
                     create: (db) => () => {
@@ -50,7 +51,6 @@ describe("createDatabase with scheduler plugin extension", () => {
                     }
                 }
             },
-            extends: basePlugin
         });
 
         // The bug: Database.create should not throw even though scheduler

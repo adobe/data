@@ -25,6 +25,56 @@ import { createPlugin } from "./create-plugin.js";
 import { Database } from "./database.js";
 
 describe("Database.Plugin.create", () => {
+    describe("property order validation", () => {
+        it("should throw error if properties are in wrong order", () => {
+            expect(() => {
+                Database.Plugin.create({
+                    components: {},
+                    extends: undefined, // extends should come first
+                });
+            }).toThrow('Property "extends" must come before "components"');
+
+            expect(() => {
+                Database.Plugin.create({
+                    systems: {},
+                    actions: {}, // actions should come before systems
+                });
+            }).toThrow('Property "actions" must come before "systems"');
+
+            expect(() => {
+                Database.Plugin.create({
+                    transactions: {},
+                    archetypes: {}, // archetypes should come before transactions
+                });
+            }).toThrow('Property "archetypes" must come before "transactions"');
+        });
+
+        it("should accept properties in correct order", () => {
+            expect(() => {
+                Database.Plugin.create({
+                    extends: undefined,
+                    components: {},
+                    resources: {},
+                    archetypes: {},
+                    transactions: {},
+                    actions: {},
+                    systems: {},
+                });
+            }).not.toThrow();
+
+            expect(() => {
+                Database.Plugin.create({
+                    components: {},
+                    resources: {},
+                    archetypes: {},
+                    transactions: {},
+                    actions: {},
+                    systems: {},
+                });
+            }).not.toThrow();
+        });
+    });
+
     describe("single descriptor (no dependencies)", () => {
         it("should create plugin with components, resources, and archetypes", () => {
             const plugin = createPlugin({
@@ -121,6 +171,7 @@ describe("Database.Plugin.create", () => {
 
             const plugin = createPlugin(
                 {
+                    extends: basePlugin,
                     systems: {
                         renderSystem: {
                             create: (_db) => () => { },
@@ -131,7 +182,6 @@ describe("Database.Plugin.create", () => {
                             }
                         }
                     },
-                    extends: basePlugin
                 },
             );
 
@@ -151,10 +201,10 @@ describe("Database.Plugin.create", () => {
 
             const extendedPlugin = createPlugin(
                 {
+                    extends: basePlugin,
                     components: {
                         velocity: { type: "number" }
                     },
-                    extends: basePlugin
                 },
             );
 
@@ -173,10 +223,10 @@ describe("Database.Plugin.create", () => {
 
             const extendedPlugin = createPlugin(
                 {
+                    extends: basePlugin,
                     resources: {
                         delta: { default: 0 }
                     },
-                    extends: basePlugin
                 },
             );
 
@@ -196,12 +246,12 @@ describe("Database.Plugin.create", () => {
 
             const extendedPlugin = createPlugin(
                 {
+                    extends: basePlugin,
                     systems: {
                         renderSystem: {
                             create: (_db) => () => { }
                         }
                     },
-                    extends: basePlugin
                 },
             );
 
@@ -218,6 +268,7 @@ describe("Database.Plugin.create", () => {
 
             const extendedPlugin = createPlugin(
                 {
+                    extends: basePlugin,
                     systems: {
                         mySystem: {
                             create: (db) => () => {
@@ -226,7 +277,6 @@ describe("Database.Plugin.create", () => {
                             }
                         }
                     },
-                    extends: basePlugin
                 },
             );
 
@@ -249,8 +299,8 @@ describe("Database.Plugin.create", () => {
             const combinedBase = Database.Plugin.combine(plugin1, plugin2, plugin3);
             const merged = createPlugin(
                 {
+                    extends: combinedBase,
                     components: { d: { type: "number" } },
-                    extends: combinedBase
                 },
             );
 
@@ -274,19 +324,17 @@ describe("Database.Plugin.create", () => {
             });
 
             expect(() => {
-                createPlugin(
-                    {
-                        systems: {
-                            renderSystem: {
-                                create: (_db) => () => { },
-                                schedule: {
-                                    after: ["inputSystem"]  // Reference from dependency!
-                                }
+                createPlugin({
+                    extends: basePlugin,
+                    systems: {
+                        renderSystem: {
+                            create: (_db) => () => { },
+                            schedule: {
+                                after: ["inputSystem"]  // Reference from dependency!
                             }
-                        },
-                        extends: basePlugin
+                        }
                     },
-                );
+                });
             }).not.toThrow();
         });
 
@@ -308,19 +356,17 @@ describe("Database.Plugin.create", () => {
             });
 
             expect(() => {
-                createPlugin(
-                    {
-                        systems: {
-                            system3: {
-                                create: (_db) => () => { },
-                                schedule: {
-                                    after: ["system1", "system2"]  // Both from dependencies
-                                }
+                createPlugin({
+                    extends: Database.Plugin.combine(plugin1, plugin2),
+                    systems: {
+                        system3: {
+                            create: (_db) => () => { },
+                            schedule: {
+                                after: ["system1", "system2"]  // Both from dependencies
                             }
-                        },
-                        extends: Database.Plugin.combine(plugin1, plugin2)
+                        }
                     },
-                );
+                });
             }).not.toThrow();
         });
 
@@ -337,20 +383,18 @@ describe("Database.Plugin.create", () => {
             });
 
             // ✅ VALID: referencing actual systems from dependencies (no 'as const' needed!)
-            const validPlugin = createPlugin(
-                {
-                    systems: {
-                        renderSystem: {
-                            create: (_db) => () => { },
-                            schedule: {
-                                // TypeScript autocompletes: "inputSystem" | "physicsSystem"
-                                after: ["inputSystem", "physicsSystem"]
-                            }
+            const validPlugin = createPlugin({
+                extends: basePlugin,
+                systems: {
+                    renderSystem: {
+                        create: (_db) => () => { },
+                        schedule: {
+                            // TypeScript autocompletes: "inputSystem" | "physicsSystem"
+                            after: ["inputSystem", "physicsSystem"]
                         }
-                    },
-                    extends: basePlugin
+                    }
                 },
-            );
+            });
 
             expect(validPlugin).toBeDefined();
             expect(validPlugin.systems).toHaveProperty("renderSystem");
@@ -384,24 +428,22 @@ describe("Database.Plugin.create", () => {
                 }
             });
 
-            const extendedPlugin = createPlugin(
-                {
-                    resources: {
-                        delta: { default: 0 as number }
-                    },
-                    systems: {
-                        testSystem: {
-                            create: (db) => () => {
-                                const time: number = db.resources.time;    // OK - from dependency
-                                const delta: number = db.resources.delta;   // OK - from descriptor
-                                // @ts-expect-error - should error
-                                const invalid: number = db.resources.nonExistent;
-                            }
+            const extendedPlugin = createPlugin({
+                extends: basePlugin,
+                resources: {
+                    delta: { default: 0 as number }
+                },
+                systems: {
+                    testSystem: {
+                        create: (db) => () => {
+                            const time: number = db.resources.time;    // OK - from dependency
+                            const delta: number = db.resources.delta;   // OK - from descriptor
+                            // @ts-expect-error - should error
+                            const invalid: number = db.resources.nonExistent;
                         }
-                    },
-                    extends: basePlugin
-                }
-            );
+                    }
+                },
+            });
 
             expect(extendedPlugin).toBeDefined();
         });
@@ -417,10 +459,10 @@ describe("Database.Plugin.create", () => {
 
             expect(() => {
                 createPlugin({
+                    extends: plugin1,
                     components: {
                         health: { type: "string" as const } // Different definition
                     },
-                    extends: plugin1
                 });
             }).toThrow('Plugin combine conflict: components.health must be identical (===) across plugins');
         });
@@ -434,10 +476,10 @@ describe("Database.Plugin.create", () => {
 
             expect(() => {
                 createPlugin({
+                    extends: plugin1,
                     resources: {
                         score: { default: 100 } // Different definition
                     },
-                    extends: plugin1
                 });
             }).toThrow('Plugin combine conflict: resources.score must be identical (===) across plugins');
         });
@@ -455,10 +497,10 @@ describe("Database.Plugin.create", () => {
 
             expect(() => {
                 createPlugin({
+                    extends: plugin1,
                     archetypes: {
                         Entity: ["position", "velocity"] // Different definition
                     },
-                    extends: plugin1
                 });
             }).toThrow('Plugin combine conflict: archetypes.Entity must be identical (===) across plugins');
         });
@@ -473,10 +515,10 @@ describe("Database.Plugin.create", () => {
 
             expect(() => {
                 createPlugin({
+                    extends: plugin1,
                     components: {
                         health: sharedComponent // Same reference - OK
                     },
-                    extends: plugin1
                 });
             }).not.toThrow();
         });
@@ -490,10 +532,10 @@ describe("Database.Plugin.create", () => {
 
             expect(() => {
                 createPlugin({
+                    extends: plugin1,
                     transactions: {
                         updateEntity: (store: any) => {} // Different function reference - error
                     },
-                    extends: plugin1
                 });
             }).toThrow('Plugin combine conflict: transactions.updateEntity must be identical (===) across plugins');
         });
@@ -508,10 +550,10 @@ describe("Database.Plugin.create", () => {
 
             expect(() => {
                 createPlugin({
+                    extends: plugin1,
                     transactions: {
                         updateEntity: sharedTransaction // Same reference - OK
                     },
-                    extends: plugin1
                 });
             }).not.toThrow();
         });
@@ -527,12 +569,12 @@ describe("Database.Plugin.create", () => {
 
             expect(() => {
                 createPlugin({
+                    extends: plugin1,
                     systems: {
                         update: {
                             create: () => () => { } // Different function - error
                         }
                     },
-                    extends: plugin1
                 });
             }).toThrow('Plugin combine conflict: systems.update must be identical (===) across plugins');
         });
@@ -549,10 +591,10 @@ describe("Database.Plugin.create", () => {
 
             expect(() => {
                 createPlugin({
+                    extends: plugin1,
                     systems: {
                         update: sharedSystem // Same reference - OK
                     },
-                    extends: plugin1
                 });
             }).not.toThrow();
         });

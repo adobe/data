@@ -105,7 +105,7 @@ export function combinePlugins<
 export function combinePlugins<
   const Plugins extends readonly Database.Plugin[]
 >(...plugins: Plugins): any {
-  const keys = ['components', 'resources', 'archetypes', 'transactions', 'systems', 'actions'] as const;
+  const keys = ['components', 'resources', 'archetypes', 'transactions', 'actions', 'systems'] as const;
   
   const merge = (base: any, next: any) => 
     Object.fromEntries(keys.map(key => {
@@ -125,7 +125,7 @@ export function combinePlugins<
       return [key, merged];
     }));
   
-  const emptyPlugin = { components: {}, resources: {}, archetypes: {}, transactions: {}, systems: {}, actions: {} };
+  const emptyPlugin = { components: {}, resources: {}, archetypes: {}, transactions: {}, actions: {}, systems: {} };
   
   // Merge all plugins together
   const result = plugins.reduce(merge, emptyPlugin);

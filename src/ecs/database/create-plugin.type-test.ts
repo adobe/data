@@ -158,6 +158,7 @@ function validTypeInferenceTests() {
 
     // Test: Valid extended plugin accessing base plugin properties
     const extendedPlugin = createPlugin({
+        extends: basePlugin,
         components: {
             a: { type: "number" },
             b: { type: "string" },
@@ -183,6 +184,15 @@ function validTypeInferenceTests() {
                 store.update(0, { a: 2, alpha: 3 });
             }
         },
+        actions: {
+            doExtendedAction: (db) => {
+                db.transactions.doAlpha({ a: 1, b: "2" });
+                db.transactions.doBeta();
+                db.transactions.testChanges();
+            },
+            doOtherExtendedAction: (db) => {
+            }
+        },
         systems: {
             update: {
                 create: (db) => () => {
@@ -199,16 +209,6 @@ function validTypeInferenceTests() {
                 schedule: {},
             }
         },
-        actions: {
-            doExtendedAction: (db) => {
-                db.transactions.doAlpha({ a: 1, b: "2" });
-                db.transactions.doBeta();
-                db.transactions.testChanges();
-            },
-            doOtherExtendedAction: (db) => {
-            }
-        },
-        extends: basePlugin
     });
 }
 

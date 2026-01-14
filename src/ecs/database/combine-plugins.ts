@@ -27,42 +27,26 @@ import { Entity } from "../entity.js";
 import { Store } from "../store/store.js";
 import type { Database, SystemDeclarations } from "./database.js";
 
-// Binary combination type - combines exactly two plugins into a flat Database.Plugin
-export type Combine2<
-    P1 extends Database.Plugin,
-    P2 extends Database.Plugin
-> = Database.Plugin<
-    Simplify<{} & (P1 extends Database.Plugin<infer C1, any, any, any, any, any> ? C1 : never) &
-        (P2 extends Database.Plugin<infer C2, any, any, any, any, any> ? C2 : never)>,
-    Simplify<{} & (P1 extends Database.Plugin<any, infer R1, any, any, any, any> ? R1 : never) &
-        (P2 extends Database.Plugin<any, infer R2, any, any, any, any> ? R2 : never)>,
-    Simplify<{} & (P1 extends Database.Plugin<any, any, infer A1, any, any, any> ? A1 : never) &
-        (P2 extends Database.Plugin<any, any, infer A2, any, any, any> ? A2 : never)>,
-    Simplify<{} & (P1 extends Database.Plugin<any, any, any, infer TD1, any, any> ? TD1 : never) &
-        (P2 extends Database.Plugin<any, any, any, infer TD2, any, any> ? TD2 : never)>,
-    Extract<
-        Simplify<(P1 extends Database.Plugin<any, any, any, any, infer S1, any> ? S1 : never) |
-        (P2 extends Database.Plugin<any, any, any, any, infer S2, any> ? S2 : never)>,
-        string
-    >,
-    (P1 extends Database.Plugin<any, any, any, any, any, infer AD1> ? AD1 : never) &
-        (P2 extends Database.Plugin<any, any, any, any, any, infer AD2> ? AD2 : never)
+// Helper to intersect all elements (works with mapped types over tuples)
+type IntersectAll<T extends readonly unknown[]> = Simplify<
+  T extends readonly [infer H, ...infer R] ? H & IntersectAll<R> : unknown
+>;
+type UnionAll<T extends readonly unknown[]> = Simplify<
+  T extends readonly [infer H, ...infer R] ? H | UnionAll<R> : never
 >;
 
-// Three-way combination
-export type Combine3<
-    P1 extends Database.Plugin,
-    P2 extends Database.Plugin,
-    P3 extends Database.Plugin
-> = Combine2<Combine2<P1, P2>, P3>;
-
-// Four-way combination
-export type Combine4<
-    P1 extends Database.Plugin,
-    P2 extends Database.Plugin,
-    P3 extends Database.Plugin,
-    P4 extends Database.Plugin
-> = Combine2<Combine2<Combine2<P1, P2>, P3>, P4>;
+// Array-based combination type - combines plugins from an array into a flat Database.Plugin
+export type CombinePlugins<Plugins extends readonly Database.Plugin[]> = Database.Plugin<
+    Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<infer C, any, any, any, any, any> ? C : never }>>,
+    Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, infer R, any, any, any, any> ? R : never }>>,
+    Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, infer A, any, any, any> ? A : never }>>,
+    Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, infer TD, any, any> ? TD : never }>>,
+    Extract<
+        Simplify<UnionAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, infer S, any> ? S : never }>>,
+        string
+    >,
+    Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, any, infer AD> ? AD : never }>>
+>;
 
 
 /**
@@ -71,40 +55,8 @@ export type Combine4<
  * require identity (===) when the same key exists across plugins.
  */
 export function combinePlugins<
-  const P1 extends Database.Plugin,
-  const P2 extends Database.Plugin
->(p1: P1, p2: P2):
-  Database.Plugin<
-    Simplify<{} & (P1 extends Database.Plugin<infer C1, any, any, any, any, any> ? C1 : never) &
-        (P2 extends Database.Plugin<infer C2, any, any, any, any, any> ? C2 : never)>,
-    Simplify<{} & (P1 extends Database.Plugin<any, infer R1, any, any, any, any> ? R1 : never) &
-        (P2 extends Database.Plugin<any, infer R2, any, any, any, any> ? R2 : never)>,
-    Simplify<{} & (P1 extends Database.Plugin<any, any, infer A1, any, any, any> ? A1 : never) &
-        (P2 extends Database.Plugin<any, any, infer A2, any, any, any> ? A2 : never)>,
-    Simplify<{} & (P1 extends Database.Plugin<any, any, any, infer TD1, any, any> ? TD1 : never) &
-        (P2 extends Database.Plugin<any, any, any, infer TD2, any, any> ? TD2 : never)>,
-    Extract<
-        Simplify<(P1 extends Database.Plugin<any, any, any, any, infer S1, any> ? S1 : never) |
-        (P2 extends Database.Plugin<any, any, any, any, infer S2, any> ? S2 : never)>,
-        string
-    >,
-    (P1 extends Database.Plugin<any, any, any, any, any, infer AD1> ? AD1 : never) &
-        (P2 extends Database.Plugin<any, any, any, any, any, infer AD2> ? AD2 : never)
-  >;
-export function combinePlugins<
-  const P1 extends Database.Plugin,
-  const P2 extends Database.Plugin,
-  const P3 extends Database.Plugin
->(p1: P1, p2: P2, p3: P3): Combine3<P1, P2, P3>;
-export function combinePlugins<
-  const P1 extends Database.Plugin,
-  const P2 extends Database.Plugin,
-  const P3 extends Database.Plugin,
-  const P4 extends Database.Plugin
->(p1: P1, p2: P2, p3: P3, p4: P4): Combine4<P1, P2, P3, P4>;
-export function combinePlugins<
   const Plugins extends readonly Database.Plugin[]
->(...plugins: Plugins): any {
+>(...plugins: Plugins): CombinePlugins<Plugins> {
   const keys = ['components', 'resources', 'archetypes', 'transactions', 'actions', 'systems'] as const;
   
   const merge = (base: any, next: any) => 
@@ -130,6 +82,6 @@ export function combinePlugins<
   // Merge all plugins together
   const result = plugins.reduce(merge, emptyPlugin);
   
-  return result;
+  return result as CombinePlugins<Plugins>;
 }
 

@@ -93,7 +93,7 @@ describe("Database.Plugin.create", () => {
                 systems: {
                     updateSystem: {
                         create: (db) => () => {
-                            db.unsafeStore.archetypes.Particle.insert({ particle: true });
+                            db.store.archetypes.Particle.insert({ particle: true });
                             db.archetypes.Particle.id.toString();
                             // @ts-expect-error - foo does not exist
                             db.archetypes.foo

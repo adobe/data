@@ -44,6 +44,11 @@ describe("createDatabase with scheduler plugin extension", () => {
 
         const extendedPlugin = Database.Plugin.create({
             extends: basePlugin,
+            transactions: {
+                stopScheduler(store) {
+                    store.resources.schedulerState = "disposed";
+                }
+            },
             systems: {
                 testSystem: {
                     create: (db) => () => {
@@ -86,7 +91,7 @@ describe("createDatabase with scheduler plugin extension", () => {
         }
 
         // Stop the scheduler
-        db.unsafeStore.resources.schedulerState = "disposed";
+        db.transactions.stopScheduler();
 
         // Advance timers to let any pending RAF callbacks execute
         await vi.runAllTimersAsync();

@@ -28,7 +28,7 @@ describe("Database.create", () => {
         const db = Database.create();
 
         expect(db).toBeDefined();
-        expect(db.unsafeStore).toBeDefined();
+        expect((db as any).store).toBeUndefined();
         expect(db.transactions).toBeDefined();
     });
 });

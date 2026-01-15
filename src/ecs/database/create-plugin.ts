@@ -29,6 +29,7 @@ import type { ActionDeclarations, ToActionFunctions } from "../store/action-func
 import type { FromSchemas } from "../../schema/index.js";
 import type { StringKeyof, Simplify, NoInfer } from "../../types/types.js";
 import { CombinePlugins, combinePlugins } from "./combine-plugins.js";
+import { Store } from "../store/store.js";
 
 type RemoveIndex<T> = Simplify<{
     [K in keyof T as
@@ -126,7 +127,11 @@ export function createPlugin<
                 ToTransactionFunctions<RemoveIndex<TD> & XP['transactions']>,
                 string,
                 ToActionFunctions<RemoveIndex<AD> & XP['actions']>
-            >) => SystemFunction | void;
+            > & { readonly store: Store<
+                FromSchemas<RemoveIndex<CS> & XP['components']>,
+                FromSchemas<RemoveIndex<RS> & XP['resources']>,
+                RemoveIndex<A> & XP['archetypes']
+            > }) => SystemFunction | void;
             readonly schedule?: {
                 readonly before?: readonly NoInfer<Exclude<S | StringKeyof<XP['systems']>, K>>[];
                 readonly after?: readonly NoInfer<Exclude<S | StringKeyof<XP['systems']>, K>>[];

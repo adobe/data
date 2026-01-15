@@ -28,7 +28,7 @@ describe("Database.create", () => {
         const db = Database.create();
 
         expect(db).toBeDefined();
-        expect(db.store).toBeDefined();
+        expect(db.unsafeStore).toBeDefined();
         expect(db.transactions).toBeDefined();
     });
 });
@@ -186,7 +186,7 @@ describe("Database.Plugin.create", () => {
     describe("edge cases", () => {
         it("should merge schemas with dependencies - shared components must use same reference", () => {
             const positionComponent = { type: "number" as const };
-            
+
             const baseSchema = Database.Plugin.create({
                 components: {
                     position: positionComponent,

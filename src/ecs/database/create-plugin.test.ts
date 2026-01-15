@@ -43,7 +43,7 @@ describe("Database.Plugin.create", () => {
                 systems: {
                     updateSystem: {
                         create: (db) => () => {
-                            db.store.archetypes.Particle.insert({ particle: true });
+                            db.unsafeStore.archetypes.Particle.insert({ particle: true });
                             db.archetypes.Particle.id.toString();
                             // @ts-expect-error - foo does not exist
                             db.archetypes.foo
@@ -484,14 +484,14 @@ describe("Database.Plugin.create", () => {
         it("should throw error when merging different transaction definitions", () => {
             const plugin1 = createPlugin({
                 transactions: {
-                    updateEntity: (store: any) => {}
+                    updateEntity: (store: any) => { }
                 }
             });
 
             expect(() => {
                 createPlugin({
                     transactions: {
-                        updateEntity: (store: any) => {} // Different function reference - error
+                        updateEntity: (store: any) => { } // Different function reference - error
                     },
                     extends: plugin1
                 });
@@ -499,7 +499,7 @@ describe("Database.Plugin.create", () => {
         });
 
         it("should allow same transaction with identical reference", () => {
-            const sharedTransaction = (store: any) => {};
+            const sharedTransaction = (store: any) => { };
             const plugin1 = createPlugin({
                 transactions: {
                     updateEntity: sharedTransaction

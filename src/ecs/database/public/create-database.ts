@@ -308,7 +308,7 @@ function createDatabaseFromStoreTransactionsAndSystems<
     const partialDatabase: any = {
         serviceName: "ecs-database-service",
         ...reconcilingDatabase,
-        store: store as Store<C, R, A>,
+        unsafeStore: store as Store<C, R, A>,
         transactions,
         actions, // Set actions before adding wrappers
         system: {

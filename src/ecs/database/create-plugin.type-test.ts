@@ -24,6 +24,8 @@ import { createPlugin } from "./create-plugin.js";
 import { Database } from "./database.js";
 import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";
+import { scheduler } from "../index.js";
+import { SchedulerState } from "../plugins/index.js";
 
 /**
  * Type-only tests for createPlugin type inference and constraints.
@@ -106,7 +108,7 @@ function validTypeInferenceTests() {
                 }
             },
             render: {
-                create: (db) => () => {},
+                create: (db) => () => { },
                 schedule: {
                     after: ["update"],
                 }
@@ -128,8 +130,8 @@ function validTypeInferenceTests() {
             FooTransient: ["alpha", "beta", "transient"],
         },
         transactions: {
-            doAlpha: (store, input: { a: number, b: string }) => {},
-            doBeta: (store) => {}
+            doAlpha: (store, input: { a: number, b: string }) => { },
+            doBeta: (store) => { }
         },
         actions: {
             doAction: (db) => {
@@ -326,7 +328,7 @@ function invalidSystemSelfReference() {
     createPlugin({
         systems: {
             render: {
-                create: (db) => () => {},
+                create: (db) => () => { },
                 schedule: {
                     // @ts-expect-error - render would be a self-reference (prevented by Exclude<S | SX, K>)
                     before: ["render"],
@@ -341,10 +343,10 @@ function invalidSystemReference() {
     createPlugin({
         systems: {
             update: {
-                create: (db) => () => {},
+                create: (db) => () => { },
             },
             render: {
-                create: (db) => () => {},
+                create: (db) => () => { },
                 schedule: {
                     // @ts-expect-error - invalid system reference (system "invalid" does not exist)
                     during: ["invalid"],
@@ -358,7 +360,7 @@ function invalidSystemReference() {
 function invalidTransactionCallInAction() {
     createPlugin({
         transactions: {
-            validTransaction: (store) => {},
+            validTransaction: (store) => { },
         },
         actions: {
             doAction: (db) => {
@@ -373,7 +375,7 @@ function invalidTransactionCallInAction() {
 function invalidActionCallInSystem() {
     createPlugin({
         actions: {
-            validAction: (db) => {},
+            validAction: (db) => { },
         },
         systems: {
             testSystem: {
@@ -475,7 +477,7 @@ function invalidExtendedPluginSystemReference() {
     const basePlugin = createPlugin({
         systems: {
             input: {
-                create: (db) => () => {},
+                create: (db) => () => { },
             }
         },
     });
@@ -483,7 +485,7 @@ function invalidExtendedPluginSystemReference() {
     createPlugin({
         systems: {
             render: {
-                create: (db) => () => {},
+                create: (db) => () => { },
                 schedule: {
                     // @ts-expect-error - invalid system reference (system "invalid" does not exist in base or current)
                     after: ["invalid"],
@@ -498,7 +500,7 @@ function invalidExtendedPluginSystemReference() {
 function invalidExtendedPluginTransactionCall() {
     const basePlugin = createPlugin({
         transactions: {
-            doAlpha: (store) => {},
+            doAlpha: (store) => { },
         },
     });
 
@@ -524,7 +526,7 @@ function invalidExtendedPluginTransactionCall() {
 function invalidExtendedPluginActionCall() {
     const basePlugin = createPlugin({
         actions: {
-            doAction: (db) => {},
+            doAction: (db) => { },
         },
     });
 
@@ -554,7 +556,7 @@ function invalidActionCallInActionSamePlugin() {
                 // @ts-expect-error - actions cannot call other actions from same plugin (only from extended plugin)
                 db.actions.action2();
             },
-            action2: (db) => {},
+            action2: (db) => { },
         },
     });
 }
@@ -595,7 +597,7 @@ function invalidComponentAccessInSystem() {
 function validActionCallInActionFromExtended() {
     const basePlugin = createPlugin({
         actions: {
-            baseAction: (db) => {},
+            baseAction: (db) => { },
         },
     });
 
@@ -633,11 +635,11 @@ function validInheritedActionReturnTypes() {
                 const userId: number = db.actions.getUserId();
                 const userName: string = db.actions.getUserName();
                 const userData: { id: number; name: string } = db.actions.getUserData();
-                
+
                 // Valid - can use return values in expressions
                 const combined = `${userName} (${userId})`;
                 const isValid = userData.id > 0;
-                
+
                 return { userId, userName, userData, combined, isValid };
             },
             anotherExtendedAction: (db) => {
@@ -674,10 +676,10 @@ function validAsyncInheritedActionReturnTypes() {
                 const userData: { id: number; name: string } = await db.actions.fetchUserData();
                 const userId: number = await db.actions.fetchUserId();
                 const userName: string = await db.actions.fetchUserName();
-                
+
                 // Valid - can use awaited return values in expressions
                 const combined = `${userName} (${userId})`;
-                
+
                 return { user: userData, combined };
             },
             async anotherExtendedAsyncAction(db): Promise<number> {
@@ -714,10 +716,10 @@ function validMixedSyncAsyncInheritedActions() {
             async extendedMixedAction(db): Promise<{ sync: string; async: number }> {
                 // Valid - can use sync inherited action return type
                 const syncValue: string = db.actions.syncAction();
-                
+
                 // Valid - can await async inherited action and use return type
                 const asyncValue: number = await db.actions.asyncAction();
-                
+
                 return { sync: syncValue, async: asyncValue };
             },
             syncExtendedAction: (db) => {
@@ -730,3 +732,24 @@ function validMixedSyncAsyncInheritedActions() {
     });
 }
 
+function checkDatabaseTypeFromExtendedPlugin() {
+    const basePlugin = scheduler;
+
+    const extendedPlugin = Database.Plugin.create({
+        systems: {
+            testSystem: {
+                create: (db) => () => {
+                    // Test system
+                }
+            }
+        },
+        extends: basePlugin
+    });
+
+    const db = Database.create(extendedPlugin);
+    type ResourcesType = typeof db extends Database<any, infer R, any, any, any, any> ? R : never;
+    type CheckResources = Assert<Equal<ResourcesType, {
+        schedulerState: SchedulerState;
+    }>>;
+
+}

@@ -22,3 +22,4 @@ SOFTWARE.*/
 
 export * from "./application-host.js";
 export * from "./application-element.js";
+export * from "./database-element.js";

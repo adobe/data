@@ -12,6 +12,9 @@ dist
 storybook-static
 *.local
 
+.chromedriver-cache/
+.plan.md
+
 # build artifacts
 custom-elements.json
 

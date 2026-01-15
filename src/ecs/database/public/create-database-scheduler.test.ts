@@ -39,9 +39,9 @@ describe("createDatabase with scheduler plugin extension", () => {
         // but db.system.functions is still empty at that point because it's only
         // populated after all systems are created. This causes the error:
         // "db.system.functions[name] is not a function"
-        
+
         const basePlugin = scheduler;
-        
+
         const extendedPlugin = Database.Plugin.create({
             systems: {
                 testSystem: {
@@ -56,7 +56,7 @@ describe("createDatabase with scheduler plugin extension", () => {
         // The bug: Database.create should not throw even though scheduler
         // executeFrame is called during system initialization
         const db = Database.create(extendedPlugin);
-        
+
         // Verify all systems are in functions (this should pass after fix)
         const allSystemNames = new Set<string>();
         for (const tier of db.system.order) {
@@ -64,13 +64,13 @@ describe("createDatabase with scheduler plugin extension", () => {
                 allSystemNames.add(name);
             }
         }
-        
+
         // Check that all systems in order exist in functions
         for (const name of allSystemNames) {
             expect(db.system.functions[name as keyof typeof db.system.functions]).toBeDefined();
             expect(typeof db.system.functions[name as keyof typeof db.system.functions]).toBe("function");
         }
-        
+
         // Also verify the reverse: all functions are in the order
         const functionNames = new Set(Object.keys(db.system.functions));
         const orderNames = new Set<string>();
@@ -79,15 +79,15 @@ describe("createDatabase with scheduler plugin extension", () => {
                 orderNames.add(name);
             }
         }
-        
+
         // All functions should be in order
         for (const name of functionNames) {
             expect(orderNames.has(name)).toBe(true);
         }
-        
+
         // Stop the scheduler
-        db.store.resources.schedulerState = "disposed";
-        
+        db.unsafeStore.resources.schedulerState = "disposed";
+
         // Advance timers to let any pending RAF callbacks execute
         await vi.runAllTimersAsync();
     });

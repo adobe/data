@@ -22,7 +22,7 @@ SOFTWARE.*/
 
 import { createPlugin } from "../../database/create-plugin.js";
 
-type SchedulerState = "running" | "paused" | "disposed";
+export type SchedulerState = "running" | "paused" | "disposed";
 
 export const scheduler = createPlugin({
     resources: {

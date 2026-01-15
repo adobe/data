@@ -68,19 +68,19 @@ export type SystemDeclaration = {
 export type SystemDeclarations<S extends string> = { readonly [K in S]: SystemDeclaration }
 
 export interface Database<
-  C extends Components,
-  R extends ResourceComponents,
-  A extends ArchetypeComponents<StringKeyof<C>>,
-  F extends TransactionFunctions,
+  C extends Components = {},
+  R extends ResourceComponents = {},
+  A extends ArchetypeComponents<StringKeyof<C>> = {},
+  F extends TransactionFunctions = {},
   S extends string = never,
   AF extends ActionFunctions = {},
 > extends ReadonlyStore<C, R, A>, Service {
   readonly transactions: F & Service;
   readonly actions: AF & Service;
   /**
-   * Provides direct mutable access to the underlying store.
+   * Provides unsafe, unobservable direct mutable access to the underlying store.
    */
-  readonly store: Store<C, R, A>
+  readonly unsafeStore: Store<C, R, A>
   readonly observe: {
     readonly components: { readonly [K in StringKeyof<C>]: Observe<void> };
     readonly resources: { readonly [K in StringKeyof<R>]: Observe<R[K]> };
@@ -115,6 +115,10 @@ export interface Database<
 export namespace Database {
   export const create = createDatabase;
 
+  export const is = (value: unknown): value is Database => {
+    return value !== null && typeof value === "object" && "transactions" in value && "actions" in value && "store" in value && "observe" in value && "system" in value && "extend" in value;
+  }
+
   export type Plugin<
     CS extends ComponentSchemas = any,
     RS extends ResourceSchemas = any,
@@ -134,6 +138,7 @@ export namespace Database {
   export namespace Plugin {
     export const create = createPlugin;
     export const combine = combinePlugins;
+    export type ToDatabase<P extends Database.Plugin> = P extends Database.Plugin<infer CS, infer RS, infer A, infer TD, infer S, infer AD> ? Database<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S, ToActionFunctions<AD>> : never;
   }
 
 }

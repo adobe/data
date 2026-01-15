@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect, vi } from "vitest";
 import { createObservedDatabase } from "./create-observed-database.js";
 import { Store } from "../../store/index.js";

@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Vec3 } from "../vec3/index.js";
 import type { Aabb } from "./index.js";
 

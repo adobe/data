@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Store } from "./store.js";
 import { Entity } from "../entity.js";
 import { Components } from "./components.js";

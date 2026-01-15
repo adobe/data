@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Schema } from "./schema.js";
 import { ToType } from "./to-type.js";
 

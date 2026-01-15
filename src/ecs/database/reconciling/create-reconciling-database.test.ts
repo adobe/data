@@ -1,3 +1,4 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect } from "vitest";
 import { createReconcilingDatabase } from "./create-reconciling-database.js";
 import { Store } from "../../store/index.js";
@@ -390,4 +391,3 @@ describe("createReconcilingDatabase", () => {
         expect(extended).toBe(reconciling);
     });
 });
-

@@ -1,6 +1,6 @@
 {
   "name": "@adobe/data",
-  "version": "0.9.4",
+  "version": "0.9.5",
   "description": "Adobe data oriented programming library",
   "type": "module",
   "sideEffects": false,
@@ -17,7 +17,7 @@
     "dev": "pnpm clean-cache && run-p dev:* dev:serve",
     "dev:serve": "vite",
     "dev:build": "tsc -b -w --preserveWatchOutput",
-    "dev:test": "pnpm test:watch",
+    "dev:test": "vitest --watch",
     "dev:apidocs": "nodemon -w README.md -w dist -x typedoc --delay 100",
     "dev:assembly": "nodemon -w assembly -e ts -x pnpm run asbuild:release --delay 100",
     "lint": "pnpm eslint .",
@@ -29,7 +29,6 @@
     "publish-public": "pnpm build && cd dist && pnpm publish --no-git-checks --access public",
     "perftest": "node dist/perftest/index.js",
     "test": "vitest --run",
-    "test:watch": "vitest --watch",
     "asbuild:debug": "asc assembly/index.ts -o dist/assembly/index.wasm --target debug --enable simd && echo built dist/assembly/index.wasm",
     "asbuild:release": "asc assembly/index.ts -o dist/assembly/index.wasm --target release --enable simd --optimize && echo built dist/assembly/index.wasm",
     "start": "npx serve ."

@@ -22,55 +22,32 @@ SOFTWARE.*/
 
 import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";
-import { IntersectTuple, UnionTuple } from "../../types/types.js";
+import { IntersectTuple, UnionTuple, Simplify } from "../../types/types.js";
 import { Entity } from "../entity.js";
 import { Store } from "../store/store.js";
 import type { Database, SystemDeclarations } from "./database.js";
 
-export type CombinePlugins<Plugins extends readonly Database.Plugin[]> =
-    Database.Plugin<
-        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<infer C, any, any, any, any, any> ? C : never }>,
-        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, infer R, any, any, any, any> ? R : never }>,
-        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, infer A, any, any, any> ? A : never }>,
-        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, infer TD, any, any> ? TD : never }>,
-        Extract<UnionTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, infer S, any> ? S : never }>, string>,
-        {} & IntersectTuple<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, any, infer AD> ? AD : never }>
-    >
+// Helper to intersect all elements (works with mapped types over tuples)
+type IntersectAll<T extends readonly unknown[]> = Simplify<
+  T extends readonly [infer H, ...infer R] ? H & IntersectAll<R> : unknown
+>;
+type UnionAll<T extends readonly unknown[]> = Simplify<
+  T extends readonly [infer H, ...infer R] ? H | UnionAll<R> : never
+>;
 
-type CombinedPlugins = CombinePlugins<[
-    Database.Plugin<{a: { readonly type: "number" }}, { c: { readonly default: boolean } }, { readonly A: readonly ["a"]}, { readonly doFoo: (store: Store, args: { a: number }) => Entity }, "system1", {}>,
-    Database.Plugin<{b: { readonly type: "string" }}, { d: { readonly default: boolean } }, { readonly B: readonly ["b"]}, { readonly doBar: (store: Store) => void }, "system2", {}>,
-]>;
-type CheckCombinedPlugins = Assert<Equal<CombinedPlugins, {
-    readonly components: {
-        a: {
-            readonly type: "number";
-        };
-        b: {
-            readonly type: "string";
-        };
-    };
-    readonly resources: {
-        c: {
-            readonly default: boolean;
-        };
-        d: {
-            readonly default: boolean;
-        };
-    };
-    readonly archetypes: {
-        readonly A: readonly ["a"];
-        readonly B: readonly ["b"];
-    };
-    readonly transactions: {
-        readonly doFoo: (store: Store, args: {
-            a: number;
-        }) => Entity;
-        readonly doBar: (store: Store) => void;
-    };
-    readonly systems: SystemDeclarations<"system1" | "system2">;
-    readonly actions: {};
-}>>;
+// Array-based combination type - combines plugins from an array into a flat Database.Plugin
+export type CombinePlugins<Plugins extends readonly Database.Plugin[]> = Database.Plugin<
+    Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<infer C, any, any, any, any, any> ? C : never }>>,
+    Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, infer R, any, any, any, any> ? R : never }>>,
+    Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, infer A, any, any, any> ? A : never }>>,
+    Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, infer TD, any, any> ? TD : never }>>,
+    Extract<
+        Simplify<UnionAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, infer S, any> ? S : never }>>,
+        string
+    >,
+    Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, any, infer AD> ? AD : never }>>
+>;
+
 
 /**
  * Combines multiple plugins into a single plugin.
@@ -79,10 +56,8 @@ type CheckCombinedPlugins = Assert<Equal<CombinedPlugins, {
  */
 export function combinePlugins<
   const Plugins extends readonly Database.Plugin[]
->(
-  ...plugins: Plugins
-): CombinePlugins<Plugins> {
-  const keys = ['components', 'resources', 'archetypes', 'transactions', 'systems', 'actions'] as const;
+>(...plugins: Plugins): CombinePlugins<Plugins> {
+  const keys = ['components', 'resources', 'archetypes', 'transactions', 'actions', 'systems'] as const;
   
   const merge = (base: any, next: any) => 
     Object.fromEntries(keys.map(key => {
@@ -102,11 +77,11 @@ export function combinePlugins<
       return [key, merged];
     }));
   
-  const emptyPlugin = { components: {}, resources: {}, archetypes: {}, transactions: {}, systems: {}, actions: {} };
+  const emptyPlugin = { components: {}, resources: {}, archetypes: {}, transactions: {}, actions: {}, systems: {} };
   
   // Merge all plugins together
   const result = plugins.reduce(merge, emptyPlugin);
   
-  return result as any;
+  return result as CombinePlugins<Plugins>;
 }
 

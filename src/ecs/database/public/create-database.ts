@@ -39,14 +39,15 @@ import { calculateSystemOrder } from "../calculate-system-order.js";
 
 export function createDatabase(): Database<{}, {}, {}, {}, never>
 export function createDatabase<
-    CS extends ComponentSchemas,
-    RS extends ResourceSchemas,
-    A extends ArchetypeComponents<StringKeyof<CS>>,
-    TD extends TransactionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A>,
-    S extends string,
-    AD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S> = {}
->(plugin: Database.Plugin<CS, RS, A, TD, S, AD>): Database<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S, ToActionFunctions<AD>>
-export function createDatabase(plugin: Database.Plugin<any, any, any, any, any, any>): any
+    P extends Database.Plugin<{}, {}, {}, {}, never, {}>
+>(plugin: P): Database<
+    FromSchemas<P extends Database.Plugin<infer CS, any, any, any, any, any> ? CS : never>,
+    FromSchemas<P extends Database.Plugin<any, infer RS, any, any, any, any> ? RS : never>,
+    P extends Database.Plugin<any, any, infer A, any, any, any> ? A : never,
+    ToTransactionFunctions<P extends Database.Plugin<any, any, any, infer TD, any, any> ? TD : never>,
+    P extends Database.Plugin<any, any, any, any, infer S, any> ? S : never,
+    ToActionFunctions<P extends Database.Plugin<any, any, any, any, any, infer AD> ? AD : never>
+>
 export function createDatabase<
     const C extends Components,
     const R extends ResourceComponents,

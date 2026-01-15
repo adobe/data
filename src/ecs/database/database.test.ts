@@ -106,10 +106,10 @@ describe("Database.Plugin.create", () => {
             });
 
             const extendedSchema = Database.Plugin.create({
+                extends: baseSchema,
                 components: {
                     velocity: { type: "number" }
                 },
-                extends: baseSchema
             });
 
             expect(extendedSchema.components).toHaveProperty("position");
@@ -152,8 +152,8 @@ describe("Database.Plugin.create", () => {
 
             const combinedBase = Database.Plugin.combine(pluginA, pluginB, pluginC) as any;
             const merged = Database.Plugin.create({
+                extends: combinedBase,
                 components: { d: { type: "number" } },
-                extends: combinedBase
             });
 
             expect(merged.components).toHaveProperty("a");
@@ -171,10 +171,10 @@ describe("Database.Plugin.create", () => {
             });
 
             const extendedSchema = Database.Plugin.create({
+                extends: baseSchema,
                 transactions: {
                     extendedAction: () => { }
                 },
-                extends: baseSchema
             });
 
             expect(extendedSchema.transactions).toHaveProperty("baseAction");
@@ -195,11 +195,11 @@ describe("Database.Plugin.create", () => {
             });
 
             const extendedSchema = Database.Plugin.create({
+                extends: baseSchema,
                 components: {
                     position: positionComponent, // Must use same reference
                     mass: { type: "number" as const }
                 },
-                extends: baseSchema
             });
 
             // All components should be present
@@ -218,6 +218,7 @@ describe("Database.Plugin.create", () => {
             });
 
             const extendedSchema = Database.Plugin.create({
+                extends: baseSchema,
                 components: {
                     velocity: { type: "number" }
                 },
@@ -225,7 +226,6 @@ describe("Database.Plugin.create", () => {
                     DynamicEntity: ["position", "velocity"],
                     LivingEntity: ["position", "health"]
                 },
-                extends: baseSchema
             });
 
             expect(extendedSchema.archetypes).toHaveProperty("DynamicEntity");

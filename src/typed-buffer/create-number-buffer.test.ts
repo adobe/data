@@ -31,4 +31,49 @@ describe("createNumberBuffer.copy", () => {
     });
 });
 
+describe("createNumberBuffer.isDefault", () => {
+    it("should return true for zero values (default for TypedArrays)", () => {
+        const buf = createNumberBuffer(F32.schema, 4);
+        // New buffer should be initialized to zeros
+        expect(buf.isDefault(0)).toBe(true);
+        expect(buf.isDefault(1)).toBe(true);
+        expect(buf.isDefault(2)).toBe(true);
+        expect(buf.isDefault(3)).toBe(true);
+    });
+
+    it("should return false for non-zero values", () => {
+        const buf = createNumberBuffer(F32.schema, 4);
+        buf.set(0, 1);
+        buf.set(1, 0.5);
+        buf.set(2, -1);
+        buf.set(3, 0); // explicitly set to 0
+
+        expect(buf.isDefault(0)).toBe(false);
+        expect(buf.isDefault(1)).toBe(false);
+        expect(buf.isDefault(2)).toBe(false);
+        expect(buf.isDefault(3)).toBe(true); // still 0
+    });
+
+    it("should work with schema.default override", () => {
+        const schema = { ...F32.schema, default: 42 };
+        const buf = createNumberBuffer(schema, 3);
+        // Even with schema.default, TypedArray default is still 0
+        expect(buf.isDefault(0)).toBe(true);
+        
+        buf.set(0, 42);
+        // Now it matches schema.default, but TypedArray check is still 0
+        expect(buf.isDefault(0)).toBe(false);
+        
+        buf.set(0, 0);
+        expect(buf.isDefault(0)).toBe(true);
+    });
+
+    it("should handle negative zero correctly", () => {
+        const buf = createNumberBuffer(F32.schema, 2);
+        buf.set(0, -0);
+        // -0 === 0 in JavaScript, so should be true
+        expect(buf.isDefault(0)).toBe(true);
+    });
+});
+
 

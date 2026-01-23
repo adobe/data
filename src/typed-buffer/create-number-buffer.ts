@@ -71,6 +71,11 @@ class NumberTypedBuffer extends TypedBuffer<number> {
         this.array[index] = value;
     }
 
+    isDefault(index: number): boolean {
+        // For TypedArray-backed buffers, default is always 0
+        return this.array[index] === 0;
+    }
+
     copyWithin(target: number, start: number, end: number): void {
         this.array.copyWithin(target, start, end);
     }

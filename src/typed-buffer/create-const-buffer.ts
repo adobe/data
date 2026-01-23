@@ -33,6 +33,10 @@ class ConstTypedBuffer<T> extends TypedBuffer<T> {
         // No-op: const buffer ignores set calls
     }
 
+    isDefault(_index: number): boolean {
+        return this.constValue === this.schema.default;
+    }
+
     copyWithin(_target: number, _start: number, _end: number): void {
         // No-op: const buffer copyWithin is a no-op
     }

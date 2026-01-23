@@ -96,4 +96,36 @@ describe('createConstBuffer', () => {
         expect(stringBuffer.get(0)).toBe('hello');
         expect(booleanBuffer.get(0)).toBe(true);
     });
+});
+
+describe('createConstBuffer.isDefault', () => {
+    it('should return true when const value matches schema.default', () => {
+        const buffer = createConstBuffer({ const: 42, default: 42 }, 3);
+        
+        expect(buffer.isDefault(0)).toBe(true);
+        expect(buffer.isDefault(1)).toBe(true);
+        expect(buffer.isDefault(2)).toBe(true);
+    });
+
+    it('should return false when const value does not match schema.default', () => {
+        const buffer = createConstBuffer({ const: 42, default: 0 }, 2);
+        
+        expect(buffer.isDefault(0)).toBe(false);
+        expect(buffer.isDefault(1)).toBe(false);
+    });
+
+    it('should work with object const values', () => {
+        const constValue = { x: 1, y: 2 };
+        const buffer = createConstBuffer({ const: constValue, default: constValue }, 2);
+        
+        expect(buffer.isDefault(0)).toBe(true);
+        expect(buffer.isDefault(1)).toBe(true);
+    });
+
+    it('should handle undefined default', () => {
+        const buffer = createConstBuffer({ const: undefined, default: undefined }, 2);
+        
+        expect(buffer.isDefault(0)).toBe(true);
+        expect(buffer.isDefault(1)).toBe(true);
+    });
 }); 

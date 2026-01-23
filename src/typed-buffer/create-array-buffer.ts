@@ -40,6 +40,17 @@ class ArrayTypedBuffer<T> extends TypedBuffer<T> {
         this.array[index] = value;
     }
 
+    isDefault(index: number): boolean {
+        // Array buffers require schema.default to be specified (can be undefined as a value)
+        if (!('default' in this.schema)) {
+            throw new Error("Array buffer requires schema.default to check for default values");
+        }
+        const defaultValue = this.schema.default;
+        // Use Object.is for comparison (handles NaN, +0/-0 correctly)
+        // If default is undefined, check if value is undefined
+        return this.array[index] === defaultValue;
+    }
+
     copyWithin(target: number, start: number, end: number): void {
         this.array.copyWithin(target, start, end);
     }

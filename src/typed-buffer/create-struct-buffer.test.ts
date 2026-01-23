@@ -244,4 +244,76 @@ describe("createStructBuffer", () => {
             expect(memorySavings).toBeCloseTo(0.125, 2); // 12.5% savings
         });
     });
+
+    describe("isDefault", () => {
+        it("should return true for zero-initialized structs", () => {
+            const schema: Schema = {
+                type: "object",
+                properties: {
+                    position: Vec3Schema,
+                    color: Vec4Schema
+                }
+            };
+
+            const buffer = createStructBuffer(schema, 2);
+            // New buffer should be initialized to zeros
+            expect(buffer.isDefault(0)).toBe(true);
+            expect(buffer.isDefault(1)).toBe(true);
+        });
+
+        it("should return false for non-zero structs", () => {
+            const schema: Schema = {
+                type: "object",
+                properties: {
+                    position: Vec3Schema,
+                    scale: F32.schema
+                }
+            };
+
+            const buffer = createStructBuffer(schema, 2);
+            buffer.set(0, { position: [1, 2, 3], scale: 1.5 });
+            
+            expect(buffer.isDefault(0)).toBe(false);
+            expect(buffer.isDefault(1)).toBe(true); // still zero
+        });
+
+        it("should check all struct fields are zero", () => {
+            const schema: Schema = {
+                type: "object",
+                properties: {
+                    a: F32.schema,
+                    b: F32.schema
+                }
+            };
+
+            const buffer = createStructBuffer(schema, 3);
+            buffer.set(0, { a: 0, b: 0 });
+            buffer.set(1, { a: 1, b: 0 });
+            buffer.set(2, { a: 0, b: 1 });
+
+            expect(buffer.isDefault(0)).toBe(true); // both zero
+            expect(buffer.isDefault(1)).toBe(false); // a is non-zero
+            expect(buffer.isDefault(2)).toBe(false); // b is non-zero
+        });
+
+        it("should work with packed layout", () => {
+            const schema: Schema = {
+                type: "object",
+                properties: {
+                    position: Vec3Schema,
+                    scale: F32.schema
+                },
+                layout: "packed"
+            };
+
+            const buffer = createStructBuffer(schema, 2);
+            expect(buffer.isDefault(0)).toBe(true);
+            
+            buffer.set(0, { position: [0, 0, 0], scale: 0 });
+            expect(buffer.isDefault(0)).toBe(true);
+            
+            buffer.set(0, { position: [1, 0, 0], scale: 0 });
+            expect(buffer.isDefault(0)).toBe(false);
+        });
+    });
 });

@@ -11,6 +11,7 @@ export interface ReadonlyTypedBuffer<T> {
     readonly typedArrayElementSizeInBytes: number;
     get(index: number): T;
     slice(start?: number, end?: number): ArrayLike<T> & Iterable<T>;
+    isDefault(index: number): boolean;
 }
 
 export abstract class TypedBuffer<T> implements ReadonlyTypedBuffer<T> {
@@ -33,4 +34,5 @@ export abstract class TypedBuffer<T> implements ReadonlyTypedBuffer<T> {
     abstract slice(start?: number, end?: number): ArrayLike<T> & Iterable<T>;
     abstract set(index: number, value: T): void;
     abstract copy(): TypedBuffer<T>;
+    abstract isDefault(index: number): boolean;
 }

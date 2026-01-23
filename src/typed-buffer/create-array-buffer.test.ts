@@ -35,4 +35,69 @@ describe("createArrayBuffer.copy", () => {
     });
 });
 
+describe("createArrayBuffer.isDefault", () => {
+    it("should require schema.default for array buffers", () => {
+        const buf = createArrayBuffer({ type: "string" }, 3);
+        
+        expect(() => {
+            buf.isDefault(0);
+        }).toThrow("Array buffer requires schema.default to check for default values");
+    });
+
+    it("should return true when value matches schema.default", () => {
+        const schema = { type: "string", default: "empty" } as const satisfies Schema;
+        const buf = createArrayBuffer(schema, 3);
+        
+        // Uninitialized values are undefined, not the default
+        expect(buf.isDefault(0)).toBe(false);
+        
+        buf.set(0, "empty");
+        buf.set(1, "not-empty");
+        buf.set(2, "empty");
+        
+        expect(buf.isDefault(0)).toBe(true);
+        expect(buf.isDefault(1)).toBe(false);
+        expect(buf.isDefault(2)).toBe(true);
+    });
+
+    it("should work with number defaults", () => {
+        const schema = { type: "number", default: 42 } as const satisfies Schema;
+        const buf = createArrayBuffer(schema, 3);
+        
+        buf.set(0, 42);
+        buf.set(1, 0);
+        buf.set(2, 42);
+        
+        expect(buf.isDefault(0)).toBe(true);
+        expect(buf.isDefault(1)).toBe(false);
+        expect(buf.isDefault(2)).toBe(true);
+    });
+
+    it("should work with object defaults using Object.is", () => {
+        const defaultObj = { x: 1, y: 2 };
+        const schema = { type: "object", default: defaultObj } as const satisfies Schema;
+        const buf = createArrayBuffer(schema, 3);
+        
+        buf.set(0, defaultObj);
+        buf.set(1, { x: 1, y: 2 }); // same value, different reference
+        buf.set(2, { x: 2, y: 3 }); // different value
+        
+        expect(buf.isDefault(0)).toBe(true); // same reference
+        expect(buf.isDefault(1)).toBe(false); // different reference (Object.is)
+        expect(buf.isDefault(2)).toBe(false); // different value
+    });
+
+    it("should handle undefined as default", () => {
+        const schema = { type: "string", default: undefined } as const satisfies Schema;
+        const buf = createArrayBuffer(schema, 2);
+        
+        // Uninitialized array elements are undefined
+        expect(buf.isDefault(0)).toBe(true);
+        expect(buf.isDefault(1)).toBe(true);
+        
+        buf.set(0, "value");
+        expect(buf.isDefault(0)).toBe(false);
+    });
+});
+
 

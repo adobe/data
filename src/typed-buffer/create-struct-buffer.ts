@@ -76,6 +76,18 @@ class StructTypedBuffer<S extends Schema, ArrayType extends keyof DataView32 = "
         this.write(this.dataView, index, value);
     }
 
+    isDefault(index: number): boolean {
+        // For TypedArray-backed structs, check if all Float32 values in the struct region are 0
+        const start = index * this.sizeInQuads;
+        const end = start + this.sizeInQuads;
+        for (let i = start; i < end; i++) {
+            if (this.typedArray[i] !== 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     copyWithin(target: number, start: number, end: number): void {
         this.dataView[this.arrayType].copyWithin(target * this.sizeInQuads, start * this.sizeInQuads, end * this.sizeInQuads);
     }

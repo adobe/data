@@ -113,6 +113,31 @@ export function createCoreTestSuite(
             expect((positionOnlyArchetypes[0].components as Set<string>).has("health")).toBe(false);
         });
 
+        it("should exclude multiple components - guarantees neither component exists in result", () => {
+            const core = factory({
+                position: positionSchema,
+                health: healthSchema,
+                name: nameSchema,
+            });
+
+            // Create archetypes with different component combinations
+            const positionOnly = core.ensureArchetype(["id", "position"]);
+            const positionHealth = core.ensureArchetype(["id", "position", "health"]);
+            const positionName = core.ensureArchetype(["id", "position", "name"]);
+            const positionHealthName = core.ensureArchetype(["id", "position", "health", "name"]);
+
+            // Query for position but exclude both health and name
+            // Should only return archetype with position only (neither health nor name)
+            const result = core.queryArchetypes(["position"], { exclude: ["health", "name"] });
+            expect(result).toHaveLength(1);
+            expect(result[0].components.has("position")).toBe(true);
+            expect((result[0].components as Set<string>).has("health")).toBe(false);
+            expect((result[0].components as Set<string>).has("name")).toBe(false);
+            
+            // Verify it's the position-only archetype
+            expect(result[0]).toBe(positionOnly);
+        });
+
         it("should ensure archetype creates new archetype when needed", () => {
             const core = factory({
                 position: positionSchema,

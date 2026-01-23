@@ -89,6 +89,8 @@ export interface Database<
 }
 
 export namespace Database {
+  export type FromPlugin<P extends Database.Plugin> = P extends Database.Plugin<infer CS, infer RS, infer A, infer TD, infer S, infer AD> ? Database<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S, ToActionFunctions<AD>> : never;
+
   export const create = createDatabase;
 
   export const is = (value: unknown): value is Database => {
@@ -114,7 +116,9 @@ export namespace Database {
   export namespace Plugin {
     export const create = createPlugin;
     export const combine = combinePlugins;
-    export type ToDatabase<P extends Database.Plugin> = P extends Database.Plugin<infer CS, infer RS, infer A, infer TD, infer S, infer AD> ? Database<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S, ToActionFunctions<AD>> : never;
+    export type ToDatabase<P extends Database.Plugin> = Database.FromPlugin<P>;
+    export type ToStore<P extends Database.Plugin> = Store<FromSchemas<P['components']>, FromSchemas<P['resources']>, P['archetypes']>;
+    export type ToSystemDatabase<P extends Database.Plugin> = Database.FromPlugin<P> & { readonly store: Database.Plugin.ToStore<P> };
   }
 
 }

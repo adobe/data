@@ -1,8 +1,8 @@
-# AsyncDataService.createLazy Type System
+# AsyncDataService.createLazy
 
 ## Overview
 
-`AsyncDataService.createLazy` provides a type-safe way to create lazy-loading wrappers around AsyncDataServices. The real service is only loaded when the first property is accessed.
+`AsyncDataService.createLazy` provides a type-safe way to create lazy-loading wrapper factories for AsyncDataServices. The real service is only loaded when the first property is accessed.
 
 ## Import
 
@@ -13,10 +13,13 @@ import { AsyncDataService } from "@adobe/data/service";
 ## API Surface
 
 ```typescript
-AsyncDataService.createLazy<T extends Service, Args = void>(
-  descriptor: LazyServiceDescriptor<T, Args>
-): T
+AsyncDataService.createLazy(
+  load: (...args: any[]) => Promise<Service>,
+  properties: { [key: string]: PropertyDescriptor }
+): (...args: Args) => Service
 ```
+
+Returns a **factory function** that creates lazy service instances. TypeScript automatically infers both the service type and argument types from the `load` function.
 
 ### Descriptor Format
 
@@ -67,15 +70,19 @@ interface AuthService extends Service {
   signOut: () => void;
 }
 
-const lazy = AsyncDataService.createLazy<AuthService>({
-  load: () => import('./auth-service').then(m => m.createAuthService()),
-  properties: {
+// Define the lazy factory
+const createLazyAuthService = AsyncDataService.createLazy(
+  () => import('./auth-service').then(m => m.createAuthService()),
+  {
     isSignedIn: 'observe',
     accessToken: 'observe',
     signIn: 'fn:promise',
     signOut: 'fn:void'
   }
-});
+);
+
+// Create an instance
+const authService = createLazyAuthService();
 ```
 
 ### Service With Constructor Args
@@ -93,13 +100,18 @@ type ServiceConfig = {
   timeout?: number;
 };
 
-const lazy = AsyncDataService.createLazy<ConfigService, ServiceConfig>({
-  load: (args) => import('./config-service').then(m => m.create(args)),
-  properties: {
+// Define the lazy factory
+const createLazyConfigService = AsyncDataService.createLazy(
+  (config: ServiceConfig) => import('./config-service').then(m => m.create(config)),
+  {
     config: 'observe',
     fetch: 'fn:promise'
   }
-});
+);
+
+// Create instances with different configs
+const prodService = createLazyConfigService({ apiUrl: 'https://api.prod.com' });
+const testService = createLazyConfigService({ apiUrl: 'https://api.test.com' });
 ```
 
 ### All Property Types
@@ -124,16 +136,18 @@ interface ComplexService extends Service {
   clearCache: () => void;
 }
 
-const lazy = AsyncDataService.createLazy<ComplexService>({
-  load: () => import('./complex').then(m => m.createService()),
-  properties: {
+const createLazyComplexService = AsyncDataService.createLazy(
+  () => import('./complex').then(m => m.createService()),
+  {
     status: 'observe',
     selectById: 'fn:observe',
     streamEvents: 'fn:generator',
     fetchData: 'fn:promise',
     clearCache: 'fn:void'
   }
-});
+);
+
+const service = createLazyComplexService();
 ```
 
 ## Compile-Time Error Examples
@@ -142,46 +156,46 @@ const lazy = AsyncDataService.createLazy<ComplexService>({
 
 ```typescript
 // ❌ Error: Property 'signOut' is missing
-const error = AsyncDataService.createLazy<AuthService>({
-  load: () => import('./auth').then(m => m.create()),
-  properties: {
+const error = AsyncDataService.createLazy(
+  () => import('./auth').then(m => m.create()),
+  {
     isSignedIn: 'observe',
     accessToken: 'observe',
     signIn: 'fn:promise'
-    // Missing: signOut
+    // Missing: signOut - TypeScript will error
   }
-});
+);
 ```
 
 ### Wrong Descriptor Type
 
 ```typescript
 // ❌ Error: Type '"fn:observe"' is not assignable to type '"observe"'
-const error = AsyncDataService.createLazy<AuthService>({
-  load: () => import('./auth').then(m => m.create()),
-  properties: {
+const error = AsyncDataService.createLazy(
+  () => import('./auth').then(m => m.create()),
+  {
     isSignedIn: 'fn:observe', // Wrong: should be 'observe'
     accessToken: 'observe',
     signIn: 'fn:promise',
     signOut: 'fn:void'
   }
-});
+);
 ```
 
 ### Extra Property
 
 ```typescript
 // ❌ Error: 'unknownProp' does not exist in type
-const error = AsyncDataService.createLazy<AuthService>({
-  load: () => import('./auth').then(m => m.create()),
-  properties: {
+const error = AsyncDataService.createLazy(
+  () => import('./auth').then(m => m.create()),
+  {
     isSignedIn: 'observe',
     accessToken: 'observe',
     signIn: 'fn:promise',
     signOut: 'fn:void',
     unknownProp: 'observe' // Extra: doesn't exist in service
   }
-});
+);
 ```
 
 ## Behavior (Queue Strategy)

@@ -38,19 +38,41 @@ interface MyService extends Service {
 type Check = Assert<AsyncDataService.IsValid<MyService>>;
 ```
 
-### `AsyncDataService.createLazy<T, Args?>(descriptor)`
+### `AsyncDataService.createLazy(load, properties)`
 
-Creates a lazy-loading wrapper around a service. The real service is only loaded when first accessed.
+Creates a lazy-loading wrapper factory for a service. Returns a factory function that creates service instances. The real service is only loaded when first accessed. TypeScript automatically infers service and argument types.
 
 ```typescript
-const lazyService = AsyncDataService.createLazy<MyService>({
-  load: () => import('./my-service').then(m => m.createService()),
-  properties: {
+// Define the factory
+const createLazyService = AsyncDataService.createLazy(
+  () => import('./my-service').then(m => m.createService()),
+  {
     data: 'observe',
     fetchData: 'fn:promise'
   }
-});
+);
+
+// Create instances
+const service = createLazyService();
 ```
+
+**With Constructor Args:**
+
+```typescript
+const createLazyService = AsyncDataService.createLazy(
+  (config: Config) => import('./my-service').then(m => m.createService(config)),
+  { data: 'observe', fetch: 'fn:promise' }
+);
+
+const service = createLazyService({ apiUrl: '...' });
+```
+
+**Features:**
+- ✅ Full type inference (no generic type parameters needed)
+- ✅ Lazy loading on first property access
+- ✅ Call queuing for functions (all calls execute in order after load)
+- ✅ Proper cleanup for Observe subscriptions
+- ✅ Factory pattern for multiple instances with different args
 
 See [create-lazy.md](./create-lazy.md) for complete documentation.
 

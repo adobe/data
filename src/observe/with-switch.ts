@@ -26,8 +26,10 @@ export function withSwitch<K extends string, T extends Record<K, Observe<any>>>(
 
     const keyUnsubscribe = key((selectedKey) => {
       // Unsubscribe from the previous observable before subscribing to the new one
+      currentUnsubscribe?.();
       if (currentUnsubscribe) {
         currentUnsubscribe();
+        currentUnsubscribe = null;
       }
 
       // Validate that the key exists in the record
@@ -47,6 +49,7 @@ export function withSwitch<K extends string, T extends Record<K, Observe<any>>>(
       keyUnsubscribe();
       if (currentUnsubscribe) {
         currentUnsubscribe();
+        currentUnsubscribe = null;
       }
     };
   };

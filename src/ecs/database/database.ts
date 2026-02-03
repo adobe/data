@@ -47,6 +47,18 @@ export type SystemDeclaration = {
 }
 export type SystemDeclarations<S extends string> = { readonly [K in S]: SystemDeclaration }
 
+/**
+ * Service factories map - functions that create services from the database.
+ */
+export type ServiceFactories<DB = any> = { readonly [K: string]: (db: DB) => unknown };
+
+/**
+ * Extracts service types from service factories.
+ */
+export type FromServiceFactories<SF> = {
+  [K in keyof SF]: SF[K] extends (db: any) => infer R ? R : never
+};
+
 export interface Database<
   C extends Components = {},
   R extends ResourceComponents = {},
@@ -54,9 +66,11 @@ export interface Database<
   F extends TransactionFunctions = {},
   S extends string = never,
   AF extends ActionFunctions = {},
+  SV = {},
 > extends ReadonlyStore<C, R, A>, Service {
   readonly transactions: F & Service;
-  readonly actions: AF & Service;  
+  readonly actions: AF & Service;
+  readonly services: SV;
   readonly observe: {
     readonly components: { readonly [K in StringKeyof<C>]: Observe<void> };
     readonly resources: { readonly [K in StringKeyof<R>]: Observe<R[K]> };
@@ -78,18 +92,19 @@ export interface Database<
   }
   toData(): unknown
   fromData(data: unknown): void
-  extend<P extends Database.Plugin<any, any, any, any, any, any>>(plugin: P): Database<
-    C & (P extends Database.Plugin<infer XC, any, any, any, any, any> ? FromSchemas<XC> : never),
-    R & (P extends Database.Plugin<any, infer XR, any, any, any, any> ? FromSchemas<XR> : never),
-    A & (P extends Database.Plugin<any, any, infer XA, any, any, any> ? XA : never),
-    F & (P extends Database.Plugin<any, any, any, infer XTD, any, any> ? ToTransactionFunctions<XTD> : never),
-    S | (P extends Database.Plugin<any, any, any, any, infer XS, any> ? XS : never),
-    AF & (P extends Database.Plugin<any, any, any, any, any, infer XAD> ? ToActionFunctions<XAD> : never)
+  extend<P extends Database.Plugin<any, any, any, any, any, any, any>>(plugin: P): Database<
+    C & (P extends Database.Plugin<infer XC, any, any, any, any, any, any> ? FromSchemas<XC> : never),
+    R & (P extends Database.Plugin<any, infer XR, any, any, any, any, any> ? FromSchemas<XR> : never),
+    A & (P extends Database.Plugin<any, any, infer XA, any, any, any, any> ? XA : never),
+    F & (P extends Database.Plugin<any, any, any, infer XTD, any, any, any> ? ToTransactionFunctions<XTD> : never),
+    S | (P extends Database.Plugin<any, any, any, any, infer XS, any, any> ? XS : never),
+    AF & (P extends Database.Plugin<any, any, any, any, any, infer XAD, any> ? ToActionFunctions<XAD> : never),
+    SV & (P extends Database.Plugin<any, any, any, any, any, any, infer XSVF> ? FromServiceFactories<XSVF> : never)
   >;
 }
 
 export namespace Database {
-  export type FromPlugin<P extends Database.Plugin> = P extends Database.Plugin<infer CS, infer RS, infer A, infer TD, infer S, infer AD> ? Database<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S, ToActionFunctions<AD>> : never;
+  export type FromPlugin<P extends Database.Plugin> = P extends Database.Plugin<infer CS, infer RS, infer A, infer TD, infer S, infer AD, infer SVF> ? Database<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S, ToActionFunctions<AD>, FromServiceFactories<SVF>> : never;
 
   export const create = createDatabase;
 
@@ -103,7 +118,8 @@ export namespace Database {
     A extends ArchetypeComponents<StringKeyof<CS>> = any,
     TD extends TransactionDeclarations<FromSchemas<CS>, FromSchemas<RS>, any> = any,
     S extends string = any,
-    AD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S> = any
+    AD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S> = any,
+    SVF extends ServiceFactories = any
   > = {
     readonly components: CS;
     readonly resources: RS;
@@ -111,6 +127,7 @@ export namespace Database {
     readonly transactions: TD;
     readonly systems: SystemDeclarations<S>;
     readonly actions: AD;
+    readonly services: SVF;
   };
 
   export namespace Plugin {

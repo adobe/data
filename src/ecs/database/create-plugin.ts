@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Database, SystemFunction } from "./database.js";
+import { Database, SystemFunction, ServiceFactories, FromServiceFactories } from "./database.js";
 import type { ComponentSchemas } from "../component-schemas.js";
 import type { ResourceSchemas } from "../resource-schemas.js";
 import type { ArchetypeComponents } from "../store/archetype-components.js";
@@ -20,8 +20,24 @@ type RemoveIndex<T> = Simplify<{
     ]: T[K]
 }>;
 
+/**
+ * Database type with services from extended plugin.
+ * Used for typing service factory parameters and actions/systems that access services.
+ */
+type DatabaseWithServices<
+    CS, RS, A, TD, S extends string, AD, XP extends Database.Plugin
+> = Database<
+    FromSchemas<CS & XP['components']>,
+    FromSchemas<RS & XP['resources']>,
+    A & XP['archetypes'],
+    ToTransactionFunctions<TD & XP['transactions']>,
+    S | StringKeyof<XP['systems']>,
+    ToActionFunctions<AD & XP['actions']>,
+    FromServiceFactories<XP['services']>
+>;
+
 function validatePropertyOrder(plugins: Record<string, unknown>): void {
-    const expectedOrder = ['extends', 'components', 'resources', 'archetypes', 'transactions', 'actions', 'systems'];
+    const expectedOrder = ['extends', 'services', 'components', 'resources', 'archetypes', 'transactions', 'actions', 'systems'];
     const actualKeys = Object.keys(plugins);
     const definedKeys = actualKeys.filter(key => key in plugins);
 
@@ -52,39 +68,52 @@ function validatePropertyOrder(plugins: Record<string, unknown>): void {
  * 
  * Properties MUST be defined in this exact order:
  * 1. extends (optional) - Base plugin to extend
- * 2. components (optional) - Component schema definitions
- * 3. resources (optional) - Resource schema definitions
- * 4. archetypes (optional) - Archetype definitions
- * 5. transactions (optional) - Transaction declarations
- * 6. actions (optional) - Action declarations
- * 7. systems (optional) - System declarations
+ * 2. services (optional) - Service factory functions
+ * 3. components (optional) - Component schema definitions
+ * 4. resources (optional) - Resource schema definitions
+ * 5. archetypes (optional) - Archetype definitions
+ * 6. transactions (optional) - Transaction declarations
+ * 7. actions (optional) - Action declarations
+ * 8. systems (optional) - System declarations
  * 
  * Example:
  * ```ts
  * Database.Plugin.create({
  *   extends: basePlugin,     // 1. extends first
- *   components: { ... },     // 2. components
- *   resources: { ... },      // 3. resources
- *   archetypes: { ... },     // 4. archetypes
- *   transactions: { ... },   // 5. transactions
- *   actions: { ... },        // 6. actions
- *   systems: { ... }         // 7. systems last
+ *   services: {              // 2. services last
+ *     myService: (db) => createMyService(db.resources.config),
+ *   }
+ *   components: { ... },     // 3. components
+ *   resources: { ... },      // 4. resources
+ *   archetypes: { ... },     // 5. archetypes
+ *   transactions: { ... },   // 6. transactions
+ *   actions: { ... },        // 7. actions
+ *   systems: { ... },        // 8. systems
  * })
  * ```
+ * 
+ * **Services**: Factory functions that create singleton services. Services from
+ * extended plugins are initialized first, ensuring proper dependency order.
+ * Service factories receive the database with access to extended plugin's
+ * resources, transactions, actions, and services.
  * 
  * @throws Error if properties are not in the correct order
  */
 export function createPlugin<
-    const XP extends Database.Plugin<{}, {}, {}, {}, never, {}>,
+    const XP extends Database.Plugin<{}, {}, {}, {}, never, {}, {}>,
     const CS extends ComponentSchemas,
     const RS extends ResourceSchemas,
     const A extends ArchetypeComponents<StringKeyof<RemoveIndex<CS> & XP['components']>>,
     const TD extends TransactionDeclarations<FromSchemas<RemoveIndex<CS> & XP['components']>, FromSchemas<RemoveIndex<RS> & XP['resources']>, RemoveIndex<A> & XP['archetypes']>,
     const AD,
     const S extends string = never,
+    const SVF extends ServiceFactories<Database.FromPlugin<XP>> = {},
 >(
     plugins: {
         extends?: XP,
+        services?: SVF & {
+            readonly [K: string]: (db: Database.FromPlugin<XP>) => unknown
+        },
         components?: CS,
         resources?: RS,
         archetypes?: A,
@@ -96,7 +125,8 @@ export function createPlugin<
                 RemoveIndex<A> & XP['archetypes'],
                 ToTransactionFunctions<RemoveIndex<TD> & XP['transactions']>,
                 string,
-                ToActionFunctions<XP['actions']>
+                ToActionFunctions<XP['actions']>,
+                FromServiceFactories<RemoveIndex<SVF> & XP['services']>
             >, input?: any) => any
         }
         systems?: { readonly [K in S]: {
@@ -106,12 +136,15 @@ export function createPlugin<
                 RemoveIndex<A> & XP['archetypes'],
                 ToTransactionFunctions<RemoveIndex<TD> & XP['transactions']>,
                 string,
-                ToActionFunctions<RemoveIndex<AD> & XP['actions']>
-            > & { readonly store: Store<
-                FromSchemas<RemoveIndex<CS> & XP['components']>,
-                FromSchemas<RemoveIndex<RS> & XP['resources']>,
-                RemoveIndex<A> & XP['archetypes']
-            > }) => SystemFunction | void;
+                ToActionFunctions<RemoveIndex<AD> & XP['actions']>,
+                FromServiceFactories<RemoveIndex<SVF> & XP['services']>
+            > & {
+                readonly store: Store<
+                    FromSchemas<RemoveIndex<CS> & XP['components']>,
+                    FromSchemas<RemoveIndex<RS> & XP['resources']>,
+                    RemoveIndex<A> & XP['archetypes']
+                >
+            }) => SystemFunction | void;
             readonly schedule?: {
                 readonly before?: readonly NoInfer<Exclude<S | StringKeyof<XP['systems']>, K>>[];
                 readonly after?: readonly NoInfer<Exclude<S | StringKeyof<XP['systems']>, K>>[];
@@ -126,12 +159,14 @@ export function createPlugin<
     RemoveIndex<A>,
     RemoveIndex<TD>,
     S,
-    AD & ActionDeclarations<FromSchemas<RemoveIndex<CS>>, FromSchemas<RemoveIndex<RS>>, RemoveIndex<A>, ToTransactionFunctions<RemoveIndex<TD>>, S>>
-]> {
+    AD & ActionDeclarations<FromSchemas<RemoveIndex<CS>>, FromSchemas<RemoveIndex<RS>>, RemoveIndex<A>, ToTransactionFunctions<RemoveIndex<TD>>, S>,
+    RemoveIndex<SVF>
+>]> {
     validatePropertyOrder(plugins);
 
     // Normalize plugins descriptor to a plugin object in correct order
     const plugin: any = {
+        services: plugins.services ?? {},
         components: plugins.components ?? {},
         resources: plugins.resources ?? {},
         archetypes: plugins.archetypes ?? {},

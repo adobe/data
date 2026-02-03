@@ -286,7 +286,7 @@ function createDatabaseFromStoreTransactionsAndSystems<
     // Calculate system execution order
     let systemOrder = calculateSystemOrder(allSystemDeclarations);
 
-    // Services container - services are initialized lazily via extend
+    // Services container - services are generally initalized via extend.
     const services: Record<string, unknown> = {};
 
     // Create partial database for system initialization (two-phase)

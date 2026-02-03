@@ -16,6 +16,13 @@ describe("Database.Plugin.create", () => {
 
             expect(() => {
                 Database.Plugin.create({
+                    components: {},
+                    services: {}, // services should come before components
+                });
+            }).toThrow('Property "services" must come before "components"');
+
+            expect(() => {
+                Database.Plugin.create({
                     systems: {},
                     actions: {}, // actions should come before systems
                 });
@@ -33,6 +40,7 @@ describe("Database.Plugin.create", () => {
             expect(() => {
                 Database.Plugin.create({
                     extends: undefined,
+                    services: {},
                     components: {},
                     resources: {},
                     archetypes: {},
@@ -44,6 +52,7 @@ describe("Database.Plugin.create", () => {
 
             expect(() => {
                 Database.Plugin.create({
+                    services: {},
                     components: {},
                     resources: {},
                     archetypes: {},
@@ -52,6 +61,21 @@ describe("Database.Plugin.create", () => {
                     systems: {},
                 });
             }).not.toThrow();
+        });
+
+        it("should allow actions to access services from the same plugin", () => {
+            const authService = { token: 'test', isAuthenticated: true };
+            const plugin = Database.Plugin.create({
+                services: {
+                    auth: () => authService,
+                },
+                actions: {
+                    getAuth: (db) => db.services.auth,
+                },
+            });
+
+            expect(plugin.services.auth).toBeDefined();
+            expect(plugin.actions.getAuth).toBeDefined();
         });
     });
 

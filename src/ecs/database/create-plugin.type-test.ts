@@ -727,9 +727,181 @@ function checkDatabaseTypeFromExtendedPlugin() {
     });
 
     const db = Database.create(extendedPlugin);
-    type ResourcesType = typeof db extends Database<any, infer R, any, any, any, any> ? R : never;
+    type ResourcesType = typeof db extends Database<any, infer R, any, any, any, any, any> ? R : never;
     type CheckResources = Assert<Equal<ResourcesType, {
         schedulerState: SchedulerState;
     }>>;
 
+}
+
+// ============================================================================
+// SERVICE FACTORY TESTS
+// ============================================================================
+
+// Mock service types for testing
+type MockEnvironmentService = { readonly env: string; readonly getConfig: () => string };
+type MockAuthService = { readonly token: string; readonly isAuthenticated: boolean };
+
+// Test: Basic service factory inference
+function validServiceFactoryBasic() {
+    const plugin = createPlugin({
+        services: {
+            auth: (_db) => ({ token: 'test', isAuthenticated: true }) as MockAuthService,
+        },
+    });
+
+    // Check the plugin's service factory type
+    type PluginType = typeof plugin;
+    type PluginServices = PluginType['services'];
+    type AuthFactory = PluginServices['auth'];
+    // The factory should be a function returning MockAuthService
+    type CheckAuthFactory = Assert<Equal<ReturnType<AuthFactory>, MockAuthService>>;
+}
+
+// Test: Service accessible in systems
+function validServiceAccessInSystems() {
+    const plugin = createPlugin({
+        services: {
+            auth: (_db) => ({ token: 'test', isAuthenticated: true }) as MockAuthService,
+        },
+        systems: {
+            testSystem: {
+                create: (db) => () => {
+                    // Service should be accessible with correct type
+                    type AuthType = typeof db.services.auth;
+                    type CheckAuthAccess = Assert<Equal<AuthType, MockAuthService>>;
+                },
+            },
+        },
+    });
+}
+
+// Test: Service factory with extended plugin - db has access to base plugin
+function validServiceFactoryWithExtendedPlugin() {
+    const basePlugin = createPlugin({
+        resources: {
+            environment: { default: null as MockEnvironmentService | null },
+        },
+        transactions: {
+            setEnvironment: (store, env: MockEnvironmentService | null) => {
+                store.resources.environment = env;
+            },
+        },
+    });
+
+    const extendedPlugin = createPlugin({
+        extends: basePlugin,
+        services: {
+            // Service factory has access to base plugin's db type
+            auth: (db) => {
+                // Verify db has access to base plugin's resources
+                type DbResources = typeof db.resources;
+                type CheckEnvAccess = Assert<Equal<DbResources['environment'], MockEnvironmentService | null>>;
+
+                // Verify db has access to base plugin's transactions
+                // Note: ToTransactionFunctions wraps the input type with AsyncArgsProvider union
+                db.transactions.setEnvironment(null);
+
+                return { token: 'test', isAuthenticated: true } as MockAuthService;
+            },
+        },
+    });
+
+    // Verify the extended plugin has the service factory
+    type ExtendedServices = typeof extendedPlugin['services'];
+    type AuthFactory = ExtendedServices['auth'];
+    type CheckAuthFactory = Assert<Equal<ReturnType<AuthFactory>, MockAuthService>>;
+}
+
+// Test: Service accessible in actions (same plugin)
+function validServiceAccessInActions() {
+    const plugin = createPlugin({
+        services: {
+            auth: (_db) => ({ token: 'test', isAuthenticated: true }) as MockAuthService,
+        },
+        actions: {
+            useAuth: (db) => {
+                // Current plugin's services should be accessible in actions
+                type AuthType = typeof db.services.auth;
+                type CheckAuthAccess = Assert<Equal<AuthType, MockAuthService>>;
+            },
+        },
+    });
+}
+
+// Test: Extended plugin services accessible in current plugin's actions
+function validExtendedServiceAccessInActions() {
+    const basePlugin = createPlugin({
+        services: {
+            auth: (_db) => ({ token: 'test', isAuthenticated: true }) as MockAuthService,
+        },
+    });
+
+    const extendedPlugin = createPlugin({
+        extends: basePlugin,
+        actions: {
+            useAuth: (db) => {
+                // Extended plugin's services should be accessible
+                type AuthType = typeof db.services.auth;
+                type CheckAuthAccess = Assert<Equal<AuthType, MockAuthService>>;
+            },
+        },
+    });
+}
+
+// Test: Chained extension with services
+function validChainedExtensionWithServices() {
+    const level1 = createPlugin({
+        resources: {
+            env: { default: null as MockEnvironmentService | null },
+        },
+    });
+
+    const level2 = createPlugin({
+        extends: level1,
+        services: {
+            // Service can access level1's resources
+            auth: (db) => {
+                type CheckEnvAccess = Assert<Equal<typeof db.resources.env, MockEnvironmentService | null>>;
+                return { token: 'test', isAuthenticated: true } as MockAuthService;
+            },
+        },
+    });
+
+    const level3 = createPlugin({
+        extends: level2,
+        services: {
+            // Service can access level1's resources and level2's services
+            session: (db) => {
+                type CheckEnvAccess = Assert<Equal<typeof db.resources.env, MockEnvironmentService | null>>;
+                type CheckAuthAccess = Assert<Equal<typeof db.services.auth, MockAuthService>>;
+                return { sessionId: 'abc123' } as { sessionId: string };
+            },
+        },
+        systems: {
+            testSystem: {
+                create: (db) => () => {
+                    // All services should be accessible in systems
+                    type AuthType = typeof db.services.auth;
+                    type SessionType = typeof db.services.session;
+                    type CheckAuth = Assert<Equal<AuthType, MockAuthService>>;
+                    type CheckSession = Assert<Equal<SessionType, { sessionId: string }>>;
+                },
+            },
+        },
+    });
+}
+
+// Test: Service cannot access current plugin's services (only extended)
+function invalidServiceAccessCurrentPluginServices() {
+    createPlugin({
+        services: {
+            a: (_db) => ({ value: 1 }),
+            b: (db) => {
+                // @ts-expect-error - Service 'a' is not accessible because it's in the same plugin
+                const _value = db.services.a;
+                return { value: 2 };
+            },
+        },
+    });
 }

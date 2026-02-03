@@ -1016,7 +1016,7 @@ describe("createDatabase", () => {
     it("should return the same instance when extended with systems", () => {
         // Create a database with initial systems
         const { baseStore, actions } = createStoreConfig();
-        
+
         const systemOneCalled = vi.fn();
         const database = Database.create(baseStore, actions, {
             systemOne: {
@@ -1043,13 +1043,152 @@ describe("createDatabase", () => {
         });
 
         const extended = database.extend(extensionPlugin);
-        
+
         // This should pass - same database instance
         expect(extended).toBe(database);
-        
+
         // Verify both systems are available and functional
         expect((extended.system as any).functions.systemOne).toBeDefined();
         expect((extended.system as any).functions.systemTwo).toBeDefined();
+    });
+
+    describe("services", () => {
+        it("should initialize services immediately when extending with a plugin", () => {
+            const database = createTestDatabase();
+
+            const authPlugin = Database.Plugin.create({
+                services: {
+                    auth: (_db) => ({ token: 'test-token', isAuthenticated: true }),
+                },
+            });
+
+            const extended = database.extend(authPlugin);
+
+            // Services should be immediately available
+            expect(extended.services.auth).toBeDefined();
+            expect(extended.services.auth.token).toBe('test-token');
+            expect(extended.services.auth.isAuthenticated).toBe(true);
+        });
+
+        it("should initialize services in correct order when extending with dependent services", () => {
+            const initializationOrder: string[] = [];
+
+            const database = createTestDatabase();
+
+            // Base plugin with a config service
+            const basePlugin = Database.Plugin.create({
+                services: {
+                    config: (_db) => {
+                        initializationOrder.push('config');
+                        return { apiUrl: 'https://api.example.com' };
+                    },
+                },
+            });
+
+            // Extended plugin with auth service that depends on config
+            const authPlugin = Database.Plugin.create({
+                extends: basePlugin,
+                services: {
+                    auth: (db) => {
+                        initializationOrder.push('auth');
+                        // Auth service depends on config service from base plugin
+                        const apiUrl = db.services.config.apiUrl;
+                        return { token: 'test-token', apiUrl };
+                    },
+                },
+            });
+
+            const extended = database.extend(authPlugin);
+
+            // Verify initialization order: base services first, then extended
+            expect(initializationOrder).toEqual(['config', 'auth']);
+
+            // Both services should be available
+            expect(extended.services.config).toBeDefined();
+            expect(extended.services.config.apiUrl).toBe('https://api.example.com');
+            expect(extended.services.auth).toBeDefined();
+            expect(extended.services.auth.token).toBe('test-token');
+            expect(extended.services.auth.apiUrl).toBe('https://api.example.com');
+        });
+
+        it("should initialize services in correct order with multiple levels of extension", () => {
+            const initializationOrder: string[] = [];
+
+            const database = createTestDatabase();
+
+            // Level 1: Environment service
+            const envPlugin = Database.Plugin.create({
+                services: {
+                    env: (_db) => {
+                        initializationOrder.push('env');
+                        return { isDev: true, apiBase: 'https://dev.api.example.com' };
+                    },
+                },
+            });
+
+            // Level 2: Config service depends on env
+            const configPlugin = Database.Plugin.create({
+                extends: envPlugin,
+                services: {
+                    config: (db) => {
+                        initializationOrder.push('config');
+                        return {
+                            apiUrl: `${db.services.env.apiBase}/v1`,
+                            debug: db.services.env.isDev,
+                        };
+                    },
+                },
+            });
+
+            // Level 3: Auth service depends on config
+            const authPlugin = Database.Plugin.create({
+                extends: configPlugin,
+                services: {
+                    auth: (db) => {
+                        initializationOrder.push('auth');
+                        return {
+                            token: 'test-token',
+                            endpoint: `${db.services.config.apiUrl}/auth`,
+                        };
+                    },
+                },
+            });
+
+            const extended = database.extend(authPlugin);
+
+            // Verify initialization order: env -> config -> auth
+            expect(initializationOrder).toEqual(['env', 'config', 'auth']);
+
+            // All services should be available with correct values
+            expect(extended.services.env.isDev).toBe(true);
+            expect(extended.services.config.apiUrl).toBe('https://dev.api.example.com/v1');
+            expect(extended.services.auth.endpoint).toBe('https://dev.api.example.com/v1/auth');
+        });
+
+        it("should make services available immediately after extend returns", () => {
+            const database = createTestDatabase();
+
+            const plugin = Database.Plugin.create({
+                services: {
+                    logger: (_db) => ({
+                        log: (msg: string) => console.log(msg),
+                        level: 'info',
+                    }),
+                    analytics: (_db) => ({
+                        track: (event: string) => { },
+                        userId: 'test-user',
+                    }),
+                },
+            });
+
+            const extended = database.extend(plugin);
+
+            // Both services should be immediately available
+            expect(extended.services.logger).toBeDefined();
+            expect(extended.services.logger.level).toBe('info');
+            expect(extended.services.analytics).toBeDefined();
+            expect(extended.services.analytics.userId).toBe('test-user');
+        });
     });
 });
 

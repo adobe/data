@@ -286,12 +286,16 @@ function createDatabaseFromStoreTransactionsAndSystems<
     // Calculate system execution order
     let systemOrder = calculateSystemOrder(allSystemDeclarations);
 
+    // Services container - services are initialized lazily via extend
+    const services: Record<string, unknown> = {};
+
     // Create partial database for system initialization (two-phase)
     const partialDatabase: any = {
         serviceName: "ecs-database-service",
         ...reconcilingDatabase,
         transactions,
         actions, // Set actions before adding wrappers
+        services,
         store,
         system: {
             functions: {},  // Empty initially
@@ -316,7 +320,7 @@ function createDatabaseFromStoreTransactionsAndSystems<
     const extendedPlugins = new Set<Database.Plugin<any, any, any, any, any, any>>();
 
     const extend = <
-        P extends Database.Plugin<any, any, any, any, any, any>
+        P extends Database.Plugin<any, any, any, any, any, any, any>
     >(
         plugin: P,
     ) => {
@@ -329,12 +333,23 @@ function createDatabaseFromStoreTransactionsAndSystems<
 
             const pluginTransactions = plugin.transactions ?? {};
             const pluginActions = plugin.actions ?? {};
+            const pluginServices = plugin.services ?? {};
 
             // Add transaction wrappers for the new transactions
             addTransactionWrappers(pluginTransactions);
 
             // Add action wrappers for the new actions
             addActionWrappers(pluginActions, partialDatabase);
+
+            // Initialize services - service factories receive the database instance
+            // Services are initialized in declaration order, allowing dependencies
+            // on previously initialized services (from extended plugins)
+            for (const name in pluginServices) {
+                if (!(name in services)) {
+                    const factory = pluginServices[name];
+                    services[name] = factory(partialDatabase);
+                }
+            }
 
             // If plugin has new systems, extend in place rather than recreating
             if (plugin.systems && Object.keys(plugin.systems).length > 0) {

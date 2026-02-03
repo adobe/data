@@ -144,7 +144,7 @@ function testDeepNestingInference() {
             r1: { default: 0 as number },
         },
         transactions: {
-            t1: (store) => {},
+            t1: (store) => { },
         },
     });
 
@@ -157,7 +157,7 @@ function testDeepNestingInference() {
             r2: { default: "" as string },
         },
         transactions: {
-            t2: (store, arg: number) => {},
+            t2: (store, arg: number) => { },
         },
     });
 
@@ -207,12 +207,12 @@ function testSystemsAndActionsInference() {
         archetypes: {},
         transactions: {},
         actions: {
-            baseAction: (db) => {},
-            baseActionWithInput: (db, input: { value: number }) => {},
+            baseAction: (db) => { },
+            baseActionWithInput: (db, input: { value: number }) => { },
         },
         systems: {
             input: {
-                create: (db) => () => {},
+                create: (db) => () => { },
             },
         },
     });
@@ -224,12 +224,12 @@ function testSystemsAndActionsInference() {
         archetypes: {},
         transactions: {},
         actions: {
-            extendedAction: (db) => {},
-            extendedActionWithInput: (db, input: { name: string }) => {},
+            extendedAction: (db) => { },
+            extendedActionWithInput: (db, input: { name: string }) => { },
         },
         systems: {
             render: {
-                create: (db) => () => {},
+                create: (db) => () => { },
                 schedule: { after: ["input"] },
             },
         },
@@ -283,5 +283,160 @@ function testSystemsAndActionsInference() {
     type ExpectErrorActionExtendedActionWithInput = Assert<Equal<
         typeof db.actions.extendedActionWithInput,
         (arg: { name: number }) => any
+    >>;
+}
+
+// ============================================================================
+// PLUGIN COMBINATION WITH MULTIPLE SYSTEMS TESTS
+// ============================================================================
+// Regression test for issue where combining plugins with different systems
+// would result in `never` type due to ActionDeclarations constraint conflicts
+
+function testPluginCombinationWithMultipleSystems() {
+    // Create a base plugin with a system
+    const pluginA = Database.Plugin.create({
+        resources: {
+            resourceA: { default: 'A' as string },
+        },
+        systems: {
+            system_a: {
+                create: db => () => { },
+            },
+        },
+    });
+
+    // Extend with another plugin that adds a different system
+    const pluginB = Database.Plugin.create({
+        extends: pluginA,
+        resources: {
+            resourceB: { default: 'B' as string },
+        },
+        systems: {
+            system_b: {
+                create: db => () => { },
+            },
+        },
+    });
+
+    // Further extend with a third plugin that adds yet another system
+    const pluginC = Database.Plugin.create({
+        extends: pluginB,
+        resources: {
+            resourceC: { default: 'C' as string },
+        },
+        systems: {
+            system_c: {
+                create: db => () => { },
+            },
+        },
+    });
+
+    // Critical test: verify the plugin type is not `never`
+    type PluginCType = typeof pluginC;
+    type IsPluginCNever = [PluginCType] extends [never] ? true : false;
+    type PluginCNotNever = Assert<Equal<IsPluginCNever, false>>;
+
+    // Create database from the combined plugin
+    const db = Database.create(pluginC);
+
+    // Critical test: verify the database type is not `never`
+    type DBType = typeof db;
+    type IsDBNever = [DBType] extends [never] ? true : false;
+    type DBNotNever = Assert<Equal<IsDBNever, false>>;
+
+    // Verify all resources are accessible
+    type CheckResourceA = Assert<Equal<typeof db.resources.resourceA, string>>;
+    type CheckResourceB = Assert<Equal<typeof db.resources.resourceB, string>>;
+    type CheckResourceC = Assert<Equal<typeof db.resources.resourceC, string>>;
+
+    // Verify all systems are accessible
+    type CheckSystemA = Assert<Equal<typeof db.system.functions.system_a, SystemFunction>>;
+    type CheckSystemB = Assert<Equal<typeof db.system.functions.system_b, SystemFunction>>;
+    type CheckSystemC = Assert<Equal<typeof db.system.functions.system_c, SystemFunction>>;
+
+    // Verify observe works correctly
+    type CheckObserveResourceA = Assert<Equal<
+        typeof db.observe.resources.resourceA,
+        import("../../../observe/index.js").Observe<string>
+    >>;
+
+    // @ts-expect-error - non-existent resource should error
+    type ExpectErrorResourceD = Assert<Equal<typeof db.resources.resourceD, string>>;
+
+    // @ts-expect-error - non-existent system should error
+    type ExpectErrorSystemD = Assert<Equal<typeof db.system.functions.system_d, SystemFunction>>;
+}
+
+// ============================================================================
+// PLUGIN COMBINATION WITH SYSTEMS AND ACTIONS TESTS
+// ============================================================================
+// Verify that plugins with both systems and actions can be combined
+
+function testPluginCombinationWithSystemsAndActions() {
+    const basePlugin = Database.Plugin.create({
+        resources: {
+            count: { default: 0 as number },
+        },
+        transactions: {
+            setCount: (store, value: number) => {
+                store.resources.count = value;
+            },
+        },
+        actions: {
+            increment: (db) => {
+                db.transactions.setCount(db.resources.count + 1);
+            },
+        },
+        systems: {
+            tick: {
+                create: db => () => {
+                    db.actions.increment();
+                },
+            },
+        },
+    });
+
+    const extendedPlugin = Database.Plugin.create({
+        extends: basePlugin,
+        resources: {
+            multiplier: { default: 2 as number },
+        },
+        actions: {
+            multiply: (db) => {
+                db.transactions.setCount(db.resources.count * db.resources.multiplier);
+            },
+        },
+        systems: {
+            render: {
+                create: db => () => {
+                    db.actions.multiply();
+                },
+            },
+        },
+    });
+
+    const db = Database.create(extendedPlugin);
+
+    // Verify the database type is not never
+    type DBType = typeof db;
+    type IsDBNever = [DBType] extends [never] ? true : false;
+    type DBNotNever = Assert<Equal<IsDBNever, false>>;
+
+    // Verify both actions are accessible
+    type CheckIncrementAction = Assert<Equal<typeof db.actions.increment, () => void>>;
+    type CheckMultiplyAction = Assert<Equal<typeof db.actions.multiply, () => void>>;
+
+    // Verify both systems are accessible
+    type CheckTickSystem = Assert<Equal<typeof db.system.functions.tick, SystemFunction>>;
+    type CheckRenderSystem = Assert<Equal<typeof db.system.functions.render, SystemFunction>>;
+
+    // Verify resources are accessible
+    type CheckCount = Assert<Equal<typeof db.resources.count, number>>;
+    type CheckMultiplier = Assert<Equal<typeof db.resources.multiplier, number>>;
+
+    // Verify transactions are accessible
+    type CheckSetCount = Assert<Equal<
+        typeof db.transactions.setCount,
+        (arg: number | AsyncArgsProvider<number>) => void
     >>;
 }

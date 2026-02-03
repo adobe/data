@@ -32,10 +32,11 @@ type _ExampleServiceType = {
   readonly value: string;
   readonly optional?: number;
   readonly raw?: Data; // Use Data for untyped/raw API responses (JSON-serializable)
+  readonly blob: Blob;
 };
 
 interface _ExampleService extends Service {
-  fetchData(options?: { forceRefresh?: boolean }): Promise<_ExampleServiceType>;
+  fetchData(options?: { forceRefresh?: boolean, blob?: Blob }): Promise<_ExampleServiceType>;
 }
 
 // Validates that the example service conforms to async-data-service pattern

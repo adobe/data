@@ -15,4 +15,5 @@ export type Data =
   | null
   | undefined
   | ReadonlyArray<Data>
-  | { readonly [K in string]?: Data };
+  | { readonly [K in string]?: Data }
+  | Blob;

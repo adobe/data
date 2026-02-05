@@ -6,6 +6,7 @@ import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";
 import { scheduler } from "../index.js";
 import { SchedulerState } from "../plugins/index.js";
+import { Observe } from "../../observe/index.js";
 
 /**
  * Type-only tests for createPlugin type inference and constraints.
@@ -64,6 +65,29 @@ function validTypeInferenceTests() {
         },
     });
 
+    // Test: Valid plugin with computed (db type inferred, no cast; each factory returns Observe<unknown>)
+    const validComputedPlugin = createPlugin({
+        components: {
+            a: { type: "number" },
+            b: { type: "string" }
+        },
+        resources: {
+            c: { default: false as boolean }
+        },
+        archetypes: {
+            A: ["a", "b"],
+        },
+        computed: {
+            derived: (db) => {
+                const _c: boolean = db.resources.c;
+                return Observe.fromConstant(0);
+            },
+        },
+        transactions: {},
+        actions: {},
+        systems: {},
+    });
+
     // Test: Valid systems with transactions
     const validSystemPlugin = createPlugin({
         components: {
@@ -95,6 +119,7 @@ function validTypeInferenceTests() {
             }
         },
     });
+
 
     // Test: Valid base plugin with all properties
     const basePlugin = createPlugin({
@@ -333,6 +358,22 @@ function invalidSystemReference() {
                 }
             }
         },
+    });
+}
+
+// Test: Invalid computed return type (must extend Observe<unknown>)
+function invalidComputedReturnType() {
+    createPlugin({
+        components: { a: { type: "number" } },
+        resources: {},
+        archetypes: {},
+        computed: {
+            // @ts-expect-error - computed factory must return something extending Observe<unknown>, not a plain number
+            bad: (_db) => 42,
+        },
+        transactions: {},
+        actions: {},
+        systems: {},
     });
 }
 

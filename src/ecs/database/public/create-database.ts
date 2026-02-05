@@ -2,7 +2,7 @@
 
 import { ResourceComponents } from "../../store/resource-components.js";
 import { Store } from "../../store/index.js";
-import { Database } from "../database.js";
+import { Database, FromServiceFactories, FromComputedFactories, type ServiceFactories, type ComputedFactories } from "../database.js";
 import type { ToTransactionFunctions, TransactionDeclarations } from "../../store/transaction-functions.js";
 import type { ToActionFunctions, ActionDeclarations } from "../../store/action-functions.js";
 import { StringKeyof } from "../../../types/types.js";
@@ -20,14 +20,16 @@ import { calculateSystemOrder } from "../calculate-system-order.js";
 
 export function createDatabase(): Database<{}, {}, {}, {}, never>
 export function createDatabase<
-    P extends Database.Plugin<{}, {}, {}, {}, never, {}>
+    P extends Database.Plugin<{}, {}, {}, {}, never, {}, any, any>
 >(plugin: P): Database<
-    FromSchemas<P extends Database.Plugin<infer CS, any, any, any, any, any> ? CS : never>,
-    FromSchemas<P extends Database.Plugin<any, infer RS, any, any, any, any> ? RS : never>,
-    P extends Database.Plugin<any, any, infer A, any, any, any> ? A : never,
-    ToTransactionFunctions<P extends Database.Plugin<any, any, any, infer TD, any, any> ? TD : never>,
-    P extends Database.Plugin<any, any, any, any, infer S, any> ? S : never,
-    ToActionFunctions<P extends Database.Plugin<any, any, any, any, any, infer AD> ? AD : never>
+    FromSchemas<P extends Database.Plugin<infer CS, any, any, any, any, any, any, any> ? CS : never>,
+    FromSchemas<P extends Database.Plugin<any, infer RS, any, any, any, any, any, any> ? RS : never>,
+    P extends Database.Plugin<any, any, infer A, any, any, any, any, any> ? A : never,
+    ToTransactionFunctions<P extends Database.Plugin<any, any, any, infer TD, any, any, any, any> ? TD : never>,
+    P extends Database.Plugin<any, any, any, any, infer S, any, any, any> ? S : never,
+    ToActionFunctions<P extends Database.Plugin<any, any, any, any, any, infer AD, any, any> ? AD : never>,
+    P extends Database.Plugin<any, any, any, any, any, any, infer SVF, any> ? FromServiceFactories<SVF> : never,
+    P extends Database.Plugin<any, any, any, any, any, any, any, infer CVF> ? FromComputedFactories<CVF> : never
 >
 export function createDatabase<
     const C extends Components,
@@ -80,7 +82,7 @@ export function createDatabase<
     actionDeclarations: AD,
 ): Database<C, R, A, ToTransactionFunctions<TD>, S, ToActionFunctions<AD>>
 export function createDatabase(
-    storeOrPlugin?: Store<any, any, any> | Database.Plugin<any, any, any, any, any, any>,
+    storeOrPlugin?: Store<any, any, any> | Database.Plugin<any, any, any, any, any, any, any, any>,
     transactionDeclarations?: any,
     systemDeclarationsOrActionDeclarations?: any,
     actionDeclarations?: any,
@@ -118,8 +120,10 @@ function createDatabaseFromPlugin<
     A extends ArchetypeComponents<StringKeyof<CS>>,
     TD extends TransactionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A>,
     S extends string,
-    AD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S> = {}
->(plugin: Database.Plugin<CS, RS, A, TD, S, AD>): Database<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S, ToActionFunctions<AD>> {
+    AD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S> = {},
+    SVF extends ServiceFactories = any,
+    CVF extends ComputedFactories = any
+>(plugin: Database.Plugin<CS, RS, A, TD, S, AD, SVF, CVF>): Database<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S, ToActionFunctions<AD>, FromServiceFactories<SVF>, FromComputedFactories<CVF>> {
     const systems = plugin.systems ?? ({} as any);
     const transactions = plugin.transactions ?? ({} as any);
     const actions = (plugin.actions ?? {}) as AD;
@@ -128,7 +132,8 @@ function createDatabaseFromPlugin<
         resources: plugin.resources ?? ({} as RS),
         archetypes: plugin.archetypes ?? ({} as A),
     };
-    return createDatabase(Store.create(storeSchema), transactions, systems, actions as any) as any;
+    const db = createDatabase(Store.create(storeSchema), transactions, systems, actions as any) as any;
+    return db.extend(plugin);
 }
 
 function createDatabaseFromStoreTransactionsAndSystems<
@@ -286,8 +291,10 @@ function createDatabaseFromStoreTransactionsAndSystems<
     // Calculate system execution order
     let systemOrder = calculateSystemOrder(allSystemDeclarations);
 
-    // Services container - services are generally initalized via extend.
+    // Services container - services are generally initialized via extend.
     const services: Record<string, unknown> = {};
+    // Computed container - computed values are initialized via extend.
+    const computed: Record<string, unknown> = {};
 
     // Create partial database for system initialization (two-phase)
     const partialDatabase: any = {
@@ -296,6 +303,7 @@ function createDatabaseFromStoreTransactionsAndSystems<
         transactions,
         actions, // Set actions before adding wrappers
         services,
+        computed,
         store,
         system: {
             functions: {},  // Empty initially
@@ -317,10 +325,10 @@ function createDatabaseFromStoreTransactionsAndSystems<
     partialDatabase.system.functions = systemFunctions;
 
     // Track extended plugins to avoid duplicate processing
-    const extendedPlugins = new Set<Database.Plugin<any, any, any, any, any, any>>();
+    const extendedPlugins = new Set<Database.Plugin<any, any, any, any, any, any, any, any>>();
 
     const extend = <
-        P extends Database.Plugin<any, any, any, any, any, any, any>
+        P extends Database.Plugin<any, any, any, any, any, any, any, any>
     >(
         plugin: P,
     ) => {
@@ -334,6 +342,7 @@ function createDatabaseFromStoreTransactionsAndSystems<
             const pluginTransactions = plugin.transactions ?? {};
             const pluginActions = plugin.actions ?? {};
             const pluginServices = plugin.services ?? {};
+            const pluginComputed = plugin.computed ?? {};
 
             // Add transaction wrappers for the new transactions
             addTransactionWrappers(pluginTransactions);
@@ -348,6 +357,14 @@ function createDatabaseFromStoreTransactionsAndSystems<
                 if (!(name in services)) {
                     const factory = pluginServices[name];
                     services[name] = factory(partialDatabase);
+                }
+            }
+
+            // Initialize computed - computed factories receive the database instance
+            for (const name in pluginComputed) {
+                if (!(name in computed)) {
+                    const factory = pluginComputed[name];
+                    computed[name] = factory(partialDatabase);
                 }
             }
 

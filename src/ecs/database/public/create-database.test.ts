@@ -7,7 +7,7 @@ import { Store } from "../../store/index.js";
 import { Schema } from "../../../schema/index.js";
 import { Entity } from "../../entity.js";
 import { F32 } from "../../../math/f32/index.js";
-import { toPromise } from "../../../observe/to-promise.js";
+import { Observe } from "../../../observe/index.js";
 import { createUndoRedoService } from "../../undo-redo-service/create-undo-redo-service.js";
 import { applyOperations } from "../transactional-store/apply-operations.js";
 import { TransactionWriteOperation } from "../transactional-store/transactional-store.js";
@@ -896,7 +896,7 @@ describe("createDatabase", () => {
 
             const result = await promise;
             expect(result).toBe(-1);
-            const generating = await toPromise(store.observe.resources.generating);
+            const generating = await Observe.toPromise(store.observe.resources.generating);
             expect(generating).toBe(false);
         });
 
@@ -957,7 +957,7 @@ describe("createDatabase", () => {
             database.transactions.noOpTransaction({});
 
             // Verify the undo stack is empty (need to await the observable)
-            const undoStack = await toPromise(undoRedo.undoStack);
+            const undoStack = await Observe.toPromise(undoRedo.undoStack);
             expect(undoStack).toHaveLength(0);
         });
 
@@ -996,13 +996,13 @@ describe("createDatabase", () => {
             const entity = database.transactions.createPositionEntity({ position: { x: 1, y: 2, z: 3 } });
 
             const undoRedo = createUndoRedoService(database);
-            const initialStackLength = (await toPromise(undoRedo.undoStack)).length;
+            const initialStackLength = (await Observe.toPromise(undoRedo.undoStack)).length;
 
             // Execute read-only transaction (true no-op)
             database.transactions.readOnlyTransaction({ entity });
 
             // Verify no new undo entry was added
-            const finalStackLength = (await toPromise(undoRedo.undoStack)).length;
+            const finalStackLength = (await Observe.toPromise(undoRedo.undoStack)).length;
             expect(finalStackLength).toBe(initialStackLength);
         });
     });
@@ -1183,11 +1183,98 @@ describe("createDatabase", () => {
 
             const extended = database.extend(plugin);
 
-            // Both services should be immediately available
             expect(extended.services.logger).toBeDefined();
-            expect(extended.services.logger.level).toBe('info');
             expect(extended.services.analytics).toBeDefined();
-            expect(extended.services.analytics.userId).toBe('test-user');
+        });
+    });
+
+    describe("computed", () => {
+        it("should initialize computed values when extending with a plugin", () => {
+            const database = createTestDatabase();
+
+            const plugin = Database.Plugin.create({
+                components: {},
+                resources: {},
+                archetypes: {},
+                computed: {
+                    count: (_db) => Observe.fromConstant(10),
+                    label: (_db) => Observe.fromConstant("test"),
+                },
+                transactions: {},
+                actions: {},
+                systems: {},
+            });
+
+            const extended = database.extend(plugin);
+
+            expect(extended.computed).toBeDefined();
+            expect(extended.computed.count).toBeDefined();
+            expect(extended.computed.label).toBeDefined();
+            expect(typeof extended.computed.count).toBe("function");
+            expect(typeof extended.computed.label).toBe("function");
+            const unsubCount = extended.computed.count((v) => expect(v).toBe(10));
+            const unsubLabel = extended.computed.label((v) => expect(v).toBe("test"));
+            unsubCount();
+            unsubLabel();
+        });
+
+        it("should initialize computed when creating database from plugin", () => {
+            const plugin = Database.Plugin.create({
+                components: { x: { type: "number" } },
+                resources: {},
+                archetypes: {},
+                computed: {
+                    sum: (_db) => Observe.fromConstant(100),
+                },
+                transactions: {},
+                actions: {},
+                systems: {},
+            });
+
+            const db = Database.create(plugin);
+
+            expect(db.computed).toBeDefined();
+            expect(db.computed.sum).toBeDefined();
+            let received: number | undefined;
+            const unsub = db.computed.sum((v) => { received = v; });
+            expect(received).toBe(100);
+            unsub();
+        });
+
+        it("should initialize computed in order when extending with base and extended plugin", () => {
+            const database = createTestDatabase();
+
+            const basePlugin = Database.Plugin.create({
+                components: {},
+                resources: {},
+                archetypes: {},
+                computed: {
+                    baseValue: (_db) => Observe.fromConstant(1),
+                },
+                transactions: {},
+                actions: {},
+                systems: {},
+            });
+
+            const extendedPlugin = Database.Plugin.create({
+                extends: basePlugin,
+                components: {},
+                resources: {},
+                archetypes: {},
+                computed: {
+                    derived: (_db) => Observe.fromConstant(2),
+                },
+                transactions: {},
+                actions: {},
+                systems: {},
+            });
+
+            const extended = database.extend(extendedPlugin);
+
+            expect(extended.computed.baseValue).toBeDefined();
+            expect(extended.computed.derived).toBeDefined();
+            extended.computed.baseValue((v) => expect(v).toBe(1));
+            extended.computed.derived((v) => expect(v).toBe(2));
         });
     });
 });

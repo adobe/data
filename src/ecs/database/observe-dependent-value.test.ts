@@ -127,11 +127,15 @@ describe('observeDependentValue', () => {
     it('should handle complex computed values', async () => {
         const database = Database.create(Database.Plugin.create({
             components: {},
-            resources: { count: { default: 5 }, multiplier: { default: 2 }, offset: { default: 10 } },
+            resources: {
+                count: { default: 5 as number },
+                multiplier: { default: 2 as number },
+                offset: { default: 10 as number },
+            },
             archetypes: {},
             transactions: {
-                updateCount: (t: any, value: number) => { t.resources.count = value; },
-                updateMultiplier: (t: any, value: number) => { t.resources.multiplier = value; }
+                updateCount: (t, value: number) => { t.resources.count = value; },
+                updateMultiplier: (t, value: number) => { t.resources.multiplier = value; }
             },
         }));
 

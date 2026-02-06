@@ -232,13 +232,28 @@ export function createTransactionalStore<
         ...store,
         execute,
         transactionStore,
-        // Override extend to sync wrapped archetypes after extending base store
+        // Override extend to sync wrapped archetypes and resources after extending base store
         extend: (plugin: any) => {
             store.extend(plugin);
             // Sync wrapped archetypes after extension
             for (const name in store.archetypes) {
                 if (!(name in wrappedArchetypesObject)) {
                     wrappedArchetypesObject[name] = getWrappedArchetype(store.archetypes[name]);
+                }
+            }
+            // Sync resources after extension (store may have new resource schemas)
+            for (const name of Object.keys(store.resources)) {
+                if (!resources.hasOwnProperty(name)) {
+                    const resourceId = name as keyof C;
+                    const archetype = store.ensureArchetype(["id", resourceId] as StringKeyof<C>[]);
+                    const entityId = archetype.columns.id.get(0);
+                    Object.defineProperty(resources, name, {
+                        get: Object.getOwnPropertyDescriptor(store.resources, name)!.get,
+                        set: (newValue: any) => {
+                            updateEntity(entityId, { [resourceId]: newValue } as any);
+                        },
+                        enumerable: true,
+                    });
                 }
             }
             return transactionalStore as any;

@@ -42,22 +42,23 @@ const nameSchema = {
 } as const satisfies Schema;
 type Name = Schema.ToType<typeof nameSchema>;
 
-const createStoreConfig = () => {
-    const baseStore = Store.create({
-        components: { position: positionSchema, health: healthSchema, name: nameSchema },
-        resources: {
-            time: { default: { delta: 0.016, elapsed: 0 } },
-            generating: { type: "boolean", default: false }
-        },
-        archetypes: {
-            Position: ["position"],
-            Health: ["health"],
-            PositionHealth: ["position", "health"],
-            PositionName: ["position", "name"],
-            Full: ["position", "health", "name"],
-        }
-    });
+const storeSchema = {
+    components: { position: positionSchema, health: healthSchema, name: nameSchema },
+    resources: {
+        time: { default: { delta: 0.016, elapsed: 0 } as { delta: number; elapsed: number } },
+        generating: { type: "boolean" as const, default: false }
+    },
+    archetypes: {
+        Position: ["position"] as const,
+        Health: ["health"] as const,
+        PositionHealth: ["position", "health"] as const,
+        PositionName: ["position", "name"] as const,
+        Full: ["position", "health", "name"] as const,
+    }
+};
 
+const createStoreConfig = () => {
+    const baseStore = Store.create(storeSchema);
     type TestStore = typeof baseStore;
 
     const actions = {
@@ -109,12 +110,21 @@ const createStoreConfig = () => {
         }
     };
 
-    return { baseStore, actions };
+    return { baseStore, actions, storeSchema };
 };
 
+function createTestPlugin() {
+    const { actions, storeSchema } = createStoreConfig();
+    return Database.Plugin.create({
+        components: storeSchema.components,
+        resources: storeSchema.resources,
+        archetypes: storeSchema.archetypes,
+        transactions: actions,
+    });
+}
+
 function createTestDatabase() {
-    const { baseStore, actions } = createStoreConfig();
-    return Database.create(baseStore, actions);
+    return Database.create(createTestPlugin());
 }
 
 describe("createDatabase", () => {
@@ -914,13 +924,18 @@ describe("createDatabase", () => {
             observer.mockClear();
 
             // Create a no-op transaction (doesn't modify anything)
-            const { baseStore, actions } = createStoreConfig();
-            const database = Database.create(baseStore, {
-                ...actions,
-                noOpTransaction(t, _args: {}) {
-                    // This transaction does nothing
-                }
-            });
+            const { actions, storeSchema } = createStoreConfig();
+            const database = Database.create(Database.Plugin.create({
+                components: storeSchema.components,
+                resources: storeSchema.resources,
+                archetypes: storeSchema.archetypes,
+                transactions: {
+                    ...actions,
+                    noOpTransaction(t: any, _args: {}) {
+                        // This transaction does nothing
+                    }
+                },
+            }));
 
             const positionObserver = vi.fn();
             const unsub = database.observe.components.position(positionObserver);
@@ -939,17 +954,22 @@ describe("createDatabase", () => {
             const store = createTestDatabase();
 
             // Create database with undo-redo service
-            const { baseStore, actions } = createStoreConfig();
-            const database = Database.create(baseStore, {
-                ...actions,
-                noOpTransaction(t, _args: {}) {
-                    t.undoable = { coalesce: false };
-                    // This transaction does nothing
+            const { actions, storeSchema } = createStoreConfig();
+            const database = Database.create(Database.Plugin.create({
+                components: storeSchema.components,
+                resources: storeSchema.resources,
+                archetypes: storeSchema.archetypes,
+                transactions: {
+                    ...actions,
+                    noOpTransaction(t, _args: {}) {
+                        t.undoable = { coalesce: false };
+                        // This transaction does nothing
+                    },
+                    applyOperations(t, operations: TransactionWriteOperation<any>[]) {
+                        applyOperations(t, operations);
+                    }
                 },
-                applyOperations(t, operations: TransactionWriteOperation<any>[]) {
-                    applyOperations(t, operations);
-                }
-            });
+            }));
 
             const undoRedo = createUndoRedoService(database);
 
@@ -978,19 +998,23 @@ describe("createDatabase", () => {
         });
 
         it("should detect true no-op when transaction reads but doesn't modify", async () => {
-            const { baseStore, actions } = createStoreConfig();
-            const database = Database.create(baseStore, {
-                ...actions,
-                readOnlyTransaction(t, args: { entity: number }) {
-                    t.undoable = { coalesce: false };
-                    // Just read the entity but don't modify it
-                    const current = t.read(args.entity);
-                    // Do nothing with the data - this is a true no-op
+            const { actions, storeSchema } = createStoreConfig();
+            const database = Database.create(Database.Plugin.create({
+                components: storeSchema.components,
+                resources: storeSchema.resources,
+                archetypes: storeSchema.archetypes,
+                transactions: {
+                    ...actions,
+                    readOnlyTransaction(t, args: { entity: number }) {
+                        t.undoable = { coalesce: false };
+                        const current = t.read(args.entity);
+                        void current;
+                    },
+                    applyOperations(t, operations: TransactionWriteOperation<any>[]) {
+                        applyOperations(t, operations);
+                    }
                 },
-                applyOperations(t, operations: TransactionWriteOperation<any>[]) {
-                    applyOperations(t, operations);
-                }
-            });
+            }));
 
             // Create an entity
             const entity = database.transactions.createPositionEntity({ position: { x: 1, y: 2, z: 3 } });
@@ -1014,26 +1038,26 @@ describe("createDatabase", () => {
     });
 
     it("should return the same instance when extended with systems", () => {
-        // Create a database with initial systems
-        const { baseStore, actions } = createStoreConfig();
-
+        const { actions, storeSchema } = createStoreConfig();
         const systemOneCalled = vi.fn();
-        const database = Database.create(baseStore, actions, {
-            systemOne: {
-                create: (db) => {
-                    return () => {
-                        systemOneCalled();
-                    };
+        const database = Database.create(Database.Plugin.create({
+            components: storeSchema.components,
+            resources: storeSchema.resources,
+            archetypes: storeSchema.archetypes,
+            transactions: actions,
+            systems: {
+                systemOne: {
+                    create: (_db) => () => systemOneCalled(),
                 }
-            }
-        });
+            },
+        }));
 
         // Extend with a plugin that includes a new system
         const systemTwoCalled = vi.fn();
         const extensionPlugin = Database.Plugin.create({
             systems: {
                 systemTwo: {
-                    create: (db) => {
+                    create: (_db) => {
                         return () => {
                             systemTwoCalled();
                         };
@@ -1301,6 +1325,33 @@ describe("createDatabase", () => {
 
             expect(createCallCount).toBe(1);
             expect(typeof db.system.functions.init).toBe("function");
+        });
+
+        it("services are created and available before system create() runs", () => {
+            let serviceSeenInSystemCreate: unknown = undefined;
+            const plugin = Database.Plugin.create({
+                services: {
+                    config: (db) => ({ apiUrl: "https://api.example.com" }),
+                },
+                components: {},
+                resources: {},
+                archetypes: {},
+                transactions: {},
+                actions: {},
+                systems: {
+                    init: {
+                        create: (db) => {
+                            serviceSeenInSystemCreate = db.services.config;
+                            return () => { };
+                        },
+                    },
+                },
+            });
+
+            Database.create(plugin);
+
+            expect(serviceSeenInSystemCreate).toBeDefined();
+            expect((serviceSeenInSystemCreate as { apiUrl: string }).apiUrl).toBe("https://api.example.com");
         });
     });
 });

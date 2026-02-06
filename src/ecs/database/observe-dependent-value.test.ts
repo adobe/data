@@ -1,40 +1,29 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect, vi } from 'vitest';
 import { observeDependentValue } from './observe-dependent-value.js';
-import { Store } from '../store/index.js';
 import { Database } from './database.js';
-import { ToReadonlyStore } from '../store/index.js';
 
 describe('observeDependentValue', () => {
     it('should compute and observe dependent values from resources', async () => {
-        // Create a store with three resources
-        const store = Store.create(
-            { components: {}, resources: { a: { default: 10 }, b: { default: 20 }, c: { default: 30 } }, archetypes: {} },
-        );
-        type TestStore = ToReadonlyStore<typeof store>;
-
-        // Create the database
-        const database = Database.create(store, {
-            updateA: (t, value: number) => {
-                t.resources.a = value;
-            },
-            updateB: (t, value: number) => {
-                t.resources.b = value;
-            },
-            updateC: (t, value: number) => {
-                t.resources.c = value;
-            },
-            updateAB: (t, values: { a: number; b: number }) => {
+        const transactions = {
+            updateA: (t: any, value: number) => { t.resources.a = value; },
+            updateB: (t: any, value: number) => { t.resources.b = value; },
+            updateC: (t: any, value: number) => { t.resources.c = value; },
+            updateAB: (t: any, values: { a: number; b: number }) => {
                 t.resources.a = values.a;
                 t.resources.b = values.b;
             }
-        });
-
-        type TestDatabase = typeof database;
+        };
+        const database = Database.create(Database.Plugin.create({
+            components: {},
+            resources: { a: { default: 10 }, b: { default: 20 }, c: { default: 30 } },
+            archetypes: {},
+            transactions,
+        }));
 
         // Create a compute function that sums resources 'a' and 'b'
-        const computeSum = (db: TestStore) => {
-            return db.resources.a + db.resources.b;
+        const computeSum = (store: { resources: { a: number; b: number; c: number } }) => {
+            return store.resources.a + store.resources.b;
         };
 
         // Create the dependent value observable
@@ -89,14 +78,18 @@ describe('observeDependentValue', () => {
     });
 
     it('should handle multiple observers correctly', async () => {
-        const store = Store.create({ components: {}, resources: { a: { default: 1 }, b: { default: 2 }, c: { default: 3 } }, archetypes: {} });
-        const database = Database.create(store, {
-            updateA: (t, value: number) => { t.resources.a = value; },
-            updateB: (t, value: number) => { t.resources.b = value; }
-        });
+        const database = Database.create(Database.Plugin.create({
+            components: {},
+            resources: { a: { default: 1 }, b: { default: 2 }, c: { default: 3 } },
+            archetypes: {},
+            transactions: {
+                updateA: (t: any, value: number) => { t.resources.a = value; },
+                updateB: (t: any, value: number) => { t.resources.b = value; }
+            },
+        }));
 
-        const sumObservable = observeDependentValue(database, (t) => {
-            return t.resources.a + t.resources.b;
+        const sumObservable = observeDependentValue(database, (db) => {
+            return db.resources.a + db.resources.b;
         });
 
         const values1: number[] = [];
@@ -132,16 +125,20 @@ describe('observeDependentValue', () => {
     });
 
     it('should handle complex computed values', async () => {
-        const store = Store.create({ components: {}, resources: { count: { default: 5 }, multiplier: { default: 2 }, offset: { default: 10 } }, archetypes: {} });
-        const database = Database.create(store, {
-            updateCount: (t, value: number) => { t.resources.count = value; },
-            updateMultiplier: (t, value: number) => { t.resources.multiplier = value; }
-        });
+        const database = Database.create(Database.Plugin.create({
+            components: {},
+            resources: { count: { default: 5 }, multiplier: { default: 2 }, offset: { default: 10 } },
+            archetypes: {},
+            transactions: {
+                updateCount: (t: any, value: number) => { t.resources.count = value; },
+                updateMultiplier: (t: any, value: number) => { t.resources.multiplier = value; }
+            },
+        }));
 
         type TestDatabase = typeof database;
 
-        const complexObservable = observeDependentValue(database, (store) => {
-            return (store.resources.count * store.resources.multiplier) + store.resources.offset;
+        const complexObservable = observeDependentValue(database, (db) => {
+            return (db.resources.count * db.resources.multiplier) + db.resources.offset;
         });
 
         const values: number[] = [];

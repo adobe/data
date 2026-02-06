@@ -33,11 +33,11 @@ export function createDatabaseFromSchema<
     schema: DatabaseSchema<CS, RS, A, TD>,
 ): DatabaseFromSchema<typeof schema> {
     return Database.create(
-        Store.create<CS, RS, A>({
+        Database.Plugin.create({
             components: schema.components,
             resources: schema.resources,
-            archetypes: schema.archetypes,
-        }),
-        schema.transactions as any
+            archetypes: schema.archetypes as any,
+            transactions: schema.transactions as any,
+        })
     ) as any;
 }

@@ -2,7 +2,6 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { Database } from "../database/database.js";
-import { Store } from "../store/index.js";
 import { F32 } from "../../math/f32/index.js";
 import { createUndoRedoService } from "./create-undo-redo-service.js";
 import { applyOperations } from "../database/transactional-store/apply-operations.js";
@@ -27,42 +26,41 @@ const nameSchema = {
 } as const;
 
 function createTestDatabase() {
-    const baseStore = Store.create({
+    return Database.create(Database.Plugin.create({
         components: { position: positionSchema, name: nameSchema },
         resources: { time: { default: { delta: 0.016, elapsed: 0 } } },
         archetypes: {
             PositionEntity: ["position"],
             PositionNameEntity: ["position", "name"],
-        }
-    });
-
-    return Database.create(baseStore, {
-        createPositionEntity(t, args: { position: { x: number, y: number, z: number } }) {
-            t.undoable = { coalesce: false };
-            return t.archetypes.PositionEntity.insert(args);
         },
-        createPositionNameEntity(t, args: { position: { x: number, y: number, z: number }, name: string }) {
-            t.undoable = { coalesce: false };
-            return t.archetypes.PositionNameEntity.insert(args);
+        transactions: {
+            createPositionEntity(t, args: { position: { x: number, y: number, z: number } }) {
+                t.undoable = { coalesce: false };
+                return t.archetypes.PositionEntity.insert(args);
+            },
+            createPositionNameEntity(t, args: { position: { x: number, y: number, z: number }, name: string }) {
+                t.undoable = { coalesce: false };
+                return t.archetypes.PositionNameEntity.insert(args);
+            },
+            updateEntity(t, args: {
+                entity: number,
+                values: Partial<{
+                    position: { x: number, y: number, z: number },
+                    name: string
+                }>
+            }) {
+                t.undoable = { coalesce: { entity: args.entity } };
+                t.update(args.entity, args.values);
+            },
+            deleteEntity(t, args: { entity: number }) {
+                t.undoable = { coalesce: false };
+                t.delete(args.entity);
+            },
+            applyOperations(t, operations: TransactionWriteOperation<any>[]) {
+                applyOperations(t, operations);
+            },
         },
-        updateEntity(t, args: {
-            entity: number,
-            values: Partial<{
-                position: { x: number, y: number, z: number },
-                name: string
-            }>
-        }) {
-            t.undoable = { coalesce: { entity: args.entity } };
-            t.update(args.entity, args.values);
-        },
-        deleteEntity(t, args: { entity: number }) {
-            t.undoable = { coalesce: false };
-            t.delete(args.entity);
-        },
-        applyOperations(t, operations: TransactionWriteOperation<any>[]) {
-            applyOperations(t, operations);
-        }
-    });
+    }));
 }
 
 describe("createUndoRedoService", () => {

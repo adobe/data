@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { describe, expect, it, beforeEach } from "vitest";
-import { Store } from "../store/index.js";
 import { Database } from "./database.js";
 import { F32 } from "../../math/f32/index.js";
 import { Boolean } from "../../schema/index.js";
@@ -10,7 +9,7 @@ describe("observeSelectEntities Performance Tests", () => {
     let database: ReturnType<typeof createTestDatabase>;
 
     function createTestDatabase() {
-        const store = Store.create({
+        return Database.create(Database.Plugin.create({
             components: {
                 position: F32.schema,
                 health: F32.schema,
@@ -27,38 +26,37 @@ describe("observeSelectEntities Performance Tests", () => {
                 PositionName: ["position", "name"],
                 HealthName: ["health", "name"],
                 Full: ["position", "health", "name", "score", "active"]
-            }
-        });
-
-        return Database.create(store, {
-            createPositionEntity(store, args: { position: number }) {
-                return store.archetypes.Position.insert(args);
             },
-            createHealthEntity(store, args: { health: number }) {
-                return store.archetypes.Health.insert(args);
+            transactions: {
+                createPositionEntity(store, args: { position: number }) {
+                    return store.archetypes.Position.insert(args);
+                },
+                createHealthEntity(store, args: { health: number }) {
+                    return store.archetypes.Health.insert(args);
+                },
+                createNameEntity(store, args: { name: string }) {
+                    return store.archetypes.Name.insert(args);
+                },
+                createPositionHealthEntity(store, args: { position: number, health: number }) {
+                    return store.archetypes.PositionHealth.insert(args);
+                },
+                createPositionNameEntity(store, args: { position: number, name: string }) {
+                    return store.archetypes.PositionName.insert(args);
+                },
+                createHealthNameEntity(store, args: { health: number, name: string }) {
+                    return store.archetypes.HealthName.insert(args);
+                },
+                createFullEntity(store, args: { position: number, health: number, name: string, score: number, active: boolean }) {
+                    return store.archetypes.Full.insert(args);
+                },
+                updateEntity(store, args: { entity: number, values: any }) {
+                    return store.update(args.entity, args.values);
+                },
+                deleteEntity(store, args: { entity: number }) {
+                    return store.delete(args.entity);
+                },
             },
-            createNameEntity(store, args: { name: string }) {
-                return store.archetypes.Name.insert(args);
-            },
-            createPositionHealthEntity(store, args: { position: number, health: number }) {
-                return store.archetypes.PositionHealth.insert(args);
-            },
-            createPositionNameEntity(store, args: { position: number, name: string }) {
-                return store.archetypes.PositionName.insert(args);
-            },
-            createHealthNameEntity(store, args: { health: number, name: string }) {
-                return store.archetypes.HealthName.insert(args);
-            },
-            createFullEntity(store, args: { position: number, health: number, name: string, score: number, active: boolean }) {
-                return store.archetypes.Full.insert(args);
-            },
-            updateEntity(store, args: { entity: number, values: any }) {
-                return store.update(args.entity, args.values);
-            },
-            deleteEntity(store, args: { entity: number }) {
-                return store.delete(args.entity);
-            }
-        });
+        }));
     }
 
     beforeEach(() => {

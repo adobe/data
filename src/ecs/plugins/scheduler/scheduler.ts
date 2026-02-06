@@ -22,7 +22,7 @@ export const scheduler = createPlugin({
                                     .filter((name: string) => name !== "schedulerSystem")
                                     .map((name: string) => {
                                         const systemFn = db.system.functions[name];
-                                        if (systemFn == null) {
+                                        if (systemFn == null || systemFn === undefined) {
                                             // System returned void or null - skip execution (initialization-only system)
                                             return Promise.resolve();
                                         }

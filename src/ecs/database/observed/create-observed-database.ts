@@ -178,6 +178,15 @@ export function createObservedDatabase<
         },
         extend: (plugin: any) => {
             transactionalStore.extend(plugin);
+            // Rebuild observe.components and observe.resources so new components/resources from extend are observable
+            (observe as any).components = mapEntries(store.componentSchemas, ([component]) => addToMapSet(component, componentObservers));
+            (observe as any).resources = Object.fromEntries(
+                Object.entries(store.resources).map(([resource]) => {
+                    const archetype = store.ensureArchetype(["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>]);
+                    const resourceId = archetype.columns.id.get(0);
+                    return [resource, Observe.withMap(observeEntity(resourceId), (values) => values?.[resource as unknown as StringKeyof<C>] ?? null)];
+                })
+            );
             notifyAllObserversStoreReloaded();
             return observedDatabase as any;
         },

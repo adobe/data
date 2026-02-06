@@ -18,6 +18,23 @@ import { ResourceSchemas } from "../../resource-schemas.js";
 import { FromSchemas } from "../../../schema/from-schemas.js";
 import { calculateSystemOrder } from "../calculate-system-order.js";
 
+/**
+ * For each system in newDeclarations that is not yet in systemFunctions: call create(db),
+ * store the returned value in systemFunctions, and assign by name. Uses natural declaration order.
+ * We do not execute the returned function here; that is up to the scheduler (if present).
+ * System order (tiers) is only for 60fps execution.
+ */
+function createAndAssignSystems(
+    db: any,
+    systemFunctions: Record<string, unknown>,
+    newDeclarations: Record<string, { create: (db: any) => unknown }>
+): void {
+    for (const name in newDeclarations) {
+        if (name in systemFunctions) continue;
+        systemFunctions[name] = newDeclarations[name].create(db) ?? null;
+    }
+}
+
 export function createDatabase(): Database<{}, {}, {}, {}, never>
 export function createDatabase<
     P extends Database.Plugin<{}, {}, {}, {}, never, {}, any, any>
@@ -317,11 +334,8 @@ function createDatabaseFromStoreTransactionsAndSystems<
         addActionWrappers(actionDeclarations, partialDatabase);
     }
 
-    // Instantiate system functions with partial database
     const systemFunctions: any = {};
-    for (const name in allSystemDeclarations) {
-        systemFunctions[name] = allSystemDeclarations[name].create(partialDatabase);
-    }
+    createAndAssignSystems(partialDatabase, systemFunctions, allSystemDeclarations);
     partialDatabase.system.functions = systemFunctions;
 
     // Track extended plugins to avoid duplicate processing
@@ -370,20 +384,11 @@ function createDatabaseFromStoreTransactionsAndSystems<
 
             // If plugin has new systems, extend in place rather than recreating
             if (plugin.systems && Object.keys(plugin.systems).length > 0) {
-                // Merge new systems into tracked declarations
                 Object.assign(allSystemDeclarations, plugin.systems);
-
-                // Recalculate system order with all systems
                 systemOrder = calculateSystemOrder(allSystemDeclarations);
 
-                // Instantiate only the new systems
-                for (const name in plugin.systems) {
-                    if (!systemFunctions[name]) {
-                        systemFunctions[name] = plugin.systems[name].create(partialDatabase);
-                    }
-                }
+                createAndAssignSystems(partialDatabase, systemFunctions, plugin.systems);
 
-                // Update system order in place
                 partialDatabase.system.order = systemOrder;
                 partialDatabase.system.functions = systemFunctions;
             }

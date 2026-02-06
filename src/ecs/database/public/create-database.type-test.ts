@@ -237,17 +237,17 @@ function testSystemsAndActionsInference() {
 
     const db = Database.create(extendedPlugin);
 
-    // Verify systems are inferred correctly
+    // Verify systems are inferred correctly (null when create() returns void)
     type CheckSystemInput = Assert<Equal<
         typeof db.system.functions.input,
-        SystemFunction
+        SystemFunction | null
     >>;
     type CheckSystemRender = Assert<Equal<
         typeof db.system.functions.render,
-        SystemFunction
+        SystemFunction | null
     >>;
 
-    // @ts-expect-error - invalid system type check (input has wrong return type)
+    // @ts-expect-error - invalid system type check (input is SystemFunction | null, not () => number)
     type ExpectErrorSystemInput = Assert<Equal<
         typeof db.system.functions.input,
         () => number

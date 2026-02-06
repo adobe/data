@@ -19,12 +19,17 @@ export abstract class DatabaseElement<P extends Database.Plugin> extends LitElem
   abstract get plugin(): P;
 
   connectedCallback(): void {
-    super.connectedCallback();
-
     if (!this.service) {
       const service = this.findAncestorDatabase();
+      if (!service) {
+        console.log("CREATING DATABASE");
+      }
+      else {
+        console.log("EXTENDING DATABASE", this.service);
+      }
       this.service = (service?.extend(this.plugin) ?? Database.create(this.plugin)) as unknown as Database.Plugin.ToDatabase<P>;
     }
+    super.connectedCallback();
   }
 
   protected findAncestorDatabase(): Database | void {

@@ -109,7 +109,8 @@ export interface Database<
     ): Observe<readonly Entity[]>;
   }
   readonly system: {
-    readonly functions: { readonly [K in S]: SystemFunction };
+    /** System create() return value, or null when create() returns void. Key is always present. */
+    readonly functions: { readonly [K in S]: SystemFunction | null };
     readonly order: S[][];
   }
   toData(): unknown

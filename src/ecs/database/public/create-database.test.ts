@@ -1277,6 +1277,32 @@ describe("createDatabase", () => {
             extended.computed.derived((v) => expect(v).toBe(2));
         });
     });
+
+    describe("system create and assign", () => {
+        it("should create and assign each system once when creating database from plugin (no double create from create then extend)", () => {
+            let createCallCount = 0;
+            const plugin = Database.Plugin.create({
+                components: { x: { type: "number" } },
+                resources: {},
+                archetypes: {},
+                transactions: {},
+                actions: {},
+                systems: {
+                    init: {
+                        create: (_db) => {
+                            createCallCount += 1;
+                            return () => { /* scheduler runs this, not us */ };
+                        },
+                    },
+                },
+            });
+
+            const db = Database.create(plugin);
+
+            expect(createCallCount).toBe(1);
+            expect(typeof db.system.functions.init).toBe("function");
+        });
+    });
 });
 
 describe("database.transactions", () => {

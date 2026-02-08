@@ -1,7 +1,7 @@
 import { BlurFilter, ColorMatrixFilter } from "pixi.js";
 import type { FilterType } from "./pixie-plugin.js";
 
-const blurFilter = new BlurFilter({ strength: 6, quality: 2 });
+const blurFilter = new BlurFilter({ strength: 2, quality: 2 });
 const sepiaFilter = new ColorMatrixFilter();
 sepiaFilter.sepia(false);
 const vintageFilter = new ColorMatrixFilter();

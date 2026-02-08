@@ -7,6 +7,8 @@ import { Vec2, F32 } from "@adobe/data/math";
 export const spriteTypeSchema = { enum: ["bunny", "fox"] } as const satisfies Schema;
 export type SpriteType = Schema.ToType<typeof spriteTypeSchema>;
 
+export type FilterType = "none" | "sepia" | "blur" | "vintage" | "night";
+
 export const pixiePlugin = Database.Plugin.create({
   components: {
     position: Vec2.schema,
@@ -14,6 +16,9 @@ export const pixiePlugin = Database.Plugin.create({
     sprite: spriteTypeSchema,
     hovered: Boolean.schema,
     active: Boolean.schema,
+  },
+  resources: {
+    filterType: { default: "none" as FilterType },
   },
   archetypes: {
     Sprite: ["position", "rotation", "sprite", "hovered", "active"],
@@ -51,6 +56,9 @@ export const pixiePlugin = Database.Plugin.create({
       if (row?.active !== undefined) {
         t.update(args.entity, { active: !row.active });
       }
+    },
+    setFilterType: (t, args: { filterType: FilterType }) => {
+      t.resources.filterType = args.filterType;
     },
   },
   systems: {

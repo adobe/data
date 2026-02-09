@@ -285,3 +285,97 @@ function testSystemsAndActionsInference() {
         (arg: { name: number }) => any
     >>;
 }
+
+// ============================================================================
+// EXTENDED DB ASSIGNABLE TO BASE DB (computed type)
+// ============================================================================
+
+/**
+ * Verifies that db from an extended plugin's system create callback can be passed
+ * to a function expecting the base database type. This catches the "computed:
+ * unknown" bug where system create's db lacked the 8th Database parameter.
+ * We use Pick to test only resources and computed (the structural assignment).
+ */
+function testExtendedDbAssignableToBaseDb() {
+    const basePlugin = Database.Plugin.create({
+        components: { pos: { type: "number" } },
+        resources: { scale: { default: 1 as number } },
+        archetypes: { Entity: ["pos"] },
+        transactions: {},
+        actions: {},
+        systems: {},
+    });
+
+    type BaseDb = Database.FromPlugin<typeof basePlugin>;
+
+    const extendedPlugin = Database.Plugin.create({
+        extends: basePlugin,
+        components: { vel: { type: "number" } },
+        resources: {},
+        archetypes: { Moving: ["pos", "vel"] },
+        transactions: {},
+        actions: {},
+        systems: {
+            update: {
+                create: (db) => {
+                    fnExpectingBaseResourcesAndComputed(db);
+                    return () => {};
+                },
+            },
+        },
+    });
+
+    function fnExpectingBaseResourcesAndComputed(db: Pick<BaseDb, "resources" | "computed">): number {
+        return db.resources.scale;
+    }
+}
+
+// ============================================================================
+// EXTENDED DB ASSIGNABLE TO BASE DB (system.functions)
+// ============================================================================
+
+/**
+ * Verifies that db from an extended plugin's system create callback has
+ * system.functions with specific keys (not { [x: string]: ... }). This catches
+ * the "S = string" bug where system create's db had an index signature.
+ * We test resources + system.functions.input (avoids system.order variance).
+ */
+function testExtendedDbAssignableToBaseDbWithSystems() {
+    const basePlugin = Database.Plugin.create({
+        components: { pos: { type: "number" } },
+        resources: { scale: { default: 1 as number } },
+        archetypes: { Entity: ["pos"] },
+        transactions: {},
+        actions: {},
+        systems: {
+            input: { create: (db) => () => {} },
+        },
+    });
+
+    type BaseDb = Database.FromPlugin<typeof basePlugin>;
+
+    const extendedPlugin = Database.Plugin.create({
+        extends: basePlugin,
+        components: { vel: { type: "number" } },
+        resources: {},
+        archetypes: { Moving: ["pos", "vel"] },
+        transactions: {},
+        actions: {},
+        systems: {
+            update: {
+                create: (db) => {
+                    fnExpectingBaseResourcesAndInputSystem(db);
+                    return () => {};
+                },
+            },
+        },
+    });
+
+    type BaseResourcesAndInputSystem = Pick<BaseDb, "resources"> & {
+        system: { functions: Pick<BaseDb["system"]["functions"], "input"> };
+    };
+
+    function fnExpectingBaseResourcesAndInputSystem(db: BaseResourcesAndInputSystem): number {
+        return db.resources.scale + (db.system.functions.input ? 1 : 0);
+    }
+}

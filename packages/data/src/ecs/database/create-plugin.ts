@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Database, SystemFunction, ServiceFactories, FromServiceFactories, type PluginComputedFactories } from "./database.js";
+import { Database, SystemFunction, ServiceFactories, FromServiceFactories, FromComputedFactories, type PluginComputedFactories } from "./database.js";
 import type { ComponentSchemas } from "../component-schemas.js";
 import type { ResourceSchemas } from "../resource-schemas.js";
 import type { ArchetypeComponents } from "../store/archetype-components.js";
@@ -145,9 +145,10 @@ export function createPlugin<
                 FromSchemas<RemoveIndex<RS> & XP['resources']>,
                 RemoveIndex<A> & XP['archetypes'],
                 ToTransactionFunctions<RemoveIndex<TD> & XP['transactions']>,
-                string,
+                S | StringKeyof<XP['systems']>,
                 ToActionFunctions<XP['actions']>,
-                FromServiceFactories<RemoveIndex<SVF> & XP['services']>
+                FromServiceFactories<RemoveIndex<SVF> & XP['services']>,
+                FromComputedFactories<RemoveIndex<CVF> & XP['computed']>
             >, input?: any) => any
         }
         systems?: { readonly [K in S]: {
@@ -156,9 +157,10 @@ export function createPlugin<
                 FromSchemas<RemoveIndex<RS> & XP['resources']>,
                 RemoveIndex<A> & XP['archetypes'],
                 ToTransactionFunctions<RemoveIndex<TD> & XP['transactions']>,
-                string,
+                S | StringKeyof<XP['systems']>,
                 ToActionFunctions<RemoveIndex<AD> & XP['actions']>,
-                FromServiceFactories<RemoveIndex<SVF> & XP['services']>
+                FromServiceFactories<RemoveIndex<SVF> & XP['services']>,
+                FromComputedFactories<RemoveIndex<CVF> & XP['computed']>
             > & {
                 readonly store: Store<
                     FromSchemas<RemoveIndex<CS> & XP['components']>,

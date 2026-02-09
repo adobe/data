@@ -20,6 +20,26 @@ export const NONE = 0;
 const FACES = [POS_Z, POS_X, NEG_Z, NEG_X, POS_Y, NEG_Y];
 
 /**
+ * Face normal vectors (outward from surface) for each AABB face.
+ * Use with getNormal(face) or directly when face is known.
+ */
+const NORMAL_POS_Z: Vec3 = [0, 0, 1];
+const NORMAL_NEG_Z: Vec3 = [0, 0, -1];
+const NORMAL_POS_X: Vec3 = [1, 0, 0];
+const NORMAL_NEG_X: Vec3 = [-1, 0, 0];
+const NORMAL_POS_Y: Vec3 = [0, 1, 0];
+const NORMAL_NEG_Y: Vec3 = [0, -1, 0];
+
+const FACE_NORMALS = new Map<number, Vec3>([
+    [POS_Z, NORMAL_POS_Z],
+    [NEG_Z, NORMAL_NEG_Z],
+    [POS_X, NORMAL_POS_X],
+    [NEG_X, NORMAL_NEG_X],
+    [POS_Y, NORMAL_POS_Y],
+    [NEG_Y, NORMAL_NEG_Y],
+]);
+
+/**
  * AABB face direction names for debugging/logging
  */
 const FACE_NAMES = new Map<number, string>([
@@ -39,18 +59,14 @@ export const getName = (face: AabbFace): string => {
 };
 
 /**
- * Get the normal vector for a given AABB face
+ * Get the normal vector for a given AABB face (outward from surface).
  */
 export const getNormal = (face: AabbFace): Vec3 => {
-    switch (face) {
-        case POS_Z: return [0, 0, 1];
-        case NEG_Z: return [0, 0, -1];
-        case POS_X: return [1, 0, 0];
-        case NEG_X: return [-1, 0, 0];
-        case POS_Y: return [0, 1, 0];
-        case NEG_Y: return [0, -1, 0];
-        default: throw new Error(`Invalid face index: ${face}`);
+    const normal = FACE_NORMALS.get(face);
+    if (normal === undefined) {
+        throw new Error(`Invalid face index: ${face}`);
     }
+    return normal;
 };
 
 export function* getFaces(face: AabbFace): IterableIterator<AabbFace> {

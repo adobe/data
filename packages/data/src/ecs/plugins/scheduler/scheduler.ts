@@ -21,7 +21,7 @@ export const scheduler = createPlugin({
                                 tier
                                     .filter((name: string) => name !== "schedulerSystem")
                                     .map((name: string) => {
-                                        const systemFn = db.system.functions[name];
+                                        const systemFn = db.system.functions[name as keyof typeof db.system.functions];
                                         if (systemFn == null || systemFn === undefined) {
                                             // System returned void or null - skip execution (initialization-only system)
                                             return Promise.resolve();

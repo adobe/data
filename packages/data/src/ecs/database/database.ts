@@ -111,7 +111,8 @@ export interface Database<
   readonly system: {
     /** System create() return value, or null when create() returns void. Key is always present. */
     readonly functions: { readonly [K in S]: SystemFunction | null };
-    readonly order: S[][];
+    /** Tier order for execution. Looser type allows extended dbs to be assignable to base. */
+    readonly order: ReadonlyArray<ReadonlyArray<string>>;
   }
   toData(): unknown
   fromData(data: unknown): void
@@ -128,7 +129,28 @@ export interface Database<
 }
 
 export namespace Database {
-  export type FromPlugin<P extends Database.Plugin> = P extends Database.Plugin<infer CS, infer RS, infer A, infer TD, infer S, infer AD, infer SVF, infer CVF> ? Database<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S, ToActionFunctions<AD>, FromServiceFactories<SVF>, FromComputedFactories<CVF>> : never;
+  /** Stepwise inference helpers - each infers one Plugin param to reduce compiler depth. */
+  type FromPluginComponents<P> = P extends Database.Plugin<infer CS, any, any, any, any, any, any, any> ? CS : never;
+  type FromPluginResources<P> = P extends Database.Plugin<any, infer RS, any, any, any, any, any, any> ? RS : never;
+  type FromPluginArchetypes<P> = P extends Database.Plugin<any, any, infer A, any, any, any, any, any> ? A : never;
+  type FromPluginTransactions<P> = P extends Database.Plugin<any, any, any, infer TD, any, any, any, any> ? TD : never;
+  type FromPluginSystems<P> = P extends Database.Plugin<any, any, any, any, infer S, any, any, any> ? S : never;
+  type FromPluginActions<P> = P extends Database.Plugin<any, any, any, any, any, infer AD, any, any> ? AD : never;
+  type FromPluginServices<P> = P extends Database.Plugin<any, any, any, any, any, any, infer SVF, any> ? SVF : never;
+  type FromPluginComputed<P> = P extends Database.Plugin<any, any, any, any, any, any, any, infer CVF> ? CVF : never;
+
+  export type FromPlugin<P extends Database.Plugin> = P extends Database.Plugin
+    ? Database<
+        FromSchemas<FromPluginComponents<P>>,
+        FromSchemas<FromPluginResources<P>>,
+        FromPluginArchetypes<P>,
+        ToTransactionFunctions<FromPluginTransactions<P>>,
+        FromPluginSystems<P>,
+        ToActionFunctions<FromPluginActions<P>>,
+        FromServiceFactories<FromPluginServices<P>>,
+        FromComputedFactories<FromPluginComputed<P>>
+      >
+    : never;
 
   export const create = createDatabase;
 

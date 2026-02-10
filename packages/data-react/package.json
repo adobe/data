@@ -1,0 +1,32 @@
+{
+  "name": "@adobe/data-react",
+  "version": "0.9.18",
+  "description": "Adobe data React bindings — hooks and context for ECS database",
+  "type": "module",
+  "private": false,
+  "scripts": {
+    "build": "cp ../../LICENSE . && tsc -b",
+    "dev": "tsc -b -w",
+    "link": "pnpm build && pnpm link --global",
+    "test": "vitest --run --passWithNoTests",
+    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
+  },
+  "dependencies": {
+    "@adobe/data": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=17.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "react": "^19",
+    "typescript": "^5.8.3",
+    "vitest": "^1.6.0"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  }
+}

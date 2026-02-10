@@ -1,0 +1,25 @@
+{
+  "name": "data-react-hello",
+  "version": "0.9.18",
+  "description": "Hello World sample - click counter using @adobe/data-react",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "publish-public": "true"
+  },
+  "dependencies": {
+    "@adobe/data": "workspace:*",
+    "@adobe/data-react": "workspace:*",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5.8.3",
+    "vite": "^5.1.1",
+    "@vitejs/plugin-react": "^4.3.0"
+  }
+}

@@ -1,0 +1,7 @@
+packages:
+  - 'packages/data'
+  - 'packages/data-lit'
+  - 'packages/data-lit-todo'
+  - 'packages/data-react'
+  - 'packages/data-react-hello'
+  - 'packages/data-react-pixie'

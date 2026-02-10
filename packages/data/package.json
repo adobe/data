@@ -1,0 +1,186 @@
+{
+  "name": "@adobe/data",
+  "version": "0.9.18",
+  "description": "Adobe data oriented programming library",
+  "type": "module",
+  "sideEffects": false,
+  "private": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "pnpm build-assembly && run-p build:*",
+    "build:code": "tsc -b",
+    "build:apidocs": "typedoc",
+    "build-assembly": "run-p asbuild:release",
+    "clean": "rm -rf dist build node_modules",
+    "clean-cache": "rm -rf node_modules/.cache",
+    "deploy-docs": "pnpm build && ./scripts/deploy-docs.sh",
+    "dev": "pnpm clean-cache && run-p dev:* dev:serve",
+    "dev:serve": "vite",
+    "dev:build": "tsc -b -w --preserveWatchOutput",
+    "dev:test": "vitest --watch",
+    "dev:apidocs": "nodemon -w README.md -w dist -x typedoc --delay 100",
+    "dev:assembly": "nodemon -w assembly -e ts -x pnpm run asbuild:release --delay 100",
+    "lint": "pnpm eslint .",
+    "lint-fix": "pnpm eslint . --fix",
+    "debug": "vitest --inspect-brk --no-file-parallelism --test-timeout 1000000",
+    "link": "pnpm build && pnpm link --global",
+    "pre-commit": "lint-staged",
+    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public",
+    "perftest": "node dist/perftest/index.js",
+    "test": "pnpm exec playwright install chromium && vitest --run",
+    "asbuild:debug": "asc assembly/index.ts -o dist/assembly/index.wasm --target debug --enable simd && echo built dist/assembly/index.wasm",
+    "asbuild:release": "asc assembly/index.ts -o dist/assembly/index.wasm --target release --enable simd --optimize && echo built dist/assembly/index.wasm",
+    "start": "npx serve ."
+  },
+  "devDependencies": {
+    "@assemblyscript/loader": "^0.27.30",
+    "@trivago/prettier-plugin-sort-imports": "^4.3.0",
+    "@types/jsonpath": "^0.2.4",
+    "@types/uuid": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "@vitest/browser": "^1.6.0",
+    "@webgpu/types": "^0.1.61",
+    "assemblyscript": "^0.27.30",
+    "eslint": "^8.56.0",
+    "eslint-config-airbnb-typescript": "^17.1.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-formatter-pretty": "^5.0.0",
+    "eslint-plugin-header": "^3.1.1",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-notice": "^0.9.10",
+    "eslint-plugin-prettier": "^5.1.3",
+    "glob": "^10.3.10",
+    "jsdom": "^24.1.0",
+    "lint-staged": "^13.2.2",
+    "nodemon": "^3.1.7",
+    "npm-run-all": "^4.1.5",
+    "playwright": "^1.46.1",
+    "prettier": "^3.2.5",
+    "prettier-package-json": "^2.8.0",
+    "pretty-quick": "^4.0.0",
+    "riteway": "v8.0.0-RC4",
+    "stylelint": "^16.2.1",
+    "stylelint-config-standard": "^36.0.0",
+    "typedoc": "^0.28.9",
+    "typescript": "^5.8.3",
+    "uuid": "^10.0.0",
+    "vite": "^5.1.1",
+    "vitest": "^1.6.0",
+    "webdriverio": "^9.0.9"
+  },
+  "lint-staged": {
+    "*.ts": "pnpm lint:ts && pnpm lint:css",
+    "*.css": "pnpm lint:css",
+    "package.json": "pnpm lint:packagejson"
+  },
+  "dependencies": {
+    "@cfworker/json-schema": "^4.1.1",
+    "jsonpath": "^1.1.1"
+  },
+  "typesVersions": {
+    "*": {
+      "*": [
+        "./dist/index.d.ts"
+      ],
+      "functions": [
+        "./dist/functions/index.d.ts"
+      ],
+      "observe": [
+        "./dist/observe/index.d.ts"
+      ],
+      "cache": [
+        "./dist/cache/index.d.ts"
+      ],
+      "schema": [
+        "./dist/schema/index.d.ts"
+      ],
+      "types": [
+        "./dist/types/index.d.ts"
+      ],
+      "blob": [
+        "./dist/blob/index.d.ts"
+      ],
+      "ecs": [
+        "./dist/ecs/index.d.ts"
+      ],
+      "old-ecs": [
+        "./dist/old-ecs/index.d.ts"
+      ],
+      "service": [
+        "./dist/service/index.d.ts"
+      ],
+      "table": [
+        "./dist/table/index.d.ts"
+      ],
+      "typed-buffer": [
+        "./dist/typed-buffer/index.d.ts"
+      ],
+      "math": [
+        "./dist/math/index.d.ts"
+      ]
+    }
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./functions": {
+      "import": "./dist/functions/index.js",
+      "types": "./dist/functions/index.d.ts"
+    },
+    "./blob": {
+      "import": "./dist/blob/index.js",
+      "types": "./dist/blob/index.d.ts"
+    },
+    "./cache": {
+      "import": "./dist/cache/index.js",
+      "types": "./dist/cache/index.d.ts"
+    },
+    "./schema": {
+      "import": "./dist/schema/index.js",
+      "types": "./dist/schema/index.d.ts"
+    },
+    "./types": {
+      "import": "./dist/types/index.js",
+      "types": "./dist/types/index.d.ts"
+    },
+    "./observe": {
+      "import": "./dist/observe/index.js",
+      "types": "./dist/observe/index.d.ts"
+    },
+    "./ecs": {
+      "import": "./dist/ecs/index.js",
+      "types": "./dist/ecs/index.d.ts"
+    },
+    "./old-ecs": {
+      "import": "./dist/old-ecs/index.js",
+      "types": "./dist/old-ecs/index.d.ts"
+    },
+    "./service": {
+      "import": "./dist/service/index.js",
+      "types": "./dist/service/index.d.ts"
+    },
+    "./table": {
+      "import": "./dist/table/index.js",
+      "types": "./dist/table/index.d.ts"
+    },
+    "./typed-buffer": {
+      "import": "./dist/typed-buffer/index.js",
+      "types": "./dist/typed-buffer/index.d.ts"
+    },
+    "./math": {
+      "import": "./dist/math/index.js",
+      "types": "./dist/math/index.d.ts"
+    },
+    "./equals-shallow": {
+      "import": "./dist/equals-shallow.js",
+      "types": "./dist/equals-shallow.d.ts"
+    }
+  }
+}

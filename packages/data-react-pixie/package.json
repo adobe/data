@@ -1,0 +1,28 @@
+{
+  "name": "data-react-pixie",
+  "version": "0.9.18",
+  "description": "PixiJS React sample - ECS sprites (bunny, fox) with @adobe/data-react",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "publish-public": "true"
+  },
+  "dependencies": {
+    "@adobe/data": "workspace:*",
+    "@adobe/data-react": "workspace:*",
+    "@pixi/react": "8.0.0-beta.25",
+    "pixi.js": "^8.2.6",
+    "react": "^19",
+    "react-dom": "^19"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4.3.0",
+    "typescript": "^5.8.3",
+    "vite": "^5.1.1",
+    "vite-plugin-checker": "^0.12.0"
+  }
+}

@@ -11,10 +11,9 @@ describe('getDynamicSchema', () => {
             age: 20,
         });
 
-        // Email UI should remain unchanged
-        expect(dynamicSchema.properties?.email?.ui).toEqual({
-            name: "Email",
-            placeholder: "john.doe@example.com",
+        // Email schema should remain unchanged
+        expect(dynamicSchema.properties?.email).toEqual({
+            type: "string",
         });
     });
 
@@ -24,11 +23,10 @@ describe('getDynamicSchema', () => {
             age: 10,
         });
 
-        // Email UI should be hidden
-        expect(dynamicSchema.properties?.email?.ui).toEqual({
-            name: "Email",
-            placeholder: "john.doe@example.com",
-            visible: false,
+        // Email should become transient when age < 18
+        expect(dynamicSchema.properties?.email).toEqual({
+            type: "string",
+            transient: true,
         });
     });
 
@@ -38,11 +36,10 @@ describe('getDynamicSchema', () => {
             species: "human",
         });
 
-        // Email UI should be visible
-        expect(dynamicSchema.properties?.email?.ui).toEqual({
-            name: "Email",
-            placeholder: "john.doe@example.com",
-            visible: true,
+        // Email should not be transient for humans
+        expect(dynamicSchema.properties?.email).toEqual({
+            type: "string",
+            transient: false,
         });
     });
 
@@ -52,11 +49,10 @@ describe('getDynamicSchema', () => {
             species: "robot",
         });
 
-        // Email UI should be disabled
-        expect(dynamicSchema.properties?.email?.ui).toEqual({
-            name: "Email",
-            placeholder: "john.doe@example.com",
-            enabled: false,
+        // Email should be immutable for robots
+        expect(dynamicSchema.properties?.email).toEqual({
+            type: "string",
+            mutable: false,
         });
     });
 
@@ -66,11 +62,10 @@ describe('getDynamicSchema', () => {
             species: "human",
         });
 
-        // Email UI should be visible due to name length > 3 and species being human
-        expect(dynamicSchema.properties?.email?.ui).toEqual({
-            name: "Email",
-            placeholder: "john.doe@example.com",
-            visible: true,
+        // Email should not be transient due to name length > 3 and species being human
+        expect(dynamicSchema.properties?.email).toEqual({
+            type: "string",
+            transient: false,
         });
     });
 
@@ -80,11 +75,10 @@ describe('getDynamicSchema', () => {
             species: "human",
         });
 
-        // Email UI should be hidden due to name length <= 2
-        expect(dynamicSchema.properties?.email?.ui).toEqual({
-            name: "Email",
-            placeholder: "john.doe@example.com",
-            visible: false,
+        // Email should become transient due to name length <= 2
+        expect(dynamicSchema.properties?.email).toEqual({
+            type: "string",
+            transient: true,
         });
     });
 

@@ -8,25 +8,18 @@ export const PersonSchema = {
     properties: {
         name: {
             type: "string",
-            ui: {
-                name: "Name",
-                placeholder: "John Doe",
-            }
         },
         age: {
             type: "number",
             default: 30,
             minimum: 0,
             maximum: 100,
-            ui: {
-                name: "Age",
-            },
             conditionals: [
-                // when the age is less than 18 then email is not visible.
+                // when the age is less than 18 then email becomes transient.
                 {
-                    path: "$.properties.email.ui",
+                    path: "$.properties.email",
                     value: {
-                        visible: false,
+                        transient: true,
                     },
                     match: {
                         exclusiveMaximum: 18,
@@ -36,10 +29,6 @@ export const PersonSchema = {
         },
         email: {
             type: "string",
-            ui: {
-                name: "Email",
-                placeholder: "john.doe@example.com",
-            }
         },
     },
     additionalProperties: false,
@@ -50,10 +39,6 @@ export const PersonSchemaWithOneOf = {
     properties: {
         name: {
             type: "string",
-            ui: {
-                name: "Name",
-                placeholder: "John Doe",
-            }
         },
         species: {
             type: "string",
@@ -62,9 +47,9 @@ export const PersonSchemaWithOneOf = {
                     const: "human",
                     conditionals: [
                         {
-                            path: "$.properties.email.ui",
+                            path: "$.properties.email",
                             value: {
-                                visible: true,
+                                transient: false,
                             }
                         }
                     ]
@@ -73,9 +58,9 @@ export const PersonSchemaWithOneOf = {
                     const: "robot",
                     conditionals: [
                         {
-                            path: "$.properties.email.ui",
+                            path: "$.properties.email",
                             value: {
-                                enabled: false,
+                                mutable: false,
                             }
                         }
                     ]
@@ -84,10 +69,6 @@ export const PersonSchemaWithOneOf = {
         },
         email: {
             type: "string",
-            ui: {
-                name: "Email",
-                placeholder: "john.doe@example.com",
-            }
         },
     },
     additionalProperties: false,
@@ -98,10 +79,6 @@ export const PersonSchemaRootConditions = {
     properties: {
         name: {
             type: "string",
-            ui: {
-                name: "Name",
-                placeholder: "John Doe",
-            }
         },
         species: {
             type: "string",
@@ -116,18 +93,14 @@ export const PersonSchemaRootConditions = {
         },
         email: {
             type: "string",
-            ui: {
-                name: "Email",
-                placeholder: "john.doe@example.com",
-            }
         },
     },
     conditionals: [
-        // if the name length is less than 3 then the email is not visible.
+        // if the name length is less than 3 then the email becomes transient.
         {
-            path: "$.properties.email.ui",
+            path: "$.properties.email",
             value: {
-                visible: false,
+                transient: true,
             },
             match: {
                 properties: {
@@ -137,11 +110,11 @@ export const PersonSchemaRootConditions = {
                 }
             }
         },
-        // if the name length is greater than 3 and the species is human then the email is visible.
+        // if the name length is greater than 3 and the species is human then the email is not transient.
         {
-            path: "$.properties.email.ui",
+            path: "$.properties.email",
             value: {
-                visible: true,
+                transient: false,
             },
             match: {
                 properties: {
@@ -173,7 +146,7 @@ describe('enumeratePatches', () => {
             age: 10,
         })];
         expect(patches).toEqual([
-            { path: ["$", "properties", "email", "ui"], fragment: { visible: false } },
+            { path: ["$", "properties", "email"], fragment: { transient: true } },
         ]);
     });
     it('should match on oneOf cases for human', () => {
@@ -182,7 +155,7 @@ describe('enumeratePatches', () => {
             species: "human",
         })];
         expect(patches).toEqual([
-            { path: ["$", "properties", "email", "ui"], fragment: { visible: true } },
+            { path: ["$", "properties", "email"], fragment: { transient: false } },
         ]);
     });
     it('should match on oneOf cases for robot', () => {
@@ -191,7 +164,7 @@ describe('enumeratePatches', () => {
             species: "robot",
         })];
         expect(patches).toEqual([
-            { path: ["$", "properties", "email", "ui"], fragment: { enabled: false } },
+            { path: ["$", "properties", "email"], fragment: { mutable: false } },
         ]);
     });
     it('should match on complex root conditions', () => {
@@ -200,7 +173,7 @@ describe('enumeratePatches', () => {
             species: "human",
         })];
         expect(patches).toEqual([
-            { path: ["$", "properties", "email", "ui"], fragment: { visible: true } },
+            { path: ["$", "properties", "email"], fragment: { transient: false } },
         ]);
     });
     it('should match on simple root conditions', () => {
@@ -209,7 +182,7 @@ describe('enumeratePatches', () => {
             species: "human",
         })];
         expect(patches).toEqual([
-            { path: ["$", "properties", "email", "ui"], fragment: { visible: false } },
+            { path: ["$", "properties", "email"], fragment: { transient: true } },
         ]);
     });
 });

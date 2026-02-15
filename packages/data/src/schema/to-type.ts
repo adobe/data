@@ -5,6 +5,7 @@ import { DeepReadonly, EquivalentTypes, True } from "../types/types.js";
 import { Schema } from "./schema.js";
 
 export type ToType<T, Depth extends number = 5> =
+  T extends false ? void :
   T extends { mutable: true } ? FromSchemaInternal<T> :
   DeepReadonly<Depth extends 0
     ? any
@@ -122,6 +123,9 @@ type FromAllOfSchema<Schemas extends ReadonlyArray<Schema>, Depth extends number
   : {};
 
 //  type check tests
+
+type TestFalse = ToType<false>; // void
+type CheckFalse = True<EquivalentTypes<TestFalse, void>>;
 
 type Test1 = ToType<{ type: 'number' }>; // number
 type CheckNumber = True<EquivalentTypes<Test1, number>>;

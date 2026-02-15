@@ -1,13 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import type { Schema as SchemaType, Layout, Conditional, UIProperties, JSONPath, JSONMergePatch } from "./schema.js";
+import type { Schema as SchemaType, Layout, Conditional, JSONPath, JSONMergePatch } from "./schema.js";
 
 export type Schema = SchemaType;
 export * as Schema from "./public.js";
 
 export type { FromSchemas } from "./from-schemas.js";
 
-export type { Layout, Conditional, UIProperties, JSONPath, JSONMergePatch };
+export type { Layout, Conditional, JSONPath, JSONMergePatch };
 export type { getDynamicSchema } from "./dynamic/index.js";
 
 export * from "./validation/index.js";

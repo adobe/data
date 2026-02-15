@@ -1,8 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { TypedBuffer } from "../typed-buffer/typed-buffer.js";
-import { DeepReadonly, EquivalentTypes, True } from "../types/types.js";
-
 export type JSONPath = string;
 export type JSONMergePatch = unknown;
 
@@ -21,29 +18,12 @@ export type Conditional = {
   value: JSONMergePatch;
 }
 
-export interface UIProperties {
-  name?: string;
-  icon?: string; // url? or icon name?
-  summary?: string;
-  premium?: boolean;
-  placeholder?: string;
-  details?: string;
-  visible?: boolean;
-  enabled?: boolean;
-  infoUrl?: string;
-  group?: string;
-  order?: number;
-  groups?: {
-    readonly [key: string]: UIProperties;
-  };
-}
-
 const schemaTypes = { number: true, integer: true, string: true, boolean: true, null: true, array: true, object: true, 'typed-buffer': true, blob: true } as const;
 
 export interface Schema {
   type?: keyof typeof schemaTypes;
+  description?: string;
   conditionals?: readonly Conditional[];
-  ui?: UIProperties;
   transient?: boolean;
   mutable?: boolean; // defaults to false
   default?: any;

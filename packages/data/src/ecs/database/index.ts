@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 export * from "./public/create-database.js";
+export * from "./public/observe-select-deep.js";
 export * from "./reconciling/create-reconciling-database.js";
 export * from "./reconciling/reconciling-database.js";
 export * from "./reconciling/reconciling-entry.js";

@@ -24,12 +24,12 @@ export const createArchetype = <C extends { id: typeof Entity.schema }>(
         return entity;
     }
 
-    const componentSet = new Set(Object.keys(components) as StringKeyof<C & RequiredComponents>[]);
+    const componentSet = new Set(Object.keys(components));
 
     const archetype = {
         id,
         ...table,
-        components: componentSet,
+        components: componentSet as Set<StringKeyof<C>>,
         insert: createEntity,
         toData: () => ({
             columns: archetype.columns,

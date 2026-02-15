@@ -88,6 +88,46 @@ function validTypeInferenceTests() {
         systems: {},
     });
 
+    // Test: Computed + transactions co-inference
+    // When both computed and transactions are defined in the same plugin,
+    // TypeScript must infer TD from the transactions property independently
+    // of the CVF contextual typing in the computed property.
+    const basePluginForComputed = createPlugin({
+        components: {
+            x: { type: "number" },
+        },
+        archetypes: {
+            X: ["x"],
+        },
+        transactions: {
+            setX: (store, value: number) => {
+                store.update(0, { x: value });
+            },
+        },
+    });
+
+    const computedWithTransactions = createPlugin({
+        extends: basePluginForComputed,
+        resources: {
+            panelVisible: { default: true as boolean },
+        },
+        computed: {
+            panelVisible: (db) => {
+                return Observe.fromConstant(true);
+            },
+        },
+        transactions: {
+            togglePanel: (store) => {
+                store.resources.panelVisible = !store.resources.panelVisible;
+            },
+        },
+    });
+
+    // Verify: the plugin's TD must include BOTH inherited and new transactions
+    type ComputedWithTxTD = typeof computedWithTransactions extends Database.Plugin<any, any, any, infer TD, any, any, any, any> ? TD : never;
+    type _CheckTogglePanel = Assert<Equal<'togglePanel' extends keyof ComputedWithTxTD ? true : false, true>>;
+    type _CheckSetX = Assert<Equal<'setX' extends keyof ComputedWithTxTD ? true : false, true>>;
+
     // Test: Valid systems with transactions
     const validSystemPlugin = createPlugin({
         components: {

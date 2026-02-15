@@ -137,7 +137,7 @@ export function createPlugin<
         components?: CS,
         resources?: RS,
         archetypes?: A,
-        computed?: CVF & PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, RemoveIndex<TD>, string, RemoveIndex<AD> & XP['actions'], XP, RemoveIndex<SVF>>>,
+        computed?: CVF & PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, {}, string, RemoveIndex<AD> & XP['actions'], XP, RemoveIndex<SVF>>>,
         transactions?: TD,
         actions?: AD & {
             readonly [K: string]: (db: Database<

@@ -4,20 +4,33 @@ import { Entity } from "../entity.js";
 import { Table, ReadonlyTable } from "../../table/index.js";
 import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";
-import { Exact } from "../../types/types.js";
+import { Exact, StringKeyof } from "../../types/types.js";
 
 export type EntityInsertValues<C> = Omit<C, "id">;
 export type ArchetypeId = number;
+
+/**
+ * Component set that narrows iteration to known component keys
+ * while keeping .has() and set comparisons accepting any string.
+ */
+interface ComponentSet<T extends string> extends ReadonlySet<T> {
+    has(value: string): boolean;
+    isSupersetOf(other: ReadonlySet<string>): boolean;
+    isSubsetOf(other: ReadonlySet<string>): boolean;
+    isDisjointFrom(other: ReadonlySet<string>): boolean;
+}
 
 interface BaseArchetype {
     readonly id: ArchetypeId;
     readonly components: ReadonlySet<string>;
 }
 export interface ReadonlyArchetype<C extends RequiredComponents> extends BaseArchetype, ReadonlyTable<C> {
+    readonly components: ComponentSet<StringKeyof<C>>;
     toData: () => unknown
 }
 
 export interface Archetype<C extends RequiredComponents = RequiredComponents> extends BaseArchetype, Table<C> {
+    readonly components: ComponentSet<StringKeyof<C>>;
     insert: <T extends EntityInsertValues<C>>(rowData: Exact<EntityInsertValues<C>, T>) => Entity;
     toData: () => unknown
     fromData: (data: unknown) => void

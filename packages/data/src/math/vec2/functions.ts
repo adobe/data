@@ -2,6 +2,9 @@
 
 import type { Vec2 } from "./index.js";
 
+// Constants
+export const zero: Vec2 = [0, 0];
+
 // Mathematical Operations
 export const abs = ([x, y]: Vec2): Vec2 => [Math.abs(x), Math.abs(y)];
 export const ceil = ([x, y]: Vec2): Vec2 => [Math.ceil(x), Math.ceil(y)];
@@ -24,6 +27,8 @@ export const smoothstep = ([e0x, e0y]: Vec2, [e1x, e1y]: Vec2, [x, y]: Vec2): Ve
     const ty = Math.max(0, Math.min(1, (y - e0y) / (e1y - e0y)));
     return [tx * tx * (3 - 2 * tx), ty * ty * (3 - 2 * ty)];
 };
+
+export const equals = ([x1, y1]: Vec2, [x2, y2]: Vec2): boolean => x1 === x2 && y1 === y2;
 
 // Geometric Functions
 export const length = ([x, y]: Vec2): number => Math.sqrt(x * x + y * y);

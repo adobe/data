@@ -14,6 +14,7 @@ import { RequiredComponents } from "../required-components.js";
 import { EntitySelectOptions } from "../store/entity-select-options.js";
 import { Service } from "../../service/service.js";
 import { createDatabase } from "./public/create-database.js";
+import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
 import { FromSchemas } from "../../schema/index.js";
@@ -141,15 +142,15 @@ export namespace Database {
 
   export type FromPlugin<P extends Database.Plugin> = P extends Database.Plugin
     ? Database<
-        FromSchemas<FromPluginComponents<P>>,
-        FromSchemas<FromPluginResources<P>>,
-        FromPluginArchetypes<P>,
-        ToTransactionFunctions<FromPluginTransactions<P>>,
-        FromPluginSystems<P>,
-        ToActionFunctions<FromPluginActions<P>>,
-        FromServiceFactories<FromPluginServices<P>>,
-        FromComputedFactories<FromPluginComputed<P>>
-      >
+      FromSchemas<FromPluginComponents<P>>,
+      FromSchemas<FromPluginResources<P>>,
+      FromPluginArchetypes<P>,
+      ToTransactionFunctions<FromPluginTransactions<P>>,
+      FromPluginSystems<P>,
+      ToActionFunctions<FromPluginActions<P>>,
+      FromServiceFactories<FromPluginServices<P>>,
+      FromComputedFactories<FromPluginComputed<P>>
+    >
     : never;
 
   export const create = createDatabase;
@@ -157,6 +158,8 @@ export namespace Database {
   export const is = (value: unknown): value is Database => {
     return value !== null && typeof value === "object" && "transactions" in value && "actions" in value && "store" in value && "observe" in value && "system" in value && "extend" in value;
   }
+
+  export const observeSelectDeep = _observeSelectDeep;
 
   export type Plugin<
     CS extends ComponentSchemas = any,

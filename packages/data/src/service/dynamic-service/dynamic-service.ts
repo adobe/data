@@ -8,10 +8,11 @@ export type State<S extends Schema = Schema> = {
 }
 
 export type Action<S extends Schema | false = Schema> = {
+    description: string
     schema: S
     execute: Schema.ToType<S> extends void
-    ? (() => Promise<void | ActionError>)
-    : ((state: Schema.ToType<S>) => Promise<void | ActionError>)
+    ? (() => Promise<void | ActionError> | void)
+    : ((state: Schema.ToType<S>) => Promise<void | ActionError> | void)
 }
 
 export type ActionError = string;

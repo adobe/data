@@ -10,4 +10,4 @@ export {
 } from './progressive-result.js';
 
 export * from './async-data-service/index.js';
-export * from './dynamic-service/index.js';
+export * from './agentic-service/index.js';

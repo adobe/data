@@ -2,7 +2,7 @@
 
 import { Observe } from "../../observe/index.js";
 import { TransactionResult } from "../database/transactional-store/transactional-store.js";
-import { Service } from "../../service/service.js";
+import type { Service } from "../../service/index.js";
 
 export interface UndoRedoService<C = unknown> extends Service {
     undoStack: Observe<TransactionResult<C>[]>;

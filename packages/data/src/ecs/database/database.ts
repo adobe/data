@@ -12,7 +12,7 @@ import { Components } from "../store/components.js";
 import { ArchetypeComponents } from "../store/archetype-components.js";
 import { RequiredComponents } from "../required-components.js";
 import { EntitySelectOptions } from "../store/entity-select-options.js";
-import { Service } from "../../service/service.js";
+import type { Service } from "../../service/index.js";
 import { createDatabase } from "./public/create-database.js";
 import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
 import { ResourceSchemas } from "../resource-schemas.js";

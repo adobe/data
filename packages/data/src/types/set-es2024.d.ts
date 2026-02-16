@@ -1,3 +1,5 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+
 /**
  * Type definitions for ES2024 Set methods that may not be fully typed in TypeScript yet.
  * These methods are part of the ES2024 specification:

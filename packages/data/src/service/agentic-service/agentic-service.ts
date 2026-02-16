@@ -1,3 +1,5 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+
 import { Observe } from "../../observe/index.js";
 import type { Service } from "../index.js";
 import type { Action } from "./action.js";

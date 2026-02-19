@@ -74,11 +74,17 @@ export type FromComputedFactories<CF> = {
 };
 
 /**
+ * Valid return type for a plugin computed factory.
+ * Either a direct Observe<T> or a function with any args that returns Observe<T>.
+ */
+export type PluginComputedValue = Observe<unknown> | ((...args: any[]) => Observe<unknown>);
+
+/**
  * Computed factories for plugin descriptors. Constrains each factory to return
- * something that extends Observe<unknown>, so plugins declare observable computed values.
+ * a PluginComputedValue (direct observable or function returning observable).
  * Use this in createPlugin; Database keeps ComputedFactories (unknown) for flexibility.
  */
-export type PluginComputedFactories<DB = any> = { readonly [K: string]: (db: DB) => Observe<unknown> };
+export type PluginComputedFactories<DB = any> = { readonly [K: string]: (db: DB) => PluginComputedValue };
 
 export interface Database<
   C extends Components = {},

@@ -88,6 +88,52 @@ function validTypeInferenceTests() {
         systems: {},
     });
 
+    // Test: Valid plugin with computed returning functions (each factory returns (...args) => Observe<T>)
+    const validComputedFunctionPlugin = createPlugin({
+        components: {
+            a: { type: "number" },
+            b: { type: "string" }
+        },
+        resources: {
+            c: { default: false as boolean }
+        },
+        archetypes: {
+            A: ["a", "b"],
+        },
+        computed: {
+            direct: (db) => Observe.fromConstant(db.resources.c),
+            withFilter: (db) => (filter: string) => Observe.fromConstant(filter.length),
+            withMultipleArgs: (db) => (a: number, b: string) => Observe.fromConstant(a + b.length),
+        },
+        transactions: {},
+        actions: {},
+        systems: {},
+    });
+
+    // Verify: Database.FromPlugin extracts exact computed types
+    type FnPluginDB = Database.FromPlugin<typeof validComputedFunctionPlugin>;
+    type FnPluginComputed = FnPluginDB['computed'];
+    type _CheckDirect = Assert<Equal<FnPluginComputed['direct'], Observe<boolean>>>;
+    type _CheckWithFilter = Assert<Equal<FnPluginComputed['withFilter'], (filter: string) => Observe<number>>>;
+    type _CheckWithMultipleArgs = Assert<Equal<FnPluginComputed['withMultipleArgs'], (a: number, b: string) => Observe<number>>>;
+
+    // Verify: function-returning computed accessible in actions with correct types
+    const pluginWithFnComputedInActions = createPlugin({
+        resources: {
+            n: { default: 10 as number },
+        },
+        computed: {
+            doubled: (db) => Observe.withMap(db.observe.resources.n, (v) => v * 2),
+            filtered: (db) => (threshold: number) => Observe.withMap(db.observe.resources.n, (v) => v > threshold),
+        },
+        actions: {
+            useComputed: (db) => {
+                const d: Observe<number> = db.computed.doubled;
+                const f: (threshold: number) => Observe<boolean> = db.computed.filtered;
+            },
+        },
+    });
+
     // Test: Computed + transactions co-inference
     // When both computed and transactions are defined in the same plugin,
     // TypeScript must infer TD from the transactions property independently
@@ -410,6 +456,50 @@ function invalidComputedReturnType() {
         computed: {
             // @ts-expect-error - computed factory must return something extending Observe<unknown>, not a plain number
             bad: (_db) => 42,
+        },
+        transactions: {},
+        actions: {},
+        systems: {},
+    });
+}
+
+// Test: Invalid computed function return type (function must return Observe, not a plain value)
+function invalidComputedFunctionReturnType() {
+    createPlugin({
+        components: { a: { type: "number" } },
+        resources: {},
+        archetypes: {},
+        computed: {
+            // @ts-expect-error - computed factory returning a function that returns a plain number, not Observe
+            bad: (_db) => (x: number) => x * 2,
+        },
+        transactions: {},
+        actions: {},
+        systems: {},
+    });
+}
+
+// Test: Invalid computed - returning a string (not Observe and not a function returning Observe)
+function invalidComputedReturnsString() {
+    createPlugin({
+        resources: {},
+        computed: {
+            // @ts-expect-error - computed factory must return Observe or (...args) => Observe, not string
+            bad: (_db) => "hello",
+        },
+        transactions: {},
+        actions: {},
+        systems: {},
+    });
+}
+
+// Test: Invalid computed - returning a plain object (not Observe and not a function returning Observe)
+function invalidComputedReturnsObject() {
+    createPlugin({
+        resources: {},
+        computed: {
+            // @ts-expect-error - computed factory must return Observe or (...args) => Observe, not object
+            bad: (_db) => ({ value: 42 }),
         },
         transactions: {},
         actions: {},

@@ -100,6 +100,34 @@ describe("Database.Plugin.create", () => {
             expect(doubleN).toBe(20);
         });
 
+        it("should create plugin with computed returning functions", async () => {
+            const plugin = createPlugin({
+                components: {},
+                resources: { n: { default: 10 as number } },
+                archetypes: {},
+                computed: {
+                    direct: (_db) => Observe.fromConstant(42),
+                    scaled: (db) => (factor: number) =>
+                        Observe.withMap(db.observe.resources.n, (value) => value * factor),
+                },
+                transactions: {},
+                actions: {},
+                systems: {},
+            });
+
+            expect(typeof plugin.computed.direct).toBe("function");
+            expect(typeof plugin.computed.scaled).toBe("function");
+
+            const db = Database.create(plugin);
+
+            const directValue = await Observe.toPromise(db.computed.direct);
+            expect(directValue).toBe(42);
+
+            const scaledObserve = db.computed.scaled(3);
+            const scaledValue = await Observe.toPromise(scaledObserve);
+            expect(scaledValue).toBe(30);
+        });
+
         it("should allow actions to access services from the same plugin", () => {
             const authService = { token: 'test', isAuthenticated: true };
             const plugin = Database.Plugin.create({

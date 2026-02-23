@@ -392,6 +392,49 @@ describe('createLazy', () => {
       expected: 'result-a,result-b,result-c'
     });
   });
+
+  test('promise function second and later calls after first completes', async () => {
+    interface TestService extends Service {
+      fetchData: (id: string) => Promise<string>;
+    }
+
+    const createTestService = (): Promise<TestService> =>
+      Promise.resolve({
+        serviceName: 'test-service',
+        fetchData: async (id: string) => `result-${id}`
+      });
+
+    const factory = createLazy(
+      createTestService,
+      { fetchData: 'fn:promise' }
+    );
+
+    const service = factory();
+
+    const first = await service.fetchData('first');
+    assert({
+      given: 'first call to fn:promise method',
+      should: 'resolve',
+      actual: first,
+      expected: 'result-first'
+    });
+
+    const second = await service.fetchData('second');
+    assert({
+      given: 'second call after first completed',
+      should: 'resolve (regression: isProcessing was never reset)',
+      actual: second,
+      expected: 'result-second'
+    });
+
+    const third = await service.fetchData('third');
+    assert({
+      given: 'third call after second completed',
+      should: 'resolve',
+      actual: third,
+      expected: 'result-third'
+    });
+  });
   
   test('promise function returns same instance', async () => {
     interface TestService extends Service {

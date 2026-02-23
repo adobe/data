@@ -144,36 +144,48 @@ export function createLazy<
           resolve: (value: any) => void;
           reject: (error: any) => void;
         };
-        
+
         const queue: QueuedCall[] = [];
         let isProcessing = false;
-        
+
+        const runDrain = (service: any) => {
+          (async () => {
+            while (queue.length > 0) {
+              const call = queue.shift()!;
+              try {
+                const result = await service[key](...call.args);
+                call.resolve(result);
+              } catch (error) {
+                call.reject(error);
+              }
+            }
+            isProcessing = false;
+            if (queue.length > 0) {
+              isProcessing = true;
+              runDrain(service);
+            }
+          })();
+        };
+
         lazyService[key] = (...args: any[]): Promise<any> => {
           return new Promise((resolve, reject) => {
             queue.push({ args, resolve, reject });
-            
+
             if (!isProcessing) {
               isProcessing = true;
-              ensureLoading().then(async (service: any) => {
-                if (service.serviceName !== 'lazy-service') {
-                  lazyService.serviceName = `lazy-${service.serviceName}`;
-                }
-                // Execute all queued calls in order
-                while (queue.length > 0) {
-                  const call = queue.shift()!;
-                  try {
-                    const result = await service[key](...call.args);
-                    call.resolve(result);
-                  } catch (error) {
-                    call.reject(error);
+              ensureLoading()
+                .then((service: any) => {
+                  if (service.serviceName !== 'lazy-service') {
+                    lazyService.serviceName = `lazy-${service.serviceName}`;
                   }
-                }
-              }).catch(error => {
-                // Service load failed, reject all queued calls
-                while (queue.length > 0) {
-                  queue.shift()!.reject(error);
-                }
-              });
+                  runDrain(service);
+                })
+                .catch(error => {
+                  while (queue.length > 0) {
+                    queue.shift()!.reject(error);
+                  }
+                  isProcessing = false;
+                });
             }
           });
         };
@@ -181,21 +193,29 @@ export function createLazy<
         // Void function - queue calls and execute after load
         const queue: any[][] = [];
         let isProcessing = false;
-        
+
+        const runDrain = (service: any) => {
+          while (queue.length > 0) {
+            const args = queue.shift()!;
+            service[key](...args);
+          }
+          isProcessing = false;
+          if (queue.length > 0) {
+            isProcessing = true;
+            runDrain(service);
+          }
+        };
+
         lazyService[key] = (...args: any[]): void => {
           queue.push(args);
-          
+
           if (!isProcessing) {
             isProcessing = true;
             ensureLoading().then((service: any) => {
               if (service.serviceName !== 'lazy-service') {
                 lazyService.serviceName = `lazy-${service.serviceName}`;
               }
-              // Execute all queued calls in order
-              while (queue.length > 0) {
-                const args = queue.shift()!;
-                service[key](...args);
-              }
+              runDrain(service);
             });
           }
         };

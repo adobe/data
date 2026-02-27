@@ -84,6 +84,7 @@
   },
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
+    "hash-wasm": "^4.12.0",
     "jsonpath": "^1.1.1"
   },
   "typesVersions": {

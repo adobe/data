@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
+import { toArrayBufferBacked } from "../../internal/array-buffer-like/index.js";
 import { serialize, deserialize } from "./serialize.js";
 
 /**
@@ -68,7 +69,7 @@ const compressData = async (data: Uint8Array): Promise<Uint8Array<ArrayBuffer>> 
     while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        chunks.push(value);
+        chunks.push(toArrayBufferBacked(value));
     }
     
     // Concatenate all chunks
@@ -105,7 +106,7 @@ const decompressData = async (data: Uint8Array): Promise<Uint8Array<ArrayBuffer>
     while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        chunks.push(value);
+        chunks.push(toArrayBufferBacked(value));
     }
     
     // Concatenate all chunks
@@ -174,7 +175,7 @@ export const deserializeFromJSON = async <T>(jsonString: string): Promise<T> => 
     
     for (const length of parsed.lengths) {
         const chunk = combinedBinary.slice(offset, offset + length);
-        binaryChunks.push(chunk);
+        binaryChunks.push(toArrayBufferBacked(chunk));
         offset += length;
     }
     

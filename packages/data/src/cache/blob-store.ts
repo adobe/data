@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { getManagedPersistentCache } from "./get-persistent-cache.js";
 import { type Schema } from "../schema/index.js";
-import { blobToHashStreaming } from "./functions/hashing/blob-to-hash-streaming.js";
+import { blobToHash } from "./functions/hashing/blob-to-hash.js";
 import { preventParallelExecution } from "./functions/prevent-parallel-execution.js";
 
 const remoteUrlPrefix = "http";
@@ -134,7 +134,7 @@ export function createBlobStore() {
       blob = await (await fetch(blob)).blob();
     }
     const ref = {
-      localBlobRef: await blobToHashStreaming(blob),
+      localBlobRef: await blobToHash(blob),
     } as const satisfies LocalBlobRef;
 
     const request = toRequest(ref);

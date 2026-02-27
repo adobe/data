@@ -82,10 +82,6 @@ export interface BlobStore {
    */
   getBlob(r: BlobRef | null): Promise<Blob | null>;
   /**
-   * Gets a stream of the blob bytes, or null if not available.
-   */
-  getStream(r?: BlobRef | null): Promise<ReadableStream<Uint8Array> | null>;
-  /**
    * Checks if the blob is still available.
    */
   hasBlob(r: BlobRef | null): Promise<boolean>;
@@ -157,7 +153,7 @@ export function createBlobStore() {
     return response !== undefined;
   }
 
-  async function getBlobResponse(r: BlobRef | null | undefined): Promise<Response | null> {
+  async function getBlob(r?: BlobRef | null): Promise<Blob | null> {
     if (!r) {
       return null;
     }
@@ -171,17 +167,7 @@ export function createBlobStore() {
       // this should only happen with remote urls. local blob responses are always ok.
       throw new Error(response.statusText);
     }
-    return response ?? null;
-  }
-
-  async function getBlob(r?: BlobRef | null): Promise<Blob | null> {
-    const response = await getBlobResponse(r);
-    return response?.blob() ?? null;
-  }
-
-  async function getStream(r?: BlobRef | null): Promise<ReadableStream<Uint8Array> | null> {
-    const response = await getBlobResponse(r);
-    return response?.body ?? null;
+    return response.blob();
   }
 
   async function releaseBlob(r: BlobRef): Promise<void> {
@@ -257,7 +243,6 @@ export function createBlobStore() {
   return {
     getRef,
     getBlob,
-    getStream,
     hasBlob,
     borrowUrl,
     returnUrl,

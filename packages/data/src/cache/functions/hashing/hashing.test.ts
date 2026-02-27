@@ -405,22 +405,6 @@ describe("test hashing", () => {
       expect(unique.size).toBe(1);
     });
 
-    it("should handle large blobs efficiently", async () => {
-      const largeData = new Uint8Array(1024 * 1024);
-      for (let i = 0; i < largeData.length; i++) {
-        largeData[i] = i % 256;
-      }
-      const largeBlob = new Blob([largeData], { type: "application/octet-stream" });
-
-      const startTime = performance.now();
-      const hash = await blobToHashStreaming(largeBlob);
-      const endTime = performance.now();
-
-      expect(hash).toBeDefined();
-      expect(hash.length).toBe(64);
-      expect(endTime - startTime).toBeLessThan(5000);
-    });
-
     it("should handle blobs with complex MIME types", async () => {
       const complexTypes = [
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

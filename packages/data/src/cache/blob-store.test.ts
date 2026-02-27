@@ -153,44 +153,4 @@ describe("blobStore", () => {
             expect(mockRevokeObjectURL).toHaveBeenCalledWith(url1);
         });
     });
-
-    describe("getStream", () => {
-        it("should return null for null ref", async () => {
-            const stream = await testBlobStore.getStream(null);
-            expect(stream).toBeNull();
-        });
-
-        it("should return a stream whose bytes match the stored blob", async () => {
-            const content = new Uint8Array([1, 2, 3, 4, 5]);
-            const testBlob = new Blob([content], { type: "application/octet-stream" });
-            const ref = await testBlobStore.getRef(testBlob);
-
-            const stream = await testBlobStore.getStream(ref);
-            expect(stream).not.toBeNull();
-
-            const reader = stream!.getReader();
-            const chunks: Uint8Array[] = [];
-            let done = false;
-            while (!done) {
-                const result = await reader.read();
-                done = result.done === true;
-                if (result.value) chunks.push(result.value);
-            }
-
-            const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
-            const assembled = new Uint8Array(totalLength);
-            let offset = 0;
-            for (const c of chunks) {
-                assembled.set(c, offset);
-                offset += c.length;
-            }
-            expect(assembled).toEqual(content);
-        });
-
-        it("should return null for non-existent local ref", async () => {
-            const fakeRef = { localBlobRef: "nonexistent-hash" } as const;
-            const stream = await testBlobStore.getStream(fakeRef);
-            expect(stream).toBeNull();
-        });
-    });
 }); 

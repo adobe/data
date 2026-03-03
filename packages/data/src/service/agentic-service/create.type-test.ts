@@ -76,6 +76,7 @@ const iface = {
         description: "Configure stats",
         parameters: [
             {
+                title: "values",
                 type: "object",
                 properties: {
                     hp: { type: "number" },

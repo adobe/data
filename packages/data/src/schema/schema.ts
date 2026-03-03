@@ -22,6 +22,7 @@ const schemaTypes = { number: true, integer: true, string: true, boolean: true, 
 
 export interface Schema {
   type?: keyof typeof schemaTypes;
+  title?: string;
   description?: string;
   conditionals?: readonly Conditional[];
   transient?: boolean;
@@ -45,6 +46,7 @@ export interface Schema {
   additionalProperties?: boolean | Schema;
   oneOf?: readonly Schema[];
   allOf?: readonly Schema[];
+  anyOf?: readonly Schema[];
   const?: any;
   enum?: readonly any[];
   layout?: Layout; // Memory layout for typed buffers (std140 or packed)

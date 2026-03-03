@@ -64,7 +64,11 @@ describe("AgenticService.create", () => {
         it("should accept action with schema-typed input", () => {
             create({
                 interface: {
-                    setHealth: { type: "action", description: "Set health", input: { type: "number" } },
+                    setHealth: {
+                        type: "action",
+                        description: "Set health",
+                        parameters: [{ type: "number" }],
+                    },
                 },
                 implementation: {
                     setHealth: async (_input: number) => {},
@@ -75,7 +79,11 @@ describe("AgenticService.create", () => {
         it("should accept action with schema: false (void execute)", () => {
             create({
                 interface: {
-                    reset: { type: "action", description: "Reset to defaults" },
+                    reset: {
+                        type: "action",
+                        description: "Reset to defaults",
+                        parameters: [],
+                    },
                 },
                 implementation: {
                     reset: async () => {},
@@ -112,15 +120,17 @@ describe("AgenticService.create", () => {
                     configure: {
                         type: "action",
                         description: "Configure",
-                        input: {
-                            type: "object",
-                            properties: {
-                                hp: { type: "number" },
-                                name: { type: "string" },
+                        parameters: [
+                            {
+                                type: "object",
+                                properties: {
+                                    hp: { type: "number" },
+                                    name: { type: "string" },
+                                },
+                                required: ["hp", "name"],
+                                additionalProperties: false,
                             },
-                            required: ["hp", "name"],
-                            additionalProperties: false,
-                        },
+                        ],
                     },
                 },
                 implementation: {
@@ -132,8 +142,16 @@ describe("AgenticService.create", () => {
         it("should accept mixed actions with and without schemas", () => {
             create({
                 interface: {
-                    heal: { type: "action", description: "Heal", input: { type: "number" } },
-                    reset: { type: "action", description: "Reset" },
+                    heal: {
+                        type: "action",
+                        description: "Heal",
+                        parameters: [{ type: "number" }],
+                    },
+                    reset: {
+                        type: "action",
+                        description: "Reset",
+                        parameters: [],
+                    },
                 },
                 implementation: {
                     heal: async (_amount: number) => {},
@@ -145,8 +163,16 @@ describe("AgenticService.create", () => {
         it("should accept synchronous void-returning execute", () => {
             create({
                 interface: {
-                    sync: { type: "action", description: "Sync" },
-                    syncWithInput: { type: "action", description: "Sync with input", input: { type: "number" } },
+                    sync: {
+                        type: "action",
+                        description: "Sync",
+                        parameters: [],
+                    },
+                    syncWithInput: {
+                        type: "action",
+                        description: "Sync with input",
+                        parameters: [{ type: "number" }],
+                    },
                 },
                 implementation: {
                     sync: () => {},
@@ -161,7 +187,11 @@ describe("AgenticService.create", () => {
             create({
                 interface: {
                     health: { type: "state", schema: { type: "number" }, description: "Health" },
-                    heal: { type: "action", description: "Heal", input: { type: "number" } },
+                    heal: {
+                        type: "action",
+                        description: "Heal",
+                        parameters: [{ type: "number" }],
+                    },
                 },
                 implementation: {
                     health: db.observe.resources.health,
@@ -292,7 +322,11 @@ describe("AgenticService.create", () => {
         it("should default action enabled to always true when omitted", async () => {
             const service = create({
                 interface: {
-                    heal: { type: "action", description: "Heal", input: { type: "number" } },
+                    heal: {
+                        type: "action",
+                        description: "Heal",
+                        parameters: [{ type: "number" }],
+                    },
                 },
                 implementation: {
                     heal: async () => {},
@@ -311,9 +345,15 @@ describe("AgenticService.create", () => {
             const service = create({
                 interface: {
                     currentHealth: { type: "state", schema: { type: "number" }, description: "Health" },
+                    refresh: {
+                        type: "action",
+                        description: "Refresh",
+                        parameters: [],
+                    },
                 },
                 implementation: {
                     currentHealth: db.observe.resources.health,
+                    refresh: async () => {},
                 },
             });
 
@@ -398,7 +438,11 @@ describe("AgenticService.create", () => {
         it("should emit enabled actions with bound execute", async () => {
             const service = create({
                 interface: {
-                    heal: { type: "action", description: "Heal player", input: { type: "number" } },
+                    heal: {
+                        type: "action",
+                        description: "Heal player",
+                        parameters: [{ type: "number" }],
+                    },
                 },
                 implementation: {
                     heal: async (_amount: number) => {},
@@ -415,8 +459,16 @@ describe("AgenticService.create", () => {
         it("should omit disabled actions", async () => {
             const service = create({
                 interface: {
-                    available: { type: "action", description: "Available", input: { type: "number" } },
-                    unavailable: { type: "action", description: "Unavailable" },
+                    available: {
+                        type: "action",
+                        description: "Available",
+                        parameters: [{ type: "number" }],
+                    },
+                    unavailable: {
+                        type: "action",
+                        description: "Unavailable",
+                        parameters: [],
+                    },
                 },
                 implementation: {
                     available: async () => {},
@@ -438,7 +490,11 @@ describe("AgenticService.create", () => {
 
             const service = create({
                 interface: {
-                    heal: { type: "action", description: "Heal", input: { type: "number" } },
+                    heal: {
+                        type: "action",
+                        description: "Heal",
+                        parameters: [{ type: "number" }],
+                    },
                 },
                 implementation: {
                     heal: async () => {},
@@ -462,7 +518,11 @@ describe("AgenticService.create", () => {
 
             const service = create({
                 interface: {
-                    setHealth: { type: "action", description: "Set health", input: { type: "number" } },
+                    setHealth: {
+                        type: "action",
+                        description: "Set health",
+                        parameters: [{ type: "number" }],
+                    },
                 },
                 implementation: {
                     setHealth: async (input: number) => { received = input; },
@@ -479,7 +539,11 @@ describe("AgenticService.create", () => {
 
             const service = create({
                 interface: {
-                    reset: { type: "action", description: "Reset" },
+                    reset: {
+                        type: "action",
+                        description: "Reset",
+                        parameters: [],
+                    },
                 },
                 implementation: {
                     reset: async () => { called = true; },
@@ -495,7 +559,11 @@ describe("AgenticService.create", () => {
 
             const service = create({
                 interface: {
-                    sync: { type: "action", description: "Sync" },
+                    sync: {
+                        type: "action",
+                        description: "Sync",
+                        parameters: [],
+                    },
                 },
                 implementation: {
                     sync: () => { called = true; },
@@ -509,7 +577,11 @@ describe("AgenticService.create", () => {
         it("should return error for unavailable action", async () => {
             const service = create({
                 interface: {
-                    heal: { type: "action", description: "Heal", input: { type: "number" } },
+                    heal: {
+                        type: "action",
+                        description: "Heal",
+                        parameters: [{ type: "number" }],
+                    },
                 },
                 implementation: {
                     heal: async () => {},
@@ -534,7 +606,11 @@ describe("AgenticService.create", () => {
         it("should propagate ActionError from execute", async () => {
             const service = create({
                 interface: {
-                    fail: { type: "action", description: "Fail" },
+                    fail: {
+                        type: "action",
+                        description: "Fail",
+                        parameters: [],
+                    },
                 },
                 implementation: {
                     fail: async () => "something went wrong",
@@ -551,7 +627,11 @@ describe("AgenticService.create", () => {
 
             const service = create({
                 interface: {
-                    heal: { type: "action", description: "Heal", input: { type: "number" } },
+                    heal: {
+                        type: "action",
+                        description: "Heal",
+                        parameters: [{ type: "number" }],
+                    },
                 },
                 implementation: {
                     heal: async () => { called = true; },
@@ -615,8 +695,16 @@ describe("AgenticService.create", () => {
 
             const service = create({
                 interface: {
-                    heal: { type: "action", description: "Heal", input: { type: "number" } },
-                    reset: { type: "action", description: "Reset" },
+                    heal: {
+                        type: "action",
+                        description: "Heal",
+                        parameters: [{ type: "number" }],
+                    },
+                    reset: {
+                        type: "action",
+                        description: "Reset",
+                        parameters: [],
+                    },
                 },
                 implementation: {
                     heal: async () => {},
@@ -650,7 +738,11 @@ describe("AgenticService.create", () => {
 
             const service = create({
                 interface: {
-                    heal: { type: "action", description: "Heal", input: { type: "number" } },
+                    heal: {
+                        type: "action",
+                        description: "Heal",
+                        parameters: [{ type: "number" }],
+                    },
                 },
                 implementation: {
                     heal: async (input: number) => { received = input; },
@@ -667,7 +759,11 @@ describe("AgenticService.create", () => {
 
             const service = create({
                 interface: {
-                    reset: { type: "action", description: "Reset" },
+                    reset: {
+                        type: "action",
+                        description: "Reset",
+                        parameters: [],
+                    },
                 },
                 implementation: {
                     reset: async () => { called = true; },
@@ -682,7 +778,11 @@ describe("AgenticService.create", () => {
         it("should propagate ActionError from bound action execute", async () => {
             const service = create({
                 interface: {
-                    fail: { type: "action", description: "Fail" },
+                    fail: {
+                        type: "action",
+                        description: "Fail",
+                        parameters: [],
+                    },
                 },
                 implementation: {
                     fail: async () => "bound error",

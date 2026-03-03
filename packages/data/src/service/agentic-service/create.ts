@@ -9,14 +9,14 @@ import type { AgenticServiceLinks } from "./agentic-service-links.js";
 type StateDeclaration<S extends Schema = Schema> = {
     type: "state";
     schema: S;
-    description: string;
+    description?: string;
 };
 
 /** Action declaration: kind + description + optional input schema */
-type ActionDeclaration<I extends Schema | false | undefined = undefined> = {
+type ActionDeclaration<P extends readonly Schema[] = readonly Schema[]> = {
     type: "action";
-    description: string;
-    input?: I;
+    description?: string;
+    parameters: P;
 };
 
 /** Link declaration: kind + optional description */
@@ -25,16 +25,12 @@ type LinkDeclaration = {
     description?: string;
 };
 
-type DeclarationEntry = StateDeclaration | ActionDeclaration<Schema | false | undefined> | LinkDeclaration;
+type DeclarationEntry = StateDeclaration | ActionDeclaration | LinkDeclaration;
 type Declarations = Record<string, DeclarationEntry>;
 
 type ConditionalFromDeclarations<D extends Declarations> = Partial<{
     [K in keyof D]: Observe<boolean>;
 }>;
-
-function getActionSchema(entry: ActionDeclaration<Schema | false | undefined>): Schema | false {
-    return entry.input ?? false;
-}
 
 /**
  * Creates an AgenticService from a config with interface, implementation, and optional conditional.
@@ -57,7 +53,7 @@ export function create<const D extends Declarations>(config: {
     const actionKeys: string[] = [];
     const linkKeys: string[] = [];
     const stateSchemas: Record<string, Schema> = {};
-    const actionMeta: Record<string, { description: string; schema: Schema | false; execute: Function }> = {};
+    const actionMeta: Record<string, { description?: string; schema: Schema | false; execute: Function }> = {};
 
     for (const [key, entry] of Object.entries(iface)) {
         if (entry.type === "state") {
@@ -67,7 +63,7 @@ export function create<const D extends Declarations>(config: {
             actionKeys.push(key);
             actionMeta[key] = {
                 description: entry.description,
-                schema: getActionSchema(entry),
+                schema: entry.parameters[0] ?? false,
                 execute: (implementation as Record<string, Function>)[key],
             };
         } else if (entry.type === "link") {
@@ -123,7 +119,9 @@ export function create<const D extends Declarations>(config: {
             for (const [key, enabled] of Object.entries(enabledMap)) {
                 if (!enabled) continue;
                 const meta = actionMeta[key];
-                if (meta) result[key] = meta as AgenticService.Action;
+                if (meta) {
+                    result[key] = meta as unknown as AgenticService.Action;
+                }
             }
             return result;
         }
@@ -163,14 +161,17 @@ export type ImplementationFromDeclarations<D extends Declarations> = {
     [K in keyof D]:
     D[K] extends { type: "state"; schema: infer S extends Schema }
     ? Observe<Schema.ToType<S>>
-    : D[K] extends { type: "action"; input?: infer I extends Schema | false | undefined }
-    ? ExecuteFromSchema<I extends undefined ? false : I>
+    : D[K] extends { type: "action"; parameters: infer P extends readonly Schema[] }
+    ? ExecuteFromParameters<P>
     : D[K] extends { type: "link" }
     ? AgenticService | Observe<AgenticService>
     : never;
 };
 
-type ExecuteFromSchema<S extends Schema | false> =
-    S extends false
+type ExecuteFromParameters<P extends readonly Schema[]> =
+    P extends readonly []
     ? (() => Promise<void | AgenticService.ActionError> | void)
-    : ((input: Schema.ToType<S>) => Promise<void | AgenticService.ActionError> | void);
+    : P extends readonly [infer S extends Schema, ...readonly Schema[]]
+    ? ((input: Schema.ToType<S>) => Promise<void | AgenticService.ActionError> | void)
+    : never;
+

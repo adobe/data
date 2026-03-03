@@ -19,9 +19,32 @@ type _StateTypeCheck = Assert<Equal<
 
 type _ActionTypeCheck = Assert<Equal<
     ImplementationFromDeclarations<{
-        heal: { type: "action"; description: "Heal"; input: { type: "number" } };
+        heal: {
+            type: "action";
+            description: "Heal";
+            parameters: [{ type: "number" }];
+        };
     }>["heal"],
     (input: number) => Promise<void | string> | void
+>>;
+
+type _MultipleActionsTypeCheck = Assert<Equal<
+    ImplementationFromDeclarations<{
+        heal: {
+            type: "action";
+            description: "Heal";
+            parameters: [{ type: "number" }];
+        };
+        rename: {
+            type: "action";
+            description: "Rename";
+            parameters: [{ type: "string" }];
+        };
+    }>,
+    {
+        heal: (input: number) => Promise<void | string> | void;
+        rename: (input: string) => Promise<void | string> | void;
+    }
 >>;
 
 const iface = {
@@ -46,24 +69,27 @@ const iface = {
     heal: {
         type: "action",
         description: "Increase health by amount",
-        input: { type: "number" },
+        parameters: [{ type: "number" }],
     },
     configure: {
         type: "action",
         description: "Configure stats",
-        input: {
-            type: "object",
-            properties: {
-                hp: { type: "number" },
-                label: { type: "string" },
+        parameters: [
+            {
+                type: "object",
+                properties: {
+                    hp: { type: "number" },
+                    label: { type: "string" },
+                },
+                required: ["hp"],
+                additionalProperties: false,
             },
-            required: ["hp"],
-            additionalProperties: false,
-        },
+        ],
     },
     reset: {
         type: "action",
         description: "Reset values",
+        parameters: [],
     },
 } as const;
 
@@ -72,10 +98,10 @@ create({
     implementation: {
         health: Observe.fromConstant(42),
         stats: Observe.fromConstant({ hp: 100, label: "ok" }),
-        heal: (input) => {
+        heal: (input: number) => {
             type _Check = Assert<Equal<typeof input, number>>;
         },
-        configure: (input) => {
+        configure: (input: { readonly hp: number; readonly label?: string }) => {
             type _Check = Assert<Equal<typeof input, { readonly hp: number; readonly label?: string }>>;
         },
         reset: () => {},
@@ -92,8 +118,8 @@ create({
         // @ts-expect-error - health state requires Observe<number>
         health: Observe.fromConstant("wrong"),
         stats: Observe.fromConstant({ hp: 100 }),
-        heal: (input) => {},
-        configure: (input) => {},
+        heal: () => {},
+        configure: () => {},
         reset: () => {},
     },
 });
@@ -105,7 +131,7 @@ create({
         stats: Observe.fromConstant({ hp: 100 }),
         // @ts-expect-error - heal input schema requires number
         heal: (input: string) => {},
-        configure: (input) => {},
+        configure: () => {},
         reset: () => {},
     },
 });
@@ -115,8 +141,8 @@ create({
     implementation: {
         health: Observe.fromConstant(100),
         stats: Observe.fromConstant({ hp: 100 }),
-        heal: (input) => {},
-        configure: (input) => {},
+        heal: () => {},
+        configure: () => {},
         reset: () => {},
     },
 });
@@ -127,8 +153,8 @@ create({
     implementation: {
         health: Observe.fromConstant(100),
         stats: Observe.fromConstant({ hp: 100 }),
-        heal: (input) => {},
-        configure: (input) => {},
+        heal: () => {},
+        configure: () => {},
     },
 });
 
@@ -137,8 +163,8 @@ create({
     implementation: {
         health: Observe.fromConstant(100),
         stats: Observe.fromConstant({ hp: 100 }),
-        heal: (input) => {},
-        configure: (input) => {},
+        heal: () => {},
+        configure: () => {},
         reset: () => {},
     },
     conditional: {

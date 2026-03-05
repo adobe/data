@@ -10,18 +10,30 @@ import { Assert } from "../../types/assert.js";
  * An async data service may only contain the following types of properties:
  * - Observe<Data>
  * - (...args: Data[]) => Observe<Data> | void | Promise<Data | void> | AsyncGenerator<Data>
- * 
+ * - Readonly objects whose properties are all valid (for organization)
+ *
  * @example
  * ```typescript
  * import { Assert } from "../../types/assert.js";
- * 
+ *
  * interface MyService extends Service {
  *   data: Observe<string>;
  *   fetchData: () => Promise<number>;
  * }
- * 
+ *
  * // This will compile successfully if MyService is a valid async data service
  * type CheckValidDataService = Assert<IsValid<MyService>>;
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Nested readonly objects for organization
+ * interface MyOrganizedService extends Service {
+ *   readonly foo: {
+ *     bar: Observe<number>;
+ *   };
+ * }
+ * type CheckOrganized = Assert<IsValid<MyOrganizedService>>;
  * ```
  */
 
@@ -66,12 +78,19 @@ type AllArgsAreData<Args extends readonly any[]> =
   : false;
 
 // Helper: Check if a single property is valid
+// Allows: Observe<Data>, valid functions, and readonly objects whose properties are all valid (for organization)
 type IsValidProperty<P> =
   P extends Observe<infer T>
   ? T extends Data ? true : false
   : P extends (...args: infer Args) => infer R
   ? AllArgsAreData<Args> extends true
   ? ValidReturnType<R>
+  : false
+  : P extends object
+  ? keyof P extends never
+  ? false
+  : { [K in keyof P]: IsValidProperty<P[K]> } extends Record<keyof P, true>
+  ? true
   : false
   : false;
 

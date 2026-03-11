@@ -10,12 +10,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 const refsDir = path.join(packageRoot, "references");
 
+const packagesDir = path.join(packageRoot, "..");
 const PACKAGES = [
   "data-lit",
+  "data-lit-tictactoe",
   "data-react",
   "data-react-hello",
   "data-react-pixie",
-  "data-lit-todo",
 ];
 
 const COPY_ENTRIES = ["src", "package.json", "tsconfig.json", "README.md"];

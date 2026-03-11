@@ -3,7 +3,7 @@
 import { createRoot } from "react-dom/client";
 import { Container, Graphics, Sprite } from "pixi.js";
 import { extend } from "@pixi/react";
-import { App } from "./App.jsx";
+import { App } from "./app";
 
 // Register PixiJS components for @pixi/react (pixiSprite, pixiContainer)
 extend({ Container, Graphics, Sprite });

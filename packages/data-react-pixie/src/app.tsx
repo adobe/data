@@ -2,18 +2,18 @@
 
 import { Application } from "@pixi/react";
 import { DatabaseProvider } from "@adobe/data-react";
-import { pixiePlugin } from "./pixie-plugin.js";
-import { FilterToggle } from "./filter-toggle.js";
-import { SpriteContainer } from "./sprite-container.js";
-import { Tick } from "./tick.js";
+import { pixiePlugin } from "./state/pixie-plugin";
+import { FilterSelector } from "./components/filter-selector/filter-selector";
+import { PixieTick } from "./components/pixie-scene/pixie-tick";
+import { PixieScene } from "./components/pixie-scene/pixie-scene";
 
 export function App() {
   return (
     <DatabaseProvider plugin={pixiePlugin}>
-      <FilterToggle />
+      <FilterSelector />
       <Application background="beige" width={640} height={480}>
-        <Tick />
-        <SpriteContainer />
+        <PixieTick />
+        <PixieScene />
       </Application>
     </DatabaseProvider>
   );

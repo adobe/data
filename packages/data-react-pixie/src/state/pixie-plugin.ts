@@ -1,19 +1,16 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { Boolean, Schema } from "@adobe/data/schema";
+import { Boolean } from "@adobe/data/schema";
 import { Vec2, F32 } from "@adobe/data/math";
-
-export const spriteTypeSchema = { enum: ["bunny", "fox"] } as const satisfies Schema;
-export type SpriteType = Schema.ToType<typeof spriteTypeSchema>;
-
-export type FilterType = "none" | "sepia" | "blur" | "vintage" | "night";
+import type { FilterType } from "../types/filter-type";
+import { SpriteType } from "../types/sprite-type/sprite-type";
 
 export const pixiePlugin = Database.Plugin.create({
   components: {
     position: Vec2.schema,
     rotation: F32.schema,
-    sprite: spriteTypeSchema,
+    sprite: SpriteType.schema,
     hovered: Boolean.schema,
     active: Boolean.schema,
   },

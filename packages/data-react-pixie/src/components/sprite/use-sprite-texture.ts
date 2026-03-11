@@ -1,7 +1,9 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+
 import { Assets, type Texture } from "pixi.js";
 import { useEffect, useState } from "react";
 
-export function useTexture(url: string): Texture | undefined {
+export function useSpriteTexture(url: string): Texture | undefined {
   const [texture, setTexture] = useState<Texture | undefined>();
 
   useEffect(() => {

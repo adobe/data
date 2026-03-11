@@ -1,6 +1,6 @@
-import { useObservableValues } from "@adobe/data-react";
-import { useDatabase } from "./hooks/use-database";
-import type { FilterType } from "./pixie-plugin.js";
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+
+import type { FilterType } from "../../types/filter-type";
 
 const FILTER_LABELS: Record<FilterType, string> = {
   none: "None",
@@ -15,24 +15,18 @@ const FILTER_OPTIONS = (Object.entries(FILTER_LABELS) as [FilterType, string][])
   label,
 }));
 
-export function FilterToggle() {
-  const db = useDatabase();
-  const values = useObservableValues(
-    () => ({
-      filterType: db.observe.resources.filterType,
-    }),
-    [],
-  );
-
-  const currentFilter = values?.filterType ?? "none";
-
+export function render(args: {
+  currentFilter: FilterType;
+  setFilterType: (filterType: FilterType) => void;
+}) {
+  const { currentFilter, setFilterType } = args;
   return (
     <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
       {FILTER_OPTIONS.map(({ value, label }) => (
         <button
           key={value}
           type="button"
-          onClick={() => db.transactions.setFilterType({ filterType: value })}
+          onClick={() => setFilterType(value)}
           style={{
             padding: "0.25rem 0.5rem",
             fontWeight: currentFilter === value ? "bold" : "normal",

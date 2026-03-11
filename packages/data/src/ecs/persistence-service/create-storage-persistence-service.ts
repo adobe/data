@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Data } from "../../data.js";
 import { deserializeFromStorage, serializeToStorage } from "../../functions/serialization/serialize-to-storage.js";
+import { debounce } from "../../internal/function/debounce.js";
 import { Database } from "../index.js";
 import { PersistenceService } from "./persistence-service.js";
 
@@ -29,11 +29,10 @@ export const createStoragePersistenceService = async (options: {
         await service.load();
     }
     if (autoSave) {
+        const debouncedSave = debounce(() => service.save(), 300);
         database.observe.transactions(t => {
-            if (!t.transient) {
-                service.save();
-            }
-        })
+            if (!t.transient) debouncedSave();
+        });
     }
     return service;
 };

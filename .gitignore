@@ -1,5 +1,3 @@
-ai
-AGENTS.md
 
 
 # Logs
@@ -18,7 +16,6 @@ storybook-static
 
 .chromedriver-cache/
 .plan.md
-.cursor
 
 # build artifacts
 custom-elements.json
@@ -46,3 +43,4 @@ source.txt
 # Generated Docs (typedoc output)
 docs/api
 packages/data/docs/api
+packages/data/references

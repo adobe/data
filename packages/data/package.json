@@ -1,6 +1,6 @@
 {
   "name": "@adobe/data",
-  "version": "0.9.36",
+  "version": "0.9.40",
   "description": "Adobe data oriented programming library",
   "type": "module",
   "sideEffects": false,
@@ -12,6 +12,8 @@
   "files": [
     "dist",
     "README.md",
+    "AGENTS.md",
+    "references",
     "LICENSE"
   ],
   "scripts": {
@@ -33,6 +35,7 @@
     "debug": "vitest --inspect-brk --no-file-parallelism --test-timeout 1000000",
     "link": "pnpm build && pnpm link --global",
     "pre-commit": "lint-staged",
+    "prepublishOnly": "node scripts/copy-references.js",
     "publish-public": "pnpm build && pnpm publish --no-git-checks --access public",
     "perftest": "node dist/perftest/index.js",
     "test": "pnpm exec playwright install chromium && vitest --run",

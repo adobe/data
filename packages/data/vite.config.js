@@ -13,6 +13,7 @@ export default defineConfig({
     open: false
   },
   test: {
+    exclude: ['**/node_modules/**', '**/dist/**', '**/references/**'],
     tsconfig: './tsconfig-base.json',
     browser: IS_RUNNING_VSCODE_DEBUG ? {} : {
       provider: 'playwright',

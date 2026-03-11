@@ -5,3 +5,4 @@ packages:
   - 'packages/data-react'
   - 'packages/data-react-hello'
   - 'packages/data-react-pixie'
+  - 'packages/data-lit-tictactoe'

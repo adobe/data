@@ -10,13 +10,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 const refsDir = path.join(packageRoot, "references");
 
-const PACKAGES = [
-  "data-lit",
-  "data-react",
-  "data-react-hello",
-  "data-react-pixie",
-  "data-lit-todo",
-];
+const packagesDir = path.join(packageRoot, "..");
+const PACKAGES = fs.readdirSync(packagesDir).filter((name) => {
+  const fullPath = path.join(packagesDir, name);
+  return name !== "data" && fs.statSync(fullPath).isDirectory();
+});
 
 const COPY_ENTRIES = ["src", "package.json", "tsconfig.json", "README.md"];
 

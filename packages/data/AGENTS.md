@@ -11,7 +11,6 @@ Source for peer packages and sample apps is included under `references/` (when p
 - **references/data-react** — Support functions for React based projects.
 - **references/data-react-hello** — Very simple react hello world sample.
 - **references/data-react-pixie** — Simple sample for react pixie based 2d games.
-- **references/data-lit-todo** — Sample for older style applications that use createStore and ApplicationElement. Do not reference unless your legacy application uses those.
 
 ## Stack
 

@@ -11,10 +11,13 @@ const packageRoot = path.resolve(__dirname, "..");
 const refsDir = path.join(packageRoot, "references");
 
 const packagesDir = path.join(packageRoot, "..");
-const PACKAGES = fs.readdirSync(packagesDir).filter((name) => {
-  const fullPath = path.join(packagesDir, name);
-  return name !== "data" && fs.statSync(fullPath).isDirectory();
-});
+const PACKAGES = [
+  "data-lit",
+  "data-lit-tictactoe",
+  "data-react",
+  "data-react-hello",
+  "data-react-pixie",
+];
 
 const COPY_ENTRIES = ["src", "package.json", "tsconfig.json", "README.md"];
 

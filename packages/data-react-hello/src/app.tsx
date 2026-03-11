@@ -2,7 +2,7 @@
 
 import { DatabaseProvider } from "@adobe/data-react";
 import { counterPlugin } from "./state/counter-plugin";
-import { Counter } from "./components/counter";
+import { Counter } from "./components/counter/counter";
 
 export function App() {
   return (

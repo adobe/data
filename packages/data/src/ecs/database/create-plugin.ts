@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Database, SystemFunction, ServiceFactory, FromServiceFactory, FromComputedFactories, type PluginComputedFactories } from "./database.js";
+import { Database, SystemFunction, ServiceFactories, FromServiceFactories, FromComputedFactories, type PluginComputedFactories } from "./database.js";
 import type { ComponentSchemas } from "../component-schemas.js";
 import type { ResourceSchemas } from "../resource-schemas.js";
 import type { ArchetypeComponents } from "../store/archetype-components.js";
@@ -33,7 +33,7 @@ type DatabaseWithServices<
     ToTransactionFunctions<TD & XP['transactions']>,
     S | StringKeyof<XP['systems']>,
     ToActionFunctions<AD & XP['actions']>,
-    FromServiceFactory<XP['services']>
+    FromServiceFactories<XP['services']>
 >;
 
 function validatePropertyOrder(plugins: Record<string, unknown>): void {
@@ -81,10 +81,10 @@ function validatePropertyOrder(plugins: Record<string, unknown>): void {
  * ```ts
  * Database.Plugin.create({
  *   extends: basePlugin,     // 1. extends first
- *   services: (db) => ({      // 2. single factory returns all services
- *     myService: createMyService(db.resources.config),
- *   }),
- *   components: { ... },      // 3. components
+ *   services: {              // 2. services last
+ *     myService: (db) => createMyService(db.resources.config),
+ *   }
+ *   components: { ... },     // 3. components
  *   resources: { ... },      // 4. resources
  *   archetypes: { ... },     // 5. archetypes
  *   computed: { ... },       // 6. computed
@@ -94,10 +94,10 @@ function validatePropertyOrder(plugins: Record<string, unknown>): void {
  * })
  * ```
  * 
- * **Services**: A single factory function `(db) => ({ name1: service1, ... })` that
- * creates all plugin services. Services from extended plugins are initialized first,
- * so the factory receives a database with access to extended plugin's resources,
- * transactions, actions, and services.
+ * **Services**: Factory functions that create singleton services. Services from
+ * extended plugins are initialized first, ensuring proper dependency order.
+ * Service factories receive the database with access to extended plugin's
+ * resources, transactions, actions, and services.
  *
  * **Computed**: Factory functions that return values extending Observe<unknown>. Each receives
  * the full db (CS, RS, A from current plugin and extend). Database keeps ComputedFactories
@@ -107,7 +107,7 @@ function validatePropertyOrder(plugins: Record<string, unknown>): void {
  */
 type FullDBForPlugin<
     CS, RS, A, TD, S extends string, AD, XP extends Database.Plugin,
-    SVF extends ServiceFactory<Database.FromPlugin<XP>>
+    SVF extends ServiceFactories<Database.FromPlugin<XP>>
 > = Database<
     FromSchemas<CS & XP['components']>,
     FromSchemas<RS & XP['resources']>,
@@ -115,29 +115,29 @@ type FullDBForPlugin<
     ToTransactionFunctions<TD & XP['transactions']>,
     S | StringKeyof<XP['systems']>,
     ToActionFunctions<AD & XP['actions']>,
-    FromServiceFactory<SVF> & FromServiceFactory<XP['services']>
+    FromServiceFactories<RemoveIndex<SVF> & XP['services']>
 >;
 
-const emptyServiceFactory = (_db: unknown): Record<string, unknown> => ({});
-
 export function createPlugin<
-    const XP extends Database.Plugin<{}, {}, {}, {}, never, {}, any, {}>,
+    const XP extends Database.Plugin<{}, {}, {}, {}, never, {}, {}, {}>,
     const CS extends ComponentSchemas,
     const RS extends ResourceSchemas,
     const A extends ArchetypeComponents<StringKeyof<RemoveIndex<CS> & XP['components']>>,
     const TD extends TransactionDeclarations<FromSchemas<RemoveIndex<CS> & XP['components']>, FromSchemas<RemoveIndex<RS> & XP['resources']>, RemoveIndex<A> & XP['archetypes']>,
     const AD,
     const S extends string = never,
-    const SVF extends ServiceFactory<Database.FromPlugin<XP>> = typeof emptyServiceFactory,
-    const CVF extends PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, RemoveIndex<TD>, S, RemoveIndex<AD> & XP['actions'], XP, SVF>> = {},
+    const SVF extends ServiceFactories<Database.FromPlugin<XP>> = {},
+    const CVF extends PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, RemoveIndex<TD>, S, RemoveIndex<AD> & XP['actions'], XP, RemoveIndex<SVF>>> = {},
 >(
     plugins: {
         extends?: XP,
-        services?: SVF & ((db: Database.FromPlugin<XP>) => Record<string, unknown>),
+        services?: SVF & {
+            readonly [K: string]: (db: Database.FromPlugin<XP>) => unknown
+        },
         components?: CS,
         resources?: RS,
         archetypes?: A,
-        computed?: CVF & PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, {}, string, RemoveIndex<AD> & XP['actions'], XP, SVF>>,
+        computed?: CVF & PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, {}, string, RemoveIndex<AD> & XP['actions'], XP, RemoveIndex<SVF>>>,
         transactions?: TD,
         actions?: AD & {
             readonly [K: string]: (db: Database<
@@ -147,7 +147,7 @@ export function createPlugin<
                 ToTransactionFunctions<RemoveIndex<TD> & XP['transactions']>,
                 S | StringKeyof<XP['systems']>,
                 ToActionFunctions<XP['actions']>,
-                FromServiceFactory<SVF> & FromServiceFactory<XP['services']>,
+                FromServiceFactories<RemoveIndex<SVF> & XP['services']>,
                 FromComputedFactories<RemoveIndex<CVF> & XP['computed']>
             >, input?: any) => any
         }
@@ -159,7 +159,7 @@ export function createPlugin<
                 ToTransactionFunctions<RemoveIndex<TD> & XP['transactions']>,
                 S | StringKeyof<XP['systems']>,
                 ToActionFunctions<RemoveIndex<AD> & XP['actions']>,
-                FromServiceFactory<SVF> & FromServiceFactory<XP['services']>,
+                FromServiceFactories<RemoveIndex<SVF> & XP['services']>,
                 FromComputedFactories<RemoveIndex<CVF> & XP['computed']>
             > & {
                 readonly store: Store<
@@ -183,14 +183,14 @@ export function createPlugin<
     RemoveIndex<TD>,
     S,
     AD & ActionDeclarations<FromSchemas<RemoveIndex<CS>>, FromSchemas<RemoveIndex<RS>>, RemoveIndex<A>, ToTransactionFunctions<RemoveIndex<TD>>, S>,
-    SVF,
+    RemoveIndex<SVF>,
     RemoveIndex<CVF>
 >]> {
     validatePropertyOrder(plugins);
 
     // Normalize plugins descriptor to a plugin object in correct order
     const plugin: any = {
-        services: plugins.services ?? emptyServiceFactory,
+        services: plugins.services ?? {},
         components: plugins.components ?? {},
         resources: plugins.resources ?? {},
         archetypes: plugins.archetypes ?? {},
@@ -201,7 +201,7 @@ export function createPlugin<
     };
 
     if (plugins.extends) {
-        return combinePlugins(plugins.extends, plugin);
+        return combinePlugins(plugins.extends, plugin) as any;
     }
-    return plugin;
+    return plugin as any;
 }

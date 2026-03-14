@@ -1,6 +1,6 @@
 {
   "name": "data-lit-tictactoe",
-  "version": "0.9.42",
+  "version": "0.9.41",
   "description": "Tic-Tac-Toe sample - Lit web components with @adobe/data-lit and AgenticService",
   "type": "module",
   "private": true,

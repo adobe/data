@@ -1081,7 +1081,9 @@ describe("createDatabase", () => {
             const database = createTestDatabase();
 
             const authPlugin = Database.Plugin.create({
-                services: () => ({ auth: { token: "test-token", isAuthenticated: true } }),
+                services: {
+                    auth: (_db) => ({ token: 'test-token', isAuthenticated: true }),
+                },
             });
 
             const extended = database.extend(authPlugin);
@@ -1099,19 +1101,24 @@ describe("createDatabase", () => {
 
             // Base plugin with a config service
             const basePlugin = Database.Plugin.create({
-                services: () => {
-                    initializationOrder.push("config");
-                    return { config: { apiUrl: "https://api.example.com" } };
+                services: {
+                    config: (_db) => {
+                        initializationOrder.push('config');
+                        return { apiUrl: 'https://api.example.com' };
+                    },
                 },
             });
 
             // Extended plugin with auth service that depends on config
             const authPlugin = Database.Plugin.create({
                 extends: basePlugin,
-                services: (db: Database.FromPlugin<typeof basePlugin>) => {
-                    initializationOrder.push("auth");
-                    const apiUrl = db.services.config.apiUrl;
-                    return { auth: { token: "test-token", apiUrl } };
+                services: {
+                    auth: (db) => {
+                        initializationOrder.push('auth');
+                        // Auth service depends on config service from base plugin
+                        const apiUrl = db.services.config.apiUrl;
+                        return { token: 'test-token', apiUrl };
+                    },
                 },
             });
 
@@ -1135,37 +1142,39 @@ describe("createDatabase", () => {
 
             // Level 1: Environment service
             const envPlugin = Database.Plugin.create({
-                services: () => {
-                    initializationOrder.push("env");
-                    return { env: { isDev: true, apiBase: "https://dev.api.example.com" } };
+                services: {
+                    env: (_db) => {
+                        initializationOrder.push('env');
+                        return { isDev: true, apiBase: 'https://dev.api.example.com' };
+                    },
                 },
             });
 
             // Level 2: Config service depends on env
             const configPlugin = Database.Plugin.create({
                 extends: envPlugin,
-                services: (db: Database.FromPlugin<typeof envPlugin>) => {
-                    initializationOrder.push("config");
-                    return {
-                        config: {
+                services: {
+                    config: (db) => {
+                        initializationOrder.push('config');
+                        return {
                             apiUrl: `${db.services.env.apiBase}/v1`,
                             debug: db.services.env.isDev,
-                        },
-                    };
+                        };
+                    },
                 },
             });
 
             // Level 3: Auth service depends on config
             const authPlugin = Database.Plugin.create({
                 extends: configPlugin,
-                services: (db: Database.FromPlugin<typeof configPlugin>) => {
-                    initializationOrder.push("auth");
-                    return {
-                        auth: {
-                            token: "test-token",
+                services: {
+                    auth: (db) => {
+                        initializationOrder.push('auth');
+                        return {
+                            token: 'test-token',
                             endpoint: `${db.services.config.apiUrl}/auth`,
-                        },
-                    };
+                        };
+                    },
                 },
             });
 
@@ -1184,16 +1193,16 @@ describe("createDatabase", () => {
             const database = createTestDatabase();
 
             const plugin = Database.Plugin.create({
-                services: () => ({
-                    logger: {
+                services: {
+                    logger: (_db) => ({
                         log: (msg: string) => console.log(msg),
-                        level: "info",
-                    },
-                    analytics: {
-                        track: (_event: string) => { },
-                        userId: "test-user",
-                    },
-                }),
+                        level: 'info',
+                    }),
+                    analytics: (_db) => ({
+                        track: (event: string) => { },
+                        userId: 'test-user',
+                    }),
+                },
             });
 
             const extended = database.extend(plugin);
@@ -1321,7 +1330,9 @@ describe("createDatabase", () => {
         it("services are created and available before system create() runs", () => {
             let serviceSeenInSystemCreate: unknown = undefined;
             const plugin = Database.Plugin.create({
-                services: () => ({ config: { apiUrl: "https://api.example.com" } }),
+                services: {
+                    config: (db) => ({ apiUrl: "https://api.example.com" }),
+                },
                 components: {},
                 resources: {},
                 archetypes: {},

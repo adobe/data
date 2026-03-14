@@ -1,6 +1,6 @@
 {
   "name": "data-lit-todo",
-  "version": "0.9.40",
+  "version": "0.9.39",
   "description": "Todo sample app demonstrating @adobe/data with Lit",
   "type": "module",
   "private": true,

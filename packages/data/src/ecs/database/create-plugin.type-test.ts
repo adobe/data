@@ -916,25 +916,19 @@ type MockAuthService = { readonly token: string; readonly isAuthenticated: boole
 // Test: Basic service factory inference
 function validServiceFactoryBasic() {
     const plugin = createPlugin({
-        services: {
-            auth: (_db) => ({ token: 'test', isAuthenticated: true }) as MockAuthService,
-        },
+        services: (db) => ({ auth: { token: "test", isAuthenticated: true } as MockAuthService }),
     });
 
-    // Check the plugin's service factory type
-    type PluginType = typeof plugin;
-    type PluginServices = PluginType['services'];
-    type AuthFactory = PluginServices['auth'];
-    // The factory should be a function returning MockAuthService
-    type CheckAuthFactory = Assert<Equal<ReturnType<AuthFactory>, MockAuthService>>;
+    // Check the plugin's service factory return type
+    type PluginDB = Database.FromPlugin<typeof plugin>;
+    type AuthType = PluginDB["services"]["auth"];
+    type CheckAuthType = Assert<Equal<AuthType, MockAuthService>>;
 }
 
 // Test: Service accessible in systems
 function validServiceAccessInSystems() {
     const plugin = createPlugin({
-        services: {
-            auth: (_db) => ({ token: 'test', isAuthenticated: true }) as MockAuthService,
-        },
+        services: () => ({ auth: { token: "test", isAuthenticated: true } as MockAuthService }),
         systems: {
             testSystem: {
                 create: (db) => () => {
@@ -962,34 +956,28 @@ function validServiceFactoryWithExtendedPlugin() {
 
     const extendedPlugin = createPlugin({
         extends: basePlugin,
-        services: {
-            // Service factory has access to base plugin's db type
-            auth: (db) => {
-                // Verify db has access to base plugin's resources
-                type DbResources = typeof db.resources;
-                type CheckEnvAccess = Assert<Equal<DbResources['environment'], MockEnvironmentService | null>>;
+        services: (db: Database.FromPlugin<typeof basePlugin>) => {
+            // Verify db has access to base plugin's resources
+            type DbResources = typeof db.resources;
+            type CheckEnvAccess = Assert<Equal<DbResources["environment"], MockEnvironmentService | null>>;
 
-                // Verify db has access to base plugin's transactions
-                // Note: ToTransactionFunctions wraps the input type with AsyncArgsProvider union
-                db.transactions.setEnvironment(null);
+            // Verify db has access to base plugin's transactions
+            db.transactions.setEnvironment(null);
 
-                return { token: 'test', isAuthenticated: true } as MockAuthService;
-            },
+            return { auth: { token: "test", isAuthenticated: true } as MockAuthService };
         },
     });
 
-    // Verify the extended plugin has the service factory
-    type ExtendedServices = typeof extendedPlugin['services'];
-    type AuthFactory = ExtendedServices['auth'];
-    type CheckAuthFactory = Assert<Equal<ReturnType<AuthFactory>, MockAuthService>>;
+    // Verify the extended plugin's database has the service type
+    type ExtendedDB = Database.FromPlugin<typeof extendedPlugin>;
+    type AuthType = ExtendedDB["services"]["auth"];
+    type CheckAuthType = Assert<Equal<AuthType, MockAuthService>>;
 }
 
 // Test: Service accessible in actions (same plugin)
 function validServiceAccessInActions() {
     const plugin = createPlugin({
-        services: {
-            auth: (_db) => ({ token: 'test', isAuthenticated: true }) as MockAuthService,
-        },
+        services: () => ({ auth: { token: "test", isAuthenticated: true } as MockAuthService }),
         actions: {
             useAuth: (db) => {
                 // Current plugin's services should be accessible in actions
@@ -1003,9 +991,7 @@ function validServiceAccessInActions() {
 // Test: Extended plugin services accessible in current plugin's actions
 function validExtendedServiceAccessInActions() {
     const basePlugin = createPlugin({
-        services: {
-            auth: (_db) => ({ token: 'test', isAuthenticated: true }) as MockAuthService,
-        },
+        services: () => ({ auth: { token: "test", isAuthenticated: true } as MockAuthService }),
     });
 
     const extendedPlugin = createPlugin({
@@ -1030,24 +1016,18 @@ function validChainedExtensionWithServices() {
 
     const level2 = createPlugin({
         extends: level1,
-        services: {
-            // Service can access level1's resources
-            auth: (db) => {
-                type CheckEnvAccess = Assert<Equal<typeof db.resources.env, MockEnvironmentService | null>>;
-                return { token: 'test', isAuthenticated: true } as MockAuthService;
-            },
+        services: (db: Database.FromPlugin<typeof level1>) => {
+            type CheckEnvAccess = Assert<Equal<typeof db.resources.env, MockEnvironmentService | null>>;
+            return { auth: { token: "test", isAuthenticated: true } as MockAuthService };
         },
     });
 
     const level3 = createPlugin({
         extends: level2,
-        services: {
-            // Service can access level1's resources and level2's services
-            session: (db) => {
-                type CheckEnvAccess = Assert<Equal<typeof db.resources.env, MockEnvironmentService | null>>;
-                type CheckAuthAccess = Assert<Equal<typeof db.services.auth, MockAuthService>>;
-                return { sessionId: 'abc123' } as { sessionId: string };
-            },
+        services: (db: Database.FromPlugin<typeof level2>) => {
+            type CheckEnvAccess = Assert<Equal<typeof db.resources.env, MockEnvironmentService | null>>;
+            type CheckAuthAccess = Assert<Equal<typeof db.services.auth, MockAuthService>>;
+            return { session: { sessionId: "abc123" } as { sessionId: string } };
         },
         systems: {
             testSystem: {
@@ -1066,13 +1046,11 @@ function validChainedExtensionWithServices() {
 // Test: Service cannot access current plugin's services (only extended)
 function invalidServiceAccessCurrentPluginServices() {
     createPlugin({
-        services: {
-            a: (_db) => ({ value: 1 }),
-            b: (db) => {
-                // @ts-expect-error - Service 'a' is not accessible because it's in the same plugin
-                const _value = db.services.a;
-                return { value: 2 };
-            },
+        services: (db) => {
+            // @ts-expect-error - Service 'a' is not accessible via db.services (same plugin)
+            const _value = db.services.a;
+            const a = { value: 1 };
+            return { a, b: { value: 2 } };
         },
     });
 }

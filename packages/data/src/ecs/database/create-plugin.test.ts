@@ -18,7 +18,7 @@ describe("Database.Plugin.create", () => {
             expect(() => {
                 Database.Plugin.create({
                     components: {},
-                    services: {}, // services should come before components
+                    services: () => ({}), // services should come before components
                 });
             }).toThrow('Property "services" must come before "components"');
 
@@ -51,7 +51,7 @@ describe("Database.Plugin.create", () => {
             expect(() => {
                 Database.Plugin.create({
                     extends: undefined,
-                    services: {},
+                    services: () => ({}),
                     components: {},
                     resources: {},
                     archetypes: {},
@@ -64,7 +64,7 @@ describe("Database.Plugin.create", () => {
 
             expect(() => {
                 Database.Plugin.create({
-                    services: {},
+                    services: () => ({}),
                     components: {},
                     resources: {},
                     archetypes: {},
@@ -129,17 +129,17 @@ describe("Database.Plugin.create", () => {
         });
 
         it("should allow actions to access services from the same plugin", () => {
-            const authService = { token: 'test', isAuthenticated: true };
+            const authService = { token: "test", isAuthenticated: true };
             const plugin = Database.Plugin.create({
-                services: {
-                    auth: () => authService,
-                },
+                services: () => ({ auth: authService }),
                 actions: {
                     getAuth: (db) => db.services.auth,
                 },
             });
 
-            expect(plugin.services.auth).toBeDefined();
+            const db = Database.create(plugin);
+            expect(db.services.auth).toBeDefined();
+            expect(db.services.auth).toBe(authService);
             expect(plugin.actions.getAuth).toBeDefined();
         });
     });

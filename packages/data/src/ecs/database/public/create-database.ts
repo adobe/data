@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Store } from "../../store/index.js";
-import { Database, FromServiceFactories, FromComputedFactories } from "../database.js";
+import { Database, FromServiceFactory, FromComputedFactories } from "../database.js";
 import type { ToTransactionFunctions } from "../../store/transaction-functions.js";
 import type { ToActionFunctions } from "../../store/action-functions.js";
 import { isPromise } from "../../../internal/promise/is-promise.js";
@@ -38,7 +38,7 @@ export function createDatabase<
     ToTransactionFunctions<P extends Database.Plugin<any, any, any, infer TD, any, any, any, any> ? TD : never>,
     P extends Database.Plugin<any, any, any, any, infer S, any, any, any> ? S : never,
     ToActionFunctions<P extends Database.Plugin<any, any, any, any, any, infer AD, any, any> ? AD : never>,
-    P extends Database.Plugin<any, any, any, any, any, any, infer SVF, any> ? FromServiceFactories<SVF> : never,
+    P extends Database.Plugin<any, any, any, any, any, any, infer SVF, any> ? FromServiceFactory<SVF> : never,
     P extends Database.Plugin<any, any, any, any, any, any, any, infer CVF> ? FromComputedFactories<CVF> : never
 >
 export function createDatabase(
@@ -159,12 +159,22 @@ function createEmptyDatabase(): any {
             reconcilingDatabase.extend(plugin);
             const pluginTransactions = plugin.transactions ?? {};
             const pluginActions = plugin.actions ?? {};
-            const pluginServices = plugin.services ?? {};
+            const pluginServices = plugin.services;
             const pluginComputed = plugin.computed ?? {};
             addTransactionWrappers(pluginTransactions);
             addActionWrappers(pluginActions, partialDatabase);
-            for (const name in pluginServices) {
-                if (!(name in services)) services[name] = (pluginServices[name] as (db: any) => unknown)(partialDatabase);
+            if (typeof pluginServices === "function") {
+                const newServices = pluginServices(partialDatabase);
+                if (newServices && typeof newServices === "object") {
+                    for (const name of Object.keys(newServices)) {
+                        if (name in services && services[name] !== (newServices as Record<string, unknown>)[name]) {
+                            throw new Error(
+                                `Plugin combine conflict: services.${name} must be identical (===) across plugins`
+                            );
+                        }
+                        if (!(name in services)) services[name] = (newServices as Record<string, unknown>)[name];
+                    }
+                }
             }
             for (const name in pluginComputed) {
                 if (!(name in computed)) computed[name] = (pluginComputed[name] as (db: any) => unknown)(partialDatabase);

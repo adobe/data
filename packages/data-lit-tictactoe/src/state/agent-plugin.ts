@@ -109,9 +109,9 @@ const createTictactoeRootAgentService = (
 
 export const agentPlugin = Database.Plugin.create({
   extends: tictactoePlugin,
-  services: {
-    agent: (db): AgenticService => createTictactoeRootAgentService(db),
-    agentX: (db): AgenticService => createTictactoeAgentService(db, "X"),
-    agentO: (db): AgenticService => createTictactoeAgentService(db, "O"),
-  },
+  services: (db: TictactoeDatabase) => ({
+    agent: createTictactoeRootAgentService(db),
+    agentX: createTictactoeAgentService(db, "X"),
+    agentO: createTictactoeAgentService(db, "O"),
+  }),
 });

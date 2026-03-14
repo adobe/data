@@ -71,7 +71,7 @@ Source lives under `src/` with one main `index.ts` per area; built output is in 
 | Property | Purpose |
 |----------|---------|
 | `extends` | Base plugin to extend (single parent only) |
-| `services` | `(db) => ServiceInstance` — singleton service factories; extended plugin services initialize first |
+| `services` | `(db) => { name1: service1, ... }` — single factory returning all services; extended plugin services initialize first |
 | `components` | Schema object for ECS component data. Use `transient: true` for non-persistable values (DOM refs, HTML elements). |
 | `resources` | `{ default: value as Type }` — global state. Use `as Type` for compile-time type; use `null as unknown as Type` for resources initialized later in a system. |
 | `archetypes` | `['comp1', 'comp2']` — standard ECS archetypes for querying and inserting related components |

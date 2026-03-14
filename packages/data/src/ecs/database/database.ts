@@ -49,16 +49,16 @@ export type SystemDeclaration = {
 export type SystemDeclarations<S extends string> = { readonly [K in S]: SystemDeclaration }
 
 /**
- * Service factories map - functions that create services from the database.
+ * Service factory - single function that creates all plugin services from the database.
+ * Returns an object with named services matching the plugin's service declarations.
  */
-export type ServiceFactories<DB = any> = { readonly [K: string]: (db: DB) => unknown };
+export type ServiceFactory<DB = any> = (db: DB) => Record<string, unknown>;
 
 /**
- * Extracts service types from service factories.
+ * Extracts service types from a service factory function's return type.
  */
-export type FromServiceFactories<SF> = {
-  [K in keyof SF]: SF[K] extends (db: any) => infer R ? R : never
-};
+export type FromServiceFactory<SF> = SF extends (...args: any[]) => infer R ? R : {};
+
 
 /**
  * Computed factories map - functions that create computed values from the database.
@@ -130,7 +130,7 @@ export interface Database<
     F & (P extends Database.Plugin<any, any, any, infer XTD, any, any, any, any> ? ToTransactionFunctions<XTD> : never),
     S | (P extends Database.Plugin<any, any, any, any, infer XS, any, any, any> ? XS : never),
     AF & (P extends Database.Plugin<any, any, any, any, any, infer XAD, any, any> ? ToActionFunctions<XAD> : never),
-    SV & (P extends Database.Plugin<any, any, any, any, any, any, infer XSVF, any> ? FromServiceFactories<XSVF> : never),
+    SV & (P extends Database.Plugin<any, any, any, any, any, any, infer XSVF, any> ? FromServiceFactory<XSVF> : never),
     CV & (P extends Database.Plugin<any, any, any, any, any, any, any, infer XCVF> ? FromComputedFactories<XCVF> : never)
   >;
 }
@@ -154,7 +154,7 @@ export namespace Database {
       ToTransactionFunctions<FromPluginTransactions<P>>,
       FromPluginSystems<P>,
       ToActionFunctions<FromPluginActions<P>>,
-      FromServiceFactories<FromPluginServices<P>>,
+      FromServiceFactory<FromPluginServices<P>>,
       FromComputedFactories<FromPluginComputed<P>>
     >
     : never;
@@ -174,7 +174,7 @@ export namespace Database {
     TD extends TransactionDeclarations<FromSchemas<CS>, FromSchemas<RS>, any> = any,
     S extends string = any,
     AD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S> = any,
-    SVF extends ServiceFactories = any,
+    SVF extends ServiceFactory = any,
     CVF extends ComputedFactories = any
   > = {
     readonly components: CS;

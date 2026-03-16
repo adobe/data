@@ -18,6 +18,7 @@ module.exports = {
     '@typescript-eslint/ban-types': 'off', // Disable banning of certain types
     '@typescript-eslint/no-empty-function': 'off', // Allow empty functions
     '@typescript-eslint/no-unused-vars': 'off', // Allow unused variables
+    '@typescript-eslint/no-namespace': 'off', // Namespaces used for API organization (Database.Plugin, etc.)
   },
   ignorePatterns: ['.eslintrc.cjs', 'docs', 'dist', 'tests', 'vite.config.js'],  // Updated ignore patterns
 };

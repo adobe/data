@@ -78,7 +78,6 @@ export function createTransactionalStore<
     const updateEntity = (entity: Entity, values: EntityUpdateValues<C>) => {
         const oldValues = store.read(entity);
         if (!oldValues) {
-            debugger;
             throw new Error(`Entity not found: ${entity}`);
         }
 
@@ -243,7 +242,7 @@ export function createTransactionalStore<
             }
             // Sync resources after extension (store may have new resource schemas)
             for (const name of Object.keys(store.resources)) {
-                if (!resources.hasOwnProperty(name)) {
+                if (!Object.hasOwn(resources, name)) {
                     const resourceId = name as keyof C;
                     const archetype = store.ensureArchetype(["id", resourceId] as StringKeyof<C>[]);
                     const entityId = archetype.columns.id.get(0);

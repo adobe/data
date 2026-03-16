@@ -1,11 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Assert } from "../../types/assert.js";
-import { Equal } from "../../types/equal.js";
-import { IntersectTuple, UnionTuple, Simplify } from "../../types/types.js";
-import { Entity } from "../entity.js";
-import { Store } from "../store/store.js";
-import type { Database, SystemDeclarations } from "./database.js";
+import { Simplify } from "../../types/types.js";
+import type { Database } from "./database.js";
 
 // Helper to intersect all elements (works with mapped types over tuples)
 type IntersectAll<T extends readonly unknown[]> = Simplify<

@@ -114,8 +114,7 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
     const updateEntity = (entity: Entity, components: EntityUpdateValues<C>) => {
         const currentLocation = locateInternal(entity);
         if (currentLocation === null) {
-            debugger;
-            throw `Entity not found ${entity}`;
+            throw new Error(`Entity not found ${entity}`);
         }
         if ("transient" in components) {
             throw new Error("Cannot update transient component");

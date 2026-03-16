@@ -632,8 +632,8 @@ describe("createDatabase", () => {
             const unsubscribe = store.observe.components.position(observer);
 
             // Create an async generator that only returns
+            // eslint-disable-next-line require-yield -- intentionally tests return-only (no yields)
             async function* returnOnly() {
-                // This generator yields nothing but returns a value
                 return { position: { x: 100, y: 200, z: 300 }, name: "ReturnOnly" };
             }
 
@@ -723,8 +723,8 @@ describe("createDatabase", () => {
                 },
                 {
                     name: "return-only (no yields)",
+                    // eslint-disable-next-line require-yield -- intentionally tests return-only (no yields)
                     generator: async function* returnOnly() {
-                        // This generator yields nothing but returns a value
                         return { position: { x: 100, y: 200, z: 300 }, name: "ReturnOnly" };
                     },
                     expectedFinalName: "ReturnOnly",

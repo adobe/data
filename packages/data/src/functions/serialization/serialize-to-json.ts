@@ -66,22 +66,22 @@ const compressData = async (data: Uint8Array): Promise<Uint8Array<ArrayBuffer>> 
     const chunks: Uint8Array<ArrayBuffer>[] = [];
     const reader = compressedStream.getReader();
     
-    while (true) {
+    for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(toArrayBufferBacked(value));
     }
-    
+
     // Concatenate all chunks
     const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
     const result = new Uint8Array(totalLength);
     let offset = 0;
-    
+
     for (const chunk of chunks) {
         result.set(chunk, offset);
         offset += chunk.length;
     }
-    
+
     return result;
 };
 
@@ -103,17 +103,17 @@ const decompressData = async (data: Uint8Array): Promise<Uint8Array<ArrayBuffer>
     const chunks: Uint8Array<ArrayBuffer>[] = [];
     const reader = decompressedStream.getReader();
     
-    while (true) {
+    for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(toArrayBufferBacked(value));
     }
-    
+
     // Concatenate all chunks
     const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
     const result = new Uint8Array(totalLength);
     let offset = 0;
-    
+
     for (const chunk of chunks) {
         result.set(chunk, offset);
         offset += chunk.length;

@@ -167,6 +167,7 @@ export function createPlugin<
                     FromSchemas<RemoveIndex<RS> & XP['resources']>,
                     RemoveIndex<A> & XP['archetypes']
                 >
+                services: { -readonly [K in keyof FromServiceFactories<RemoveIndex<SVF> & XP['services']>]: FromServiceFactories<RemoveIndex<SVF> & XP['services']>[K] }
             }) => SystemFunction | void;
             readonly schedule?: {
                 readonly before?: readonly NoInfer<Exclude<S | StringKeyof<XP['systems']>, K>>[];

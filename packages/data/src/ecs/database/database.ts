@@ -192,7 +192,14 @@ export namespace Database {
     export const combine = combinePlugins;
     export type ToDatabase<P extends Database.Plugin> = Database.FromPlugin<P>;
     export type ToStore<P extends Database.Plugin> = Store<FromSchemas<P['components']>, FromSchemas<P['resources']>, P['archetypes']>;
-    export type ToSystemDatabase<P extends Database.Plugin> = Database.FromPlugin<P> & { readonly store: Database.Plugin.ToStore<P> };
+    export type ToSystemDatabase<P extends Database.Plugin> = Database.FromPlugin<P> & {
+      // Systems are allowed to access the database store directly.
+      // This direct access will NOT trigger observable transactions.
+      readonly store: Database.Plugin.ToStore<P>;
+      // Systems are allowed to write to the services object directly.
+      // This is dangerous and should only be done during initialization.
+      services: { -readonly [K in keyof FromServiceFactories<P['services']>]: FromServiceFactories<P['services']>[K] };
+    };
   }
 
 }

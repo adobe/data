@@ -1076,3 +1076,87 @@ function invalidServiceAccessCurrentPluginServices() {
         },
     });
 }
+
+// ============================================================================
+// MUTABLE SERVICES IN SYSTEM CREATE TESTS
+// ============================================================================
+
+// Test: System create can assign to db.services (mutable in systems)
+function validMutableServicesInSystemCreate() {
+    const basePlugin = createPlugin({
+        services: {
+            auth: (_db) => ({ token: "test", isAuthenticated: true }) as MockAuthService,
+            env: (_db) => ({ env: "dev", getConfig: () => "cfg" }) as MockEnvironmentService,
+        },
+    });
+
+    createPlugin({
+        extends: basePlugin,
+        systems: {
+            initServices: {
+                create: (db) => {
+                    // Mutable: can assign to individual service properties
+                    db.services.auth = { token: "new", isAuthenticated: false };
+                    db.services.env = { env: "prod", getConfig: () => "prod-cfg" };
+
+                    // Read access still works with correct types
+                    const token: string = db.services.auth.token;
+                    const env: string = db.services.env.env;
+                },
+            },
+        },
+    });
+}
+
+// Test: System create services are correctly typed (no any, proper inference)
+function validMutableServicesTypeSafety() {
+    createPlugin({
+        services: {
+            counter: (_db) => ({ count: 0, increment: () => {} }),
+        },
+        systems: {
+            init: {
+                create: (db) => {
+                    // Type is correctly inferred
+                    type CounterType = typeof db.services.counter;
+                    type _CheckCount = Assert<Equal<CounterType, { count: number; increment: () => void }>>;
+
+                    // Can reassign with correct type
+                    db.services.counter = { count: 10, increment: () => {} };
+                },
+            },
+        },
+    });
+}
+
+// Test: System create rejects wrong service type assignment
+function invalidMutableServicesWrongType() {
+    createPlugin({
+        services: {
+            auth: (_db) => ({ token: "test", isAuthenticated: true }) as MockAuthService,
+        },
+        systems: {
+            init: {
+                create: (db) => {
+                    // @ts-expect-error - cannot assign wrong type to service
+                    db.services.auth = { wrong: "type" };
+                },
+            },
+        },
+    });
+}
+
+// Test: Actions CANNOT assign to db.services (only systems can)
+function invalidMutableServicesInActions() {
+    createPlugin({
+        services: {
+            auth: (_db) => ({ token: "test", isAuthenticated: true }) as MockAuthService,
+        },
+        actions: {
+            tryAssign: (db) => {
+                // @ts-expect-error - services is readonly in actions
+                db.services.auth = { token: "new", isAuthenticated: false };
+            },
+        },
+    });
+}

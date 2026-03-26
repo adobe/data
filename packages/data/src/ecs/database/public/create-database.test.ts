@@ -1210,6 +1210,107 @@ describe("createDatabase", () => {
             expect(extended.services.logger).toBeDefined();
             expect(extended.services.analytics).toBeDefined();
         });
+
+        describe("service overrides via createDatabase options", () => {
+            it("should use the override instead of calling the factory", () => {
+                const plugin = Database.Plugin.create({
+                    services: {
+                        auth: (_db) => ({ token: 'from-factory', isAuthenticated: false }),
+                    },
+                });
+
+                const override = { token: 'from-override', isAuthenticated: true };
+                const db = Database.create(plugin, { services: { auth: override } });
+
+                expect(db.services.auth).toBe(override);
+                expect(db.services.auth.token).toBe('from-override');
+                expect(db.services.auth.isAuthenticated).toBe(true);
+            });
+
+            it("should not call the factory for an overridden service", () => {
+                const factoryCalled = vi.fn();
+
+                const plugin = Database.Plugin.create({
+                    services: {
+                        auth: (_db) => {
+                            factoryCalled();
+                            return { token: 'from-factory' };
+                        },
+                    },
+                });
+
+                Database.create(plugin, {
+                    services: { auth: { token: 'injected' } },
+                });
+
+                expect(factoryCalled).not.toHaveBeenCalled();
+            });
+
+            it("should still call factories for non-overridden services", () => {
+                const authFactory = vi.fn(() => ({ token: 'factory-token' }));
+                const configFactory = vi.fn(() => ({ apiUrl: 'https://example.com' }));
+
+                const plugin = Database.Plugin.create({
+                    services: {
+                        auth: (_db) => authFactory(),
+                        config: (_db) => configFactory(),
+                    },
+                });
+
+                const override = { token: 'injected-token' };
+                const db = Database.create(plugin, { services: { auth: override } });
+
+                expect(authFactory).not.toHaveBeenCalled();
+                expect(configFactory).toHaveBeenCalledOnce();
+                expect(db.services.auth).toBe(override);
+                expect(db.services.config.apiUrl).toBe('https://example.com');
+            });
+
+            it("should make overridden services available to dependent service factories", () => {
+                const basePlugin = Database.Plugin.create({
+                    services: {
+                        config: (_db) => ({ apiUrl: 'https://default.com' }),
+                    },
+                });
+
+                const appPlugin = Database.Plugin.create({
+                    extends: basePlugin,
+                    services: {
+                        auth: (db) => ({
+                            endpoint: `${db.services.config.apiUrl}/auth`,
+                        }),
+                    },
+                });
+
+                const db = Database.create(appPlugin, {
+                    services: { config: { apiUrl: 'https://injected.com' } },
+                });
+
+                expect(db.services.config.apiUrl).toBe('https://injected.com');
+                expect(db.services.auth.endpoint).toBe('https://injected.com/auth');
+            });
+
+            it("should reject invalid service overrides at compile time", () => {
+                const plugin = Database.Plugin.create({
+                    services: {
+                        auth: (_db) => ({ token: 'abc', isAuthenticated: true }),
+                        config: (_db) => ({ apiUrl: 'https://example.com', debug: false }),
+                    },
+                });
+
+                // Wrong value type: token should be string, not number
+                // @ts-expect-error
+                Database.create(plugin, { services: { auth: { token: 123, isAuthenticated: false } } });
+
+                // Unknown service key
+                // @ts-expect-error
+                Database.create(plugin, { services: { nonexistent: { foo: 'bar' } } });
+
+                // Missing required property (isAuthenticated)
+                // @ts-expect-error
+                Database.create(plugin, { services: { auth: { token: 'x' } } });
+            });
+        });
     });
 
     describe("computed", () => {

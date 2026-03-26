@@ -31,7 +31,16 @@ function createAndAssignSystems(
 export function createDatabase(): Database<{}, {}, {}, {}, never, {}, {}, {}>
 export function createDatabase<
     P extends Database.Plugin<{}, {}, {}, {}, never, {}, any, any>
->(plugin: P): Database<
+>(
+    plugin: P,
+    options?: {
+        /**
+         * Optional services overrides to use.
+         * For each service injected here, we will use it and not call the normal service factory function.
+         */
+        services?: { [K in keyof FromServiceFactories<P['services']>]?: FromServiceFactories<P['services']>[K] }
+    }
+): Database<
     FromSchemas<P extends Database.Plugin<infer CS, any, any, any, any, any, any, any> ? CS : never>,
     FromSchemas<P extends Database.Plugin<any, infer RS, any, any, any, any, any, any> ? RS : never>,
     P extends Database.Plugin<any, any, infer A, any, any, any, any, any> ? A : never,
@@ -43,10 +52,14 @@ export function createDatabase<
 >
 export function createDatabase(
     plugin?: Database.Plugin<any, any, any, any, any, any, any, any>,
+    options?: { services?: Record<string, unknown> },
 ): any {
     const db = createEmptyDatabase();
     if (plugin === undefined) {
         return db;
+    }
+    if (options?.services) {
+        Object.assign(db.services, options.services);
     }
     return db.extend(plugin);
 }

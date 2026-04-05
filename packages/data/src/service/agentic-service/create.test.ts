@@ -452,7 +452,7 @@ describe("AgenticService.create", () => {
             const actions = await Observe.toPromise(service.actions);
             expect(actions).toHaveProperty("heal");
             expect(actions.heal.description).toBe("Heal player");
-            expect(actions.heal.schema).toEqual({ type: "number" });
+            expect(actions.heal.parameters).toEqual([{ type: "number" }]);
             expect(typeof actions.heal.execute).toBe("function");
         });
 

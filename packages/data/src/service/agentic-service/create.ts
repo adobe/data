@@ -2,6 +2,7 @@
 
 import { Observe } from "../../observe/index.js";
 import { Schema } from "../../schema/index.js";
+import { Data } from "../../data.js";
 import { AgenticService } from "./agentic-service.js";
 import type { AgenticServiceLinks } from "./agentic-service-links.js";
 
@@ -53,7 +54,7 @@ export function create<const D extends Declarations>(config: {
     const actionKeys: string[] = [];
     const linkKeys: string[] = [];
     const stateSchemas: Record<string, Schema> = {};
-    const actionMeta: Record<string, { description?: string; schema: Schema | false; execute: Function }> = {};
+    const actionMeta: Record<string, { description?: string; parameters: Schema[]; execute: Function }> = {};
 
     for (const [key, entry] of Object.entries(iface)) {
         if (entry.type === "state") {
@@ -63,7 +64,7 @@ export function create<const D extends Declarations>(config: {
             actionKeys.push(key);
             actionMeta[key] = {
                 description: entry.description,
-                schema: entry.parameters[0] ?? false,
+                parameters: [...entry.parameters],
                 execute: (implementation as Record<string, Function>)[key],
             };
         } else if (entry.type === "link") {
@@ -168,10 +169,10 @@ export type ImplementationFromDeclarations<D extends Declarations> = {
     : never;
 };
 
+type ParametersFromSchemas<P extends readonly Schema[]> = {
+    [K in keyof P]: P[K] extends Schema ? Schema.ToType<P[K]> : never;
+};
+
 type ExecuteFromParameters<P extends readonly Schema[]> =
-    P extends readonly []
-    ? (() => Promise<void | AgenticService.ActionError> | void)
-    : P extends readonly [infer S extends Schema, ...readonly Schema[]]
-    ? ((input: Schema.ToType<S>) => Promise<void | AgenticService.ActionError> | void)
-    : never;
+    (...input: ParametersFromSchemas<P>) => Promise<void | Data> | Data | void;
 

@@ -7,6 +7,7 @@ import {
     create,
     type ImplementationFromDeclarations,
 } from "./create.js";
+import type { Action as AgenticAction } from "./action.js";
 import type { Assert } from "../../types/assert.js";
 import type { Equal } from "../../types/equal.js";
 
@@ -25,7 +26,7 @@ type _ActionTypeCheck = Assert<Equal<
             parameters: [{ type: "number" }];
         };
     }>["heal"],
-    (input: number) => Promise<void | string> | void
+    (input: number) => Promise<void | import("../../data.js").Data> | import("../../data.js").Data | void
 >>;
 
 type _MultipleActionsTypeCheck = Assert<Equal<
@@ -42,10 +43,39 @@ type _MultipleActionsTypeCheck = Assert<Equal<
         };
     }>,
     {
-        heal: (input: number) => Promise<void | string> | void;
-        rename: (input: string) => Promise<void | string> | void;
+        heal: (input: number) => Promise<void | import("../../data.js").Data> | import("../../data.js").Data | void;
+        rename: (input: string) => Promise<void | import("../../data.js").Data> | import("../../data.js").Data | void;
     }
 >>;
+
+type _MultiParamImplementationTypeCheck = Assert<Equal<
+    ImplementationFromDeclarations<{
+        multi: {
+            type: "action";
+            description: "Multi";
+            parameters: [
+                { type: "number" },
+                { type: "string" },
+            ];
+        };
+    }>["multi"],
+    (...input: [number, string]) => Promise<void | import("../../data.js").Data> | import("../../data.js").Data | void
+>>;
+
+type _MultiParamActionTypeCheck = Equal<
+    AgenticAction<[
+        { type: "number" },
+        { type: "string" },
+    ]>,
+    {
+        description: string;
+        parameters: [
+            { type: "number" },
+            { type: "string" },
+        ];
+        execute: (...input: [number, string]) => Promise<void | import("../../data.js").Data> | import("../../data.js").Data | void;
+    }
+>;
 
 const iface = {
     health: {
@@ -94,6 +124,17 @@ const iface = {
     },
 } as const;
 
+const multiIface = {
+    multi: {
+        type: "action",
+        description: "Multi",
+        parameters: [
+            { type: "number" },
+            { type: "string" },
+        ],
+    },
+} as const;
+
 create({
     interface: iface,
     implementation: {
@@ -110,6 +151,21 @@ create({
     conditional: {
         health: Observe.fromConstant(true),
         heal: Observe.fromConstant(false),
+    },
+});
+
+create({
+    interface: multiIface,
+    implementation: {
+        multi: (a: number, b: string) => {},
+    },
+});
+
+create({
+    interface: multiIface,
+    implementation: {
+        // @ts-expect-error - multi parameters must be [number, string]
+        multi: (a: string, b: string) => {},
     },
 });
 

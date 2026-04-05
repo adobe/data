@@ -1,6 +1,6 @@
 {
   "name": "@adobe/data",
-  "version": "0.9.45",
+  "version": "0.10.0",
   "description": "Adobe data oriented programming library",
   "type": "module",
   "sideEffects": false,
@@ -189,6 +189,22 @@
     "./equals-shallow": {
       "import": "./dist/equals-shallow.js",
       "types": "./dist/equals-shallow.d.ts"
+    },
+    "./math/*": {
+      "import": "./dist/math/*.js",
+      "types": "./dist/math/*.d.ts"
+    },
+    "./ecs/*": {
+      "import": "./dist/ecs/*.js",
+      "types": "./dist/ecs/*.d.ts"
+    },
+    "./cache/*": {
+      "import": "./dist/cache/*.js",
+      "types": "./dist/cache/*.d.ts"
+    },
+    "./typed-buffer/*": {
+      "import": "./dist/typed-buffer/*.js",
+      "types": "./dist/typed-buffer/*.d.ts"
     }
   }
 }

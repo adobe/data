@@ -3,7 +3,8 @@
 export type JSONPath = string;
 export type JSONMergePatch = unknown;
 
-export type Layout = "std140" | "packed";
+/** TypedBuffer / GPU struct memory: `wgsl` = WGSL host-shareable (§14.4); `packed` = tight vertex-style packing. */
+export type Layout = "wgsl" | "packed";
 
 /**
  * Conditional patch applied to the path when the enclosing schema branch is active
@@ -49,5 +50,5 @@ export interface Schema {
   anyOf?: readonly Schema[];
   const?: any;
   enum?: readonly any[];
-  layout?: Layout; // Memory layout for typed buffers (std140 or packed)
+  layout?: Layout; // Memory layout for typed buffers (wgsl or packed); default wgsl
 }

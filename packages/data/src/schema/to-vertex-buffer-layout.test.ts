@@ -229,9 +229,9 @@ describe("Schema.toVertexBufferLayout", () => {
             };
 
             const layout = Schema.toVertexBufferLayout(schema, {
-                layout: "std140"
+                layout: "wgsl"
             });
-            expect(layout.arrayStride).toBe(16); // std140: 16-byte alignment
+            expect(layout.arrayStride).toBe(16); // wgsl: vec3 then vec4 field aligns to 16
         });
     });
 

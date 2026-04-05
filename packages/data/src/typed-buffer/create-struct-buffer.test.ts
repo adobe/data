@@ -21,8 +21,8 @@ describe("createStructBuffer", () => {
         maxItems: 4
     };
 
-    describe("std140 layout (default)", () => {
-        it("should create buffer with std140 layout by default", () => {
+    describe("wgsl layout (default)", () => {
+        it("should create buffer with wgsl layout by default", () => {
             const schema: Schema = {
                 type: "object",
                 properties: {
@@ -32,14 +32,13 @@ describe("createStructBuffer", () => {
             };
 
             const buffer = createStructBuffer(schema, 1);
-            
-            // Should use std140 layout (32 bytes: 16 + 16)
+
             expect(buffer.capacity).toBe(1);
             expect(buffer.type).toBe("struct");
-            expect(buffer.typedArrayElementSizeInBytes).toBe(32); // vec3 padded to vec4 + vec4
+            expect(buffer.typedArrayElementSizeInBytes).toBe(32); // vec3 @16 + vec4
         });
 
-        it("should explicitly accept std140 layout parameter", () => {
+        it("should pack vec3 + f32 to 16 bytes under wgsl", () => {
             const schema: Schema = {
                 type: "object", 
                 properties: {
@@ -49,11 +48,10 @@ describe("createStructBuffer", () => {
             };
 
             const buffer = createStructBuffer(schema, 1);
-            
-            // vec3 (16 bytes padded) + f32 (4 bytes) = 20 bytes, rounded to vec4 = 20 bytes
-            expect(buffer.typedArrayElementSizeInBytes).toBeGreaterThanOrEqual(16);
+
+            expect(buffer.typedArrayElementSizeInBytes).toBe(16);
         });
-        
+
         it("should work with arrayBuffer parameter", () => {
             const schema: Schema = {
                 type: "object",
@@ -63,10 +61,10 @@ describe("createStructBuffer", () => {
                 }
             };
 
-            const arrayBuffer = new ArrayBuffer(32); // 2 * 16 bytes for std140
+            const arrayBuffer = new ArrayBuffer(32); // 4 * 8 bytes per struct
             const buffer = createStructBuffer(schema, arrayBuffer);
-            
-            expect(buffer.capacity).toBe(2); // 32 bytes / 16 bytes per element
+
+            expect(buffer.capacity).toBe(4);
         });
     });
 
@@ -90,13 +88,13 @@ describe("createStructBuffer", () => {
         });
 
         it("should show memory efficiency difference", () => {
-            const std140Schema: Schema = {
+            const wgslSchema: Schema = {
                 type: "object",
                 properties: {
                     position: Vec3Schema,    // 12 bytes
                     normal: Vec3Schema      // 12 bytes
                 },
-                layout: "std140"
+                layout: "wgsl"
             };
             const packedSchema: Schema = {
                 type: "object",
@@ -107,14 +105,12 @@ describe("createStructBuffer", () => {
                 layout: "packed"
             };
 
-            const std140Buffer = createStructBuffer(std140Schema, 100);
+            const wgslBuffer = createStructBuffer(wgslSchema, 100);
             const packedBuffer = createStructBuffer(packedSchema, 100);
 
-            // std140: 2 * 16 bytes = 32 bytes per element
-            // packed: 12 + 12 = 24 bytes per element
-            expect(packedBuffer.typedArrayElementSizeInBytes).toBeLessThan(std140Buffer.typedArrayElementSizeInBytes);
+            expect(packedBuffer.typedArrayElementSizeInBytes).toBeLessThan(wgslBuffer.typedArrayElementSizeInBytes);
             expect(packedBuffer.typedArrayElementSizeInBytes).toBe(24);
-            expect(std140Buffer.typedArrayElementSizeInBytes).toBe(32);
+            expect(wgslBuffer.typedArrayElementSizeInBytes).toBe(32);
         });
 
         it("should work with primitive fields in packed layout", () => {
@@ -162,7 +158,7 @@ describe("createStructBuffer", () => {
             };
 
             // Demonstrate Layout type usage
-            const layouts: Layout[] = ["std140", "packed"];
+            const layouts: Layout[] = ["wgsl", "packed"];
             
             layouts.forEach(layout => {
                 const schemaWithLayout = { ...schema, layout };
@@ -176,8 +172,8 @@ describe("createStructBuffer", () => {
         });
     });
 
-    describe("backwards compatibility", () => {
-        it("should default to std140 layout when no layout specified", () => {
+    describe("default layout", () => {
+        it("should default to wgsl layout when no layout specified", () => {
             const schema: Schema = {
                 type: "object",
                 properties: {
@@ -187,9 +183,8 @@ describe("createStructBuffer", () => {
             };
 
             const buffer = createStructBuffer(schema, 1);
-            
-            // Should default to std140 (padded to vec4 = 16 bytes)
-            expect(buffer.typedArrayElementSizeInBytes).toBe(16);
+
+            expect(buffer.typedArrayElementSizeInBytes).toBe(8);
         });
 
         it("should work with existing function signatures", () => {
@@ -200,10 +195,9 @@ describe("createStructBuffer", () => {
                 }
             };
 
-            // Test both function signature forms
             const buffer1 = createStructBuffer(schema, 5);
-            const buffer2 = createStructBuffer(schema, new ArrayBuffer(80)); // 5 * 16 bytes
-            
+            const buffer2 = createStructBuffer(schema, new ArrayBuffer(20)); // 5 * 4 bytes (single f32)
+
             expect(buffer1.capacity).toBe(5);
             expect(buffer2.capacity).toBe(5);
         });
@@ -212,13 +206,13 @@ describe("createStructBuffer", () => {
     describe("vertex buffer use case", () => {
         it("should be optimized for vertex data with packed layout", () => {
             // Typical vertex format: position + color
-            const std140VertexSchema: Schema = {
+            const wgslVertexSchema: Schema = {
                 type: "object",
                 properties: {
                     position: Vec3Schema,    // 12 bytes for tight vertex packing
                     color: Vec4Schema        // 16 bytes
                 },
-                layout: "std140"
+                layout: "wgsl"
             };
             const packedVertexSchema: Schema = {
                 type: "object",
@@ -229,19 +223,16 @@ describe("createStructBuffer", () => {
                 layout: "packed"
             };
 
-            const std140VertexBuffer = createStructBuffer(std140VertexSchema, 1000);
+            const wgslVertexBuffer = createStructBuffer(wgslVertexSchema, 1000);
             const packedVertexBuffer = createStructBuffer(packedVertexSchema, 1000);
 
-            // Calculate memory usage
-            const std140Memory = std140VertexBuffer.capacity * std140VertexBuffer.typedArrayElementSizeInBytes;
+            const wgslMemory = wgslVertexBuffer.capacity * wgslVertexBuffer.typedArrayElementSizeInBytes;
             const packedMemory = packedVertexBuffer.capacity * packedVertexBuffer.typedArrayElementSizeInBytes;
-            
-            // Packed should use less memory
-            expect(packedMemory).toBeLessThan(std140Memory);
-            
-            // Verify the difference is sensible (12.5% reduction for vec3 + vec4)
-            const memorySavings = (std140Memory - packedMemory) / std140Memory;
-            expect(memorySavings).toBeCloseTo(0.125, 2); // 12.5% savings
+
+            expect(packedMemory).toBeLessThan(wgslMemory);
+
+            const memorySavings = (wgslMemory - packedMemory) / wgslMemory;
+            expect(memorySavings).toBeCloseTo(0.125, 2);
         });
     });
 

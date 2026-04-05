@@ -5,6 +5,8 @@ import type { Schema } from "../../schema/index.js";
 import { F32 } from "../../math/f32/index.js";
 import { U32 } from "../../math/u32/index.js";
 import { I32 } from "../../math/i32/index.js";
+import { schema as mat4x4Schema } from "../../math/mat4x4/schema.js";
+import { schema as vec3Schema } from "../../math/vec3/schema.js";
 
 describe("getStructLayout", () => {
     it("should handle primitive types", () => {
@@ -19,7 +21,7 @@ describe("getStructLayout", () => {
 
         const layout = getStructLayout(schema);
         expect(layout.type).toBe("object");
-        expect(layout.size).toBe(16);  // rounded to vec4
+        expect(layout.size).toBe(12); // WGSL: three scalars, struct align 4
         expect(layout.fields.a.offset).toBe(0);
         expect(layout.fields.b.offset).toBe(4);
         expect(layout.fields.c.offset).toBe(8);
@@ -94,12 +96,12 @@ describe("getStructLayout", () => {
 
         const layout = getStructLayout(schema)!;
         expect(layout.type).toBe("array");
-        expect(layout.size).toBe(32);  // 2 structs aligned to vec4
+        expect(layout.size).toBe(16); // stride roundUp(4,8)=8 per WGSL fixed array
         expect(layout.fields["0"].offset).toBe(0);
-        expect(layout.fields["1"].offset).toBe(16);  // aligned to vec4
+        expect(layout.fields["1"].offset).toBe(8);
     });
 
-    it("should demonstrate std140 vec4 + f32 + f32 alignment issue", () => {
+    it("should place vec4 then vec3 fields per WGSL host-shareable alignment", () => {
         const schema: Schema = {
             type: "object",
             properties: {
@@ -117,7 +119,7 @@ describe("getStructLayout", () => {
                     minItems: 3,
                     maxItems: 3
                 },
-                // f32 (4 bytes, offset 32) - CORRECT for std140!
+                // third vec3 @ offset 32
                 lightColor: {
                     type: "array",
                     items: { type: "number", precision: 1 },
@@ -129,17 +131,9 @@ describe("getStructLayout", () => {
 
         const layout = getStructLayout(schema)!;
         expect(layout.type).toBe("object");
-        
-        // The getStructLayout function is actually working correctly for std140!
-        // It's properly padding vec3s to 16-byte boundaries
-        expect(layout.fields.lightColor.offset).toBe(32); // This is correct!
-        
-        // The correct std140 layout is:
-        // - viewProjection: offset 0, size 16 bytes
-        // - lightDirection: offset 16, size 16 bytes (padded to vec4)
-        // - lightColor: offset 32, size 16 bytes (padded to vec4)
-        // Total size: 48 bytes
-        expect(layout.size).toBe(48); // This is correct
+
+        expect(layout.fields.lightColor.offset).toBe(32);
+        expect(layout.size).toBe(48);
     });
 
     it("should handle vec3<f32> + f32 struct layout correctly", () => {
@@ -177,7 +171,7 @@ describe("getStructLayout", () => {
     });
 
     // This sample was pulled from here: https://webgpufundamentals.org/webgpu/lessons/webgpu-memory-layout.html
-    it("should handle complex struct with arrays and nested structs (std140 example)", () => {
+    it("should handle complex struct with arrays and nested structs (WGSL-aligned)", () => {
         const schema: Schema = {
             type: "object",
             properties: {
@@ -230,28 +224,103 @@ describe("getStructLayout", () => {
         // size: f32 at offset 12 (fits right after vec3f)
         expect(layout.fields.size.offset).toBe(12);
         
-        // direction: array<vec3f, 1> at offset 16 (aligned to vec4)
+        // direction: array<vec3f, 1> — stride roundUp(16,12)=16
         expect(layout.fields.direction.offset).toBe(16);
         const directionType = layout.fields.direction.type;
         if (typeof directionType !== "string") {
-            expect(directionType.size).toBe(16); // vec3f padded to vec4
+            expect(directionType.size).toBe(16);
         }
         
         // scale: f32 at offset 32 (after array)
         expect(layout.fields.scale.offset).toBe(32);
         
-        // info: Ex4a struct at offset 48 (aligned to vec4)
         expect(layout.fields.info.offset).toBe(48);
         const infoType = layout.fields.info.type;
         if (typeof infoType !== "string") {
-            expect(infoType.size).toBe(16); // vec3f padded to vec4
+            expect(infoType.size).toBe(16);
         }
         
         // friction: f32 at offset 64 (after struct)
         expect(layout.fields.friction.offset).toBe(64);
         
-        // Total size should be 68 bytes, rounded up to vec4 = 80 bytes
         expect(layout.size).toBe(80);
+    });
+
+    // Golden layouts from WGSL host-shareable struct rules (WGSL spec §14.4 memory layout).
+    it("WGSL golden: struct { a: f32, b: vec3<f32> } — scalar then vec3", () => {
+        const schema: Schema = {
+            type: "object",
+            properties: {
+                a: { type: "number", precision: 1 },
+                b: {
+                    type: "array",
+                    items: { type: "number", precision: 1 },
+                    minItems: 3,
+                    maxItems: 3,
+                },
+            },
+        };
+        const layout = getStructLayout(schema)!;
+        expect(layout.fields.a.offset).toBe(0);
+        expect(layout.fields.b.offset).toBe(16);
+        expect(layout.size).toBe(32);
+    });
+
+    it("WGSL golden: struct { u: vec2<f32>, v: vec2<f32> } — two vec2", () => {
+        const vec2: Schema = {
+            type: "array",
+            items: { type: "number", precision: 1 },
+            minItems: 2,
+            maxItems: 2,
+        };
+        const schema: Schema = {
+            type: "object",
+            properties: { u: vec2, v: vec2 },
+        };
+        const layout = getStructLayout(schema)!;
+        expect(layout.fields.u.offset).toBe(0);
+        expect(layout.fields.v.offset).toBe(8);
+        expect(layout.size).toBe(16);
+    });
+
+    it("WGSL golden: vec2<f32> has size 8 (not 16-byte slot)", () => {
+        const schema: Schema = {
+            type: "array",
+            items: { type: "number", precision: 1 },
+            minItems: 2,
+            maxItems: 2,
+        };
+        const layout = getStructLayout(schema)!;
+        expect(layout.size).toBe(8);
+        expect(layout.fields["1"].offset).toBe(4);
+    });
+
+    /** Mirrors Cryos `SceneUniforms` (mat4 + vec3 + f32 + vec3 + vec3) for `var<uniform>` buffer sizing. */
+    it("WGSL golden: scene-style uniforms struct size and offsets", () => {
+        const sceneUniformsLike: Schema = {
+            type: "object",
+            properties: {
+                viewProjectionMatrix: mat4x4Schema,
+                lightDirection: vec3Schema,
+                ambientStrength: F32.schema,
+                lightColor: vec3Schema,
+                cameraPosition: vec3Schema,
+            },
+            required: [
+                "viewProjectionMatrix",
+                "lightDirection",
+                "ambientStrength",
+                "lightColor",
+                "cameraPosition",
+            ],
+        };
+        const layout = getStructLayout(sceneUniformsLike)!;
+        expect(layout.size).toBe(112);
+        expect(layout.fields.viewProjectionMatrix.offset).toBe(0);
+        expect(layout.fields.lightDirection.offset).toBe(64);
+        expect(layout.fields.ambientStrength.offset).toBe(76);
+        expect(layout.fields.lightColor.offset).toBe(80);
+        expect(layout.fields.cameraPosition.offset).toBe(96);
     });
 
     it("should reject invalid schemas", () => {
@@ -321,8 +390,8 @@ describe("getStructLayout", () => {
             expect(packedLayout.size).toBe(28);
         });
 
-        it("should show difference between std140 and packed layouts", () => {
-            const std140Schema: Schema = {
+        it("should show difference between wgsl and packed layouts", () => {
+            const wgslSchema: Schema = {
                 type: "object",
                 properties: {
                     position: {
@@ -338,7 +407,7 @@ describe("getStructLayout", () => {
                         maxItems: 4
                     }
                 },
-                layout: "std140"
+                layout: "wgsl"
             };
             const packedSchema: Schema = {
                 type: "object",
@@ -359,14 +428,13 @@ describe("getStructLayout", () => {
                 layout: "packed"
             };
 
-            const std140Layout = getStructLayout(std140Schema);
+            const wgslLayout = getStructLayout(wgslSchema);
             const packedLayout = getStructLayout(packedSchema);
 
-            // std140 should be larger due to vec4 alignment
-            expect(std140Layout.size).toBe(32); // 16 + 16
+            expect(wgslLayout.size).toBe(32); // vec3 @16 + vec4
             expect(packedLayout.size).toBe(28); // 12 + 16 (no padding)
-            
-            expect(std140Layout.layout).toBe("std140");
+
+            expect(wgslLayout.layout).toBe("wgsl");
             expect(packedLayout.layout).toBe("packed");
         });
 
@@ -399,8 +467,8 @@ describe("getStructLayout", () => {
         });
     });
 
-    describe("backwards compatibility", () => {
-        it("should default to std140 layout when no layout specified", () => {
+    describe("default layout", () => {
+        it("should default to wgsl layout when no layout specified", () => {
             const schema: Schema = {
                 type: "object",
                 properties: {
@@ -409,9 +477,9 @@ describe("getStructLayout", () => {
                 }
             };
 
-            const layout = getStructLayout(schema); // No layout parameter
-            expect(layout.layout).toBe("std140");
-            expect(layout.size).toBe(16); // Should be padded to vec4
+            const layout = getStructLayout(schema);
+            expect(layout.layout).toBe("wgsl");
+            expect(layout.size).toBe(8);
         });
 
         it("should work with original function signatures", () => {
@@ -422,14 +490,13 @@ describe("getStructLayout", () => {
                 }
             };
 
-            // Original signatures should still work
             const layout1 = getStructLayout(schema);
             const layout2 = getStructLayout(schema, true);
             const layout3 = getStructLayout(schema, false);
-            
-            expect(layout1?.layout).toBe("std140");
-            expect(layout2?.layout).toBe("std140");
-            expect(layout3?.layout).toBe("std140");
+
+            expect(layout1?.layout).toBe("wgsl");
+            expect(layout2?.layout).toBe("wgsl");
+            expect(layout3?.layout).toBe("wgsl");
         });
     });
 

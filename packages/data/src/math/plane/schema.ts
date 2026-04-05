@@ -10,7 +10,7 @@ export const schema = {
         normal: Vec3.schema,
         distance: F32.schema,
     },
-    layout: 'std140',
+    layout: 'wgsl',
     required: ['normal', 'distance'],
     additionalProperties: false,
 } as const satisfies Schema;

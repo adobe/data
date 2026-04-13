@@ -1,7 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect } from "vitest";
 import { createTransactionalStore } from "./create-transactional-store.js";
+import { coalesceTransactions } from "./coalesce-actions.js";
 import { Store } from "../../store/index.js";
+import { Entity } from "../../entity/entity.js";
 import { F32 } from "../../../math/f32/index.js";
 import { Schema } from "../../../schema/index.js";
 
@@ -546,5 +548,222 @@ describe("createTransactionalStore", () => {
         const transactionalStore = createTransactionalStore(baseStore);
         const extended = transactionalStore.extend({ components: {}, resources: {}, archetypes: {} });
         expect(extended).toBe(transactionalStore);
+    });
+
+    describe("ephemeral", () => {
+        it("should mark transaction as ephemeral when only ephemeral entities are changed", () => {
+            const store = createTransactionalStore(Store.create({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: {}
+            }));
+
+            const result = store.execute(t => {
+                const archetype = t.ensureArchetype(["id", "position", "ephemeral"]);
+                const entity = archetype.insert({ position: { x: 1, y: 2, z: 3 }, ephemeral: true });
+                expect(Entity.isEphemeral(entity)).toBe(true);
+            });
+
+            expect(result.ephemeral).toBe(true);
+        });
+
+        it("should not mark transaction as ephemeral when persistent entities are changed", () => {
+            const store = createTransactionalStore(Store.create({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: {}
+            }));
+
+            const result = store.execute(t => {
+                const archetype = t.ensureArchetype(["id", "position"]);
+                archetype.insert({ position: { x: 1, y: 2, z: 3 } });
+            });
+
+            expect(result.ephemeral).toBe(false);
+        });
+
+        it("should not mark transaction as ephemeral when mixing ephemeral and persistent entities", () => {
+            const store = createTransactionalStore(Store.create({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: {}
+            }));
+
+            const result = store.execute(t => {
+                const persistent = t.ensureArchetype(["id", "position"]);
+                persistent.insert({ position: { x: 1, y: 2, z: 3 } });
+
+                const ephemeral = t.ensureArchetype(["id", "position", "ephemeral"]);
+                ephemeral.insert({ position: { x: 4, y: 5, z: 6 }, ephemeral: true });
+            });
+
+            expect(result.ephemeral).toBe(false);
+        });
+
+        it("should mark transaction as ephemeral when only ephemeral resources are updated", () => {
+            const store = createTransactionalStore(Store.create({
+                components: {},
+                resources: {
+                    cursor: { type: "object", properties: { x: F32.schema, y: F32.schema }, default: { x: 0, y: 0 }, ephemeral: true } as const satisfies Schema & { default: unknown },
+                },
+                archetypes: {}
+            }));
+
+            const result = store.execute(t => {
+                t.resources.cursor = { x: 10, y: 20 };
+            });
+
+            expect(result.ephemeral).toBe(true);
+        });
+
+        it("should give ephemeral resources negative entity IDs", () => {
+            const baseStore = Store.create({
+                components: {},
+                resources: {
+                    cursor: { type: "object", properties: { x: F32.schema, y: F32.schema }, default: { x: 0, y: 0 }, ephemeral: true } as const satisfies Schema & { default: unknown },
+                    score: { type: "number", default: 0 } as const satisfies Schema & { default: unknown },
+                },
+                archetypes: {}
+            });
+
+            const cursorArchetype = (baseStore as any).ensureArchetype(["id", "cursor", "ephemeral"]);
+            const cursorEntityId = cursorArchetype.columns.id.get(0);
+            expect(Entity.isEphemeral(cursorEntityId)).toBe(true);
+
+            const scoreArchetype = (baseStore as any).ensureArchetype(["id", "score"]);
+            const scoreEntityId = scoreArchetype.columns.id.get(0);
+            expect(Entity.isEphemeral(scoreEntityId)).toBe(false);
+        });
+
+        it("should not mark transaction as ephemeral when persistent resources are updated", () => {
+            const store = createTransactionalStore(Store.create({
+                components: {},
+                resources: {
+                    score: { type: "number", default: 0 } as const satisfies Schema & { default: unknown },
+                },
+                archetypes: {}
+            }));
+
+            const result = store.execute(t => {
+                t.resources.score = 42;
+            });
+
+            expect(result.ephemeral).toBe(false);
+        });
+
+        it("should not mark transaction as ephemeral when mixing ephemeral and persistent resources", () => {
+            const store = createTransactionalStore(Store.create({
+                components: {},
+                resources: {
+                    cursor: { type: "object", properties: { x: F32.schema, y: F32.schema }, default: { x: 0, y: 0 }, ephemeral: true } as const satisfies Schema & { default: unknown },
+                    score: { type: "number", default: 0 } as const satisfies Schema & { default: unknown },
+                },
+                archetypes: {}
+            }));
+
+            const result = store.execute(t => {
+                t.resources.cursor = { x: 10, y: 20 };
+                t.resources.score = 42;
+            });
+
+            expect(result.ephemeral).toBe(false);
+        });
+
+        it("should be ephemeral: false when no entities are changed", () => {
+            const store = createTransactionalStore(Store.create({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: {}
+            }));
+
+            const result = store.execute(() => {});
+
+            expect(result.ephemeral).toBe(false);
+        });
+
+        it("should mark update of ephemeral entity as ephemeral", () => {
+            const store = createTransactionalStore(Store.create({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: {}
+            }));
+
+            let entity: number;
+            store.execute(t => {
+                const archetype = t.ensureArchetype(["id", "position", "ephemeral"]);
+                entity = archetype.insert({ position: { x: 1, y: 2, z: 3 }, ephemeral: true });
+            });
+
+            const result = store.execute(t => {
+                t.update(entity!, { position: { x: 10, y: 20, z: 30 } });
+            });
+
+            expect(result.ephemeral).toBe(true);
+        });
+
+        it("should mark delete of ephemeral entity as ephemeral", () => {
+            const store = createTransactionalStore(Store.create({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: {}
+            }));
+
+            let entity: number;
+            store.execute(t => {
+                const archetype = t.ensureArchetype(["id", "position", "ephemeral"]);
+                entity = archetype.insert({ position: { x: 1, y: 2, z: 3 }, ephemeral: true });
+            });
+
+            const result = store.execute(t => {
+                t.delete(entity!);
+            });
+
+            expect(result.ephemeral).toBe(true);
+        });
+
+        it("should preserve ephemeral when coalescing two ephemeral transactions", () => {
+            const store = createTransactionalStore(Store.create({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: {}
+            }));
+
+            let entity: number;
+            const first = store.execute(t => {
+                const archetype = t.ensureArchetype(["id", "position", "ephemeral"]);
+                entity = archetype.insert({ position: { x: 1, y: 2, z: 3 }, ephemeral: true });
+            });
+
+            const second = store.execute(t => {
+                t.update(entity!, { position: { x: 10, y: 20, z: 30 } });
+            });
+
+            expect(first.ephemeral).toBe(true);
+            expect(second.ephemeral).toBe(true);
+
+            const coalesced = coalesceTransactions(first, second);
+            expect(coalesced.ephemeral).toBe(true);
+        });
+
+        it("should not be ephemeral when coalescing ephemeral with non-ephemeral", () => {
+            const store = createTransactionalStore(Store.create({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: {}
+            }));
+
+            const ephemeralResult = store.execute(t => {
+                const archetype = t.ensureArchetype(["id", "position", "ephemeral"]);
+                archetype.insert({ position: { x: 1, y: 2, z: 3 }, ephemeral: true });
+            });
+
+            const persistentResult = store.execute(t => {
+                const archetype = t.ensureArchetype(["id", "position"]);
+                archetype.insert({ position: { x: 4, y: 5, z: 6 } });
+            });
+
+            const coalesced = coalesceTransactions(ephemeralResult, persistentResult);
+            expect(coalesced.ephemeral).toBe(false);
+        });
     });
 }); 

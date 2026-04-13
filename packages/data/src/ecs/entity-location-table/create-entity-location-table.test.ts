@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect } from 'vitest';
 import { createEntityLocationTable } from './create-entity-location-table.js';
-import { Entity } from '../entity.js';
+import { Entity } from '../entity/entity.js';
 
 describe('createEntityLocationTable', () => {
     it('should create entities with increasing ids starting from 0', () => {

@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { createArchetype } from '../archetype/index.js';
 import { createEntityLocationTable } from '../entity-location-table/index.js';
-import { Entity } from '../entity.js';
+import { Entity } from '../entity/entity.js';
 import { U32 } from '../../math/u32/index.js';
 
 describe('createArchetype', () => {

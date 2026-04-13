@@ -6,7 +6,7 @@ import { ResourceComponents } from "../../store/resource-components.js";
 import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { TransactionResult } from "../transactional-store/index.js";
 import { Store } from "../../store/index.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 
 export type ReconcilingEntry<
     C extends Components = Components,

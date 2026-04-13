@@ -6,7 +6,7 @@ import * as ARCHETYPE from "../../archetype/index.js";
 import { Table, getRowData, addRow, updateRow } from "../../../table/index.js";
 import { Archetype, ReadonlyArchetype } from "../../archetype/archetype.js";
 import { RequiredComponents } from "../../required-components.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 import { Core, EntityUpdateValues, ArchetypeQueryOptions } from "./core.js";
 import { Assert, Equal, Simplify, StringKeyof } from "../../../types/index.js";
 import { ComponentSchemas } from "../../component-schemas.js";

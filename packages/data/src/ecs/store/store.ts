@@ -2,7 +2,7 @@
 import { RequiredComponents } from "../required-components.js";
 import { ResourceComponents } from "./resource-components.js";
 import { Core, ReadonlyCore } from "./core/core.js";
-import { Entity } from "../entity.js";
+import { Entity } from "../entity/entity.js";
 import { IntersectTuple, Simplify, StringKeyof } from "../../types/types.js";
 import { Components } from "./components.js";
 import { ArchetypeComponents } from "./archetype-components.js";

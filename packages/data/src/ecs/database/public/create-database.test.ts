@@ -5,7 +5,7 @@ import { Database } from "../database.js";
 import { createReconcilingDatabase } from "../reconciling/create-reconciling-database.js";
 import { Store } from "../../store/index.js";
 import { Schema } from "../../../schema/index.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 import { F32 } from "../../../math/f32/index.js";
 import { Observe } from "../../../observe/index.js";
 import { createUndoRedoService } from "../../undo-redo-service/create-undo-redo-service.js";

@@ -9,7 +9,7 @@ import { ReadonlyStore, Store } from "../../store/index.js";
 import { Observe } from "../../../observe/index.js";
 import { TransactionResult } from "../transactional-store/index.js";
 import { RequiredComponents } from "../../required-components.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 import { EntityReadValues } from "../../store/core/index.js";
 import { Database } from "../database.js";
 import { FromSchemas } from "../../../schema/from-schemas.js";

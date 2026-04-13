@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { createCore } from "./create-core.js";
 import { Schema } from "../../../schema/index.js";
-import type { Entity } from "../../entity.js";
+import type { Entity } from "../../entity/entity.js";
 import { F32 } from "../../../math/f32/index.js";
 
 // Shared test schemas

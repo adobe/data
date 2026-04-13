@@ -12,7 +12,7 @@ import { TransactionResult } from "../transactional-store/index.js";
 import { observeSelectEntities } from "../observe-select-entities.js";
 import { createTransactionalStore } from "../transactional-store/create-transactional-store.js";
 import { RequiredComponents } from "../../required-components.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 import { EntityReadValues, EntityUpdateValues } from "../../store/core/index.js";
 import { ObservedDatabase } from "./observed-database.js";
 
@@ -117,9 +117,16 @@ export function createObservedDatabase<
     const observeArchetype = (archetype: ArchetypeId) => addToMapSet(archetype, archetypeObservers);
     const observeComponent = mapEntries(store.componentSchemas, ([component]) => addToMapSet(component, componentObservers));
 
+    const resourceArchetypeComponents = (resource: string): StringKeyof<C>[] => {
+        const isEphemeral = (store.componentSchemas as any)[resource]?.ephemeral;
+        return isEphemeral
+            ? ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>, "ephemeral" as StringKeyof<C>]
+            : ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>];
+    };
+
     const observeResource = Object.fromEntries(
         Object.entries(store.resources).map(([resource]) => {
-            const archetype = store.ensureArchetype(["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>]);
+            const archetype = store.ensureArchetype(resourceArchetypeComponents(resource));
             const resourceId = archetype.columns.id.get(0);
             return [resource, Observe.withMap(observeEntity(resourceId), (values) => values?.[resource as unknown as StringKeyof<C>] ?? null)];
         })
@@ -158,6 +165,7 @@ export function createObservedDatabase<
                 ];
             })),
             transient: false,
+            ephemeral: false,
             value: undefined,
             undo: [],
             redo: [],
@@ -182,7 +190,7 @@ export function createObservedDatabase<
             (observe as any).components = mapEntries(store.componentSchemas, ([component]) => addToMapSet(component, componentObservers));
             (observe as any).resources = Object.fromEntries(
                 Object.entries(store.resources).map(([resource]) => {
-                    const archetype = store.ensureArchetype(["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>]);
+                    const archetype = store.ensureArchetype(resourceArchetypeComponents(resource));
                     const resourceId = archetype.columns.id.get(0);
                     return [resource, Observe.withMap(observeEntity(resourceId), (values) => values?.[resource as unknown as StringKeyof<C>] ?? null)];
                 })

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Store } from "./store.js";
-import { Entity } from "../entity.js";
+import { Entity } from "../entity/entity.js";
 import { Components } from "./components.js";
 import { ResourceComponents } from "./resource-components.js";
 import { ArchetypeComponents } from "./archetype-components.js";

@@ -9,6 +9,7 @@ describe("shouldCoalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [],
             undo: [],
@@ -20,6 +21,7 @@ describe("shouldCoalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [],
             undo: [],
@@ -35,6 +37,7 @@ describe("shouldCoalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [],
             undo: [],
@@ -46,6 +49,7 @@ describe("shouldCoalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 456 } },
             redo: [],
             undo: [],
@@ -61,6 +65,7 @@ describe("shouldCoalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: false },
             redo: [],
             undo: [],
@@ -72,6 +77,7 @@ describe("shouldCoalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [],
             undo: [],
@@ -87,6 +93,7 @@ describe("shouldCoalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [],
             undo: [],
@@ -98,6 +105,7 @@ describe("shouldCoalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: false },
             redo: [],
             undo: [],
@@ -113,6 +121,7 @@ describe("shouldCoalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: null,
             redo: [],
             undo: [],
@@ -124,6 +133,7 @@ describe("shouldCoalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [],
             undo: [],
@@ -139,6 +149,7 @@ describe("shouldCoalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [],
             undo: [],
@@ -150,6 +161,7 @@ describe("shouldCoalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: false,
+            ephemeral: false,
             undoable: null,
             redo: [],
             undo: [],
@@ -167,6 +179,7 @@ describe("coalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [{ type: "update", entity: 123, values: { position: { x: 1 } } }],
             undo: [{ type: "update", entity: 123, values: { position: { x: 0 } } }],
@@ -178,6 +191,7 @@ describe("coalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [{ type: "update", entity: 123, values: { position: { y: 2 } } }],
             undo: [{ type: "update", entity: 123, values: { position: { y: 0 } } }],
@@ -207,6 +221,7 @@ describe("coalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [],
             undo: [],
@@ -218,6 +233,7 @@ describe("coalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [],
             undo: [],
@@ -245,6 +261,7 @@ describe("coalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [],
             undo: [],
@@ -256,6 +273,7 @@ describe("coalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: true,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [],
             undo: [],
@@ -275,6 +293,7 @@ describe("coalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "createEntity", entity: 123 } },
             redo: [{ type: "insert", values: { position: { x: 1 } } }],
             undo: [{ type: "delete", entity: 123 }],
@@ -286,6 +305,7 @@ describe("coalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [{ type: "update", entity: 123, values: { position: { y: 2 } } }],
             undo: [{ type: "update", entity: 123, values: { position: { y: 0 } } }],
@@ -313,6 +333,7 @@ describe("coalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "createEntity", entity: 123 } },
             redo: [{ type: "insert", values: { position: { x: 1 } } }],
             undo: [{ type: "delete", entity: 123 }],
@@ -324,6 +345,7 @@ describe("coalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "deleteEntity", entity: 123 } },
             redo: [{ type: "delete", entity: 123 }],
             undo: [{ type: "insert", values: { position: { x: 1 } } }],
@@ -349,6 +371,7 @@ describe("coalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [{ type: "update", entity: 123, values: { position: { x: 1 } } }],
             undo: [{ type: "update", entity: 123, values: { position: { x: 0 } } }],
@@ -360,6 +383,7 @@ describe("coalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [
                 { type: "update", entity: 123, values: { position: { y: 2 } } },
@@ -396,6 +420,7 @@ describe("coalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 123 } },
             redo: [{ type: "update", entity: 123, values: { position: { x: 1 } } }],
             undo: [{ type: "update", entity: 123, values: { position: { x: 0 } } }],
@@ -407,6 +432,7 @@ describe("coalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "deleteEntity", entity: 123 } },
             redo: [{ type: "delete", entity: 123 }],
             undo: [{ type: "insert", values: { position: { x: 1 } } }],
@@ -441,6 +467,7 @@ describe("coalesceTransactions", () => {
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "createEntity", entity: 123 } },
             redo: [{ type: "insert", values: { position: { x: 1 } } }],
             undo: [{ type: "delete", entity: 123 }],
@@ -452,6 +479,7 @@ describe("coalesceTransactions", () => {
         const current: TransactionResult<any> = {
             value: 2,
             transient: false,
+            ephemeral: false,
             undoable: { coalesce: { id: "updateEntity", entity: 456 } },
             redo: [{ type: "update", entity: 456, values: { position: { y: 2 } } }],
             undo: [{ type: "update", entity: 456, values: { position: { y: 0 } } }],

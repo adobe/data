@@ -4,7 +4,7 @@ import { Observe } from "../../observe/index.js";
 import { getRowPredicateFromFilter } from "../../table/select-rows.js";
 import { StringKeyof } from "../../types/types.js";
 import { RequiredComponents } from "../required-components.js";
-import { Entity } from "../entity.js";
+import { Entity } from "../entity/entity.js";
 import { OptionalComponents, ReadonlyStore } from "../index.js";
 import { EntitySelectOptions } from "../store/entity-select-options.js";
 import { TransactionResult } from "./transactional-store/transactional-store.js";

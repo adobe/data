@@ -3,7 +3,7 @@
 import { Assert } from "../../../types/assert.js";
 import { Equal } from "../../../types/equal.js";
 import { Database } from "../database.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 import { Observe } from "../../../observe/index.js";
 import { observeSelectDeep } from "./observe-select-deep.js";
 

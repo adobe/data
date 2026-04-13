@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 import { Archetype, ReadonlyArchetype } from "../../archetype/archetype.js";
 import { Schema } from "../../../schema/index.js";
 import { RequiredComponents } from "../../required-components.js";

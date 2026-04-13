@@ -3,7 +3,7 @@
 import { ArchetypeId, EntityInsertValues } from "../../archetype/index.js";
 import { ResourceComponents } from "../../store/resource-components.js";
 import { ReadonlyStore, Store } from "../../store/index.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 import { EntityUpdateValues } from "../../store/core/index.js";
 import { Components } from "../../store/components.js";
 import { StringKeyof } from "../../../types/types.js";
@@ -67,7 +67,10 @@ export interface TransactionResult<C = unknown> {
      * The Entity value if any returned by the transaction function.
      */
     readonly value: Entity | void;
+    /** True when the transaction is a non-final intermediate operation within a sequence. */
     readonly transient: boolean;
+    /** True when all changed entities are ephemeral (entity id < 0). */
+    readonly ephemeral: boolean;
     readonly undoable: null | Undoable;
     readonly redo: TransactionWriteOperation<C>[];
     readonly undo: TransactionWriteOperation<C>[];

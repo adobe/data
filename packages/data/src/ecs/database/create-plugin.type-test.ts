@@ -35,8 +35,8 @@ function validTypeInferenceTests() {
         },
         archetypes: {
             A: ["a", "b"],
-            ABTransient: ["a", "b", "transient"],
-            Transient: ["transient"],
+            ABEphemeral: ["a", "b", "ephemeral"],
+            Ephemeral: ["ephemeral"],
         }
     });
 
@@ -51,7 +51,7 @@ function validTypeInferenceTests() {
         },
         archetypes: {
             A: ["a", "b"],
-            ABTransient: ["a", "b", "transient"],
+            ABEphemeral: ["a", "b", "ephemeral"],
         },
         transactions: {
             testChanges: (store) => {
@@ -218,7 +218,7 @@ function validTypeInferenceTests() {
         },
         archetypes: {
             Foo: ["alpha", "beta"],
-            FooTransient: ["alpha", "beta", "transient"],
+            FooEphemeral: ["alpha", "beta", "ephemeral"],
         },
         transactions: {
             doAlpha: (store, input: { a: number, b: string }) => { },
@@ -261,7 +261,7 @@ function validTypeInferenceTests() {
         },
         archetypes: {
             A: ["a", "b", "alpha", "beta"],
-            ABTransient: ["a", "b", "alpha", "beta", "transient"],
+            ABEphemeral: ["a", "b", "alpha", "beta", "ephemeral"],
         },
         transactions: {
             testChanges: (store) => {

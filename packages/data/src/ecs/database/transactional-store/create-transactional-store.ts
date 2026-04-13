@@ -2,7 +2,7 @@
 import { Archetype, ArchetypeId, EntityInsertValues } from "../../archetype/index.js";
 import { ResourceComponents } from "../../store/resource-components.js";
 import { Store } from "../../store/index.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 import { EntityUpdateValues } from "../../store/core/index.js";
 import { TransactionalStore, TransactionResult, TransactionWriteOperation } from "./transactional-store.js";
 import { StringKeyof } from "../../../types/types.js";
@@ -33,6 +33,10 @@ export function createTransactionalStore<
     // Transaction state (mutable during transaction execution)
     let undoOperationsInReverseOrder: TransactionWriteOperation<C>[] = [];
     let redoOperations: TransactionWriteOperation<C>[] = [];
+    let nonEphemeral = false;
+    const trackEntity = (entity: Entity) => {
+        if (!Entity.isEphemeral(entity)) nonEphemeral = true;
+    };
     const changed = {
         entities: new Map<Entity, EntityUpdateValues<C> | null>(),
         components: new Set<keyof C>(),
@@ -49,6 +53,7 @@ export function createTransactionalStore<
             },
             insert: <T extends EntityInsertValues<C>>(values: T) => {
                 const entity = archetype.insert(values as never);
+                trackEntity(entity);
                 redoOperations.push({
                     type: "insert",
                     values: values,
@@ -74,8 +79,8 @@ export function createTransactionalStore<
         return wrappedArchetypes.get(archetype.id);
     };
 
-    // Transaction-aware update function
     const updateEntity = (entity: Entity, values: EntityUpdateValues<C>) => {
+        trackEntity(entity);
         const oldValues = store.read(entity);
         if (!oldValues) {
             throw new Error(`Entity not found: ${entity}`);
@@ -116,8 +121,8 @@ export function createTransactionalStore<
         addUpdateOperationsMaybeCombineLast(undoOperationsInReverseOrder, redoOperations, entity, values, replacedValues);
     };
 
-    // Transaction-aware delete function
     const deleteEntity = (entity: Entity) => {
+        trackEntity(entity);
         const location = store.locate(entity);
         if (location) {
             changed.archetypes.add(location.archetype.id);
@@ -142,7 +147,11 @@ export function createTransactionalStore<
     const resources = {} as { [K in keyof R]: R[K] };
     for (const name of Object.keys(store.resources)) {
         const resourceId = name as keyof C;
-        const archetype = store.ensureArchetype(["id", resourceId] as StringKeyof<C>[]);
+        const isEphemeral = (store.componentSchemas as any)[name]?.ephemeral;
+        const componentNames = isEphemeral
+            ? ["id", resourceId, "ephemeral"] as StringKeyof<C>[]
+            : ["id", resourceId] as StringKeyof<C>[];
+        const archetype = store.ensureArchetype(componentNames);
         const entityId = archetype.columns.id.get(0);
         Object.defineProperty(resources, name, {
             get: Object.getOwnPropertyDescriptor(store.resources, name)!.get,
@@ -183,9 +192,9 @@ export function createTransactionalStore<
         }
     ): TransactionResult<C> => {
         transactionStore.undoable = undefined;
-        // Reset transaction state
         undoOperationsInReverseOrder = [];
         redoOperations = [];
+        nonEphemeral = false;
         changed.entities.clear();
         changed.components.clear();
         changed.archetypes.clear();
@@ -198,10 +207,10 @@ export function createTransactionalStore<
             const coalescedRedo = coalesceWriteOperations([...redoOperations]);
             const coalescedUndo = coalesceWriteOperations([...undoOperationsInReverseOrder.reverse()]);
 
-            // Return the transaction result
             const result: TransactionResult<C> = {
                 value: value ?? undefined,
                 transient: options?.transient ?? false,
+                ephemeral: !nonEphemeral && changed.entities.size > 0,
                 undoable: transactionStore.undoable ?? null,
                 redo: coalescedRedo,
                 undo: coalescedUndo,
@@ -216,9 +225,9 @@ export function createTransactionalStore<
             applyWriteOperations(store, undoOperationsInReverseOrder.reverse());
             throw error;
         } finally {
-            // Clean up transaction state
             undoOperationsInReverseOrder = [];
             redoOperations = [];
+            nonEphemeral = false;
             changed.entities.clear();
             changed.components.clear();
             changed.archetypes.clear();
@@ -240,11 +249,14 @@ export function createTransactionalStore<
                     wrappedArchetypesObject[name] = getWrappedArchetype(store.archetypes[name]);
                 }
             }
-            // Sync resources after extension (store may have new resource schemas)
             for (const name of Object.keys(store.resources)) {
                 if (!Object.hasOwn(resources, name)) {
                     const resourceId = name as keyof C;
-                    const archetype = store.ensureArchetype(["id", resourceId] as StringKeyof<C>[]);
+                    const isEphemeral = (store.componentSchemas as any)[name]?.ephemeral;
+                    const componentNames = isEphemeral
+                        ? ["id", resourceId, "ephemeral"] as StringKeyof<C>[]
+                        : ["id", resourceId] as StringKeyof<C>[];
+                    const archetype = store.ensureArchetype(componentNames);
                     const entityId = archetype.columns.id.get(0);
                     Object.defineProperty(resources, name, {
                         get: Object.getOwnPropertyDescriptor(store.resources, name)!.get,

@@ -16,4 +16,4 @@ export * from "./plugins/index.js";
 export * from "./store/transaction-functions.js";
 
 // Export Entity type and namespace
-export { Entity } from "./entity.js";
+export { Entity } from "./entity/entity.js";

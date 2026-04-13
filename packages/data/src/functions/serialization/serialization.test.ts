@@ -67,12 +67,11 @@ describe('serialize/deserialize', () => {
     expect(equals(roundTrip, table)).toBe(true);
   });
 
-  it('should NOT serialize data for transient number buffers and reset to defaults on deserialize', () => {
-    // Create transient number buffer with default value
+  it('should NOT serialize data for ephemeral number buffers and reset to defaults on deserialize', () => {
     const numberBuffer = createTypedBuffer({
       type: "number",
       precision: 1,
-      transient: true,
+      ephemeral: true,
       default: 42
     }, 3);
 
@@ -99,12 +98,11 @@ describe('serialize/deserialize', () => {
     expect(roundTrip.numberBuffer.get(2)).not.toBe(300);
   });
 
-  it('should NOT serialize data for transient array buffers and reset to defaults on deserialize', () => {
-    // Create transient array buffer with default value
+  it('should NOT serialize data for ephemeral array buffers and reset to defaults on deserialize', () => {
     const arrayBuffer = createTypedBuffer({
       type: "array",
       items: { type: "string" },
-      transient: true,
+      ephemeral: true,
       default: ["defaultValue1", "defaultValue2"]
     }, 2);
 
@@ -128,11 +126,10 @@ describe('serialize/deserialize', () => {
     expect(roundTrip.arrayBuffer.get(1)).not.toEqual(["customValue3", "customValue4"]);
   });
 
-  it('should NOT serialize data for transient struct buffers and reset to defaults on deserialize', () => {
-    // Create transient struct buffer with default value
+  it('should NOT serialize data for ephemeral struct buffers and reset to defaults on deserialize', () => {
     const structBuffer = createStructBuffer({
       type: "object",
-      transient: true,
+      ephemeral: true,
       default: { x: 10, y: 20 },
       properties: {
         x: { type: "number", precision: 1 },

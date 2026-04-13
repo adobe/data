@@ -7,7 +7,7 @@ import { Store } from "../store.js";
 import { Schema } from "../../../schema/index.js";
 import { FromSchemas } from "../../../schema/from-schemas.js";
 import { createCore } from "../core/create-core.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 import { Core } from "../core/core.js";
 import { ResourceSchemas } from "../../resource-schemas.js";
 import { ArchetypeComponents } from "../archetype-components.js";
@@ -53,9 +53,16 @@ export function createStore<
     // The resource component we added above will contain the resource value
     const ensureResourceInitialized = (name: string, resourceSchema: Schema & { default: unknown }) => {
         const resourceId = name as StringKeyof<C>;
-        const archetype = core.ensureArchetype(["id", resourceId]);
+        const isEphemeral = resourceSchema.ephemeral;
+        const componentNames: StringKeyof<C>[] = isEphemeral
+            ? ["id" as StringKeyof<C>, resourceId, "ephemeral" as StringKeyof<C>]
+            : ["id" as StringKeyof<C>, resourceId];
+        const archetype = core.ensureArchetype(componentNames);
         if (archetype.rowCount === 0) {
-            archetype.insert({ [resourceId]: resourceSchema.default } as any);
+            const insertValues = isEphemeral
+                ? { [resourceId]: resourceSchema.default, ephemeral: true }
+                : { [resourceId]: resourceSchema.default };
+            archetype.insert(insertValues as any);
         }
         if (!Object.prototype.hasOwnProperty.call(resources, name)) {
             const row = 0;

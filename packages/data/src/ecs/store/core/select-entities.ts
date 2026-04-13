@@ -3,7 +3,7 @@
 import { selectRows } from "../../../table/select-rows.js";
 import { StringKeyof } from "../../../types/types.js";
 import { RequiredComponents } from "../../required-components.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 import { EntitySelectOptions } from "../entity-select-options.js";
 import { Core } from "./core.js";
 import { OptionalComponents } from "../../optional-components.js";

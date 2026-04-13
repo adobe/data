@@ -122,10 +122,10 @@ export function coalesceTransactions(
         combinedChangedArchetypes.add(archetype);
     }
 
-    // Create combined transaction result
     return {
         value: current.value,
         transient: current.transient,
+        ephemeral: previous.ephemeral && current.ephemeral,
         undoable: current.undoable,
         redo: combinedRedo,
         undo: combinedUndo,

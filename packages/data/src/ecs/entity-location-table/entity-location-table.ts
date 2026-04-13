@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Entity } from "../entity.js";
+import { Entity } from "../entity/entity.js";
 import { EntityLocation } from "./entity-location.js";
 
 export interface EntityLocationTable {

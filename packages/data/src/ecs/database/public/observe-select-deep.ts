@@ -6,7 +6,7 @@ import { StringKeyof } from "../../../types/types.js";
 import { RequiredComponents } from "../../required-components.js";
 import { Components } from "../../store/components.js";
 import { EntitySelectOptions } from "../../store/entity-select-options.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 import { Database } from "../database.js";
 
 type EntityData<C, Include extends StringKeyof<C>> =

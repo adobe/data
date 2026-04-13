@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { RequiredComponents } from "../required-components.js";
-import { Entity } from "../entity.js";
+import { Entity } from "../entity/entity.js";
 import { Table, ReadonlyTable } from "../../table/index.js";
 import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";

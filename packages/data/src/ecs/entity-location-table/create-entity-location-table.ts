@@ -2,11 +2,11 @@
 import { resize } from "../../internal/array-buffer-like/resize.js";
 import { EntityLocationTable } from "./entity-location-table.js";
 import { EntityLocation } from "./entity-location.js";
-import { Entity } from "../entity.js";
+import { Entity } from "../entity/entity.js";
 import { createSharedArrayBuffer } from "../../internal/shared-array-buffer/create-shared-array-buffer.js";
 
-export const createEntityLocationTable = (initialCapacity: number = 16, transient: boolean = false): EntityLocationTable => {
-    return transient ? createNegativeEntityLocationTable(initialCapacity) : createPositiveEntityLocationTable(initialCapacity);
+export const createEntityLocationTable = (initialCapacity: number = 16, ephemeral: boolean = false): EntityLocationTable => {
+    return ephemeral ? createNegativeEntityLocationTable(initialCapacity) : createPositiveEntityLocationTable(initialCapacity);
 }
 
 const createNegativeEntityLocationTable = (initialCapacity: number = 16): EntityLocationTable => {

@@ -11,7 +11,7 @@ import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { ReconcilingDatabase, TransactionEnvelope } from "./reconciling-database.js";
 import { ReconcilingEntry, ReconcilingEntryOps } from "./reconciling-entry.js";
 import { createObservedDatabase } from "../observed/create-observed-database.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 
 export function createReconcilingDatabase<
     const C extends Components,

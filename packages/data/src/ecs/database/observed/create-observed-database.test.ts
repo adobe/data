@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createObservedDatabase } from "./create-observed-database.js";
 import { Store } from "../../store/index.js";
 import { Schema } from "../../../schema/index.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 import { Database } from "../database.js";
 
 const positionSchema = {

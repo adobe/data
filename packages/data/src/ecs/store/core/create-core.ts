@@ -6,7 +6,7 @@ import * as ARCHETYPE from "../../archetype/index.js";
 import { Table, getRowData, addRow, updateRow } from "../../../table/index.js";
 import { Archetype, ReadonlyArchetype } from "../../archetype/archetype.js";
 import { RequiredComponents } from "../../required-components.js";
-import { Entity } from "../../entity.js";
+import { Entity } from "../../entity/entity.js";
 import { Core, EntityUpdateValues, ArchetypeQueryOptions } from "./core.js";
 import { Assert, Equal, Simplify, StringKeyof } from "../../../types/index.js";
 import { ComponentSchemas } from "../../component-schemas.js";
@@ -18,16 +18,12 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
 
     const componentSchemas: { readonly [K in StringKeyof<C & RequiredComponents & OptionalComponents>]: Schema } = {
         id: Entity.schema,
-        transient: True.schema,
+        ephemeral: True.schema,
         ...newComponentSchemas
     };
-    // entity location table for entities that are not transient
-    // values >= 0
     const persistentLocationTable = createEntityLocationTable(16, false);
-    // entity location table for entities that are transient
-    // values < 0
-    const transientLocationTable = createEntityLocationTable(16, true);
-    const getLocationTable = (entity: Entity) => entity < 0 ? transientLocationTable : persistentLocationTable;
+    const ephemeralLocationTable = createEntityLocationTable(16, true);
+    const getLocationTable = (entity: Entity) => entity < 0 ? ephemeralLocationTable : persistentLocationTable;
     const archetypes = [] as unknown as Archetype<C & RequiredComponents & OptionalComponents>[] & { readonly [x: string]: Archetype<C> };
 
     const queryArchetypes = <
@@ -60,13 +56,13 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         const id = archetypes.length;
         const archetypeComponentSchemas: { [K in CC]: Schema } = {} as { [K in CC]: Schema };
         let hasId = false;
-        let transient = false;
+        let ephemeral = false;
         for (const comp of componentNames as Iterable<CC>) {
             if (comp === "id") {
                 hasId = true;
             }
-            if (comp === "transient") {
-                transient = true;
+            if (comp === "ephemeral") {
+                ephemeral = true;
             }
             archetypeComponentSchemas[comp] = componentSchemas[comp];
         }
@@ -76,14 +72,14 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         const archetype = ARCHETYPE.createArchetype(
             archetypeComponentSchemas as any,
             id,
-            transient ? transientLocationTable : persistentLocationTable
+            ephemeral ? ephemeralLocationTable : persistentLocationTable
         );
         archetypes.push(archetype as unknown as Archetype<C & RequiredComponents & OptionalComponents>);
         return archetype as unknown as Archetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>;
     }
 
     const locateInternal = (entity: Entity) => {
-        return (entity < 0 ? transientLocationTable : persistentLocationTable).locate(entity);
+        return (entity < 0 ? ephemeralLocationTable : persistentLocationTable).locate(entity);
     }
 
     const readEntity = (entity: Entity, minArchetype?: ReadonlyArchetype<C> | Archetype<C>): any => {
@@ -116,8 +112,8 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         if (currentLocation === null) {
             throw new Error(`Entity not found ${entity}`);
         }
-        if ("transient" in components) {
-            throw new Error("Cannot update transient component");
+        if ("ephemeral" in components) {
+            throw new Error("Cannot update ephemeral component");
         }
         const currentArchetype = archetypes[currentLocation.archetype];
         let newArchetype = currentArchetype;
@@ -215,14 +211,14 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
 
 type TestType = ReturnType<typeof createCore<{ position: { type: "number" }, health: { type: "string" } }>>
 type CheckTestType = Assert<Equal<TestType, Core<{
-    transient: true;
+    ephemeral: true;
     position: number;
     health: string;
 }>>>
 type TestTypeComponents = TestType["componentSchemas"]
 type CheckComponents = Assert<Equal<TestTypeComponents, {
     readonly id: Schema;
-    readonly transient: Schema;
+    readonly ephemeral: Schema;
     readonly position: Schema;
     readonly health: Schema;
 }>>;

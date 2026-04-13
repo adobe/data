@@ -18,7 +18,7 @@ export function registerTypedBufferCodecs() {
         serialize: (data: TypedBuffer<any>) => {
             const { type, schema, capacity } = data;
             try {
-                if (type === "const" || schema.transient) {
+                if (type === "const" || schema.ephemeral) {
                     return { json: { type, schema, capacity } };
                 }
                 else if (type === "array") {
@@ -46,7 +46,7 @@ export function registerTypedBufferCodecs() {
             }
             else if (type === "array") {
                 const buffer = createArrayBuffer(schema, capacity);
-                if (schema.transient) {
+                if (schema.ephemeral) {
                     if (schema.default !== undefined && schema.default !== 0) {
                         for (let i = 0; i < capacity; i++) {
                             buffer.set(i, schema.default);
@@ -62,7 +62,7 @@ export function registerTypedBufferCodecs() {
             }
             else if (type === "number" || type === "struct") {
                 const buffer = type === "number" ? createNumberBuffer(schema, capacity) : createStructBuffer(schema, capacity);
-                if (schema.transient) {
+                if (schema.ephemeral) {
                     if (schema.default !== undefined && schema.default !== 0) {
                         for (let i = 0; i < capacity; i++) {
                             buffer.set(i, schema.default);

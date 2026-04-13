@@ -15,11 +15,10 @@ export const PersonSchema = {
             minimum: 0,
             maximum: 100,
             conditionals: [
-                // when the age is less than 18 then email becomes transient.
                 {
                     path: "$.properties.email",
                     value: {
-                        transient: true,
+                        ephemeral: true,
                     },
                     match: {
                         exclusiveMaximum: 18,
@@ -49,7 +48,7 @@ export const PersonSchemaWithOneOf = {
                         {
                             path: "$.properties.email",
                             value: {
-                                transient: false,
+                                ephemeral: false,
                             }
                         }
                     ]
@@ -96,11 +95,10 @@ export const PersonSchemaRootConditions = {
         },
     },
     conditionals: [
-        // if the name length is less than 3 then the email becomes transient.
         {
             path: "$.properties.email",
             value: {
-                transient: true,
+                ephemeral: true,
             },
             match: {
                 properties: {
@@ -110,11 +108,10 @@ export const PersonSchemaRootConditions = {
                 }
             }
         },
-        // if the name length is greater than 3 and the species is human then the email is not transient.
         {
             path: "$.properties.email",
             value: {
-                transient: false,
+                ephemeral: false,
             },
             match: {
                 properties: {
@@ -146,7 +143,7 @@ describe('enumeratePatches', () => {
             age: 10,
         })];
         expect(patches).toEqual([
-            { path: ["$", "properties", "email"], fragment: { transient: true } },
+            { path: ["$", "properties", "email"], fragment: { ephemeral: true } },
         ]);
     });
     it('should match on oneOf cases for human', () => {
@@ -155,7 +152,7 @@ describe('enumeratePatches', () => {
             species: "human",
         })];
         expect(patches).toEqual([
-            { path: ["$", "properties", "email"], fragment: { transient: false } },
+            { path: ["$", "properties", "email"], fragment: { ephemeral: false } },
         ]);
     });
     it('should match on oneOf cases for robot', () => {
@@ -173,7 +170,7 @@ describe('enumeratePatches', () => {
             species: "human",
         })];
         expect(patches).toEqual([
-            { path: ["$", "properties", "email"], fragment: { transient: false } },
+            { path: ["$", "properties", "email"], fragment: { ephemeral: false } },
         ]);
     });
     it('should match on simple root conditions', () => {
@@ -182,7 +179,7 @@ describe('enumeratePatches', () => {
             species: "human",
         })];
         expect(patches).toEqual([
-            { path: ["$", "properties", "email"], fragment: { transient: true } },
+            { path: ["$", "properties", "email"], fragment: { ephemeral: true } },
         ]);
     });
 });

@@ -154,7 +154,7 @@ describe('createEntityLocationTable', () => {
     });
 });
 
-describe('createTransientEntityLocationTable', () => {
+describe('createEphemeralEntityLocationTable', () => {
     it('should create entities with increasing ids starting from -1', () => {
         const table = createEntityLocationTable(16, true);
 

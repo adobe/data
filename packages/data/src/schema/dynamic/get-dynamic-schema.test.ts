@@ -23,10 +23,9 @@ describe('getDynamicSchema', () => {
             age: 10,
         });
 
-        // Email should become transient when age < 18
         expect(dynamicSchema.properties?.email).toEqual({
             type: "string",
-            transient: true,
+            ephemeral: true,
         });
     });
 
@@ -36,10 +35,9 @@ describe('getDynamicSchema', () => {
             species: "human",
         });
 
-        // Email should not be transient for humans
         expect(dynamicSchema.properties?.email).toEqual({
             type: "string",
-            transient: false,
+            ephemeral: false,
         });
     });
 
@@ -62,10 +60,9 @@ describe('getDynamicSchema', () => {
             species: "human",
         });
 
-        // Email should not be transient due to name length > 3 and species being human
         expect(dynamicSchema.properties?.email).toEqual({
             type: "string",
-            transient: false,
+            ephemeral: false,
         });
     });
 
@@ -75,10 +72,9 @@ describe('getDynamicSchema', () => {
             species: "human",
         });
 
-        // Email should become transient due to name length <= 2
         expect(dynamicSchema.properties?.email).toEqual({
             type: "string",
-            transient: true,
+            ephemeral: true,
         });
     });
 

@@ -25,7 +25,7 @@ export interface Schema {
   title?: string;
   description?: string;
   conditionals?: readonly Conditional[];
-  transient?: boolean;
+  ephemeral?: boolean;
   mutable?: boolean; // defaults to false
   default?: any;
   precision?: 1 | 2;

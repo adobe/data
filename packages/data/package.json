@@ -23,7 +23,6 @@
     "build-assembly": "run-p asbuild:release",
     "clean": "rm -rf dist build node_modules",
     "clean-cache": "rm -rf node_modules/.cache",
-    "deploy-docs": "pnpm build && ./scripts/deploy-docs.sh",
     "dev": "pnpm clean-cache && run-p dev:* dev:serve",
     "dev:serve": "vite",
     "dev:build": "tsc -b -w --preserveWatchOutput",

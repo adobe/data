@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { toArrayBufferBacked } from "../../internal/array-buffer-like/index.js";
+import { compressDeflate, decompressDeflate } from "./compression.js";
 import { serialize, deserialize } from "./serialize.js";
 
 /**
@@ -49,90 +50,14 @@ const base64ToUint8Array = (base64: string): Uint8Array => {
 };
 
 /**
- * Compresses a Uint8Array using the deflate algorithm
- */
-const compressData = async (data: Uint8Array): Promise<Uint8Array<ArrayBuffer>> => {
-    const stream = new ReadableStream({
-        start(controller) {
-            controller.enqueue(data);
-            controller.close();
-        }
-    });
-    
-    const compressedStream = stream.pipeThrough(
-        new CompressionStream('deflate')
-    );
-    
-    const chunks: Uint8Array<ArrayBuffer>[] = [];
-    const reader = compressedStream.getReader();
-    
-    for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(toArrayBufferBacked(value));
-    }
-
-    // Concatenate all chunks
-    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-    const result = new Uint8Array(totalLength);
-    let offset = 0;
-
-    for (const chunk of chunks) {
-        result.set(chunk, offset);
-        offset += chunk.length;
-    }
-
-    return result;
-};
-
-/**
- * Decompresses a Uint8Array using the deflate algorithm
- */
-const decompressData = async (data: Uint8Array): Promise<Uint8Array<ArrayBuffer>> => {
-    const stream = new ReadableStream({
-        start(controller) {
-            controller.enqueue(data);
-            controller.close();
-        }
-    });
-    
-    const decompressedStream = stream.pipeThrough(
-        new DecompressionStream('deflate')
-    );
-    
-    const chunks: Uint8Array<ArrayBuffer>[] = [];
-    const reader = decompressedStream.getReader();
-    
-    for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(toArrayBufferBacked(value));
-    }
-
-    // Concatenate all chunks
-    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
-    const result = new Uint8Array(totalLength);
-    let offset = 0;
-
-    for (const chunk of chunks) {
-        result.set(chunk, offset);
-        offset += chunk.length;
-    }
-    
-    return result;
-};
-
-/**
  * Serializes data to a single JSON string with base64-encoded and compressed binary data.
  * The binary arrays are concatenated, compressed using deflate, and their original lengths are stored to allow reconstruction.
  */
 export const serializeToJSON = async <T>(data: T): Promise<string> => {
     const serialized = serialize(data);
     
-    // Store the length of each binary chunk
     const lengths = serialized.binary.map(chunk => chunk.byteLength);
     
-    // Calculate total size and concatenate all binary arrays into a single Uint8Array
     const totalSize = lengths.reduce((sum, len) => sum + len, 0);
     const combinedBinary = new Uint8Array(totalSize);
     let offset = 0;
@@ -142,14 +67,11 @@ export const serializeToJSON = async <T>(data: T): Promise<string> => {
         offset += binaryChunk.byteLength;
     }
     
-    // Compress the binary data
-    const compressedBinary = await compressData(combinedBinary);
-    
-    // Convert to base64
+    const compressedBinary = await compressDeflate(combinedBinary);
     const base64Binary = uint8ArrayToBase64(compressedBinary);
     
     const result: SerializedJSON = {
-        json: JSON.parse(serialized.json), // Parse to avoid double-encoding
+        json: JSON.parse(serialized.json),
         lengths,
         binary: base64Binary
     };
@@ -163,13 +85,9 @@ export const serializeToJSON = async <T>(data: T): Promise<string> => {
 export const deserializeFromJSON = async <T>(jsonString: string): Promise<T> => {
     const parsed: SerializedJSON = JSON.parse(jsonString);
     
-    // Convert base64 back to Uint8Array
     const compressedBinary = base64ToUint8Array(parsed.binary);
+    const combinedBinary = await decompressDeflate(compressedBinary);
     
-    // Decompress the binary data
-    const combinedBinary = await decompressData(compressedBinary);
-    
-    // Split the combined binary back into chunks based on lengths
     const binaryChunks: Uint8Array<ArrayBuffer>[] = [];
     let offset = 0;
     
@@ -179,10 +97,8 @@ export const deserializeFromJSON = async <T>(jsonString: string): Promise<T> => 
         offset += length;
     }
     
-    // Deserialize using the original deserialize function
     return deserialize<T>({
-        json: JSON.stringify(parsed.json), // Convert back to string for deserialize()
+        json: JSON.stringify(parsed.json),
         binary: binaryChunks
     });
 };
-

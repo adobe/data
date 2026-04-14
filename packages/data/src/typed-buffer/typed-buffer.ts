@@ -3,7 +3,7 @@ import { TypedArray } from "../internal/typed-array/index.js";
 import { Schema } from "../schema/index.js";
 import { typedBufferEquals } from "./typed-buffer-equals.js";
 
-export type TypedBufferType = "array" | "const" | "number" | "struct";
+export type TypedBufferType = "array" | "const" | "enum" | "number" | "struct";
 
 export interface ReadonlyTypedBuffer<T> {
     readonly type: TypedBufferType;

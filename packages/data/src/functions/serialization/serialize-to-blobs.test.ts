@@ -1,8 +1,41 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect } from "vitest";
 import { serializeToBlobs, deserializeFromBlobs } from "./serialize-to-blobs.js";
+import { serialize } from "./serialize.js";
 
 describe("serializeToBlobs", () => {
+    it("should include version 2 in json metadata", async () => {
+        const data = { value: new Uint8Array([1, 2, 3]) };
+        const blobs = await serializeToBlobs(data);
+        const meta = JSON.parse(await blobs.json.text());
+
+        expect(meta.version).toBe(2);
+    });
+
+    it("should deserialize a legacy v1 payload (no version field, uncompressed binary)", async () => {
+        const data = {
+            scores: new Uint16Array([10, 20, 30]),
+            name: "legacy"
+        };
+
+        const serialized = serialize(data);
+        const binarySizes = serialized.binary.map((a) => a.byteLength);
+        const binaryParts = serialized.binary.map((a) =>
+            new Uint8Array(a.buffer, a.byteOffset, a.byteLength)
+        );
+
+        const jsonBlob = new Blob(
+            [JSON.stringify({ json: serialized.json, binarySizes })],
+            { type: "application/json" }
+        );
+        const binaryBlob = new Blob(binaryParts, { type: "application/octet-stream" });
+
+        const result = await deserializeFromBlobs({ json: jsonBlob, binary: binaryBlob }) as typeof data;
+
+        expect(result.name).toBe("legacy");
+        expect(result.scores).toEqual(data.scores);
+    });
+
     it("should serialize and deserialize primitive data", async () => {
         const data = {
             string: "hello world",

@@ -14,7 +14,8 @@
     "exclude": [
         "**/__tests__/**",
         "**/*.spec.ts",
-        "**/references/**"
+        "**/references/**",
+        "src/old-ecs/**"
     ],
     "excludePrivate": true,
     "excludeProtected": true,

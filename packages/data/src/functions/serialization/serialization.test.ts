@@ -7,6 +7,7 @@ import { equals } from '../../equals.js';
 import { createTable } from '../../table/create-table.js';
 import { addRow } from '../../table/add-row.js';
 import { createStructBuffer } from '../../typed-buffer/create-struct-buffer.js';
+import type { TypedBuffer } from '../../typed-buffer/typed-buffer.js';
 
 
 describe('serialize/deserialize', () => {
@@ -157,5 +158,82 @@ describe('serialize/deserialize', () => {
     // Verify original custom data was NOT preserved
     expect(roundTrip.structBuffer.get(0)).not.toEqual({ x: 999, y: 888 });
     expect(roundTrip.structBuffer.get(1)).not.toEqual({ x: 777, y: 666 });
+  });
+
+  it('round-trips enum typed buffers', () => {
+    const schema = { enum: ["landscape", "portrait", "square"] } as const;
+    const buf = createTypedBuffer(schema, 3);
+    buf.set(0, "landscape");
+    buf.set(1, "portrait");
+    buf.set(2, "square");
+
+    const payload = serialize({ buf });
+    const roundTrip = deserialize<{ buf: TypedBuffer<string> }>(payload);
+
+    expect(roundTrip.buf.type).toBe("enum");
+    expect(roundTrip.buf.capacity).toBe(3);
+    expect(roundTrip.buf.get(0)).toBe("landscape");
+    expect(roundTrip.buf.get(1)).toBe("portrait");
+    expect(roundTrip.buf.get(2)).toBe("square");
+  });
+
+  it('should deserialize legacy array-serialized enum buffers as enum buffers', () => {
+    const schema = { enum: ["landscape", "portrait", "square"] };
+
+    // Simulate the old serialized format: type was "array" with values in a JSON array
+    const legacyPayload = {
+      json: JSON.stringify({
+        buf: {
+          codec: "typed-buffer",
+          json: {
+            type: "array",
+            schema,
+            capacity: 3,
+            array: ["landscape", "portrait", "square"],
+          },
+          binaryIndex: 0,
+          binaryCount: 0,
+        },
+      }),
+      binary: [],
+    };
+
+    const roundTrip = deserialize<{ buf: TypedBuffer<string> }>(legacyPayload);
+
+    expect(roundTrip.buf.type).toBe("enum");
+    expect(roundTrip.buf.capacity).toBe(3);
+    expect(roundTrip.buf.get(0)).toBe("landscape");
+    expect(roundTrip.buf.get(1)).toBe("portrait");
+    expect(roundTrip.buf.get(2)).toBe("square");
+  });
+
+  it('should deserialize enum type with json array fallback when binary is missing', () => {
+    const schema = { enum: ["a", "b", "c"] };
+
+    // Simulate a payload where type is "enum" but only a JSON array is present (no binary)
+    const fallbackPayload = {
+      json: JSON.stringify({
+        buf: {
+          codec: "typed-buffer",
+          json: {
+            type: "enum",
+            schema,
+            capacity: 3,
+            array: ["b", "c", "a"],
+          },
+          binaryIndex: 0,
+          binaryCount: 0,
+        },
+      }),
+      binary: [],
+    };
+
+    const roundTrip = deserialize<{ buf: TypedBuffer<string> }>(fallbackPayload);
+
+    expect(roundTrip.buf.type).toBe("enum");
+    expect(roundTrip.buf.capacity).toBe(3);
+    expect(roundTrip.buf.get(0)).toBe("b");
+    expect(roundTrip.buf.get(1)).toBe("c");
+    expect(roundTrip.buf.get(2)).toBe("a");
   });
 }); 

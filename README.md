@@ -3,9 +3,9 @@ Adobe Data Oriented Programming Library
 
 ## Documentation
 
-[Main Page](https://git.corp.adobe.com/pages/neuralfiltersplatform/firefly-data/docs/api/)
+[API Reference](https://adobe.github.io/data/)
 
-[ECS Performance Test](https://git.corp.adobe.com/pages/neuralfiltersplatform/firefly-data/docs/perftest.html)
+[ECS Performance Test](https://adobe.github.io/data/perftest.html)
 
 ## Breaking API Changes
 
@@ -76,7 +76,7 @@ An `Observable<T>` is a subscription function that you can pass a callback funct
 
 Your callback function *may* be called back synchronously (before the initial call returns) zero or one times and asynchronously later any number of times.
 
-For more information see the [Observable API documentation](./docs/api/modules/observe.html)
+For more information see the [Observable API documentation](https://adobe.github.io/data/)
 
 ### Observable Types
 
@@ -181,116 +181,33 @@ Contains some standard data type schemas in JSON Schema format for convenience. 
 
 ## Entity Component System (ECS)
 
-This ECS database is a high performance, strongly typed typescript implementation inspired by the Sanders Mertens C++ based [Flecs](https://www.flecs.dev/flecs/md_docs_2Docs.html).
+A high-performance, strongly typed ECS database for TypeScript, inspired by [Flecs](https://www.flecs.dev/flecs/md_docs_2Docs.html). All application state is modeled as composable plugins, and all mutations flow through observable, undoable transactions.
 
-This library provides two main interfaces for ECS operations: **Store** and **Database**. They share the same read API but differ significantly in their approach to writing and observability.
-
-### Store Interface
-
-The **Store** is the foundational, low-level interface for direct ECS data operations.
-
-**Key Characteristics:**
-- **Direct Access**: Provides immediate, synchronous read/write access to entities, components, and resources
-- **No Transaction Control**: Changes are applied directly without transaction boundaries  
-- **No Observability**: Changes are not automatically observable or trackable
-- **High Performance**: Minimal overhead for direct operations using Structure of Arrays (SoA) with linear memory layout of numeric types for optimal cache performance
-- **Core ECS Operations**: Includes entity creation, component updates, archetype querying, and resource management
-
-**Usage**: Ideal for scenarios requiring fast, direct ECS manipulation where you don't need change tracking or transactional safety.
+For a complete guide covering plugins, transactions, observability, composition, and transient/ephemeral semantics, see the **[ECS README](./packages/data/src/ecs/README.md)**.
 
 ```typescript
-// Create a store with components, resources, and archetypes
-const store = createStore(
-  { 
-    position: Vec3.schema, 
-    health: { type: "number" },
-    player: { const: true } 
+import { Database } from "@adobe/data/ecs";
+
+const myPlugin = Database.Plugin.create({
+  resources: {
+    score: { default: 0 as number },
   },
-  { 
-    gravity: { default: 9.8 as number } 
+  transactions: {
+    addPoints: (t, points: number) => {
+      t.resources.score += points;
+    },
   },
-  {
-    Player: ["position", "health", "player"],
-    Particle: ["position"]
-  }
-);
-
-// Direct operations
-const playerId = store.archetypes.Player.insert({ 
-  position: [0, 0, 0], 
-  health: 100, 
-  player: true 
-});
-store.update(playerId, { position: [1, 1, 1] });
-store.resources.gravity = 10.0;
-```
-
-### Database Interface
-
-The **Database** wraps a Store to provide **transaction-based operations** with **full observability**.
-
-**Key Characteristics:**
-- **Transaction-Based**: All changes must occur within predefined atomic transactions that can be undone.
-- **Full Observability**: Every change is observable through the `observe` API
-- **Predefined Operations**: Uses predefined transaction functions rather than direct mutations
-- **Undo/Redo Support**: Transactions generate undo/redo operations automatically
-- **Change Tracking**: Tracks which entities, components, and archetypes changed
-- **Event Notifications**: Automatically notifies observers of changes
-
-**Usage**: Ideal for applications requiring change history, multiplayer synchronization, undo/redo functionality, or reactive UI updates.
-
-**Important Note**: Even when using a Database, transaction functions are written as direct modifications to the underlying Store interface. The Database wraps these operations to provide transactional guarantees and observability.
-
-```typescript
-// Create a database with predefined transactions
-const database = createDatabase(store, {
-  createPlayer(t, args: { position: Vector3, health: number }) {
-    // Transaction function receives Store interface for direct operations
-    return t.archetypes.Player.insert({ 
-      ...args, 
-      player: true 
-    });
-  },
-  movePlayer(t, args: { entity: Entity, position: Vector3 }) {
-    // Direct Store operations within transaction context
-    t.update(args.entity, { position: args.position });
-  },
-  setGravity(t, gravity: number) {
-    // Direct resource modification within transaction
-    t.resources.gravity = gravity;
-  }
 });
 
-// Execute transactions (these provide observability and undo/redo)
-const playerId = database.transactions.createPlayer({ 
-  position: [10, 20, 0], 
-  health: 100 
-});
-database.transactions.movePlayer({ entity: playerId, position: [15, 25, 5] });
-
-// Observe all changes
-database.observe.transactions((result) => {
-  console.log('Transaction applied:', result);
-  console.log('Changed entities:', result.changedEntities);
-  console.log('Undo operations:', result.undo);
-});
-
-// Observe specific entities
-database.observe.entity(playerId)((entityData) => {
-  if (entityData) {
-    console.log('Player moved to:', entityData.position);
-  }
-});
+const db = Database.create(myPlugin);
+db.observe.resources.score((score) => console.log("Score:", score));
+db.transactions.addPoints(10);
 ```
 
 ### What is an ECS?
 
-Sanders Mertens also covers this thoroughly in his ECS FAQ:
+Sanders Mertens covers this thoroughly in his ECS FAQ:
 
 [https://github.com/SanderMertens/ecs-faq?tab=readme-ov-file#what-is-ecs](https://github.com/SanderMertens/ecs-faq?tab=readme-ov-file#what-is-ecs)
 
-In addition to the Entity, Component and System definitions which are standard, we also use the term Resource. A Resource is just a value which is defined globally on the ECS itself and not attached to any specific Entity. You can think of them as a singleton Component.
-
-## Performance Test
-
-[Performance Test](https://git.corp.adobe.com/pages/neuralfiltersplatform/firefly-data/docs/perftest.html)
+In addition to the standard Entity, Component, and System definitions, we also use the term **Resource** — a global singleton value defined on the ECS itself, not attached to any specific entity.

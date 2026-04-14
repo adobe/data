@@ -1,6 +1,6 @@
 {
   "name": "data-monorepo",
-  "version": "0.9.48",
+  "version": "0.9.49",
   "private": true,
   "scripts": {
     "build": "pnpm -r run build",
@@ -9,7 +9,7 @@
     "dev:data": "pnpm --filter @adobe/data run dev",
     "link": "pnpm -r --filter @adobe/data* run link",
     "publish": "sh -c 'for x in \"$@\"; do OTP=\"$x\"; done; export NPM_CONFIG_OTP=\"$OTP\"; pnpm -r --filter @adobe/data --filter @adobe/data-react --filter @adobe/data-lit run publish-public' sh",
-    "bump": "pnpm version patch --no-git-tag-version && pnpm -r exec -- pnpm version patch --no-git-tag-version",
+    "bump": "pnpm version patch --no-git-tag-version && V=$(node -p \"require('$PWD/package.json').version\") && pnpm -r exec pnpm version $V --no-git-tag-version --allow-same-version",
     "release": "pnpm bump && pnpm publish",
     "bp": "pnpm bump && pnpm run publish"
   },

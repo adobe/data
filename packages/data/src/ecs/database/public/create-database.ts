@@ -1,14 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Store } from "../../store/index.js";
-import { Database, FromServiceFactories, FromComputedFactories } from "../database.js";
-import type { ToTransactionFunctions } from "../../store/transaction-functions.js";
-import type { ToActionFunctions } from "../../store/action-functions.js";
+import { Database, FromServiceFactories } from "../database.js";
 import { isPromise } from "../../../internal/promise/is-promise.js";
 import { isAsyncGenerator } from "../../../internal/async-generator/is-async-generator.js";
 import { createReconcilingDatabase } from "../reconciling/create-reconciling-database.js";
 import { TransactionEnvelope } from "../reconciling/reconciling-database.js";
-import { FromSchemas } from "../../../schema/from-schemas.js";
 import { calculateSystemOrder } from "../calculate-system-order.js";
 
 /**
@@ -40,16 +37,7 @@ export function createDatabase<
          */
         services?: { [K in keyof FromServiceFactories<P['services']>]?: FromServiceFactories<P['services']>[K] }
     }
-): Database<
-    FromSchemas<P extends Database.Plugin<infer CS, any, any, any, any, any, any, any> ? CS : never>,
-    FromSchemas<P extends Database.Plugin<any, infer RS, any, any, any, any, any, any> ? RS : never>,
-    P extends Database.Plugin<any, any, infer A, any, any, any, any, any> ? A : never,
-    ToTransactionFunctions<P extends Database.Plugin<any, any, any, infer TD, any, any, any, any> ? TD : never>,
-    P extends Database.Plugin<any, any, any, any, infer S, any, any, any> ? S : never,
-    ToActionFunctions<P extends Database.Plugin<any, any, any, any, any, infer AD, any, any> ? AD : never>,
-    P extends Database.Plugin<any, any, any, any, any, any, infer SVF, any> ? FromServiceFactories<SVF> : never,
-    P extends Database.Plugin<any, any, any, any, any, any, any, infer CVF> ? FromComputedFactories<CVF> : never
->
+): Database.FromPlugin<P>
 export function createDatabase(
     plugin?: Database.Plugin<any, any, any, any, any, any, any, any>,
     options?: { services?: Record<string, unknown> },

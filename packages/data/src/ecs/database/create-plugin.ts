@@ -5,10 +5,10 @@ import type { ComponentSchemas } from "../component-schemas.js";
 import type { ResourceSchemas } from "../resource-schemas.js";
 import type { ArchetypeComponents } from "../store/archetype-components.js";
 import type { TransactionDeclarations, ToTransactionFunctions } from "../store/transaction-functions.js";
-import type { ActionDeclarations, ToActionFunctions } from "../store/action-functions.js";
+import type { ToActionFunctions } from "../store/action-functions.js";
 import type { FromSchemas } from "../../schema/index.js";
 import type { StringKeyof, Simplify, NoInfer } from "../../types/types.js";
-import { CombinePlugins, combinePlugins } from "./combine-plugins.js";
+import { combinePlugins } from "./combine-plugins.js";
 import { Store } from "../store/store.js";
 
 type RemoveIndex<T> = Simplify<{
@@ -19,6 +19,27 @@ type RemoveIndex<T> = Simplify<{
     K
     ]: T[K]
 }>;
+
+/**
+ * Direct-intersection return type for createPlugin.
+ *
+ * Uses direct property access (`XP['components']`) instead of conditional
+ * inference (`CombinePlugins<[XP, ...]>`) to avoid expensive 8-way type
+ * expansion that amplifies TS7056 serialization overflow.
+ */
+type CreatePluginResult<
+    XP extends Database.Plugin,
+    CS, RS, A, TD, S extends string, AD, SVF, CVF
+> = Database.Plugin<
+    XP['components'] & CS,
+    XP['resources'] & RS,
+    XP['archetypes'] & A,
+    XP['transactions'] & TD,
+    S | StringKeyof<XP['systems']>,
+    XP['actions'] & AD,
+    XP['services'] & SVF,
+    XP['computed'] & CVF
+>;
 
 /**
  * Database type with services from extended plugin.
@@ -177,16 +198,7 @@ export function createPlugin<
         }
         },
     },
-): CombinePlugins<[XP, Database.Plugin<
-    RemoveIndex<CS>,
-    RemoveIndex<RS>,
-    RemoveIndex<A>,
-    RemoveIndex<TD>,
-    S,
-    AD & ActionDeclarations<FromSchemas<RemoveIndex<CS>>, FromSchemas<RemoveIndex<RS>>, RemoveIndex<A>, ToTransactionFunctions<RemoveIndex<TD>>, S>,
-    RemoveIndex<SVF>,
-    RemoveIndex<CVF>
->]> {
+): CreatePluginResult<XP, RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, RemoveIndex<TD>, S, AD, RemoveIndex<SVF>, RemoveIndex<CVF>> {
     validatePropertyOrder(plugins);
 
     // Normalize plugins descriptor to a plugin object in correct order

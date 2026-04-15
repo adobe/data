@@ -123,41 +123,35 @@ export interface Database<
   }
   toData(): unknown
   fromData(data: unknown): void
-  extend<P extends Database.Plugin<any, any, any, any, any, any, any, any>>(plugin: P): Database<
-    C & (P extends Database.Plugin<infer XC, any, any, any, any, any, any, any> ? FromSchemas<XC> : never),
-    R & (P extends Database.Plugin<any, infer XR, any, any, any, any, any, any> ? FromSchemas<XR> : never),
-    A & (P extends Database.Plugin<any, any, infer XA, any, any, any, any, any> ? XA : never),
-    F & (P extends Database.Plugin<any, any, any, infer XTD, any, any, any, any> ? ToTransactionFunctions<XTD> : never),
-    S | (P extends Database.Plugin<any, any, any, any, infer XS, any, any, any> ? XS : never),
-    AF & (P extends Database.Plugin<any, any, any, any, any, infer XAD, any, any> ? ToActionFunctions<XAD> : never),
-    SV & (P extends Database.Plugin<any, any, any, any, any, any, infer XSVF, any> ? FromServiceFactories<XSVF> : never),
-    CV & (P extends Database.Plugin<any, any, any, any, any, any, any, infer XCVF> ? FromComputedFactories<XCVF> : never)
+  extend<P extends Database.Plugin>(plugin: P): Database<
+    C & FromSchemas<P['components']>,
+    R & FromSchemas<P['resources']>,
+    A & P['archetypes'],
+    F & ToTransactionFunctions<P['transactions']>,
+    S | StringKeyof<P['systems']>,
+    AF & ToActionFunctions<P['actions']>,
+    SV & FromServiceFactories<P['services']>,
+    CV & FromComputedFactories<P['computed']>
   >;
 }
 
 export namespace Database {
-  /** Stepwise inference helpers - each infers one Plugin param to reduce compiler depth. */
-  type FromPluginComponents<P> = P extends Database.Plugin<infer CS, any, any, any, any, any, any, any> ? CS : never;
-  type FromPluginResources<P> = P extends Database.Plugin<any, infer RS, any, any, any, any, any, any> ? RS : never;
-  type FromPluginArchetypes<P> = P extends Database.Plugin<any, any, infer A, any, any, any, any, any> ? A : never;
-  type FromPluginTransactions<P> = P extends Database.Plugin<any, any, any, infer TD, any, any, any, any> ? TD : never;
-  type FromPluginSystems<P> = P extends Database.Plugin<any, any, any, any, infer S, any, any, any> ? S : never;
-  type FromPluginActions<P> = P extends Database.Plugin<any, any, any, any, any, infer AD, any, any> ? AD : never;
-  type FromPluginServices<P> = P extends Database.Plugin<any, any, any, any, any, any, infer SVF, any> ? SVF : never;
-  type FromPluginComputed<P> = P extends Database.Plugin<any, any, any, any, any, any, any, infer CVF> ? CVF : never;
-
-  export type FromPlugin<P extends Database.Plugin> = P extends Database.Plugin
-    ? Database<
-      FromSchemas<FromPluginComponents<P>>,
-      FromSchemas<FromPluginResources<P>>,
-      FromPluginArchetypes<P>,
-      ToTransactionFunctions<FromPluginTransactions<P>>,
-      FromPluginSystems<P>,
-      ToActionFunctions<FromPluginActions<P>>,
-      FromServiceFactories<FromPluginServices<P>>,
-      FromComputedFactories<FromPluginComputed<P>>
-    >
-    : never;
+  /**
+   * Converts a Plugin type to its corresponding Database type.
+   * Uses direct property access (P['components']) instead of conditional inference
+   * (P extends Plugin<infer CS, ...> ? CS : never) to avoid expensive 8-way type
+   * expansion that amplifies TS7056 serialization overflow in deep extends chains.
+   */
+  export type FromPlugin<P extends Database.Plugin> = Database<
+    FromSchemas<P['components']>,
+    FromSchemas<P['resources']>,
+    P['archetypes'],
+    ToTransactionFunctions<P['transactions']>,
+    StringKeyof<P['systems']>,
+    ToActionFunctions<P['actions']>,
+    FromServiceFactories<P['services']>,
+    FromComputedFactories<P['computed']>
+  >;
 
   export const create = createDatabase;
 

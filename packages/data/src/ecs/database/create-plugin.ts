@@ -7,18 +7,9 @@ import type { ArchetypeComponents } from "../store/archetype-components.js";
 import type { TransactionDeclarations, ToTransactionFunctions } from "../store/transaction-functions.js";
 import type { ToActionFunctions } from "../store/action-functions.js";
 import type { FromSchemas } from "../../schema/index.js";
-import type { StringKeyof, Simplify, NoInfer } from "../../types/types.js";
+import type { StringKeyof, NoInfer, RemoveIndex } from "../../types/types.js";
 import { combinePlugins } from "./combine-plugins.js";
 import { Store } from "../store/store.js";
-
-type RemoveIndex<T> = Simplify<{
-    [K in keyof T as
-    string extends K ? never :
-    number extends K ? never :
-    symbol extends K ? never :
-    K
-    ]: T[K]
-}>;
 
 /**
  * Direct-intersection return type for createPlugin.

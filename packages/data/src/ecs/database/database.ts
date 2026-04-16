@@ -7,7 +7,7 @@ import { Entity } from "../entity/entity.js";
 import { EntityReadValues } from "../store/core/index.js";
 import { Observe } from "../../observe/index.js";
 import { TransactionResult } from "./transactional-store/index.js";
-import { StringKeyof } from "../../types/types.js";
+import { StringKeyof, RemoveIndex } from "../../types/types.js";
 import { Components } from "../store/components.js";
 import { ArchetypeComponents } from "../store/archetype-components.js";
 import { RequiredComponents } from "../required-components.js";
@@ -104,7 +104,7 @@ export interface Database<
     readonly components: { readonly [K in StringKeyof<C>]: Observe<void> };
     readonly resources: { readonly [K in StringKeyof<R>]: Observe<R[K]> };
     readonly transactions: Observe<TransactionResult<C>>;
-    entity<T extends RequiredComponents>(id: Entity, minArchetype?: ReadonlyArchetype<T> | Archetype<T>): Observe<{ readonly [K in (StringKeyof<RequiredComponents & T>)]: (RequiredComponents & T)[K] } & EntityReadValues<C> | null>;
+    entity<T extends RequiredComponents>(id: Entity, minArchetype?: ReadonlyArchetype<T> | Archetype<T>): Observe<Readonly<T> & EntityReadValues<C> | null>;
     entity(id: Entity): Observe<EntityReadValues<C> | null>;
     archetype(id: ArchetypeId): Observe<void>;
     select<
@@ -124,14 +124,14 @@ export interface Database<
   toData(): unknown
   fromData(data: unknown): void
   extend<P extends Database.Plugin>(plugin: P): Database<
-    C & FromSchemas<P['components']>,
-    R & FromSchemas<P['resources']>,
-    A & P['archetypes'],
-    F & ToTransactionFunctions<P['transactions']>,
+    C & FromSchemas<RemoveIndex<P['components']>>,
+    R & FromSchemas<RemoveIndex<P['resources']>>,
+    A & RemoveIndex<P['archetypes']>,
+    F & ToTransactionFunctions<RemoveIndex<P['transactions']>>,
     S | StringKeyof<P['systems']>,
-    AF & ToActionFunctions<P['actions']>,
-    SV & FromServiceFactories<P['services']>,
-    CV & FromComputedFactories<P['computed']>
+    AF & ToActionFunctions<RemoveIndex<P['actions']>>,
+    SV & FromServiceFactories<RemoveIndex<P['services']>>,
+    CV & FromComputedFactories<RemoveIndex<P['computed']>>
   >;
 }
 
@@ -143,14 +143,14 @@ export namespace Database {
    * expansion that amplifies TS7056 serialization overflow in deep extends chains.
    */
   export type FromPlugin<P extends Database.Plugin> = Database<
-    FromSchemas<P['components']>,
-    FromSchemas<P['resources']>,
-    P['archetypes'],
-    ToTransactionFunctions<P['transactions']>,
+    FromSchemas<RemoveIndex<P['components']>>,
+    FromSchemas<RemoveIndex<P['resources']>>,
+    RemoveIndex<P['archetypes']>,
+    ToTransactionFunctions<RemoveIndex<P['transactions']>>,
     StringKeyof<P['systems']>,
-    ToActionFunctions<P['actions']>,
-    FromServiceFactories<P['services']>,
-    FromComputedFactories<P['computed']>
+    ToActionFunctions<RemoveIndex<P['actions']>>,
+    FromServiceFactories<RemoveIndex<P['services']>>,
+    FromComputedFactories<RemoveIndex<P['computed']>>
   >;
 
   export const create = createDatabase;
@@ -185,14 +185,14 @@ export namespace Database {
     export const create = createPlugin;
     export const combine = combinePlugins;
     export type ToDatabase<P extends Database.Plugin> = Database.FromPlugin<P>;
-    export type ToStore<P extends Database.Plugin> = Store<FromSchemas<P['components']>, FromSchemas<P['resources']>, P['archetypes']>;
+    export type ToStore<P extends Database.Plugin> = Store<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>>;
     export type ToSystemDatabase<P extends Database.Plugin> = Database.FromPlugin<P> & {
       // Systems are allowed to access the database store directly.
       // This direct access will NOT trigger observable transactions.
       readonly store: Database.Plugin.ToStore<P>;
       // Systems are allowed to write to the services object directly.
       // This is dangerous and should only be done during initialization.
-      services: { -readonly [K in keyof FromServiceFactories<P['services']>]: FromServiceFactories<P['services']>[K] };
+      services: { -readonly [K in keyof FromServiceFactories<RemoveIndex<P['services']>>]: FromServiceFactories<RemoveIndex<P['services']>>[K] };
     };
   }
 

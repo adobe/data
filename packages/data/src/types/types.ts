@@ -105,6 +105,8 @@ export type IsUnknown<T> = unknown extends T
 
 export type DeepReadonly<T> = T extends Function | Branded | Element | Blob
   ? T
+  : T extends number | string | boolean | symbol | bigint
+  ? T
   : T extends Array<infer U>
   ? IsTuple<T> extends true
   ? { readonly [K in keyof T]: DeepReadonly<T[K]> } // T is a tuple
@@ -120,6 +122,20 @@ export type IsTuple<T> = T extends readonly [...infer Elements]
   : false;
 
 export type Simplify<T> = T extends object ? { [K in keyof T]: T[K] } : T;
+
+/**
+ * Strips index signatures (`[K: string]`, `[K: number]`, `[K: symbol]`) from
+ * an object type, keeping only explicitly-named keys. Useful when a type flows
+ * through a constraint like `Record<string, V>` which adds an implicit index.
+ */
+export type RemoveIndex<T> = Simplify<{
+    [K in keyof T as
+    string extends K ? never :
+    number extends K ? never :
+    symbol extends K ? never :
+    K
+    ]: T[K]
+}>;
 
 export type IsNever<T> = [T] extends [never] ? true : false;
 

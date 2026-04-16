@@ -128,7 +128,7 @@ export function createObservedDatabase<
         Object.entries(store.resources).map(([resource]) => {
             const archetype = store.ensureArchetype(resourceArchetypeComponents(resource));
             const resourceId = archetype.columns.id.get(0);
-            return [resource, Observe.withMap(observeEntity(resourceId), (values) => values?.[resource as unknown as StringKeyof<C>] ?? null)];
+            return [resource, Observe.withMap(observeEntity(resourceId), (values) => (values as any)?.[resource] ?? null)];
         })
     ) as { [K in StringKeyof<R>]: Observe<R[K]>; };
 
@@ -192,7 +192,7 @@ export function createObservedDatabase<
                 Object.entries(store.resources).map(([resource]) => {
                     const archetype = store.ensureArchetype(resourceArchetypeComponents(resource));
                     const resourceId = archetype.columns.id.get(0);
-                    return [resource, Observe.withMap(observeEntity(resourceId), (values) => values?.[resource as unknown as StringKeyof<C>] ?? null)];
+                    return [resource, Observe.withMap(observeEntity(resourceId), (values) => (values as any)?.[resource] ?? null)];
                 })
             );
             notifyAllObserversStoreReloaded();

@@ -5,6 +5,10 @@ import { Database } from "./database.js";
 import { Observe } from "../../observe/index.js";
 import { F32 } from "../../math/index.js";
 import { Entity } from "../entity/entity.js";
+import type { False, True, RemoveIndex } from "../../types/types.js";
+import type { EntityReadValues } from "../store/core/core.js";
+import type { ComponentSchemas } from "../component-schemas.js";
+import type { ResourceSchemas } from "../resource-schemas.js";
 
 /**
  * Type-only tests for deep `extends` chains and TS7056 serialization limits.
@@ -318,3 +322,116 @@ export function create() {
 }
 
 type _CityService = ReturnType<typeof create>;
+
+// ============================================================================
+// Index signature regression guard
+//
+// Plugin type parameters default to constraints like Record<string, Schema>,
+// which carry an implicit { [K: string]: ... } index signature. If that
+// index leaks into the Database's public API types (read, get, resources,
+// observe), downstream consumers see { [x: string]: any } in their types
+// and lose type safety.
+//
+// Two layered defenses prevent this:
+//
+//   1. RemoveIndex<T> — applied in Database.FromPlugin to every plugin
+//      property (components, resources, etc.) before passing to FromSchemas.
+//      Strips the index at the source.
+//
+//   2. EntityReadValues<C> key remapping — applies
+//      `as string extends K ? never : K` so even if C still carries an
+//      index, the read() return type won't expose it.
+//
+// The tests below verify EACH defense independently (by feeding types that
+// actually have index signatures) and the end-to-end pipeline.
+// ============================================================================
+
+type HasStringIndex<T> = string extends keyof T ? true : false;
+
+{
+    // --- Defense 1: RemoveIndex strips index signatures ---
+    type WithIndex = { readonly [K: string]: unknown; foo: string; bar: number };
+    type _Precondition1 = True<HasStringIndex<WithIndex>>;
+    type _Defense1 = False<HasStringIndex<RemoveIndex<WithIndex>>>;
+
+    // --- Defense 2: EntityReadValues strips index keys via key remapping ---
+    type ComponentsWithIndex = { [x: string]: unknown; foo: string; bar: number };
+    type _Precondition2 = True<HasStringIndex<ComponentsWithIndex>>;
+    type _Defense2 = False<HasStringIndex<EntityReadValues<ComponentsWithIndex>>>;
+
+    // --- Defense 1 applied in FromPlugin ---
+    // When a plugin type flows through a generic constraint like
+    // <P extends Database.Plugin>, P['components'] resolves to the
+    // constraint ComponentSchemas (= Record<string, Schema>) intersected
+    // with the concrete properties. This carries a string index.
+    // FromPlugin must strip it via RemoveIndex before Database sees it.
+    type IndexedPlugin = Database.Plugin<
+        ComponentSchemas & { readonly foo: { type: 'string' }; readonly bar: { type: 'number' } },
+        ResourceSchemas & { readonly baz: { default: 0 } }
+    >;
+    type IndexedDB = Database.FromPlugin<IndexedPlugin>;
+    type IndexedRead = NonNullable<ReturnType<IndexedDB['read']>>;
+    type _FromPlugin_ReadNoIndex = False<HasStringIndex<IndexedRead>>;
+    type _FromPlugin_ResourcesNoIndex = False<HasStringIndex<IndexedDB['resources']>>;
+
+    // --- End-to-end: Database from combined concrete plugins ---
+    type FullDB = Database.FromPlugin<typeof _allPlugins>;
+    type FullRead = NonNullable<ReturnType<FullDB['read']>>;
+    type _E2E_ReadNoIndex = False<HasStringIndex<FullRead>>;
+    type _E2E_ResourcesNoIndex = False<HasStringIndex<FullDB['resources']>>;
+
+    type ServiceRead = NonNullable<ReturnType<_CityService['read']>>;
+    type _E2E_ServiceReadNoIndex = False<HasStringIndex<ServiceRead>>;
+    type _E2E_ServiceResourcesNoIndex = False<HasStringIndex<_CityService['resources']>>;
+}
+
+// ============================================================================
+// Overload assignability test
+//
+// When assigning Database<C,...> to an interface with concrete read overloads
+// (e.g., `read(entity, archetype: ReadonlyArchetype<District>): District | null`),
+// TypeScript checks generic overload compatibility by instantiating T to `any`,
+// not to the target's archetype type.
+//
+// The old archetype-specific read overload returned:
+//   { readonly [K in StringKeyof<RequiredComponents & T>]: ... } & EntityReadValues<C>
+// With T=any this produced StringKeyof<any>=string → { [x: string]: any }.
+//
+// The fix uses `Readonly<T> & EntityReadValues<C>` instead. When T=any,
+// Readonly<any>=any, and any & EntityReadValues<C> = any, which is
+// assignable to any concrete return type.
+//
+// This test reproduces the pattern used by consumers like firefly-platform's
+// MainService interface to verify that the assignment compiles.
+// ============================================================================
+
+import type { ReadonlyArchetype } from "../archetype/archetype.js";
+import type { RequiredComponents } from "../required-components.js";
+
+type District = Readonly<{
+    id: Entity;
+    districtType: string;
+    zoning: string;
+    districtLocked: boolean;
+    districtActive: boolean;
+}>;
+
+type Building = Readonly<{
+    id: Entity;
+    buildingType: string;
+    parentDistrict: Entity;
+    positionX: number;
+}>;
+
+interface CityService {
+    read(entity: Entity): Readonly<Partial<District & Building> & { id: Entity }> | null;
+    read(entity: Entity, archetype: ReadonlyArchetype<District>): District | null;
+    read(entity: Entity, archetype: ReadonlyArchetype<Building>): Building | null;
+}
+
+{
+    const _db: _CityService = null!;
+    // This assignment tests that Database's generic read overload is
+    // compatible with CityService's concrete read overloads.
+    const _service: CityService = _db;
+}

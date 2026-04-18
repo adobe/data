@@ -1,0 +1,22 @@
+{
+  "name": "data-solid-dashboard",
+  "version": "0.9.50",
+  "description": "Mini dashboard sample — multiple components sharing one @adobe/data ECS database with SolidJS",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "publish-public": "true"
+  },
+  "dependencies": {
+    "@adobe/data": "workspace:*",
+    "@adobe/data-solid": "workspace:*",
+    "solid-js": "^1.9.12"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vite": "^5.1.1",
+    "vite-plugin-solid": "^2.11.0"
+  }
+}

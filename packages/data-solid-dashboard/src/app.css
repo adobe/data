@@ -1,0 +1,151 @@
+.dashboard {
+  max-width: 640px;
+  margin: 2rem auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: #2d333b;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  background: #1c2028;
+  font-size: 0.85rem;
+  color: #8b949e;
+}
+
+.main-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: #2d333b;
+}
+
+.control-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: #161b22;
+}
+
+.counter-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.counter-controls button,
+.name-controls button {
+  padding: 0.5rem 1rem;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  background: #21262d;
+  color: #e1e4e8;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.counter-controls button:hover:not(:disabled),
+.name-controls button:hover {
+  background: #30363d;
+}
+
+.counter-controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.name-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.name-controls input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  background: #0d1117;
+  color: #e1e4e8;
+  font-size: 0.9rem;
+}
+
+.name-controls input::placeholder {
+  color: #484f58;
+}
+
+.counter-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: #161b22;
+}
+
+.count-value {
+  font-size: 4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #58a6ff;
+}
+
+.activity-log {
+  padding: 1rem 1.25rem;
+  background: #161b22;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.activity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.activity-log h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8b949e;
+}
+
+.clear-btn {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  background: #21262d;
+  color: #8b949e;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.clear-btn:hover {
+  background: #30363d;
+  color: #e1e4e8;
+}
+
+.activity-log ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column-reverse;
+}
+
+.activity-log li {
+  padding: 0.25rem 0;
+  font-size: 0.85rem;
+  color: #c9d1d9;
+  border-bottom: 1px solid #21262d;
+}
+
+.activity-log .empty {
+  color: #484f58;
+  font-style: italic;
+}

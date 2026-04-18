@@ -6,3 +6,5 @@ packages:
   - 'packages/data-react-hello'
   - 'packages/data-react-pixie'
   - 'packages/data-lit-tictactoe'
+  - 'packages/data-solid'
+  - 'packages/data-solid-dashboard'

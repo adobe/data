@@ -1,0 +1,35 @@
+{
+  "name": "@adobe/data-solid",
+  "version": "0.9.50",
+  "description": "Adobe data SolidJS bindings — context and provider for ECS database",
+  "type": "module",
+  "private": false,
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "scripts": {
+    "build": "cp ../../LICENSE . && tsc -b",
+    "dev": "tsc -b -w",
+    "link": "pnpm build && pnpm link --global",
+    "test": "vitest --run --passWithNoTests",
+    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
+  },
+  "dependencies": {
+    "@adobe/data": "workspace:*"
+  },
+  "peerDependencies": {
+    "solid-js": ">=1.7.0"
+  },
+  "devDependencies": {
+    "solid-js": "^1.9.12",
+    "typescript": "^5.8.3",
+    "vitest": "^1.6.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  }
+}

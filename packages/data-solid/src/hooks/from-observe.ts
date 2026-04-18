@@ -8,8 +8,6 @@ import type { Observe } from "@adobe/data/observe";
  *
  * Solid's `from()` works at runtime with Observe<T> directly, but TypeScript
  * cannot infer T through the complex Setter<T> overloads in Producer<T>.
- * This function provides correct type inference by forwarding the generic.
+ * This typed alias provides correct type inference by narrowing the signature.
  */
-export function fromObserve<T>(observe: Observe<T>): Accessor<T | undefined> {
-  return from<T | undefined>(observe);
-}
+export const fromObserve: <T>(observe: Observe<T>) => Accessor<T | undefined> = from;

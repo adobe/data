@@ -6,9 +6,7 @@ import * as presentation from "./counter-display.presentation";
 
 export function CounterDisplay() {
   const db = useDatabase(dashboardPlugin);
-  const count = fromObserve(db.observe.resources.count);
+  const count = fromObserve(db.observe.resources.count, 0);
 
-  return presentation.render({
-    get count() { return count() ?? 0; },
-  });
+  return presentation.render({ count });
 }

@@ -6,13 +6,8 @@ import * as presentation from "./control-panel.presentation";
 
 export function ControlPanel() {
   const db = useDatabase(dashboardPlugin);
-  const count = fromObserve(db.observe.resources.count);
+  const count = fromObserve(db.observe.resources.count, 0);
+  const { increment, decrement, reset, setUserName } = db.transactions;
 
-  return presentation.render({
-    get count() { return count() ?? 0; },
-    increment: db.transactions.increment,
-    decrement: db.transactions.decrement,
-    reset: db.transactions.reset,
-    setUserName: db.transactions.setUserName,
-  });
+  return presentation.render({ count, increment, decrement, reset, setUserName });
 }

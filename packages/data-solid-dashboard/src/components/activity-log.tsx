@@ -6,10 +6,8 @@ import * as presentation from "./activity-log.presentation";
 
 export function ActivityLog() {
   const db = useDatabase(dashboardPlugin);
-  const log = fromObserve(db.observe.resources.log);
+  const log = fromObserve(db.observe.resources.log, [] as readonly string[]);
+  const { clearLog } = db.transactions;
 
-  return presentation.render({
-    get log() { return log() ?? []; },
-    clearLog: db.transactions.clearLog,
-  });
+  return presentation.render({ log, clearLog });
 }

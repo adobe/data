@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 export function render(args: {
-  count: number;
+  count: () => number;
   increment: () => void;
   decrement: () => void;
   reset: () => void;
@@ -13,7 +13,7 @@ export function render(args: {
     <div class="control-panel">
       <div class="counter-controls">
         <button onClick={args.increment}>+</button>
-        <button onClick={args.decrement} disabled={args.count <= 0}>-</button>
+        <button onClick={args.decrement} disabled={args.count() <= 0}>-</button>
         <button onClick={args.reset}>Reset</button>
       </div>
       <div class="name-controls">

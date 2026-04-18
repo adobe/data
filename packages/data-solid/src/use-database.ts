@@ -2,7 +2,7 @@
 
 import { useContext } from "solid-js";
 import { Database } from "@adobe/data/ecs";
-import { DatabaseContext } from "../context/database-context.js";
+import { DatabaseContext } from "./database-context.js";
 
 export function useDatabase<T extends Database.Plugin>(plugin: T): Database.FromPlugin<T> {
   const ancestor = useContext(DatabaseContext);

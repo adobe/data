@@ -1,7 +1,7 @@
 {
-  "name": "data-react-hello",
+  "name": "data-solid-dashboard",
   "version": "0.9.51",
-  "description": "Hello World sample - click counter using @adobe/data-react",
+  "description": "Mini dashboard sample — multiple components sharing one @adobe/data ECS database with SolidJS",
   "type": "module",
   "private": true,
   "scripts": {
@@ -11,15 +11,12 @@
   },
   "dependencies": {
     "@adobe/data": "workspace:*",
-    "@adobe/data-react": "workspace:*",
-    "react": "^19",
-    "react-dom": "^19"
+    "@adobe/data-solid": "workspace:*",
+    "solid-js": "^1.9.12"
   },
   "devDependencies": {
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
     "typescript": "^5.8.3",
     "vite": "^5.1.1",
-    "@vitejs/plugin-react": "^4.3.0"
+    "vite-plugin-solid": "^2.11.0"
   }
 }

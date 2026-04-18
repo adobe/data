@@ -9,7 +9,7 @@ import { Components } from "../components.js";
 import { OptionalComponents } from "../../optional-components.js";
 
 export type EntityValues<C> = { readonly [K in (RequiredComponents & StringKeyof<C & OptionalComponents>)]: (C & OptionalComponents)[K] }
-export type EntityReadValues<C> = RequiredComponents & { readonly [K in StringKeyof<C & OptionalComponents>]?: (C & OptionalComponents)[K] }
+export type EntityReadValues<C> = RequiredComponents & { readonly [K in StringKeyof<C & OptionalComponents> as string extends K ? never : K]?: (C & OptionalComponents)[K] }
 export type EntityUpdateValues<C> = Partial<Omit<C, "id">>;
 
 export type ArchetypeQueryOptions<C extends object> =
@@ -30,8 +30,8 @@ export interface ReadonlyCore<
     ) => ReadonlyArchetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>;
 
     locate: (entity: Entity) => { archetype: ReadonlyArchetype<RequiredComponents>, row: number } | null;
-    read<T extends RequiredComponents>(entity: Entity, minArchetype: ReadonlyArchetype<T> | Archetype<T>): { readonly [K in (StringKeyof<RequiredComponents & T>)]: (RequiredComponents & T)[K] } & EntityReadValues<C> | null;
-    read(entity: Entity): RequiredComponents & { readonly [K in (StringKeyof<C & OptionalComponents>)]?: (OptionalComponents & C)[K] } | null;
+    read<T extends RequiredComponents>(entity: Entity, minArchetype: ReadonlyArchetype<T> | Archetype<T>): Readonly<T> & EntityReadValues<C> | null;
+    read(entity: Entity): EntityReadValues<C> | null;
     get<K extends StringKeyof<C>>(entity: Entity, component: K): C[K] | undefined;
     toData(): unknown
 }

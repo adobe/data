@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Simplify } from "../../types/types.js";
+import { Simplify, StringKeyof } from "../../types/types.js";
 import type { Database } from "./database.js";
 
 // Helper to intersect all elements (works with mapped types over tuples)
@@ -11,19 +11,22 @@ type UnionAll<T extends readonly unknown[]> = Simplify<
   T extends readonly [infer H, ...infer R] ? H | UnionAll<R> : never
 >;
 
-// Array-based combination type - combines plugins from an array into a flat Database.Plugin
+// Array-based combination type - combines plugins from an array into a flat Database.Plugin.
+// Uses direct property access (P['components']) instead of conditional inference
+// (P extends Plugin<infer C, ...> ? C : never) to avoid expensive 8-way type expansion
+// that amplifies TS7056 serialization overflow in deep extends chains.
 export type CombinePlugins<Plugins extends readonly Database.Plugin[]> = Database.Plugin<
-  Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<infer C, any, any, any, any, any, any, any> ? C : never }>>,
-  Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, infer R, any, any, any, any, any, any> ? R : never }>>,
-  Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, infer A, any, any, any, any, any> ? A : never }>>,
-  Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, infer TD, any, any, any, any> ? TD : never }>>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['components'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['resources'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['archetypes'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['transactions'] }>,
   Extract<
-    Simplify<UnionAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, infer S, any, any, any> ? S : never }>>,
+    UnionAll<{ [K in keyof Plugins]: StringKeyof<Plugins[K]['systems']> }>,
     string
   >,
-  Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, any, infer AD, any, any> ? AD : never }>>,
-  Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, any, any, infer SVF, any> ? SVF : never }>>,
-  Simplify<{} & IntersectAll<{ [K in keyof Plugins]: Plugins[K] extends Database.Plugin<any, any, any, any, any, any, any, infer CVF> ? CVF : never }>>
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['actions'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['services'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['computed'] }>
 >;
 
 
@@ -37,7 +40,16 @@ export type CombinePlugins<Plugins extends readonly Database.Plugin[]> = Databas
  */
 export function combinePlugins<
   const Plugins extends readonly Database.Plugin[]
->(...plugins: Plugins): CombinePlugins<Plugins> {
+>(...plugins: Plugins): Database.Plugin<
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['components'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['resources'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['archetypes'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['transactions'] }>,
+  Extract<UnionAll<{ [K in keyof Plugins]: StringKeyof<Plugins[K]['systems']> }>, string>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['actions'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['services'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['computed'] }>
+> {
   const keys = ['services', 'components', 'resources', 'archetypes', 'computed', 'transactions', 'actions', 'systems'] as const;
 
   const merge = (base: any, next: any) =>

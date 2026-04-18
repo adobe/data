@@ -11,6 +11,8 @@ Source for peer packages and sample apps is included under `references/` (when p
 - **references/data-react** — Support functions for React based projects.
 - **references/data-react-hello** — Very simple react hello world sample.
 - **references/data-react-pixie** — Simple sample for react pixie based 2d games.
+- **references/data-solid** — Support functions for SolidJS based projects. Minimal: only database context/provider. Observable bridging uses Solid's native `from()`.
+- **references/data-solid-dashboard** — Mini dashboard sample with SolidJS. Demonstrates shared database, multiple components each observing only their own slice, and fine-grained reactivity via `from()`.
 
 ## Stack
 

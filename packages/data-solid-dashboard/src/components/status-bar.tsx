@@ -2,6 +2,7 @@
 
 import { fromObserve, useDatabase } from "@adobe/data-solid";
 import { dashboardPlugin } from "../state/dashboard-plugin";
+import * as presentation from "./status-bar.presentation";
 
 export function StatusBar() {
   const db = useDatabase(dashboardPlugin);
@@ -9,11 +10,9 @@ export function StatusBar() {
   const count = fromObserve(db.observe.resources.count);
   const log = fromObserve(db.observe.resources.log);
 
-  return (
-    <div class="status-bar">
-      <span>{userName() ?? "Guest"}</span>
-      <span>{(log() ?? []).length} actions</span>
-      <span>Count: {count() ?? 0}</span>
-    </div>
-  );
+  return presentation.render({
+    get userName() { return userName() ?? "Guest"; },
+    get actionCount() { return (log() ?? []).length; },
+    get count() { return count() ?? 0; },
+  });
 }

@@ -2,30 +2,17 @@
 
 import { fromObserve, useDatabase } from "@adobe/data-solid";
 import { dashboardPlugin } from "../state/dashboard-plugin";
+import * as presentation from "./control-panel.presentation";
 
 export function ControlPanel() {
   const db = useDatabase(dashboardPlugin);
   const count = fromObserve(db.observe.resources.count);
-  let nameInput!: HTMLInputElement;
 
-  return (
-    <div class="control-panel">
-      <div class="counter-controls">
-        <button onClick={() => db.transactions.increment()}>+</button>
-        <button
-          onClick={() => db.transactions.decrement()}
-          disabled={(count() ?? 0) <= 0}
-        >
-          -
-        </button>
-        <button onClick={() => db.transactions.reset()}>Reset</button>
-      </div>
-      <div class="name-controls">
-        <input ref={nameInput} type="text" placeholder="Enter name" />
-        <button onClick={() => db.transactions.setUserName(nameInput.value)}>
-          Set Name
-        </button>
-      </div>
-    </div>
-  );
+  return presentation.render({
+    get count() { return count() ?? 0; },
+    increment: db.transactions.increment,
+    decrement: db.transactions.decrement,
+    reset: db.transactions.reset,
+    setUserName: db.transactions.setUserName,
+  });
 }

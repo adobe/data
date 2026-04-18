@@ -10,7 +10,7 @@ import type { Observe } from "@adobe/data/observe";
  * have emitted yet).  With a default value of type D the return type becomes
  * Accessor<T | D> — which collapses to Accessor<T> when D is a subtype of T.
  */
-export function fromObserve<T, D = undefined>(
+export function fromObserve<T, const D = undefined>(
   observe: Observe<T>,
   ...args: [defaultValue: D] | []
 ): Accessor<T | D> {

@@ -8,13 +8,18 @@ import { Observe, Unobserve } from "./index.js";
  * @returns the first value yielded by the observe function.
  */
 export function toPromise<T>(observable: Observe<T>): Promise<T> {
-  return new Promise<T>((resolve, _reject) => {
+  return new Promise<T>((resolve) => {
+    let resolved = false;
     let unobserve: Unobserve | null = null;
+    const tryUnobserve = () => {
+      if (unobserve) unobserve();
+      else queueMicrotask(tryUnobserve);
+    };
     unobserve = observable((value) => {
+      if (resolved) return;
+      resolved = true;
       resolve(value);
-      if (unobserve) {
-        unobserve();
-      }
+      tryUnobserve();
     });
   });
 }

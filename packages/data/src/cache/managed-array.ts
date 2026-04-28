@@ -98,82 +98,100 @@ function binaryDecode(
   return new ctor(byteArray.buffer, byteArray.byteOffset, length);
 }
 
+// Methods live on the prototype so every numeric column shares one hidden
+// class. This lets V8 monomorphize the IC at hot get/set call sites in tight
+// per-row loops (~20× speedup over the previous closure-per-instance shape).
+class ManagedTypedArrayColumn implements ManagedArray<number> {
+  readonly constant = false;
+  array: TypedArray;
+  private capacity: number;
+  private readonly ctor: TypedArrayConstructor;
+  private readonly allocator: MemoryAllocator;
+
+  constructor(ctor: TypedArrayConstructor, allocator: MemoryAllocator) {
+    this.ctor = ctor;
+    this.allocator = allocator;
+    this.capacity = 16;
+    this.array = allocator.allocate(ctor, this.capacity);
+    //  when the main wasm memory is resized, we need to refresh the array.
+    allocator.needsRefresh(() => {
+      this.array = allocator.refresh(this.array);
+    });
+  }
+
+  get native(): TypedArray {
+    return this.array;
+  }
+
+  get(index: number): number {
+    return this.array[index];
+  }
+
+  set(index: number, value: number): void {
+    this.array[index] = value;
+  }
+
+  move(from: number, to: number): void {
+    this.array[to] = this.array[from];
+  }
+
+  slice(start: number, end: number): number[] {
+    return [...this.array.subarray(start, end)];
+  }
+
+  ensureCapacity(newCapacity: number): void {
+    this.grow(newCapacity);
+  }
+
+  private grow(newCapacity?: number): void {
+    if (newCapacity && newCapacity > this.capacity) {
+      this.array = this.allocator.refresh(this.array);
+      const oldArray = this.array;
+      const growthFactor = 2;
+      this.capacity = Math.max(newCapacity, this.capacity * growthFactor);
+      const newArray = this.allocator.allocate(this.ctor, this.capacity);
+      newArray.set(this.array);
+      this.array = newArray;
+      this.allocator.release(oldArray);
+    }
+  }
+
+  toJSON(length: number, allowEncoding = true): Data {
+    const subarray = this.array.subarray(0, length);
+    if (!allowEncoding) {
+      return Array.from(subarray);
+    }
+    const jsonString = JSON.stringify(Array.from(subarray));
+    const binaryString = binaryEncode(subarray);
+    return binaryString.length < jsonString.length
+      ? binaryString
+      : Array.from(subarray);
+  }
+
+  fromJSON(data: Data, length: number): void {
+    if (typeof data === "string") {
+      const decodedArray = binaryDecode(data, length, this.ctor);
+      if (decodedArray.length > this.capacity) {
+        this.grow(decodedArray.length);
+      }
+      this.array.set(decodedArray);
+    } else {
+      if (!Array.isArray(data)) {
+        throw new Error(`Cannot set array to ${data}`);
+      }
+      if (data.length > this.capacity) {
+        this.grow(data.length);
+      }
+      this.array.set(data as number[]);
+    }
+  }
+}
+
 function createManagedTypedArray(
   ctor: TypedArrayConstructor,
   allocator: MemoryAllocator
 ): ManagedArray<number> {
-  let capacity = 16;
-  let array = allocator.allocate(ctor, capacity);
-  //  when the main wasm memory is resized, we need to refresh the array.
-  allocator.needsRefresh(() => {
-    array = allocator.refresh(array);
-  });
-
-  const grow = (newCapacity?: number) => {
-    if (newCapacity && newCapacity > capacity) {
-      array = allocator.refresh(array);
-      const oldArray = array;
-      const growthFactor = 2;
-      capacity = Math.max(newCapacity, capacity * growthFactor);
-      const newArray = allocator.allocate(ctor, capacity);
-      newArray.set(array);
-      array = newArray;
-      allocator.release(oldArray);
-    }
-  };
-  const result = {
-    constant: false,
-    get native() {
-      return array;
-    },
-    get(index: number) {
-      return array[index];
-    },
-    set(index: number, value: number): void {
-      // if (index >= capacity) {
-      //   grow();
-      // }
-      array[index] = value;
-    },
-    move(from: number, to: number): void {
-      array[to] = array[from];
-    },
-    slice(start: number, end: number) {
-      return [...array.subarray(start, end)];
-    },
-    ensureCapacity(newCapacity: number) {
-      grow(newCapacity);
-    },
-    toJSON(length: number, allowEncoding = true) {
-      const subarray = array.subarray(0, length);
-      if (!allowEncoding) {
-        return Array.from(subarray);
-      }
-      const jsonString = JSON.stringify(Array.from(subarray));
-      const binaryString = binaryEncode(subarray);
-      return binaryString.length < jsonString.length
-        ? binaryString
-        : Array.from(subarray);
-    },
-    fromJSON(data: Data, length: number) {
-      if (typeof data === "string") {
-        const decodedArray = binaryDecode(data, length, ctor);
-        if (decodedArray.length > capacity) {
-          grow(decodedArray.length);
-        }
-        array.set(decodedArray);
-      } else {
-        if (!Array.isArray(data)) {
-          throw new Error(`Cannot set array to ${data}`);
-        }
-        if (data.length > capacity) {
-          grow(data.length);
-        }
-        array.set(data as number[]);
-      }
-    },
-  };
-  return result;
+  return new ManagedTypedArrayColumn(ctor, allocator);
 }
 
 export function createManagedArray<S extends Schema>(

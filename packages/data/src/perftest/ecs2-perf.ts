@@ -123,19 +123,24 @@ const particlePlugin = Database.Plugin.create({
 
 type ParticleDb = ReturnType<typeof Database.create<typeof particlePlugin>>;
 
-const create = (batch: boolean) => {
+// The new ECS doesn't have a true batch-allocate-and-write-columns API like
+// the legacy `ecs.createBatch(...)` returning a writable table — every
+// insert goes through transaction machinery one entity at a time. So we
+// don't ship an `ecs2:create_batch` test; it would be identical in cost to
+// `ecs2:create`. When the new ECS gains a batch surface, add one here.
+
+const create = (): PerformanceTest => {
     let count = 0;
     const setup = async (n: number) => { count = n; };
     const run = () => {
         const db = Database.create(particlePlugin);
-        if (batch) {
-            db.transactions.seedAll({ count });
-        } else {
-            db.transactions.seedSingle({ count });
-        }
+        db.transactions.seedSingle({ count });
     };
     const cleanup = async () => { };
-    return { setup, run, cleanup, type: "create" } satisfies PerformanceTest;
+    // Single-entity insert is currently ~1.6 µs/entity on the new ECS.
+    // Starting at the harness default of 100k means a probe takes ~160 ms;
+    // 2k stays comfortably in the 0.5-250 ms band on the first attempt.
+    return { setup, run, cleanup, type: "create", startN: 2_000 };
 };
 
 const createMoveParticlesPerformanceTest = (): PerformanceTest => {
@@ -169,7 +174,6 @@ const createMoveParticlesPerformanceTest = (): PerformanceTest => {
 };
 
 export const ecs2 = {
-    create: create(false),
-    create_batch: create(true),
+    create: create(),
     move_column: createMoveParticlesPerformanceTest(),
 };

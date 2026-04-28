@@ -4,6 +4,7 @@ interface PerfResults {
   timeMs: number;
   result: any;
   flops: number;
+  n: number;
 }
 
 declare global {
@@ -93,9 +94,16 @@ export async function runTests(
         // console.log(JSON.stringify(finalPositions));
       }
 
-      const n = test.getVisibleEnabledPositions ? 100_000 : 100_000;
+      // Auto-tune n upward so each measured iteration falls in TARGET_BAND.
+      // Tests already at or above the lower bound keep their starting n.
+      const n = await tuneN(test, 100_000);
+      garbageCollect();
 
-      await test.setup(n);
+      // Warmup so V8 has fully optimized before any sample is recorded.
+      const warmupEnd = getTime() + WARMUP_MS;
+      while (getTime() < warmupEnd) {
+        test.run();
+      }
       garbageCollect();
 
       const baselineMemory = getMemory();
@@ -105,7 +113,7 @@ export async function runTests(
       while (getTime() - timeStart < 1000) {
         const result = runOnce(test.run, test);
         result.memoryKb -= baselineMemory;
-        testResults.push({...result, flops: n * typeToFlops[test.type] });
+        testResults.push({...result, flops: n * typeToFlops[test.type], n });
       }
 
       await test.cleanup();
@@ -130,6 +138,7 @@ export async function runTests(
         const totalFlops = testResults.reduce((a, b) => a + b.flops, 0);
         const averageFlopsPerSecond = (totalFlops * 1000) / totalTime;
         tableValues[`${display(suite)}:${display(name)}`] = {
+          N: testResults[0]?.n ?? 0,
           Passes: memoryKb.length,
           // 'Mem Min (Mb)': Math.min(...memoryKb).toFixed(2),
           // 'Mem Max (Mb)': Math.max(...memoryKb).toFixed(2),
@@ -170,7 +179,36 @@ export async function runTests(
 // allocate WASM-backed memory that is not reclaimed between calls.
 const MIN_SAMPLE_MS = 2;
 
-function runOnce(fn: () => any, test: PerformanceTest): Omit<PerfResults, "flops"> {
+// Target per-iteration time band. Tests that come in faster than the lower
+// bound get their n scaled up so each measured call does meaningful work and
+// dominates timing-call overhead. Tests already in or above the band are left
+// alone — we never scale n down, since that would change benchmark semantics.
+const TARGET_MIN_MS = 0.5;
+const TARGET_MAX_MS = 50;
+const MAX_AUTO_N = 1_000_000;
+const WARMUP_MS = 50;
+
+async function tuneN(test: PerformanceTest, startN: number): Promise<number> {
+  let n = startN;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await test.setup(n);
+    const probe = runOnce(test.run, test);
+    const probeMs = Math.max(probe.timeMs, 0.001);
+    if (probeMs >= TARGET_MIN_MS) {
+      return n;
+    }
+    const target = (TARGET_MIN_MS + TARGET_MAX_MS) / 2;
+    const newN = Math.min(MAX_AUTO_N, Math.round(n * (target / probeMs)));
+    if (newN <= n) {
+      return n;
+    }
+    await test.cleanup();
+    n = newN;
+  }
+  return n;
+}
+
+function runOnce(fn: () => any, test: PerformanceTest): Omit<PerfResults, "flops" | "n"> {
   const start = getTime();
   let result: any;
   let iterations = 0;

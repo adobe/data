@@ -2,6 +2,7 @@
 import * as vanilla_tests from "./vanilla-perf.js";
 import * as horizon_tests from "./horizon-perf.js";
 import * as ecs_tests from "./ecs-perf.js";
+import * as typed_buffer_tests from "./typed-buffer-perf.js";
 import { runTests } from "./perf-test.js";
 
 export function run() {
@@ -9,6 +10,7 @@ export function run() {
     ...ecs_tests,
     ...vanilla_tests,
     ...horizon_tests,
+    ...typed_buffer_tests,
   });
 }
 

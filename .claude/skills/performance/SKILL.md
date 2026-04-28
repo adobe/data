@@ -78,7 +78,7 @@ In order, three pieces:
 
 Don't conflate the closure→class fix with adjacent perf problems — they have different cures.
 
-- **Per-element allocation in hot reads** (e.g. struct buffer's `get(i)` returning a fresh `{x,y,z}`). The cure is bulk APIs (`forEach`, `getInto(target, i)`) or operating on the underlying typed array directly, not class-ifying the readout. *We benched generating a class for struct readout in this repo and the win was below threshold — V8 already converges on a stable hidden class for object literals where every property is assigned in fixed order.*
+- **Per-element allocation in hot reads** (e.g. struct buffer's `get(i)` returning a fresh `{x,y,z}`). The cure is bulk APIs (`forEach`, `getInto(target, i)`) or operating on the underlying typed array directly, not class-ifying the readout. *Empirically confirmed: we benched a generated class for struct readout in this repo (`{x: f32, y: f32, z: f32}`, N=1M) and got 10.90 ms → 10.60 ms (−2.8%) — well below the 25% threshold. V8 already converges on a stable hidden class for object literals whose properties are assigned in fixed order, so the class buys nothing here. Don't re-try this without first changing the surface (e.g. a `getInto(target, i)` that mutates a caller-owned object, eliminating the allocation entirely).*
 - **Polymorphic IC caused by mixed value types** (numbers and strings flowing through the same column). Cure: type-specialized columns.
 - **Closure-captured bindings that get reassigned** (`array = allocator.refresh(array)` etc.). The hidden class is wrong from instance #1 — class form is correct independent of instance count.
 

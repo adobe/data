@@ -53,6 +53,7 @@ Specifically:
 3. Pull internal helpers up as `private` methods, not nested closures or arrow-function fields. Arrow-function class fields go on each instance, not the prototype, and reintroduce the slow shape.
 4. Don't add or delete properties after construction — that mutates the hidden class.
 5. The factory function (`createXxx(...)`) stays exported and unchanged for callers; only the body is `return new XxxClass(...)`.
+6. **Don't capture `this` in a closure that reassigns `this.<field>` — especially for fields read from a hot loop.** Even if the closure rarely runs, V8 escape-analyzes that `this.<field>` is externally mutable and refuses to inline reads of it. Compounded with a typed-array union and a few other fields, this can produce ~30-40× slowdowns on `column.get(i)` style loops despite identical-looking source. If the field genuinely needs to be reassigned by external code (e.g. WASM memory growth detaching a typed-array view), prefer an explicit `column.refresh()` method called by the orchestrator over a `this`-capturing callback. *Empirically confirmed in this repo: `ManagedTypedArrayColumn` (which registers `allocator.needsRefresh(() => { this.array = allocator.refresh(this.array) })` in its constructor) is **40× slower** than the equivalent `NumberTypedBuffer` (no such closure) on a per-element add sweep at N=1M, even though both classes share the same `get`/`set` shape. See `packages/data/src/perftest/typed-buffer-perf.ts` for the bisect test.*
 
 ## Public-API discipline
 

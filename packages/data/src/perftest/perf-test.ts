@@ -20,6 +20,13 @@ export interface PerformanceTest {
   getVisibleEnabledPositions?: () => number[];
   type: "create" | "move";
   cleanup: () => Promise<void>;
+  /**
+   * Optional starting `n` for the auto-tuner. Tests whose per-iteration cost
+   * is known to be very high at the default `n` should set this lower so the
+   * harness doesn't waste a probe attempt at the default before scaling down.
+   * Auto-tune may still adjust this upward or downward as usual.
+   */
+  startN?: number;
 }
 
 const typeToFlops = {
@@ -94,9 +101,11 @@ export async function runTests(
         // console.log(JSON.stringify(finalPositions));
       }
 
-      // Auto-tune n upward so each measured iteration falls in TARGET_BAND.
-      // Tests already at or above the lower bound keep their starting n.
-      const n = await tuneN(test, 100_000);
+      // Auto-tune n so each measured iteration falls in TARGET_BAND.
+      // Tests already in band keep their starting n. Tests can override
+      // the seed via `startN` when they know their per-iter cost is far
+      // from the default.
+      const n = await tuneN(test, test.startN ?? 100_000);
       garbageCollect();
 
       // Warmup so V8 has fully optimized before any sample is recorded.

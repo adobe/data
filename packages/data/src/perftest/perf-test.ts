@@ -102,7 +102,7 @@ export async function runTests(
       const timeStart = getTime();
 
       //   only run for 1 second
-      while (getTime() - timeStart < 100) {
+      while (getTime() - timeStart < 1000) {
         const result = runOnce(test.run, test);
         result.memoryKb -= baselineMemory;
         testResults.push({...result, flops: n * typeToFlops[test.type] });
@@ -163,11 +163,30 @@ export async function runTests(
   }
 }
 
+// Browsers without cross-origin isolation clamp performance.now() to ~0.1ms
+// resolution, so very fast operations register as 0ms. For move tests we
+// inner-loop until the elapsed time exceeds this threshold and report the
+// per-iteration average. Create tests are not inner-looped because some
+// allocate WASM-backed memory that is not reclaimed between calls.
+const MIN_SAMPLE_MS = 2;
+
 function runOnce(fn: () => any, test: PerformanceTest): Omit<PerfResults, "flops"> {
   const start = getTime();
-  const result = fn();
-  const end = getTime();
+  let result: any;
+  let iterations = 0;
+  let now = start;
+  if (test.type === "move") {
+    do {
+      result = fn();
+      iterations++;
+      now = getTime();
+    } while (now - start < MIN_SAMPLE_MS);
+  } else {
+    result = fn();
+    iterations = 1;
+    now = getTime();
+  }
   const after = getMemory();
-  const timeMs = end - start;
+  const timeMs = (now - start) / iterations;
   return { memoryKb: after, timeMs, result };
 }

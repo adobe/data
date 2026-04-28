@@ -24,7 +24,7 @@
     "clean": "rm -rf dist build node_modules",
     "clean-cache": "rm -rf node_modules/.cache",
     "dev": "pnpm clean-cache && run-p dev:* dev:serve",
-    "dev:serve": "vite",
+    "dev:serve": "vite --host",
     "dev:build": "tsc -b -w --preserveWatchOutput",
     "dev:test": "vitest --watch",
     "dev:apidocs": "nodemon -w README.md -w dist -x typedoc --delay 100",

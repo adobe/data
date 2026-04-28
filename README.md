@@ -76,7 +76,7 @@ An `Observable<T>` is a subscription function that you can pass a callback funct
 
 Your callback function *may* be called back synchronously (before the initial call returns) zero or one times and asynchronously later any number of times.
 
-For more information see the [Observable API documentation](https://adobe.github.io/data/)
+For more information see the [Observable API documentation](https://adobe.github.io/data/api/modules/observe.html)
 
 ### Observable Types
 

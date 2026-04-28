@@ -224,7 +224,7 @@ function createMoveParticlesPerformanceTest(options: {
   return { setup, run: run, cleanup, getVisibleEnabledPositions, type: "move" } satisfies PerformanceTest;
 }
 
-export const ec2s = {
+export const ecs1 = {
   create: create(false),
   create_batch: create(true),
   move_column: createMoveParticlesPerformanceTest({ mode: "column" }),

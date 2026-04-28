@@ -179,12 +179,16 @@ export async function runTests(
 // allocate WASM-backed memory that is not reclaimed between calls.
 const MIN_SAMPLE_MS = 2;
 
-// Target per-iteration time band. Tests that come in faster than the lower
-// bound get their n scaled up so each measured call does meaningful work and
-// dominates timing-call overhead. Tests already in or above the band are left
-// alone — we never scale n down, since that would change benchmark semantics.
+// Target per-iteration time band. Tests faster than the lower bound get
+// their n scaled up so each call does meaningful work and dominates
+// timing-call overhead. Tests slower than the upper bound get their n
+// scaled down so we collect enough samples within the 1s budget. Setting
+// TARGET_MAX_MS conservatively (250ms) keeps moderate-cost tests
+// (ecs1:create at ~65ms, horizon:create at ~200ms) at their original n;
+// only pathologically slow tests get down-scaled.
 const TARGET_MIN_MS = 0.5;
-const TARGET_MAX_MS = 50;
+const TARGET_MAX_MS = 250;
+const MIN_AUTO_N = 100;
 const MAX_AUTO_N = 1_000_000;
 const WARMUP_MS = 50;
 
@@ -194,12 +198,14 @@ async function tuneN(test: PerformanceTest, startN: number): Promise<number> {
     await test.setup(n);
     const probe = runOnce(test.run, test);
     const probeMs = Math.max(probe.timeMs, 0.001);
-    if (probeMs >= TARGET_MIN_MS) {
+    if (probeMs >= TARGET_MIN_MS && probeMs <= TARGET_MAX_MS) {
       return n;
     }
     const target = (TARGET_MIN_MS + TARGET_MAX_MS) / 2;
-    const newN = Math.min(MAX_AUTO_N, Math.round(n * (target / probeMs)));
-    if (newN <= n) {
+    const ratio = target / probeMs;
+    const scaled = Math.round(n * ratio);
+    const newN = Math.max(MIN_AUTO_N, Math.min(MAX_AUTO_N, scaled));
+    if (newN === n) {
       return n;
     }
     await test.cleanup();

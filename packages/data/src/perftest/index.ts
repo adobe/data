@@ -8,7 +8,7 @@ export function run() {
   runTests({
     ...ecs_tests,
     ...vanilla_tests,
-    // ...horizon_tests,
+    ...horizon_tests,
   });
 }
 

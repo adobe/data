@@ -159,7 +159,11 @@ const createMoveParticlesPerformanceTest = (): PerformanceTest => {
         return values;
     };
     const cleanup = async () => { };
-    return { setup, run, cleanup, getVisibleEnabledPositions, type: "move" };
+    // Lock N to 1M to match ecs1's move tests so cache pressure is the
+    // same on both sides — otherwise the auto-tuner picks different N
+    // based on cold-probe time and the comparison becomes about cache,
+    // not code. See ecs1-perf.ts for the matching note.
+    return { setup, run, cleanup, getVisibleEnabledPositions, type: "move", startN: 1_000_000 };
 };
 
 export const ecs2 = {

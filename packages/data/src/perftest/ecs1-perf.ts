@@ -221,7 +221,11 @@ function createMoveParticlesPerformanceTest(options: {
   }
 
   const cleanup = async () => { };
-  return { setup, run: run, cleanup, getVisibleEnabledPositions, type: "move" } satisfies PerformanceTest;
+  // Lock N to 1M so every ecs*:move_* row exercises the same memory-hierarchy
+  // pressure (~24 MB working set, well past L2). Otherwise the auto-tuner
+  // picks different N per test based on cold-probe time, and "ecs2:move_column
+  // is faster than ecs1:move_native" turns out to be cache-locality, not code.
+  return { setup, run: run, cleanup, getVisibleEnabledPositions, type: "move", startN: 1_000_000 } satisfies PerformanceTest;
 }
 
 export const ecs1 = {

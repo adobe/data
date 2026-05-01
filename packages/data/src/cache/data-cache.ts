@@ -115,16 +115,37 @@ export function createBlobRefAwareDataCache<
   };
 }
 
-const managedPersistentCache = await getManagedPersistentCache("datacache", {
-  maximumMemoryEntries: 100,
-  maximumStorageEntries: 1000,
-});
-const blobRefAwareDataCache = await createBlobRefAwareDataCache(
-  createDataCache(managedPersistentCache)
-);
-export const dataCache: DataCache<Data, Data> = createExpiringDataCache(
-  blobRefAwareDataCache
-);
+// Lazy-init the global cache to avoid a top-level await. Rolldown / Vite 8
+// can deadlock when modules with TLA are reachable through a barrel cycle
+// in downstream bundles, so we defer the async work to first use.
+function createGlobalDataCache(): DataCache<Data, Data> {
+  let cachePromise: Promise<DataCache<Data, Data>> | undefined;
+  const init = (): Promise<DataCache<Data, Data>> =>
+    (cachePromise ??= (async () => {
+      const managedPersistentCache = await getManagedPersistentCache("datacache", {
+        maximumMemoryEntries: 100,
+        maximumStorageEntries: 1000,
+      });
+      const blobRefAwareDataCache = await createBlobRefAwareDataCache(
+        createDataCache(managedPersistentCache)
+      );
+      return createExpiringDataCache(blobRefAwareDataCache);
+    })());
+
+  return {
+    async match(key) {
+      return (await init()).match(key);
+    },
+    async put(key, value, options) {
+      return (await init()).put(key, value, options);
+    },
+    async delete(key) {
+      return (await init()).delete(key);
+    },
+  };
+}
+
+export const dataCache: DataCache<Data, Data> = createGlobalDataCache();
 
 /**
  * Retrieves a namespaced data cache. Calling it multiple times will return an equivalent cache.

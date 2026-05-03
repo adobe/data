@@ -507,11 +507,12 @@ describe("createDatabase", () => {
                 }
             }
 
-            // Execute transaction with conditional async generator wrapped in function
-            store.transactions.createPositionNameEntity(() => conditionalStream());
-
-            // Wait for processing
-            await new Promise(resolve => setTimeout(resolve, 20));
+            // Execute transaction with conditional async generator wrapped in function.
+            // Capture the promise so we can await actual completion rather than
+            // relying on a fixed wait (the inner generator does 5 setTimeout(1)
+            // cycles which under load can exceed any short fixed wait).
+            const txPromise = store.transactions.createPositionNameEntity(() => conditionalStream()) as unknown as Promise<unknown>;
+            await txPromise;
 
             // Verify only the final entity was created (each yield replaces the previous)
             // Now that rollback is working correctly and observably, we should see only the final entity

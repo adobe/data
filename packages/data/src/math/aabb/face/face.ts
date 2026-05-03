@@ -3,6 +3,6 @@
 import { Schema } from "../../../schema/index.js";
 import { schema } from "./schema.js";
 
-export type AabbFace = Schema.ToType<typeof schema>;
+export type Face = Schema.ToType<typeof schema>;
 
-export * from "./public.js";
+export * as Face from "./public.js";

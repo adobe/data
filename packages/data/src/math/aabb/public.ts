@@ -5,5 +5,5 @@ export * from "./layout.js";
 export * from "./schema.js";
 export * from "./unit.js";
 export * from "./line-intersection.js";
-export * as Face from "./face/public.js";
+export { Face } from "./face/face.js";
 

@@ -1,8 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { resize } from "../internal/array-buffer-like/resize.js";
+import { I8 } from "../math/i8/index.js";
+import { I16 } from "../math/i16/index.js";
 import { I32 } from "../math/i32/index.js";
 import { Schema } from "../schema/index.js";
 import { TypedArrayConstructor, TypedArray } from "../internal/typed-array/index.js";
+import { U8 } from "../math/u8/index.js";
+import { U16 } from "../math/u16/index.js";
 import { U32 } from "../math/u32/index.js";
 import { TypedBuffer, TypedBufferType } from "./typed-buffer.js";
 import { createSharedArrayBuffer } from "../internal/shared-array-buffer/create-shared-array-buffer.js";
@@ -12,11 +16,15 @@ const getTypedArrayConstructor = (schema: Schema): TypedArrayConstructor => {
     if (schema.type === 'number' || schema.type === 'integer') {
         if (schema.type === "integer") {
             if (schema.minimum !== undefined && schema.maximum !== undefined) {
-                if (schema.minimum >= U32.schema.minimum && schema.maximum <= U32.schema.maximum) {
-                    return Uint32Array;
-                }
-                if (schema.minimum >= I32.schema.minimum && schema.maximum <= I32.schema.maximum) {
-                    return Int32Array;
+                const { minimum: min, maximum: max } = schema;
+                if (min >= 0) {
+                    if (max <= U8.schema.maximum)  return Uint8Array;
+                    if (max <= U16.schema.maximum) return Uint16Array;
+                    if (max <= U32.schema.maximum) return Uint32Array;
+                } else {
+                    if (min >= I8.schema.minimum  && max <= I8.schema.maximum)  return Int8Array;
+                    if (min >= I16.schema.minimum && max <= I16.schema.maximum) return Int16Array;
+                    if (min >= I32.schema.minimum && max <= I32.schema.maximum) return Int32Array;
                 }
             }
         }

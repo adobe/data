@@ -7,7 +7,7 @@ import { U32 } from "../../math/u32/index.js";
 import { I32 } from "../../math/i32/index.js";
 
 describe("getStructLayout", () => {
-    it("should handle primitive types", () => {
+    it("packs scalar-only structs without artificial vec4 rounding", () => {
         const schema: Schema = {
             type: "object",
             properties: {
@@ -19,13 +19,14 @@ describe("getStructLayout", () => {
 
         const layout = getStructLayout(schema);
         expect(layout.type).toBe("object");
-        expect(layout.size).toBe(16);  // rounded to vec4
+        expect(layout.align).toBe(4);
+        expect(layout.size).toBe(12);
         expect(layout.fields.a.offset).toBe(0);
         expect(layout.fields.b.offset).toBe(4);
         expect(layout.fields.c.offset).toBe(8);
     });
 
-    it("should handle vec3 with proper padding", () => {
+    it("treats a 3-element primitive array as vec3 (align 16, size 12)", () => {
         const schema: Schema = {
             type: "array",
             items: { type: "number", precision: 1 },
@@ -35,13 +36,14 @@ describe("getStructLayout", () => {
 
         const layout = getStructLayout(schema)!;
         expect(layout.type).toBe("array");
-        expect(layout.size).toBe(12);  // vec3 is 12 bytes, not padded to vec4
+        expect(layout.align).toBe(16);
+        expect(layout.size).toBe(12);
         expect(layout.fields["0"].offset).toBe(0);
         expect(layout.fields["1"].offset).toBe(4);
         expect(layout.fields["2"].offset).toBe(8);
     });
 
-    it("should handle nested structs", () => {
+    it("rounds nested structs to their max member alignment", () => {
         const schema: Schema = {
             type: "object",
             properties: {
@@ -63,22 +65,20 @@ describe("getStructLayout", () => {
 
         const layout = getStructLayout(schema)!;
         expect(layout.type).toBe("object");
-        // transform (16 bytes) + active (4 bytes) = 20 bytes
-        // rounded up to largest member alignment (16 bytes) = 32 bytes
+        expect(layout.align).toBe(16);
         expect(layout.size).toBe(32);
-        
+
         const transform = layout.fields.transform.type;
         expect(typeof transform).not.toBe("string");
         if (typeof transform !== "string") {
-            // position (vec3 = 12 bytes) + scale (4 bytes) = 16 bytes
-            // no padding needed, struct alignment is 16 bytes
+            expect(transform.align).toBe(16);
             expect(transform.size).toBe(16);
             const position = transform.fields.position.type;
             expect(typeof position !== "string" && position.size).toBe(12);
         }
     });
 
-    it("should handle array of structs", () => {
+    it("computes array<struct> stride from element align and size", () => {
         const schema: Schema = {
             type: "array",
             items: {
@@ -94,30 +94,28 @@ describe("getStructLayout", () => {
 
         const layout = getStructLayout(schema)!;
         expect(layout.type).toBe("array");
-        expect(layout.size).toBe(32);  // 2 structs aligned to vec4
+        // element struct: align 4, size 8 -> stride 8 (no vec4 rounding for scalar-only structs)
+        expect(layout.size).toBe(16);
         expect(layout.fields["0"].offset).toBe(0);
-        expect(layout.fields["1"].offset).toBe(16);  // aligned to vec4
+        expect(layout.fields["1"].offset).toBe(8);
     });
 
-    it("should demonstrate std140 vec4 + f32 + f32 alignment issue", () => {
+    it("aligns vec3/f32 mix per WGSL: vec4 + vec3 + vec3 packs to 48 bytes", () => {
         const schema: Schema = {
             type: "object",
             properties: {
-                // vec4 (16 bytes, offset 0)
                 viewProjection: {
                     type: "array",
                     items: { type: "number", precision: 1 },
                     minItems: 4,
                     maxItems: 4
                 },
-                // f32 (4 bytes, offset 16)
                 lightDirection: {
                     type: "array",
                     items: { type: "number", precision: 1 },
                     minItems: 3,
                     maxItems: 3
                 },
-                // f32 (4 bytes, offset 32) - CORRECT for std140!
                 lightColor: {
                     type: "array",
                     items: { type: "number", precision: 1 },
@@ -129,59 +127,47 @@ describe("getStructLayout", () => {
 
         const layout = getStructLayout(schema)!;
         expect(layout.type).toBe("object");
-        
-        // The getStructLayout function is actually working correctly for std140!
-        // It's properly padding vec3s to 16-byte boundaries
-        expect(layout.fields.lightColor.offset).toBe(32); // This is correct!
-        
-        // The correct std140 layout is:
-        // - viewProjection: offset 0, size 16 bytes
-        // - lightDirection: offset 16, size 16 bytes (padded to vec4)
-        // - lightColor: offset 32, size 16 bytes (padded to vec4)
-        // Total size: 48 bytes
-        expect(layout.size).toBe(48); // This is correct
+
+        // viewProjection vec4 at 0..16, lightDirection vec3 at 16..28, lightColor vec3
+        // align 16 -> at 32, ends 44; struct align 16 -> size = roundUp(44, 16) = 48.
+        expect(layout.fields.viewProjection.offset).toBe(0);
+        expect(layout.fields.lightDirection.offset).toBe(16);
+        expect(layout.fields.lightColor.offset).toBe(32);
+        expect(layout.size).toBe(48);
     });
 
-    it("should handle vec3<f32> + f32 struct layout correctly", () => {
+    it("packs vec3 followed by f32 tightly (the 12+4 = 16 case)", () => {
         const schema: Schema = {
             type: "object",
             properties: {
-                // vec3<f32> (12 bytes, padded to 16 bytes, offset 0)
                 position: {
                     type: "array",
                     items: { type: "number", precision: 1 },
                     minItems: 3,
                     maxItems: 3
                 },
-                // f32 (4 bytes, offset 16)
                 scale: { type: "number", precision: 1 }
             }
         };
 
         const layout = getStructLayout(schema)!;
         expect(layout.type).toBe("object");
-        
-        // vec3<f32> should be 16-byte aligned and take 12 bytes
+
         expect(layout.fields.position.offset).toBe(0);
         const positionType = layout.fields.position.type;
         if (typeof positionType !== "string") {
             expect(positionType.size).toBe(12);
         }
-        
-        // f32 should follow immediately at offset 12
+
         expect(layout.fields.scale.offset).toBe(12);
-        
-        // Total size should be 12 bytes (vec3) + 4 bytes (f32) = 16 bytes
-        // no padding needed, struct alignment is 16 bytes
         expect(layout.size).toBe(16);
     });
 
-    // This sample was pulled from here: https://webgpufundamentals.org/webgpu/lessons/webgpu-memory-layout.html
-    it("should handle complex struct with arrays and nested structs (std140 example)", () => {
+    // Sample loosely based on https://webgpufundamentals.org/webgpu/lessons/webgpu-memory-layout.html
+    it("handles complex struct with arrays and nested structs", () => {
         const schema: Schema = {
             type: "object",
             properties: {
-                // Main struct fields in expected order
                 orientation: {
                     type: "array",
                     items: { type: "number", precision: 1 },
@@ -201,7 +187,6 @@ describe("getStructLayout", () => {
                     maxItems: 1
                 },
                 scale: { type: "number", precision: 1 },
-                // Ex4a struct
                 info: {
                     type: "object",
                     properties: {
@@ -219,49 +204,43 @@ describe("getStructLayout", () => {
 
         const layout = getStructLayout(schema)!;
         expect(layout.type).toBe("object");
-        
-        // orientation: vec3f at offset 0, size 12 bytes
+
         expect(layout.fields.orientation.offset).toBe(0);
         const orientationType = layout.fields.orientation.type;
         if (typeof orientationType !== "string") {
             expect(orientationType.size).toBe(12);
         }
-        
-        // size: f32 at offset 12 (fits right after vec3f)
+
         expect(layout.fields.size.offset).toBe(12);
-        
-        // direction: array<vec3f, 1> at offset 16 (aligned to vec4)
+
+        // array<vec3, 1>: element stride = roundUp(16, 12) = 16, total size 16, align 16
         expect(layout.fields.direction.offset).toBe(16);
         const directionType = layout.fields.direction.type;
         if (typeof directionType !== "string") {
-            expect(directionType.size).toBe(16); // vec3f padded to vec4
+            expect(directionType.size).toBe(16);
         }
-        
-        // scale: f32 at offset 32 (after array)
+
         expect(layout.fields.scale.offset).toBe(32);
-        
-        // info: Ex4a struct at offset 48 (aligned to vec4)
+
+        // info struct holds a vec3 -> struct align 16, size 16
         expect(layout.fields.info.offset).toBe(48);
         const infoType = layout.fields.info.type;
         if (typeof infoType !== "string") {
-            expect(infoType.size).toBe(16); // vec3f padded to vec4
+            expect(infoType.size).toBe(16);
         }
-        
-        // friction: f32 at offset 64 (after struct)
+
         expect(layout.fields.friction.offset).toBe(64);
-        
-        // Total size should be 68 bytes, rounded up to vec4 = 80 bytes
+
+        // outer struct align = 16, size = roundUp(68, 16) = 80
         expect(layout.size).toBe(80);
     });
 
-    it("should reject invalid schemas", () => {
-        // Non-fixed length array
+    it("rejects invalid schemas", () => {
         expect(() => getStructLayout({
             type: "array",
             items: { type: "number", precision: 1 }
         })).toThrow();
 
-        // Invalid primitive type
         expect(() => getStructLayout({
             type: "object",
             properties: {
@@ -269,7 +248,6 @@ describe("getStructLayout", () => {
             }
         })).toThrow();
 
-        // Array length < 1
         expect(() => getStructLayout({
             type: "array",
             items: { type: "number", precision: 1 },
@@ -278,8 +256,123 @@ describe("getStructLayout", () => {
         })).toThrow();
     });
 
-    describe("packed layout", () => {
-        it("should use tight packing for vertex buffers", () => {
+    describe("storage layout (WGSL host-shareable)", () => {
+        it("aligns vec2 to 8 bytes inside a struct", () => {
+            const schema: Schema = {
+                type: "object",
+                properties: {
+                    a: F32.schema,
+                    b: {
+                        type: "array",
+                        items: { type: "number", precision: 1 },
+                        minItems: 2,
+                        maxItems: 2
+                    }
+                },
+                layout: "storage"
+            };
+
+            const layout = getStructLayout(schema);
+            expect(layout.fields.a.offset).toBe(0);
+            // vec2 must align to 8 -> next slot after f32 (offset 4) rounds up to 8.
+            expect(layout.fields.b.offset).toBe(8);
+            expect(layout.align).toBe(8);
+            expect(layout.size).toBe(16);
+        });
+
+        it("rounds struct size up to max member alignment (Material-style: vec4 + … + f32 = 112)", () => {
+            const Vec2: Schema = {
+                type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2,
+            };
+            const Vec3: Schema = {
+                type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3,
+            };
+            const Vec4: Schema = {
+                type: "array", items: { type: "number", precision: 1 }, minItems: 4, maxItems: 4,
+            };
+
+            const schema: Schema = {
+                type: "object",
+                properties: {
+                    baseColor: Vec4,
+                    metallic: F32.schema,
+                    roughness: F32.schema,
+                    irReflectance: F32.schema,
+                    irEmission: F32.schema,
+                    emissionRgb: Vec3,
+                    emissionMode: F32.schema,
+                    density: F32.schema,
+                    viscosity: F32.schema,
+                    specificHeatCapacity: F32.schema,
+                    thermalConductivity: F32.schema,
+                    tensileYieldStrainStress: Vec2,
+                    tensileFractureStrainStress: Vec2,
+                    compressiveYieldStrainStress: Vec2,
+                    compressiveFractureStrainStress: Vec2,
+                    restitution: F32.schema,
+                },
+                layout: "storage",
+            };
+
+            const layout = getStructLayout(schema);
+            expect(layout.fields.baseColor.offset).toBe(0);
+            expect(layout.fields.emissionRgb.offset).toBe(32);
+            expect(layout.fields.tensileYieldStrainStress.offset).toBe(64);
+            expect(layout.fields.restitution.offset).toBe(96);
+            expect(layout.align).toBe(16);
+            expect(layout.size).toBe(112);
+        });
+
+        it("uses element-tight strides for arrays of primitives and vec3 stride 16", () => {
+            const arrayOfF32: Schema = {
+                type: "object",
+                properties: {
+                    values: {
+                        type: "array",
+                        items: { type: "number", precision: 1 },
+                        // vec1 isn't supported, so test via 5 elements outside the vec range
+                        minItems: 5,
+                        maxItems: 5,
+                    },
+                },
+                layout: "storage",
+            };
+            const layout1 = getStructLayout(arrayOfF32);
+            // element f32 align 4 size 4 -> stride 4 -> total 20
+            const valuesType1 = layout1.fields.values.type;
+            if (typeof valuesType1 !== "string") {
+                expect(valuesType1.size).toBe(20);
+            }
+
+            const arrayOfVec3: Schema = {
+                type: "object",
+                properties: {
+                    directions: {
+                        type: "array",
+                        items: {
+                            type: "array",
+                            items: { type: "number", precision: 1 },
+                            minItems: 3,
+                            maxItems: 3,
+                        },
+                        minItems: 4,
+                        maxItems: 4,
+                    },
+                },
+                layout: "storage",
+            };
+            const layout2 = getStructLayout(arrayOfVec3);
+            // element vec3 align 16 size 12 -> stride 16 -> total 64
+            const valuesType2 = layout2.fields.directions.type;
+            if (typeof valuesType2 !== "string") {
+                expect(valuesType2.size).toBe(64);
+                expect(valuesType2.align).toBe(16);
+            }
+        });
+    });
+
+    describe("packed layout (vertex buffer streams)", () => {
+        it("uses tight packing", () => {
             const schema: Schema = {
                 type: "object",
                 properties: {
@@ -302,75 +395,55 @@ describe("getStructLayout", () => {
             const packedLayout = getStructLayout(schema);
             expect(packedLayout.layout).toBe("packed");
             expect(packedLayout.type).toBe("object");
-            
-            // position: vec3f at offset 0, size 12 bytes
+            expect(packedLayout.align).toBe(1);
+
             expect(packedLayout.fields.position.offset).toBe(0);
             const positionType = packedLayout.fields.position.type;
             if (typeof positionType !== "string") {
                 expect(positionType.size).toBe(12);
             }
-            
-            // color: vec4f at offset 12, size 16 bytes
+
             expect(packedLayout.fields.color.offset).toBe(12);
             const colorType = packedLayout.fields.color.type;
             if (typeof colorType !== "string") {
                 expect(colorType.size).toBe(16);
             }
-            
-            // Total size should be 28 bytes (no padding for packed layout)
+
             expect(packedLayout.size).toBe(28);
         });
 
-        it("should show difference between std140 and packed layouts", () => {
-            const std140Schema: Schema = {
-                type: "object",
-                properties: {
-                    position: {
-                        type: "array",
-                        items: { type: "number", precision: 1 },
-                        minItems: 3,
-                        maxItems: 3
-                    },
-                    color: {
-                        type: "array",
-                        items: { type: "number", precision: 1 },
-                        minItems: 4,
-                        maxItems: 4
-                    }
+        it("differs from storage layout: tighter struct size", () => {
+            const schemaProps = {
+                position: {
+                    type: "array" as const,
+                    items: { type: "number" as const, precision: 1 as const },
+                    minItems: 3,
+                    maxItems: 3
                 },
-                layout: "std140"
-            };
-            const packedSchema: Schema = {
-                type: "object",
-                properties: {
-                    position: {
-                        type: "array",
-                        items: { type: "number", precision: 1 },
-                        minItems: 3,
-                        maxItems: 3
-                    },
-                    color: {
-                        type: "array",
-                        items: { type: "number", precision: 1 },
-                        minItems: 4,
-                        maxItems: 4
-                    }
-                },
-                layout: "packed"
+                color: {
+                    type: "array" as const,
+                    items: { type: "number" as const, precision: 1 as const },
+                    minItems: 4,
+                    maxItems: 4
+                }
             };
 
-            const std140Layout = getStructLayout(std140Schema);
+            const storageSchema: Schema = { type: "object", properties: schemaProps, layout: "storage" };
+            const packedSchema: Schema = { type: "object", properties: schemaProps, layout: "packed" };
+
+            const storageLayout = getStructLayout(storageSchema);
             const packedLayout = getStructLayout(packedSchema);
 
-            // std140 should be larger due to vec4 alignment
-            expect(std140Layout.size).toBe(32); // 16 + 16
-            expect(packedLayout.size).toBe(28); // 12 + 16 (no padding)
-            
-            expect(std140Layout.layout).toBe("std140");
+            // storage: vec3 at 0..12, vec4 at 16..32, struct align 16 -> size 32
+            expect(storageLayout.size).toBe(32);
+            // packed: vec3 at 0..12, vec4 at 12..28, no rounding -> size 28
+            expect(packedLayout.size).toBe(28);
+
+            expect(storageLayout.layout).toBe("storage");
             expect(packedLayout.layout).toBe("packed");
         });
 
-        it("should work with arrays of primitives in packed mode", () => {
+        it("works with arrays of primitives in packed mode", () => {
             const schema: Schema = {
                 type: "object",
                 properties: {
@@ -387,20 +460,19 @@ describe("getStructLayout", () => {
             const packedLayout = getStructLayout(schema);
             expect(packedLayout.layout).toBe("packed");
             expect(packedLayout.type).toBe("object");
-            
-            // Array should not have excess padding
+
             const valuesType = packedLayout.fields.values.type;
             expect(typeof valuesType).not.toBe("string");
             if (typeof valuesType !== "string") {
-                expect(valuesType.size).toBe(8); // 2 floats * 4 bytes each
+                expect(valuesType.size).toBe(8);
             }
-            
-            expect(packedLayout.size).toBe(8); // No padding
+
+            expect(packedLayout.size).toBe(8);
         });
     });
 
-    describe("backwards compatibility", () => {
-        it("should default to std140 layout when no layout specified", () => {
+    describe("default layout", () => {
+        it("defaults to \"storage\" when no layout specified", () => {
             const schema: Schema = {
                 type: "object",
                 properties: {
@@ -409,12 +481,14 @@ describe("getStructLayout", () => {
                 }
             };
 
-            const layout = getStructLayout(schema); // No layout parameter
-            expect(layout.layout).toBe("std140");
-            expect(layout.size).toBe(16); // Should be padded to vec4
+            const layout = getStructLayout(schema);
+            expect(layout.layout).toBe("storage");
+            // scalar-only struct: align 4, size 8 (no vec4 rounding)
+            expect(layout.align).toBe(4);
+            expect(layout.size).toBe(8);
         });
 
-        it("should work with original function signatures", () => {
+        it("works with original function signatures", () => {
             const schema: Schema = {
                 type: "object",
                 properties: {
@@ -422,15 +496,14 @@ describe("getStructLayout", () => {
                 }
             };
 
-            // Original signatures should still work
             const layout1 = getStructLayout(schema);
             const layout2 = getStructLayout(schema, true);
             const layout3 = getStructLayout(schema, false);
-            
-            expect(layout1?.layout).toBe("std140");
-            expect(layout2?.layout).toBe("std140");
-            expect(layout3?.layout).toBe("std140");
+
+            expect(layout1?.layout).toBe("storage");
+            expect(layout2?.layout).toBe("storage");
+            expect(layout3?.layout).toBe("storage");
         });
     });
 
-}); 
+});

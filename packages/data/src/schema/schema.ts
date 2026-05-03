@@ -3,7 +3,7 @@
 export type JSONPath = string;
 export type JSONMergePatch = unknown;
 
-export type Layout = "std140" | "packed";
+export type Layout = "storage" | "packed";
 
 /**
  * Conditional patch applied to the path when the enclosing schema branch is active
@@ -49,5 +49,5 @@ export interface Schema {
   anyOf?: readonly Schema[];
   const?: any;
   enum?: readonly any[];
-  layout?: Layout; // Memory layout for typed buffers (std140 or packed)
+  layout?: Layout; // Memory layout for typed buffers (storage or packed)
 }

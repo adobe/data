@@ -229,9 +229,10 @@ describe("Schema.toVertexBufferLayout", () => {
             };
 
             const layout = Schema.toVertexBufferLayout(schema, {
-                layout: "std140"
+                layout: "storage"
             });
-            expect(layout.arrayStride).toBe(16); // std140: 16-byte alignment
+            // storage: vec3 align 16 size 12, struct align 16 -> stride 16
+            expect(layout.arrayStride).toBe(16);
         });
     });
 

@@ -2,24 +2,57 @@
 import { describe, it, expect } from "vitest";
 import { createReadStruct } from "./create-read-struct.js";
 import { createDataView32 } from "../../internal/data-view-32/create-data-view-32.js";
-import type { StructLayout } from "./struct-layout.js";
+import type { Schema } from "../../schema/index.js";
+import { F32 } from "../../math/f32/index.js";
+import { getStructLayout } from "./get-struct-layout.js";
+
+/** Root vec2 — same shape as `Vec2.schema` but as a root array for TypedBuffer-style roots. */
+const vec2RootSchema = {
+    type: "array",
+    items: { type: "number", precision: 1 },
+    minItems: 2,
+    maxItems: 2,
+} as const satisfies Schema;
+
+const vec2ObjectSchema = {
+    type: "object",
+    properties: {
+        x: F32.schema,
+        y: F32.schema,
+    },
+} as const satisfies Schema;
+
+const complexStructSchema = {
+    type: "object",
+    properties: {
+        position: {
+            type: "array",
+            items: { type: "number", precision: 1 },
+            minItems: 3,
+            maxItems: 3,
+        },
+        color: {
+            type: "array",
+            items: { type: "number", precision: 1 },
+            minItems: 4,
+            maxItems: 4,
+        },
+        age: { type: "integer", minimum: 0, maximum: 4294967295 },
+        charge: { type: "integer", minimum: -2147483648, maximum: 2147483647 },
+    },
+} as const satisfies Schema;
+
+const mixedPrimitivesSchema = {
+    type: "object",
+    properties: {
+        a: { type: "integer", minimum: -2147483648, maximum: 2147483647 },
+        b: { type: "integer", minimum: 0, maximum: 4294967295 },
+    },
+} as const satisfies Schema;
 
 describe("ReadStruct", () => {
     it("Vec2 array root", () => {
-        const layout = {
-            "type": "array",
-            "size": 8,
-            "fields": {
-                "0": {
-                    "offset": 0,
-                    "type": "f32"
-                },
-                "1": {
-                    "offset": 4,
-                    "type": "f32"
-                }
-            }
-        } as const satisfies StructLayout;
+        const layout = getStructLayout(vec2RootSchema);
         const read = createReadStruct(layout);
 
         const data = createDataView32(new ArrayBuffer(16));
@@ -30,26 +63,12 @@ describe("ReadStruct", () => {
         const result = read(data, 0);
         expect(result).toEqual([1.5, 2.5]);
 
-        // Test with offset
         const result2 = read(data, 1);
         expect(result2).toEqual([3.5, 4.5]);
     });
 
     it("Vec2 object root", () => {
-        const layout = {
-            "type": "object",
-            "size": 8,
-            "fields": {
-                "x": {
-                    "offset": 0,
-                    "type": "f32"
-                },
-                "y": {
-                    "offset": 4,
-                    "type": "f32"
-                }
-            }
-        } as const satisfies StructLayout;
+        const layout = getStructLayout(vec2ObjectSchema);
         const read = createReadStruct(layout);
 
         const data = createDataView32(new ArrayBuffer(16));
@@ -60,69 +79,26 @@ describe("ReadStruct", () => {
         const result = read(data, 0);
         expect(result).toEqual({ x: 1.5, y: 2.5 });
 
-        // Test with offset
         const result2 = read(data, 1);
         expect(result2).toEqual({ x: 3.5, y: 4.5 });
     });
 
     it("Complex struct with nested arrays and primitives", () => {
-        const layout = {
-            type: "object",
-            size: 48,  // Total size rounded to vec4 (16 bytes)
-            fields: {
-                position: {
-                    offset: 0,
-                    type: {
-                        type: "array",
-                        size: 16,  // vec3 padded to vec4
-                        fields: {
-                            "0": { offset: 0, type: "f32" },
-                            "1": { offset: 4, type: "f32" },
-                            "2": { offset: 8, type: "f32" }
-                        }
-                    }
-                },
-                color: {
-                    offset: 16,  // Aligned to vec4
-                    type: {
-                        type: "array",
-                        size: 16,
-                        fields: {
-                            "0": { offset: 0, type: "f32" },
-                            "1": { offset: 4, type: "f32" },
-                            "2": { offset: 8, type: "f32" },
-                            "3": { offset: 12, type: "f32" }
-                        }
-                    }
-                },
-                age: {
-                    offset: 32,  // Aligned to vec4
-                    type: "u32"
-                },
-                charge: {
-                    offset: 36,
-                    type: "i32"
-                }
-            }
-        } as const satisfies StructLayout;
+        const layout = getStructLayout(complexStructSchema);
+        expect(layout.size).toBe(48);
         const read = createReadStruct(layout);
 
-        const data = createDataView32(new ArrayBuffer(96));  // Space for 2 structs
-        // position
+        const data = createDataView32(new ArrayBuffer(96));
         data.f32[0] = 1;
         data.f32[1] = 2;
         data.f32[2] = 3;
-        // color
         data.f32[4] = 1;
         data.f32[5] = 0;
         data.f32[6] = 0;
         data.f32[7] = 1;
-        // age
         data.u32[8] = 42;
-        // charge
         data.i32[9] = -5;
 
-        // Second struct for offset testing
         data.f32[12] = 4;
         data.f32[13] = 5;
         data.f32[14] = 6;
@@ -138,45 +114,26 @@ describe("ReadStruct", () => {
             position: [1, 2, 3],
             color: [1, 0, 0, 1],
             age: 42,
-            charge: -5
+            charge: -5,
         });
 
-        // Test with offset
         const result2 = read(data, 1);
         expect(result2).toEqual({
             position: [4, 5, 6],
             color: [0, 1, 0, 1],
             age: 24,
-            charge: 3
+            charge: 3,
         });
     });
 
     it("should only destructure used view types", () => {
-        // f32 only
-        const vec2Layout = {
-            type: "array",
-            size: 8,
-            fields: {
-                "0": { offset: 0, type: "f32" },
-                "1": { offset: 4, type: "f32" }
-            }
-        } as const satisfies StructLayout;
-        const readVec2 = createReadStruct(vec2Layout);
+        const readVec2 = createReadStruct(getStructLayout(vec2RootSchema));
         expect(readVec2.toString()).toMatch(/const { f32: __f32 } = data/);
         expect(readVec2.toString()).not.toMatch(/i32: __i32/);
         expect(readVec2.toString()).not.toMatch(/u32: __u32/);
 
-        // i32 and u32 only
-        const mixedLayout = {
-            type: "object",
-            size: 8,
-            fields: {
-                a: { offset: 0, type: "i32" },
-                b: { offset: 4, type: "u32" }
-            }
-        } as const satisfies StructLayout;
-        const readMixed = createReadStruct(mixedLayout);
+        const readMixed = createReadStruct(getStructLayout(mixedPrimitivesSchema));
         expect(readMixed.toString()).not.toMatch(/f32: __f32/);
         expect(readMixed.toString()).toMatch(/const { (?=.*i32: __i32)(?=.*u32: __u32).*? } = data/);
     });
-}); 
+});

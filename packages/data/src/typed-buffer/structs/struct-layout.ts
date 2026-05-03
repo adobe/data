@@ -19,6 +19,8 @@ export interface StructLayout {
     type: "object" | "array";
     /** Total size including padding in bytes */
     size: number;
+    /** Alignment in bytes (max alignment of any member; 1 for "packed"). */
+    align: number;
     /** Fields for struct types */
     fields: Record<string, StructLayoutField>;
     /** Layout mode used for generating this layout */

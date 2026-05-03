@@ -5,91 +5,20 @@ import { type Schema } from "../../schema/index.js";
 import { U32 } from "../../math/u32/index.js";
 import type { StructFieldPrimitiveType, StructLayout, Layout } from "./struct-layout.js";
 
-// Layout rules for different memory layouts
-const LAYOUT_RULES: { [K in Layout]: { vecAlign: number; structAlign: number; arrayAlign: number } } = {
-    "std140": {
-        vecAlign: 16,      // vec4 alignment
-        structAlign: 16,   // struct alignment
-        arrayAlign: 16     // array element alignment
-    },
-    "packed": {
-        vecAlign: 4,       // minimal alignment for vertex buffers
-        structAlign: 1,    // no struct padding
-        arrayAlign: 1      // tight packing
-    }
-} as const;
-
-
 /**
- * Gets alignment in bytes for a field within a struct
+ * Two layouts, both modelling real WebGPU buffer types:
+ *
+ * - "storage" (default) — WGSL host-shareable rules used by `var<storage>` (and `var<uniform>`
+ *   structs without arrays). vec2 aligns to 8, vec3/vec4 align to 16, struct alignment is the
+ *   max alignment of any member, and struct size is rounded up to that alignment so
+ *   `array<T>` element strides match WGSL.
+ * - "packed" — tight 4-byte packing for vertex buffer attribute streams. Vertex pipelines
+ *   describe attribute offsets explicitly so structs need no GPU-imposed alignment.
  */
-const getStructFieldAlignment = (
-    type: StructFieldPrimitiveType | StructLayout, 
-    layout: Layout
-): number => {
-    // Primitive types are always 4-byte aligned
-    if (typeof type === "string") {
-        return 4;
-    }
-    // Arrays and structs alignment depends on layout mode
-    return type.type === "array" 
-        ? LAYOUT_RULES[layout].arrayAlign 
-        : LAYOUT_RULES[layout].structAlign;
-};
 
-/**
- * Gets size in bytes for a field type
- */
-const getFieldSize = (type: StructFieldPrimitiveType | StructLayout): number => {
-    if (typeof type === "string") {
-        return 4;  // All primitives are 4 bytes
-    }
-    // For arrays and structs, use their actual size
-    return type.size;
-};
+const roundUp = (value: number, alignment: number): number =>
+    Math.ceil(value / alignment) * alignment;
 
-/**
- * Gets stride in bytes for an array element type
- */
-const getArrayElementStride = (
-    type: StructFieldPrimitiveType | StructLayout, 
-    layout: Layout
-): number => {
-    // For primitives in arrays, use 4 bytes
-    if (typeof type === "string") {
-        return 4;
-    }
-    // For structs and arrays, alignment depends on layout mode
-    if (layout === "packed") {
-        return type.size; // tight packing
-    }
-    // std140: round up to vec4
-    return roundUpToAlignment(type.size, LAYOUT_RULES.std140.vecAlign);
-};
-
-/**
- * Gets alignment for array elements
- */
-const getArrayElementAlignment = (
-    type: StructFieldPrimitiveType | StructLayout, 
-    layout: Layout
-): number => {
-    if (typeof type === "string") {
-        return 4;  // Primitives use natural alignment
-    }
-    return LAYOUT_RULES[layout].arrayAlign;
-};
-
-/**
- * Rounds up to the next multiple of alignment
- */
-const roundUpToAlignment = (offset: number, alignment: number): number => {
-    return Math.ceil(offset / alignment) * alignment;
-};
-
-/**
- * Converts a primitive schema type to a StructFieldPrimitiveType or returns null if not a valid primitive type
- */
 const getPrimitiveType = (schema: Schema): StructFieldPrimitiveType | null => {
     if (schema.type === "number" || schema.type === "integer") {
         if (schema.type === "integer") {
@@ -104,20 +33,45 @@ const getPrimitiveType = (schema: Schema): StructFieldPrimitiveType | null => {
             return "f32";
         }
     }
-
     return null;
 };
 
 /**
- * Analyzes a Schema and returns a StructLayout.
- * Returns null if schema is not a valid struct schema.
+ * Detect a WGSL vector: an array of 2/3/4 primitive scalars.
  */
+const detectVector = (schema: Schema): { primitive: StructFieldPrimitiveType; n: 2 | 3 | 4 } | null => {
+    if (schema.type !== "array" || !schema.items || Array.isArray(schema.items)) return null;
+    if (schema.minItems !== schema.maxItems) return null;
+    const n = schema.minItems;
+    if (n !== 2 && n !== 3 && n !== 4) return null;
+    const primitive = getPrimitiveType(schema.items);
+    if (!primitive) return null;
+    return { primitive, n: n as 2 | 3 | 4 };
+};
+
+const vectorAlign = (n: 2 | 3 | 4, layout: Layout): number =>
+    layout === "packed" ? 4 : (n === 2 ? 8 : 16);
+
+const vectorSize = (n: 2 | 3 | 4): number => n * 4;
+
+const sizeOfType = (type: StructFieldPrimitiveType | StructLayout): number =>
+    typeof type === "string" ? 4 : type.size;
+
+const alignOfType = (type: StructFieldPrimitiveType | StructLayout, layout: Layout): number => {
+    if (typeof type === "string") return 4;
+    if (layout === "packed") return 1;
+    return type.align;
+};
+
 const getStructLayoutInternal = memoizeFactory(
     ({ schema, layout }: { schema: Schema; layout: Layout }): StructLayout | null => getStructLayoutInternalImpl(schema, layout, false)
 );
 
-const getStructLayoutInternalImpl = (schema: Schema, layout: Layout = "std140", throwsOnError: boolean = false): StructLayout | null => {
-    // Handle root array/tuple case
+const getStructLayoutInternalImpl = (
+    schema: Schema,
+    layout: Layout = "storage",
+    throwsOnError: boolean = false,
+): StructLayout | null => {
     if (schema.type === "array") {
         if (!schema.items || Array.isArray(schema.items)) {
             if (throwsOnError) throw new Error("Array schema must have single item type");
@@ -132,110 +86,78 @@ const getStructLayoutInternalImpl = (schema: Schema, layout: Layout = "std140", 
             return null;
         }
 
-        // Special case for vec3
-        const primitiveType = getPrimitiveType(schema.items);
-        if (primitiveType && schema.minItems === 3) {
+        const vector = detectVector(schema);
+        if (vector) {
+            const align = vectorAlign(vector.n, layout);
+            const size = vectorSize(vector.n);
             const fields: StructLayout["fields"] = {};
-            for (let i = 0; i < 3; i++) {
-                fields[i.toString()] = {
-                    offset: i * 4,
-                    type: primitiveType
-                };
+            for (let i = 0; i < vector.n; i++) {
+                fields[i.toString()] = { offset: i * 4, type: vector.primitive };
             }
-            return {
-                type: "array",
-                size: 12,  // vec3 is 12 bytes, not padded to vec4
-                fields,
-                layout
-            };
+            return { type: "array", size, align, fields, layout };
         }
 
-        // Regular array case
-        const fields: StructLayout["fields"] = {};
-        const elementType = primitiveType ?? getStructLayoutInternal({ schema: schema.items, layout });
+        const primitive = getPrimitiveType(schema.items);
+        const elementType: StructFieldPrimitiveType | StructLayout | null =
+            primitive ?? getStructLayoutInternal({ schema: schema.items, layout });
         if (!elementType) {
             if (throwsOnError) throw new Error("Array element type is not a valid struct type");
             return null;
         }
-        let currentOffset = 0;
 
-        // Arrays are aligned according to layout rules
-        const arrayAlign = LAYOUT_RULES[layout].arrayAlign;
-        currentOffset = roundUpToAlignment(currentOffset, arrayAlign);
-        const elementAlignment = getArrayElementAlignment(elementType, layout);
-        const stride = getArrayElementStride(elementType, layout);
+        const elementAlign = alignOfType(elementType, layout);
+        const elementSize = sizeOfType(elementType);
+        const stride = layout === "packed" ? elementSize : roundUp(elementSize, elementAlign);
 
+        const fields: StructLayout["fields"] = {};
+        let offset = 0;
         for (let i = 0; i < schema.minItems; i++) {
-            // Align each element according to its type
-            currentOffset = roundUpToAlignment(currentOffset, elementAlignment);
-            fields[i.toString()] = {
-                offset: currentOffset,
-                type: elementType
-            };
-            currentOffset += stride;
+            fields[i.toString()] = { offset, type: elementType };
+            offset += stride;
         }
 
-        // Total size must be rounded up to alignment
-        const finalAlign = layout === "packed" ? 1 : arrayAlign;
-        const size = roundUpToAlignment(currentOffset, finalAlign);
-        return {
-            type: "array",
-            size,
-            fields,
-            layout
-        };
+        const align = layout === "packed" ? 1 : elementAlign;
+        const size = layout === "packed" ? offset : roundUp(offset, align);
+        return { type: "array", size, align, fields, layout };
     }
 
-    // Handle object case
     if (schema.type !== "object" || !schema.properties) {
         if (throwsOnError) throw new Error("Schema must be an object type with properties definition");
         return null;
     }
 
     const fields: StructLayout["fields"] = {};
-    let currentOffset = 0;
-
-    // First pass: create all fields and calculate alignments
+    let offset = 0;
+    let maxAlign = 1;
     for (const [name, fieldSchema] of Object.entries(schema.properties)) {
-        const primitiveType = getPrimitiveType(fieldSchema);
-        const fieldType = primitiveType ?? getStructLayoutInternal({ schema: fieldSchema, layout });
+        const primitive = getPrimitiveType(fieldSchema);
+        const fieldType: StructFieldPrimitiveType | StructLayout | null =
+            primitive ?? getStructLayoutInternal({ schema: fieldSchema, layout });
         if (!fieldType) {
             if (throwsOnError) throw new Error(`Field "${name}" is not a valid struct type`);
             return null;
         }
-        const alignment = getStructFieldAlignment(fieldType, layout);
 
-        // Align field to its required alignment
-        currentOffset = roundUpToAlignment(currentOffset, alignment);
-        fields[name] = {
-            offset: currentOffset,
-            type: fieldType
-        };
-        currentOffset += getFieldSize(fieldType);
+        const fieldAlign = alignOfType(fieldType, layout);
+        offset = roundUp(offset, fieldAlign);
+        fields[name] = { offset, type: fieldType };
+        offset += sizeOfType(fieldType);
+        if (fieldAlign > maxAlign) maxAlign = fieldAlign;
     }
 
-    // Round up total size according to layout rules
-    const finalAlign = layout === "packed" ? 1 : LAYOUT_RULES.std140.structAlign;
-    const size = roundUpToAlignment(currentOffset, finalAlign);
-    return {
-        type: "object",
-        size,
-        fields,
-        layout
-    };
+    const align = layout === "packed" ? 1 : maxAlign;
+    const size = layout === "packed" ? offset : roundUp(offset, align);
+    return { type: "object", size, align, fields, layout };
 };
 
 export function getStructLayout(schema: Schema): StructLayout
 export function getStructLayout(schema: Schema, throwError: boolean): StructLayout | null
 export function getStructLayout(
-    schema: Schema, 
-    throwError: boolean = true
+    schema: Schema,
+    throwError: boolean = true,
 ): StructLayout | null {
-    // Read layout from schema with fallback to "std140"
-    const layout = schema.layout ?? "std140";
-    
-    // If we need to throw errors, call the implementation directly with throwError=true
-    // Otherwise, use the memoized version for better performance
+    const layout = schema.layout ?? "storage";
+
     if (throwError) {
         return getStructLayoutInternalImpl(schema, layout, true);
     } else {

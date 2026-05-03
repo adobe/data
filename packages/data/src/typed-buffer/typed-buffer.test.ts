@@ -4,7 +4,7 @@ import { createTypedBuffer } from './create-typed-buffer.js';
 import { createNumberBuffer, numberBufferType } from './create-number-buffer.js';
 import { arrayBufferType, createArrayBuffer } from './create-array-buffer.js';
 import { createStructBuffer, structBufferType } from './create-struct-buffer.js';
-import { isTypedBuffer } from './is-typed-buffer.js';
+import { createBooleanBuffer, booleanBufferType } from './create-boolean-buffer.js';
 
 describe('TypedBuffer copyWithin', () => {
     describe('NumberBuffer', () => {
@@ -115,6 +115,39 @@ describe('TypedBuffer copyWithin', () => {
         });
     });
 
+    describe('BooleanBuffer', () => {
+        it('should copy elements within the same buffer', () => {
+            const buffer = createBooleanBuffer({ type: 'boolean' }, 5);
+
+            for (let i = 0; i < 5; i++) {
+                buffer.set(i, i % 2 === 0);
+            }
+
+            buffer.copyWithin(2, 0, 3);
+            expect(buffer.get(0)).toBe(true);
+            expect(buffer.get(1)).toBe(false);
+            expect(buffer.get(2)).toBe(true);
+            expect(buffer.get(3)).toBe(false);
+            expect(buffer.get(4)).toBe(true);
+        });
+
+        it('should handle negative indices', () => {
+            const buffer = createBooleanBuffer({ type: 'boolean' }, 5);
+
+            for (let i = 0; i < 5; i++) {
+                buffer.set(i, i % 2 === 1);
+            }
+
+            buffer.copyWithin(0, -2, buffer.capacity);
+            // Copies indices 3 and 4 (true, false) to 0 and 1
+            expect(buffer.get(0)).toBe(true);
+            expect(buffer.get(1)).toBe(false);
+            expect(buffer.get(2)).toBe(false);
+            expect(buffer.get(3)).toBe(true);
+            expect(buffer.get(4)).toBe(false);
+        });
+    });
+
     describe('StructBuffer', () => {
         const vec2Schema = {
             type: 'object',
@@ -211,6 +244,16 @@ describe('TypedBuffer copyWithin', () => {
             structBuffer.copyWithin(2, 0, 2);
             expect(structBuffer.get(2)).toEqual({ x: 1, y: 2 });
             expect(structBuffer.get(3)).toEqual({ x: 3, y: 4 });
+        });
+
+        it('should create boolean buffer from boolean schema', () => {
+            const booleanBuffer = createTypedBuffer({ type: 'boolean' }, 4);
+            expect(booleanBuffer.type).toBe(booleanBufferType);
+            booleanBuffer.set(0, true);
+            booleanBuffer.set(1, false);
+            booleanBuffer.copyWithin(2, 0, 2);
+            expect(booleanBuffer.get(2)).toBe(true);
+            expect(booleanBuffer.get(3)).toBe(false);
         });
     });
 });

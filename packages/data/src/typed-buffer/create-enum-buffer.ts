@@ -4,6 +4,7 @@ import { Schema } from "../schema/index.js";
 import { TypedArray } from "../internal/typed-array/index.js";
 import { TypedBuffer, TypedBufferType } from "./typed-buffer.js";
 import { createSharedArrayBuffer } from "../internal/shared-array-buffer/create-shared-array-buffer.js";
+import { normalizeFillRange } from "./normalize-fill-range.js";
 
 export const enumBufferType = "enum";
 
@@ -83,6 +84,20 @@ class EnumTypedBuffer<T> extends TypedBuffer<T> {
             );
         }
         this.array[index] = enumIndex;
+    }
+
+    fill(value: T, start?: number, end?: number): void {
+        const enumIndex = this.valueToIndex.get(value);
+        if (enumIndex === undefined) {
+            throw new Error(
+                `Value ${JSON.stringify(value)} is not a valid enum value. ` +
+                `Expected one of: ${this.indexToValue.map(v => JSON.stringify(v)).join(", ")}`
+            );
+        }
+        const range = normalizeFillRange(this._capacity, start, end);
+        if (range) {
+            this.array.fill(enumIndex, ...range);
+        }
     }
 
     isDefault(index: number): boolean {

@@ -6,6 +6,7 @@ import { TypedArrayConstructor, TypedArray } from "../internal/typed-array/index
 import { U32 } from "../math/u32/index.js";
 import { TypedBuffer, TypedBufferType } from "./typed-buffer.js";
 import { createSharedArrayBuffer } from "../internal/shared-array-buffer/create-shared-array-buffer.js";
+import { normalizeFillRange } from "./normalize-fill-range.js";
 
 const getTypedArrayConstructor = (schema: Schema): TypedArrayConstructor => {
     if (schema.type === 'number' || schema.type === 'integer') {
@@ -69,6 +70,13 @@ class NumberTypedBuffer extends TypedBuffer<number> {
 
     set(index: number, value: number): void {
         this.array[index] = value;
+    }
+
+    fill(value: number, start?: number, end?: number): void {
+        const range = normalizeFillRange(this._capacity, start, end);
+        if (range) {
+            this.array.fill(value, ...range);
+        }
     }
 
     isDefault(index: number): boolean {

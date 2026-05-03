@@ -33,6 +33,10 @@ class ConstTypedBuffer<T> extends TypedBuffer<T> {
         // No-op: const buffer ignores set calls
     }
 
+    fill(_value: T, _start?: number, _end?: number): void {
+        // No-op: const buffer ignores fill
+    }
+
     isDefault(_index: number): boolean {
         return this.constValue === this.schema.default;
     }

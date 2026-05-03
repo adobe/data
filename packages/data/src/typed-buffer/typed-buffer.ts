@@ -3,7 +3,7 @@ import { TypedArray } from "../internal/typed-array/index.js";
 import { Schema } from "../schema/index.js";
 import { typedBufferEquals } from "./typed-buffer-equals.js";
 
-export type TypedBufferType = "array" | "const" | "enum" | "number" | "struct";
+export type TypedBufferType = "array" | "boolean" | "const" | "enum" | "number" | "struct";
 
 export interface ReadonlyTypedBuffer<T> {
     readonly type: TypedBufferType;
@@ -34,6 +34,11 @@ export abstract class TypedBuffer<T> implements ReadonlyTypedBuffer<T> {
     abstract get(index: number): T;
     abstract slice(start?: number, end?: number): ArrayLike<T> & Iterable<T>;
     abstract set(index: number, value: T): void;
+    /**
+     * Sets indices [start, end) to value. Indices are clamped to the buffer; there is no
+     * negative-from-end indexing (unlike TypedArray.fill).
+     */
+    abstract fill(value: T, start?: number, end?: number): void;
     abstract copy(): TypedBuffer<T>;
     abstract isDefault(index: number): boolean;
 

@@ -2,11 +2,12 @@
 import { Schema } from "../schema/index.js";
 import { createStructBuffer } from "./create-struct-buffer.js";
 import { getStructLayout } from "./structs/get-struct-layout.js";
-import { TypedBuffer } from "./typed-buffer.js";
+import type { TypedBuffer } from "./typed-buffer.js";
 import { createNumberBuffer } from "./create-number-buffer.js";
 import { createArrayBuffer } from "./create-array-buffer.js";
 import { createConstBuffer } from "./create-const-buffer.js";
 import { createEnumBuffer } from "./create-enum-buffer.js";
+import { createBooleanBuffer } from "./create-boolean-buffer.js";
 
 export function createTypedBuffer <S extends Schema>(
     schema: S,
@@ -45,6 +46,10 @@ function createTypedBufferInternal <S extends Schema>(
 
     if (schema.type === 'number' || schema.type === 'integer') {
         return createNumberBuffer(schema, initialCapacity) as TypedBuffer<Schema.ToType<S>>;
+    }
+
+    if (schema.type === 'boolean') {
+        return createBooleanBuffer(schema, initialCapacity) as TypedBuffer<Schema.ToType<S>>;
     }
 
     // If schema has layout property, it should be treated as a struct layout

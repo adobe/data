@@ -9,6 +9,8 @@ import { getStructLayout } from "./structs/get-struct-layout.js";
 import { TypedBuffer, TypedBufferType } from "./typed-buffer.js";
 import { TypedArray } from "../internal/typed-array/index.js";
 import { createSharedArrayBuffer } from "../internal/shared-array-buffer/create-shared-array-buffer.js";
+import { normalizeFillRange } from "./normalize-fill-range.js";
+import { isStructLayoutZeroValue } from "./structs/is-struct-layout-zero-value.js";
 
 export const structBufferType = "struct";
 
@@ -74,6 +76,23 @@ class StructTypedBuffer<S extends Schema, ArrayType extends keyof DataView32 = "
 
     set(index: number, value: Schema.ToType<S>): void {
         this.write(this.dataView, index, value);
+    }
+
+    fill(value: Schema.ToType<S>, start?: number, end?: number): void {
+        const range = normalizeFillRange(this._capacity, start, end);
+        if (!range) {
+            return;
+        }
+        const [k, fin] = range;
+        if (isStructLayoutZeroValue(this.layout, value)) {
+            const byteOffset = k * this.layout.size;
+            const byteLength = (fin - k) * this.layout.size;
+            new Uint8Array(this.arrayBuffer, byteOffset, byteLength).fill(0);
+            return;
+        }
+        for (let i = k; i < fin; i++) {
+            this.write(this.dataView, i, value);
+        }
     }
 
     isDefault(index: number): boolean {

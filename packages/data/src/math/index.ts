@@ -10,8 +10,6 @@ export * from "./vec2/index.js";
 export * from "./vec3/index.js";
 export * from "./vec4/index.js";
 export * from "./quat/index.js";
-export * from "./aabb/index.js";
-export { Aabb } from "./aabb/index.js";
 export * from "./line2/index.js";
 export * from "./line3/index.js";
 export * from "./plane/index.js";

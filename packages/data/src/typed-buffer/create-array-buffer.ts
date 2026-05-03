@@ -2,6 +2,7 @@
 import { Schema } from "../schema/index.js";
 import { TypedBuffer, TypedBufferType } from "./typed-buffer.js";
 import { TypedArray } from "../internal/typed-array/index.js";
+import { normalizeFillRange } from "./normalize-fill-range.js";
 
 export const arrayBufferType = "array";
 
@@ -38,6 +39,13 @@ class ArrayTypedBuffer<T> extends TypedBuffer<T> {
 
     set(index: number, value: T): void {
         this.array[index] = value;
+    }
+
+    fill(value: T, start?: number, end?: number): void {
+        const range = normalizeFillRange(this.array.length, start, end);
+        if (range) {
+            this.array.fill(value, ...range);
+        }
     }
 
     isDefault(index: number): boolean {

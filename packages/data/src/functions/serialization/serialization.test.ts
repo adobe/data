@@ -41,6 +41,7 @@ describe('serialize/deserialize', () => {
         { name: "John", age: 30 },
         { name: "Jane", age: 25 },
       ]),
+      flags: createTypedBuffer({ type: "boolean" }, [true, false, true]),
     };
     // console.log(original);
     const payload = serialize(original);

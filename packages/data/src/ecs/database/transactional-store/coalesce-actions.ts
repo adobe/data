@@ -25,21 +25,18 @@ export function shouldCoalesceTransactions(
 export function coalesceWriteOperations(operations: TransactionWriteOperation<any>[]): TransactionWriteOperation<any>[] {
     if (operations.length <= 1) return operations;
 
-    // Simple approach: just merge consecutive update operations on the same entity
     const result: TransactionWriteOperation<any>[] = [];
+    const deletedEntities = new Set<number>();
     let i = 0;
 
     while (i < operations.length) {
         const current = operations[i];
 
-        // Look ahead to see if we can merge with next operations
         if (current.type === "update") {
             const mergedValues = { ...current.values };
             let j = i + 1;
 
-            // Merge consecutive updates on the same entity
-            while (j < operations.length &&
-                operations[j].type === "update") {
+            while (j < operations.length && operations[j].type === "update") {
                 const nextOp = operations[j];
                 if (nextOp.type === "update" && nextOp.entity === current.entity) {
                     Object.assign(mergedValues, nextOp.values);
@@ -49,47 +46,25 @@ export function coalesceWriteOperations(operations: TransactionWriteOperation<an
                 }
             }
 
-            if (j > i + 1) {
-                // We merged some operations
-                result.push({
-                    type: "update",
-                    entity: current.entity,
-                    values: mergedValues
-                });
-                i = j;
-            } else {
-                // No merging possible
-                result.push(current);
-                i++;
-            }
-        } else if (current.type === "insert") {
-            // Cannot safely merge insert + update since insert doesn't have an entity ID
-            // to verify the update is on the same entity
+            result.push(j > i + 1 ? { type: "update", entity: current.entity, values: mergedValues } : current);
+            i = j > i + 1 ? j : i + 1;
+        } else if (current.type === "delete") {
+            deletedEntities.add(current.entity);
             result.push(current);
             i++;
         } else {
-            // For delete operations, remove any preceding update operations on the same entity
-            if (current.type === "delete") {
-                // Remove any preceding update operations on the same entity
-                const deleteEntity = current.entity;
-                for (let k = result.length - 1; k >= 0; k--) {
-                    const op = result[k];
-                    if (op.type === "update" && op.entity === deleteEntity) {
-                        result.splice(k, 1);
-                    }
-                }
-                
-                // Add the delete operation
-                result.push(current);
-                i++;
-            } else {
-                result.push(current);
-                i++;
-            }
+            result.push(current);
+            i++;
         }
     }
 
-    return result;
+    if (deletedEntities.size === 0) return result;
+
+    // Single O(N) pass to strip updates for entities that were later deleted.
+    // An update-after-delete for the same entity is impossible in this codebase
+    // (updateEntity throws "Entity not found" after a delete), so filtering all
+    // updates whose entity appears in the delete set is semantics-preserving.
+    return result.filter(op => !(op.type === "update" && deletedEntities.has(op.entity)));
 }
 
 /**

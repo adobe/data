@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { describe, it, expect } from "vitest";
-import { shouldCoalesceTransactions, coalesceTransactions } from "./coalesce-actions.js";
+import { shouldCoalesceTransactions, coalesceTransactions, coalesceWriteOperations } from "./coalesce-actions.js";
 import { TransactionResult } from "./transactional-store.js";
 
 describe("shouldCoalesceTransactions", () => {
@@ -464,6 +464,7 @@ describe("coalesceTransactions", () => {
     });
 
     it("should NOT merge insert + update on different entities", () => {
+
         const previous: TransactionResult<any> = {
             value: 1,
             transient: false,
@@ -494,5 +495,40 @@ describe("coalesceTransactions", () => {
         expect(result.redo).toHaveLength(2);
         expect(result.redo[0]).toEqual({ type: "insert", values: { position: { x: 1 } } });
         expect(result.redo[1]).toEqual({ type: "update", entity: 456, values: { position: { y: 2 } } });
+    });
+});
+
+describe("coalesceWriteOperations performance", () => {
+    it("should run in linear time (not quadratic) for N delete operations", () => {
+        // N delete ops produce O(N²) work in the buggy implementation because each
+        // delete scans all previously-built results. At N=25_000 the quadratic path
+        // takes ~450ms; the linear fix takes <20ms.
+        const N = 25_000;
+        const ops = Array.from({ length: N }, (_, i) => ({
+            type: "delete" as const,
+            entity: i,
+        }));
+
+        const start = performance.now();
+        coalesceWriteOperations(ops);
+        const elapsed = performance.now() - start;
+
+        // 100ms budget: well above the linear path (~20ms) but well below the
+        // quadratic path (~450ms), making the regression unambiguous.
+        expect(elapsed).toBeLessThan(100);
+    });
+
+    it("should strip preceding updates for deleted entities", () => {
+        const ops = [
+            { type: "update" as const, entity: 1, values: { x: 1 } },
+            { type: "update" as const, entity: 2, values: { y: 2 } },
+            { type: "delete" as const, entity: 1 },
+        ];
+
+        const result = coalesceWriteOperations(ops);
+
+        expect(result).toHaveLength(2);
+        expect(result[0]).toEqual({ type: "update", entity: 2, values: { y: 2 } });
+        expect(result[1]).toEqual({ type: "delete", entity: 1 });
     });
 }); 

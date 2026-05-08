@@ -18,7 +18,7 @@ interface SimpleAuthService extends Service {
   isSignedIn: Observe<boolean | null>;
   accessToken: Observe<string | null>;
   userProfile: Observe<{ readonly name: string; readonly id: string } | null>;
-  
+
   showSignInDialog: () => void;
   hideSignInDialog: () => void;
   refreshToken: () => Promise<void>;
@@ -53,6 +53,64 @@ interface ConfigurableService extends Service {
 }
 
 type _CheckConfigurableService = Assert<IsValid<ConfigurableService>>;
+
+// ============================================================================
+// PATTERNS FROM REAL SERVICE CONTRACTS (names changed for open-source use)
+// ============================================================================
+
+// Session service: nullable-not-undefined observables, optional trailing params.
+// Mirrors the authentication-service shape from a real platform codebase.
+interface SessionService extends Service {
+  isActive: Observe<boolean | null>;
+  token: Observe<string | null>;
+  profile: Observe<{ readonly id: string; readonly name: string } | null>;
+  isDialogOpen: Observe<boolean>;
+
+  openDialog(scenario?: string): void;
+  closeDialog(): void;
+  refresh(): Promise<void>;
+  validate(): Promise<boolean>;
+  signIn(redirectUrl: string, openInTab: boolean): Promise<void>;
+  signOut(redirectUrl?: string): Promise<void>;
+  dispose(): void;
+}
+
+type _CheckSessionService = Assert<IsValid<SessionService>>;
+
+// Quota service: optional config object with nested optional booleans,
+// return type contains optional string fields.
+// Mirrors the storage-quota-service shape from a real platform codebase.
+type QuotaInfo = {
+  readonly used: number | null;
+  readonly total: number | null;
+  readonly isExceeded: boolean;
+  readonly manageUrl?: string;
+  readonly raw?: Data;
+};
+
+interface QuotaService extends Service {
+  fetch(options?: { forceRefresh?: boolean }): Promise<QuotaInfo>;
+}
+
+type _CheckQuotaService = Assert<IsValid<QuotaService>>;
+
+// Recognition service: optional Partial<Config> param.
+// Mirrors the dictation-service shape from a real platform codebase.
+type RecognitionConfig = {
+  readonly language: 'en-US' | 'en-GB';
+  readonly continuous: boolean;
+  readonly maxResults: number;
+};
+
+interface RecognitionService extends Service {
+  status: Observe<'idle' | 'active' | 'error'>;
+  text: Observe<{ readonly transcript: string; readonly isFinal: boolean }>;
+  start(config?: Partial<RecognitionConfig>): void;
+  stop(): void;
+  dispose(): void;
+}
+
+type _CheckRecognitionService = Assert<IsValid<RecognitionService>>;
 
 // ============================================================================
 // VALID USAGE TESTS

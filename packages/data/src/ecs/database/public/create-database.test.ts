@@ -447,10 +447,11 @@ describe("createDatabase", () => {
                 throw new Error("Sequential transaction failed");
             }
 
-            // Start the transaction
-            const transactionPromise = store.transactions.createPositionNameEntity(() => multiYieldErrorStream());
-            // Attach a no-op catch immediately so Node doesn't fire unhandledRejection
-            // while we wait below — we still observe the error via the try/catch further down.
+            // Start the transaction. At runtime the database returns a Promise when the
+            // provider is an async generator, but the static type is number (entity id).
+            // Cast so we can attach a no-op .catch immediately — without it Node fires
+            // unhandledRejection during the wait below, before our try/catch runs.
+            const transactionPromise = store.transactions.createPositionNameEntity(() => multiYieldErrorStream()) as unknown as Promise<unknown>;
             void transactionPromise.catch(() => {});
 
             // Wait a bit to let some yields process

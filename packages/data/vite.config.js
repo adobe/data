@@ -20,6 +20,7 @@ export default defineConfig({
       enabled: true,
       name: 'chromium', // browser name is required
       headless: true,
+      include: ['**/*.browser.test.ts'], // only tests that need browser APIs run in Chromium
       options: {
         launch: {},
       },

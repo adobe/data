@@ -449,6 +449,9 @@ describe("createDatabase", () => {
 
             // Start the transaction
             const transactionPromise = store.transactions.createPositionNameEntity(() => multiYieldErrorStream());
+            // Attach a no-op catch immediately so Node doesn't fire unhandledRejection
+            // while we wait below — we still observe the error via the try/catch further down.
+            void transactionPromise.catch(() => {});
 
             // Wait a bit to let some yields process
             await new Promise(resolve => setTimeout(resolve, 5));

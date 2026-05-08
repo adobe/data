@@ -1,30 +1,19 @@
 import { defineConfig } from 'vite'
 
-// we have to turn off the webdriverio test runner when running in vscode debug mode
-const IS_RUNNING_VSCODE_DEBUG = typeof process.env.VSCODE_INSPECTOR_OPTIONS === 'string';
-
 export default defineConfig({
   root: '.',
   build: {
     outDir: 'dist'
   },
-  server: {
-    port: 3000,
-    open: false
-  },
   test: {
-    exclude: ['**/node_modules/**', '**/dist/**', '**/references/**'],
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/references/**',
+      '**/assembly-test/**',
+    ],
+    setupFiles: ['./src/test-setup.ts'],
     tsconfig: './tsconfig-base.json',
-    browser: IS_RUNNING_VSCODE_DEBUG ? {} : {
-      provider: 'playwright',
-      enabled: true,
-      name: 'chromium', // browser name is required
-      headless: true,
-      include: ['**/*.browser.test.ts'], // only tests that need browser APIs run in Chromium
-      options: {
-        launch: {},
-      },
-    },
     silent: false,
     reporters: 'verbose',
   }

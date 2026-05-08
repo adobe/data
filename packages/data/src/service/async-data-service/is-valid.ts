@@ -53,6 +53,14 @@ interface _ExampleService extends Service {
 // Validates that the example service conforms to async-data-service pattern
 type _ExampleServiceCheck = Assert<IsValid<_ExampleService>>;
 
+// Negative: Observe<T | undefined> is rejected — services must use null, not undefined,
+// to represent the absence of a value.  undefined is not data.
+interface _InvalidObserveUndefinedService extends Service {
+  value: Observe<string | undefined>;
+}
+// @ts-expect-error — use Observe<string | null> instead of Observe<string | undefined>
+type _CheckInvalidObserveUndefined = Assert<IsValid<_InvalidObserveUndefinedService>>;
+
 // Helper: Check if a return type is valid
 type ValidReturnType<R> =
   R extends Observe<infer T>
@@ -65,16 +73,19 @@ type ValidReturnType<R> =
   ? G extends Data ? true : false
   : false;
 
-// Helper: Check if all arguments are Data
+// Helper: Check if all arguments are Data.
+// Strips `undefined` before the Data check so optional parameters (`arg?: T`)
+// are accepted when T extends Data — the `| undefined` comes from the TypeScript
+// optional-parameter encoding, not from a caller passing actual undefined values.
 type AllArgsAreData<Args extends readonly any[]> =
   Args extends readonly []
   ? true
   : Args extends readonly [infer First, ...infer Rest]
-  ? First extends Data
+  ? Exclude<First, undefined> extends Data
   ? AllArgsAreData<Rest>
   : false
   : Args extends readonly (infer Element)[]
-  ? Element extends Data ? true : false
+  ? Exclude<Element, undefined> extends Data ? true : false
   : false;
 
 // Helper: Check if a single property is valid

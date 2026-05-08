@@ -26,10 +26,11 @@ export type IsData<T> =
   ? EqualReadonly<T, ReadonlyArray<U>> extends true
   ? IsData<U>
   : false
-  // plain objects: 1) fully readonly, 2) every value is Data
+  // plain objects: 1) fully readonly, 2) every value (excluding the `| undefined`
+  // that TypeScript adds for optional properties) is Data
   : T extends object
   ? IsFullyReadonly<T> extends true
-  ? { [K in keyof T]-?: IsData<T[K]> }[keyof T] extends false
+  ? { [K in keyof T]-?: IsData<Exclude<T[K], undefined>> }[keyof T] extends false
   ? false
   : true
   : false
@@ -45,5 +46,12 @@ interface Bar {
   readonly x: number; // readonly ✔️
 }
 
+interface Baz {
+  readonly label: string;
+  readonly count?: number; // optional ✔️ — absence is fine, undefined is not data
+  readonly meta?: { readonly tag: string }; // nested optional ✔️
+}
+
 type IsFooData = Assert<EqualReadonly<IsData<Foo>, false>>; // false
 type IsBarData = Assert<EqualReadonly<IsData<Bar>, true>>; // true
+type IsBazData = Assert<EqualReadonly<IsData<Baz>, true>>; // true — optional props are OK

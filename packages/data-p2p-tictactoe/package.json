@@ -10,7 +10,9 @@
   },
   "dependencies": {
     "@adobe/data": "workspace:*",
-    "@adobe/data-sync": "workspace:*"
+    "@adobe/data-lit": "workspace:*",
+    "@adobe/data-sync": "workspace:*",
+    "lit": "^3.3.1"
   },
   "devDependencies": {
     "typescript": "^5.8.3",

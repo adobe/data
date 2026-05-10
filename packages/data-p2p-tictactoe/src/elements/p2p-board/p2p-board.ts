@@ -52,22 +52,22 @@ export class P2pBoard extends P2pElement {
             let active = true;
 
             (async () => {
-                for await (const { x, y } of gen) {
-                    if (!active) break;
-                    const { width, height } = this.getBoundingClientRect();
-                    if (!width || !height) continue;
-                    this.syncClient.sendTransient({
-                        id: PRESENCE_ID[this.myMark],
-                        name: "movePresence",
-                        args: { mark: this.myMark, x: x / width, y: y / height },
-                        time: -1,
-                    });
-                }
+                    for await (const [px, py] of gen) {
+                        if (!active) break;
+                        const { width, height } = this.getBoundingClientRect();
+                        if (!width || !height) continue;
+                        this.syncClient.sendTransient({
+                            id: PRESENCE_ID[this.myMark],
+                            name: "movePresence",
+                            args: { mark: this.myMark, x: px / width, y: py / height },
+                            time: -1,
+                        });
+                    }
             })();
 
             return () => {
                 active = false;
-                void gen.return(undefined as unknown as { x: number; y: number });
+                void gen.return(undefined as unknown as [number, number]);
             };
         }, []);
 

@@ -1,16 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Observe } from "@adobe/data/observe";
+import { Vec2 } from "@adobe/data/math";
 import { useElement } from "./use-element.js";
 import { useEffect } from "./use-effect.js";
 import { useMemo } from "./use-memo.js";
 
-export type PointerPosition = { readonly x: number; readonly y: number };
-
 /**
- * Returns an `Observe<PointerPosition>` that fires on every `pointermove`
- * over the host element. Coordinates are relative to the element's bounding
- * box, in pixels.
+ * Returns an `Observe<Vec2>` that fires on every `pointermove` over the host
+ * element. Coordinates are relative to the element's bounding box, in pixels.
  *
  * This is the primitive for **continuous** pointer tracking — presence
  * indicators, live cursors, heat-maps, etc. It is intentionally simpler than
@@ -28,12 +26,12 @@ export type PointerPosition = { readonly x: number; readonly y: number };
  *   const gen = Observe.toAsyncGenerator(pointerPos, () => false);
  *   let active = true;
  *   (async () => {
- *     for await (const { x, y } of gen) {
+ *     for await (const [px, py] of gen) {
  *       if (!active) break;
  *       syncClient.sendTransient({
  *         id: PRESENCE_ID,
  *         name: "movePresence",
- *         args: { userId, x, y },
+ *         args: { userId, x: px, y: py },
  *         time: -1,
  *       });
  *     }
@@ -52,12 +50,12 @@ export type PointerPosition = { readonly x: number; readonly y: number };
  * called (e.g. on component disconnect), which is the correct lifetime for
  * a presence stream.
  */
-export function usePointerObserve(dependencies: unknown[]): Observe<PointerPosition> {
+export function usePointerObserve(dependencies: unknown[]): Observe<Vec2> {
     // useMemo ensures the same [observe, notify] pair is reused across renders
     // as long as dependencies are stable — critical so subscribers registered
     // in a sibling useEffect don't miss events fired between renders.
     const [pos, setPos] = useMemo(
-        () => Observe.createEvent<PointerPosition>(),
+        () => Observe.createEvent<Vec2>(),
         dependencies,
     );
 
@@ -66,7 +64,7 @@ export function usePointerObserve(dependencies: unknown[]): Observe<PointerPosit
     useEffect(() => {
         const handler = (e: PointerEvent) => {
             const rect = element.getBoundingClientRect();
-            setPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+            setPos([e.clientX - rect.left, e.clientY - rect.top]);
         };
         element.addEventListener("pointermove", handler);
         return () => element.removeEventListener("pointermove", handler);

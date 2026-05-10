@@ -2,12 +2,20 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Observe } from "@adobe/data/observe";
+import type { SyncClient } from "@adobe/data-sync";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export type PlayerMark = "X" | "O";
+
+/**
+ * Ephemeral-only — tracks which screen the local peer is on.
+ * Applied directly to the local DB (never through syncClient.propose),
+ * so it never reaches the remote peer.
+ */
+export type Phase = "idle" | "host-signaling" | "join-signaling" | "game";
 export type Cell = " " | PlayerMark;
 
 /**
@@ -69,10 +77,20 @@ export const Board = {
 
 export const p2pPlugin = Database.Plugin.create({
     resources: {
+        // ── Game state (synced to peer via syncClient.propose / sendTransient) ──
         board: { default: Board.empty() },
         firstPlayer: { default: "X" as PlayerMark },
         cursorX: { default: null as PresenceCursor },
         cursorO: { default: null as PresenceCursor },
+
+        // ── Ephemeral local state (applied directly to DB, never synced) ──
+        phase:       { default: "idle" as Phase },
+        offerCode:   { default: "" as string },
+        answerCode:  { default: "" as string },
+        bannerText:  { default: "" as string },
+        bannerError: { default: false as boolean },
+        myMark:      { default: null as PlayerMark | null },
+        syncClient:  { default: null as SyncClient | null },
     },
     computed: {
         currentPlayer: (db) =>
@@ -88,6 +106,38 @@ export const p2pPlugin = Database.Plugin.create({
             Observe.withFilter(db.observe.resources.board, Board.winningLine),
     },
     transactions: {
+        // ── Ephemeral phase transitions (local only, never propose()d) ──
+
+        startHostSignaling(t) {
+            t.resources.phase = "host-signaling";
+            t.resources.bannerText = "Generating invite code — please wait…";
+            t.resources.bannerError = false;
+        },
+        startJoinSignaling(t) {
+            t.resources.phase = "join-signaling";
+            t.resources.bannerText = "";
+            t.resources.bannerError = false;
+        },
+        setOfferCode(t, { code }: { code: string }) {
+            t.resources.offerCode = code;
+            t.resources.bannerText = "";
+        },
+        setAnswerCode(t, { code }: { code: string }) {
+            t.resources.answerCode = code;
+            t.resources.bannerText = "";
+        },
+        setBanner(t, { text, error = false }: { text: string; error?: boolean }) {
+            t.resources.bannerText = text;
+            t.resources.bannerError = error;
+        },
+        connected(t, { myMark, syncClient }: { myMark: PlayerMark; syncClient: SyncClient }) {
+            t.resources.myMark = myMark;
+            t.resources.syncClient = syncClient;
+            t.resources.phase = "game";
+        },
+
+        // ── Game transactions (go through syncClient.propose / sendTransient) ──
+
         playMove(t, args: { index: number }) {
             if (!Board.canPlay(t.resources.board, args.index)) return;
             const mark = Board.currentPlayer(t.resources.board, t.resources.firstPlayer);

@@ -15,15 +15,10 @@ the table at the bottom.
 
 ## Exports
 
-A presentation file exports exactly:
-
-- `render` (required) — the pure function.
-- `unlocalized` (optional) — `as const satisfies Unlocalized` string
-  bundle for localisation.
-
-No other exports. No types, styles, helpers, constants, or re-exports.
-If you need shared logic, keep it inside `render` as a local helper. If
-you need shared UI, that's another presentation.
+A presentation file exports exactly one symbol: `render` — the pure
+function. No types, styles, helpers, constants, or re-exports. If you
+need shared logic, keep it inside `render` as a local helper. If you
+need shared UI, that's another presentation.
 
 Consumers derive the props type via `Parameters<typeof render>[0]` —
 never declare or export a separate props type.

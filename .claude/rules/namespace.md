@@ -1,7 +1,6 @@
 ---
 paths:
-  - 'packages/**/types/**/*.ts'
-  - 'packages/**/src/types/**/*.ts'
+  - 'packages/**/src/**/*.ts'
 ---
 
 # Type namespace pattern

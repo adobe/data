@@ -10,7 +10,7 @@ export type {
     IncrementalPersistenceServiceOptions,
 } from "./incremental-persistence-service.js";
 
-export type { PersistenceMount, ProviderMountOptions as _ProviderMountOptions } from "../provider/persistence-provider.js";
+export type { ProviderMountOptions as _ProviderMountOptions } from "../provider/persistence-provider.js";
 
 import type { IncrementalPersistenceService, IncrementalPersistenceServiceOptions } from "./incremental-persistence-service.js";
 import type { PersistenceMount, ProviderMountOptions } from "../provider/persistence-provider.js";

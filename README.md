@@ -7,6 +7,8 @@ Adobe Data Oriented Programming Library
 
 [ECS Performance Test](https://adobe.github.io/data/perftest.html)
 
+[P2P Tic-Tac-Toe Demo](https://adobe.github.io/data/p2p-tictactoe/) — serverless browser-to-browser multiplayer via WebRTC + @adobe/data-sync
+
 ## Breaking API Changes
 
 Until we reach 1.0.0, minor version changes may be API breaking.

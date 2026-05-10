@@ -36,6 +36,14 @@ jobs:
 
       - run: cp -r packages/data/dist packages/data/docs/dist
 
+      - run: pnpm --filter @adobe/data-sync build
+
+      - run: pnpm --filter data-p2p-tictactoe build
+        env:
+          CI: true
+
+      - run: cp -r packages/data-p2p-tictactoe/dist packages/data/docs/p2p-tictactoe
+
       - uses: actions/configure-pages@v5
         with:
           enablement: true

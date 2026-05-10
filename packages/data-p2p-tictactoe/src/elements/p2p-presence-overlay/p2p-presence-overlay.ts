@@ -7,18 +7,19 @@ import { html, css } from "lit";
 import { customElement } from "lit/decorators.js";
 import { DatabaseElement, useObservableValues, usePointerObserve, useEffect, useElement } from "@adobe/data-lit";
 import { Observe } from "@adobe/data/observe";
+import { PlayerMark } from "data-lit-tictactoe";
 import { presencePlugin } from "../../state/presence-plugin.js";
 
 export const tagName = "p2p-presence-overlay";
 
 /**
  * Wraps a game element (via `<slot>`) and renders live cursor dots for each
- * connected peer. The overlay owns no sync logic — it reads `cursorX` and
- * `cursorO` from the injected synced database and drives `movePresence` with
- * local pointer events.
+ * connected peer. The overlay owns no sync logic — it reads the `cursors`
+ * resource (keyed by `PlayerMark`) from the injected synced database and
+ * drives `movePresence` with local pointer events.
  *
- * Cursor coordinates are stored as raw pixel offsets from the overlay's
- * bounding box (as returned by `usePointerObserve`).
+ * Cursor coordinates are stored as normalised `[0..1]` offsets so they map
+ * naturally to CSS percentages regardless of viewport size.
  *
  * Service injection: the parent must set `.service` to a database that
  * includes `presencePlugin` (typically combined with `tictactoePlugin`).
@@ -55,9 +56,6 @@ export class P2pPresenceOverlay extends DatabaseElement<typeof presencePlugin> {
             font-weight: 700;
             color: #fff;
         }
-
-        .cursor--x { background: #6c63ff; }
-        .cursor--o { background: #ff6363; }
     `;
 
     get plugin() {
@@ -66,10 +64,7 @@ export class P2pPresenceOverlay extends DatabaseElement<typeof presencePlugin> {
 
     render() {
         const values = useObservableValues(
-            () => ({
-                cursorX: this.service.observe.resources.cursorX,
-                cursorO: this.service.observe.resources.cursorO,
-            }),
+            () => ({ cursors: this.service.observe.resources.cursors }),
             [],
         );
 
@@ -87,7 +82,6 @@ export class P2pPresenceOverlay extends DatabaseElement<typeof presencePlugin> {
                 for await (const [px, py] of positions) {
                     const { width, height } = element.getBoundingClientRect();
                     if (!width || !height) continue;
-                    // Normalise to [0..1] so coords are screen-size independent.
                     yield { x: px / width, y: py / height };
                 }
             }
@@ -100,22 +94,20 @@ export class P2pPresenceOverlay extends DatabaseElement<typeof presencePlugin> {
             };
         }, [pointerPos, element, service]);
 
-        const cx = values?.cursorX;
-        const co = values?.cursorO;
+        const cursors = values?.cursors;
 
-        // Convert normalised [0..1] coords back to pixel offsets for rendering.
-        // We don't need element dimensions here — CSS percentages work naturally.
         return html`
             <slot></slot>
             <div class="overlay">
-                ${cx ? html`
-                    <div class="cursor cursor--x"
-                         style="left: ${(cx[0] * 100).toFixed(1)}%; top: ${(cx[1] * 100).toFixed(1)}%">X</div>
-                ` : ""}
-                ${co ? html`
-                    <div class="cursor cursor--o"
-                         style="left: ${(co[0] * 100).toFixed(1)}%; top: ${(co[1] * 100).toFixed(1)}%">O</div>
-                ` : ""}
+                ${PlayerMark.values.map((mark) => {
+                    const pos = cursors?.[mark];
+                    if (!pos) return "";
+                    return html`
+                        <div class="cursor"
+                             style="left: ${(pos[0] * 100).toFixed(1)}%; top: ${(pos[1] * 100).toFixed(1)}%; background-color: ${PlayerMark.markColor[mark]}"
+                        >${mark}</div>
+                    `;
+                })}
             </div>
         `;
     }

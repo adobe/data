@@ -3,13 +3,13 @@
 import { Database } from "@adobe/data/ecs";
 import { Observe } from "@adobe/data/observe";
 import { BoardState } from "../types/board-state/board-state";
-import type { PlayerMark } from "../types/player-mark/player-mark";
+import { PlayerMark } from "../types/player-mark/player-mark";
 import { PlayMoveArgs } from "../types/play-move-args/play-move-args";
 
 export const tictactoePlugin = Database.Plugin.create({
   resources: {
     board: { default: BoardState.createInitialBoard() },
-    firstPlayer: { default: "X" as PlayerMark },
+    firstPlayer: { default: PlayerMark.values[0] },
   },
   computed: {
     currentPlayer: (db) =>
@@ -29,8 +29,7 @@ export const tictactoePlugin = Database.Plugin.create({
   },
   transactions: {
     restartGame: (t) => {
-      t.resources.firstPlayer =
-        t.resources.firstPlayer === "X" ? "O" : "X";
+      t.resources.firstPlayer = PlayerMark.opponent[t.resources.firstPlayer];
       t.resources.board = BoardState.createInitialBoard();
     },
     playMove: (t, { index }: PlayMoveArgs) => {

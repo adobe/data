@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { html } from "lit";
+import { PlayerMark } from "../../types/player-mark/player-mark.js";
 
 export function render(args: {
   cell: string;
@@ -9,7 +10,7 @@ export function render(args: {
   playMove: () => void;
 }) {
   const { cell, isWinning, isPlayable, playMove } = args;
-  const hasMark = cell === "X" || cell === "O";
+  const hasMark = PlayerMark.is(cell);
 
   return html`
     <div

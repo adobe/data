@@ -11,7 +11,7 @@ import { customElement } from "lit/decorators.js";
 import { Database } from "@adobe/data/ecs";
 // Importing tictactoeTagName pulls in tictactoe-app.ts which registers
 // the <tictactoe-app> custom element via @customElement.
-import { tictactoePlugin, tictactoeTagName } from "data-lit-tictactoe";
+import { tictactoePlugin, tictactoeTagName, PlayerMark } from "data-lit-tictactoe";
 import { presencePlugin } from "../../state/presence-plugin.js";
 import "../p2p-negotiation/p2p-negotiation.js";
 import "../p2p-presence-overlay/p2p-presence-overlay.js";
@@ -26,8 +26,9 @@ export const tagName = "p2p-app";
  */
 const gamePlugin = Database.Plugin.combine(tictactoePlugin, presencePlugin);
 
-const assignUserId = (role: "host" | "joiner") =>
-    role === "host" ? "X" : "O";
+// Host plays first (PlayerMark.values[0], "X"); joiner plays second.
+const assignUserId = (role: "host" | "joiner"): PlayerMark =>
+    PlayerMark.values[role === "host" ? 0 : 1];
 
 @customElement(tagName)
 export class P2pApp extends LitElement {

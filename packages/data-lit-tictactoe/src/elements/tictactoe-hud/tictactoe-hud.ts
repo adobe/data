@@ -3,6 +3,7 @@
 import { customElement } from "lit/decorators.js";
 import { useObservableValues } from "@adobe/data-lit";
 import { BoardState } from "../../types/board-state/board-state.js";
+import { PlayerMark } from "../../types/player-mark/player-mark.js";
 import { TictactoeElement } from "../../tictactoe-element.js";
 import { styles } from "./tictactoe-hud.css.js";
 import * as presentation from "./tictactoe-hud-presentation.js";
@@ -23,7 +24,7 @@ export class TictactoeHud extends TictactoeElement {
     );
 
     const board = values?.board ?? "         ";
-    const firstPlayer = values?.firstPlayer ?? "X";
+    const firstPlayer = values?.firstPlayer ?? PlayerMark.values[0];
 
     const currentPlayer = BoardState.currentPlayer(board, firstPlayer);
     const status = BoardState.deriveStatus(board);

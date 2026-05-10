@@ -1,0 +1,23 @@
+{
+  "name": "@adobe/data-ai",
+  "version": "0.9.54",
+  "description": "Claude and AI-assistant rules and guidance for Adobe data-oriented architecture",
+  "private": false,
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "files": [
+    "README.md",
+    "LICENSE",
+    ".claude"
+  ],
+  "scripts": {
+    "build": "cp ../../LICENSE .",
+    "test": "vitest --run --passWithNoTests",
+    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0"
+  }
+}

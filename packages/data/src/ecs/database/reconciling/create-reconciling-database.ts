@@ -53,12 +53,17 @@ export function createReconcilingDatabase<
         }
     };
 
-    const removeTransientEntry = (id: number): boolean => {
+    /**
+     * Splice a transient entry out of the queue by id.
+     * IMPORTANT: must only be called when all transients are already rolled back
+     * (i.e. after rollbackAllTransients()). Calling it while entries are still
+     * applied would undo a non-top entry mid-stack, corrupting the freelist.
+     */
+    const spliceTransientEntry = (id: number): boolean => {
         const index = reconcilingEntries.findIndex(entry => entry.id === id);
         if (index === -1) {
             return false;
         }
-        rollbackEntryResult(reconcilingEntries[index]);
         reconcilingEntries.splice(index, 1);
         return true;
     };
@@ -108,8 +113,11 @@ export function createReconcilingDatabase<
 
         // Handle transient application (negative time).
         if (time < 0) {
-            // Replace any existing transient entry for this id.
-            removeTransientEntry(id);
+            // Roll everything back before touching the queue so each undo is
+            // applied in reverse stack order (avoids mid-stack partial undos
+            // that would corrupt the freelist).
+            rollbackAllTransients();
+            spliceTransientEntry(id);
 
             // Create and insert the new transient entry.
             const entry: ReconcilingEntry<C, R, A> = {
@@ -125,18 +133,28 @@ export function createReconcilingDatabase<
             reconcilingEntries.splice(insertIndex, 0, entry);
 
             // Rebuild transient state from scratch to respect time ordering.
-            rollbackAllTransients();
             return replayAllTransients();
         }
 
-        // Handle committed application (positive time): just execute once, do not
-        // retain in memory. Clear any existing transient for this id first.
-        removeTransientEntry(id);
-
-        return execute(
+        // Handle committed application (positive time): rebase the entire
+        // transient queue around it so deterministic id allocation matches
+        // every other peer's view.
+        //   1. Roll back all transients in reverse stack order (avoids
+        //      mid-stack partial undos that corrupt the freelist).
+        //   2. Splice out the matching transient (already rolled back).
+        //   3. Apply the committed envelope once (non-transient).
+        //   4. Replay the surviving transients on top.
+        // This guarantees the freelist / nextIndex snapshot at step 3 is
+        // identical on every peer, regardless of what local transients were
+        // pending when the broadcast arrived.
+        rollbackAllTransients();
+        spliceTransientEntry(id);
+        const result = execute(
             t => transactionFn(t, args),
             { transient: false },
         );
+        replayAllTransients();
+        return result;
     };
 
     const cancelEntry = (id: number) => {

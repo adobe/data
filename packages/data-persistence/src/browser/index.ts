@@ -11,3 +11,7 @@ export {
     createBrowserWorkerTransport,
     type BrowserWorkerTransportOptions,
 } from "./browser-worker-transport.js";
+export { createOpfsProvider } from "./create-opfs-provider.js";
+
+/** @deprecated Use `mount(createOpfsProvider(root?), db, opts)` instead. */
+export { mountOpfs } from "./mount-opfs.js";

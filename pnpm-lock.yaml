@@ -367,6 +367,19 @@ importers:
         specifier: ^2.11.0
         version: 2.11.0(solid-js@1.9.12)(vite@5.1.1)
 
+  packages/data-sync:
+    dependencies:
+      '@adobe/data':
+        specifier: workspace:*
+        version: link:../data
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)
+
 packages:
 
   /@asamuzakjp/css-color@3.2.0:

@@ -7,7 +7,10 @@
 export type { RandomAccessFile } from "./backend/random-access-file.js";
 export { createMemoryFile } from "./backend/memory-file.js";
 
-export type { PersistenceBackend } from "./backend/persistence-backend.js";
+export type {
+    PersistenceBackend,
+    PersistenceBackendCapabilities,
+} from "./backend/persistence-backend.js";
 export { createMemoryBackend } from "./backend/memory-backend.js";
 export { validateRelPath } from "./backend/validate-rel-path.js";
 
@@ -26,8 +29,29 @@ export { createColumnEncoder } from "./encoder/create-column-encoder.js";
 export type { JournalEntry, JournalEntryKind } from "./journal/journal-entry.js";
 export { encodeJournalEntry, decodeJournalEntry, decodeJournalStream } from "./journal/journal-codec.js";
 
+// ─── New provider API ────────────────────────────────────────────────────────
+
 export type {
-    WorkerPersistenceService,
-    WorkerPersistenceServiceOptions,
-} from "./service/worker-persistence-service.js";
+    PersistenceProvider,
+    ProviderMountOptions,
+    PersistenceMount,
+} from "./provider/persistence-provider.js";
+export { mount } from "./provider/mount.js";
+export { createMemoryProvider } from "./provider/create-memory-provider.js";
+
+export type {
+    IncrementalPersistenceService,
+    IncrementalPersistenceServiceOptions,
+} from "./service/incremental-persistence-service.js";
+export { createIncrementalPersistenceService } from "./service/create-incremental-persistence-service.js";
+
+// ─── Deprecated (backwards-compatible) ───────────────────────────────────────
+
+/**
+ * @deprecated Use `IncrementalPersistenceService` instead.
+ */
+export type { WorkerPersistenceService, WorkerPersistenceServiceOptions, MountOptions } from "./service/worker-persistence-service.js";
+/**
+ * @deprecated Use `createIncrementalPersistenceService` instead.
+ */
 export { createWorkerPersistenceService } from "./service/create-worker-persistence-service.js";

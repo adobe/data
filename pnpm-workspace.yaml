@@ -1,6 +1,7 @@
 packages:
   - 'packages/data'
   - 'packages/data-persistence'
+  - 'packages/data-sync'
   - 'packages/data-lit'
   - 'packages/data-lit-todo'
   - 'packages/data-react'

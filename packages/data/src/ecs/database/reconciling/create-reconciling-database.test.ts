@@ -390,4 +390,138 @@ describe("createReconcilingDatabase", () => {
         const extended = reconciling.extend(Database.Plugin.create({}));
         expect(extended).toBe(reconciling);
     });
+
+    it("preserves entity-id determinism across peers when a remote commit lands while a local transient is pending", () => {
+        // Three databases sharing the same plugin: an authoritative "server"
+        // and two peers. Each peer applies its own transient insert, then both
+        // peers receive both server commits in canonical order. All three
+        // must agree on (name → entity id) afterwards.
+        const server = createTestReconcilingDatabase();
+        const peerA = createTestReconcilingDatabase();
+        const peerB = createTestReconcilingDatabase();
+
+        const T_A = {
+            id: 1,
+            name: "createPositionNameEntity" as const,
+            args: { position: { x: 0, y: 0, z: 0 }, name: "A" },
+            userId: "user-a",
+        };
+        const T_B = {
+            id: 2,
+            name: "createPositionNameEntity" as const,
+            args: { position: { x: 0, y: 0, z: 0 }, name: "B" },
+            userId: "user-b",
+        };
+
+        peerA.apply({ ...T_A, time: -1 });
+        peerB.apply({ ...T_B, time: -1 });
+
+        // Server picks the order: A first, B second.
+        server.apply({ ...T_A, time: 1 });
+        server.apply({ ...T_B, time: 2 });
+
+        peerA.apply({ ...T_A, time: 1 });
+        peerB.apply({ ...T_A, time: 1 }); // T_A committed while T_B transient is still pending
+        peerA.apply({ ...T_B, time: 2 });
+        peerB.apply({ ...T_B, time: 2 });
+
+        const idByName = (
+            db: ReturnType<typeof createTestReconcilingDatabase>,
+            n: string,
+        ): number | undefined =>
+            db.select(["name"]).find((e) => db.read(e)?.name === n);
+
+        expect(idByName(peerA, "A")).toBe(idByName(server, "A"));
+        expect(idByName(peerA, "B")).toBe(idByName(server, "B"));
+        expect(idByName(peerB, "A")).toBe(idByName(server, "A"));
+        expect(idByName(peerB, "B")).toBe(idByName(server, "B"));
+    });
+
+    it("a foreign commit arriving while a local transient is applied does not corrupt entity ids", () => {
+        // Regression test for the missing rollback-before-execute bug.
+        //
+        // Scenario: specDb has applied B as a local transient (B now occupies
+        // entity 0, incrementing nextIndex to 1). Then a commit for A arrives
+        // from the server — A was never a transient on specDb.
+        //
+        // Without rolling back B's transient BEFORE executing committed A, the
+        // entity allocator sees nextIndex=1 (B has already consumed slot 0) and
+        // assigns A entity 1 instead of entity 0. A reference database that
+        // received only commits assigns A entity 0. The two databases diverge.
+        const specDb = createTestReconcilingDatabase();
+        const refDb = createTestReconcilingDatabase();
+
+        const envA = { id: 1, name: "createPositionNameEntity" as const, args: { position: { x: 0, y: 0, z: 0 }, name: "A" } };
+        const envB = { id: 2, name: "createPositionNameEntity" as const, args: { position: { x: 0, y: 0, z: 0 }, name: "B" } };
+
+        // specDb has only B as a local transient — it has never seen A.
+        specDb.apply({ ...envB, time: -1 });
+
+        // Server commits A first, then B.
+        specDb.apply({ ...envA, time: 1 });
+        specDb.apply({ ...envB, time: 2 });
+        refDb.apply({ ...envA, time: 1 });
+        refDb.apply({ ...envB, time: 2 });
+
+        const idByName = (db: ReturnType<typeof createTestReconcilingDatabase>, n: string) =>
+            db.select(["name"]).find(e => db.read(e)?.name === n);
+
+        // Committed state must agree regardless of prior transient history.
+        expect(idByName(specDb, "A")).toBe(idByName(refDb, "A"));
+        expect(idByName(specDb, "B")).toBe(idByName(refDb, "B"));
+    });
+
+    it("two independent databases converge to identical logical state after replaying the same envelope sequence", () => {
+        // Verifies the determinism contract: given the same ordered committed
+        // envelopes, any two reconciling databases — regardless of what local
+        // transients they each accumulated — must produce equal entity IDs and
+        // component values. Physical row order in the archetype array may differ
+        // due to rollback-replay reshuffling; logical state (entity → values)
+        // must be identical.
+        const buildDb = () => createTestReconcilingDatabase();
+
+        const alpha = buildDb();
+        const beta = buildDb();
+
+        const envelopes = [
+            { id: 10, name: "createPositionNameEntity" as const, args: { position: { x: 1, y: 2, z: 3 }, name: "Alice" }, time: 1 },
+            { id: 11, name: "createPositionNameEntity" as const, args: { position: { x: 4, y: 5, z: 6 }, name: "Bob" }, time: 2 },
+            { id: 12, name: "createPositionNameEntity" as const, args: { position: { x: 7, y: 8, z: 9 }, name: "Carol" }, time: 3 },
+        ];
+
+        // alpha accumulates transients before each commit (simulates a user who
+        // speculatively inserts entities before the server echoes back)
+        alpha.apply({ ...envelopes[0]!, time: -100 });
+        alpha.apply({ ...envelopes[0]!, time: 1 });
+        alpha.apply({ ...envelopes[1]!, time: -101 });
+        alpha.apply({ ...envelopes[2]!, time: -102 });
+        alpha.apply({ ...envelopes[1]!, time: 2 });
+        alpha.apply({ ...envelopes[2]!, time: 3 });
+
+        // beta receives commits with no prior transients (simulates a passive observer)
+        for (const env of envelopes) {
+            beta.apply(env);
+        }
+
+        // Helper: map name → { entity, position, name } sorted by name for deterministic comparison.
+        const snapshot = (db: ReturnType<typeof createTestReconcilingDatabase>) =>
+            db
+                .select(["name", "position"])
+                .map(e => ({ entity: e, ...db.read(e) }))
+                .sort((a, b) => ((a.name ?? "") < (b.name ?? "") ? -1 : 1));
+
+        const alphaSnap = snapshot(alpha);
+        const betaSnap = snapshot(beta);
+
+        // Same number of entities.
+        expect(alphaSnap.length).toBe(betaSnap.length);
+
+        for (let i = 0; i < alphaSnap.length; i++) {
+            // Same entity ID for the same logical entity.
+            expect(alphaSnap[i]!.entity).toBe(betaSnap[i]!.entity);
+            // Same component values.
+            expect(alphaSnap[i]!.name).toBe(betaSnap[i]!.name);
+            expect(alphaSnap[i]!.position).toEqual(betaSnap[i]!.position);
+        }
+    });
 });

@@ -397,3 +397,47 @@ db.observe.transactions((t) => {
   }
 });
 ```
+
+---
+
+## Reference: Transaction Determinism Contract
+
+**Transaction functions must be pure functions of `(store, args)`.**
+
+This is an implicit contract that single-client use does not enforce but multi-client sync makes load-bearing. The `ReconcilingDatabase` achieves cross-peer convergence by shipping `TransactionEnvelope` values (name + args) across the network instead of raw operation lists, and by rolling back and replaying local transients whenever a committed envelope arrives. Both mechanisms rely on a critical property: given the same database state and the same args, `transactionFn(store, args)` must produce exactly the same mutations every time it runs.
+
+**Violations that break convergence:**
+
+```ts
+// BAD — result depends on wall-clock time
+moveEntity: (t, args) => {
+  t.update(args.entity, { lastSeen: Date.now() });
+},
+
+// BAD — result depends on a random value
+spawnParticle: (t, args) => {
+  t.archetypes.Particle.insert({ id: Math.random(), ... });
+},
+
+// BAD — result depends on module-level mutable state
+let counter = 0;
+assignId: (t, args) => {
+  t.update(args.entity, { assignedId: counter++ });
+},
+```
+
+**Allowed patterns:**
+
+- Reading from `store` (entities, components, resources) — the store's committed state is identical on every peer at the moment of replay.
+- Using values derived from `args` — args are serialized and broadcast verbatim.
+- Calling pure math / pure utility functions.
+- Generating ids deterministically from args (e.g. hashing a user-provided name).
+
+**If you need a timestamp or random value**, generate it on the caller side and include it in `args`:
+
+```ts
+// GOOD — timestamp baked into the envelope before broadcast
+db.transactions.moveEntity({ entity, x, y, z, timestamp: Date.now() });
+```
+
+**Design implication for multi-user operations:** Prefer parametrizing transactions on database-resident state rather than raw entity ids held at the call site. For example, "move what user X has selected" is safer than "move entity 7" because the selected set is committed database state (identical on every peer), whereas entity 7 may refer to different entities on different peers during the speculative transient phase. See the `ReconcilingDatabase` for the reconciliation protocol details.

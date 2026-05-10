@@ -41,6 +41,14 @@ export type PersistOp =
     }
     | {
         readonly id: number;
+        readonly kind: "writeJournalSnapshot";
+        readonly archetypeId: number;
+        readonly component: string;
+        /** Full snapshot buffer from encodeJournalSnapshot — always written at offset 0 and truncated to this length. */
+        readonly bytes: ArrayBuffer;
+    }
+    | {
+        readonly id: number;
         readonly kind: "readFile";
         readonly path: string;
     }

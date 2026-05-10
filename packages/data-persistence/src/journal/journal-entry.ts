@@ -1,7 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 /**
- * Kinds of mutations recorded in the journal.
+ * Wire codes for each journal entry kind. This is the single source of
+ * truth — `JournalEntryKind` and `JournalEntryKindName` are both
+ * derived from it so they can never drift.
  *
  *   insert  - a new row was inserted into an archetype
  *   update  - an existing row was updated
@@ -15,8 +17,6 @@
  *             are dropped wholesale, preserving transactional
  *             atomicity across crashes.
  */
-export type JournalEntryKind = "insert" | "update" | "delete" | "migrate" | "commit";
-
 export const JournalEntryKindCode = {
     insert: 1,
     update: 2,
@@ -25,13 +25,11 @@ export const JournalEntryKindCode = {
     commit: 5,
 } as const;
 
-export const JournalEntryKindName: Readonly<Record<number, JournalEntryKind>> = {
-    1: "insert",
-    2: "update",
-    3: "delete",
-    4: "migrate",
-    5: "commit",
-};
+export type JournalEntryKind = keyof typeof JournalEntryKindCode;
+
+export const JournalEntryKindName = Object.fromEntries(
+    Object.entries(JournalEntryKindCode).map(([name, code]) => [code, name]),
+) as Readonly<Record<number, JournalEntryKind>>;
 
 /**
  * A single journal entry. Variable-length payloads (`bytes`) are JSON

@@ -81,6 +81,16 @@ export const createPersistRouter = (backend: PersistenceBackend): PersistRouter 
                 await file.writeAt(op.entity * ELT_STRIDE, tombstone);
                 return undefined;
             }
+            case "writeJournalSnapshot": {
+                // Always a full rewrite at offset 0; truncate removes any
+                // stale tail from a previous checkpoint with more rows.
+                const path = columnPath(op.archetypeId, op.component);
+                const file = await openCached(path);
+                const bytes = new Uint8Array(op.bytes);
+                await file.writeAt(0, bytes);
+                await file.truncate(bytes.byteLength);
+                return undefined;
+            }
             case "checkpoint": {
                 // Atomic-ish: write the manifest to a temp file, then rename.
                 // OPFS rename is implemented as copy+delete in our backend

@@ -25,6 +25,10 @@
 //   - op count is the closed-form algorithmic invariant — if op count
 //     is flat, time-per-op is bounded by per-op work (which is itself
 //     O(stride) per write, not O(world))
+//
+// World sizes deliberately stay small (10 / 100 / 500) — larger numbers
+// don't add confidence to the invariant (which is binary: flat or not)
+// but do add seconds of test time with no benefit.
 
 import { Database } from "@adobe/data/ecs";
 import { F32, Vec3 } from "@adobe/data/math";
@@ -134,11 +138,11 @@ describe("persistence complexity contract: O(changes), not O(world)", () => {
     };
 
     it("a single-component update emits the same op count regardless of world size", async () => {
-        const counts = await Promise.all([
-            measureOpsForOneMove(100),
-            measureOpsForOneMove(1_000),
-            measureOpsForOneMove(10_000),
-        ]);
+        const counts = [
+            await measureOpsForOneMove(10),
+            await measureOpsForOneMove(100),
+            await measureOpsForOneMove(500),
+        ];
         // All three must be identical: the per-tx op count is a
         // function of the diff (1 entity × 1 component touched), not N.
         expect(counts[0]).toBe(counts[1]);
@@ -185,11 +189,11 @@ describe("persistence complexity contract: O(changes), not O(world)", () => {
             return out;
         };
 
-        const counts = await Promise.all([
-            measure(100),
-            measure(1_000),
-            measure(10_000),
-        ]);
+        const counts = [
+            await measure(10),
+            await measure(100),
+            await measure(500),
+        ];
         expect(counts[0]).toBe(counts[1]);
         expect(counts[1]).toBe(counts[2]);
         // 3 columns touched (position, velocity, mass) → 3 journal entries
@@ -224,11 +228,11 @@ describe("persistence complexity contract: O(changes), not O(world)", () => {
             return out;
         };
 
-        const counts = await Promise.all([
-            measure(100),
-            measure(1_000),
-            measure(10_000),
-        ]);
+        const counts = [
+            await measure(10),
+            await measure(100),
+            await measure(500),
+        ];
         expect(counts[0]).toBe(counts[1]);
         expect(counts[1]).toBe(counts[2]);
         // Insert writes all destination columns + ELT + commit:
@@ -272,11 +276,11 @@ describe("persistence complexity contract: O(changes), not O(world)", () => {
             return out;
         };
 
-        const counts = await Promise.all([
-            measure(100),
-            measure(1_000),
-            measure(10_000),
-        ]);
+        const counts = [
+            await measure(10),
+            await measure(100),
+            await measure(500),
+        ];
         expect(counts[0]).toBe(counts[1]);
         expect(counts[1]).toBe(counts[2]);
         // Delete cost:

@@ -19,6 +19,12 @@ export type TransactionEnvelope<Name extends string = string> = {
      * and zero time cancels any existing entry.
      */
     readonly time: number;
+    /**
+     * Optional originating user identifier. Used for attribution, filtering, and
+     * access-control in the sync layer. Has no effect on transaction execution or
+     * entity-id allocation — the reconciler ignores it.
+     */
+    readonly userId?: number | string;
 };
 
 export interface ReconcilingDatabase<

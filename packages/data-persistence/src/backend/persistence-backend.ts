@@ -3,6 +3,21 @@
 import type { RandomAccessFile } from "./random-access-file.js";
 
 /**
+ * Capability flags for a `PersistenceBackend`. Declared optionally by
+ * backends so that higher-level code can adapt its strategy.
+ */
+export interface PersistenceBackendCapabilities {
+    /**
+     * Whether the backend supports partial byte-range writes via
+     * `RandomAccessFile.writeAt`. When `false` the service should prefer
+     * whole-file snapshot writes (e.g. for cloud blob stores). Currently
+     * informational — the existing journal/checkpoint strategy is used
+     * regardless.
+     */
+    readonly byteRangeWrites: boolean;
+}
+
+/**
  * A directory of RandomAccessFile handles, rooted at some host-defined
  * location (an OPFS directory, a Node fs path, or an in-memory map).
  *
@@ -10,6 +25,12 @@ import type { RandomAccessFile } from "./random-access-file.js";
  * to prevent path traversal.
  */
 export interface PersistenceBackend {
+    /**
+     * Optional capability advertisement. Omit (or omit individual fields) to
+     * indicate the backend has the same capabilities as the default
+     * (`byteRangeWrites: true`).
+     */
+    readonly capabilities?: Partial<PersistenceBackendCapabilities>;
     /**
      * Open (and create if missing) a file at `relPath`.
      */

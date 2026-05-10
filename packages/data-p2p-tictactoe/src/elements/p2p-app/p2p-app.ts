@@ -3,9 +3,11 @@
 // Top-level application element. Manages the signaling state machine and
 // renders either the connection UI or the live game.
 //
-// This is a plain LitElement (no hooks needed) — state is driven by Lit's
-// own @state reactive properties. Only the in-game child elements (p2p-board,
-// p2p-cell, p2p-hud) use the data-lit hook system.
+// This is a plain LitElement — the database is created asynchronously once
+// WebRTC connects, so we can't use the DatabaseElement pattern here. Instead
+// we expose `service` as a @state property; child elements (P2pElement
+// subclasses) find it via DatabaseElement's ancestor traversal, exactly as in
+// the standard data-lit pattern.
 
 import { LitElement, html } from "lit";
 import { customElement, state } from "lit/decorators.js";

@@ -217,6 +217,22 @@ importers:
         specifier: ^1.6.0
         version: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)
 
+  packages/data-p2p-tictactoe:
+    dependencies:
+      '@adobe/data':
+        specifier: workspace:*
+        version: link:../data
+      '@adobe/data-sync':
+        specifier: workspace:*
+        version: link:../data-sync
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^5.1.1
+        version: 5.1.1(@types/node@25.6.0)
+
   packages/data-persistence:
     dependencies:
       '@adobe/data':

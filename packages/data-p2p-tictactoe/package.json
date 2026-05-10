@@ -1,0 +1,19 @@
+{
+  "name": "data-p2p-tictactoe",
+  "version": "0.9.55",
+  "description": "Serverless P2P tic-tac-toe — WebRTC DataChannel + @adobe/data-sync",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@adobe/data": "workspace:*",
+    "@adobe/data-sync": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vite": "^5.1.1"
+  }
+}

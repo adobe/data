@@ -8,9 +8,10 @@ import type { Phase } from "../types/phase/phase.js";
  * are never replicated to peers (the negotiation DB itself is always
  * local-only, but the ephemeral flag is good documentation).
  *
- * The game role (userId) lives in the synced game DB, not here. After
- * `connected()` transitions the phase to "game", the negotiation element
- * mounts the game element with the synced DB already configured.
+ * The game role (userId) lives in the synced game DB referenced by the
+ * `gameDb` resource. Once the WebRTC handshake completes, the negotiation
+ * controller constructs that DB, attaches sync transports, and stores the
+ * handle here for the container element to render.
  */
 export const negotiationPlugin = Database.Plugin.create({
     resources: {
@@ -19,6 +20,15 @@ export const negotiationPlugin = Database.Plugin.create({
         answerCode:  { default: "" as string,     ephemeral: true },
         bannerText:  { default: "" as string,     ephemeral: true },
         bannerError: { default: false as boolean, ephemeral: true },
+        // Live values of the two paste textareas. Backing them with
+        // resources keeps the textareas controlled and avoids touching
+        // the DOM from action callbacks.
+        hostAnswerInput:   { default: "" as string, ephemeral: true },
+        joinerOfferInput:  { default: "" as string, ephemeral: true },
+        // The synced game database, populated by the negotiation controller
+        // after the WebRTC channel opens. `unknown` so the plugin stays
+        // game-agnostic; consumers cast at the render boundary.
+        gameDb:      { default: null as unknown,  ephemeral: true },
     },
     transactions: {
         startHostSignaling(t) {
@@ -43,8 +53,19 @@ export const negotiationPlugin = Database.Plugin.create({
             t.resources.bannerText = text;
             t.resources.bannerError = error;
         },
-        /** Transitions to the game phase. Call after the synced game DB is ready. */
-        connected(t) {
+        setHostAnswerInput(t, { value }: { value: string }) {
+            t.resources.hostAnswerInput = value;
+        },
+        setJoinerOfferInput(t, { value }: { value: string }) {
+            t.resources.joinerOfferInput = value;
+        },
+        /**
+         * Stores the constructed game DB and transitions to the game phase.
+         * Called by the negotiation controller after sync transports are
+         * wired and the WebRTC channel is open.
+         */
+        setGameDb(t, { gameDb }: { gameDb: unknown }) {
+            t.resources.gameDb = gameDb;
             t.resources.phase = "game";
         },
     },

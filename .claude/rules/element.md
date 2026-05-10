@@ -1,7 +1,6 @@
 ---
 paths:
-  - 'packages/**/*element*.ts'
-  - 'packages/**/*element*/**/*.ts'
+  - 'packages/**/*-element.ts'
 ---
 
 # Container element authoring
@@ -33,6 +32,16 @@ A container element fits on screen. Its body contains:
 That is the entire surface. No internal state, no event handlers, no
 lifecycle overrides, no derivation math, no timers, no event emitters,
 no broadcast channels, no synchronous data reads.
+
+### Bootstrap exception
+
+A *bootstrap container* — one that constructs its service rather than
+consuming a pre-existing one (e.g. an element that owns a WebRTC
+handshake before mounting a child app) — may also accept dependency-
+injection props that configure that construction (the plugin to use,
+a child tag name, mapping functions). Those props feed a sibling
+controller invoked from a `useMemo` / `useEffect` hook; they never
+appear inside render branching. Use sparingly.
 
 ## Subscription reads must be raw
 

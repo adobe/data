@@ -1,18 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { customElement } from "lit/decorators.js";
-import { TictactoeElement } from "../../tictactoe-element.js";
-import { styles } from "./tictactoe-board.css.js";
-import * as presentation from "./tictactoe-board-presentation.js";
-import "../tictactoe-cell/tictactoe-cell.js";
+import { html, type TemplateResult } from "lit";
 
-export const tagName = "tictactoe-board";
-
-@customElement(tagName)
-export class TictactoeBoard extends TictactoeElement {
-  static styles = styles;
-
-  render() {
-    return presentation.render();
-  }
-}
+export const TictactoeBoard = (): TemplateResult => {
+    void import("./tictactoe-board-element.js");
+    return html`<tictactoe-board></tictactoe-board>`;
+};

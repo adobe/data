@@ -86,8 +86,7 @@ export class P2pPresenceOverlay extends DatabaseElement<typeof presencePlugin> {
                 }
             }
 
-            (service.transactions.movePresence as (factory: () => AsyncGenerator<{ x: number; y: number }>) => Promise<unknown>)(presenceArgs)
-                .catch(() => undefined);
+            service.transactions.movePresence(presenceArgs).catch(() => undefined);
 
             return () => {
                 void positions.throw(new Error("disposed")).catch(() => undefined);

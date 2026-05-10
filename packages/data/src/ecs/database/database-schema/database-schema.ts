@@ -47,15 +47,11 @@ type CheckDynamicParticle = Assert<Equal<typeof testDatabase.archetypes.DynamicP
 type CheckParticle = Assert<Equal<typeof testDatabase.archetypes.Particle, ReadonlyArchetype<RequiredComponents & {
     particle: boolean;
 }>>>;
-type CheckCreateParticle = Assert<Equal<typeof testDatabase.transactions.createParticle, (arg: {
-    particle: boolean;
-} | AsyncArgsProvider<{
-    particle: boolean;
-}>) => void>>;
-type CheckCreateDynamicParticle = Assert<Equal<typeof testDatabase.transactions.createDynamicParticle, (arg: {
-    particle: boolean;
-    velocity: number;
-} | AsyncArgsProvider<{
-    particle: boolean;
-    velocity: number;
-}>) => void>>;
+type CheckCreateParticle = Assert<Equal<typeof testDatabase.transactions.createParticle, {
+    (arg: AsyncArgsProvider<{ particle: boolean }>): Promise<void>;
+    (arg: { particle: boolean }): void;
+}>>;
+type CheckCreateDynamicParticle = Assert<Equal<typeof testDatabase.transactions.createDynamicParticle, {
+    (arg: AsyncArgsProvider<{ particle: boolean; velocity: number }>): Promise<void>;
+    (arg: { particle: boolean; velocity: number }): void;
+}>>;

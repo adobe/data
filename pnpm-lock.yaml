@@ -8,6 +8,9 @@ importers:
 
   .:
     devDependencies:
+      '@types/node':
+        specifier: ^25.6.0
+        version: 25.6.0
       pnpm:
         specifier: ^9.0.0
         version: 9.0.0
@@ -104,7 +107,7 @@ importers:
         version: 4.0.0(prettier@3.2.5)
       riteway:
         specifier: v8.0.0-RC4
-        version: 8.0.0-RC4(@vitest/browser@1.6.0)(jsdom@24.1.0)(react@18.3.1)
+        version: 8.0.0-RC4(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)(react@18.3.1)
       stylelint:
         specifier: ^16.2.1
         version: 16.2.1(typescript@5.8.3)
@@ -122,10 +125,10 @@ importers:
         version: 10.0.0
       vite:
         specifier: ^5.1.1
-        version: 5.1.1
+        version: 5.1.1(@types/node@25.6.0)
       vitest:
         specifier: ^1.6.0
-        version: 1.6.0(@vitest/browser@1.6.0)(jsdom@24.1.0)
+        version: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)
       webdriverio:
         specifier: ^9.0.9
         version: 9.0.9
@@ -144,7 +147,7 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^1.6.0
-        version: 1.6.0(@vitest/browser@1.6.0)(jsdom@24.1.0)
+        version: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)
 
   packages/data-lit-tictactoe:
     dependencies:
@@ -163,7 +166,7 @@ importers:
         version: 5.8.3
       vite:
         specifier: ^5.1.1
-        version: 5.1.1
+        version: 5.1.1(@types/node@25.6.0)
       vite-plugin-checker:
         specifier: ^0.12.0
         version: 0.12.0(typescript@5.8.3)(vite@5.1.1)
@@ -209,10 +212,48 @@ importers:
         version: 5.8.3
       vite:
         specifier: ^6.4.0
-        version: 6.4.0
+        version: 6.4.0(@types/node@25.6.0)
       vitest:
         specifier: ^1.6.0
-        version: 1.6.0(@vitest/browser@1.6.0)(jsdom@24.1.0)
+        version: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)
+
+  packages/data-p2p-tictactoe:
+    dependencies:
+      '@adobe/data':
+        specifier: workspace:*
+        version: link:../data
+      '@adobe/data-sync':
+        specifier: workspace:*
+        version: link:../data-sync
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^5.1.1
+        version: 5.1.1(@types/node@25.6.0)
+
+  packages/data-persistence:
+    dependencies:
+      '@adobe/data':
+        specifier: workspace:*
+        version: link:../data
+    devDependencies:
+      '@vitest/browser':
+        specifier: ^1.6.0
+        version: 1.6.0(playwright@1.46.1)(vitest@1.6.0)
+      playwright:
+        specifier: ^1.46.1
+        version: 1.46.1
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^5.1.1
+        version: 5.1.1(@types/node@25.6.0)
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)
 
   packages/data-react:
     dependencies:
@@ -231,7 +272,7 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^1.6.0
-        version: 1.6.0(@vitest/browser@1.6.0)(jsdom@24.1.0)
+        version: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)
 
   packages/data-react-hello:
     dependencies:
@@ -262,7 +303,7 @@ importers:
         version: 5.8.3
       vite:
         specifier: ^5.1.1
-        version: 5.1.1
+        version: 5.1.1(@types/node@25.6.0)
 
   packages/data-react-pixie:
     dependencies:
@@ -299,7 +340,7 @@ importers:
         version: 5.8.3
       vite:
         specifier: ^5.1.1
-        version: 5.1.1
+        version: 5.1.1(@types/node@25.6.0)
       vite-plugin-checker:
         specifier: ^0.12.0
         version: 0.12.0(typescript@5.8.3)(vite@5.1.1)
@@ -318,7 +359,7 @@ importers:
         version: 5.8.3
       vitest:
         specifier: ^1.6.0
-        version: 1.6.0(@vitest/browser@1.6.0)(jsdom@24.1.0)
+        version: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)
 
   packages/data-solid-dashboard:
     dependencies:
@@ -337,10 +378,23 @@ importers:
         version: 5.8.3
       vite:
         specifier: ^5.1.1
-        version: 5.1.1
+        version: 5.1.1(@types/node@25.6.0)
       vite-plugin-solid:
         specifier: ^2.11.0
         version: 2.11.0(solid-js@1.9.12)(vite@5.1.1)
+
+  packages/data-sync:
+    dependencies:
+      '@adobe/data':
+        specifier: workspace:*
+        version: link:../data
+    devDependencies:
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)
 
 packages:
 
@@ -1881,6 +1935,12 @@ packages:
       undici-types: 6.21.0
     dev: true
 
+  /@types/node@25.6.0:
+    resolution: {integrity: sha512-+qIYRKdNYJwY3vRCZMdJbPLJAtGjQBudzZzdzwQYkEPQd+PJGixUL5QfvCLDaULoLv+RhT3LDkwEfKaAkgSmNQ==}
+    dependencies:
+      undici-types: 7.19.2
+    dev: true
+
   /@types/parse-author@2.0.3:
     resolution: {integrity: sha512-pgRW2K/GVQoogylrGJXDl7PBLW9A6T4OOc9Hy9MLT5f7vgufK2GQ8FcfAbjFHR5HjcN9ByzuCczAORk49REqoA==}
     dev: true
@@ -1934,14 +1994,14 @@ packages:
   /@types/ws@8.18.1:
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
     dependencies:
-      '@types/node': 20.19.35
+      '@types/node': 25.6.0
     dev: true
 
   /@types/yauzl@2.10.3:
     resolution: {integrity: sha512-oJoftv0LSuaDZE3Le4DbKX+KS9G36NzOeSap90UIK0yMA/NhKJhqlSGtNDORNRaIbQfzjXDrQa0ytJ6mNRGz/Q==}
     requiresBuild: true
     dependencies:
-      '@types/node': 20.19.35
+      '@types/node': 25.6.0
     dev: true
     optional: true
 
@@ -2092,9 +2152,31 @@ packages:
       '@babel/plugin-transform-react-jsx-source': 7.27.1(@babel/core@7.29.0)
       '@types/babel__core': 7.20.5
       react-refresh: 0.14.2
-      vite: 5.1.1
+      vite: 5.1.1(@types/node@25.6.0)
     transitivePeerDependencies:
       - supports-color
+    dev: true
+
+  /@vitest/browser@1.6.0(playwright@1.46.1)(vitest@1.6.0):
+    resolution: {integrity: sha512-3Wpp9h1hf++rRVPvoXevkdHybLhJVn7MwIMKMIh08tVaoDMmT6fnNhbP222Z48V9PptpYeA5zvH9Ct/ZcaAzmQ==}
+    peerDependencies:
+      playwright: '*'
+      safaridriver: '*'
+      vitest: 1.6.0
+      webdriverio: '*'
+    peerDependenciesMeta:
+      playwright:
+        optional: true
+      safaridriver:
+        optional: true
+      webdriverio:
+        optional: true
+    dependencies:
+      '@vitest/utils': 1.6.0
+      magic-string: 0.30.21
+      playwright: 1.46.1
+      sirv: 2.0.4
+      vitest: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)
     dev: true
 
   /@vitest/browser@1.6.0(playwright@1.46.1)(vitest@1.6.0)(webdriverio@9.0.9):
@@ -2116,7 +2198,7 @@ packages:
       magic-string: 0.30.21
       playwright: 1.46.1
       sirv: 2.0.4
-      vitest: 1.6.0(@vitest/browser@1.6.0)(jsdom@24.1.0)
+      vitest: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)
       webdriverio: 9.0.9
     dev: true
 
@@ -6390,7 +6472,7 @@ packages:
       glob: 7.2.3
     dev: true
 
-  /riteway@8.0.0-RC4(@vitest/browser@1.6.0)(jsdom@24.1.0)(react@18.3.1):
+  /riteway@8.0.0-RC4(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)(react@18.3.1):
     resolution: {integrity: sha512-zUqwi4jR1iVgVAFLRuBerhHilvGxHjxibW3wHdMh8EaYFAWywmmq0kaF9diibnJ3wLue/TVEqX6NtS/ePj/eGw==}
     hasBin: true
     dependencies:
@@ -6398,7 +6480,7 @@ packages:
       esm: 3.2.25
       react-dom: 18.2.0(react@18.3.1)
       tape: 5.9.0
-      vitest: 1.6.0(@vitest/browser@1.6.0)(jsdom@24.1.0)
+      vitest: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)
     transitivePeerDependencies:
       - '@edge-runtime/vm'
       - '@types/node'
@@ -7418,6 +7500,10 @@ packages:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
     dev: true
 
+  /undici-types@7.19.2:
+    resolution: {integrity: sha512-qYVnV5OEm2AW8cJMCpdV20CDyaN3g0AjDlOGf1OW4iaDEx8MwdtChUp4zu4H0VP3nDRF/8RKWH+IPp9uW0YGZg==}
+    dev: true
+
   /undici@7.22.0:
     resolution: {integrity: sha512-RqslV2Us5BrllB+JeiZnK4peryVTndy9Dnqq62S3yYRRTj0tFQCwEniUy2167skdGOy3vqRzEvl1Dm4sV2ReDg==}
     engines: {node: '>=20.18.1'}
@@ -7487,7 +7573,7 @@ packages:
       spdx-expression-parse: 3.0.1
     dev: true
 
-  /vite-node@1.6.0:
+  /vite-node@1.6.0(@types/node@25.6.0):
     resolution: {integrity: sha512-de6HJgzC+TFzOu0NTC4RAIsyf/DY/ibWDYQUcuEA84EMHhcefTUGkjFHKKEJhQN4A+6I0u++kr3l36ZF2d7XRw==}
     engines: {node: ^18.0.0 || >=20.0.0}
     hasBin: true
@@ -7496,7 +7582,7 @@ packages:
       debug: 4.4.3(supports-color@5.5.0)
       pathe: 1.1.2
       picocolors: 1.1.1
-      vite: 5.1.1
+      vite: 5.1.1(@types/node@25.6.0)
     transitivePeerDependencies:
       - '@types/node'
       - less
@@ -7553,7 +7639,7 @@ packages:
       tiny-invariant: 1.3.3
       tinyglobby: 0.2.15
       typescript: 5.8.3
-      vite: 5.1.1
+      vite: 5.1.1(@types/node@25.6.0)
       vscode-uri: 3.1.0
     dev: true
 
@@ -7573,13 +7659,13 @@ packages:
       merge-anything: 5.1.7
       solid-js: 1.9.12
       solid-refresh: 0.6.3(solid-js@1.9.12)
-      vite: 5.1.1
+      vite: 5.1.1(@types/node@25.6.0)
       vitefu: 1.1.3(vite@5.1.1)
     transitivePeerDependencies:
       - supports-color
     dev: true
 
-  /vite@5.1.1:
+  /vite@5.1.1(@types/node@25.6.0):
     resolution: {integrity: sha512-wclpAgY3F1tR7t9LL5CcHC41YPkQIpKUGeIuT8MdNwNZr6OqOTLs7JX5vIHAtzqLWXts0T+GDrh9pN2arneKqg==}
     engines: {node: ^18.0.0 || >=20.0.0}
     hasBin: true
@@ -7607,6 +7693,7 @@ packages:
       terser:
         optional: true
     dependencies:
+      '@types/node': 25.6.0
       esbuild: 0.19.12
       postcss: 8.5.6
       rollup: 4.59.0
@@ -7614,7 +7701,7 @@ packages:
       fsevents: 2.3.3
     dev: true
 
-  /vite@6.4.0:
+  /vite@6.4.0(@types/node@25.6.0):
     resolution: {integrity: sha512-oLnWs9Hak/LOlKjeSpOwD6JMks8BeICEdYMJBf6P4Lac/pO9tKiv/XhXnAM7nNfSkZahjlCZu9sS50zL8fSnsw==}
     engines: {node: ^18.0.0 || ^20.0.0 || >=22.0.0}
     hasBin: true
@@ -7654,6 +7741,7 @@ packages:
       yaml:
         optional: true
     dependencies:
+      '@types/node': 25.6.0
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.3)
       picomatch: 4.0.3
@@ -7672,10 +7760,10 @@ packages:
       vite:
         optional: true
     dependencies:
-      vite: 5.1.1
+      vite: 5.1.1(@types/node@25.6.0)
     dev: true
 
-  /vitest@1.6.0(@vitest/browser@1.6.0)(jsdom@24.1.0):
+  /vitest@1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0):
     resolution: {integrity: sha512-H5r/dN06swuFnzNFhq/dnz37bPXnq8xB2xB5JOVk8K09rUtoeNN+LHWkoQ0A/i3hvbUKKcCei9KpbxqHMLhLLA==}
     engines: {node: ^18.0.0 || >=20.0.0}
     hasBin: true
@@ -7700,6 +7788,64 @@ packages:
       jsdom:
         optional: true
     dependencies:
+      '@types/node': 25.6.0
+      '@vitest/browser': 1.6.0(playwright@1.46.1)(vitest@1.6.0)
+      '@vitest/expect': 1.6.0
+      '@vitest/runner': 1.6.0
+      '@vitest/snapshot': 1.6.0
+      '@vitest/spy': 1.6.0
+      '@vitest/utils': 1.6.0
+      acorn-walk: 8.3.5
+      chai: 4.5.0
+      debug: 4.4.3(supports-color@5.5.0)
+      execa: 8.0.1
+      local-pkg: 0.5.1
+      magic-string: 0.30.21
+      pathe: 1.1.2
+      picocolors: 1.1.1
+      std-env: 3.10.0
+      strip-literal: 2.1.1
+      tinybench: 2.9.0
+      tinypool: 0.8.4
+      vite: 5.1.1(@types/node@25.6.0)
+      vite-node: 1.6.0(@types/node@25.6.0)
+      why-is-node-running: 2.3.0
+    transitivePeerDependencies:
+      - less
+      - lightningcss
+      - sass
+      - stylus
+      - sugarss
+      - supports-color
+      - terser
+    dev: true
+
+  /vitest@1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0):
+    resolution: {integrity: sha512-H5r/dN06swuFnzNFhq/dnz37bPXnq8xB2xB5JOVk8K09rUtoeNN+LHWkoQ0A/i3hvbUKKcCei9KpbxqHMLhLLA==}
+    engines: {node: ^18.0.0 || >=20.0.0}
+    hasBin: true
+    peerDependencies:
+      '@edge-runtime/vm': '*'
+      '@types/node': ^18.0.0 || >=20.0.0
+      '@vitest/browser': 1.6.0
+      '@vitest/ui': 1.6.0
+      happy-dom: '*'
+      jsdom: '*'
+    peerDependenciesMeta:
+      '@edge-runtime/vm':
+        optional: true
+      '@types/node':
+        optional: true
+      '@vitest/browser':
+        optional: true
+      '@vitest/ui':
+        optional: true
+      happy-dom:
+        optional: true
+      jsdom:
+        optional: true
+    dependencies:
+      '@types/node': 25.6.0
       '@vitest/browser': 1.6.0(playwright@1.46.1)(vitest@1.6.0)(webdriverio@9.0.9)
       '@vitest/expect': 1.6.0
       '@vitest/runner': 1.6.0
@@ -7719,8 +7865,8 @@ packages:
       strip-literal: 2.1.1
       tinybench: 2.9.0
       tinypool: 0.8.4
-      vite: 5.1.1
-      vite-node: 1.6.0
+      vite: 5.1.1(@types/node@25.6.0)
+      vite-node: 1.6.0(@types/node@25.6.0)
       why-is-node-running: 2.3.0
     transitivePeerDependencies:
       - less

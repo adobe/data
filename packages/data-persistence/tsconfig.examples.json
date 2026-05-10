@@ -1,0 +1,14 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "rootDir": "examples",
+        "outDir": "dist/examples",
+        "composite": false,
+        "noEmit": true
+    },
+    "include": ["examples/**/*"],
+    "references": [
+        { "path": "../data" },
+        { "path": "." }
+    ]
+}

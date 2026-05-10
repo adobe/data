@@ -1,10 +1,13 @@
 packages:
   - 'packages/data'
+  - 'packages/data-persistence'
+  - 'packages/data-sync'
   - 'packages/data-lit'
   - 'packages/data-lit-todo'
   - 'packages/data-react'
   - 'packages/data-react-hello'
   - 'packages/data-react-pixie'
   - 'packages/data-lit-tictactoe'
+  - 'packages/data-p2p-tictactoe'
   - 'packages/data-solid'
   - 'packages/data-solid-dashboard'

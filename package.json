@@ -1,6 +1,6 @@
 {
   "name": "data-monorepo",
-  "version": "0.9.56",
+"version": "0.9.56",
   "private": true,
   "scripts": {
     "build": "pnpm -r run build",
@@ -14,6 +14,7 @@
     "bp": "pnpm bump && pnpm run publish"
   },
   "devDependencies": {
+    "@types/node": "^25.6.0",
     "pnpm": "^9.0.0"
   },
   "publishConfig": {

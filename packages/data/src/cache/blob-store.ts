@@ -1,4 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { type AsyncCache } from "./async-cache.js";
 import { getManagedPersistentCache } from "./get-persistent-cache.js";
 import { type Schema } from "../schema/index.js";
 import { blobToHash } from "./functions/hashing/blob-to-hash.js";
@@ -117,10 +118,17 @@ export interface BlobStore {
  * Creates a new blob store instance.
  */
 export function createBlobStore() {
-  const cachePromise = getManagedPersistentCache("blobstore", {
-    maximumMemoryEntries: 10,
-    maximumStorageEntries: 1000,
-  });
+  // Lazy-init the persistent cache so that importing this module on a
+  // runtime without `globalThis.caches` (e.g. Node) does not produce an
+  // unhandled rejection. The cache promise is only kicked off the first
+  // time a blob store method actually needs it. See CLAUDE.md for the
+  // rationale behind the lazy-init pattern.
+  let cachePromiseInternal: Promise<AsyncCache<Request, Response>> | undefined;
+  const cachePromise = (): Promise<AsyncCache<Request, Response>> =>
+    (cachePromiseInternal ??= getManagedPersistentCache("blobstore", {
+      maximumMemoryEntries: 10,
+      maximumStorageEntries: 1000,
+    }));
 
   // Track borrowed URLs and their reference counts
   const borrowedUrls = new Map<string, { url: string; count: number }>();
@@ -128,7 +136,7 @@ export function createBlobStore() {
   const urlToKey = new Map<string, string>();
 
   async function getRef(blob: Blob | string): Promise<BlobRef> {
-    const cache = await cachePromise;
+    const cache = await cachePromise();
     if (typeof blob === "string") {
       //  if this is not a remote url, then we can assume it is a data url and fetch the blob from it.
       blob = await (await fetch(blob)).blob();
@@ -148,7 +156,7 @@ export function createBlobStore() {
     if (isRemoteBlobRef(r)) {
       return true;
     }
-    const cache = await cachePromise;
+    const cache = await cachePromise();
     const response = await cache.match(toRequest(r));
     return response !== undefined;
   }
@@ -159,7 +167,7 @@ export function createBlobStore() {
     }
     const response = await (isRemoteBlobRef(r)
       ? fetch(r.remoteBlobRef)
-      : (await cachePromise).match(toRequest(r)));
+      : (await cachePromise()).match(toRequest(r)));
     if (!response) {
       return null;
     }
@@ -172,7 +180,7 @@ export function createBlobStore() {
 
   async function releaseBlob(r: BlobRef): Promise<void> {
     if (isLocalBlobRef(r)) {
-      const cache = await cachePromise;
+      const cache = await cachePromise();
       cache.delete(toRequest(r));
     }
   }

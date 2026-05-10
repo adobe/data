@@ -1,0 +1,59 @@
+{
+    "name": "@adobe/data-persistence",
+    "version": "0.9.55",
+    "description": "Worker-based incremental persistence layer for @adobe/data ECS over OPFS (browser) and node:fs (server).",
+    "type": "module",
+    "sideEffects": false,
+    "private": false,
+    "publishConfig": {
+        "registry": "https://registry.npmjs.org/",
+        "access": "public"
+    },
+    "files": [
+        "dist",
+        "README.md",
+        "LICENSE"
+    ],
+    "scripts": {
+        "build": "cp ../../LICENSE . 2>/dev/null || true; tsc -b",
+        "clean": "rm -rf dist node_modules",
+        "dev": "tsc -b -w --preserveWatchOutput",
+        "lint": "pnpm eslint .",
+        "test": "pnpm exec playwright install chromium && vitest --run",
+        "test:node": "vitest --run --project=node",
+        "test:browser": "vitest --run --project=browser",
+        "perf": "tsc -b && node --expose-gc dist/perftest/run.js"
+    },
+    "dependencies": {
+        "@adobe/data": "workspace:*"
+    },
+    "devDependencies": {
+        "@vitest/browser": "^1.6.0",
+        "playwright": "^1.46.1",
+        "typescript": "^5.8.3",
+        "vite": "^5.1.1",
+        "vitest": "^1.6.0"
+    },
+    "exports": {
+        ".": {
+            "import": "./dist/index.js",
+            "types": "./dist/index.d.ts"
+        },
+        "./node": {
+            "import": "./dist/node/index.js",
+            "types": "./dist/node/index.d.ts"
+        },
+        "./browser": {
+            "import": "./dist/browser/index.js",
+            "types": "./dist/browser/index.d.ts"
+        },
+        "./browser-worker": {
+            "import": "./dist/browser/browser-worker-bootstrap.js",
+            "types": "./dist/browser/browser-worker-bootstrap.d.ts"
+        },
+        "./node-worker": {
+            "import": "./dist/node/node-worker-bootstrap.js",
+            "types": "./dist/node/node-worker-bootstrap.d.ts"
+        }
+    }
+}

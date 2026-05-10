@@ -9,6 +9,10 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Cursor local rules
+.cursor
+security-*
+
 node_modules
 dist
 storybook-static

@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { html } from "lit";
-import type { Cell } from "../../state/p2p-plugin.js";
+import type { Cell } from "../../types/board-state/get-cell.js";
 
 export function render(args: {
     cell: Cell;

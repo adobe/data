@@ -2,7 +2,7 @@
 
 import { customElement, property } from "lit/decorators.js";
 import { useObservableValues } from "@adobe/data-lit";
-import { Board } from "../../state/p2p-plugin.js";
+import { BoardState } from "../../types/board-state/board-state.js";
 import { P2pElement } from "../p2p-element.js";
 import { styles } from "./p2p-cell.css.js";
 import * as presentation from "./p2p-cell-presentation.js";
@@ -25,12 +25,13 @@ export class P2pCell extends P2pElement {
             [],
         );
 
-        const board = values?.board ?? Board.empty();
+        const board = values?.board ?? BoardState.createInitialBoard();
         const firstPlayer = values?.firstPlayer ?? "X";
-        const cell = Board.cell(board, this.index);
-        const currentPlayer = Board.currentPlayer(board, firstPlayer);
-        const isWinning = (Board.winningLine(board) ?? []).includes(this.index);
-        const isPlayable = cell === " " && currentPlayer === this.myMark && !Board.isOver(board);
+        const cell = BoardState.getCell(board, this.index);
+        const currentPlayer = BoardState.currentPlayer(board, firstPlayer);
+        const winningLine = BoardState.getWinningLine(board);
+        const isWinning = winningLine !== null && (winningLine as readonly number[]).includes(this.index);
+        const isPlayable = cell === " " && currentPlayer === this.myMark && !BoardState.isGameOver(board);
 
         return presentation.render({
             cell,

@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { html } from "lit";
-import type { PlayerMark } from "../../state/p2p-plugin.js";
+import type { PlayerMark } from "../../types/player-mark/player-mark.js";
 
 export function render(args: {
     myMark: PlayerMark;

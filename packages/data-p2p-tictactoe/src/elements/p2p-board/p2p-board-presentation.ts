@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { html } from "lit";
-import type { PresenceCursor, PlayerMark } from "../../state/p2p-plugin.js";
+import type { PlayerMark } from "../../types/player-mark/player-mark.js";
+import type { PresenceCursor } from "../../types/presence-cursor/presence-cursor.js";
 import "../p2p-cell/p2p-cell.js";
 
 export function render(args: {

@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { DatabaseElement } from "@adobe/data-lit";
-import { p2pPlugin, type PlayerMark } from "../state/p2p-plugin.js";
+import { p2pPlugin } from "../state/p2p-plugin.js";
+import type { PlayerMark } from "../types/player-mark/player-mark.js";
 
 /**
  * Base class for all P2P Tic-Tac-Toe elements.

@@ -3,7 +3,8 @@
 import { customElement } from "lit/decorators.js";
 import { Observe } from "@adobe/data/observe";
 import { useObservableValues, usePointerObserve, useEffect } from "@adobe/data-lit";
-import type { PlayerMark, PresenceCursor } from "../../state/p2p-plugin.js";
+import type { PlayerMark } from "../../types/player-mark/player-mark.js";
+import type { PresenceCursor } from "../../types/presence-cursor/presence-cursor.js";
 import { P2pElement } from "../p2p-element.js";
 import { styles } from "./p2p-board.css.js";
 import * as presentation from "./p2p-board-presentation.js";

@@ -46,13 +46,7 @@ export class P2pHud extends P2pElement {
             myTurn,
             isOver,
             restartGame: () => {
-                this.syncClient.propose({
-                    id: Date.now(),
-                    name: "restartGame",
-                    args: {},
-                    time: -1,
-                    userId: this.myMark,
-                });
+                this.service.transactions.restartGame();
             },
         });
     }

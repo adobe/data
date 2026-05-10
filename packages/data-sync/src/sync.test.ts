@@ -2,80 +2,87 @@
 //
 // Soundness tests for the @adobe/data-sync protocol.
 //
-// Each test wires up a SyncServer + one or more SyncClients over loopback
-// transports and verifies convergence / correctness properties.
+// Each test wires up a SyncServer + one or more SyncServices over loopback
+// transports and verifies convergence / correctness properties. Application
+// code only ever calls `db.transactions.X(args)` — the sync service forwards
+// envelopes transparently.
 
 import { describe, it, expect } from "vitest";
-import { createReconcilingDatabase, Store } from "@adobe/data/ecs";
+import { Database } from "@adobe/data/ecs";
 import { createLoopbackTransport } from "./loopback-transport.js";
 import { createSyncServer } from "./create-sync-server.js";
-import { createSyncClient } from "./create-sync-client.js";
+import { createSyncService } from "./create-sync-service.js";
 
 // ---------------------------------------------------------------------------
 // Shared test fixture
 // ---------------------------------------------------------------------------
 
-const makeDb = () => {
-    const store = Store.create({
-        components: {
-            x: { type: "number", default: 0 },
-            y: { type: "number", default: 0 },
-            label: { type: "string" },
-        } as const,
-        resources: {},
-        archetypes: {
-            Point: ["x", "y", "label"],
-        } as const,
-    });
-
-    type S = typeof store;
-
-    const transactions = {
-        createPoint(s: S, args: { x: number; y: number; label: string }) {
+const plugin = Database.Plugin.create({
+    components: {
+        x: { type: "number", default: 0 },
+        y: { type: "number", default: 0 },
+        label: { type: "string" },
+    } as const,
+    resources: {
+        // Synced resource — replicates to peers.
+        score: { default: 0 as number },
+        // Local-only resource — never replicates because of `ephemeral: true`.
+        // (Verified by the "ephemeral resource never replicates" test below.)
+        bannerText: { default: "" as string, ephemeral: true },
+    },
+    archetypes: {
+        Point: ["x", "y", "label"],
+    } as const,
+    transactions: {
+        createPoint(s, args: { x: number; y: number; label: string }) {
             return s.archetypes.Point.insert(args);
         },
-        movePoint(s: S, args: { entity: number; x: number; y: number }) {
+        movePoint(s, args: { entity: number; x: number; y: number }) {
             s.update(args.entity, { x: args.x, y: args.y });
         },
-    };
+        bumpScore(s, args: { delta: number }) {
+            s.resources.score = s.resources.score + args.delta;
+        },
+        setBanner(s, args: { text: string }) {
+            s.resources.bannerText = args.text;
+        },
+    },
+});
 
-    return createReconcilingDatabase(store, transactions);
-};
+const makeDb = (userId: string) => Database.create(plugin, { userId });
 
-let _idCounter = 100;
-const nextId = () => ++_idCounter;
+const snap = (db: ReturnType<typeof makeDb>) =>
+    db.select(["x", "y", "label"])
+        .map(e => ({ entity: e, ...db.read(e) }))
+        .sort((a, b) => (a.label ?? "") < (b.label ?? "") ? -1 : 1);
 
-// ---------------------------------------------------------------------------
-// 1. Determinism: two clients receiving the same committed sequence converge
 // ---------------------------------------------------------------------------
 
 describe("sync soundness", () => {
-    it("two clients converge after receiving the same committed envelopes via loopback", () => {
+    // -----------------------------------------------------------------------
+    // 1. Determinism: two clients receiving the same committed sequence converge
+    // -----------------------------------------------------------------------
+
+    it("two peers converge after one peer's transactions are forwarded via loopback", () => {
         const server = createSyncServer();
 
         const { client: c1t, server: s1t } = createLoopbackTransport();
         const { client: c2t, server: s2t } = createLoopbackTransport();
 
-        const db1 = makeDb();
-        const db2 = makeDb();
+        const db1 = makeDb("peer1");
+        const db2 = makeDb("peer2");
 
         server.connect(s1t);
         server.connect(s2t);
 
-        const client1 = createSyncClient({ database: db1, transport: c1t });
+        const sync1 = createSyncService({ database: db1, transport: c1t });
+        // peer 2 is a passive observer — sync service alone, no transactions
+        createSyncService({ database: db2, transport: c2t });
 
-        // client2 is a passive observer — it does not propose anything
-        createSyncClient({ database: db2, transport: c2t });
-
-        client1.propose({ id: nextId(), name: "createPoint", args: { x: 1, y: 2, label: "A" }, time: -1 });
-        client1.propose({ id: nextId(), name: "createPoint", args: { x: 3, y: 4, label: "B" }, time: -1 });
+        db1.transactions.createPoint({ x: 1, y: 2, label: "A" });
+        db1.transactions.createPoint({ x: 3, y: 4, label: "B" });
 
         // Both DBs should have the same two points with the same entity ids.
-        const snap = (db: ReturnType<typeof makeDb>) =>
-            db.select(["x", "y", "label"])
-                .map(e => ({ entity: e, ...db.read(e) }))
-                .sort((a, b) => (a.label ?? "") < (b.label ?? "") ? -1 : 1);
-
         const snap1 = snap(db1);
         const snap2 = snap(db2);
 
@@ -86,134 +93,86 @@ describe("sync soundness", () => {
         expect(snap1[0]!.label).toBe("A");
         expect(snap2[0]!.label).toBe("A");
 
-        client1.dispose();
+        sync1.dispose();
         server.dispose();
     });
 
     // -----------------------------------------------------------------------
-    // 2. Round-trip rebase: transient → committed results in correct state
+    // 2. Round-trip rebase: a local transaction is promoted from transient
+    //    to committed and the database converges.
     // -----------------------------------------------------------------------
 
-    it("a transient proposal is promoted to committed and the database converges", () => {
+    it("a local transaction is promoted to committed and the database converges", () => {
         const server = createSyncServer();
         const { client: ct, server: st } = createLoopbackTransport();
-        const db = makeDb();
+        const db = makeDb("peer");
 
         server.connect(st);
-        const client = createSyncClient({ database: db, transport: ct });
+        const sync = createSyncService({ database: db, transport: ct });
 
-        client.propose({ id: nextId(), name: "createPoint", args: { x: 10, y: 20, label: "X" }, time: -1 });
+        db.transactions.createPoint({ x: 10, y: 20, label: "X" });
 
-        // The loopback server echoes back with positive time; the client's
-        // database should now have the point committed (no transient entries).
         const points = db.select(["label"]);
         expect(points.length).toBe(1);
         expect(db.read(points[0]!)?.label).toBe("X");
 
-        client.dispose();
+        sync.dispose();
         server.dispose();
     });
 
     // -----------------------------------------------------------------------
-    // 3. Concurrent-insert id stability: two clients insert simultaneously;
-    //    both must end up with identical entity ids for the same logical entity.
+    // 3. Concurrent inserts from two clients converge to identical entity ids.
     // -----------------------------------------------------------------------
 
-    it("concurrent inserts from two clients converge to identical entity ids", () => {
+    it("concurrent inserts from two peers converge to identical entity ids", () => {
         const server = createSyncServer();
         const { client: c1t, server: s1t } = createLoopbackTransport();
         const { client: c2t, server: s2t } = createLoopbackTransport();
 
-        const db1 = makeDb();
-        const db2 = makeDb();
+        const db1 = makeDb("peer1");
+        const db2 = makeDb("peer2");
 
         server.connect(s1t);
         server.connect(s2t);
 
-        const client1 = createSyncClient({ database: db1, transport: c1t });
-        const client2 = createSyncClient({ database: db2, transport: c2t });
+        const sync1 = createSyncService({ database: db1, transport: c1t });
+        const sync2 = createSyncService({ database: db2, transport: c2t });
 
-        // Both clients propose a point before either receives the other's commit.
-        client1.propose({ id: nextId(), name: "createPoint", args: { x: 1, y: 0, label: "Alpha" }, time: -1 });
-        client2.propose({ id: nextId(), name: "createPoint", args: { x: 2, y: 0, label: "Beta" }, time: -1 });
+        db1.transactions.createPoint({ x: 1, y: 0, label: "Alpha" });
+        db2.transactions.createPoint({ x: 2, y: 0, label: "Beta" });
 
-        // Loopback is synchronous so both commits are echoed immediately.
         const entityByLabel = (db: ReturnType<typeof makeDb>, lbl: string) =>
             db.select(["label"]).find(e => db.read(e)?.label === lbl);
 
         expect(entityByLabel(db1, "Alpha")).toBe(entityByLabel(db2, "Alpha"));
         expect(entityByLabel(db1, "Beta")).toBe(entityByLabel(db2, "Beta"));
 
-        client1.dispose();
-        client2.dispose();
+        sync1.dispose();
+        sync2.dispose();
         server.dispose();
     });
 
     // -----------------------------------------------------------------------
-    // 4. Cancel before commit: cancelling a proposed id rolls it back locally
-    //    and the server notifies all clients.
-    // -----------------------------------------------------------------------
-
-    it("cancelling a proposal removes it from the database on all clients", () => {
-        const server = createSyncServer();
-        const { client: c1t, server: s1t } = createLoopbackTransport();
-        const { client: c2t, server: s2t } = createLoopbackTransport();
-
-        const db1 = makeDb();
-        const db2 = makeDb();
-
-        server.connect(s1t);
-        server.connect(s2t);
-
-        const client1 = createSyncClient({ database: db1, transport: c1t });
-        createSyncClient({ database: db2, transport: c2t });
-
-        const id = nextId();
-        client1.propose({ id, name: "createPoint", args: { x: 5, y: 5, label: "ToDelete" }, time: -1 });
-
-        // Over synchronous loopback, the commit lands before the cancel.
-        // Both sides see the committed entity.
-        expect(db1.select(["label"]).length).toBe(1);
-        expect(db2.select(["label"]).length).toBe(1);
-
-        // The cancel arrives after the commit has already landed — this is a
-        // no-op for a committed entry. Document that cancel only works for
-        // *transient* (in-flight) proposals.
-        client1.cancel(id);
-        expect(db1.select(["label"]).length).toBe(1);
-
-        client1.dispose();
-        server.dispose();
-    });
-
-    // -----------------------------------------------------------------------
-    // 5. Initial load: a client that connects after commits have already been
+    // 4. Late-join: a peer that connects after commits have already been
     //    made receives the full history and ends up in identical state.
     // -----------------------------------------------------------------------
 
-    it("a late-joining client receives full history and converges with existing clients", () => {
+    it("a late-joining peer receives full history and converges with existing peers", () => {
         const server = createSyncServer();
 
-        // early client joins and makes two commits
         const { client: c1t, server: s1t } = createLoopbackTransport();
-        const db1 = makeDb();
+        const db1 = makeDb("peer1");
         server.connect(s1t);
-        const client1 = createSyncClient({ database: db1, transport: c1t });
+        const sync1 = createSyncService({ database: db1, transport: c1t });
 
-        client1.propose({ id: nextId(), name: "createPoint", args: { x: 1, y: 2, label: "First" }, time: -1 });
-        client1.propose({ id: nextId(), name: "createPoint", args: { x: 3, y: 4, label: "Second" }, time: -1 });
+        db1.transactions.createPoint({ x: 1, y: 2, label: "First" });
+        db1.transactions.createPoint({ x: 3, y: 4, label: "Second" });
 
-        // late client joins AFTER both commits are already in the server log
+        // late peer joins AFTER both commits are already in the server log
         const { client: c2t, server: s2t } = createLoopbackTransport();
-        const db2 = makeDb();
+        const db2 = makeDb("peer2");
         server.connect(s2t);
-        createSyncClient({ database: db2, transport: c2t });
-
-        // db2 should have replayed the history and match db1's committed state
-        const snap = (db: ReturnType<typeof makeDb>) =>
-            db.select(["label"])
-                .map(e => ({ entity: e, ...db.read(e) }))
-                .sort((a, b) => (a.label ?? "") < (b.label ?? "") ? -1 : 1);
+        createSyncService({ database: db2, transport: c2t });
 
         const snap1 = snap(db1);
         const snap2 = snap(db2);
@@ -224,50 +183,80 @@ describe("sync soundness", () => {
         expect(snap2[0]!.label).toBe("First");
         expect(snap2[1]!.label).toBe("Second");
 
-        client1.dispose();
+        sync1.dispose();
         server.dispose();
     });
 
     // -----------------------------------------------------------------------
-    // 6. Transient lossiness: sendTransient does NOT commit to the server;
-    //    a fresh database that connects later has no record of it.
+    // 5. Ephemeral resource never replicates.
+    //    Red-green: this is the semantic guarantee that ephemeral: true
+    //    resources stay local. Sync service skips envelopes whose
+    //    TransactionResult.ephemeral === true.
     // -----------------------------------------------------------------------
 
-    it("sendTransient is not committed — a fresh database has no record of it", () => {
+    it("ephemeral resource mutations are never replicated to peers", () => {
         const server = createSyncServer();
         const { client: c1t, server: s1t } = createLoopbackTransport();
         const { client: c2t, server: s2t } = createLoopbackTransport();
 
-        const db1 = makeDb();
-        const db2 = makeDb();
+        const db1 = makeDb("peer1");
+        const db2 = makeDb("peer2");
 
         server.connect(s1t);
         server.connect(s2t);
 
-        const client1 = createSyncClient({ database: db1, transport: c1t });
-        createSyncClient({ database: db2, transport: c2t });
+        const sync1 = createSyncService({ database: db1, transport: c1t });
+        createSyncService({ database: db2, transport: c2t });
 
-        // sendTransient applies locally (transient) and is relayed to peers.
-        client1.sendTransient({
-            id: nextId(),
-            name: "createPoint",
-            args: { x: 9, y: 9, label: "Cursor" },
-            time: -1,
-        });
+        db1.transactions.setBanner({ text: "private to peer1" });
 
-        // db1 sees the local transient.
-        expect(db1.select(["label"]).length).toBeGreaterThanOrEqual(1);
+        // Local DB sees the local change.
+        expect(db1.resources.bannerText).toBe("private to peer1");
+        // Peer 2 must NOT see it.
+        expect(db2.resources.bannerText).toBe("");
 
-        // A fresh db3 that connects after the transient was sent should see
-        // zero committed points (the transient was never committed).
-        const db3 = makeDb();
-        const { client: c3t, server: s3t } = createLoopbackTransport();
-        server.connect(s3t);
-        createSyncClient({ database: db3, transport: c3t });
+        // Sanity check: a non-ephemeral mutation in the same session DOES replicate.
+        db1.transactions.bumpScore({ delta: 5 });
+        expect(db1.resources.score).toBe(5);
+        expect(db2.resources.score).toBe(5);
 
-        expect(db3.select(["label"]).length).toBe(0);
+        sync1.dispose();
+        server.dispose();
+    });
 
-        client1.dispose();
+    // -----------------------------------------------------------------------
+    // 6. (userId, id) compound key keeps two peers' independent local
+    //    counters from colliding on the wire.
+    // -----------------------------------------------------------------------
+
+    it("two peers' identical local id counters do not collide via (userId, id) compound key", () => {
+        const server = createSyncServer();
+        const { client: c1t, server: s1t } = createLoopbackTransport();
+        const { client: c2t, server: s2t } = createLoopbackTransport();
+
+        const db1 = makeDb("peerA");
+        const db2 = makeDb("peerB");
+
+        server.connect(s1t);
+        server.connect(s2t);
+
+        const sync1 = createSyncService({ database: db1, transport: c1t });
+        const sync2 = createSyncService({ database: db2, transport: c2t });
+
+        // Both peers' local id counters start at 1; if compound keying were
+        // broken these envelopes would overwrite each other in the
+        // reconciler queue and one of the entities would be lost.
+        db1.transactions.createPoint({ x: 0, y: 0, label: "FromA" });
+        db2.transactions.createPoint({ x: 0, y: 0, label: "FromB" });
+
+        const labels = (db: ReturnType<typeof makeDb>) =>
+            db.select(["label"]).map(e => db.read(e)?.label).sort();
+
+        expect(labels(db1)).toEqual(["FromA", "FromB"]);
+        expect(labels(db2)).toEqual(["FromA", "FromB"]);
+
+        sync1.dispose();
+        sync2.dispose();
         server.dispose();
     });
 });

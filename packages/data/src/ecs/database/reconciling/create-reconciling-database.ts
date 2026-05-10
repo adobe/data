@@ -54,13 +54,13 @@ export function createReconcilingDatabase<
     };
 
     /**
-     * Splice a transient entry out of the queue by id.
+     * Splice a transient entry out of the queue by compound (userId, id) key.
      * IMPORTANT: must only be called when all transients are already rolled back
      * (i.e. after rollbackAllTransients()). Calling it while entries are still
      * applied would undo a non-top entry mid-stack, corrupting the freelist.
      */
-    const spliceTransientEntry = (id: number): boolean => {
-        const index = reconcilingEntries.findIndex(entry => entry.id === id);
+    const spliceTransientEntry = (id: number, userId: number | string | undefined): boolean => {
+        const index = reconcilingEntries.findIndex(entry => entry.id === id && entry.userId === userId);
         if (index === -1) {
             return false;
         }
@@ -96,12 +96,12 @@ export function createReconcilingDatabase<
             throw new Error(`Unknown transaction: ${envelope.name as string}`);
         }
 
-        const { id, time, args } = envelope;
+        const { id, userId, time, args } = envelope;
         const transactionFn = transaction as (store: Store<C, R, A>, args: unknown) => void | Entity;
 
-        // Handle cancellation: remove any transient entry for this id.
+        // Handle cancellation: remove any transient entry for this (userId, id).
         if (time === 0) {
-            const index = reconcilingEntries.findIndex(entry => entry.id === id);
+            const index = reconcilingEntries.findIndex(entry => entry.id === id && entry.userId === userId);
             if (index === -1) {
                 return undefined;
             }
@@ -117,11 +117,12 @@ export function createReconcilingDatabase<
             // applied in reverse stack order (avoids mid-stack partial undos
             // that would corrupt the freelist).
             rollbackAllTransients();
-            spliceTransientEntry(id);
+            spliceTransientEntry(id, userId);
 
             // Create and insert the new transient entry.
             const entry: ReconcilingEntry<C, R, A> = {
                 id,
+                userId,
                 name: envelope.name,
                 transaction: transactionFn,
                 args,
@@ -148,7 +149,7 @@ export function createReconcilingDatabase<
         // identical on every peer, regardless of what local transients were
         // pending when the broadcast arrived.
         rollbackAllTransients();
-        spliceTransientEntry(id);
+        spliceTransientEntry(id, userId);
         const result = execute(
             t => transactionFn(t, args),
             { transient: false },
@@ -157,8 +158,8 @@ export function createReconcilingDatabase<
         return result;
     };
 
-    const cancelEntry = (id: number) => {
-        const index = reconcilingEntries.findIndex(entry => entry.id === id);
+    const cancelEntry = (id: number, userId?: number | string) => {
+        const index = reconcilingEntries.findIndex(entry => entry.id === id && entry.userId === userId);
         if (index === -1) {
             return;
         }

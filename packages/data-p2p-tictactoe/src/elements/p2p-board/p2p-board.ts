@@ -3,7 +3,7 @@
 import { customElement } from "lit/decorators.js";
 import { Observe } from "@adobe/data/observe";
 import { useObservableValues, usePointerObserve, useEffect } from "@adobe/data-lit";
-import { PRESENCE_ID, type PlayerMark, type PresenceCursor } from "../../state/p2p-plugin.js";
+import type { PlayerMark, PresenceCursor } from "../../state/p2p-plugin.js";
 import { P2pElement } from "../p2p-element.js";
 import { styles } from "./p2p-board.css.js";
 import * as presentation from "./p2p-board-presentation.js";
@@ -33,41 +33,50 @@ export class P2pBoard extends P2pElement {
                 : (values?.cursorO ?? null);
 
         // -------------------------------------------------------------------
-        // Presence: continuous pointer-position stream → sendTransient.
+        // Presence: never-ending transaction whose async generator yields a
+        // fresh `movePresence` argument for every pointer sample.
         //
-        // usePointerObserve returns an Observe<{x,y}> (pixels relative to
-        // this element). Observe.toAsyncGenerator with () => false creates a
-        // never-ending async generator — the "drag sequence that never ends"
-        // pattern. Each yielded position is normalised to a 0–1 fraction and
-        // sent as a transient envelope with a fixed per-player ID so it
-        // replaces (rather than accumulates) in the reconciling DB's queue.
+        // The transaction is invoked once with a generator function:
+        //   - Each yielded value becomes a transient envelope (negative
+        //     time) which createSyncService forwards as `kind: "transient"`.
+        //   - The wrapper assigns the same `id` to every yield, so each
+        //     yield REPLACES the previous transient in the reconciler queue
+        //     via the (userId, id) compound key.
+        //   - The generator never returns, so the transaction never
+        //     commits — it just streams transients until the element
+        //     disconnects.
         //
-        // The useEffect cleanup calls gen.return() which terminates the
-        // generator when the element disconnects.
+        // The useEffect cleanup terminates the generator so the transaction
+        // wrapper unwinds cleanly.
         // -------------------------------------------------------------------
         const pointerPos = usePointerObserve([]);
 
         useEffect(() => {
-            const gen = Observe.toAsyncGenerator(pointerPos, () => false);
-            let active = true;
+            const positions = Observe.toAsyncGenerator(pointerPos, () => false);
+            const myMark = this.myMark;
+            const board = this;
 
-            (async () => {
-                    for await (const [px, py] of gen) {
-                        if (!active) break;
-                        const { width, height } = this.getBoundingClientRect();
-                        if (!width || !height) continue;
-                        this.syncClient.sendTransient({
-                            id: PRESENCE_ID[this.myMark],
-                            name: "movePresence",
-                            args: { mark: this.myMark, x: px / width, y: py / height },
-                            time: -1,
-                        });
-                    }
-            })();
+            async function* presenceArgs() {
+                for await (const [px, py] of positions) {
+                    const { width, height } = board.getBoundingClientRect();
+                    if (!width || !height) continue;
+                    yield { mark: myMark, x: px / width, y: py / height };
+                }
+            }
+
+            // When invoked with an async-generator factory the wrapper
+            // returns a Promise (typed loosely here because the static
+            // declaration of `movePresence` is `(args) => void`). The
+            // promise rejects when we `.throw()` the generator on
+            // dispose; swallow that — we used `.throw()` precisely so the
+            // wrapper would cancel the in-flight transient instead of
+            // promoting the last cursor position to a commit.
+            const movePresence = this.service.transactions.movePresence as
+                unknown as (factory: () => AsyncGenerator<unknown>) => Promise<unknown>;
+            movePresence(presenceArgs).catch(() => undefined);
 
             return () => {
-                active = false;
-                void gen.return(undefined as unknown as [number, number]);
+                void positions.throw(new Error("p2p-board disposed")).catch(() => undefined);
             };
         }, []);
 
@@ -75,9 +84,6 @@ export class P2pBoard extends P2pElement {
         // Render
         // -------------------------------------------------------------------
         return presentation.render({
-            service: this.service,
-            syncClient: this.syncClient,
-            myMark: this.myMark,
             remoteCursor,
             remoteMark,
         });

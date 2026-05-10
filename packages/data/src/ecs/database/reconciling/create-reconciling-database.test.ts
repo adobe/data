@@ -524,4 +524,47 @@ describe("createReconcilingDatabase", () => {
             expect(alphaSnap[i]!.position).toEqual(betaSnap[i]!.position);
         }
     });
+
+    it("treats (userId, id) as the compound transient-replace key", () => {
+        // Two different peers can each maintain their own per-session id
+        // counter. When their envelopes happen to share an `id` they MUST
+        // remain separate transient entries, because they are unrelated
+        // logical transactions originating on different peers. Without the
+        // compound `(userId, id)` key, peer B's transient with `id=1` would
+        // overwrite peer A's transient with `id=1`.
+        const reconciling = createTestReconcilingDatabase();
+
+        reconciling.apply({
+            id: 1,
+            userId: "peerA",
+            name: "createPositionNameEntity",
+            args: { position: { x: 0, y: 0, z: 0 }, name: "FromA" },
+            time: -1,
+        });
+        reconciling.apply({
+            id: 1,
+            userId: "peerB",
+            name: "createPositionNameEntity",
+            args: { position: { x: 1, y: 1, z: 1 }, name: "FromB" },
+            time: -2,
+        });
+
+        // Both transients must coexist — neither one replaces the other.
+        expect(readEntityNames(reconciling).sort()).toEqual(["FromA", "FromB"]);
+
+        // A subsequent transient from peerA with the same id MUST replace
+        // peerA's prior transient (and only peerA's).
+        reconciling.apply({
+            id: 1,
+            userId: "peerA",
+            name: "createPositionNameEntity",
+            args: { position: { x: 9, y: 9, z: 9 }, name: "FromA-v2" },
+            time: -1,
+        });
+        expect(readEntityNames(reconciling).sort()).toEqual(["FromA-v2", "FromB"]);
+
+        // Cancelling (userId=peerA, id=1) must leave peerB's entry intact.
+        reconciling.cancel(1, "peerA");
+        expect(readEntityNames(reconciling)).toEqual(["FromB"]);
+    });
 });

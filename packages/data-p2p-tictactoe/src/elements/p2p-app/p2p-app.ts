@@ -1,17 +1,21 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 //
 // Top-level application element. Manages the WebRTC signaling flow and
-// transitions to the live game — all state lives in the ECS service.
+// transitions to the live game — all reactive state lives in the ECS service.
 //
-// As the DOM root, DatabaseElement.connectedCallback() finds no ancestor
-// service and calls Database.create(p2pPlugin), creating the shared DB that
-// all descendant P2pElement subclasses discover via ancestor traversal.
+// As the DOM root, we override `connectedCallback` to call
+// `Database.create(p2pPlugin, { userId })` ourselves, where `userId` is a
+// fresh UUID per browser tab. The sync layer's reconciler uses
+// `(userId, id)` as its compound transient-replace key so two tabs never
+// clobber each other's transients on the wire.
 
 import { html } from "lit";
 import { customElement } from "lit/decorators.js";
+import { Database } from "@adobe/data/ecs";
 import { useObservableValues } from "@adobe/data-lit";
-import { createSyncServer, createSyncClient, createLoopbackTransport } from "@adobe/data-sync";
+import { createSyncServer, createSyncService, createLoopbackTransport, type SyncService } from "@adobe/data-sync";
 import { startHostSignaling, startJoinerSignaling } from "../../signaling.js";
+import { p2pPlugin } from "../../state/p2p-plugin.js";
 import { P2pElement } from "../p2p-element.js";
 import { styles } from "./p2p-app.css.js";
 import "../p2p-board/p2p-board.js";
@@ -27,6 +31,26 @@ export class P2pApp extends P2pElement {
     private _submitAnswer?: (code: string) => void;
     private _answerInput = "";
     private _joinStarted = false;
+    private _syncService?: SyncService;
+    private _syncServer?: ReturnType<typeof createSyncServer>;
+
+    override connectedCallback(): void {
+        if (!this.service) {
+            // Each tab/peer must have a unique userId — the reconciler keys
+            // its transient queue by (userId, id) and would collide if two
+            // peers happened to pick the same id-counter values.
+            this.service = Database.create(p2pPlugin, {
+                userId: crypto.randomUUID(),
+            }) as unknown as typeof this.service;
+        }
+        super.connectedCallback();
+    }
+
+    override disconnectedCallback(): void {
+        this._syncService?.dispose();
+        this._syncServer?.dispose();
+        super.disconnectedCallback();
+    }
 
     render() {
         const values = useObservableValues(
@@ -75,7 +99,7 @@ export class P2pApp extends P2pElement {
         `;
     }
 
-    private _startHost() {
+    private _startHost = () => {
         this.service.transactions.startHostSignaling();
 
         const { offerCode, submitAnswer, connected } = startHostSignaling();
@@ -89,16 +113,20 @@ export class P2pApp extends P2pElement {
         this._submitAnswer = submitAnswer;
 
         connected.then((serverTransport) => {
+            // Host runs the SyncServer in-process and connects:
+            //   - the WebRTC server transport (joiner's link)
+            //   - a loopback transport pair, with the loopback-client end
+            //     given to the host's own SyncService.
             const { client: loopbackClient, server: loopbackServer } = createLoopbackTransport();
-            const syncServer = createSyncServer();
-            syncServer.connect(serverTransport);
-            syncServer.connect(loopbackServer);
-            const syncClient = createSyncClient({ database: this.service as any, transport: loopbackClient });
-            this.service.transactions.connected({ myMark: "X", syncClient });
+            this._syncServer = createSyncServer();
+            this._syncServer.connect(serverTransport);
+            this._syncServer.connect(loopbackServer);
+            this._syncService = createSyncService({ database: this.service, transport: loopbackClient });
+            this.service.transactions.connected({ myMark: "X" });
         }).catch((err: unknown) => {
             this.service.transactions.setBanner({ text: `Connection failed: ${String(err)}`, error: true });
         });
-    }
+    };
 
     // -------------------------------------------------------------------------
     // Phase: host-signaling
@@ -132,19 +160,19 @@ export class P2pApp extends P2pElement {
         `;
     }
 
-    private _submitAnswerCode() {
+    private _submitAnswerCode = () => {
         if (this._answerInput && this._submitAnswer) {
             this._submitAnswer(this._answerInput);
         }
-    }
+    };
 
     // -------------------------------------------------------------------------
     // Phase: join-signaling
     // -------------------------------------------------------------------------
 
-    private _startJoin() {
+    private _startJoin = () => {
         this.service.transactions.startJoinSignaling();
-    }
+    };
 
     private _renderJoinSignaling(answerCode: string, bannerText: string, bannerError: boolean) {
         return html`
@@ -174,7 +202,7 @@ export class P2pApp extends P2pElement {
         `;
     }
 
-    private _generateAnswer() {
+    private _generateAnswer = () => {
         if (this._joinStarted || !this._answerInput) return;
         this._joinStarted = true;
         this.service.transactions.setBanner({ text: "Generating answer — please wait…" });
@@ -188,12 +216,12 @@ export class P2pApp extends P2pElement {
         });
 
         connected.then((clientTransport) => {
-            const syncClient = createSyncClient({ database: this.service as any, transport: clientTransport });
-            this.service.transactions.connected({ myMark: "O", syncClient });
+            this._syncService = createSyncService({ database: this.service, transport: clientTransport });
+            this.service.transactions.connected({ myMark: "O" });
         }).catch((err: unknown) => {
             this.service.transactions.setBanner({ text: `Connection failed: ${String(err)}`, error: true });
         });
-    }
+    };
 
     // -------------------------------------------------------------------------
     // Phase: game

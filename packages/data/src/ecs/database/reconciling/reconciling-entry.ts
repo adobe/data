@@ -14,6 +14,13 @@ export type ReconcilingEntry<
     A extends ArchetypeComponents<StringKeyof<C>> = ArchetypeComponents<StringKeyof<C>>,
 > = {
     readonly id: number;
+    /**
+     * Originating peer identifier. Combined with `id` to form the compound key
+     * the reconciler uses to locate prior entries on transient/cancel/commit.
+     * Two peers can each maintain their own per-session id counter without
+     * collision provided each peer's `userId` is unique.
+     */
+    readonly userId?: number | string;
     readonly name: string;
     readonly transaction: (store: Store<C, R, A>, args: unknown) => void | Entity;
     readonly args: unknown;

@@ -474,4 +474,32 @@ describe('toAsyncGenerator', () => {
         // Second value should trigger error
         await expect(generator.next()).rejects.toThrow('Test error');
     });
+
+    it('return() resolves an in-flight next() with { done: true }', async () => {
+        // Regression: previously cleanup() set done=true but never flushed
+        // a pending resolveNext, so a `for await` consumer would hang
+        // forever after `.return()` was called from outside.
+        const observe: Observe<number> = () => () => { };
+        const generator = toAsyncGenerator(observe, () => false);
+
+        const pending = generator.next();
+        await Promise.resolve();
+        await generator.return(undefined);
+        await expect(pending).resolves.toEqual({ done: true, value: undefined });
+    });
+
+    it('throw() rejects an in-flight next() with the passed error', async () => {
+        // Regression: previously throw() called cleanup() (which set
+        // done=true) before recording the error, and flush() prefers
+        // {done:true} over rejection — so a pending next() resolved
+        // instead of rejecting.
+        const observe: Observe<number> = () => () => { };
+        const generator = toAsyncGenerator(observe, () => false);
+
+        const pending = generator.next();
+        await Promise.resolve();
+        const err = new Error('disposed');
+        await expect(generator.throw(err)).rejects.toBe(err);
+        await expect(pending).rejects.toBe(err);
+    });
 }); 

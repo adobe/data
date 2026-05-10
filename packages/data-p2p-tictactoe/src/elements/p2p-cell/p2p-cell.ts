@@ -37,13 +37,7 @@ export class P2pCell extends P2pElement {
             isWinning,
             isPlayable,
             playMove: () => {
-                this.syncClient.propose({
-                    id: Date.now(),
-                    name: "playMove",
-                    args: { index: this.index },
-                    time: -1,
-                    userId: this.myMark,
-                });
+                this.service.transactions.playMove({ index: this.index });
             },
         });
     }

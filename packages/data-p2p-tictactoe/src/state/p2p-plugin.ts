@@ -2,35 +2,26 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Observe } from "@adobe/data/observe";
-import type { SyncClient } from "@adobe/data-sync";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export type PlayerMark = "X" | "O";
-
-/**
- * Ephemeral-only — tracks which screen the local peer is on.
- * Applied directly to the local DB (never through syncClient.propose),
- * so it never reaches the remote peer.
- */
-export type Phase = "idle" | "host-signaling" | "join-signaling" | "game";
 export type Cell = " " | PlayerMark;
 
 /**
- * Cursor position as fractions [0–1] of board width/height — resolution-independent.
- * null means the player hasn't moved their pointer over the board yet.
+ * Local-only screen the peer is currently on. Stored as an ephemeral
+ * resource so it never reaches the wire — only the local UI reads it.
  */
-export type PresenceCursor = { readonly x: number; readonly y: number } | null;
+export type Phase = "idle" | "host-signaling" | "join-signaling" | "game";
 
 /**
- * Fixed envelope IDs for presence transients. Re-using the same ID per player
- * replaces the previous cursor entry in the reconciling DB's transient queue
- * rather than accumulating — so each player's presence is a single sliding
- * entry at all times.
+ * Cursor position as fractions [0–1] of board width/height — resolution-
+ * independent. `null` means the player hasn't moved their pointer over the
+ * board yet.
  */
-export const PRESENCE_ID: Record<PlayerMark, number> = { X: 0xF001, O: 0xF002 };
+export type PresenceCursor = { readonly x: number; readonly y: number } | null;
 
 // ---------------------------------------------------------------------------
 // Board helpers
@@ -77,20 +68,22 @@ export const Board = {
 
 export const p2pPlugin = Database.Plugin.create({
     resources: {
-        // ── Game state (synced to peer via syncClient.propose / sendTransient) ──
+        // ── Synced game state — replicated to the peer by createSyncService ──
         board: { default: Board.empty() },
         firstPlayer: { default: "X" as PlayerMark },
         cursorX: { default: null as PresenceCursor },
         cursorO: { default: null as PresenceCursor },
 
-        // ── Ephemeral local state (applied directly to DB, never synced) ──
-        phase:       { default: "idle" as Phase },
-        offerCode:   { default: "" as string },
-        answerCode:  { default: "" as string },
-        bannerText:  { default: "" as string },
-        bannerError: { default: false as boolean },
-        myMark:      { default: null as PlayerMark | null },
-        syncClient:  { default: null as SyncClient | null },
+        // ── Ephemeral local state — `ephemeral: true` marks them as
+        //    purely local: createSyncService skips envelopes whose
+        //    TransactionResult.ephemeral === true, so these never reach
+        //    the wire. ──
+        phase:       { default: "idle" as Phase, ephemeral: true },
+        offerCode:   { default: "" as string,   ephemeral: true },
+        answerCode:  { default: "" as string,   ephemeral: true },
+        bannerText:  { default: "" as string,   ephemeral: true },
+        bannerError: { default: false as boolean, ephemeral: true },
+        myMark:      { default: null as PlayerMark | null, ephemeral: true },
     },
     computed: {
         currentPlayer: (db) =>
@@ -106,7 +99,8 @@ export const p2pPlugin = Database.Plugin.create({
             Observe.withFilter(db.observe.resources.board, Board.winningLine),
     },
     transactions: {
-        // ── Ephemeral phase transitions (local only, never propose()d) ──
+        // ── Local UI transitions — touch only ephemeral resources, so
+        //    createSyncService skips them and they stay on this peer. ──
 
         startHostSignaling(t) {
             t.resources.phase = "host-signaling";
@@ -130,13 +124,13 @@ export const p2pPlugin = Database.Plugin.create({
             t.resources.bannerText = text;
             t.resources.bannerError = error;
         },
-        connected(t, { myMark, syncClient }: { myMark: PlayerMark; syncClient: SyncClient }) {
+        connected(t, { myMark }: { myMark: PlayerMark }) {
             t.resources.myMark = myMark;
-            t.resources.syncClient = syncClient;
             t.resources.phase = "game";
         },
 
-        // ── Game transactions (go through syncClient.propose / sendTransient) ──
+        // ── Synced game transactions — touch the synced resources, so
+        //    createSyncService forwards them through the WebRTC channel. ──
 
         playMove(t, args: { index: number }) {
             if (!Board.canPlay(t.resources.board, args.index)) return;
@@ -148,9 +142,13 @@ export const p2pPlugin = Database.Plugin.create({
             t.resources.board = Board.empty();
         },
         /**
-         * Update a player's cursor position (always sent via sendTransient,
-         * never committed). Applied with time=-1, so it stays in the
-         * reconciling DB's transient queue and is overwritten on the next move.
+         * Update a player's cursor position. Invoked once with an async
+         * generator that never returns: each yield becomes a transient
+         * envelope (negative time) which the sync service forwards as
+         * `kind: "transient"`. The peer applies it as a transient too, and
+         * the next yield with the same `(userId, id)` key replaces the
+         * previous one — so each peer has at most one outstanding cursor
+         * sample at any time.
          */
         movePresence(t, args: { mark: PlayerMark; x: number; y: number }) {
             if (args.mark === "X") {

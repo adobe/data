@@ -34,7 +34,7 @@ export interface ReconcilingDatabase<
     TD extends TransactionDeclarations<C, R, A>,
 > extends Omit<ObservedDatabase<C, R, A>, "extend"> {
     readonly apply: (envelope: TransactionEnvelope<Extract<keyof TD, string>>) => TransactionResult<C> | undefined;
-    readonly cancel: (id: number) => void;
+    readonly cancel: (id: number, userId?: number | string) => void;
     readonly extend: <
         P extends Database.Plugin<any, any, any, any, any>
     >(

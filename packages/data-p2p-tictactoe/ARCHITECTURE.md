@@ -27,8 +27,9 @@ sequenceDiagram
     App->>App: RTCPeerConnection offer + gather ICE
     App-->>Peer: copy-paste SDP offer
     Peer-->>App: copy-paste SDP answer
+    App->>DB: Database.create(plugin, { sync: { userId } })
+    Note over DB: deferred-commit mode is active for the lifetime of the DB
     App->>App: createSyncService({ database, transport })
-    Sync->>DB: setDeferredCommitMode(true)
 
     Note over App,Peer: Live game — committed moves
     App->>DB: db.transactions.playMove({ index })
@@ -98,18 +99,20 @@ graph TD
   committed envelopes and go through the same rollback/rebase path as the
   joiner — keeping both databases byte-identical.
 - The joiner connects with a single `SyncService` over the WebRTC transport.
-- `SyncService` puts the database in **deferred-commit mode**: each call
-  to `db.transactions.X(args)` applies locally as a transient (negative
-  time) and waits for the server's echoed `committed` envelope to promote
-  it. This is what makes concurrent inserts from two peers end up with
-  identical entity IDs.
+- Each peer's `Database.create(plugin, { sync: { userId } })` is given a
+  fresh `crypto.randomUUID()` per tab. Passing `sync` does two things:
+  - Stamps every locally-generated envelope with `userId` and keys the
+    reconciler's transient queue by the compound `(userId, id)`, so two
+    peers' independent local id counters can never collide.
+  - Switches the transaction wrapper into **deferred-commit mode**: each
+    call to `db.transactions.X(args)` applies locally as a transient
+    (negative time) and waits for the server's echoed `committed`
+    envelope to promote it. This is what makes concurrent inserts from
+    two peers end up with identical entity IDs.
 - Async-generator transactions (such as `movePresence`) yield transient
   envelopes that the sync service forwards as `kind: "transient"`. The
   server relays them but never logs them. Each yield replaces the
   previous transient via the reconciler's `(userId, id)` compound key.
-- Each peer's `Database.create(plugin, { userId })` is given a fresh
-  `crypto.randomUUID()` per tab. The reconciler's compound `(userId, id)`
-  key keeps two peers' independent local id counters from colliding.
 
 ---
 

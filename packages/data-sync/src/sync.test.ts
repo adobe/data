@@ -49,7 +49,7 @@ const plugin = Database.Plugin.create({
     },
 });
 
-const makeDb = (userId: string) => Database.create(plugin, { userId });
+const makeDb = (userId: string) => Database.create(plugin, { sync: { userId } });
 
 const snap = (db: ReturnType<typeof makeDb>) =>
     db.select(["x", "y", "label"])

@@ -9,9 +9,11 @@ import type { ClientTransport, ServerMessage } from "./transport.js";
 export interface SyncServiceOptions {
     /**
      * The database to wire into the sync layer. Must have been created with
-     * `Database.create(plugin, { userId })` where `userId` is unique per peer
-     * — the reconciler's transient queue uses `(userId, id)` as its compound
-     * key to keep concurrent peers from colliding.
+     * `Database.create(plugin, { sync: { userId } })` where `userId` is
+     * unique per peer — the reconciler's transient queue uses
+     * `(userId, id)` as its compound key to keep concurrent peers from
+     * colliding, and the wrapper's deferred-commit semantics are required
+     * for cross-peer entity-id determinism.
      */
     readonly database: Database<any, any, any, any>;
     /** Transport connecting this peer to the sync server. */
@@ -58,7 +60,7 @@ export interface SyncService {
  *
  * @example
  * ```ts
- * const db = Database.create(myPlugin, { userId: crypto.randomUUID() });
+ * const db = Database.create(myPlugin, { sync: { userId: crypto.randomUUID() } });
  * const sync = createSyncService({ database: db, transport: ws });
  *
  * db.transactions.spawnUnit({ x: 0, y: 0, hp: 100 });
@@ -68,14 +70,15 @@ export interface SyncService {
  */
 export const createSyncService = (options: SyncServiceOptions): SyncService => {
     const { database, transport, maxTransientsPerSecond = 20 } = options;
+
+    if (database.sync === undefined) {
+        throw new Error(
+            "createSyncService: database was not created in sync mode. Pass `sync: { userId }` to `Database.create`.",
+        );
+    }
+
     const minIntervalMs = 1000 / maxTransientsPerSecond;
     let lastTransientSentAt = 0;
-
-    // Switch the database into deferred-commit mode so that local commits
-    // apply as transients and wait for the server's echoed `committed`
-    // envelope to promote them — this is what gives concurrent peers a
-    // canonical entity-id assignment.
-    database.setDeferredCommitMode(true);
 
     const unsubscribeOutbound = database.observe.envelopes(({ envelope, result, intent }) => {
         // Skip envelopes whose only effect was on ephemeral entities/
@@ -106,7 +109,6 @@ export const createSyncService = (options: SyncServiceOptions): SyncService => {
         dispose: () => {
             unsubscribeOutbound();
             unsubscribeInbound();
-            database.setDeferredCommitMode(false);
             transport.close();
         },
     };

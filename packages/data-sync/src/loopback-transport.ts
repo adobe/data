@@ -14,8 +14,9 @@ type Listener<T> = (msg: T) => void;
  * @example
  * ```ts
  * const { client, server } = createLoopbackTransport();
- * const syncServer = createSyncServer({ transport: server, ... });
- * const syncClient = createSyncClient({ transport: client, ... });
+ * const syncServer = createSyncServer();
+ * syncServer.connect(server);
+ * const sync = createSyncService({ database: db, transport: client });
  * ```
  */
 export const createLoopbackTransport = (): {

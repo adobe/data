@@ -2,13 +2,9 @@
 
 import { Store } from "../../store/index.js";
 import { Database, FromServiceFactories } from "../database.js";
-import { isPromise } from "../../../internal/promise/is-promise.js";
-import { isAsyncGenerator } from "../../../internal/async-generator/is-async-generator.js";
 import { createReconcilingDatabase } from "../reconciling/create-reconciling-database.js";
-import { TransactionEnvelope } from "../reconciling/reconciling-database.js";
-import { TransactionResult } from "../transactional-store/index.js";
 import { calculateSystemOrder } from "../calculate-system-order.js";
-import { Observe } from "../../../observe/index.js";
+import { createTransactionDispatcher } from "./create-transaction-dispatcher.js";
 
 /**
  * For each system in newDeclarations that is not yet in systemFunctions: call create(db),
@@ -27,22 +23,40 @@ function createAndAssignSystems(
     }
 }
 
-export interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, any, any, any, any>> {
+/**
+ * Sync-related options. Presence of `sync` means "this database is going to
+ * be attached to a sync service", which has two consequences:
+ *
+ *   1. Every locally-generated `TransactionEnvelope` is stamped with
+ *      `userId`, and the reconciler keys its transient queue by the
+ *      compound `(userId, id)` so two peers' independent local id counters
+ *      cannot collide.
+ *   2. The transaction wrapper enters deferred-commit mode: calls to
+ *      `db.transactions.X(args)` apply locally as transients (negative
+ *      time) and wait for the server's echoed `committed` envelope to
+ *      promote them via the reconciler's rebase-replay. This is required
+ *      for cross-peer entity-id determinism under concurrent edits.
+ *
+ * If `sync` is omitted the database operates in local-only mode: commits
+ * apply immediately with positive time, no envelope stamping, no deferred
+ * promotion.
+ */
+export interface DatabaseSyncOptions {
+    /**
+     * Stable peer/session identifier. Must be unique across all peers
+     * sharing the same sync server.
+     */
+    readonly userId: number | string;
+}
+
+interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, any, any, any, any>> {
     /**
      * Optional services overrides to use.
      * For each service injected here, we will use it and not call the normal service factory function.
      */
     services?: { [K in keyof FromServiceFactories<P['services']>]?: FromServiceFactories<P['services']>[K] };
-    /**
-     * Stable identifier for this peer/session. Stamped onto every locally-
-     * generated `TransactionEnvelope` and used by the reconciler as part of
-     * its compound `(userId, id)` queue key.
-     *
-     * In a multi-peer (sync) deployment this MUST be unique per peer so that
-     * the per-DB id counter in different peers cannot collide and confuse
-     * the reconciler's transient-replace semantics.
-     */
-    userId?: number | string;
+    /** See {@link DatabaseSyncOptions}. */
+    sync?: DatabaseSyncOptions;
 }
 
 export function createDatabase(): Database<{}, {}, {}, {}, never, {}, {}, {}>
@@ -56,7 +70,7 @@ export function createDatabase(
     plugin?: Database.Plugin<any, any, any, any, any, any, any, any>,
     options?: CreateDatabaseOptions<any>,
 ): any {
-    const db = createEmptyDatabase(options?.userId);
+    const db = createEmptyDatabase(options?.sync);
     if (plugin === undefined) {
         return db;
     }
@@ -70,7 +84,7 @@ export function createDatabase(
  * Creates a database with empty store, no transactions, actions, services, computed, or systems.
  * All content is added via .extend(plugin). Single code path for extension.
  */
-function createEmptyDatabase(userId?: number | string): any {
+function createEmptyDatabase(sync: DatabaseSyncOptions | undefined): any {
     const store = Store.create({
         components: {},
         resources: {},
@@ -78,101 +92,18 @@ function createEmptyDatabase(userId?: number | string): any {
     });
     const reconcilingDatabase = createReconcilingDatabase(store, {} as any);
 
-    // Outbound envelope event — fires once per locally-initiated envelope
-    // produced by the transaction wrappers. Inbound `db.apply()` and
-    // reconciler replays do NOT fire it. The `intent` records the wrapper's
-    // decision so a sync service can forward each envelope as a propose,
-    // transient, or cancel without re-deriving from the time sign.
-    type EnvelopeEvent = {
-        envelope: TransactionEnvelope;
-        result: TransactionResult<unknown> | undefined;
-        intent: "commit" | "transient" | "cancel";
-    };
-    const [envelopesObserve, notifyEnvelope] = Observe.createEvent<EnvelopeEvent>();
-    (reconcilingDatabase.observe as any).envelopes = envelopesObserve;
-
-    // Deferred-commit mode (toggled by an attached sync service). When true,
-    // the wrapper applies "commit" intents as local transients and lets the
-    // server's echoed `committed` envelope promote them via the reconciler's
-    // rebase-replay. This is required for cross-peer entity-id determinism
-    // under concurrent edits.
-    let deferredCommitMode = false;
-    const setDeferredCommitMode = (enabled: boolean) => {
-        deferredCommitMode = enabled;
-    };
-
-    let nextTransactionId = 1;
-    const apply = (envelope: TransactionEnvelope<string>): TransactionResult<unknown> | undefined => {
-        return reconcilingDatabase.apply(envelope) as TransactionResult<unknown> | undefined;
-    };
-
-    const createTransactionWrapper = (name: string) => (args: unknown) => {
-        const transactionId = nextTransactionId;
-        nextTransactionId += 1;
-        let hasTransient = false;
-        const applyTransient = (payload: unknown) => {
-            hasTransient = true;
-            const envelope: TransactionEnvelope = { id: transactionId, userId, name, args: payload, time: -Date.now() };
-            const result = apply(envelope);
-            notifyEnvelope({ envelope, result, intent: "transient" });
-        };
-        const applyCommit = (payload: unknown) => {
-            // In deferred-commit mode the commit is applied locally as a
-            // transient; the server's echo will promote it. Otherwise it
-            // commits immediately with positive time.
-            const time = deferredCommitMode ? -Date.now() : Date.now();
-            const envelope: TransactionEnvelope = { id: transactionId, userId, name, args: payload, time };
-            const result = apply(envelope);
-            notifyEnvelope({ envelope, result, intent: "commit" });
-            hasTransient = deferredCommitMode;
-            return result?.value;
-        };
-        const cancelPending = () => {
-            if (!hasTransient) return;
-            const envelope: TransactionEnvelope = { id: transactionId, userId, name, args: undefined, time: 0 };
-            apply(envelope);
-            notifyEnvelope({ envelope, result: undefined, intent: "cancel" });
-            hasTransient = false;
-        };
-        if (typeof args === "function") {
-            const providerResult = (args as () => Promise<unknown> | AsyncGenerator<unknown>)();
-            if (isAsyncGenerator(providerResult)) {
-                return new Promise((resolve, reject) => {
-                    (async () => {
-                        let lastArgs: unknown;
-                        try {
-                            let iteration = await providerResult.next();
-                            while (!iteration.done) {
-                                lastArgs = iteration.value;
-                                applyTransient(iteration.value);
-                                iteration = await providerResult.next();
-                            }
-                            const finalArgs = iteration.value !== undefined ? iteration.value : lastArgs;
-                            if (finalArgs !== undefined) resolve(applyCommit(finalArgs));
-                            else { cancelPending(); resolve(undefined); }
-                        } catch (e) { cancelPending(); reject(e); }
-                    })();
-                });
-            }
-            if (isPromise(providerResult)) {
-                return (async () => {
-                    try {
-                        return applyCommit(await providerResult);
-                    } catch (e) {
-                        cancelPending();
-                        throw e;
-                    }
-                })();
-            }
-            return applyCommit(providerResult);
-        }
-        return applyCommit(args);
-    };
+    // The dispatcher owns everything envelope-related: id allocation,
+    // commit/transient/cancel intent decisions, the deferred-commit
+    // behaviour implied by sync mode, and resolving plain/promise/async-
+    // generator argument shapes. We just plug its outputs into the
+    // database surface.
+    const dispatcher = createTransactionDispatcher(reconcilingDatabase.apply, sync);
+    (reconcilingDatabase.observe as any).envelopes = dispatcher.envelopes;
 
     const transactions: any = { serviceName: "ecs-database-transactions-service" };
     const addTransactionWrappers = (transactionDecls: Record<string, any>) => {
         for (const name of Object.keys(transactionDecls)) {
-            transactions[name] = createTransactionWrapper(name);
+            transactions[name] = dispatcher.wrap(name);
         }
     };
 
@@ -194,7 +125,7 @@ function createEmptyDatabase(userId?: number | string): any {
     const partialDatabase: any = {
         serviceName: "ecs-database-service",
         ...reconcilingDatabase,
-        setDeferredCommitMode,
+        sync,
         transactions,
         actions,
         services,

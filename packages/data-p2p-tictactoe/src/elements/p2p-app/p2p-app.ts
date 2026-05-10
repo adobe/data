@@ -4,10 +4,10 @@
 // transitions to the live game — all reactive state lives in the ECS service.
 //
 // As the DOM root, we override `connectedCallback` to call
-// `Database.create(p2pPlugin, { userId })` ourselves, where `userId` is a
-// fresh UUID per browser tab. The sync layer's reconciler uses
-// `(userId, id)` as its compound transient-replace key so two tabs never
-// clobber each other's transients on the wire.
+// `Database.create(p2pPlugin, { sync: { userId } })` ourselves, where
+// `userId` is a fresh UUID per browser tab. The sync layer's reconciler
+// uses `(userId, id)` as its compound transient-replace key so two tabs
+// never clobber each other's transients on the wire.
 
 import { html } from "lit";
 import { customElement } from "lit/decorators.js";
@@ -40,7 +40,7 @@ export class P2pApp extends P2pElement {
             // its transient queue by (userId, id) and would collide if two
             // peers happened to pick the same id-counter values.
             this.service = Database.create(p2pPlugin, {
-                userId: crypto.randomUUID(),
+                sync: { userId: crypto.randomUUID() },
             }) as unknown as typeof this.service;
         }
         super.connectedCallback();

@@ -14,31 +14,36 @@ import { useMemo } from "./use-memo.js";
  * indicators, live cursors, heat-maps, etc. It is intentionally simpler than
  * `useDragObserve`: it emits without a drag start/end lifecycle.
  *
- * ### Driving a never-ending presence loop
+ * ### Driving a never-ending presence transaction
  *
- * Pair with `Observe.toAsyncGenerator` to get an async generator that streams
- * positions for the component's lifetime and feeds a transient transaction:
+ * Pair with `Observe.toAsyncGenerator` to feed a never-ending async-generator
+ * transaction. Each `yield` becomes a transient envelope that the sync
+ * service forwards as `kind: "transient"`. The reconciler's `(userId, id)`
+ * compound key replaces the previous sample, so each peer has at most one
+ * outstanding cursor sample at any time.
  *
  * ```ts
  * const pointerPos = usePointerObserve([]);
  *
  * useEffect(() => {
- *   const gen = Observe.toAsyncGenerator(pointerPos, () => false);
- *   let active = true;
- *   (async () => {
- *     for await (const [px, py] of gen) {
- *       if (!active) break;
- *       syncClient.sendTransient({
- *         id: PRESENCE_ID,
- *         name: "movePresence",
- *         args: { userId, x: px, y: py },
- *         time: -1,
- *       });
+ *   const positions = Observe.toAsyncGenerator(pointerPos, () => false);
+ *
+ *   async function* presenceArgs() {
+ *     for await (const [px, py] of positions) {
+ *       const { width, height } = element.getBoundingClientRect();
+ *       if (!width || !height) continue;
+ *       yield { userId, x: px / width, y: py / height };
  *     }
- *   })();
+ *   }
+ *
+ *   // The wrapper returns a Promise when invoked with a generator factory.
+ *   // It rejects when we `.throw()` on dispose; swallow that — we threw
+ *   // precisely so the wrapper would cancel the in-flight transient
+ *   // instead of promoting the last sample to a commit.
+ *   db.transactions.movePresence(presenceArgs).catch(() => undefined);
+ *
  *   return () => {
- *     active = false;
- *     gen.return(undefined as any);
+ *     void positions.throw(new Error("disposed")).catch(() => undefined);
  *   };
  * }, []);
  * ```
@@ -46,9 +51,9 @@ import { useMemo } from "./use-memo.js";
  * ### Why `() => false` as the `finished` predicate?
  *
  * `Observe.toAsyncGenerator` stops when `finished(value)` returns `true`.
- * Passing `() => false` makes the generator run until `gen.return()` is
- * called (e.g. on component disconnect), which is the correct lifetime for
- * a presence stream.
+ * Passing `() => false` makes the generator run until `gen.throw()` (or
+ * `gen.return()`) is called from the effect cleanup — the correct lifetime
+ * for a presence stream.
  */
 export function usePointerObserve(dependencies: unknown[]): Observe<Vec2> {
     // useMemo ensures the same [observe, notify] pair is reused across renders

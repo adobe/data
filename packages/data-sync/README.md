@@ -116,10 +116,11 @@ import { Database } from "@adobe/data/ecs";
 import { createSyncService, createWebSocketClientTransport } from "@adobe/data-sync";
 import { gamePlugin } from "./game-plugin.js";
 
-// userId MUST be unique per peer — the reconciler uses (userId, id) as its
-// compound key for transient-replace and cancel semantics, so two peers
-// using the same userId would clobber each other's transients.
-const db = Database.create(gamePlugin, { userId: crypto.randomUUID() });
+// `sync.userId` MUST be unique per peer — the reconciler uses (userId, id)
+// as its compound key for transient-replace and cancel semantics, so two
+// peers using the same userId would clobber each other's transients.
+// Passing `sync` also enables deferred-commit mode (see API section).
+const db = Database.create(gamePlugin, { sync: { userId: crypto.randomUUID() } });
 
 const transport = createWebSocketClientTransport({ url: "ws://localhost:4000/sync" });
 const sync = createSyncService({ database: db, transport });
@@ -140,7 +141,7 @@ const server = createSyncServer();
 const { client: ct, server: st } = createLoopbackTransport();
 server.connect(st);
 
-const db = Database.create(myPlugin, { userId: "test-peer" });
+const db = Database.create(myPlugin, { sync: { userId: "test-peer" } });
 const sync = createSyncService({ database: db, transport: ct });
 ```
 
@@ -185,20 +186,33 @@ interface SyncService {
 }
 ```
 
-When attached, `createSyncService` puts the database in deferred-commit
-mode: `db.transactions.X(args)` calls apply locally as transients and wait
-for the server's echo to promote them. This is what guarantees that
-concurrent inserts from two peers end up with identical entity IDs on every
-peer.
+`createSyncService` will throw if the database wasn't created in sync mode
+(`Database.create(plugin, { sync: { userId } })`).
 
-### `Database.create(plugin, { userId })`
+### `Database.create(plugin, { sync: { userId } })`
 
-The `userId` option is required for any database that will be attached to
-a sync service. It is stamped onto every locally-generated envelope and
-combined with the per-DB id counter to form the reconciler's compound
-`(userId, id)` queue key.
+The `sync` option opts the database into deferred-commit mode and is
+required for any database that will be attached to a sync service. Two
+things change:
 
-In a single-peer / no-sync deployment `userId` may be omitted.
+1. Every locally-generated envelope is stamped with `userId` and the
+   reconciler keys its transient queue by the compound `(userId, id)` so
+   independent per-peer id counters can never collide.
+2. `db.transactions.X(args)` calls apply locally as transients (negative
+   `time`) and wait for the server's echoed `committed` envelope to
+   promote them via the reconciler's rebase-replay. This is what
+   guarantees that concurrent inserts from two peers end up with
+   identical entity IDs on every peer.
+
+In a single-peer / no-sync deployment `sync` may be omitted; commits then
+apply immediately with positive `time` and envelopes are not stamped with
+a `userId`.
+
+```ts
+interface DatabaseSyncOptions {
+    readonly userId: number | string;
+}
+```
 
 ### Transports
 
@@ -407,7 +421,7 @@ const server = createSyncServer();
 const { client: ct, server: st } = createLoopbackTransport();
 server.connect(st);
 
-const db = Database.create(myPlugin, { userId: "test" });
+const db = Database.create(myPlugin, { sync: { userId: "test" } });
 const sync = createSyncService({ database: db, transport: ct });
 
 db.transactions.createPoint({ x: 1, y: 2 });

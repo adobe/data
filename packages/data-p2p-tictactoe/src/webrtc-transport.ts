@@ -12,13 +12,14 @@ const encode = (msg: unknown): string => JSON.stringify(msg);
 const decode = <T>(raw: string): T => JSON.parse(raw) as T;
 
 /**
- * Wraps an RTCDataChannel that the host created as a ClientTransport.
- * The host side is the "server" in sync terms — this gives the host a
- * ClientTransport it can pass to createSyncClient.
+ * Two adapters wrap an open RTCDataChannel as a sync transport:
  *
- * Actually: the *host* runs createSyncServer and needs a ServerTransport
- * for each connected peer. Use createWebRTCServerTransport for that.
- * The *client* (joiner) uses createWebRTCClientTransport.
+ *   - `createWebRTCServerTransport` — used by the **host**, which runs
+ *     `createSyncServer` in-process and wraps each connected peer's
+ *     channel as a `ServerTransport`.
+ *   - `createWebRTCClientTransport` — used by the **joiner**, which wraps
+ *     its channel as a `ClientTransport` and passes it to
+ *     `createSyncService({ database, transport })`.
  */
 
 /**

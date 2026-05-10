@@ -48,7 +48,7 @@ export interface WebSocketClientTransportOptions {
  * @example
  * ```ts
  * const transport = createWebSocketClientTransport({ url: "ws://localhost:4000/sync" });
- * const client = createSyncClient({ database: myDb, transport });
+ * const sync = createSyncService({ database: myDb, transport });
  * ```
  */
 export const createWebSocketClientTransport = (

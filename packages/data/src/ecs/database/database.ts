@@ -14,7 +14,7 @@ import { ArchetypeComponents } from "../store/archetype-components.js";
 import { RequiredComponents } from "../required-components.js";
 import { EntitySelectOptions } from "../store/entity-select-options.js";
 import type { Service } from "../../service/index.js";
-import { createDatabase } from "./public/create-database.js";
+import { createDatabase, type DatabaseSyncOptions } from "./public/create-database.js";
 import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
@@ -147,21 +147,13 @@ export interface Database<
    */
   readonly cancel: (id: number, userId?: number | string) => void;
   /**
-   * Switch between "local-only" and "deferred-commit" modes for the
-   * transaction wrappers. Called by a sync service when it attaches /
-   * detaches.
-   *
-   * - `false` (default): `db.transactions.X(args)` applies the commit
-   *   locally with positive `time` immediately, suitable for single-peer
-   *   use.
-   * - `true`: `db.transactions.X(args)` applies the commit locally as a
-   *   transient (negative `time`) and emits a `"commit"` intent on
-   *   `observe.envelopes` so the sync service can forward it to the
-   *   server. The reconciler promotes it once the server echoes back the
-   *   committed envelope. This is required for cross-peer entity-id
-   *   determinism under concurrent edits.
+   * The sync options the database was created with, or `undefined` for a
+   * local-only database. Sync services read this to (a) confirm the
+   * database was created in sync mode and (b) recover the `userId` for
+   * authentication / logging without having to thread it through
+   * separately.
    */
-  readonly setDeferredCommitMode: (enabled: boolean) => void;
+  readonly sync: DatabaseSyncOptions | undefined;
   readonly system: {
     /** System create() return value, or null when create() returns void. Key is always present. */
     readonly functions: { readonly [K in S]: SystemFunction | null };

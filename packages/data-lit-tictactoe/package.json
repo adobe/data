@@ -4,6 +4,9 @@
   "description": "Tic-Tac-Toe sample - Lit web components with @adobe/data-lit and AgenticService",
   "type": "module",
   "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "build": "vite build",
     "dev": "vite",

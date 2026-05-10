@@ -4,7 +4,7 @@ import { ResourceComponents } from "../../store/resource-components.js";
 import { Store } from "../../store/index.js";
 import { Entity } from "../../entity/entity.js";
 import { EntityUpdateValues } from "../../store/core/index.js";
-import { TransactionalStore, TransactionResult, TransactionWriteOperation } from "./transactional-store.js";
+import { TransactionalStore, TransactionContext, TransactionResult, TransactionWriteOperation } from "./transactional-store.js";
 import { StringKeyof } from "../../../types/types.js";
 import { Components } from "../../store/components.js";
 import { ArchetypeComponents } from "../../store/archetype-components.js";
@@ -19,7 +19,7 @@ interface Transaction<
     R extends ResourceComponents = never,
     A extends ArchetypeComponents<StringKeyof<C>> = never,
 > extends Store<C, R, A> {
-    // readonly transient: boolean;
+    userId: number | string | undefined;
 }
 
 export function createTransactionalStore<
@@ -180,18 +180,20 @@ export function createTransactionalStore<
         },
         update: updateEntity,
         delete: deleteEntity,
-        // transient: false as boolean,
         undoable: undefined,
+        userId: undefined as number | string | undefined,
     } satisfies Transaction<C, R, A>;
 
     // Execute transaction function
     const execute = (
-        transactionFunction: (t: Transaction<C, R, A>) => Entity | void,
+        transactionFunction: (t: TransactionContext<C, R, A>) => Entity | void,
         options?: {
             transient?: boolean;
+            userId?: number | string;
         }
     ): TransactionResult<C> => {
         transactionStore.undoable = undefined;
+        transactionStore.userId = options?.userId;
         undoOperationsInReverseOrder = [];
         redoOperations = [];
         nonEphemeral = false;
@@ -201,7 +203,7 @@ export function createTransactionalStore<
 
         try {
             // Execute the transaction
-            const value = transactionFunction(transactionStore);
+            const value = transactionFunction(transactionStore as TransactionContext<C, R, A>);
 
             // Coalesce operations to optimize redo/undo arrays
             const coalescedRedo = coalesceWriteOperations([...redoOperations]);
@@ -225,6 +227,7 @@ export function createTransactionalStore<
             applyWriteOperations(store, undoOperationsInReverseOrder.reverse());
             throw error;
         } finally {
+            transactionStore.userId = undefined;
             undoOperationsInReverseOrder = [];
             redoOperations = [];
             nonEphemeral = false;

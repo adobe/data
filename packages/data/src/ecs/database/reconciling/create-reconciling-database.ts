@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { StringKeyof } from "../../../types/types.js";
-import { TransactionResult } from "../transactional-store/index.js";
+import { TransactionContext, TransactionResult } from "../transactional-store/index.js";
 import { applyOperations } from "../transactional-store/apply-operations.js";
 import type { TransactionDeclarations } from "../../store/transaction-functions.js";
 import { ResourceComponents } from "../../store/resource-components.js";
@@ -42,7 +42,7 @@ export function createReconcilingDatabase<
 
     const rollbackEntryResult = (entry: ReconcilingEntry<C, R, A>) => {
         if (entry.result) {
-            execute(t => applyOperations(t, entry.result!.undo), { transient: true });
+            execute(t => applyOperations(t, entry.result!.undo), { transient: true, userId: undefined });
             entry.result = undefined;
         }
     };
@@ -71,7 +71,7 @@ export function createReconcilingDatabase<
     const executeEntry = (entry: ReconcilingEntry<C, R, A>) => {
         const result = execute(
             t => entry.transaction(t, entry.args),
-            { transient: true },
+            { transient: true, userId: entry.userId },
         );
 
         // Only store result if it actually made changes (not a no-op).
@@ -97,7 +97,7 @@ export function createReconcilingDatabase<
         }
 
         const { id, userId, time, args } = envelope;
-        const transactionFn = transaction as (store: Store<C, R, A>, args: unknown) => void | Entity;
+        const transactionFn = transaction as (ctx: TransactionContext<C, R, A>, args: unknown) => void | Entity;
 
         // Handle cancellation: remove any transient entry for this (userId, id).
         if (time === 0) {
@@ -134,7 +134,17 @@ export function createReconcilingDatabase<
             reconcilingEntries.splice(insertIndex, 0, entry);
 
             // Rebuild transient state from scratch to respect time ordering.
-            return replayAllTransients();
+            const result = replayAllTransients();
+
+            // If the new entry produced no store changes (no-op), remove it
+            // from the queue immediately. It will never receive a server
+            // promotion and would otherwise sit in the queue uselessly.
+            if (entry.result === undefined) {
+                const idx = reconcilingEntries.indexOf(entry);
+                if (idx !== -1) reconcilingEntries.splice(idx, 1);
+            }
+
+            return result;
         }
 
         // Handle committed application (positive time): rebase the entire
@@ -152,7 +162,7 @@ export function createReconcilingDatabase<
         spliceTransientEntry(id, userId);
         const result = execute(
             t => transactionFn(t, args),
-            { transient: false },
+            { transient: false, userId },
         );
         replayAllTransients();
         return result;

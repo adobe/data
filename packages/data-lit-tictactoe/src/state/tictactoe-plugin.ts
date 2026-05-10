@@ -34,21 +34,22 @@ export const tictactoePlugin = Database.Plugin.create({
       t.resources.board = BoardState.createInitialBoard();
     },
     playMove: (t, { index }: PlayMoveArgs) => {
+      const mark = BoardState.currentPlayer(
+        t.resources.board,
+        t.resources.firstPlayer,
+      );
+      // When userId is set (sync/P2P mode) a peer may only play their own mark.
+      if (t.userId !== undefined && t.userId !== mark) return;
       const validation = PlayMoveArgs.canPlayMove({
         board: t.resources.board,
         index,
       });
       if (!validation.ok) return;
-      const mark = BoardState.currentPlayer(
-        t.resources.board,
-        t.resources.firstPlayer,
-      );
-      const nextBoard = BoardState.setBoardCell({
+      t.resources.board = BoardState.setBoardCell({
         board: t.resources.board,
         index,
         mark,
       });
-      t.resources.board = nextBoard;
     },
   },
 });

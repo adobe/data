@@ -89,7 +89,13 @@ export const createTransactionDispatcher = (
         intent: TransactionIntent,
     ): TransactionResult<unknown> | undefined => {
         const result = apply(envelope);
-        notifyEnvelope({ envelope, result, intent });
+        // Suppress envelope events for no-ops so they never reach the sync
+        // service and are never forwarded to peers. Cancel envelopes have
+        // result === undefined and are always forwarded.
+        const isNoOp = result !== undefined && result.redo.length === 0 && result.undo.length === 0;
+        if (!isNoOp) {
+            notifyEnvelope({ envelope, result, intent });
+        }
         return result;
     };
 
@@ -114,7 +120,12 @@ export const createTransactionDispatcher = (
                 { id: transactionId, userId, name, args: payload, time },
                 "commit",
             );
-            hasTransient = deferredCommit;
+            // Only mark a pending transient if the envelope was effective (not
+            // a no-op). A no-op envelope is suppressed by dispatchEnvelope and
+            // will never receive a server promotion, so we must not set
+            // hasTransient — doing so would cause a spurious cancel later.
+            const effective = result === undefined || result.redo.length > 0 || result.undo.length > 0;
+            hasTransient = deferredCommit && effective;
             return result?.value;
         };
 

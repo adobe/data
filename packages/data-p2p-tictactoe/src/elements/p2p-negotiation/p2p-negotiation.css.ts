@@ -102,12 +102,8 @@ export const styles = css`
 
     .banner--error { background: #2d1520; border-color: #7a2535; color: #ff8099; }
 
-    /* ── Game ──────────────────────────────────────────────────── */
-    .game {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 1rem;
-        width: 100%;
+    /* ── Game mount ────────────────────────────────────────────── */
+    .game-mount {
+        display: contents;
     }
 `;

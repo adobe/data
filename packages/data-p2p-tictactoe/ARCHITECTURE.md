@@ -5,20 +5,67 @@ No backend required: signaling is done by copy-pasting SDP blobs, and
 real-time sync runs over a WebRTC DataChannel.
 
 The application code never speaks to the sync layer directly. Every
-mutation — whether a game move, a UI phase change, or a per-frame cursor
-position — flows through `db.transactions.X(args)`. A `SyncService`
-attached to the database transparently forwards outbound envelopes and
-applies inbound envelopes from peers. UI-only state is marked
-`ephemeral: true` on its resource schemas, and the sync service skips it.
+mutation — whether a game move or a per-frame cursor position — flows
+through `db.transactions.X(args)`. A `SyncService` attached to the synced
+game database transparently forwards outbound envelopes and applies inbound
+envelopes from peers.
 
 ---
 
-## Current architecture — invisible sync via createSyncService
+## Two-database model
+
+The application uses **two separate ECS databases**:
+
+| Database | Plugin | Mode | Lifetime |
+|---|---|---|---|
+| Negotiation DB | `negotiationPlugin` | local-only | Entire page session |
+| Game DB | `tictactoePlugin + presencePlugin` | synced | Created on connection |
+
+The negotiation DB drives the signaling UI (phase, codes, banners). It is
+purely local — never synced. Once both peers connect over WebRTC, the game DB
+is created with `{ sync: { userId } }` so all game mutations replicate
+transparently.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph p2pttt [data-p2p-tictactoe sample]
+        app["<p2p-app> (thin shell — combines plugins, sets roles)"]
+        neg["<p2p-negotiation> (generic, negotiationDB local-only)"]
+        overlay["<p2p-presence-overlay> (optional, reads cursorX/O)"]
+    end
+    subgraph litttt [data-lit-tictactoe library]
+        ttt["<tictactoe-app> (typed on tictactoePlugin)"]
+        plugin["tictactoePlugin (gated playMove by t.userId)"]
+        agent["agentPlugin extends tictactoePlugin (AI-only)"]
+    end
+    subgraph datalib [core]
+        ctx["t.userId in TransactionContext"]
+        noop["no-op envelopes never replicated (dispatcher)"]
+        sync["SyncService (transparent, reads observe.envelopes)"]
+    end
+
+    app --> neg
+    neg -->|"on connect: mounts"| overlay
+    overlay -->|"<slot>"| ttt
+    ttt -->|"service injected"| neg
+    plugin --> ttt
+    agent -.standalone main.ts.-> ttt
+    ctx --> plugin
+    noop --> sync
+```
+
+---
+
+## Sync sequence — committed game move
 
 ```mermaid
 sequenceDiagram
     participant App as App code
-    participant DB as Database (host)
+    participant DB as Game DB (host)
     participant Sync as SyncService
     participant WR as WebRTC DataChannel
     participant Peer as Peer (joiner)
@@ -27,12 +74,13 @@ sequenceDiagram
     App->>App: RTCPeerConnection offer + gather ICE
     App-->>Peer: copy-paste SDP offer
     Peer-->>App: copy-paste SDP answer
-    App->>DB: Database.create(plugin, { sync: { userId } })
-    Note over DB: deferred-commit mode is active for the lifetime of the DB
-    App->>App: createSyncService({ database, transport })
+    App->>DB: Database.create(gamePlugin, { sync: { userId: "X" } })
+    Note over DB: deferred-commit mode implicit when sync is present
+    App->>App: createSyncService({ database: gameDB, transport })
 
-    Note over App,Peer: Live game — committed moves
+    Note over App,Peer: Live game — committed move (correct player)
     App->>DB: db.transactions.playMove({ index })
+    Note over DB: t.userId==="X" and it is X's turn → applies
     DB->>DB: apply locally as transient (time<0)
     DB->>Sync: observe.envelopes fires { intent:"commit" }
     Sync->>WR: send { kind:"propose", envelope }
@@ -42,203 +90,80 @@ sequenceDiagram
     Note over Peer: Peer receives same committed envelope
     Peer->>Peer: db.apply(committed)
 
-    Note over App,Peer: Live game — presence (transient, never committed)
-    App->>DB: db.transactions.movePresence(asyncGenerator)
-    DB->>DB: apply each yield as transient (time<0)
-    DB->>Sync: observe.envelopes fires { intent:"transient" }
-    Sync->>WR: send { kind:"transient", envelope }
-    WR->>Peer: SyncServer relays { kind:"committed", time<0 }
-    Peer->>Peer: db.apply(transient) → cursorX/O resource updates
-
-    Note over App,Peer: Local UI state (phase / banners / signaling codes)
-    App->>DB: db.transactions.startHostSignaling()
-    DB->>DB: applies; result.ephemeral = true
-    DB->>Sync: observe.envelopes fires
-    Sync-->>Sync: result.ephemeral === true → SKIP forwarding
+    Note over App: Wrong player tries to move
+    App->>DB: db.transactions.playMove({ index })
+    Note over DB: t.userId==="X" but it is O's turn → no-op
+    Note over DB: Dispatcher detects empty redo/undo → suppresses observe.envelopes
+    Note over Sync: No envelope emitted, no bytes sent to peer
 ```
-
-### Component map
-
-```mermaid
-graph TD
-    subgraph "Host browser"
-        HApp[p2p-app + p2p-board + p2p-cell + p2p-hud]
-        HDB[Database]
-        HSync[SyncService]
-        HSrv[SyncServer]
-        HWR[WebRTC ServerTransport]
-        HLL[Loopback ServerTransport]
-        HSyncLB[Loopback ClientTransport]
-    end
-
-    subgraph "Joiner browser"
-        JApp[p2p-app + ...]
-        JDB[Database]
-        JSync[SyncService]
-        JWR[WebRTC ClientTransport]
-    end
-
-    HApp -->|db.transactions.X| HDB
-    HDB -->|observe.envelopes| HSync
-    HSync -->|propose / transient / cancel| HSyncLB
-    HSyncLB <-->|messages| HSrv
-    HSrv <-->|messages| HWR
-    HWR <-.->|DataChannel| JWR
-    JWR <-->|messages| JSync
-    JSync -->|db.apply / db.cancel| JDB
-    JDB -->|observe.resources| JApp
-    HSrv -->|committed broadcast| HSyncLB
-    HSyncLB --> HSync
-    HSync -->|db.apply| HDB
-```
-
-**Key points:**
-
-- The host runs both `SyncServer` and its own `SyncService` (via an
-  in-process loopback transport). This lets the host receive its own
-  committed envelopes and go through the same rollback/rebase path as the
-  joiner — keeping both databases byte-identical.
-- The joiner connects with a single `SyncService` over the WebRTC transport.
-- Each peer's `Database.create(plugin, { sync: { userId } })` is given a
-  fresh `crypto.randomUUID()` per tab. Passing `sync` does two things:
-  - Stamps every locally-generated envelope with `userId` and keys the
-    reconciler's transient queue by the compound `(userId, id)`, so two
-    peers' independent local id counters can never collide.
-  - Switches the transaction wrapper into **deferred-commit mode**: each
-    call to `db.transactions.X(args)` applies locally as a transient
-    (negative time) and waits for the server's echoed `committed`
-    envelope to promote it. This is what makes concurrent inserts from
-    two peers end up with identical entity IDs.
-- Async-generator transactions (such as `movePresence`) yield transient
-  envelopes that the sync service forwards as `kind: "transient"`. The
-  server relays them but never logs them. Each yield replaces the
-  previous transient via the reconciler's `(userId, id)` compound key.
 
 ---
 
-## Ephemeral resources stay local
+## Sync sequence — presence (transient, never committed)
+
+```mermaid
+sequenceDiagram
+    participant Board as <p2p-presence-overlay>
+    participant DB as Game DB
+    participant Sync as SyncService
+    participant WR as WebRTC DataChannel
+    participant Peer as Peer
+
+    Board->>Board: usePointerObserve → Observe<Vec2>
+    Board->>Board: Observe.toAsyncGenerator(stream, ()=>false)
+    Board->>DB: db.transactions.movePresence(asyncGenerator)
+    loop pointer moves
+        Board->>DB: yield { x, y }
+        DB->>DB: apply transient (time<0)
+        DB->>Sync: observe.envelopes fires { intent:"transient" }
+        Sync->>WR: send { kind:"transient", envelope }
+        WR->>Peer: applies transient cursor position
+        Peer->>Peer: db.apply({ time<0 }) → cursor dot moves
+    end
+    Note over Board: on element dispose: gen.throw() → cancelPending()
+    DB->>Sync: observe.envelopes fires { intent:"cancel" }
+    Sync->>WR: send { kind:"cancel", envelope }
+    Peer->>Peer: cursor disappears
+```
+
+---
+
+## userId authorization
+
+`Database.create(plugin, { sync: { userId } })` stamps every locally-generated
+envelope with `userId` and passes it as `t.userId` inside every transaction
+function:
+
+```ts
+// In tictactoePlugin:
+playMove: (t, { index }) => {
+    const mark = BoardState.currentPlayer(t.resources.board, t.resources.firstPlayer);
+    // Gate: only the current player may move. In P2P mode userId = "X" or "O".
+    // In standalone / AI mode userId is undefined → all moves allowed.
+    if (t.userId !== undefined && t.userId !== mark) return;
+    // ...
+}
+```
+
+No-op transactions (where no store changes occur) are detected by the
+dispatcher and their envelopes are suppressed — they never reach the
+`SyncService` and are never forwarded to peers.
+
+---
+
+## Persistence (not currently implemented)
+
+The synced game DB could be given persistence by wrapping it in a
+`PersistenceService` backed by `IndexedDB` (browser) or the filesystem
+(Node). This is completely orthogonal to sync: persistence saves the committed
+state to disk; sync replicates it to peers. Either, neither, or both can be
+active simultaneously.
 
 ```mermaid
 flowchart LR
-    UI[UI handler]
-    Tx["db.transactions.startHostSignaling()"]
-    DB[Database]
-    Sync[SyncService]
-    Wire[WebRTC]
-
-    UI --> Tx --> DB
-    DB -->|observe.envelopes\nresult.ephemeral === true| Sync
-    Sync -.->|skipped — never sent| Wire
+    db["Game DB"]
+    sync["SyncService\n(replicates to peer)"]
+    persist["PersistenceService\n(not yet wired)"]
+    db --> sync
+    db --> persist
 ```
-
-Resources marked `ephemeral: true` in their schema produce transactions
-whose `TransactionResult.ephemeral === true`. The sync service skips
-those envelopes entirely — they never reach the wire. This is what lets
-the P2P app keep its `phase`, `offerCode`, `answerCode`, `bannerText`,
-`bannerError`, and `myMark` state in the same database as the synced
-game state without leaking it to the peer.
-
----
-
-## What adding persistence would look like
-
-Persistence can be layered on the host's database **independently** of
-sync — the two packages share only the local `Database` and have no
-coupling to each other.
-
-```mermaid
-graph TD
-    subgraph "Host browser (with persistence)"
-        HApp[App code]
-        HDB[Database]
-        HSync[SyncService]
-        HSrv[SyncServer]
-        HWR[WebRTC ServerTransport]
-        HLL[Loopback]
-        HPROV[OPFS PersistenceProvider]
-        HMNT[PersistenceMount]
-    end
-
-    subgraph "Joiner browser"
-        JApp[App code]
-        JDB[Database]
-        JSync[SyncService]
-        JWR[WebRTC ClientTransport]
-    end
-
-    HApp -->|db.transactions.X| HDB
-    HDB --> HSync
-    HSync <--> HLL <--> HSrv <--> HWR
-    HWR <-.-> JWR
-    JWR <--> JSync
-    JSync --> JDB
-
-    %% Persistence hooks into the committed stream
-    HPROV -->|mount| HMNT
-    HMNT -->|observe committed transactions| HDB
-    HMNT -->|write journal| HPROV
-    HPROV -.->|reload journal on launch| HDB
-```
-
-### What needs to be built
-
-1. **Host-side persistence** — straightforward:
-   ```ts
-   import { mount, createOpfsProvider } from "@adobe/data-persistence/browser";
-   const persistenceMount = await mount(createOpfsProvider(), hostDb);
-   ```
-   All committed transactions are journalled automatically. On page reload
-   the host calls `mount` again and the journal is replayed into a fresh DB.
-
-2. **Catch-up on joiner connect** — already works today: `SyncServer`
-   holds an in-memory `committedLog` and replays it to every new client on
-   `connect()`, so a joiner who connects *after* moves have been made
-   receives the full history.
-
-3. **Cross-session persistence** — the gap is that on host page reload the
-   in-memory `committedLog` is lost. Replaying the journal into `hostDb`
-   restores the database state, but a *new* `SyncServer` instance starts
-   with an empty `committedLog`. A future enhancement would pre-populate
-   `committedLog` from the replayed journal before accepting new
-   connections.
-
----
-
-## Presence data flow
-
-```mermaid
-flowchart LR
-    Pointer[pointermove event]
-    Pos["usePointerObserve\nObserve&lt;Vec2&gt;"]
-    Gen["Observe.toAsyncGenerator(pos, () => false)"]
-    Tx["db.transactions.movePresence(asyncGenerator)"]
-    DB[Local DB cursorX/O]
-    Sync[SyncService]
-    Wire[WebRTC DataChannel]
-    Peer[Peer DB cursorX/O]
-    UI[Cursor dot re-renders]
-
-    Pointer --> Pos --> Gen --> Tx
-    Tx -->|each yield → transient envelope| DB
-    DB -->|observe.envelopes intent:"transient"| Sync
-    Sync -->|kind:"transient"| Wire
-    Wire --> Peer --> UI
-```
-
-The transaction is invoked once with an async generator function and
-**never returns**. Each pointer sample yields a fresh argument object;
-the wrapper applies it as a transient envelope (negative time) with the
-same per-call envelope `id` — so the reconciler's `(userId, id)`
-compound key replaces the previous cursor sample in the queue rather
-than accumulating one entry per frame.
-
-The sync service forwards each transient as `kind: "transient"`; the
-server relays them lossy without logging; the peer applies each as a
-local transient that updates its `cursorX` / `cursorO` resource. When
-the element disposes, the effect cleanup calls `positions.throw(...)`,
-which rejects the in-flight `next()` and propagates through the
-generator — the wrapper sees the rejection and cancels the in-flight
-transient instead of promoting the last cursor position to a commit.
-
-Presence envelopes are never committed; they evaporate if the
-connection drops. This is the correct semantic for ephemeral UI state.

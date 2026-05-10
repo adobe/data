@@ -236,6 +236,43 @@ type TransactionEnvelope = {
 };
 ```
 
+### `t.userId` in transaction functions
+
+Every transaction function receives the calling peer's `userId` (or
+`undefined` in local-only mode) via `t.userId` on the transaction context.
+This lets transaction functions **self-authorize**: they can act as a no-op
+when the caller doesn't have permission instead of relying on caller-side
+guards.
+
+```ts
+const plugin = Database.Plugin.create({
+    resources: { board: { default: initialBoard } },
+    transactions: {
+        // Only the current player may move. Other peers calling this with
+        // their own userId will produce a no-op that is never replicated.
+        playMove(t, { index }: { index: number }) {
+            const mark = currentPlayer(t.resources.board);
+            if (t.userId !== undefined && t.userId !== mark) return; // no-op
+            // ...apply the move
+        },
+    },
+});
+
+// Host is "X", joiner is "O"
+const hostDb = Database.create(plugin, { sync: { userId: "X" } });
+```
+
+When a transaction produces **no store changes** (empty redo/undo operations),
+the dispatcher suppresses the envelope notification. The `SyncService` never
+sees the envelope, nothing is sent to the peer, and no server timestamp is
+consumed. This is the **no-op replication guarantee**: invalid operations are
+silently discarded at the source peer.
+
+> **Note**: The server may still replicate a committed no-op envelope received
+> from another peer (a peer that applied the op before learning it was
+> invalid). This is harmless — the op produces no changes on the receiving
+> peer either.
+
 ## Designing transactions for concurrent correctness
 
 The sync layer guarantees **convergent ordering**, not conflict-free

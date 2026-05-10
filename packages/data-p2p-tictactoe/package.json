@@ -12,6 +12,7 @@
     "@adobe/data": "workspace:*",
     "@adobe/data-lit": "workspace:*",
     "@adobe/data-sync": "workspace:*",
+    "data-lit-tictactoe": "workspace:*",
     "lit": "^3.3.1"
   },
   "devDependencies": {

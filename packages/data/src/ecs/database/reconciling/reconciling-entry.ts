@@ -4,8 +4,7 @@ import { StringKeyof } from "../../../types/types.js";
 import { Components } from "../../store/components.js";
 import { ResourceComponents } from "../../store/resource-components.js";
 import { ArchetypeComponents } from "../../store/archetype-components.js";
-import { TransactionResult } from "../transactional-store/index.js";
-import { Store } from "../../store/index.js";
+import { TransactionContext, TransactionResult } from "../transactional-store/index.js";
 import { Entity } from "../../entity/entity.js";
 
 export type ReconcilingEntry<
@@ -22,7 +21,7 @@ export type ReconcilingEntry<
      */
     readonly userId?: number | string;
     readonly name: string;
-    readonly transaction: (store: Store<C, R, A>, args: unknown) => void | Entity;
+    readonly transaction: (ctx: TransactionContext<C, R, A>, args: unknown) => void | Entity;
     readonly args: unknown;
     readonly time: number;
     result?: TransactionResult<C>;

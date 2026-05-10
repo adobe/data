@@ -1,17 +1,24 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import type { PlayerMark } from "../types/player-mark/player-mark.js";
 import type { Phase } from "../types/phase/phase.js";
 
+/**
+ * Negotiation-only ECS plugin. All resources are `ephemeral: true` so they
+ * are never replicated to peers (the negotiation DB itself is always
+ * local-only, but the ephemeral flag is good documentation).
+ *
+ * The game role (userId) lives in the synced game DB, not here. After
+ * `connected()` transitions the phase to "game", the negotiation element
+ * mounts the game element with the synced DB already configured.
+ */
 export const negotiationPlugin = Database.Plugin.create({
     resources: {
-        phase:       { default: "idle" as Phase,         ephemeral: true },
-        offerCode:   { default: "" as string,            ephemeral: true },
-        answerCode:  { default: "" as string,            ephemeral: true },
-        bannerText:  { default: "" as string,            ephemeral: true },
-        bannerError: { default: false as boolean,        ephemeral: true },
-        myMark:      { default: null as PlayerMark | null, ephemeral: true },
+        phase:       { default: "idle" as Phase,  ephemeral: true },
+        offerCode:   { default: "" as string,     ephemeral: true },
+        answerCode:  { default: "" as string,     ephemeral: true },
+        bannerText:  { default: "" as string,     ephemeral: true },
+        bannerError: { default: false as boolean, ephemeral: true },
     },
     transactions: {
         startHostSignaling(t) {
@@ -36,8 +43,8 @@ export const negotiationPlugin = Database.Plugin.create({
             t.resources.bannerText = text;
             t.resources.bannerError = error;
         },
-        connected(t, { myMark }: { myMark: PlayerMark }) {
-            t.resources.myMark = myMark;
+        /** Transitions to the game phase. Call after the synced game DB is ready. */
+        connected(t) {
             t.resources.phase = "game";
         },
     },

@@ -1672,3 +1672,103 @@ describe("database.transactions", () => {
         unsubscribe();
     });
 });
+
+// ---------------------------------------------------------------------------
+// userId threading tests
+// ---------------------------------------------------------------------------
+
+describe("userId in transaction context", () => {
+    const makePlugin = () => Database.Plugin.create({
+        components: {} as const,
+        resources: {
+            seen: { default: undefined as string | undefined },
+        },
+        transactions: {
+            capture(t) {
+                t.resources.seen = t.userId as string | undefined;
+            },
+        },
+    });
+
+    it("t.userId is undefined for a local-only database (no sync)", () => {
+        const db = Database.create(makePlugin());
+        db.transactions.capture();
+        expect(db.resources.seen).toBeUndefined();
+    });
+
+    it("t.userId matches sync.userId for locally-initiated transactions", () => {
+        const db = Database.create(makePlugin(), { sync: { userId: "alice" } });
+        db.transactions.capture();
+        expect(db.resources.seen).toBe("alice");
+    });
+
+    it("t.userId matches the envelope userId for inbound db.apply(envelope) calls", () => {
+        const plugin = makePlugin();
+        const db = Database.create(plugin, { sync: { userId: "alice" } });
+
+        // Build a committed envelope that looks like it came from "bob"
+        const envelope = { id: 1, userId: "bob", name: "capture", args: undefined, time: 1 };
+        db.apply(envelope as any);
+
+        expect(db.resources.seen).toBe("bob");
+    });
+});
+
+// ---------------------------------------------------------------------------
+// No-op envelope suppression tests
+// ---------------------------------------------------------------------------
+
+describe("no-op envelope suppression", () => {
+    const makeGatedPlugin = () => Database.Plugin.create({
+        components: {} as const,
+        resources: {
+            value: { default: 0 as number },
+        },
+        transactions: {
+            setIfX(t, args: { v: number }) {
+                // Only applies when the calling user is "X"
+                if (t.userId !== "X") return;
+                t.resources.value = args.v;
+            },
+        },
+    });
+
+    it("a no-op commit (wrong userId) does not fire observe.envelopes", () => {
+        const db = Database.create(makeGatedPlugin(), { sync: { userId: "O" } });
+
+        const listener = vi.fn();
+        db.observe.envelopes(listener);
+
+        db.transactions.setIfX({ v: 99 });
+
+        expect(listener).not.toHaveBeenCalled();
+        expect(db.resources.value).toBe(0);
+    });
+
+    it("an effective commit (correct userId) does fire observe.envelopes", () => {
+        const db = Database.create(makeGatedPlugin(), { sync: { userId: "X" } });
+
+        const listener = vi.fn();
+        db.observe.envelopes(listener);
+
+        db.transactions.setIfX({ v: 99 });
+
+        expect(listener).toHaveBeenCalledOnce();
+        // In deferred-commit mode the local apply is transient (time < 0)
+        // and the value is visible immediately.
+        expect(db.resources.value).toBe(99);
+    });
+
+    it("a no-op in local-only mode does not fire observe.envelopes", () => {
+        const db = Database.create(makeGatedPlugin());  // no sync
+
+        const listener = vi.fn();
+        db.observe.envelopes(listener);
+
+        // userId is undefined in local-only mode, so setIfX is always a no-op
+        db.transactions.setIfX({ v: 42 });
+
+        expect(listener).not.toHaveBeenCalled();
+        expect(db.resources.value).toBe(0);
+    });
+});

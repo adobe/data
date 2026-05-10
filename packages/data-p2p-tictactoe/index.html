@@ -116,9 +116,51 @@
     .game__status--active { color: var(--win-color); font-weight: 600; }
 
     /* ── Board ────────────────────────────────────────────────── */
+
+    /* Wrapper is persistent across re-renders so the pointermove listener
+       and the cursor overlay survive game-state changes. */
+    .board-wrap {
+      position: relative;
+      width: 100%; max-width: 320px;
+    }
+
     .board {
       display: grid; grid-template-columns: repeat(3, 1fr);
-      gap: 8px; width: 100%; max-width: 320px;
+      gap: 8px; width: 100%;
+    }
+
+    /* ── Presence cursor overlay ─────────────────────────────── */
+
+    /* Sits on top of the board, covers it exactly, never intercepts clicks. */
+    .cursors {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    /* A small dot + player label tracking the remote player's pointer. */
+    .cursor {
+      position: absolute;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 800; line-height: 1;
+      /* Offset so the dot is centred on the pointer tip */
+      transform: translate(-50%, -50%);
+      transition: left .05s linear, top .05s linear;
+      box-shadow: 0 2px 8px rgba(0,0,0,.45);
+      z-index: 10;
+    }
+    .cursor--x {
+      background: var(--x-color);
+      color: #fff;
+      border: 2px solid rgba(255,255,255,.3);
+    }
+    .cursor--o {
+      background: var(--o-color);
+      color: #fff;
+      border: 2px solid rgba(255,255,255,.3);
     }
 
     .cell {

@@ -19,3 +19,4 @@ export * from "./use-drag-transaction.js";
 export * from "./use-drag-observe.js";
 export * from "./use-draggable.js";
 export * from "./use-updated.js";
+export * from "./use-pointer-observe.js";

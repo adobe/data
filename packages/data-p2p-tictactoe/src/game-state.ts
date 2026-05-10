@@ -52,6 +52,25 @@ export const Board = {
 };
 
 // ---------------------------------------------------------------------------
+// Presence
+// ---------------------------------------------------------------------------
+
+/**
+ * Cursor position expressed as fractions (0–1) of the board's width/height.
+ * Using fractions makes the data resolution-independent; the renderer scales
+ * them to pixels at display time.
+ */
+export type PresenceCursor = { readonly x: number; readonly y: number } | null;
+
+/**
+ * Fixed envelope IDs used for presence transients. Re-using the same ID
+ * replaces the previous cursor position in the reconciling DB's transient
+ * queue rather than accumulating entries, so each player's presence is a
+ * single sliding entry at all times.
+ */
+export const PRESENCE_ID: Record<PlayerMark, number> = { X: 0xF001, O: 0xF002 };
+
+// ---------------------------------------------------------------------------
 // Plugin
 // ---------------------------------------------------------------------------
 
@@ -59,6 +78,9 @@ export const tictactoePlugin = Database.Plugin.create({
     resources: {
         board: { default: Board.empty() },
         firstPlayer: { default: "X" as PlayerMark },
+        // Presence: each player's cursor position on the board (null = not yet moved).
+        cursorX: { default: null as PresenceCursor },
+        cursorO: { default: null as PresenceCursor },
     },
     transactions: {
         playMove(t, args: { index: number }) {
@@ -70,6 +92,22 @@ export const tictactoePlugin = Database.Plugin.create({
             // Alternate who goes first so the loser gets first move next round.
             t.resources.firstPlayer = t.resources.firstPlayer === "X" ? "O" : "X";
             t.resources.board = Board.empty();
+        },
+        /**
+         * Update a player's cursor position. Called via `sendTransient` so it
+         * is never committed — it stays in the reconciling DB's transient
+         * queue and is overwritten on the next mouse move.
+         *
+         * Receiving peers apply it via `database.apply({ ..., time: -1 })`,
+         * which runs this function transiently and notifies observers so the
+         * UI can re-render the remote cursor dot.
+         */
+        movePresence(t, args: { mark: PlayerMark; x: number; y: number }) {
+            if (args.mark === "X") {
+                t.resources.cursorX = { x: args.x, y: args.y };
+            } else {
+                t.resources.cursorO = { x: args.x, y: args.y };
+            }
         },
     },
 });

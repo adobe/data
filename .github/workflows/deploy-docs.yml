@@ -38,6 +38,8 @@ jobs:
 
       - run: pnpm --filter @adobe/data-sync build
 
+      - run: pnpm --filter @adobe/data-lit build
+
       - run: pnpm --filter data-p2p-tictactoe build
         env:
           CI: true

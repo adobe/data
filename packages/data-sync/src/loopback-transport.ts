@@ -14,8 +14,9 @@ type Listener<T> = (msg: T) => void;
  * @example
  * ```ts
  * const { client, server } = createLoopbackTransport();
- * const syncServer = createSyncServer({ transport: server, ... });
- * const syncClient = createSyncClient({ transport: client, ... });
+ * const syncServer = createSyncServer();
+ * syncServer.connect(server);
+ * const sync = createSyncService({ database: db, transport: client });
  * ```
  */
 export const createLoopbackTransport = (): {
@@ -33,6 +34,13 @@ export const createLoopbackTransport = (): {
     const serverPending: import("./transport.js").ClientMessage[] = [];
 
     let closed = false;
+    const closeListeners = new Set<() => void>();
+
+    const fireClose = () => {
+        if (!closed) return;
+        for (const l of closeListeners) l();
+        closeListeners.clear();
+    };
 
     const client: ClientTransport = {
         send(msg) {
@@ -49,10 +57,17 @@ export const createLoopbackTransport = (): {
             for (const msg of clientPending.splice(0)) listener(msg);
             return () => clientListeners.delete(listener);
         },
+        onClose(listener) {
+            if (closed) { listener(); return () => undefined; }
+            closeListeners.add(listener);
+            return () => closeListeners.delete(listener);
+        },
         close() {
+            if (closed) return;
             closed = true;
             clientListeners.clear();
             serverListeners.clear();
+            fireClose();
         },
     };
 
@@ -69,6 +84,9 @@ export const createLoopbackTransport = (): {
             serverListeners.add(listener);
             for (const msg of serverPending.splice(0)) listener(msg);
             return () => serverListeners.delete(listener);
+        },
+        onClose(listener) {
+            return client.onClose(listener);
         },
         close() {
             client.close();

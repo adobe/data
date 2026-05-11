@@ -16,8 +16,9 @@ const createNegativeEntityLocationTable = (initialCapacity: number = 16): Entity
         create: (location: EntityLocation): Entity => -1 - table.create(location),
         delete: (entity: Entity) => table.delete(-1 - entity),
         locate: (entity: Entity) => table.locate(-1 - entity),
-        update: (entity: Entity, location: EntityLocation) => table.update(-1 - entity, location)
-    }
+        update: (entity: Entity, location: EntityLocation) => table.update(-1 - entity, location),
+        reset: () => table.reset(),
+    };
 }
 
 const createPositiveEntityLocationTable = (initialCapacity: number = 16): EntityLocationTable => {
@@ -91,6 +92,10 @@ const createPositiveEntityLocationTable = (initialCapacity: number = 16): Entity
         delete: deleteEntity,
         locate: locateEntity,
         update: updateEntity,
+        reset: () => {
+            freeListHead = -1;
+            nextIndex = 0;
+        },
         toData: () => ({
             entities,
             freeListHead,

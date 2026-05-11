@@ -13,8 +13,8 @@ export { createLoopbackTransport } from "./loopback-transport.js";
 export type { SyncServer, SyncServerOptions } from "./create-sync-server.js";
 export { createSyncServer } from "./create-sync-server.js";
 
-export type { SyncClient, SyncClientOptions } from "./create-sync-client.js";
-export { createSyncClient } from "./create-sync-client.js";
+export type { SyncService, SyncServiceOptions } from "./create-sync-service.js";
+export { createSyncService } from "./create-sync-service.js";
 
 export type {
     WebSocketClientTransportOptions,
@@ -24,6 +24,3 @@ export {
     createWebSocketClientTransport,
     createWebSocketServerTransport,
 } from "./websocket-transport.js";
-
-export type { LossyTransientTransportOptions } from "./lossy-transient-transport.js";
-export { createLossyTransientTransport } from "./lossy-transient-transport.js";

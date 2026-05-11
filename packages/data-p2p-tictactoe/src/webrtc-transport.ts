@@ -12,13 +12,14 @@ const encode = (msg: unknown): string => JSON.stringify(msg);
 const decode = <T>(raw: string): T => JSON.parse(raw) as T;
 
 /**
- * Wraps an RTCDataChannel that the host created as a ClientTransport.
- * The host side is the "server" in sync terms — this gives the host a
- * ClientTransport it can pass to createSyncClient.
+ * Two adapters wrap an open RTCDataChannel as a sync transport:
  *
- * Actually: the *host* runs createSyncServer and needs a ServerTransport
- * for each connected peer. Use createWebRTCServerTransport for that.
- * The *client* (joiner) uses createWebRTCClientTransport.
+ *   - `createWebRTCServerTransport` — used by the **host**, which runs
+ *     `createSyncServer` in-process and wraps each connected peer's
+ *     channel as a `ServerTransport`.
+ *   - `createWebRTCClientTransport` — used by the **joiner**, which wraps
+ *     its channel as a `ClientTransport` and passes it to
+ *     `createSyncService({ database, transport })`.
  */
 
 /**
@@ -27,11 +28,21 @@ const decode = <T>(raw: string): T => JSON.parse(raw) as T;
  */
 export const createWebRTCClientTransport = (channel: RTCDataChannel): ClientTransport => {
     const listeners = new Set<(msg: ServerMessage) => void>();
+    const closeListeners = new Set<() => void>();
+    let closed = false;
+
+    const fireClose = () => {
+        if (closed) return;
+        closed = true;
+        for (const l of closeListeners) l();
+        closeListeners.clear();
+    };
 
     channel.addEventListener("message", (e: MessageEvent<string>) => {
         const msg = decode<ServerMessage>(e.data);
         for (const l of listeners) l(msg);
     });
+    channel.addEventListener("close", fireClose);
 
     return {
         send(msg: ClientMessage) {
@@ -43,7 +54,13 @@ export const createWebRTCClientTransport = (channel: RTCDataChannel): ClientTran
             listeners.add(listener);
             return () => listeners.delete(listener);
         },
+        onClose(listener) {
+            if (closed) { listener(); return () => undefined; }
+            closeListeners.add(listener);
+            return () => closeListeners.delete(listener);
+        },
         close() {
+            fireClose();
             listeners.clear();
             if (channel.readyState === "open" || channel.readyState === "connecting") {
                 channel.close();
@@ -58,11 +75,21 @@ export const createWebRTCClientTransport = (channel: RTCDataChannel): ClientTran
  */
 export const createWebRTCServerTransport = (channel: RTCDataChannel): ServerTransport => {
     const listeners = new Set<(msg: ClientMessage) => void>();
+    const closeListeners = new Set<() => void>();
+    let closed = false;
+
+    const fireClose = () => {
+        if (closed) return;
+        closed = true;
+        for (const l of closeListeners) l();
+        closeListeners.clear();
+    };
 
     channel.addEventListener("message", (e: MessageEvent<string>) => {
         const msg = decode<ClientMessage>(e.data);
         for (const l of listeners) l(msg);
     });
+    channel.addEventListener("close", fireClose);
 
     return {
         send(msg: ServerMessage) {
@@ -74,7 +101,13 @@ export const createWebRTCServerTransport = (channel: RTCDataChannel): ServerTran
             listeners.add(listener);
             return () => listeners.delete(listener);
         },
+        onClose(listener) {
+            if (closed) { listener(); return () => undefined; }
+            closeListeners.add(listener);
+            return () => closeListeners.delete(listener);
+        },
         close() {
+            fireClose();
             listeners.clear();
             if (channel.readyState === "open" || channel.readyState === "connecting") {
                 channel.close();

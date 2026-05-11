@@ -7,13 +7,14 @@ import { Entity } from "../entity/entity.js";
 import { EntityReadValues } from "../store/core/index.js";
 import { Observe } from "../../observe/index.js";
 import { TransactionResult } from "./transactional-store/index.js";
+import { TransactionEnvelope } from "./reconciling/reconciling-database.js";
 import { StringKeyof, RemoveIndex } from "../../types/types.js";
 import { Components } from "../store/components.js";
 import { ArchetypeComponents } from "../store/archetype-components.js";
 import { RequiredComponents } from "../required-components.js";
 import { EntitySelectOptions } from "../store/entity-select-options.js";
 import type { Service } from "../../service/index.js";
-import { createDatabase } from "./public/create-database.js";
+import { createDatabase, type DatabaseSyncOptions } from "./public/create-database.js";
 import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
@@ -104,6 +105,24 @@ export interface Database<
     readonly components: { readonly [K in StringKeyof<C>]: Observe<void> };
     readonly resources: { readonly [K in StringKeyof<R>]: Observe<R[K]> };
     readonly transactions: Observe<TransactionResult<C>>;
+    /**
+     * Fires once for every locally-initiated envelope produced by the
+     * transaction wrappers (`db.transactions.X(args)`). Replays inside the
+     * reconciler and inbound `db.apply()` calls do NOT fire it. The
+     * `intent` reflects the wrapper's decision regardless of whether the
+     * envelope was applied locally as a transient (deferred-commit / sync
+     * mode) or as a commit (local-only mode).
+     *
+     * Sync services route forwarding by `intent`:
+     *   - `"commit"`    → propose to the server (reliable)
+     *   - `"transient"` → relay to peers (lossy)
+     *   - `"cancel"`    → cancel a pending transient (reliable)
+     */
+    readonly envelopes: Observe<{
+        envelope: TransactionEnvelope;
+        result: TransactionResult<C> | undefined;
+        intent: "commit" | "transient" | "cancel";
+    }>;
     entity<T extends RequiredComponents>(id: Entity, minArchetype?: ReadonlyArchetype<T> | Archetype<T>): Observe<Readonly<T> & EntityReadValues<C> | null>;
     entity(id: Entity): Observe<EntityReadValues<C> | null>;
     archetype(id: ArchetypeId): Observe<void>;
@@ -115,6 +134,36 @@ export interface Database<
       options?: EntitySelectOptions<C, Pick<C & RequiredComponents, T>>
     ): Observe<readonly Entity[]>;
   }
+  /**
+   * Wipes all entities and resets all resources to their plugin defaults,
+   * preserving database identity (observers, transaction wrappers, sync
+   * options stay intact). Equivalent in observable state to a freshly
+   * constructed Database with the same plugin.
+   *
+   * O(num_archetypes + num_resources) — does not walk individual entities.
+   * Clears any in-flight reconciler transient queue.
+   */
+  readonly reset: () => void;
+  /**
+   * Apply a remotely-originated transaction envelope to the database. Used
+   * by sync services to feed in inbound commits and transients. Does not
+   * fire `observe.envelopes`.
+   */
+  readonly apply: (envelope: TransactionEnvelope) => TransactionResult<C> | undefined;
+  /**
+   * Cancel a previously-applied transient envelope by its compound
+   * `(userId, id)` key. Used by sync services to forward server-broadcast
+   * cancellations.
+   */
+  readonly cancel: (id: number, userId?: number | string) => void;
+  /**
+   * The sync options the database was created with, or `undefined` for a
+   * local-only database. Sync services read this to (a) confirm the
+   * database was created in sync mode and (b) recover the `userId` for
+   * authentication / logging without having to thread it through
+   * separately.
+   */
+  readonly sync: DatabaseSyncOptions | undefined;
   readonly system: {
     /** System create() return value, or null when create() returns void. Key is always present. */
     readonly functions: { readonly [K in S]: SystemFunction | null };

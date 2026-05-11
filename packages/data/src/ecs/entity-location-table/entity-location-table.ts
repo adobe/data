@@ -7,6 +7,8 @@ export interface EntityLocationTable {
     update: (entity: Entity, location: EntityLocation) => void;
     delete: (entity: Entity) => void;
     locate: (entity: Entity) => EntityLocation | null;
+    /** Wipe all entity records. O(1). Next allocate starts from entity 0 again. */
+    reset: () => void;
     toData: () => unknown;
     fromData: (data: unknown) => void;
 }

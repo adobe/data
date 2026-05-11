@@ -85,10 +85,7 @@ export function createObservedDatabase<
     };
 
     const execute: ObservedDatabase<C, R, A>["execute"] = (handler, options) => {
-        const result = transactionalExecute(
-            handler as (db: Store<C, R, A>) => Entity | void,
-            options,
-        );
+        const result = transactionalExecute(handler, options);
         notifyObservers(result);
         return result;
     };
@@ -179,6 +176,10 @@ export function createObservedDatabase<
         resources,
         observe,
         execute,
+        reset: () => {
+            store.reset();
+            notifyAllObserversStoreReloaded();
+        },
         toData: () => store.toData(),
         fromData: (data: unknown) => {
             store.fromData(data);

@@ -3,13 +3,16 @@
 import { Database } from "@adobe/data/ecs";
 import { Observe } from "@adobe/data/observe";
 import { BoardState } from "../types/board-state/board-state";
-import type { PlayerMark } from "../types/player-mark/player-mark";
+import { PlayerMark } from "../types/player-mark/player-mark";
 import { PlayMoveArgs } from "../types/play-move-args/play-move-args";
 
 export const tictactoePlugin = Database.Plugin.create({
   resources: {
     board: { default: BoardState.createInitialBoard() },
-    firstPlayer: { default: "X" as PlayerMark },
+    firstPlayer: { default: PlayerMark.values[0] },
+    xWins: { default: 0 as number },
+    oWins: { default: 0 as number },
+    draws: { default: 0 as number },
   },
   computed: {
     currentPlayer: (db) =>
@@ -29,26 +32,31 @@ export const tictactoePlugin = Database.Plugin.create({
   },
   transactions: {
     restartGame: (t) => {
-      t.resources.firstPlayer =
-        t.resources.firstPlayer === "X" ? "O" : "X";
+      const winner = BoardState.getWinner(t.resources.board);
+      const status = BoardState.deriveStatus(t.resources.board);
+      if (winner === "X") t.resources.xWins = t.resources.xWins + 1;
+      else if (winner === "O") t.resources.oWins = t.resources.oWins + 1;
+      else if (status === "draw") t.resources.draws = t.resources.draws + 1;
+      t.resources.firstPlayer = PlayerMark.opponent[t.resources.firstPlayer];
       t.resources.board = BoardState.createInitialBoard();
     },
     playMove: (t, { index }: PlayMoveArgs) => {
+      const mark = BoardState.currentPlayer(
+        t.resources.board,
+        t.resources.firstPlayer,
+      );
+      // When userId is set (sync/P2P mode) a peer may only play their own mark.
+      if (t.userId !== undefined && t.userId !== mark) return;
       const validation = PlayMoveArgs.canPlayMove({
         board: t.resources.board,
         index,
       });
       if (!validation.ok) return;
-      const mark = BoardState.currentPlayer(
-        t.resources.board,
-        t.resources.firstPlayer,
-      );
-      const nextBoard = BoardState.setBoardCell({
+      t.resources.board = BoardState.setBoardCell({
         board: t.resources.board,
         index,
         mark,
       });
-      t.resources.board = nextBoard;
     },
   },
 });

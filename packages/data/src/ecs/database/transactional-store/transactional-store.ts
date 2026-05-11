@@ -11,6 +11,23 @@ import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { FromSchemas } from "../../../schema/from-schemas.js";
 import { Undoable } from "../undoable.js";
 
+/**
+ * The first argument passed to every transaction function. Extends the full
+ * store read/write surface with `userId` — the identifier of the peer or user
+ * that initiated the transaction. Transaction functions can use this to
+ * enforce per-user authorization rules (e.g. a game that lets only the
+ * current player move).
+ *
+ * `userId` is `undefined` in local-only (no-sync) databases.
+ */
+export type TransactionContext<
+    C extends Components,
+    R extends ResourceComponents,
+    A extends ArchetypeComponents<StringKeyof<C>>,
+> = Store<C, R, A> & {
+    readonly userId: number | string | undefined;
+};
+
 export interface TransactionalStore<
     C extends Components = never,
     R extends ResourceComponents = never,
@@ -24,9 +41,10 @@ export interface TransactionalStore<
      * @returns A promise that resolves when the transaction is complete.
      */
     execute(
-        transactionFunction: (t: Store<C, R, A>) => Entity | void,
+        transactionFunction: (t: TransactionContext<C, R, A>) => Entity | void,
         options?: {
             transient?: boolean;
+            userId?: number | string;
         }
     ): TransactionResult<C>;
 

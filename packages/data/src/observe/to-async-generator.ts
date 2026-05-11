@@ -33,7 +33,15 @@ export function toAsyncGenerator<T>(
     let error: any = null;
 
     const flush = () => {
-        if (resolveNext && q.length > head) {
+        if (rejectNext && error != null) {
+            // Errors take precedence over `done` — a thrown iterator must
+            // reject the pending next() rather than resolve `{done: true}`.
+            const rej = rejectNext;
+            resolveNext = rejectNext = null;
+            const e = error;
+            error = null;
+            rej(e);
+        } else if (resolveNext && q.length > head) {
             const r = resolveNext;
             resolveNext = rejectNext = null;
             r({ done: false, value: dequeue() });
@@ -41,12 +49,6 @@ export function toAsyncGenerator<T>(
             const r = resolveNext;
             resolveNext = rejectNext = null;
             r({ done: true, value: undefined as any });
-        } else if (rejectNext && error != null) {
-            const rej = rejectNext;
-            resolveNext = rejectNext = null;
-            const e = error;
-            error = null;
-            rej(e);
         }
     };
 
@@ -75,6 +77,10 @@ export function toAsyncGenerator<T>(
         }
         // Drain queue to free memory.
         q.length = head = 0;
+        // Resolve any in-flight `next()` waiter with { done: true } so a
+        // `for await` consumer sees the iterator complete instead of
+        // hanging forever on the outstanding promise.
+        flush();
     };
 
     const iterator: AsyncGenerator<T> = {
@@ -100,6 +106,10 @@ export function toAsyncGenerator<T>(
             return Promise.resolve({ done: true, value: undefined as any });
         },
         throw(e: any): Promise<IteratorResult<T>> {
+            // Stash the error before cleanup() runs flush(), so that any
+            // currently-pending next() awaiter rejects with `e` instead of
+            // resolving as `{ done: true }`.
+            error = e;
             cleanup();
             return Promise.reject(e);
         },

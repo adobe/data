@@ -11,6 +11,12 @@ export type DragObserveProps = Pick<
 >;
 export type DragStart = {
     readonly type: 'start' | 'cancel';
+    /**
+     * The `PointerEvent` whose cumulative drag distance first exceeded
+     * `minDragDistance`. Only present when `type === 'start'`. Useful for
+     * callers that need the originating `clientX`/`clientY` synchronously.
+     */
+    readonly event?: PointerEvent;
 };
 export type DragMove = {
     readonly type: 'move';
@@ -36,8 +42,8 @@ export function useDragObserve(props: DragObserveProps, dependencies: unknown[])
     useDraggable(element,
         {
             ...props,
-            onDragStart: _e => {
-                setDragState({ type: 'start' });
+            onDragStart: e => {
+                setDragState({ type: 'start', event: e });
             },
             onDrag: (_e, position, delta) => {
                 setDragState({

@@ -48,7 +48,7 @@ export interface WebSocketClientTransportOptions {
  * @example
  * ```ts
  * const transport = createWebSocketClientTransport({ url: "ws://localhost:4000/sync" });
- * const client = createSyncClient({ database: myDb, transport });
+ * const sync = createSyncService({ database: myDb, transport });
  * ```
  */
 export const createWebSocketClientTransport = (
@@ -58,7 +58,16 @@ export const createWebSocketClientTransport = (
     const ws = new WS(options.url);
 
     const listeners = new Set<(msg: ServerMessage) => void>();
+    const closeListeners = new Set<() => void>();
     const pendingOutbound: string[] = [];
+    let closed = false;
+
+    const fireClose = () => {
+        if (closed) return;
+        closed = true;
+        for (const l of closeListeners) l();
+        closeListeners.clear();
+    };
 
     ws.addEventListener("open", () => {
         options.onOpen?.(ws);
@@ -73,6 +82,7 @@ export const createWebSocketClientTransport = (
 
     ws.addEventListener("close", (event: CloseEvent) => {
         options.onClose?.(event);
+        fireClose();
     });
 
     return {
@@ -88,7 +98,13 @@ export const createWebSocketClientTransport = (
             listeners.add(listener);
             return () => listeners.delete(listener);
         },
+        onClose(listener) {
+            if (closed) { listener(); return () => undefined; }
+            closeListeners.add(listener);
+            return () => closeListeners.delete(listener);
+        },
         close() {
+            fireClose();
             listeners.clear();
             if (ws.readyState === ws.OPEN || ws.readyState === ws.CONNECTING) {
                 ws.close(1000, "client disposed");
@@ -137,12 +153,22 @@ export interface WebSocketLike {
  */
 export const createWebSocketServerTransport = (ws: WebSocketLike): ServerTransport => {
     const listeners = new Set<(msg: ClientMessage) => void>();
+    const closeListeners = new Set<() => void>();
+    let closed = false;
+
+    const fireClose = () => {
+        if (closed) return;
+        closed = true;
+        for (const l of closeListeners) l();
+        closeListeners.clear();
+    };
 
     const messageHandler = (event: { data: string }) => {
         const msg = decode<ClientMessage>(event.data);
         for (const l of listeners) l(msg);
     };
     ws.addEventListener("message", messageHandler);
+    ws.addEventListener("close", fireClose);
 
     return {
         send(msg: ServerMessage) {
@@ -154,7 +180,13 @@ export const createWebSocketServerTransport = (ws: WebSocketLike): ServerTranspo
             listeners.add(listener);
             return () => listeners.delete(listener);
         },
+        onClose(listener) {
+            if (closed) { listener(); return () => undefined; }
+            closeListeners.add(listener);
+            return () => closeListeners.delete(listener);
+        },
         close() {
+            fireClose();
             ws.removeEventListener("message", messageHandler);
             listeners.clear();
             if (ws.readyState === 1) {

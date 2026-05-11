@@ -222,9 +222,18 @@ importers:
       '@adobe/data':
         specifier: workspace:*
         version: link:../data
+      '@adobe/data-lit':
+        specifier: workspace:*
+        version: link:../data-lit
       '@adobe/data-sync':
         specifier: workspace:*
         version: link:../data-sync
+      data-lit-tictactoe:
+        specifier: workspace:*
+        version: link:../data-lit-tictactoe
+      lit:
+        specifier: ^3.3.1
+        version: 3.3.1
     devDependencies:
       typescript:
         specifier: ^5.8.3

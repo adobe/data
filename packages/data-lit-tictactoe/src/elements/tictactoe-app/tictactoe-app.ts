@@ -1,22 +1,18 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { customElement } from "lit/decorators.js";
-import { html } from "lit";
-import { TictactoeElement } from "../../tictactoe-element.js";
-import { styles } from "./tictactoe-app.css.js";
-import "../tictactoe-board/tictactoe-board.js";
-import "../tictactoe-hud/tictactoe-hud.js";
+import { html, type TemplateResult } from "lit";
+import type { Database } from "@adobe/data/ecs";
+import type { tictactoePlugin } from "../../state/tictactoe-plugin.js";
 
-export const tagName = "tictactoe-app";
+type TictactoeService = Database.Plugin.ToDatabase<typeof tictactoePlugin>;
 
-@customElement(tagName)
-export class TictactoeApp extends TictactoeElement {
-  static styles = styles;
-
-  render() {
-    return html`
-      <tictactoe-board></tictactoe-board>
-      <tictactoe-hud></tictactoe-hud>
-    `;
-  }
-}
+/**
+ * Generic over `S` so callers may pass a database built from any plugin
+ * that extends `tictactoePlugin` (for example one that adds AI agents
+ * or peer presence). The element class itself is typed on the minimal
+ * `tictactoePlugin` surface and ignores the extra capabilities.
+ */
+export const Tictactoe = <S extends TictactoeService>(args: { service: S }): TemplateResult => {
+    void import("./tictactoe-app-element.js");
+    return html`<tictactoe-app .service=${args.service}></tictactoe-app>`;
+};

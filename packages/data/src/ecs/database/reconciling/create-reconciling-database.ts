@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { StringKeyof } from "../../../types/types.js";
-import { TransactionResult } from "../transactional-store/index.js";
+import { TransactionContext, TransactionResult } from "../transactional-store/index.js";
 import { applyOperations } from "../transactional-store/apply-operations.js";
 import type { TransactionDeclarations } from "../../store/transaction-functions.js";
 import { ResourceComponents } from "../../store/resource-components.js";
@@ -42,7 +42,7 @@ export function createReconcilingDatabase<
 
     const rollbackEntryResult = (entry: ReconcilingEntry<C, R, A>) => {
         if (entry.result) {
-            execute(t => applyOperations(t, entry.result!.undo), { transient: true });
+            execute(t => applyOperations(t, entry.result!.undo), { transient: true, userId: undefined });
             entry.result = undefined;
         }
     };
@@ -54,13 +54,13 @@ export function createReconcilingDatabase<
     };
 
     /**
-     * Splice a transient entry out of the queue by id.
+     * Splice a transient entry out of the queue by compound (userId, id) key.
      * IMPORTANT: must only be called when all transients are already rolled back
      * (i.e. after rollbackAllTransients()). Calling it while entries are still
      * applied would undo a non-top entry mid-stack, corrupting the freelist.
      */
-    const spliceTransientEntry = (id: number): boolean => {
-        const index = reconcilingEntries.findIndex(entry => entry.id === id);
+    const spliceTransientEntry = (id: number, userId: number | string | undefined): boolean => {
+        const index = reconcilingEntries.findIndex(entry => entry.id === id && entry.userId === userId);
         if (index === -1) {
             return false;
         }
@@ -71,7 +71,7 @@ export function createReconcilingDatabase<
     const executeEntry = (entry: ReconcilingEntry<C, R, A>) => {
         const result = execute(
             t => entry.transaction(t, entry.args),
-            { transient: true },
+            { transient: true, userId: entry.userId },
         );
 
         // Only store result if it actually made changes (not a no-op).
@@ -96,12 +96,12 @@ export function createReconcilingDatabase<
             throw new Error(`Unknown transaction: ${envelope.name as string}`);
         }
 
-        const { id, time, args } = envelope;
-        const transactionFn = transaction as (store: Store<C, R, A>, args: unknown) => void | Entity;
+        const { id, userId, time, args } = envelope;
+        const transactionFn = transaction as (ctx: TransactionContext<C, R, A>, args: unknown) => void | Entity;
 
-        // Handle cancellation: remove any transient entry for this id.
+        // Handle cancellation: remove any transient entry for this (userId, id).
         if (time === 0) {
-            const index = reconcilingEntries.findIndex(entry => entry.id === id);
+            const index = reconcilingEntries.findIndex(entry => entry.id === id && entry.userId === userId);
             if (index === -1) {
                 return undefined;
             }
@@ -117,11 +117,12 @@ export function createReconcilingDatabase<
             // applied in reverse stack order (avoids mid-stack partial undos
             // that would corrupt the freelist).
             rollbackAllTransients();
-            spliceTransientEntry(id);
+            spliceTransientEntry(id, userId);
 
             // Create and insert the new transient entry.
             const entry: ReconcilingEntry<C, R, A> = {
                 id,
+                userId,
                 name: envelope.name,
                 transaction: transactionFn,
                 args,
@@ -133,7 +134,17 @@ export function createReconcilingDatabase<
             reconcilingEntries.splice(insertIndex, 0, entry);
 
             // Rebuild transient state from scratch to respect time ordering.
-            return replayAllTransients();
+            const result = replayAllTransients();
+
+            // If the new entry produced no store changes (no-op), remove it
+            // from the queue immediately. It will never receive a server
+            // promotion and would otherwise sit in the queue uselessly.
+            if (entry.result === undefined) {
+                const idx = reconcilingEntries.indexOf(entry);
+                if (idx !== -1) reconcilingEntries.splice(idx, 1);
+            }
+
+            return result;
         }
 
         // Handle committed application (positive time): rebase the entire
@@ -148,17 +159,17 @@ export function createReconcilingDatabase<
         // identical on every peer, regardless of what local transients were
         // pending when the broadcast arrived.
         rollbackAllTransients();
-        spliceTransientEntry(id);
+        spliceTransientEntry(id, userId);
         const result = execute(
             t => transactionFn(t, args),
-            { transient: false },
+            { transient: false, userId },
         );
         replayAllTransients();
         return result;
     };
 
-    const cancelEntry = (id: number) => {
-        const index = reconcilingEntries.findIndex(entry => entry.id === id);
+    const cancelEntry = (id: number, userId?: number | string) => {
+        const index = reconcilingEntries.findIndex(entry => entry.id === id && entry.userId === userId);
         if (index === -1) {
             return;
         }
@@ -167,11 +178,17 @@ export function createReconcilingDatabase<
         replayAllTransients();
     };
 
+    const resetReconciling = () => {
+        reconcilingEntries.length = 0;
+        observedDatabase.reset();
+    };
+
     const reconcilingDatabase: ReconcilingDatabase<C, R, A, TD> = {
         ...storeMethods,
         resources,
         execute,
         observe,
+        reset: resetReconciling,
         toData: () => {
             rollbackAllTransients();
             const data = observedToData();

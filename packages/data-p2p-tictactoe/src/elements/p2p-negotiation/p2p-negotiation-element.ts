@@ -67,6 +67,7 @@ export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlu
     render() {
         const values = useObservableValues(() => ({
             phase: this.service.observe.resources.phase,
+            connection: this.service.observe.resources.connection,
             offerCode: this.service.observe.resources.offerCode,
             answerCode: this.service.observe.resources.answerCode,
             bannerText: this.service.observe.resources.bannerText,
@@ -91,6 +92,7 @@ export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlu
             setHostAnswerInput: (value) => this.service.transactions.setHostAnswerInput({ value }),
             setJoinerOfferInput: (value) => this.service.transactions.setJoinerOfferInput({ value }),
             copyText: (text) => controller.copyText(text),
+            reconnect: () => controller.reconnect(),
         });
     }
 }

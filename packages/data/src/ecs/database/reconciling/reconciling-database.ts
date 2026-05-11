@@ -33,6 +33,7 @@ export interface ReconcilingDatabase<
     A extends ArchetypeComponents<StringKeyof<C>>,
     TD extends TransactionDeclarations<C, R, A>,
 > extends Omit<ObservedDatabase<C, R, A>, "extend"> {
+    readonly reset: () => void;
     readonly apply: (envelope: TransactionEnvelope<Extract<keyof TD, string>>) => TransactionResult<C> | undefined;
     readonly cancel: (id: number, userId?: number | string) => void;
     readonly extend: <

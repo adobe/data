@@ -2,12 +2,14 @@
 
 import { html, nothing, type TemplateResult } from "lit";
 import type { Phase } from "../../types/phase/phase.js";
+import type { ConnectionState } from "../../state/negotiation-plugin.js";
 
 export type RenderGame = (args: { service: unknown }) => TemplateResult;
 export type RenderPresence = (args: { service: unknown; children: TemplateResult }) => TemplateResult;
 
 export function render({
     phase,
+    connection,
     offerCode,
     answerCode,
     bannerText,
@@ -24,8 +26,10 @@ export function render({
     setHostAnswerInput,
     setJoinerOfferInput,
     copyText,
+    reconnect,
 }: {
     phase: Phase;
+    connection: ConnectionState;
     offerCode: string;
     answerCode: string;
     bannerText: string;
@@ -42,18 +46,40 @@ export function render({
     setHostAnswerInput: (value: string) => void;
     setJoinerOfferInput: (value: string) => void;
     copyText: (text: string) => void;
+    reconnect: () => void;
 }): TemplateResult | typeof nothing {
+    // Disconnected overlay sits on top of the game view regardless of phase.
+    if (connection === "disconnected" && phase === "game") {
+        return renderDisconnected({ reconnect });
+    }
+
+    // When reconnecting, fall through to the normal signaling UI so the new
+    // invite/answer code is visible. A banner at the top explains the context.
+    const reconnecting = connection === "reconnecting";
+    const reconnectBannerForPhase =
+        phase === "host-signaling"
+            ? "Reconnecting — copy the new invite code and send it to your friend."
+            : "Reconnecting — ask your friend for their new invite code, then paste it below.";
+    const effectiveBannerText = reconnecting ? reconnectBannerForPhase : bannerText;
+    const effectiveBannerError = reconnecting ? false : bannerError;
+
     switch (phase) {
         case "idle":
             return renderIdle({ startHost, startJoin });
         case "host-signaling":
             return renderHostSignaling({
-                offerCode, bannerText, bannerError,
+                offerCode,
+                bannerText: effectiveBannerText,
+                bannerError: effectiveBannerError,
+                reconnecting,
                 hostAnswerInput, setHostAnswerInput, submitAnswer, copyText,
             });
         case "join-signaling":
             return renderJoinSignaling({
-                answerCode, bannerText, bannerError,
+                answerCode,
+                bannerText: effectiveBannerText,
+                bannerError: effectiveBannerError,
+                reconnecting,
                 joinerOfferInput, setJoinerOfferInput, generateAnswer, copyText,
             });
         case "game":
@@ -61,8 +87,8 @@ export function render({
     }
 }
 
-const banner = (text: string, error: boolean) =>
-    text ? html`<div class="banner ${error ? "banner--error" : ""}">${text}</div>` : nothing;
+const banner = (text: string, error: boolean, reconnecting = false) =>
+    text ? html`<div class="banner ${error ? "banner--error" : reconnecting ? "banner--reconnect" : ""}">${text}</div>` : nothing;
 
 const inputValue = (e: Event) => (e.target as HTMLTextAreaElement).value;
 
@@ -93,6 +119,7 @@ function renderHostSignaling({
     offerCode,
     bannerText,
     bannerError,
+    reconnecting,
     hostAnswerInput,
     setHostAnswerInput,
     submitAnswer,
@@ -101,6 +128,7 @@ function renderHostSignaling({
     offerCode: string;
     bannerText: string;
     bannerError: boolean;
+    reconnecting: boolean;
     hostAnswerInput: string;
     setHostAnswerInput: (value: string) => void;
     submitAnswer: () => void;
@@ -108,8 +136,8 @@ function renderHostSignaling({
 }) {
     return html`
         <div class="signaling">
-            <h2>Host a game</h2>
-            ${banner(bannerText, bannerError)}
+            <h2>${reconnecting ? "Reconnect — Host" : "Host a game"}</h2>
+            ${banner(bannerText, bannerError, reconnecting)}
             ${offerCode ? html`
                 <p class="step">Step 1 — Send this invite code to your friend:</p>
                 <div class="codebox-wrap">
@@ -136,6 +164,7 @@ function renderJoinSignaling({
     answerCode,
     bannerText,
     bannerError,
+    reconnecting,
     joinerOfferInput,
     setJoinerOfferInput,
     generateAnswer,
@@ -144,6 +173,7 @@ function renderJoinSignaling({
     answerCode: string;
     bannerText: string;
     bannerError: boolean;
+    reconnecting: boolean;
     joinerOfferInput: string;
     setJoinerOfferInput: (value: string) => void;
     generateAnswer: () => void;
@@ -151,8 +181,8 @@ function renderJoinSignaling({
 }) {
     return html`
         <div class="signaling">
-            <h2>Join a game</h2>
-            ${banner(bannerText, bannerError)}
+            <h2>${reconnecting ? "Reconnect — Joiner" : "Join a game"}</h2>
+            ${banner(bannerText, bannerError, reconnecting)}
             <p class="step">Paste the invite code your friend gave you:</p>
             <div class="codebox-wrap">
                 <label class="label">Host's invite code</label>
@@ -188,3 +218,16 @@ function renderGameMount({
     const game = renderGame({ service: gameDb });
     return renderPresence ? renderPresence({ service: gameDb, children: game }) : game;
 }
+
+function renderDisconnected({ reconnect }: { reconnect: () => void }) {
+    return html`
+        <div class="disconnected-overlay">
+            <div class="disconnected-card">
+                <h2>Connection lost</h2>
+                <p>Your peer disconnected. You can try to reconnect — the game state is preserved.</p>
+                <button class="btn btn--role" @click=${reconnect}>Reconnect</button>
+            </div>
+        </div>
+    `;
+}
+

@@ -175,6 +175,14 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         }
     };
 
+    const resetCore = () => {
+        persistentLocationTable.reset();
+        ephemeralLocationTable.reset();
+        for (const archetype of archetypes) {
+            archetype.rowCount = 0;
+        }
+    };
+
     const core: Core<C> = {
         componentSchemas: componentSchemas,
         queryArchetypes,
@@ -191,6 +199,7 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         delete: deleteEntity,
         update: updateEntity,
         compact,
+        reset: resetCore,
         toData: () => ({
             componentSchemas,
             entityLocationTableData: persistentLocationTable.toData(),

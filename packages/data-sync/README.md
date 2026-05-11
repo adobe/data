@@ -158,8 +158,16 @@ Returns a `SyncServer` — a pure ordering service that:
 - Is entirely stateless with respect to ECS data — it never owns a database.
 
 ```ts
+interface SyncServerOptions {
+    /** Gap (ms) after which a silent client's transport is closed. Default 25 000. 0 = disabled. */
+    livenessTimeoutMs?: number;
+    /** Optional sink for lifecycle log messages (handshake, proposals, liveness). */
+    logger?: (msg: string) => void;
+}
+
 interface SyncServer {
-    connect(transport: ServerTransport): () => void; // returns disconnect fn
+    readonly sessionId: string;                       // stable random id for this instance
+    connect(transport: ServerTransport): () => void;  // returns disconnect fn
     dispose(): void;
 }
 ```
@@ -179,10 +187,26 @@ interface SyncServiceOptions {
     readonly transport: ClientTransport;
     /** Default 20. Lossy rate limit for `kind: "transient"` messages. */
     readonly maxTransientsPerSecond?: number;
+    /** Session id from the previous connection's welcome. Omit for a fresh client. */
+    readonly priorSessionId?: string;
+    /** Highest committed time already applied locally. Default 0 (full replay). */
+    readonly initialWatermark?: number;
+    /** Called once when welcome arrives, before replay is applied. */
+    readonly onWelcome?: (msg: { sessionId: string; resetRequired: boolean }) => void;
+    /** Interval (ms) between outbound pings. Default 10 000. 0 = disabled. */
+    readonly pingIntervalMs?: number;
+    /** Gap (ms) with no inbound traffic before transport.close() is called. Default 25 000. 0 = disabled. */
+    readonly livenessTimeoutMs?: number;
+    /** Optional sink for lifecycle log messages (handshake, commits, liveness). */
+    readonly logger?: (msg: string) => void;
 }
 
 interface SyncService {
     dispose(): void;
+    /** Highest committed time applied so far (for reconnect watermark). */
+    lastAppliedTime(): number;
+    /** Session id from the server's welcome (undefined until welcome arrives). */
+    sessionId(): string | undefined;
 }
 ```
 
@@ -442,6 +466,157 @@ them and clients treat them as best-effort previews.
 
 WebSocket fulfills the transport contract. UDP, raw QUIC, or other
 unordered channels require a reliability layer on top before use.
+
+## Connection resilience
+
+### Reconnection and session continuity (`hello` / `welcome`)
+
+Every `SyncServer` instance is assigned a stable random `sessionId` at
+creation time. When a `SyncService` connects it immediately sends a `hello`
+message carrying:
+
+- `sessionId` — the `sessionId` received from the *previous* connection's
+  `welcome`, or omitted for a fresh client.
+- `lastAppliedTime` — the highest committed `time` the client has already
+  applied locally.
+
+The server responds with `welcome` before replaying any history:
+
+```
+client → server   { kind: "hello", sessionId?: string, lastAppliedTime: number }
+server → client   { kind: "welcome", sessionId: string, resetRequired: boolean }
+server → client   … committed envelopes (replay) …
+```
+
+`resetRequired` is `true` when the server cannot satisfy the client's
+watermark claim safely:
+
+| Condition | `resetRequired` | Replay |
+|---|---|---|
+| Fresh client (no prior session) | `false` | Full log |
+| Same session, watermark ≤ server max | `false` | Tail from `lastAppliedTime` |
+| Different session (server restarted) | `true` | Full log |
+| Client watermark ahead of server | `true` | Full log |
+
+When `resetRequired` is `true`, the client must wipe its database (call
+`db.reset()`) before applying the replay. The `onWelcome` callback in
+`createSyncService` is the right place to do this — it fires
+synchronously before the replay buffer is flushed:
+
+```ts
+const sync = createSyncService({
+    database: db,
+    transport,
+    priorSessionId,          // retained from the previous connection
+    initialWatermark,        // retained from sync.lastAppliedTime()
+    onWelcome: ({ sessionId, resetRequired }) => {
+        if (resetRequired) db.reset(); // wipe before replay arrives
+    },
+});
+```
+
+The `SyncService` exposes `sessionId()` and `lastAppliedTime()` so a
+reconnect wrapper can read them after a disconnect:
+
+```ts
+const priorSessionId = sync.sessionId();
+const initialWatermark = sync.lastAppliedTime();
+sync.dispose(); // close old transport
+
+const newSync = createSyncService({
+    database: db,
+    transport: newTransport,
+    priorSessionId,
+    initialWatermark,
+    onWelcome: ({ resetRequired }) => {
+        if (resetRequired) db.reset();
+    },
+});
+```
+
+`db.reset()` wipes all entities and resets all resources to their plugin
+defaults in O(archetypes + resources) time, preserving database identity
+(observers, sync options, transaction wrappers stay intact).
+
+### Keep-alive: `ping` / `pong`
+
+WebRTC DataChannels and WebSockets can silently drop without closing the
+transport object — the underlying TCP or SCTP connection may be gone while
+the browser's JS handle still looks open. The sync protocol includes an
+application-level keep-alive to detect this:
+
+- `SyncService` sends a `ping` message at a configurable interval.
+- `SyncServer` echoes a `pong` on every `ping` it receives.
+- Any inbound traffic (committed envelopes, pongs, welcome) resets the
+  client's liveness deadline.
+- If the deadline expires — no inbound traffic for `livenessTimeoutMs` —
+  the service calls `transport.close()`, which fires all registered
+  `onClose` listeners and lets the application drive a reconnect.
+
+The server applies a symmetric check: any inbound traffic from a client
+(pings, proposals, hello) resets that client's deadline. A client that
+goes silent is disconnected server-side after `livenessTimeoutMs`.
+
+**`SyncServiceOptions`** keep-alive fields:
+
+| Option | Default | Effect |
+|---|---|---|
+| `pingIntervalMs` | `10_000` | How often to send `ping`. `0` disables ping sending. |
+| `livenessTimeoutMs` | `25_000` | Gap after which `transport.close()` is called. `0` disables the check. |
+
+**`SyncServerOptions`** keep-alive fields:
+
+| Option | Default | Effect |
+|---|---|---|
+| `livenessTimeoutMs` | `25_000` | Gap after which a silent client's transport is closed. `0` disables the check. |
+
+With the defaults, a silent drop is detected within ~25–31 seconds on
+either side. NAT keepalive is an implicit benefit: pings keep the UDP
+mapping alive on routers with short idle timeouts.
+
+```ts
+// Tighter timeouts for a controlled LAN environment:
+const server = createSyncServer({ livenessTimeoutMs: 10_000 });
+const sync = createSyncService({
+    database: db,
+    transport,
+    pingIntervalMs:    3_000,
+    livenessTimeoutMs: 10_000,
+    onWelcome: ({ resetRequired }) => { if (resetRequired) db.reset(); },
+});
+
+// Wire transport close to a reconnect flow:
+transport.onClose(() => {
+    const priorSessionId = sync.sessionId();
+    const initialWatermark = sync.lastAppliedTime();
+    sync.dispose();
+    // ... reconnect with priorSessionId + initialWatermark
+});
+```
+
+### Debug logging
+
+Both `createSyncServer` and `createSyncService` accept an optional
+`logger` function for human-readable lifecycle messages. The library
+itself never imports `console`; consumers wire one in explicitly:
+
+```ts
+const server = createSyncServer({
+    logger: (msg) => console.log(`[sync-server] ${msg}`),
+});
+
+const sync = createSyncService({
+    database: db,
+    transport,
+    logger: (msg) => console.log(`[sync] ${msg}`),
+});
+```
+
+Logged events include: `hello` / `welcome` (with replay count and
+`resetRequired`), outbound `propose` / `cancel`, inbound `committed` /
+`cancelled`, liveness timeout, and `dispose`. Pings and pongs are
+intentionally omitted — they fire every 10 seconds and would flood the
+console.
 
 ## Testing
 

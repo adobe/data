@@ -178,11 +178,17 @@ export function createReconcilingDatabase<
         replayAllTransients();
     };
 
+    const resetReconciling = () => {
+        reconcilingEntries.length = 0;
+        observedDatabase.reset();
+    };
+
     const reconcilingDatabase: ReconcilingDatabase<C, R, A, TD> = {
         ...storeMethods,
         resources,
         execute,
         observe,
+        reset: resetReconciling,
         toData: () => {
             rollbackAllTransients();
             const data = observedToData();

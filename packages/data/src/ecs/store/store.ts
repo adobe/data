@@ -53,6 +53,8 @@ export interface Store<
     undoable?: Undoable;
     readonly resources: { -readonly [K in StringKeyof<R>]: R[K] };
     readonly archetypes: { -readonly [K in StringKeyof<A>]: Archetype<RequiredComponents & { [P in A[K][number]]: (C & RequiredComponents & OptionalComponents)[P] }> }
+    /** Wipe all entities and reset resources to plugin defaults. O(num_archetypes + num_resources). */
+    reset(): void;
     fromData(data: unknown): void
     extend<S extends Store.Schema>(schema: S): S extends Store.Schema<infer XC, infer XR, infer XA> ? Store<C & XC, R & XR, A & XA> : never;
 }

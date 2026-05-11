@@ -135,6 +135,16 @@ export interface Database<
     ): Observe<readonly Entity[]>;
   }
   /**
+   * Wipes all entities and resets all resources to their plugin defaults,
+   * preserving database identity (observers, transaction wrappers, sync
+   * options stay intact). Equivalent in observable state to a freshly
+   * constructed Database with the same plugin.
+   *
+   * O(num_archetypes + num_resources) — does not walk individual entities.
+   * Clears any in-flight reconciler transient queue.
+   */
+  readonly reset: () => void;
+  /**
    * Apply a remotely-originated transaction envelope to the database. Used
    * by sync services to feed in inbound commits and transients. Does not
    * fire `observe.envelopes`.

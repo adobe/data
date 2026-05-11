@@ -55,5 +55,7 @@ export interface Core<
     delete: (entity: Entity) => void;
     update: (entity: Entity, values: EntityUpdateValues<C>) => void;
     compact: () => void;
+    /** Wipe all entities. O(num_archetypes). Location tables and row counts reset to empty. */
+    reset(): void;
     fromData(data: unknown): void
 }

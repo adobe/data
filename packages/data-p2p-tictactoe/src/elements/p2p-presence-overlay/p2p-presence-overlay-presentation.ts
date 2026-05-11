@@ -6,13 +6,16 @@ import { PlayerMark } from "data-lit-tictactoe";
 
 export function render({
     cursors,
+    localMark,
 }: {
     cursors: Partial<Record<PlayerMark, Vec2>> | undefined;
+    localMark: number | string | undefined;
 }): TemplateResult {
     return html`
         <slot></slot>
         <div class="overlay">
             ${PlayerMark.values.map((mark) => {
+                if (mark === localMark) return "";
                 const pos = cursors?.[mark];
                 if (!pos) return "";
                 return html`

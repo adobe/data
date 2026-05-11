@@ -141,6 +141,12 @@ export function createStore<
         select,
         archetypes,
         extend,
+        reset: () => {
+            core.reset();
+            for (const [name, resourceSchema] of Object.entries(resourceSchemas)) {
+                ensureResourceInitialized(name, resourceSchema as any);
+            }
+        },
         toData: () => core.toData(),
         fromData: (data: unknown) => {
             core.fromData(data);

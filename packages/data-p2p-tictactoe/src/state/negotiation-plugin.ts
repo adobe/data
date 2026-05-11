@@ -3,6 +3,8 @@
 import { Database } from "@adobe/data/ecs";
 import type { Phase } from "../types/phase/phase.js";
 
+export type ConnectionState = "idle" | "connecting" | "connected" | "disconnected" | "reconnecting";
+
 /**
  * Negotiation-only ECS plugin. All resources are `ephemeral: true` so they
  * are never replicated to peers (the negotiation DB itself is always
@@ -15,29 +17,36 @@ import type { Phase } from "../types/phase/phase.js";
  */
 export const negotiationPlugin = Database.Plugin.create({
     resources: {
-        phase:       { default: "idle" as Phase,  ephemeral: true },
-        offerCode:   { default: "" as string,     ephemeral: true },
-        answerCode:  { default: "" as string,     ephemeral: true },
-        bannerText:  { default: "" as string,     ephemeral: true },
-        bannerError: { default: false as boolean, ephemeral: true },
+        phase:       { default: "idle" as Phase,             ephemeral: true },
+        connection:  { default: "idle" as ConnectionState,   ephemeral: true },
+        role:        { default: null as "host" | "joiner" | null, ephemeral: true },
+        sessionId:   { default: null as string | null,        ephemeral: true },
+        offerCode:   { default: "" as string,                 ephemeral: true },
+        answerCode:  { default: "" as string,                 ephemeral: true },
+        bannerText:  { default: "" as string,                 ephemeral: true },
+        bannerError: { default: false as boolean,             ephemeral: true },
         // Live values of the two paste textareas. Backing them with
         // resources keeps the textareas controlled and avoids touching
         // the DOM from action callbacks.
-        hostAnswerInput:   { default: "" as string, ephemeral: true },
-        joinerOfferInput:  { default: "" as string, ephemeral: true },
+        hostAnswerInput:   { default: "" as string,  ephemeral: true },
+        joinerOfferInput:  { default: "" as string,  ephemeral: true },
         // The synced game database, populated by the negotiation controller
         // after the WebRTC channel opens. `unknown` so the plugin stays
         // game-agnostic; consumers cast at the render boundary.
-        gameDb:      { default: null as unknown,  ephemeral: true },
+        gameDb:      { default: null as unknown, ephemeral: true },
     },
     transactions: {
         startHostSignaling(t) {
             t.resources.phase = "host-signaling";
+            t.resources.role = "host";
+            t.resources.connection = "connecting";
             t.resources.bannerText = "Generating invite code — please wait…";
             t.resources.bannerError = false;
         },
         startJoinSignaling(t) {
             t.resources.phase = "join-signaling";
+            t.resources.role = "joiner";
+            t.resources.connection = "connecting";
             t.resources.bannerText = "";
             t.resources.bannerError = false;
         },
@@ -59,6 +68,10 @@ export const negotiationPlugin = Database.Plugin.create({
         setJoinerOfferInput(t, { value }: { value: string }) {
             t.resources.joinerOfferInput = value;
         },
+        setConnection(t, { state, sessionId }: { state: ConnectionState; sessionId?: string | null }) {
+            t.resources.connection = state;
+            if (sessionId !== undefined) t.resources.sessionId = sessionId;
+        },
         /**
          * Stores the constructed game DB and transitions to the game phase.
          * Called by the negotiation controller after sync transports are
@@ -67,6 +80,7 @@ export const negotiationPlugin = Database.Plugin.create({
         setGameDb(t, { gameDb }: { gameDb: unknown }) {
             t.resources.gameDb = gameDb;
             t.resources.phase = "game";
+            t.resources.connection = "connected";
         },
     },
 });

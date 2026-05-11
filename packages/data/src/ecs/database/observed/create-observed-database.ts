@@ -176,6 +176,10 @@ export function createObservedDatabase<
         resources,
         observe,
         execute,
+        reset: () => {
+            store.reset();
+            notifyAllObserversStoreReloaded();
+        },
         toData: () => store.toData(),
         fromData: (data: unknown) => {
             store.fromData(data);

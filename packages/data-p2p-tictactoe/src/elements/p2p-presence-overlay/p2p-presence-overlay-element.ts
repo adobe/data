@@ -57,6 +57,8 @@ export class P2pPresenceOverlayElement extends DatabaseElement<typeof presencePl
             };
         }, [pointerPos, element, service]);
 
-        return presentation.render({ cursors: values?.cursors });
+        const localMark = this.service.sync?.userId;
+
+        return presentation.render({ cursors: values?.cursors, localMark });
     }
 }

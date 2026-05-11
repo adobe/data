@@ -35,6 +35,7 @@ export interface ObservedDatabase<
         ): Observe<readonly Entity[]>;
     };
     readonly execute: (handler: (ctx: TransactionContext<C, R, A>) => Entity | void, options?: { transient?: boolean; userId?: number | string }) => TransactionResult<C>;
+    readonly reset: () => void;
     readonly toData: () => unknown;
     readonly fromData: (data: unknown) => void;
     readonly extend: <

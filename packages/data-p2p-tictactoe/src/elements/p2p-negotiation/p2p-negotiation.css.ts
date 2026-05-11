@@ -101,9 +101,36 @@ export const styles = css`
     }
 
     .banner--error { background: #2d1520; border-color: #7a2535; color: #ff8099; }
+    .banner--reconnect { background: #1a2235; border-color: #2e4a7a; color: #82b4ff; }
 
     /* ── Game mount ────────────────────────────────────────────── */
     .game-mount {
         display: contents;
     }
+
+    /* ── Disconnected overlay ──────────────────────────────────── */
+    .disconnected-overlay {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        padding: 2rem 0;
+    }
+
+    .disconnected-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1.25rem;
+        text-align: center;
+        padding: 2rem 1.5rem;
+        background: #1a1a24;
+        border: 1px solid #2e2e3e;
+        border-radius: 12px;
+        max-width: 340px;
+        width: 100%;
+    }
+
+    .disconnected-card h2 { margin: 0; }
+    .disconnected-card p { color: #7a7a9a; line-height: 1.6; margin: 0; }
 `;

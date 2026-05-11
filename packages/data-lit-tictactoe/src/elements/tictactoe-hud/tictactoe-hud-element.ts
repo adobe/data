@@ -25,6 +25,9 @@ export class TictactoeHudElement extends TictactoeElement {
             () => ({
                 board: this.service.observe.resources.board,
                 firstPlayer: this.service.observe.resources.firstPlayer,
+                xWins: this.service.observe.resources.xWins,
+                oWins: this.service.observe.resources.oWins,
+                draws: this.service.observe.resources.draws,
             }),
             [],
         );
@@ -38,13 +41,16 @@ export class TictactoeHudElement extends TictactoeElement {
 
         const statusText =
             status === "won" && winner !== null
-                ? `Winner: ${winner}`
+                ? `${winner} wins!`
                 : status === "draw"
-                    ? "Draw"
-                    : `Current Player: ${currentPlayer}`;
+                    ? "Draw!"
+                    : `${currentPlayer}'s turn`;
 
         return presentation.render({
             statusText,
+            xWins: values?.xWins ?? 0,
+            oWins: values?.oWins ?? 0,
+            draws: values?.draws ?? 0,
             restartGame: () => this.service.transactions.restartGame(),
         });
     }

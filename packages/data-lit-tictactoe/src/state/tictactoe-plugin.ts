@@ -10,6 +10,9 @@ export const tictactoePlugin = Database.Plugin.create({
   resources: {
     board: { default: BoardState.createInitialBoard() },
     firstPlayer: { default: PlayerMark.values[0] },
+    xWins: { default: 0 as number },
+    oWins: { default: 0 as number },
+    draws: { default: 0 as number },
   },
   computed: {
     currentPlayer: (db) =>
@@ -29,6 +32,11 @@ export const tictactoePlugin = Database.Plugin.create({
   },
   transactions: {
     restartGame: (t) => {
+      const winner = BoardState.getWinner(t.resources.board);
+      const status = BoardState.deriveStatus(t.resources.board);
+      if (winner === "X") t.resources.xWins = t.resources.xWins + 1;
+      else if (winner === "O") t.resources.oWins = t.resources.oWins + 1;
+      else if (status === "draw") t.resources.draws = t.resources.draws + 1;
       t.resources.firstPlayer = PlayerMark.opponent[t.resources.firstPlayer];
       t.resources.board = BoardState.createInitialBoard();
     },

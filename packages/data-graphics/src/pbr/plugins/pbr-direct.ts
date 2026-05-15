@@ -79,32 +79,41 @@ export const pbrDirect = Database.Plugin.create({
                         }
                     }
 
+                    const materialMap = new Map<number, GPUBindGroup>();
+                    for (const arch of db.store.queryArchetypes(["pbrMaterialBindGroup"])) {
+                        const ids = arch.columns.id;
+                        const bgs = arch.columns.pbrMaterialBindGroup;
+                        for (let i = 0; i < arch.rowCount; i++) {
+                            materialMap.set(ids.get(i) as number, bgs.get(i));
+                        }
+                    }
+
+                    let lastMat: GPUBindGroup | null = null;
                     for (const archetype of db.store.queryArchetypes([
                         "pbrVertexBuffer",
                         "pbrIndexBuffer",
                         "pbrIndexCount",
                         "pbrIndexFormat",
-                        "pbrMaterialBindGroup",
+                        "pbrMaterialRef",
                         "pbrGeometryRef",
                     ])) {
                         const vbs = archetype.columns.pbrVertexBuffer;
                         const ibs = archetype.columns.pbrIndexBuffer;
                         const counts = archetype.columns.pbrIndexCount;
                         const formats = archetype.columns.pbrIndexFormat;
-                        const groups = archetype.columns.pbrMaterialBindGroup;
+                        const matRefs = archetype.columns.pbrMaterialRef;
                         const geoRefs = archetype.columns.pbrGeometryRef;
                         for (let i = 0; i < archetype.rowCount; i++) {
                             if (!visibleGeo.has(geoRefs.get(i) as number)) continue;
-                            const vb = vbs.get(i);
-                            const ib = ibs.get(i);
-                            const count = counts.get(i);
-                            const fmt = formats.get(i);
-                            const mat = groups.get(i);
-                            if (!vb || !ib || !count || !mat) continue;
-                            renderPassEncoder.setVertexBuffer(0, vb);
-                            renderPassEncoder.setIndexBuffer(ib, fmt);
-                            renderPassEncoder.setBindGroup(1, mat);
-                            renderPassEncoder.drawIndexed(count);
+                            const mat = materialMap.get(matRefs.get(i) as number);
+                            if (!mat) continue;
+                            if (mat !== lastMat) {
+                                renderPassEncoder.setBindGroup(1, mat);
+                                lastMat = mat;
+                            }
+                            renderPassEncoder.setVertexBuffer(0, vbs.get(i));
+                            renderPassEncoder.setIndexBuffer(ibs.get(i), formats.get(i));
+                            renderPassEncoder.drawIndexed(counts.get(i));
                         }
                     }
                 };

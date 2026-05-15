@@ -21,8 +21,10 @@ export const pbrCore = Database.Plugin.create({
         pbrIndexFormat: { default: "uint16" as GPUIndexFormat },
         pbrMaterialBindGroup: { default: null as unknown as GPUBindGroup },
         pbrGeometryRef: { default: 0 as number },
+        pbrMaterialRef: { default: 0 as number },
     },
     archetypes: {
-        PbrPrimitive: ["ephemeral", "pbrVertexBuffer", "pbrIndexBuffer", "pbrIndexCount", "pbrIndexFormat", "pbrMaterialBindGroup", "pbrGeometryRef"],
+        PbrMaterial: ["ephemeral", "pbrMaterialBindGroup", "pbrGeometryRef"],
+        PbrPrimitive: ["ephemeral", "pbrVertexBuffer", "pbrIndexBuffer", "pbrIndexCount", "pbrIndexFormat", "pbrMaterialRef", "pbrGeometryRef"],
     },
 });

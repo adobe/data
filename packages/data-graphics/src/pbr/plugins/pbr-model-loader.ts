@@ -49,10 +49,19 @@ export const pbrModelLoader = Database.Plugin.create({
         },
         pbrInsertLoadedPrimitives(t, args: LoadedArgs) {
             for (const p of args.primitives) {
+                const materialId = t.archetypes.PbrMaterial.insert({
+                    ephemeral: true,
+                    pbrMaterialBindGroup: p.pbrMaterialBindGroup,
+                    pbrGeometryRef: args.pbrGeometryRef,
+                });
                 t.archetypes.PbrPrimitive.insert({
                     ephemeral: true,
                     pbrGeometryRef: args.pbrGeometryRef,
-                    ...p,
+                    pbrMaterialRef: materialId,
+                    pbrVertexBuffer: p.pbrVertexBuffer,
+                    pbrIndexBuffer: p.pbrIndexBuffer,
+                    pbrIndexCount: p.pbrIndexCount,
+                    pbrIndexFormat: p.pbrIndexFormat,
                 });
             }
             t.update(args.pbrGeometryRef, { pbrModelBounds: args.bounds });

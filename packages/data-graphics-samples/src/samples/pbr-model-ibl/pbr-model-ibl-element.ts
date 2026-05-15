@@ -13,9 +13,8 @@ declare global {
     }
 }
 
-const BASE = import.meta.env.BASE_URL ?? "/";
-const MODEL_URL = `${BASE}models/DamagedHelmet.glb`;
-const ENV_URL = `${BASE}env/studio_small_09_1k.hdr`;
+const MODEL_URL = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/DamagedHelmet/glTF-Binary/DamagedHelmet.glb";
+const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr";
 
 @customElement(tagName)
 export class PbrModelIblElement extends LitElement {

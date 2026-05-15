@@ -13,7 +13,7 @@ declare global {
     }
 }
 
-const MODEL_URL = `${import.meta.env.BASE_URL ?? "/"}models/DamagedHelmet.glb`;
+const MODEL_URL = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/DamagedHelmet/glTF-Binary/DamagedHelmet.glb";
 
 @customElement(tagName)
 export class PbrModelElement extends LitElement {

@@ -13,9 +13,8 @@ declare global {
     }
 }
 
-const BASE = import.meta.env.BASE_URL ?? "/";
-const MODEL_URL = `${BASE}models/MetalRoughSpheres.glb`;
-const ENV_URL = `${BASE}env/venice_sunset_1k.hdr`;
+const MODEL_URL = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/MetalRoughSpheres/glTF-Binary/MetalRoughSpheres.glb";
+const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/venice_sunset_1k.hdr";
 
 @customElement(tagName)
 export class MetalRoughSpheresElement extends LitElement {

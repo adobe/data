@@ -12,8 +12,7 @@ declare global {
     }
 }
 
-const BASE = import.meta.env.BASE_URL ?? "/";
-const ENV_URL = `${BASE}env/studio_small_09_1k.hdr`;
+const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr";
 
 @customElement(tagName)
 export class SolarSystemElement extends LitElement {

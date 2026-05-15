@@ -1,25 +1,24 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-// CesiumMilkTruck © 2017 Cesium, CC-BY 4.0
+// AntiqueCamera glTF model © Khronos Group, CC-BY 4.0
 
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import type { Aabb } from "@adobe/data/math";
 import { createPbrModelIblService } from "../pbr-model-ibl/pbr-model-ibl-service.js";
 
-const tagName = "cesium-milk-truck";
+const tagName = "antique-camera";
 
 declare global {
     interface HTMLElementTagNameMap {
-        [tagName]: CesiumMilkTruckElement;
+        [tagName]: AntiqueCameraElement;
     }
 }
 
-const BASE = import.meta.env.BASE_URL ?? "/";
-const MODEL_URL = `${BASE}models/CesiumMilkTruck.glb`;
-const ENV_URL = `${BASE}env/studio_small_09_1k.hdr`;
+const MODEL_URL = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/AntiqueCamera/glTF-Binary/AntiqueCamera.glb";
+const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr";
 
 @customElement(tagName)
-export class CesiumMilkTruckElement extends LitElement {
+export class AntiqueCameraElement extends LitElement {
     static styles = css`
         :host { display: block; }
         .stage { position: relative; }
@@ -65,7 +64,7 @@ export class CesiumMilkTruckElement extends LitElement {
         canvas.addEventListener("pointercancel", this.onPointerUp);
         this.service.transactions.setCanvas(canvas);
         this.service.transactions.setIblEnvironmentUrl(ENV_URL);
-        this.service.transactions.setLight({ color: [0.3, 0.3, 0.3] });
+        this.service.transactions.setLight({ color: [0.2, 0.2, 0.2] });
 
         const geoId = this.service.transactions.insertGeometry({ pbrModelUrl: MODEL_URL });
         this.service.transactions.insertModel({ pbrGeometryRef: geoId });
@@ -88,7 +87,7 @@ export class CesiumMilkTruckElement extends LitElement {
                 radius: size * 1.4,
                 height: size * 0.3,
             });
-            this.status = "2 mesh nodes · 6 glTF nodes";
+            this.status = "ready";
         });
     }
 

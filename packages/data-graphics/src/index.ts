@@ -10,4 +10,10 @@ export { SceneUniforms } from "./types/scene-uniforms/scene-uniforms.js";
 export { PositionColorNormalVertex } from "./types/vertices/position-color-normal/position-color-normal.js";
 export { GPU } from "./gpu/gpu.js";
 
-export * from "./pbr/index.js";
+export { pbrCore } from "./plugins/pbr-core.js";
+export { pbrDirect } from "./plugins/pbr-direct/pbr-direct.js";
+export { pbrIbl } from "./plugins/pbr-ibl/pbr-ibl.js";
+export { pbrModelLoader } from "./plugins/pbr-model-loader/pbr-model-loader.js";
+export { pbrShapes } from "./plugins/pbr-shapes.js";
+export { StandardVertex } from "./types/standard-vertex/standard-vertex.js";
+export { PbrMaterial } from "./types/pbr-material/pbr-material.js";

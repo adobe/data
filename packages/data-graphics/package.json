@@ -1,0 +1,31 @@
+{
+  "name": "@adobe/data-graphics",
+  "version": "0.9.56",
+  "description": "Adobe data WebGPU graphics plugins and types",
+  "type": "module",
+  "private": false,
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "scripts": {
+    "build": "cp ../../LICENSE . && tsc -b",
+    "dev": "tsc -b -w",
+    "test": "vitest --run --passWithNoTests",
+    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
+  },
+  "dependencies": {
+    "@adobe/data": "workspace:*"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.61",
+    "typescript": "^5.8.3",
+    "vitest": "^1.6.0"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  }
+}

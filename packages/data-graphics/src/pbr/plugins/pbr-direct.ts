@@ -1,0 +1,102 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+
+import { Database } from "@adobe/data/ecs";
+import { defaultSceneUniforms } from "../../plugins/default-scene-uniforms.js";
+import { StandardVertex } from "../types/standard-vertex/standard-vertex.js";
+import { createMaterialBindGroupLayout, createSceneBindGroupLayout } from "../bind-group-layouts.js";
+import { pbrCore } from "./pbr-core.js";
+import shaderSource from "./direct-shader.wgsl.js";
+
+/**
+ * Direct-lighting PBR renderer. Renders any entity matching the `pbrCore`
+ * `PbrPrimitive` archetype using a metallic-roughness Cook-Torrance BRDF
+ * driven by the scene's single directional light + flat ambient.
+ *
+ * Pick this OR (future) `pbrIbl` — not both, since both would iterate the
+ * same archetype.
+ */
+export const pbrDirect = Database.Plugin.create({
+    extends: Database.Plugin.combine(pbrCore, defaultSceneUniforms),
+    systems: {
+        pbrDirectRender: {
+            create: db => {
+                let pipeline: GPURenderPipeline | null = null;
+                let sceneLayout: GPUBindGroupLayout | null = null;
+                let materialLayout: GPUBindGroupLayout | null = null;
+                let sceneBindGroup: GPUBindGroup | null = null;
+                let cachedSceneBuffer: GPUBuffer | null = null;
+
+                return () => {
+                    const { device, renderPassEncoder, canvasFormat, depthFormat, sceneUniformsBuffer } = db.store.resources;
+                    if (!device || !renderPassEncoder || !sceneUniformsBuffer) return;
+
+                    if (!sceneLayout) sceneLayout = createSceneBindGroupLayout(device);
+                    if (!materialLayout) materialLayout = createMaterialBindGroupLayout(device);
+
+                    if (!pipeline) {
+                        const module = device.createShaderModule({ code: shaderSource });
+                        pipeline = device.createRenderPipeline({
+                            layout: device.createPipelineLayout({
+                                bindGroupLayouts: [sceneLayout, materialLayout],
+                            }),
+                            vertex: {
+                                module,
+                                entryPoint: "vs_main",
+                                buffers: [StandardVertex.layout],
+                            },
+                            fragment: {
+                                module,
+                                entryPoint: "fs_main",
+                                targets: [{ format: canvasFormat }],
+                            },
+                            primitive: { topology: "triangle-list", cullMode: "back" },
+                            depthStencil: {
+                                format: depthFormat,
+                                depthWriteEnabled: true,
+                                depthCompare: "less",
+                            },
+                        });
+                    }
+
+                    if (sceneUniformsBuffer !== cachedSceneBuffer || !sceneBindGroup) {
+                        sceneBindGroup = device.createBindGroup({
+                            layout: sceneLayout,
+                            entries: [{ binding: 0, resource: { buffer: sceneUniformsBuffer } }],
+                        });
+                        cachedSceneBuffer = sceneUniformsBuffer;
+                    }
+
+                    renderPassEncoder.setPipeline(pipeline);
+                    renderPassEncoder.setBindGroup(0, sceneBindGroup);
+
+                    for (const archetype of db.store.queryArchetypes([
+                        "pbrVertexBuffer",
+                        "pbrIndexBuffer",
+                        "pbrIndexCount",
+                        "pbrIndexFormat",
+                        "pbrMaterialBindGroup",
+                    ])) {
+                        const vbs = archetype.columns.pbrVertexBuffer;
+                        const ibs = archetype.columns.pbrIndexBuffer;
+                        const counts = archetype.columns.pbrIndexCount;
+                        const formats = archetype.columns.pbrIndexFormat;
+                        const groups = archetype.columns.pbrMaterialBindGroup;
+                        for (let i = 0; i < archetype.rowCount; i++) {
+                            const vb = vbs.get(i);
+                            const ib = ibs.get(i);
+                            const count = counts.get(i);
+                            const fmt = formats.get(i);
+                            const mat = groups.get(i);
+                            if (!vb || !ib || !count || !mat) continue;
+                            renderPassEncoder.setVertexBuffer(0, vb);
+                            renderPassEncoder.setIndexBuffer(ib, fmt);
+                            renderPassEncoder.setBindGroup(1, mat);
+                            renderPassEncoder.drawIndexed(count);
+                        }
+                    }
+                };
+            },
+            schedule: { during: ["render"] }
+        }
+    }
+});

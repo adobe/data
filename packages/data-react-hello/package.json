@@ -1,6 +1,6 @@
 {
   "name": "data-react-hello",
-"version": "0.9.56",
+  "version": "0.9.56",
   "description": "Hello World sample - click counter using @adobe/data-react",
   "type": "module",
   "private": true,
@@ -18,8 +18,9 @@
   "devDependencies": {
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4.3.0",
     "typescript": "^5.8.3",
     "vite": "^5.1.1",
-    "@vitejs/plugin-react": "^4.3.0"
+    "vite-plugin-checker": "^0.12.0"
   }
 }

@@ -1,10 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Database } from "@adobe/data/ecs";
-import type { Vec3 } from "@adobe/data/math";
-import { graphics } from "../../plugins/graphics.js";
+import type { Aabb } from "@adobe/data/math";
 import { createMaterialBindGroupLayout } from "../bind-group-layouts.js";
-import { pbrCore, type PbrPrimitiveInsert } from "../plugins/pbr-core.js";
 import { readAccessor } from "./accessor-view.js";
 import { buildMaterialBindGroup, type FallbackViews } from "./build-material-bind-group.js";
 import { computeWorldMatrices } from "./compute-world-matrices.js";
@@ -12,24 +9,17 @@ import { createFallbackTextures, decodeAllImages } from "./decode-images.js";
 import { packPrimitiveVertices } from "./pack-vertex-buffer.js";
 import { parseGlb } from "./parse-glb.js";
 
-export interface LoadedGltfModel {
-    boundsMin: Vec3;
-    boundsMax: Vec3;
-    primitiveCount: number;
+export interface GpuPrimitiveData {
+    pbrVertexBuffer: GPUBuffer;
+    pbrIndexBuffer: GPUBuffer;
+    pbrIndexCount: number;
+    pbrIndexFormat: GPUIndexFormat;
+    pbrMaterialBindGroup: GPUBindGroup;
 }
 
-const loaderPlugin = Database.Plugin.combine(pbrCore, graphics);
-type PbrDatabase = Database.Plugin.ToDatabase<typeof loaderPlugin>;
-
-function waitForDevice(db: PbrDatabase): Promise<GPUDevice> {
-    return new Promise<GPUDevice>(resolve => {
-        const unobserve = db.observe.resources.device(value => {
-            if (value) {
-                resolve(value);
-                queueMicrotask(() => unobserve?.());
-            }
-        });
-    });
+export interface LoadedGltfData {
+    primitives: GpuPrimitiveData[];
+    bounds: Aabb;
 }
 
 function pickIndexFormat(raw: Uint16Array | Uint32Array | Uint8Array | Float32Array): {
@@ -47,17 +37,15 @@ function pickIndexFormat(raw: Uint16Array | Uint32Array | Uint8Array | Float32Ar
 }
 
 /**
- * Fetches and parses a GLB file at `url`, decodes its textures, builds GPU
- * buffers and per-material bind groups, and inserts one PbrPrimitive entity
- * per mesh primitive. Returns the model's world-space AABB so the caller can
- * frame the camera.
+ * Fetches and parses a GLB file, decodes textures, and builds GPU buffers and
+ * per-material bind groups. Returns the raw data without touching the ECS
+ * database — the caller is responsible for inserting entities.
  */
-export async function loadGltfModel(db: PbrDatabase, url: string): Promise<LoadedGltfModel> {
+export async function loadGltfPrimitives(device: GPUDevice, url: string): Promise<LoadedGltfData> {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Failed to fetch ${url}: ${response.status}`);
     const buffer = await response.arrayBuffer();
 
-    const device = await waitForDevice(db);
     const { json, bin } = parseGlb(buffer);
 
     const materialLayout = createMaterialBindGroupLayout(device);
@@ -73,10 +61,9 @@ export async function loadGltfModel(db: PbrDatabase, url: string): Promise<Loade
 
     const worldMatrices = computeWorldMatrices(json);
 
-    const modelMin: [number, number, number] = [Infinity, Infinity, Infinity];
-    const modelMax: [number, number, number] = [-Infinity, -Infinity, -Infinity];
-
-    const primitives: PbrPrimitiveInsert[] = [];
+    const boundsMin: [number, number, number] = [Infinity, Infinity, Infinity];
+    const boundsMax: [number, number, number] = [-Infinity, -Infinity, -Infinity];
+    const primitives: GpuPrimitiveData[] = [];
 
     for (let nodeIdx = 0; nodeIdx < (json.nodes ?? []).length; nodeIdx++) {
         const node = json.nodes![nodeIdx];
@@ -88,8 +75,8 @@ export async function loadGltfModel(db: PbrDatabase, url: string): Promise<Loade
             const packed = packPrimitiveVertices(json, bin, prim, worldMatrix);
 
             for (let i = 0; i < 3; i++) {
-                if (packed.boundsMin[i] < modelMin[i]) modelMin[i] = packed.boundsMin[i];
-                if (packed.boundsMax[i] > modelMax[i]) modelMax[i] = packed.boundsMax[i];
+                if (packed.boundsMin[i] < boundsMin[i]) boundsMin[i] = packed.boundsMin[i];
+                if (packed.boundsMax[i] > boundsMax[i]) boundsMax[i] = packed.boundsMax[i];
             }
 
             const vertexBuffer = device.createBuffer({
@@ -122,11 +109,8 @@ export async function loadGltfModel(db: PbrDatabase, url: string): Promise<Loade
         }
     }
 
-    db.transactions.pbrInsertPrimitives(primitives);
-
     return {
-        boundsMin: modelMin as unknown as Vec3,
-        boundsMax: modelMax as unknown as Vec3,
-        primitiveCount: primitives.length,
+        primitives,
+        bounds: { min: boundsMin as unknown as [number, number, number], max: boundsMax as unknown as [number, number, number] },
     };
 }

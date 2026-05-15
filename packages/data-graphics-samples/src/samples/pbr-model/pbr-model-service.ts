@@ -2,10 +2,10 @@
 
 import { Database } from "@adobe/data/ecs";
 import { F32, Vec3 } from "@adobe/data/math";
-import { pbrDirect } from "@adobe/data-graphics";
+import { pbrDirect, pbrModelLoader } from "@adobe/data-graphics";
 
 export const pbrModelPlugin = Database.Plugin.create({
-    extends: pbrDirect,
+    extends: Database.Plugin.combine(pbrDirect, pbrModelLoader),
     resources: {
         orbitCenter: { default: [0, 0, 0] as Vec3, transient: true },
         orbitRadius: { default: 3 as F32, transient: true },

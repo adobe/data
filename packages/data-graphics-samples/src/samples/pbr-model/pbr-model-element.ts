@@ -2,8 +2,7 @@
 
 import { LitElement, html, css } from "lit";
 import { customElement, state } from "lit/decorators.js";
-import type { Vec3 } from "@adobe/data/math";
-import { loadGltfModel } from "@adobe/data-graphics";
+import type { Aabb } from "@adobe/data/math";
 import { createPbrModelService } from "./pbr-model-service.js";
 
 const tagName = "pbr-model";
@@ -28,33 +27,34 @@ export class PbrModelElement extends LitElement {
     private service = createPbrModelService();
     @state() private status = "loading…";
 
-    override async firstUpdated() {
+    override firstUpdated() {
         const canvas = this.renderRoot.querySelector("canvas");
         if (!canvas) return;
         this.service.transactions.setCanvas(canvas);
 
-        try {
-            const loaded = await loadGltfModel(this.service, MODEL_URL);
-            const center: Vec3 = [
-                (loaded.boundsMin[0] + loaded.boundsMax[0]) / 2,
-                (loaded.boundsMin[1] + loaded.boundsMax[1]) / 2,
-                (loaded.boundsMin[2] + loaded.boundsMax[2]) / 2,
-            ];
+        const geoId = this.service.transactions.insertGeometry({ pbrModelUrl: MODEL_URL });
+        this.service.transactions.insertModel({ pbrGeometryRef: geoId });
+
+        const unsub = this.service.observe.entity(geoId)((values: unknown) => {
+            const bounds = (values as Record<string, unknown> | null)?.pbrModelBounds as Aabb | undefined;
+            if (!bounds) return;
+            unsub();
             const size = Math.max(
-                loaded.boundsMax[0] - loaded.boundsMin[0],
-                loaded.boundsMax[1] - loaded.boundsMin[1],
-                loaded.boundsMax[2] - loaded.boundsMin[2],
+                bounds.max[0] - bounds.min[0],
+                bounds.max[1] - bounds.min[1],
+                bounds.max[2] - bounds.min[2],
             );
             this.service.transactions.setOrbit({
-                center,
+                center: [
+                    (bounds.min[0] + bounds.max[0]) / 2,
+                    (bounds.min[1] + bounds.max[1]) / 2,
+                    (bounds.min[2] + bounds.max[2]) / 2,
+                ],
                 radius: size * 1.6,
                 height: size * 0.25,
             });
-            this.status = `${loaded.primitiveCount} primitive(s)`;
-        } catch (e) {
-            console.error("PBR model load failed", e);
-            this.status = `error: ${(e as Error).message}`;
-        }
+            this.status = "ready";
+        });
     }
 
     override render() {

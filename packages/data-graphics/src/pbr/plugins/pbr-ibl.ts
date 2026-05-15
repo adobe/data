@@ -3,6 +3,7 @@
 import { Database } from "@adobe/data/ecs";
 import { Vec3 } from "@adobe/data/math";
 import { defaultSceneUniforms } from "../../plugins/default-scene-uniforms.js";
+import { node } from "../../plugins/node.js";
 import { createMaterialBindGroupLayout, createSceneBindGroupLayout } from "../bind-group-layouts.js";
 import { buildIblResources } from "../ibl/build-ibl-resources.js";
 import { parseHdr } from "../ibl/parse-hdr.js";
@@ -44,7 +45,7 @@ function createSkyboxBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
  * Mutually exclusive with `pbrDirect` — both iterate the same archetype.
  */
 export const pbrIbl = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrCore, defaultSceneUniforms),
+    extends: Database.Plugin.combine(pbrCore, defaultSceneUniforms, node),
     resources: {
         iblEnvironmentUrl: { default: null as string | null, transient: true },
         iblEnvironmentMap: { default: null as GPUTexture | null, transient: true },
@@ -230,19 +231,31 @@ export const pbrIbl = Database.Plugin.create({
                     renderPassEncoder.setBindGroup(0, sceneBindGroup);
                     renderPassEncoder.setBindGroup(2, iblBindGroup);
 
+                    const visibleGeo = new Set<number>();
+                    for (const arch of db.store.queryArchetypes(["pbrGeometryRef", "visible"])) {
+                        const refs = arch.columns.pbrGeometryRef;
+                        const vis = arch.columns.visible;
+                        for (let i = 0; i < arch.rowCount; i++) {
+                            if (vis.get(i)) visibleGeo.add(refs.get(i) as number);
+                        }
+                    }
+
                     for (const archetype of db.store.queryArchetypes([
                         "pbrVertexBuffer",
                         "pbrIndexBuffer",
                         "pbrIndexCount",
                         "pbrIndexFormat",
                         "pbrMaterialBindGroup",
+                        "pbrGeometryRef",
                     ])) {
                         const vbs = archetype.columns.pbrVertexBuffer;
                         const ibs = archetype.columns.pbrIndexBuffer;
                         const counts = archetype.columns.pbrIndexCount;
                         const formats = archetype.columns.pbrIndexFormat;
                         const groups = archetype.columns.pbrMaterialBindGroup;
+                        const geoRefs = archetype.columns.pbrGeometryRef;
                         for (let i = 0; i < archetype.rowCount; i++) {
+                            if (!visibleGeo.has(geoRefs.get(i) as number)) continue;
                             const vb = vbs.get(i);
                             const ib = ibs.get(i);
                             const count = counts.get(i);

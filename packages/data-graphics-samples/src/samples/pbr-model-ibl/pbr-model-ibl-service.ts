@@ -2,10 +2,10 @@
 
 import { Database } from "@adobe/data/ecs";
 import { F32, Vec3 } from "@adobe/data/math";
-import { pbrIbl } from "@adobe/data-graphics";
+import { pbrIbl, pbrModelLoader } from "@adobe/data-graphics";
 
 export const pbrModelIblPlugin = Database.Plugin.create({
-    extends: pbrIbl,
+    extends: Database.Plugin.combine(pbrIbl, pbrModelLoader),
     resources: {
         orbitCenter: { default: [0, 0, 0] as Vec3, transient: true },
         orbitRadius: { default: 3 as F32, transient: true },

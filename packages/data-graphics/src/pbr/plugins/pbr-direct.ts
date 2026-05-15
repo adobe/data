@@ -2,6 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { defaultSceneUniforms } from "../../plugins/default-scene-uniforms.js";
+import { node } from "../../plugins/node.js";
 import { StandardVertex } from "../types/standard-vertex/standard-vertex.js";
 import { createMaterialBindGroupLayout, createSceneBindGroupLayout } from "../bind-group-layouts.js";
 import { pbrCore } from "./pbr-core.js";
@@ -16,7 +17,7 @@ import shaderSource from "./direct-shader.wgsl.js";
  * same archetype.
  */
 export const pbrDirect = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrCore, defaultSceneUniforms),
+    extends: Database.Plugin.combine(pbrCore, defaultSceneUniforms, node),
     systems: {
         pbrDirectRender: {
             create: db => {
@@ -69,19 +70,31 @@ export const pbrDirect = Database.Plugin.create({
                     renderPassEncoder.setPipeline(pipeline);
                     renderPassEncoder.setBindGroup(0, sceneBindGroup);
 
+                    const visibleGeo = new Set<number>();
+                    for (const arch of db.store.queryArchetypes(["pbrGeometryRef", "visible"])) {
+                        const refs = arch.columns.pbrGeometryRef;
+                        const vis = arch.columns.visible;
+                        for (let i = 0; i < arch.rowCount; i++) {
+                            if (vis.get(i)) visibleGeo.add(refs.get(i) as number);
+                        }
+                    }
+
                     for (const archetype of db.store.queryArchetypes([
                         "pbrVertexBuffer",
                         "pbrIndexBuffer",
                         "pbrIndexCount",
                         "pbrIndexFormat",
                         "pbrMaterialBindGroup",
+                        "pbrGeometryRef",
                     ])) {
                         const vbs = archetype.columns.pbrVertexBuffer;
                         const ibs = archetype.columns.pbrIndexBuffer;
                         const counts = archetype.columns.pbrIndexCount;
                         const formats = archetype.columns.pbrIndexFormat;
                         const groups = archetype.columns.pbrMaterialBindGroup;
+                        const geoRefs = archetype.columns.pbrGeometryRef;
                         for (let i = 0; i < archetype.rowCount; i++) {
+                            if (!visibleGeo.has(geoRefs.get(i) as number)) continue;
                             const vb = vbs.get(i);
                             const ib = ibs.get(i);
                             const count = counts.get(i);

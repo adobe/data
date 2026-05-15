@@ -6,6 +6,7 @@ import { HelloTriangle } from "../samples/hello-triangle/hello-triangle.js";
 import { PbrModel } from "../samples/pbr-model/pbr-model.js";
 import { PbrModelIbl } from "../samples/pbr-model-ibl/pbr-model-ibl.js";
 import { MetalRoughSpheres } from "../samples/metal-rough-spheres/metal-rough-spheres.js";
+import { PbrIblInstanced } from "../samples/pbr-ibl-instanced/pbr-ibl-instanced.js";
 
 const tagName = "sample-container";
 
@@ -30,7 +31,7 @@ export class SampleContainerElement extends LitElement {
     }
 
     override render() {
-        const samples = ["hello-triangle", "pbr-model", "pbr-model-ibl", "metal-rough-spheres"];
+        const samples = ["hello-triangle", "pbr-model", "pbr-model-ibl", "metal-rough-spheres", "pbr-ibl-instanced"];
         return html`
             <nav>
                 ${samples.map(s => html`<a href="?sample=${s}">${s}</a>`)}
@@ -40,6 +41,7 @@ export class SampleContainerElement extends LitElement {
                 ${this.sample === "pbr-model" ? PbrModel() : ""}
                 ${this.sample === "pbr-model-ibl" ? PbrModelIbl() : ""}
                 ${this.sample === "metal-rough-spheres" ? MetalRoughSpheres() : ""}
+                ${this.sample === "pbr-ibl-instanced" ? PbrIblInstanced() : ""}
             </div>
         `;
     }

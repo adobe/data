@@ -34,6 +34,8 @@ ${wgslStructFields(pbrMaterialSchema)}
 @group(2) @binding(2) var iblBrdfLut: texture_2d<f32>;
 @group(2) @binding(3) var iblSampler: sampler;
 
+@group(3) @binding(0) var<storage, read> instances: array<mat4x4<f32>>;
+
 const PREFILTERED_MIP_COUNT: f32 = ${options.prefilteredMipCount.toFixed(1)};
 
 struct VertexInput {
@@ -53,13 +55,20 @@ struct VertexOutput {
 }
 
 @vertex
-fn vs_main(in: VertexInput) -> VertexOutput {
+fn vs_main(@builtin(instance_index) instanceIndex: u32, in: VertexInput) -> VertexOutput {
+    let m = instances[instanceIndex];
+    let m3 = mat3x3<f32>(m[0].xyz, m[1].xyz, m[2].xyz);
+    let normalMat = mat3x3<f32>(
+        cross(m3[1], m3[2]),
+        cross(m3[2], m3[0]),
+        cross(m3[0], m3[1]),
+    );
+    let worldPos = m * vec4f(in.position, 1.0);
     var out: VertexOutput;
-    let world = vec4f(in.position, 1.0);
-    out.clipPosition = scene.viewProjectionMatrix * world;
-    out.worldPosition = world.xyz;
-    out.normal = normalize(in.normal);
-    out.tangent = normalize(in.tangent.xyz);
+    out.clipPosition = scene.viewProjectionMatrix * worldPos;
+    out.worldPosition = worldPos.xyz;
+    out.normal = normalize(normalMat * in.normal);
+    out.tangent = normalize(m3 * in.tangent.xyz);
     out.bitangent = normalize(cross(out.normal, out.tangent) * in.tangent.w);
     out.uv = in.uv;
     return out;

@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
+import { Mat4x4 } from "@adobe/data/math";
 import { graphics } from "../../plugins/graphics.js";
 import { createMaterialBindGroupLayout } from "../bind-group-layouts.js";
 import { createColorMaterial, type ColorMaterialOptions } from "../gltf/create-color-material.js";
@@ -54,6 +55,7 @@ export const pbrShapes = Database.Plugin.create({
                 pbrIndexBuffer: args.pbrIndexBuffer,
                 pbrIndexCount: args.pbrIndexCount,
                 pbrIndexFormat: args.pbrIndexFormat,
+                pbrNodeLocalMatrix: Mat4x4.identity,
             });
         },
     },

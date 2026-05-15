@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
+import { Mat4x4 } from "@adobe/data/math";
 import { defaultSceneUniforms } from "../../plugins/default-scene-uniforms.js";
 import { transform } from "../../plugins/transform.js";
 import { StandardVertex } from "../types/standard-vertex/standard-vertex.js";
@@ -28,7 +29,10 @@ export const pbrDirect = Database.Plugin.create({
                 let sceneBindGroup: GPUBindGroup | null = null;
                 let cachedSceneBuffer: GPUBuffer | null = null;
                 type InstanceEntry = { buffer: GPUBuffer; bindGroup: GPUBindGroup; capacity: number };
+                // Keyed by primitive entity ID; each primitive may have a different
+                // pbrNodeLocalMatrix so effective instance matrices differ per primitive.
                 const instanceCache = new Map<number, InstanceEntry>();
+                let instanceScratch = new Float32Array(16);
 
                 return () => {
                     const { device, renderPassEncoder, canvasFormat, depthFormat, sceneUniformsBuffer } = db.store.resources;
@@ -76,9 +80,9 @@ export const pbrDirect = Database.Plugin.create({
                     renderPassEncoder.setPipeline(pipeline);
                     renderPassEncoder.setBindGroup(0, sceneBindGroup);
 
-                    // Collect per-geometry instance matrices from visible Model entities.
+                    // Collect world matrices of visible Model entities, grouped by geometry.
                     const { worldMatrices } = db.store.resources;
-                    const instancesByGeo = new Map<number, Float32Array>();
+                    const modelMatsByGeo = new Map<number, Mat4x4[]>();
                     for (const arch of db.store.queryArchetypes(["pbrGeometryRef", "visible"])) {
                         const ids = arch.columns.id;
                         const geoRefs = arch.columns.pbrGeometryRef;
@@ -86,42 +90,12 @@ export const pbrDirect = Database.Plugin.create({
                         for (let i = 0; i < arch.rowCount; i++) {
                             if (!vis.get(i)) continue;
                             const geoId = geoRefs.get(i) as number;
-                            const entityId = ids.get(i) as number;
-                            const m = worldMatrices.get(entityId);
+                            const m = worldMatrices.get(ids.get(i) as number);
                             if (!m) continue;
-                            let arr = instancesByGeo.get(geoId);
-                            if (!arr) {
-                                arr = new Float32Array(16);
-                                instancesByGeo.set(geoId, arr);
-                            } else {
-                                const grown = new Float32Array(arr.length + 16);
-                                grown.set(arr);
-                                arr = grown;
-                                instancesByGeo.set(geoId, arr);
-                            }
-                            arr.set(m, arr.length - 16);
+                            let arr = modelMatsByGeo.get(geoId);
+                            if (!arr) { arr = []; modelMatsByGeo.set(geoId, arr); }
+                            arr.push(m);
                         }
-                    }
-
-                    // Upload instance matrices and build per-geometry bind groups.
-                    const instanceBindGroups = new Map<number, GPUBindGroup>();
-                    for (const [geoId, matrices] of instancesByGeo) {
-                        let entry = instanceCache.get(geoId);
-                        if (!entry || entry.capacity < matrices.length / 16) {
-                            entry?.buffer.destroy();
-                            const buffer = device.createBuffer({
-                                size: Math.max(matrices.byteLength, 64),
-                                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-                            });
-                            const bindGroup = device.createBindGroup({
-                                layout: instanceLayout,
-                                entries: [{ binding: 0, resource: { buffer } }],
-                            });
-                            entry = { buffer, bindGroup, capacity: matrices.length / 16 };
-                            instanceCache.set(geoId, entry);
-                        }
-                        device.queue.writeBuffer(entry.buffer, 0, matrices);
-                        instanceBindGroups.set(geoId, entry.bindGroup);
                     }
 
                     const materialMap = new Map<number, GPUBindGroup>();
@@ -133,6 +107,8 @@ export const pbrDirect = Database.Plugin.create({
                         }
                     }
 
+                    // For each primitive: pre-multiply modelWorldMatrix × pbrNodeLocalMatrix
+                    // to get effective instance matrices, upload, and draw.
                     let lastMat: GPUBindGroup | null = null;
                     let lastInstBG: GPUBindGroup | null = null;
                     for (const archetype of db.store.queryArchetypes([
@@ -142,6 +118,7 @@ export const pbrDirect = Database.Plugin.create({
                         "pbrIndexFormat",
                         "pbrMaterialRef",
                         "pbrGeometryRef",
+                        "pbrNodeLocalMatrix",
                     ])) {
                         const vbs = archetype.columns.pbrVertexBuffer;
                         const ibs = archetype.columns.pbrIndexBuffer;
@@ -149,20 +126,48 @@ export const pbrDirect = Database.Plugin.create({
                         const formats = archetype.columns.pbrIndexFormat;
                         const matRefs = archetype.columns.pbrMaterialRef;
                         const geoRefs = archetype.columns.pbrGeometryRef;
+                        const nodeMats = archetype.columns.pbrNodeLocalMatrix;
+                        const primIds = archetype.columns.id;
                         for (let i = 0; i < archetype.rowCount; i++) {
                             const geoId = geoRefs.get(i) as number;
-                            const instBG = instanceBindGroups.get(geoId);
-                            if (!instBG) continue;
-                            const instCount = instancesByGeo.get(geoId)!.length / 16;
+                            const modelMats = modelMatsByGeo.get(geoId);
+                            if (!modelMats) continue;
+
+                            const nodeMatrix = nodeMats.get(i) as Mat4x4;
+                            const instCount = modelMats.length;
+                            const primId = primIds.get(i) as number;
+
+                            let entry = instanceCache.get(primId);
+                            if (!entry || entry.capacity < instCount) {
+                                entry?.buffer.destroy();
+                                const buffer = device.createBuffer({
+                                    size: Math.max(instCount * 64, 64),
+                                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                                });
+                                const bindGroup = device.createBindGroup({
+                                    layout: instanceLayout,
+                                    entries: [{ binding: 0, resource: { buffer } }],
+                                });
+                                entry = { buffer, bindGroup, capacity: instCount };
+                                instanceCache.set(primId, entry);
+                            }
+                            if (instanceScratch.length < instCount * 16) {
+                                instanceScratch = new Float32Array(instCount * 16);
+                            }
+                            for (let j = 0; j < instCount; j++) {
+                                instanceScratch.set(Mat4x4.multiply(modelMats[j], nodeMatrix), j * 16);
+                            }
+                            device.queue.writeBuffer(entry.buffer, 0, instanceScratch, 0, instCount * 16);
+
                             const mat = materialMap.get(matRefs.get(i) as number);
                             if (!mat) continue;
                             if (mat !== lastMat) {
                                 renderPassEncoder.setBindGroup(1, mat);
                                 lastMat = mat;
                             }
-                            if (instBG !== lastInstBG) {
-                                renderPassEncoder.setBindGroup(2, instBG);
-                                lastInstBG = instBG;
+                            if (entry.bindGroup !== lastInstBG) {
+                                renderPassEncoder.setBindGroup(2, entry.bindGroup);
+                                lastInstBG = entry.bindGroup;
                             }
                             renderPassEncoder.setVertexBuffer(0, vbs.get(i));
                             renderPassEncoder.setIndexBuffer(ibs.get(i), formats.get(i));

@@ -10,7 +10,7 @@ import { pbrCore } from "./pbr-core.js";
 interface LoadedArgs {
     pbrGeometryRef: number;
     bounds: Aabb;
-    primitives: GpuPrimitiveData[];
+    primitives: GpuPrimitiveData[];  // each carries pbrNodeLocalMatrix
 }
 
 /**
@@ -63,6 +63,7 @@ export const pbrModelLoader = Database.Plugin.create({
                     pbrIndexBuffer: p.pbrIndexBuffer,
                     pbrIndexCount: p.pbrIndexCount,
                     pbrIndexFormat: p.pbrIndexFormat,
+                    pbrNodeLocalMatrix: p.pbrNodeLocalMatrix,
                 });
             }
             t.update(args.pbrGeometryRef, { pbrModelBounds: args.bounds });

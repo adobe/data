@@ -9,6 +9,7 @@ export interface GltfAsset {
     scenes?: GltfScene[];
     nodes?: GltfNode[];
     meshes?: GltfMesh[];
+    skins?: GltfSkin[];
     materials?: GltfMaterial[];
     textures?: GltfTexture[];
     images?: GltfImage[];
@@ -25,6 +26,7 @@ export interface GltfScene {
 export interface GltfNode {
     name?: string;
     mesh?: number;
+    skin?: number;
     children?: number[];
     translation?: [number, number, number];
     rotation?: [number, number, number, number];
@@ -43,11 +45,20 @@ export interface GltfPrimitive {
         NORMAL?: number;
         TANGENT?: number;
         TEXCOORD_0?: number;
+        JOINTS_0?: number;
+        WEIGHTS_0?: number;
         [key: string]: number | undefined;
     };
     indices?: number;
     material?: number;
     mode?: number; // default 4 (triangles)
+}
+
+export interface GltfSkin {
+    name?: string;
+    inverseBindMatrices?: number;  // accessor index → array of mat4
+    skeleton?: number;             // root joint node index
+    joints: number[];              // ordered list of node indices that are joints
 }
 
 export interface GltfMaterial {

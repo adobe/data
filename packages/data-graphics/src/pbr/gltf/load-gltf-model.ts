@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import type { Aabb } from "@adobe/data/math";
+import type { Aabb, Mat4x4 } from "@adobe/data/math";
 import { createMaterialBindGroupLayout } from "../bind-group-layouts.js";
 import { readAccessor } from "./accessor-view.js";
 import { buildMaterialBindGroup, type FallbackViews } from "./build-material-bind-group.js";
@@ -15,11 +15,37 @@ export interface GpuPrimitiveData {
     pbrIndexCount: number;
     pbrIndexFormat: GPUIndexFormat;
     pbrMaterialBindGroup: GPUBindGroup;
+    /** Node's model-root-local matrix. Renderers pre-multiply this with the
+     *  per-instance model-root world matrix at draw time. Identity for
+     *  single-node models. */
+    pbrNodeLocalMatrix: Mat4x4;
 }
 
 export interface LoadedGltfData {
     primitives: GpuPrimitiveData[];
     bounds: Aabb;
+}
+
+/** Transforms the 8 corners of a node-local AABB into model-root-local space
+ *  and expands the running global bounds. */
+function expandBounds(
+    m: Mat4x4,
+    localMin: readonly [number, number, number],
+    localMax: readonly [number, number, number],
+    outMin: [number, number, number],
+    outMax: [number, number, number],
+): void {
+    const xs = [localMin[0], localMax[0]];
+    const ys = [localMin[1], localMax[1]];
+    const zs = [localMin[2], localMax[2]];
+    for (const lx of xs) for (const ly of ys) for (const lz of zs) {
+        const wx = m[0] * lx + m[4] * ly + m[8]  * lz + m[12];
+        const wy = m[1] * lx + m[5] * ly + m[9]  * lz + m[13];
+        const wz = m[2] * lx + m[6] * ly + m[10] * lz + m[14];
+        if (wx < outMin[0]) outMin[0] = wx; if (wx > outMax[0]) outMax[0] = wx;
+        if (wy < outMin[1]) outMin[1] = wy; if (wy > outMax[1]) outMax[1] = wy;
+        if (wz < outMin[2]) outMin[2] = wz; if (wz > outMax[2]) outMax[2] = wz;
+    }
 }
 
 function pickIndexFormat(raw: Uint16Array | Uint32Array | Uint8Array | Float32Array): {
@@ -59,6 +85,8 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
         addressModeV: "repeat",
     });
 
+    // World matrices computed for two purposes: node-local-to-model-root matrix
+    // stored on each primitive, and transforming node-local bounds to model-root-local.
     const worldMatrices = computeWorldMatrices(json);
 
     const boundsMin: [number, number, number] = [Infinity, Infinity, Infinity];
@@ -69,15 +97,15 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
         const node = json.nodes![nodeIdx];
         if (node.mesh === undefined) continue;
         const mesh = json.meshes![node.mesh];
-        const worldMatrix = worldMatrices[nodeIdx];
+        const pbrNodeLocalMatrix = worldMatrices[nodeIdx];
 
         for (const prim of mesh.primitives) {
-            const packed = packPrimitiveVertices(json, bin, prim, worldMatrix);
+            // Vertices remain in node-local space; pbrNodeLocalMatrix carries
+            // the node-to-model-root transform for use at draw time.
+            const packed = packPrimitiveVertices(json, bin, prim);
 
-            for (let i = 0; i < 3; i++) {
-                if (packed.boundsMin[i] < boundsMin[i]) boundsMin[i] = packed.boundsMin[i];
-                if (packed.boundsMax[i] > boundsMax[i]) boundsMax[i] = packed.boundsMax[i];
-            }
+            // Expand global bounds in model-root-local space.
+            expandBounds(pbrNodeLocalMatrix, packed.boundsMin, packed.boundsMax, boundsMin, boundsMax);
 
             const vertexBuffer = device.createBuffer({
                 size: packed.vertices.byteLength,
@@ -105,6 +133,7 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
                 pbrIndexCount: indices.length,
                 pbrIndexFormat: format,
                 pbrMaterialBindGroup: materialBindGroup,
+                pbrNodeLocalMatrix,
             });
         }
     }

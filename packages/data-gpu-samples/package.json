@@ -1,17 +1,17 @@
 {
-  "name": "data-graphics-samples",
+  "name": "data-gpu-samples",
   "version": "0.9.56",
-  "description": "WebGPU graphics samples built on @adobe/data-graphics",
+  "description": "WebGPU samples built on @adobe/data-gpu",
   "type": "module",
   "private": true,
   "scripts": {
     "dev": "vite",
-    "dev:all": "pnpm --parallel --filter @adobe/data --filter @adobe/data-graphics --filter data-graphics-samples run dev",
+    "dev:all": "pnpm --parallel --filter @adobe/data --filter @adobe/data-gpu --filter data-gpu-samples run dev",
     "build": "vite build"
   },
   "dependencies": {
     "@adobe/data": "workspace:*",
-    "@adobe/data-graphics": "workspace:*",
+    "@adobe/data-gpu": "workspace:*",
     "@adobe/data-lit": "workspace:*",
     "lit": "^3.3.1"
   },

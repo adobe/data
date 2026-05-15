@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { F32, Vec3 } from "@adobe/data/math";
-import { pbrIbl, pbrModelLoader, pbrShapes } from "@adobe/data-graphics";
+import { pbrIbl, pbrModelLoader, pbrShapes } from "@adobe/data-gpu";
 
 interface OrbitState {
     entityId: number;

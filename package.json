@@ -7,9 +7,9 @@
     "test": "pnpm -r run test",
     "dev": "pnpm -r --parallel run dev",
     "dev:data": "pnpm --filter @adobe/data run dev",
-    "dev-graphics": "pnpm --parallel --filter @adobe/data --filter @adobe/data-graphics --filter data-graphics-samples run dev",
+    "dev-gpu": "pnpm --parallel --filter @adobe/data --filter @adobe/data-gpu --filter data-gpu-samples run dev",
     "link": "pnpm -r --filter @adobe/data* run link",
-    "publish": "sh -c 'for x in \"$@\"; do OTP=\"$x\"; done; export NPM_CONFIG_OTP=\"$OTP\"; pnpm -r --filter @adobe/data --filter @adobe/data-react --filter @adobe/data-lit --filter @adobe/data-solid --filter @adobe/data-graphics run publish-public' sh",
+    "publish": "sh -c 'for x in \"$@\"; do OTP=\"$x\"; done; export NPM_CONFIG_OTP=\"$OTP\"; pnpm -r --filter @adobe/data --filter @adobe/data-react --filter @adobe/data-lit --filter @adobe/data-solid --filter @adobe/data-gpu run publish-public' sh",
     "bump": "pnpm version patch --no-git-tag-version && V=$(node -p \"require('$PWD/package.json').version\") && pnpm -r exec pnpm version $V --no-git-tag-version --allow-same-version",
     "release": "pnpm bump && pnpm publish",
     "bp": "pnpm bump && pnpm run publish"

@@ -1,7 +1,7 @@
 {
-  "name": "@adobe/data-graphics",
+  "name": "@adobe/data-gpu",
   "version": "0.9.56",
-  "description": "Adobe data WebGPU graphics plugins and types",
+  "description": "Adobe data WebGPU plugins and types for graphics and compute",
   "type": "module",
   "private": false,
   "publishConfig": {

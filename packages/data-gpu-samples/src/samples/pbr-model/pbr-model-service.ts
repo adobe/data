@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { F32, Vec3 } from "@adobe/data/math";
-import { pbrDirect, pbrModelLoader } from "@adobe/data-graphics";
+import { pbrDirect, pbrModelLoader } from "@adobe/data-gpu";
 
 export const pbrModelPlugin = Database.Plugin.create({
     extends: Database.Plugin.combine(pbrDirect, pbrModelLoader),

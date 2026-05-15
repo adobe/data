@@ -48,3 +48,43 @@ as both type and namespace (`LogLevel.is(x)`, `LogLevel.values`).
   avoid cycling through `public.ts`.
 - Add `is` / `values` / per-member descriptors only when an external
   consumer actually needs them — not preemptively.
+
+## Domain namespaces (for types you don't own)
+
+When utility functions operate on a platform or third-party type (e.g.
+`GPUDevice`, `GPUTexture`), use a **domain namespace** instead: a folder
+named after the concept, with a namespace export but *no type re-export*.
+
+```
+src/gpu/
+  gpu.ts       # `export * as GPU from "./public.js"` — no type alias
+  public.ts    # re-exports every public helper
+  <helper>.ts  # one declaration per file
+```
+
+```ts
+// gpu/gpu.ts
+export * as GPU from "./public.js";
+
+// gpu/public.ts
+export { createCubemap } from "./create-cubemap.js";
+export { cubeFaceView }  from "./cube-face-view.js";
+```
+
+Consumers import the namespace and get discoverability without shadowing
+the platform type:
+
+```ts
+import { GPU } from "@adobe/data-graphics";
+GPU.createCubemap(device, 256, "rgba16float");
+```
+
+**Name by purpose, not by the external type.** `GPU`, not `GPUDevice`.
+
+**Tree-shaking still works**: bundlers (Rollup/Rolldown) trace static
+property accesses (`GPU.createCubemap`) and exclude unused helpers.
+Dynamic access (`GPU[name]`) defeats this — avoid it.
+
+**When NOT to use a domain namespace**: if a utility is only useful as
+an internal implementation detail of a specific plugin (not callable by
+consumers), keep it private to that plugin's folder instead.

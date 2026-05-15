@@ -8,6 +8,7 @@ import { PbrModelIbl } from "../samples/pbr-model-ibl/pbr-model-ibl.js";
 import { MetalRoughSpheres } from "../samples/metal-rough-spheres/metal-rough-spheres.js";
 import { PbrIblInstanced } from "../samples/pbr-ibl-instanced/pbr-ibl-instanced.js";
 import { SolarSystem } from "../samples/solar-system/solar-system.js";
+import { CesiumMilkTruck } from "../samples/cesium-milk-truck/cesium-milk-truck.js";
 
 const tagName = "sample-container";
 
@@ -32,7 +33,7 @@ export class SampleContainerElement extends LitElement {
     }
 
     override render() {
-        const samples = ["hello-triangle", "pbr-model", "pbr-model-ibl", "metal-rough-spheres", "pbr-ibl-instanced", "solar-system"];
+        const samples = ["hello-triangle", "pbr-model", "pbr-model-ibl", "metal-rough-spheres", "pbr-ibl-instanced", "solar-system", "cesium-milk-truck"];
         return html`
             <nav>
                 ${samples.map(s => html`<a href="?sample=${s}">${s}</a>`)}
@@ -44,6 +45,7 @@ export class SampleContainerElement extends LitElement {
                 ${this.sample === "metal-rough-spheres" ? MetalRoughSpheres() : ""}
                 ${this.sample === "pbr-ibl-instanced" ? PbrIblInstanced() : ""}
                 ${this.sample === "solar-system" ? SolarSystem() : ""}
+                ${this.sample === "cesium-milk-truck" ? CesiumMilkTruck() : ""}
             </div>
         `;
     }

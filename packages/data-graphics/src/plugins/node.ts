@@ -10,5 +10,6 @@ export const node = Database.Plugin.create({
         position: Vec3.schema,
         rotation: Quat.schema,
         scale: Vec3.schema,
+        parent: { default: 0 as number },
     },
 });

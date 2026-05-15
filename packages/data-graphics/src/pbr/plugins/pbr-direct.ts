@@ -1,9 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { Mat4x4, Quat, Vec3 } from "@adobe/data/math";
 import { defaultSceneUniforms } from "../../plugins/default-scene-uniforms.js";
-import { node } from "../../plugins/node.js";
+import { transform } from "../../plugins/transform.js";
 import { StandardVertex } from "../types/standard-vertex/standard-vertex.js";
 import { createMaterialBindGroupLayout, createSceneBindGroupLayout } from "../bind-group-layouts.js";
 import { pbrCore } from "./pbr-core.js";
@@ -18,7 +17,7 @@ import shaderSource from "./direct-shader.wgsl.js";
  * same archetype.
  */
 export const pbrDirect = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrCore, defaultSceneUniforms, node),
+    extends: Database.Plugin.combine(pbrCore, defaultSceneUniforms, transform),
     systems: {
         pbrDirectRender: {
             create: db => {
@@ -78,23 +77,18 @@ export const pbrDirect = Database.Plugin.create({
                     renderPassEncoder.setBindGroup(0, sceneBindGroup);
 
                     // Collect per-geometry instance matrices from visible Model entities.
+                    const { worldMatrices } = db.store.resources;
                     const instancesByGeo = new Map<number, Float32Array>();
-                    for (const arch of db.store.queryArchetypes(["pbrGeometryRef", "visible", "position", "rotation", "scale"])) {
+                    for (const arch of db.store.queryArchetypes(["pbrGeometryRef", "visible"])) {
+                        const ids = arch.columns.id;
                         const geoRefs = arch.columns.pbrGeometryRef;
                         const vis = arch.columns.visible;
-                        const positions = arch.columns.position;
-                        const rotations = arch.columns.rotation;
-                        const scales = arch.columns.scale;
                         for (let i = 0; i < arch.rowCount; i++) {
                             if (!vis.get(i)) continue;
                             const geoId = geoRefs.get(i) as number;
-                            const pos = positions.get(i) as Vec3;
-                            const rot = rotations.get(i) as Quat;
-                            const scl = scales.get(i) as Vec3;
-                            const m = Mat4x4.multiply(
-                                Mat4x4.translation(pos[0], pos[1], pos[2]),
-                                Mat4x4.multiply(Quat.toMat4(rot), Mat4x4.scaling(scl[0], scl[1], scl[2])),
-                            );
+                            const entityId = ids.get(i) as number;
+                            const m = worldMatrices.get(entityId);
+                            if (!m) continue;
                             let arr = instancesByGeo.get(geoId);
                             if (!arr) {
                                 arr = new Float32Array(16);
@@ -177,7 +171,7 @@ export const pbrDirect = Database.Plugin.create({
                     }
                 };
             },
-            schedule: { during: ["render"] }
+            schedule: { during: ["render"], after: ["transformSystem"] }
         }
     }
 });

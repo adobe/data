@@ -32,19 +32,20 @@ export const pbrModelLoader = Database.Plugin.create({
     },
     archetypes: {
         Geometry: ["pbrModelUrl"],
-        Model: ["pbrGeometryRef", "position", "rotation", "scale", "visible"],
+        Model: ["pbrGeometryRef", "position", "rotation", "scale", "visible", "parent"],
     },
     transactions: {
         insertGeometry(t, args: { pbrModelUrl: string }): number {
             return t.archetypes.Geometry.insert({ pbrModelUrl: args.pbrModelUrl });
         },
-        insertModel(t, args: { pbrGeometryRef: number; position?: Vec3; rotation?: Quat; scale?: Vec3 }): number {
+        insertModel(t, args: { pbrGeometryRef: number; position?: Vec3; rotation?: Quat; scale?: Vec3; parent?: number }): number {
             return t.archetypes.Model.insert({
                 pbrGeometryRef: args.pbrGeometryRef,
                 position: args.position ?? [0, 0, 0],
                 rotation: args.rotation ?? [0, 0, 0, 1],
                 scale: args.scale ?? [1, 1, 1],
                 visible: true,
+                parent: args.parent ?? 0,
             });
         },
         pbrInsertLoadedPrimitives(t, args: LoadedArgs) {

@@ -4,7 +4,7 @@ import { html, css } from "lit";
 import { customElement } from "lit/decorators.js";
 import { DatabaseElement, useEffect, useElement } from "@adobe/data-lit";
 import { solarSystemPlugin } from "./solar-system-service.js";
-import { useOrbitDragCamera } from "../../hooks/use-orbit-drag-camera.js";
+import { useOrbitCameraControl } from "../../hooks/use-orbit-camera-control.js";
 
 const tagName = "solar-system";
 
@@ -40,10 +40,7 @@ export class SolarSystemElement extends DatabaseElement<typeof solarSystemPlugin
             service.transactions.initializeScene();
         }, [canvas, service]);
 
-        useOrbitDragCamera(
-            dx => service.transactions.addCameraAngle(-dx * 0.01),
-            () => service.transactions.releaseDrag(),
-        );
+        useOrbitCameraControl(service);
 
         return html`
             <div class="stage">

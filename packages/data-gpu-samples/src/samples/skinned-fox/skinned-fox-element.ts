@@ -5,7 +5,7 @@ import { html, css } from "lit";
 import { customElement } from "lit/decorators.js";
 import { DatabaseElement, useEffect, useElement } from "@adobe/data-lit";
 import { skinnedFoxPlugin } from "./skinned-fox-service.js";
-import { useOrbitDragCamera } from "../../hooks/use-orbit-drag-camera.js";
+import { useOrbitCameraControl } from "../../hooks/use-orbit-camera-control.js";
 
 const tagName = "skinned-fox";
 
@@ -45,7 +45,7 @@ export class SkinnedFoxElement extends DatabaseElement<typeof skinnedFoxPlugin> 
             });
         }, [canvas, service]);
 
-        useOrbitDragCamera(dx => service.transactions.addOrbitAngle(-dx * 0.01));
+        useOrbitCameraControl(service);
 
         return html`
             <div class="stage">

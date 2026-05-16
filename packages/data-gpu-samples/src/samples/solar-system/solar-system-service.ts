@@ -1,9 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { F32, Quat, Vec3 } from "@adobe/data/math";
+import { Quat, Vec3 } from "@adobe/data/math";
 import {
     animation,
+    orbitCamera,
     pbrIbl,
     pbrModelLoader,
     pbrShapes,
@@ -38,20 +39,15 @@ interface PlanetSpec {
 }
 
 export const solarSystemPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrIbl, pbrModelLoader, pbrShapes, animation),
-    resources: {
-        cameraAngle: { default: 0 as F32, transient: true },
-        cameraDragging: { default: false as boolean, transient: true },
-    },
+    extends: Database.Plugin.combine(pbrIbl, pbrModelLoader, pbrShapes, animation, orbitCamera),
     transactions: {
-        addCameraAngle(t, delta: number) {
-            t.resources.cameraAngle = t.resources.cameraAngle + delta;
-            t.resources.cameraDragging = true;
-        },
-        releaseDrag(t) {
-            t.resources.cameraDragging = false;
-        },
         initializeScene(t) {
+            // Solar system uses a fixed orbit rather than bounds-fit.
+            t.resources.orbitCenter = [0, 0, 0];
+            t.resources.orbitRadius = 28;
+            t.resources.orbitHeight = 10;
+            t.resources.orbitAutoSpinSpeed = 0.12;
+
             const insertPlanet = (spec: PlanetSpec): number => {
                 const geo = t.archetypes.Sphere.insert({
                     pbrSphereSpec: {
@@ -119,35 +115,6 @@ export const solarSystemPlugin = Database.Plugin.create({
                 position: [14, 0, 0], scale: [0.4, 0.4, 0.4], parent: sun,
                 orbitRadius: 14.0, orbitSpeed: 0.53,
             });
-        },
-    },
-    systems: {
-        cameraSystem: {
-            create: db => {
-                let lastTime = performance.now();
-                return () => {
-                    const now = performance.now();
-                    const dt = (now - lastTime) / 1000;
-                    lastTime = now;
-
-                    const { camera, cameraDragging } = db.store.resources;
-                    if (!camera) return;
-
-                    if (!cameraDragging) {
-                        db.store.resources.cameraAngle = db.store.resources.cameraAngle + dt * 0.12;
-                    }
-
-                    const angle = db.store.resources.cameraAngle;
-                    const radius = 28;
-                    const height = 10;
-                    db.store.resources.camera = {
-                        ...camera,
-                        position: [Math.sin(angle) * radius, height, Math.cos(angle) * radius],
-                        target: [0, 0, 0],
-                    };
-                };
-            },
-            schedule: { during: ["update"] },
         },
     },
 });

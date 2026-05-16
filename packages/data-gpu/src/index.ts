@@ -5,6 +5,7 @@ export { camera } from "./plugins/camera.js";
 export { defaultSceneUniforms } from "./plugins/default-scene-uniforms.js";
 export { node } from "./plugins/node.js";
 export { transform } from "./plugins/transform.js";
+export { orbitCamera } from "./plugins/orbit-camera.js";
 export { animation } from "./plugins/animation/animation.js";
 export type { AnimationTrack, InterpolationMode } from "./plugins/animation/animation-types.js";
 export { Camera } from "./types/camera/camera.js";

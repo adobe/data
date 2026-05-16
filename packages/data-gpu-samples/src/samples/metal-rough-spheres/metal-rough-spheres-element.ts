@@ -4,7 +4,7 @@ import { html, css } from "lit";
 import { customElement } from "lit/decorators.js";
 import { DatabaseElement, useEffect, useElement } from "@adobe/data-lit";
 import { pbrModelIblPlugin } from "../pbr-model-ibl/pbr-model-ibl-service.js";
-import { useOrbitDragCamera } from "../../hooks/use-orbit-drag-camera.js";
+import { useOrbitCameraControl } from "../../hooks/use-orbit-camera-control.js";
 
 const tagName = "metal-rough-spheres";
 
@@ -44,7 +44,7 @@ export class MetalRoughSpheresElement extends DatabaseElement<typeof pbrModelIbl
             });
         }, [canvas, service]);
 
-        useOrbitDragCamera(dx => service.transactions.addOrbitAngle(-dx * 0.01));
+        useOrbitCameraControl(service);
 
         return html`
             <div class="stage">

@@ -4,7 +4,7 @@ import { html, css } from "lit";
 import { customElement } from "lit/decorators.js";
 import { DatabaseElement, useEffect, useElement } from "@adobe/data-lit";
 import { pbrIblInstancedPlugin } from "./pbr-ibl-instanced-service.js";
-import { useOrbitDragCamera } from "../../hooks/use-orbit-drag-camera.js";
+import { useOrbitCameraControl } from "../../hooks/use-orbit-camera-control.js";
 
 const tagName = "pbr-ibl-instanced";
 
@@ -45,7 +45,7 @@ export class PbrIblInstancedElement extends DatabaseElement<typeof pbrIblInstanc
             });
         }, [canvas, service]);
 
-        useOrbitDragCamera(dx => service.transactions.addOrbitAngle(-dx * 0.01));
+        useOrbitCameraControl(service);
 
         return html`
             <div class="stage">

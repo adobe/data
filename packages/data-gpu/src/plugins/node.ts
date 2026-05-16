@@ -12,4 +12,7 @@ export const node = Database.Plugin.create({
         scale: Vec3.schema,
         parent: { default: 0 as number },
     },
+    archetypes: {
+        Node: ["position", "rotation", "scale", "parent", "visible"],
+    },
 });

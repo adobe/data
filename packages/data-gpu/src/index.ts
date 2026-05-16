@@ -17,5 +17,6 @@ export { pbrDirect } from "./plugins/pbr-direct/pbr-direct.js";
 export { pbrIbl } from "./plugins/pbr-ibl/pbr-ibl.js";
 export { pbrModelLoader } from "./plugins/pbr-model-loader/pbr-model-loader.js";
 export { pbrShapes } from "./plugins/pbr-shapes.js";
+export { pbrSkinning } from "./plugins/pbr-skinning/pbr-skinning.js";
 export { StandardVertex } from "./types/standard-vertex/standard-vertex.js";
 export { PbrMaterial } from "./types/pbr-material/pbr-material.js";

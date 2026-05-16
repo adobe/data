@@ -70,6 +70,7 @@ export const solarSystemPlugin = Database.Plugin.create({
                     scale: spec.scale,
                     visible: true,
                     parent: spec.parent ?? 0,
+                    animationSkeletonRef: 0,
                 });
                 if (spec.orbitRadius !== undefined && spec.orbitSpeed !== undefined) {
                     const clip = t.archetypes.AnimationClip.insert({

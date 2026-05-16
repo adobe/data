@@ -3,19 +3,19 @@
 import { Database } from "@adobe/data/ecs";
 import { F32, Quat, Vec3 } from "@adobe/data/math";
 import type { Aabb } from "@adobe/data/math";
-import { pbrIbl, pbrModelLoader } from "@adobe/data-gpu";
+import { pbrIbl, pbrModelLoader, pbrSkinning } from "@adobe/data-gpu";
 
-export const pbrModelIblPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrIbl, pbrModelLoader),
+export const skinnedFoxPlugin = Database.Plugin.create({
+    extends: Database.Plugin.combine(pbrIbl, pbrModelLoader, pbrSkinning),
     resources: {
         orbitCenter: { default: [0, 0, 0] as Vec3, transient: true },
         orbitRadius: { default: 3 as F32, transient: true },
-        orbitHeight: { default: 0 as F32, transient: true },
+        orbitHeight: { default: 1 as F32, transient: true },
         orbitAngle: { default: 0 as F32, transient: true },
         orbitAutoSpin: { default: true as boolean, transient: true },
         autoFitOrbitRef: { default: 0 as number, transient: true },
-        autoFitOrbitRadiusFactor: { default: 1.5 as F32, transient: true },
-        autoFitOrbitHeightFactor: { default: 0.25 as F32, transient: true },
+        autoFitOrbitRadiusFactor: { default: 1.6 as F32, transient: true },
+        autoFitOrbitHeightFactor: { default: 0.4 as F32, transient: true },
     },
     transactions: {
         setOrbit(t, args: { center: Vec3; radius: number; height: number }) {
@@ -26,9 +26,6 @@ export const pbrModelIblPlugin = Database.Plugin.create({
         addOrbitAngle(t, delta: number) {
             t.resources.orbitAngle = t.resources.orbitAngle + delta;
             t.resources.orbitAutoSpin = false;
-        },
-        resumeAutoSpin(t) {
-            t.resources.orbitAutoSpin = true;
         },
         initializeScene(t, args: {
             modelUrl: string;
@@ -59,25 +56,29 @@ export const pbrModelIblPlugin = Database.Plugin.create({
     systems: {
         orbitCamera: {
             create: db => {
-                const start = performance.now();
-                let lastTime = start;
+                let lastTime = performance.now();
                 return () => {
                     const { orbitCenter, orbitRadius, orbitHeight, orbitAutoSpin, camera } = db.store.resources;
                     if (!camera) return;
                     const now = performance.now();
                     if (orbitAutoSpin) {
                         const dt = (now - lastTime) / 1000;
-                        db.store.resources.orbitAngle = db.store.resources.orbitAngle + dt * 1.0;
+                        db.store.resources.orbitAngle = db.store.resources.orbitAngle + dt * 0.5;
                     }
                     lastTime = now;
                     const angle = db.store.resources.orbitAngle;
-                    const x = orbitCenter[0] + Math.sin(angle) * orbitRadius;
-                    const z = orbitCenter[2] + Math.cos(angle) * orbitRadius;
-                    const y = orbitCenter[1] + orbitHeight;
                     db.store.resources.camera = {
                         ...camera,
-                        position: [x, y, z],
+                        position: [
+                            orbitCenter[0] + Math.sin(angle) * orbitRadius,
+                            orbitCenter[1] + orbitHeight,
+                            orbitCenter[2] + Math.cos(angle) * orbitRadius,
+                        ],
                         target: orbitCenter,
+                        // Fox is authored in cm — extend the depth range so the
+                        // ~150-unit-tall mesh isn't clipped by the default 0.1/100 planes.
+                        nearPlane: Math.max(orbitRadius * 0.01, 0.1) as F32,
+                        farPlane: Math.max(orbitRadius * 4, 100) as F32,
                     };
                 };
             },
@@ -111,4 +112,4 @@ export const pbrModelIblPlugin = Database.Plugin.create({
     },
 });
 
-export type PbrModelIblService = Database.Plugin.ToDatabase<typeof pbrModelIblPlugin>;
+export type SkinnedFoxService = Database.Plugin.ToDatabase<typeof skinnedFoxPlugin>;

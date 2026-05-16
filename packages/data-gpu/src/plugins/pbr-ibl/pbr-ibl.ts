@@ -8,6 +8,7 @@ import { createMaterialBindGroupLayout, createSceneBindGroupLayout } from "../bi
 import { buildIblResources } from "./ibl/build-ibl-resources.js";
 import { parseHdr } from "./ibl/parse-hdr.js";
 import { StandardVertex } from "../../types/standard-vertex/standard-vertex.js";
+import { SkinningAttributes } from "../../types/skinning-attributes/skinning-attributes.js";
 import { pbrCore } from "../pbr-core.js";
 import { buildIblShader } from "./ibl-shader.wgsl.js";
 import skyboxShader from "./skybox-shader.wgsl.js";
@@ -102,11 +103,13 @@ export const pbrIbl = Database.Plugin.create({
         pbrIblRender: {
             create: db => {
                 let pipeline: GPURenderPipeline | null = null;
+                let skinnedPipeline: GPURenderPipeline | null = null;
                 let skyboxPipeline: GPURenderPipeline | null = null;
                 let sceneLayout: GPUBindGroupLayout | null = null;
                 let materialLayout: GPUBindGroupLayout | null = null;
                 let iblLayout: GPUBindGroupLayout | null = null;
                 let instanceLayout: GPUBindGroupLayout | null = null;
+                let skinnedInstanceLayout: GPUBindGroupLayout | null = null;
                 let skyboxLayout: GPUBindGroupLayout | null = null;
                 let iblSampler: GPUSampler | null = null;
                 let skyboxUniformBuffer: GPUBuffer | null = null;
@@ -139,6 +142,12 @@ export const pbrIbl = Database.Plugin.create({
                     if (!instanceLayout) instanceLayout = device.createBindGroupLayout({
                         entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } }],
                     });
+                    if (!skinnedInstanceLayout) skinnedInstanceLayout = device.createBindGroupLayout({
+                        entries: [
+                            { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
+                            { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
+                        ],
+                    });
                     if (!skyboxLayout) skyboxLayout = createSkyboxBindGroupLayout(device);
                     if (!iblSampler) {
                         iblSampler = device.createSampler({
@@ -159,13 +168,27 @@ export const pbrIbl = Database.Plugin.create({
 
                     if (!pipeline) {
                         const module = device.createShaderModule({
-                            code: buildIblShader({ prefilteredMipCount: PREFILTERED_MIP_COUNT }),
+                            code: buildIblShader({ prefilteredMipCount: PREFILTERED_MIP_COUNT, skinned: false }),
                         });
                         pipeline = device.createRenderPipeline({
                             layout: device.createPipelineLayout({
                                 bindGroupLayouts: [sceneLayout, materialLayout, iblLayout, instanceLayout],
                             }),
                             vertex: { module, entryPoint: "vs_main", buffers: [StandardVertex.layout] },
+                            fragment: { module, entryPoint: "fs_main", targets: [{ format: canvasFormat }] },
+                            primitive: { topology: "triangle-list", cullMode: "back" },
+                            depthStencil: { format: depthFormat, depthWriteEnabled: true, depthCompare: "less" },
+                        });
+                    }
+                    if (!skinnedPipeline) {
+                        const module = device.createShaderModule({
+                            code: buildIblShader({ prefilteredMipCount: PREFILTERED_MIP_COUNT, skinned: true }),
+                        });
+                        skinnedPipeline = device.createRenderPipeline({
+                            layout: device.createPipelineLayout({
+                                bindGroupLayouts: [sceneLayout, materialLayout, iblLayout, skinnedInstanceLayout],
+                            }),
+                            vertex: { module, entryPoint: "vs_main", buffers: [StandardVertex.layout, SkinningAttributes.layout] },
                             fragment: { module, entryPoint: "fs_main", targets: [{ format: canvasFormat }] },
                             primitive: { topology: "triangle-list", cullMode: "back" },
                             depthStencil: { format: depthFormat, depthWriteEnabled: true, depthCompare: "less" },
@@ -236,25 +259,24 @@ export const pbrIbl = Database.Plugin.create({
                     renderPassEncoder.setBindGroup(0, skyboxBindGroup);
                     renderPassEncoder.draw(3);
 
-                    renderPassEncoder.setPipeline(pipeline);
-                    renderPassEncoder.setBindGroup(0, sceneBindGroup);
-                    renderPassEncoder.setBindGroup(2, iblBindGroup);
-
-                    // Collect world matrices of visible Model entities, grouped by geometry.
+                    // Collect visible Models grouped by geometry, keeping ids alongside
+                    // matrices so the skinned path can look up each instance's skeleton.
                     const { worldMatrices } = db.store.resources;
-                    const modelMatsByGeo = new Map<number, Mat4x4[]>();
+                    interface ModelEntry { id: number; matrix: Mat4x4 }
+                    const modelsByGeo = new Map<number, ModelEntry[]>();
                     for (const arch of db.store.queryArchetypes(["pbrGeometryRef", "visible"])) {
                         const ids = arch.columns.id;
                         const geoRefs = arch.columns.pbrGeometryRef;
                         const vis = arch.columns.visible;
                         for (let i = 0; i < arch.rowCount; i++) {
                             if (!vis.get(i)) continue;
-                            const geoId = geoRefs.get(i) as number;
-                            const m = worldMatrices.get(ids.get(i) as number);
+                            const id = ids.get(i) as number;
+                            const m = worldMatrices.get(id);
                             if (!m) continue;
-                            let arr = modelMatsByGeo.get(geoId);
-                            if (!arr) { arr = []; modelMatsByGeo.set(geoId, arr); }
-                            arr.push(m);
+                            const geoId = geoRefs.get(i) as number;
+                            let arr = modelsByGeo.get(geoId);
+                            if (!arr) { arr = []; modelsByGeo.set(geoId, arr); }
+                            arr.push({ id, matrix: m });
                         }
                     }
 
@@ -267,12 +289,28 @@ export const pbrIbl = Database.Plugin.create({
                         }
                     }
 
-                    // For each primitive: pre-multiply modelWorldMatrix × pbrNodeLocalMatrix
-                    // to get effective instance matrices, upload, and draw.
+                    const jointBindGroupByModel = new Map<number, GPUBindGroup>();
+                    for (const arch of db.store.queryArchetypes([
+                        "skeletonModelRef",
+                        "skeletonJointMatrixBindGroup",
+                    ])) {
+                        const modelRefs = arch.columns.skeletonModelRef;
+                        const bgs = arch.columns.skeletonJointMatrixBindGroup;
+                        for (let i = 0; i < arch.rowCount; i++) {
+                            const bg = bgs.get(i) as GPUBindGroup | null;
+                            if (bg) jointBindGroupByModel.set(modelRefs.get(i) as number, bg);
+                        }
+                    }
+
+                    renderPassEncoder.setBindGroup(0, sceneBindGroup);
+                    renderPassEncoder.setBindGroup(2, iblBindGroup);
+
+                    let lastPipeline: GPURenderPipeline | null = null;
                     let lastMat: GPUBindGroup | null = null;
                     let lastInstBG: GPUBindGroup | null = null;
                     for (const archetype of db.store.queryArchetypes([
                         "pbrVertexBuffer",
+                        "pbrSkinVertexBuffer",
                         "pbrIndexBuffer",
                         "pbrIndexCount",
                         "pbrIndexFormat",
@@ -281,6 +319,7 @@ export const pbrIbl = Database.Plugin.create({
                         "pbrNodeLocalMatrix",
                     ])) {
                         const vbs = archetype.columns.pbrVertexBuffer;
+                        const skinVbs = archetype.columns.pbrSkinVertexBuffer;
                         const ibs = archetype.columns.pbrIndexBuffer;
                         const counts = archetype.columns.pbrIndexCount;
                         const formats = archetype.columns.pbrIndexFormat;
@@ -290,13 +329,50 @@ export const pbrIbl = Database.Plugin.create({
                         const primIds = archetype.columns.id;
                         for (let i = 0; i < archetype.rowCount; i++) {
                             const geoId = geoRefs.get(i) as number;
-                            const modelMats = modelMatsByGeo.get(geoId);
-                            if (!modelMats) continue;
+                            const models = modelsByGeo.get(geoId);
+                            if (!models) continue;
 
+                            const skinBuf = skinVbs.get(i) as GPUBuffer | null;
                             const nodeMatrix = nodeMats.get(i) as Mat4x4;
-                            const instCount = modelMats.length;
                             const primId = primIds.get(i) as number;
+                            const mat = materialMap.get(matRefs.get(i) as number);
+                            if (!mat) continue;
 
+                            if (skinBuf) {
+                                // Skinned: one draw per Model. The skeleton owns a
+                                // 2-binding bind group containing both the per-Model
+                                // instance matrix and the per-Model joint matrices.
+                                if (lastPipeline !== skinnedPipeline) {
+                                    renderPassEncoder.setPipeline(skinnedPipeline);
+                                    lastPipeline = skinnedPipeline;
+                                    lastInstBG = null;
+                                }
+                                if (mat !== lastMat) {
+                                    renderPassEncoder.setBindGroup(1, mat);
+                                    lastMat = mat;
+                                }
+                                renderPassEncoder.setVertexBuffer(0, vbs.get(i));
+                                renderPassEncoder.setVertexBuffer(1, skinBuf);
+                                renderPassEncoder.setIndexBuffer(ibs.get(i), formats.get(i));
+                                for (const model of models) {
+                                    const skeletonBG = jointBindGroupByModel.get(model.id);
+                                    if (!skeletonBG) continue;
+                                    if (skeletonBG !== lastInstBG) {
+                                        renderPassEncoder.setBindGroup(3, skeletonBG);
+                                        lastInstBG = skeletonBG;
+                                    }
+                                    renderPassEncoder.drawIndexed(counts.get(i), 1);
+                                }
+                                continue;
+                            }
+
+                            // Static: instanced draw.
+                            if (lastPipeline !== pipeline) {
+                                renderPassEncoder.setPipeline(pipeline);
+                                lastPipeline = pipeline;
+                                lastInstBG = null;
+                            }
+                            const instCount = models.length;
                             let entry = instanceCache.get(primId);
                             if (!entry || entry.capacity < instCount) {
                                 entry?.buffer.destroy();
@@ -315,12 +391,10 @@ export const pbrIbl = Database.Plugin.create({
                                 instanceScratch = new Float32Array(instCount * 16);
                             }
                             for (let j = 0; j < instCount; j++) {
-                                instanceScratch.set(Mat4x4.multiply(modelMats[j], nodeMatrix), j * 16);
+                                instanceScratch.set(Mat4x4.multiply(models[j].matrix, nodeMatrix), j * 16);
                             }
                             device.queue.writeBuffer(entry.buffer, 0, instanceScratch, 0, instCount * 16);
 
-                            const mat = materialMap.get(matRefs.get(i) as number);
-                            if (!mat) continue;
                             if (mat !== lastMat) {
                                 renderPassEncoder.setBindGroup(1, mat);
                                 lastMat = mat;

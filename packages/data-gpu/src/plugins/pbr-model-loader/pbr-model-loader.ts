@@ -2,37 +2,39 @@
 
 import { Database } from "@adobe/data/ecs";
 import type { Aabb, Quat, Vec3 } from "@adobe/data/math";
+import { animation } from "../animation/animation.js";
 import { graphics } from "../graphics.js";
 import { node } from "../node.js";
 import { loadGltfPrimitives, type GpuPrimitiveData } from "./gltf/load-gltf-model.js";
+import type { LoadedAnimation } from "./gltf/parse-animations.js";
+import type { JointTemplate } from "./gltf/parse-skin.js";
 import { pbrCore } from "../pbr-core.js";
 
-interface LoadedArgs {
+export interface LoadedArgs {
     pbrGeometryRef: number;
     bounds: Aabb;
-    primitives: GpuPrimitiveData[];  // each carries pbrNodeLocalMatrix
+    primitives: GpuPrimitiveData[];
+    skinJointTemplate: JointTemplate[];
+    skinInverseBindMatrices: Float32Array | null;
+    animations: LoadedAnimation[];
 }
 
-/**
- * Declarative GLTF model loader. Provides two user-facing archetypes:
- *
- * - **Geometry**: insert with `{ pbrModelUrl }`. The loader system fetches,
- *   parses, and uploads the model. When done, `pbrModelBounds` is added to
- *   the entity (its presence signals that loading is complete).
- *
- * - **Model**: insert with `{ pbrGeometryRef, position?, rotation?, scale? }`.
- *   Presence of a visible Model is what causes its Geometry's primitives to
- *   be drawn each frame.
- */
 export const pbrModelLoader = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrCore, node, graphics),
+    extends: Database.Plugin.combine(pbrCore, node, graphics, animation),
     components: {
         pbrModelUrl: { default: "" as string },
         pbrModelBounds: { default: null as unknown as Aabb },
+        /** Per-joint local TRS + parent-index. Empty for non-skinned models;
+         *  the skinning init system uses this to instantiate joint entities. */
+        skinJointTemplate: { default: [] as JointTemplate[] },
+        /** N × 16 flat floats. Null when the glTF has no skin. */
+        skinInverseBindMatrices: { default: null as Float32Array | null },
+        /** Entity ids of AnimationClip entities bundled with this asset. */
+        animationClipRefs: { default: [] as number[] },
     },
     archetypes: {
         Geometry: ["pbrModelUrl"],
-        Model: ["pbrGeometryRef", "position", "rotation", "scale", "visible", "parent"],
+        Model: ["pbrGeometryRef", "position", "rotation", "scale", "visible", "parent", "animationSkeletonRef"],
     },
     transactions: {
         insertGeometry(t, args: { pbrModelUrl: string }): number {
@@ -46,6 +48,7 @@ export const pbrModelLoader = Database.Plugin.create({
                 scale: args.scale ?? [1, 1, 1],
                 visible: true,
                 parent: args.parent ?? 0,
+                animationSkeletonRef: 0,
             });
         },
         pbrInsertLoadedPrimitives(t, args: LoadedArgs) {
@@ -60,13 +63,28 @@ export const pbrModelLoader = Database.Plugin.create({
                     pbrGeometryRef: args.pbrGeometryRef,
                     pbrMaterialRef: materialId,
                     pbrVertexBuffer: p.pbrVertexBuffer,
+                    pbrSkinVertexBuffer: p.pbrSkinVertexBuffer,
                     pbrIndexBuffer: p.pbrIndexBuffer,
                     pbrIndexCount: p.pbrIndexCount,
                     pbrIndexFormat: p.pbrIndexFormat,
                     pbrNodeLocalMatrix: p.pbrNodeLocalMatrix,
                 });
             }
-            t.update(args.pbrGeometryRef, { pbrModelBounds: args.bounds });
+            const clipRefs: number[] = [];
+            for (const anim of args.animations) {
+                if (anim.tracks.length === 0) continue;
+                const clipId = t.archetypes.AnimationClip.insert({
+                    animationClipTracks: anim.tracks,
+                    animationClipDuration: anim.duration,
+                });
+                clipRefs.push(clipId);
+            }
+            t.update(args.pbrGeometryRef, {
+                pbrModelBounds: args.bounds,
+                skinJointTemplate: args.skinJointTemplate,
+                skinInverseBindMatrices: args.skinInverseBindMatrices,
+                animationClipRefs: clipRefs,
+            });
         },
     },
     systems: {
@@ -84,11 +102,14 @@ export const pbrModelLoader = Database.Plugin.create({
                             if (inFlight.has(id)) continue;
                             inFlight.add(id);
                             loadGltfPrimitives(device, urls.get(i) as string)
-                                .then(({ primitives, bounds }) => {
+                                .then(loaded => {
                                     db.transactions.pbrInsertLoadedPrimitives({
                                         pbrGeometryRef: id,
-                                        bounds,
-                                        primitives,
+                                        bounds: loaded.bounds,
+                                        primitives: loaded.primitives,
+                                        skinJointTemplate: loaded.skin?.jointTemplate ?? [],
+                                        skinInverseBindMatrices: loaded.skin?.inverseBindMatrices ?? null,
+                                        animations: loaded.animations,
                                     });
                                 })
                                 .catch(err => {

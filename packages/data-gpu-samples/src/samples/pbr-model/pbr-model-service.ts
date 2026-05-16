@@ -33,6 +33,7 @@ export const pbrModelPlugin = Database.Plugin.create({
                 scale: [1, 1, 1],
                 visible: true,
                 parent: 0,
+                animationSkeletonRef: 0,
             });
             t.resources.autoFitOrbitRef = geoId;
             if (args.orbitFit) {

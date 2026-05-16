@@ -17,6 +17,24 @@ export interface GltfAsset {
     accessors?: GltfAccessor[];
     bufferViews?: GltfBufferView[];
     buffers?: GltfBuffer[];
+    animations?: GltfAnimation[];
+}
+
+export interface GltfAnimation {
+    name?: string;
+    channels: GltfAnimationChannel[];
+    samplers: GltfAnimationSampler[];
+}
+
+export interface GltfAnimationChannel {
+    sampler: number;
+    target: { node: number; path: "translation" | "rotation" | "scale" | "weights" };
+}
+
+export interface GltfAnimationSampler {
+    input: number;   // accessor → keyframe times (Float32Array)
+    output: number;  // accessor → keyframe values
+    interpolation?: "LINEAR" | "STEP" | "CUBICSPLINE";
 }
 
 export interface GltfScene {

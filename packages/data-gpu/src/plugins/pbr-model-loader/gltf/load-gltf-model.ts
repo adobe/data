@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import type { Aabb, Mat4x4 } from "@adobe/data/math";
+import { Mat4x4, type Aabb } from "@adobe/data/math";
 import { createMaterialBindGroupLayout } from "../../bind-group-layouts.js";
 import { readAccessor } from "./accessor-view.js";
 import { buildMaterialBindGroup, type FallbackViews } from "./build-material-bind-group.js";
@@ -8,26 +8,33 @@ import { computeWorldMatrices } from "./compute-world-matrices.js";
 import { createFallbackTextures, decodeAllImages } from "./decode-images.js";
 import { packPrimitiveVertices } from "./pack-vertex-buffer.js";
 import { parseGlb } from "./parse-glb.js";
+import { parseGltfSkin, type LoadedSkin } from "./parse-skin.js";
+import { parseGltfAnimations, type LoadedAnimation } from "./parse-animations.js";
 
 export interface GpuPrimitiveData {
     pbrVertexBuffer: GPUBuffer;
+    /** Secondary VBO with skinning attributes (joints u32×4, weights f32×4).
+     *  Null for non-skinned primitives. Drives the renderer's pipeline choice. */
+    pbrSkinVertexBuffer: GPUBuffer | null;
     pbrIndexBuffer: GPUBuffer;
     pbrIndexCount: number;
     pbrIndexFormat: GPUIndexFormat;
     pbrMaterialBindGroup: GPUBindGroup;
     /** Node's model-root-local matrix. Renderers pre-multiply this with the
      *  per-instance model-root world matrix at draw time. Identity for
-     *  single-node models. */
+     *  single-node and skinned-mesh primitives (skin owns the deformation). */
     pbrNodeLocalMatrix: Mat4x4;
 }
 
 export interface LoadedGltfData {
     primitives: GpuPrimitiveData[];
     bounds: Aabb;
+    /** Present when the glTF declares a `skins[0]`. */
+    skin: LoadedSkin | null;
+    /** Parsed `animations[]`; jointIndex on each track is into `skin.jointTemplate`. */
+    animations: LoadedAnimation[];
 }
 
-/** Transforms the 8 corners of a node-local AABB into model-root-local space
- *  and expands the running global bounds. */
 function expandBounds(
     m: Mat4x4,
     localMin: readonly [number, number, number],
@@ -62,11 +69,6 @@ function pickIndexFormat(raw: Uint16Array | Uint32Array | Uint8Array | Float32Ar
     throw new Error("Index accessor must be an integer type");
 }
 
-/**
- * Fetches and parses a GLB file, decodes textures, and builds GPU buffers and
- * per-material bind groups. Returns the raw data without touching the ECS
- * database — the caller is responsible for inserting entities.
- */
 export async function loadGltfPrimitives(device: GPUDevice, url: string): Promise<LoadedGltfData> {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Failed to fetch ${url}: ${response.status}`);
@@ -85,9 +87,9 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
         addressModeV: "repeat",
     });
 
-    // World matrices computed for two purposes: node-local-to-model-root matrix
-    // stored on each primitive, and transforming node-local bounds to model-root-local.
     const worldMatrices = computeWorldMatrices(json);
+    const skin = parseGltfSkin(json, bin);
+    const animations = skin ? parseGltfAnimations(json, bin, json.skins![0].joints) : [];
 
     const boundsMin: [number, number, number] = [Infinity, Infinity, Infinity];
     const boundsMax: [number, number, number] = [-Infinity, -Infinity, -Infinity];
@@ -97,14 +99,15 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
         const node = json.nodes![nodeIdx];
         if (node.mesh === undefined) continue;
         const mesh = json.meshes![node.mesh];
-        const pbrNodeLocalMatrix = worldMatrices[nodeIdx];
+        // For skinned primitives the joint transforms own the deformation;
+        // the mesh node's own transform must not be baked in. For non-skinned
+        // primitives we pre-bake the node's world matrix as before.
+        const skinned = node.skin !== undefined;
+        const pbrNodeLocalMatrix = skinned ? Mat4x4.identity : worldMatrices[nodeIdx];
 
         for (const prim of mesh.primitives) {
-            // Vertices remain in node-local space; pbrNodeLocalMatrix carries
-            // the node-to-model-root transform for use at draw time.
             const packed = packPrimitiveVertices(json, bin, prim);
 
-            // Expand global bounds in model-root-local space.
             expandBounds(pbrNodeLocalMatrix, packed.boundsMin, packed.boundsMax, boundsMin, boundsMax);
 
             const vertexBuffer = device.createBuffer({
@@ -113,9 +116,32 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
             });
             device.queue.writeBuffer(vertexBuffer, 0, packed.vertices);
 
-            if (prim.indices === undefined) throw new Error("Non-indexed primitives not supported");
-            const raw = readAccessor(json, bin, prim.indices);
-            const { indices, format } = pickIndexFormat(raw);
+            let skinVertexBuffer: GPUBuffer | null = null;
+            if (packed.skinningAttributes) {
+                skinVertexBuffer = device.createBuffer({
+                    size: packed.skinningAttributes.byteLength,
+                    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+                });
+                device.queue.writeBuffer(skinVertexBuffer, 0, packed.skinningAttributes);
+            }
+
+            // Non-indexed primitives are valid in glTF — synthesize sequential indices.
+            let indices: Uint16Array | Uint32Array;
+            let format: GPUIndexFormat;
+            if (prim.indices === undefined) {
+                if (packed.vertexCount <= 0xffff) {
+                    indices = new Uint16Array(packed.vertexCount);
+                    for (let k = 0; k < packed.vertexCount; k++) indices[k] = k;
+                    format = "uint16";
+                } else {
+                    indices = new Uint32Array(packed.vertexCount);
+                    for (let k = 0; k < packed.vertexCount; k++) indices[k] = k;
+                    format = "uint32";
+                }
+            } else {
+                const raw = readAccessor(json, bin, prim.indices);
+                ({ indices, format } = pickIndexFormat(raw));
+            }
 
             const indexBuffer = device.createBuffer({
                 size: indices.byteLength,
@@ -129,6 +155,7 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
 
             primitives.push({
                 pbrVertexBuffer: vertexBuffer,
+                pbrSkinVertexBuffer: skinVertexBuffer,
                 pbrIndexBuffer: indexBuffer,
                 pbrIndexCount: indices.length,
                 pbrIndexFormat: format,
@@ -140,6 +167,8 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
 
     return {
         primitives,
-        bounds: { min: boundsMin as unknown as [number, number, number], max: boundsMax as unknown as [number, number, number] },
+        bounds: { min: boundsMin as [number, number, number], max: boundsMax as [number, number, number] },
+        skin,
+        animations,
     };
 }

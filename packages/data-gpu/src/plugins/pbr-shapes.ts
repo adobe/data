@@ -52,6 +52,7 @@ export const pbrShapes = Database.Plugin.create({
                 pbrGeometryRef: args.pbrGeometryRef,
                 pbrMaterialRef: materialId,
                 pbrVertexBuffer: args.pbrVertexBuffer,
+                pbrSkinVertexBuffer: null,
                 pbrIndexBuffer: args.pbrIndexBuffer,
                 pbrIndexCount: args.pbrIndexCount,
                 pbrIndexFormat: args.pbrIndexFormat,

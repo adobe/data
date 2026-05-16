@@ -7,9 +7,81 @@ import brdf from "./brdf.wgsl.js";
 
 export interface IblShaderOptions {
     prefilteredMipCount: number;
+    /** When true, the vertex shader accepts JOINTS_0 / WEIGHTS_0 attributes and
+     *  a joint-matrix storage buffer in bind group 4, and blends each vertex by
+     *  the four weighted joint matrices before applying the instance transform. */
+    skinned: boolean;
 }
 
 export function buildIblShader(options: IblShaderOptions): string {
+    // Skinned variant adds jointMatrices as binding 1 of group 3 (sharing the
+    // slot with instance matrices) so we stay within WebGPU's default
+    // maxBindGroups = 4 limit.
+    const skinningBindings = options.skinned ? /* wgsl */ `
+@group(3) @binding(1) var<storage, read> jointMatrices: array<mat4x4<f32>>;
+` : "";
+
+    const vertexInputs = options.skinned ? /* wgsl */ `
+struct VertexInput {
+    @location(0) position: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) tangent: vec4f,
+    @location(3) uv: vec2f,
+    @location(4) joints: vec4u,
+    @location(5) weights: vec4f,
+}` : /* wgsl */ `
+struct VertexInput {
+    @location(0) position: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) tangent: vec4f,
+    @location(3) uv: vec2f,
+}`;
+
+    const vertexMain = options.skinned ? /* wgsl */ `
+@vertex
+fn vs_main(@builtin(instance_index) instanceIndex: u32, in: VertexInput) -> VertexOutput {
+    let skinMat =
+        jointMatrices[in.joints.x] * in.weights.x +
+        jointMatrices[in.joints.y] * in.weights.y +
+        jointMatrices[in.joints.z] * in.weights.z +
+        jointMatrices[in.joints.w] * in.weights.w;
+    let m = instances[instanceIndex] * skinMat;
+    let m3 = mat3x3<f32>(m[0].xyz, m[1].xyz, m[2].xyz);
+    let normalMat = mat3x3<f32>(
+        cross(m3[1], m3[2]),
+        cross(m3[2], m3[0]),
+        cross(m3[0], m3[1]),
+    );
+    let worldPos = m * vec4f(in.position, 1.0);
+    var out: VertexOutput;
+    out.clipPosition = scene.viewProjectionMatrix * worldPos;
+    out.worldPosition = worldPos.xyz;
+    out.normal = normalize(normalMat * in.normal);
+    out.tangent = normalize(m3 * in.tangent.xyz);
+    out.bitangent = normalize(cross(out.normal, out.tangent) * in.tangent.w);
+    out.uv = in.uv;
+    return out;
+}` : /* wgsl */ `
+@vertex
+fn vs_main(@builtin(instance_index) instanceIndex: u32, in: VertexInput) -> VertexOutput {
+    let m = instances[instanceIndex];
+    let m3 = mat3x3<f32>(m[0].xyz, m[1].xyz, m[2].xyz);
+    let normalMat = mat3x3<f32>(
+        cross(m3[1], m3[2]),
+        cross(m3[2], m3[0]),
+        cross(m3[0], m3[1]),
+    );
+    let worldPos = m * vec4f(in.position, 1.0);
+    var out: VertexOutput;
+    out.clipPosition = scene.viewProjectionMatrix * worldPos;
+    out.worldPosition = worldPos.xyz;
+    out.normal = normalize(normalMat * in.normal);
+    out.tangent = normalize(m3 * in.tangent.xyz);
+    out.bitangent = normalize(cross(out.normal, out.tangent) * in.tangent.w);
+    out.uv = in.uv;
+    return out;
+}`;
+
     return /* wgsl */ `
 struct SceneUniforms {
 ${wgslStructFields(sceneUniformsSchema)}
@@ -35,15 +107,10 @@ ${wgslStructFields(pbrMaterialSchema)}
 @group(2) @binding(3) var iblSampler: sampler;
 
 @group(3) @binding(0) var<storage, read> instances: array<mat4x4<f32>>;
-
+${skinningBindings}
 const PREFILTERED_MIP_COUNT: f32 = ${options.prefilteredMipCount.toFixed(1)};
 
-struct VertexInput {
-    @location(0) position: vec3f,
-    @location(1) normal: vec3f,
-    @location(2) tangent: vec4f,
-    @location(3) uv: vec2f,
-}
+${vertexInputs}
 
 struct VertexOutput {
     @builtin(position) clipPosition: vec4f,
@@ -54,25 +121,7 @@ struct VertexOutput {
     @location(4) uv: vec2f,
 }
 
-@vertex
-fn vs_main(@builtin(instance_index) instanceIndex: u32, in: VertexInput) -> VertexOutput {
-    let m = instances[instanceIndex];
-    let m3 = mat3x3<f32>(m[0].xyz, m[1].xyz, m[2].xyz);
-    let normalMat = mat3x3<f32>(
-        cross(m3[1], m3[2]),
-        cross(m3[2], m3[0]),
-        cross(m3[0], m3[1]),
-    );
-    let worldPos = m * vec4f(in.position, 1.0);
-    var out: VertexOutput;
-    out.clipPosition = scene.viewProjectionMatrix * worldPos;
-    out.worldPosition = worldPos.xyz;
-    out.normal = normalize(normalMat * in.normal);
-    out.tangent = normalize(m3 * in.tangent.xyz);
-    out.bitangent = normalize(cross(out.normal, out.tangent) * in.tangent.w);
-    out.uv = in.uv;
-    return out;
-}
+${vertexMain}
 
 ${brdf}
 

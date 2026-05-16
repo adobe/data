@@ -51,6 +51,7 @@ export const pbrIblInstancedPlugin = Database.Plugin.create({
                         scale: [1, 1, 1],
                         visible: true,
                         parent: 0,
+                        animationSkeletonRef: 0,
                     });
                 }
             }

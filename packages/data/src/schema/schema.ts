@@ -50,4 +50,13 @@ export interface Schema {
   const?: any;
   enum?: readonly any[];
   layout?: Layout; // Memory layout for typed buffers (std140 or packed)
+  // Per-type interpolation overrides used by the animation system. Schemas omit
+  // this when the componentwise lerp / step default is correct (Vec3, scalar, …).
+  // Quat declares { linear: slerp } so quaternion tracks are interpolated on the
+  // 4-sphere instead of component-wise.
+  interpolators?: {
+    readonly linear?: (prev: any, next: any, t: number) => any;
+    readonly step?: (prev: any, next: any, t: number) => any;
+    readonly cubicSpline?: (prev: any, next: any, t: number) => any;
+  };
 }

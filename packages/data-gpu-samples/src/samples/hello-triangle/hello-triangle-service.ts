@@ -33,42 +33,38 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 }
 `;
 
-export function createHelloTriangleService() {
-    return Database.create(
-        Database.Plugin.create({
-            extends: graphics,
-            systems: {
-                hello_triangle_render: {
-                    create: db => {
-                        let pipeline: GPURenderPipeline | null = null;
-                        return () => {
-                            const { device, renderPassEncoder, canvasFormat, depthFormat } = db.store.resources;
-                            if (!device || !renderPassEncoder) return;
+export const helloTrianglePlugin = Database.Plugin.create({
+    extends: graphics,
+    systems: {
+        hello_triangle_render: {
+            create: db => {
+                let pipeline: GPURenderPipeline | null = null;
+                return () => {
+                    const { device, renderPassEncoder, canvasFormat, depthFormat } = db.store.resources;
+                    if (!device || !renderPassEncoder) return;
 
-                            if (!pipeline) {
-                                const module = device.createShaderModule({ code: triangleShader });
-                                pipeline = device.createRenderPipeline({
-                                    layout: "auto",
-                                    vertex: { module, entryPoint: "vs_main" },
-                                    fragment: { module, entryPoint: "fs_main", targets: [{ format: canvasFormat }] },
-                                    primitive: { topology: "triangle-list" },
-                                    depthStencil: {
-                                        format: depthFormat,
-                                        depthWriteEnabled: true,
-                                        depthCompare: "less",
-                                    },
-                                });
-                            }
+                    if (!pipeline) {
+                        const module = device.createShaderModule({ code: triangleShader });
+                        pipeline = device.createRenderPipeline({
+                            layout: "auto",
+                            vertex: { module, entryPoint: "vs_main" },
+                            fragment: { module, entryPoint: "fs_main", targets: [{ format: canvasFormat }] },
+                            primitive: { topology: "triangle-list" },
+                            depthStencil: {
+                                format: depthFormat,
+                                depthWriteEnabled: true,
+                                depthCompare: "less",
+                            },
+                        });
+                    }
 
-                            renderPassEncoder.setPipeline(pipeline);
-                            renderPassEncoder.draw(3);
-                        };
-                    },
-                    schedule: { during: ["render"] }
-                },
+                    renderPassEncoder.setPipeline(pipeline);
+                    renderPassEncoder.draw(3);
+                };
             },
-        })
-    );
-}
+            schedule: { during: ["render"] }
+        },
+    },
+});
 
-export type HelloTriangleService = ReturnType<typeof createHelloTriangleService>;
+export type HelloTriangleService = Database.Plugin.ToDatabase<typeof helloTrianglePlugin>;

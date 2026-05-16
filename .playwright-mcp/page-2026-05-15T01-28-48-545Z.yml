@@ -1,9 +1,0 @@
-- generic [ref=e3]:
-  - navigation [ref=e4]:
-    - link "hello-triangle" [ref=e5] [cursor=pointer]:
-      - /url: "?sample=hello-triangle"
-    - link "pbr-model" [ref=e6] [cursor=pointer]:
-      - /url: "?sample=pbr-model"
-    - link "pbr-model-ibl" [ref=e7] [cursor=pointer]:
-      - /url: "?sample=pbr-model-ibl"
-  - generic [ref=e12]: 1 primitive(s) · IBL

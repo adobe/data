@@ -133,7 +133,7 @@ importers:
         specifier: ^9.0.9
         version: 9.0.9
 
-  packages/data-graphics:
+  packages/data-gpu:
     dependencies:
       '@adobe/data':
         specifier: workspace:*
@@ -149,14 +149,14 @@ importers:
         specifier: ^1.6.0
         version: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)
 
-  packages/data-graphics-samples:
+  packages/data-gpu-samples:
     dependencies:
       '@adobe/data':
         specifier: workspace:*
         version: link:../data
-      '@adobe/data-graphics':
+      '@adobe/data-gpu':
         specifier: workspace:*
-        version: link:../data-graphics
+        version: link:../data-gpu
       '@adobe/data-lit':
         specifier: workspace:*
         version: link:../data-lit

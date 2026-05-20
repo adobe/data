@@ -14,9 +14,9 @@ const WORLD_EXTENT = 10;                  // half-extent of cubic toroidal world
 const GRID_DIM = 10;                      // 1000 cells, cellSize = 2.0
 const CELL_COUNT = GRID_DIM ** 3;
 const CELL_SIZE = (WORLD_EXTENT * 2) / GRID_DIM;
-// Tuned for visible flocking: sparse enough that distinct flocks form and
-// break apart, dense enough to populate the volume.
-const DEFAULT_BOIDS = 4_000;
+// Tuned for visible flocking. With viewR ≈ 1.6 and the 20-unit cube the
+// average neighbour count is ~8 — Reynolds' classic boid count band.
+const DEFAULT_BOIDS = 2_500;
 
 // Per-vertex stride for the boid arrowhead (position + normal, packed).
 const MESH_STRIDE = 24;
@@ -27,6 +27,59 @@ const DRAW_ARGS_SIZE = 20;
 const BOID_STATE_STRIDE = 32;
 // 12 f32/u32 params.
 const PARAMS_SIZE = 48;
+
+// --- Initial state: clumped positions + curl-noise-like velocity field ----
+
+// Sum-of-sines stand-in for 3D Perlin. Features at ~6-unit scale concentrate
+// boids into a handful of blobs rather than a uniform fog, so flocks exist
+// from frame 1.
+function densityNoise(x: number, y: number, z: number): number {
+    const a = Math.sin(x * 0.45 + 0.3) * Math.cos(y * 0.45 + 1.1) * Math.sin(z * 0.45 + 2.4);
+    const b = Math.sin(x * 0.95 + 2.7) * Math.cos(y * 0.95 + 0.6) * Math.sin(z * 0.95 + 1.8);
+    return a + 0.5 * b;
+}
+
+// Smooth, swirly velocity field. Boids in the same blob start moving in the
+// same direction so alignment locks them into a coherent flock immediately.
+function flowField(x: number, y: number, z: number): [number, number, number] {
+    const f = 0.35;
+    return [
+        Math.sin(y * f + 0.2) * Math.cos(z * f - 0.7) * 3,
+        Math.sin(z * f + 1.4) * Math.cos(x * f + 0.3) * 3,
+        Math.sin(x * f + 2.1) * Math.cos(y * f + 1.6) * 3,
+    ];
+}
+
+function buildInitialState(count: number): Float32Array {
+    const out = new Float32Array(count * 8);
+    const halfRange = WORLD_EXTENT * 0.85;
+    for (let i = 0; i < count; i++) {
+        // Rejection-sample positions where densityNoise is high.
+        let x = 0, y = 0, z = 0;
+        let placed = false;
+        for (let tries = 0; tries < 32; tries++) {
+            x = (Math.random() * 2 - 1) * halfRange;
+            y = (Math.random() * 2 - 1) * halfRange;
+            z = (Math.random() * 2 - 1) * halfRange;
+            if (densityNoise(x, y, z) > -0.1) { placed = true; break; }
+        }
+        if (!placed) {
+            x = (Math.random() * 2 - 1) * halfRange;
+            y = (Math.random() * 2 - 1) * halfRange;
+            z = (Math.random() * 2 - 1) * halfRange;
+        }
+        const [vx, vy, vz] = flowField(x, y, z);
+        out[i * 8 + 0] = x;
+        out[i * 8 + 1] = y;
+        out[i * 8 + 2] = z;
+        out[i * 8 + 3] = 0;
+        out[i * 8 + 4] = vx;
+        out[i * 8 + 5] = vy;
+        out[i * 8 + 6] = vz;
+        out[i * 8 + 7] = 0;
+    }
+    return out;
+}
 
 // --- Mesh: 4-vertex tetrahedral arrowhead, +Z forward ----------------------
 
@@ -141,27 +194,7 @@ export const boidsPlugin = Database.Plugin.create({
                     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
                 });
 
-                // Seed stateA with random positions on a sphere and small random velocities.
-                const initState = new Float32Array(boidsCount * 8);
-                for (let i = 0; i < boidsCount; i++) {
-                    // Random direction
-                    const u = Math.random() * 2 - 1;
-                    const theta = Math.random() * Math.PI * 2;
-                    const r = Math.sqrt(1 - u * u);
-                    const dir = [r * Math.cos(theta), r * Math.sin(theta), u];
-                    const rad = WORLD_EXTENT * Math.cbrt(Math.random()) * 0.7;
-                    initState[i * 8 + 0] = dir[0] * rad;
-                    initState[i * 8 + 1] = dir[1] * rad;
-                    initState[i * 8 + 2] = dir[2] * rad;
-                    initState[i * 8 + 3] = 0;
-                    // Random small velocity
-                    const v = 1 + Math.random() * 1.5;
-                    initState[i * 8 + 4] = (Math.random() - 0.5) * v;
-                    initState[i * 8 + 5] = (Math.random() - 0.5) * v;
-                    initState[i * 8 + 6] = (Math.random() - 0.5) * v;
-                    initState[i * 8 + 7] = 0;
-                }
-                device.queue.writeBuffer(stateA, 0, initState);
+                device.queue.writeBuffer(stateA, 0, buildInitialState(boidsCount));
 
                 const cellCounts = device.createBuffer({
                     size: CELL_COUNT * 4,
@@ -319,10 +352,10 @@ export const boidsPlugin = Database.Plugin.create({
                 u32[4]  = GRID_DIM;          // gridDim
                 u32[5]  = CELL_COUNT;        // cellCount
                 u32[6]  = gpu.indexCount;    // indexCount
-                f32[7]  = 1.0;               // separationDist (matches cellSize / 2)
+                f32[7]  = 0.8;               // separationDist → viewR ≈ 1.6
                 f32[8]  = 3.0;               // separationGain (strong push-apart)
                 f32[9]  = 2.0;               // alignmentGain (strong velocity matching)
-                f32[10] = 0.7;               // cohesionGain (looser pull-in)
+                f32[10] = 0.6;               // cohesionGain (looser pull-in)
                 f32[11] = 9.0;               // maxSpeed
                 device.queue.writeBuffer(gpu.params, 0, params);
 

@@ -135,6 +135,16 @@ fn update_boids(@builtin(global_invocation_id) gid: vec3u) {
         newVel = newVel + (cohForce + alnForce + sepForce) * P.dt;
     }
 
+    // Aquarium walls: as a boid approaches any face, push it back toward the
+    // origin. Linear ramp starting at margin units from each wall, no hard
+    // bounce so flocks make smooth U-turns instead of clipping the boundary.
+    let margin   = 2.5;
+    let wallGain = 12.0;
+    let edge     = P.worldExtent - margin;
+    let over     = max(abs(pos) - vec3f(edge), vec3f(0.0));
+    let wallForce = -sign(pos) * over * wallGain;
+    newVel = newVel + wallForce * P.dt;
+
     let speed = length(newVel);
     if (speed > P.maxSpeed) {
         newVel = newVel * (P.maxSpeed / speed);
@@ -143,11 +153,9 @@ fn update_boids(@builtin(global_invocation_id) gid: vec3u) {
         newVel = newVel + vec3f(0.0, 0.0, 0.5) * P.dt;
     }
 
-    // Wrap-around (toroidal) world.
+    // Integrate and hard-clamp as a backstop so boids can never escape.
     var newPos = pos + newVel * P.dt;
-    let extent = P.worldExtent;
-    let size   = 2.0 * extent;
-    newPos = ((newPos + vec3f(extent)) - floor((newPos + vec3f(extent)) / size) * size) - vec3f(extent);
+    newPos = clamp(newPos, vec3f(-P.worldExtent), vec3f(P.worldExtent));
 
     writeState[i] = BoidState(vec4f(newPos, 0.0), vec4f(newVel, 0.0));
 

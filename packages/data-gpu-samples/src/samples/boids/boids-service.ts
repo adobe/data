@@ -7,13 +7,16 @@ import { computeShader, renderShader } from "./boids-shaders.js";
 
 // --- Tunables --------------------------------------------------------------
 
-const GRID_DIM = 32;                      // cellCount = 32 768 — keeps avg cell
-                                          // occupancy low up through 1M boids.
-                                          // Serial scan still ~32 µs.
-const CELL_COUNT = GRID_DIM ** 3;
+// Cell size must be ≥ the boid view radius so the 3×3×3 cell scan in the
+// update pass covers every possible neighbour. We currently use viewR ≈ 2×
+// separationDist; at separationDist = 1.0 that's 2.0, hence cellSize = 2.0.
 const WORLD_EXTENT = 10;                  // half-extent of cubic toroidal world
+const GRID_DIM = 10;                      // 1000 cells, cellSize = 2.0
+const CELL_COUNT = GRID_DIM ** 3;
 const CELL_SIZE = (WORLD_EXTENT * 2) / GRID_DIM;
-const DEFAULT_BOIDS = 50_000;
+// Tuned for visible flocking: sparse enough that distinct flocks form and
+// break apart, dense enough to populate the volume.
+const DEFAULT_BOIDS = 4_000;
 
 // Per-vertex stride for the boid arrowhead (position + normal, packed).
 const MESH_STRIDE = 24;
@@ -34,10 +37,11 @@ function arrowheadMesh(): { vertices: Float32Array; indices: Uint16Array; indexC
         const len = Math.hypot(x, y, z) || 1;
         v.push(x, y, z, x / len, y / len, z / len);
     };
-    push( 0.00,  0.000,  0.15);  // tip
-    push( 0.04, -0.025, -0.05);  // back-bot-right
-    push(-0.04, -0.025, -0.05);  // back-bot-left
-    push( 0.00,  0.050, -0.05);  // back-top
+    // 3× the previous scale so each boid is visible against the IBL skybox.
+    push( 0.00,  0.000,  0.45);  // tip
+    push( 0.12, -0.075, -0.15);  // back-bot-right
+    push(-0.12, -0.075, -0.15);  // back-bot-left
+    push( 0.00,  0.150, -0.15);  // back-top
     const indices = new Uint16Array([
         0, 1, 3,  // tip-right-top
         0, 3, 2,  // tip-top-left
@@ -95,9 +99,9 @@ export const boidsPlugin = Database.Plugin.create({
         },
         initializeScene(t) {
             t.resources.orbitCenter = [0, 0, 0];
-            t.resources.orbitRadius = WORLD_EXTENT * 2.6;
-            t.resources.orbitHeight = WORLD_EXTENT * 0.6;
-            t.resources.orbitAutoSpinSpeed = 0.06;
+            t.resources.orbitRadius = WORLD_EXTENT * 1.6;
+            t.resources.orbitHeight = WORLD_EXTENT * 0.3;
+            t.resources.orbitAutoSpinSpeed = 0.08;
             t.resources.orbitNearFactor = 0.005;
             t.resources.orbitFarFactor = 4;
         },
@@ -315,11 +319,11 @@ export const boidsPlugin = Database.Plugin.create({
                 u32[4]  = GRID_DIM;          // gridDim
                 u32[5]  = CELL_COUNT;        // cellCount
                 u32[6]  = gpu.indexCount;    // indexCount
-                f32[7]  = 0.6;               // separationDist
-                f32[8]  = 1.4;               // separationGain
-                f32[9]  = 1.0;               // alignmentGain
-                f32[10] = 1.0;               // cohesionGain
-                f32[11] = 4.0;               // maxSpeed
+                f32[7]  = 1.0;               // separationDist (matches cellSize / 2)
+                f32[8]  = 3.0;               // separationGain (strong push-apart)
+                f32[9]  = 2.0;               // alignmentGain (strong velocity matching)
+                f32[10] = 0.7;               // cohesionGain (looser pull-in)
+                f32[11] = 9.0;               // maxSpeed
                 device.queue.writeBuffer(gpu.params, 0, params);
 
                 const ping = db.store.resources.boidsPingFrame & 1;

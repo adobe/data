@@ -37,12 +37,31 @@ export class BoidsElement extends DatabaseElement<typeof boidsPlugin> {
             service.transactions.initializeScene();
         }, [canvas, service]);
 
+        // Cursor scare: project the pointer onto the orbit-focal plane and
+        // feed it to the compute shader as a fleeing target.
+        useEffect(() => {
+            if (!canvas) return;
+            const onMove = (e: PointerEvent) => {
+                const rect = canvas.getBoundingClientRect();
+                const ndcX = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+                const ndcY = -(((e.clientY - rect.top)  / rect.height) * 2 - 1);
+                service.transactions.setScareFromNdc({ ndcX, ndcY });
+            };
+            const onLeave = () => service.transactions.disableScare();
+            canvas.addEventListener("pointermove", onMove);
+            canvas.addEventListener("pointerleave", onLeave);
+            return () => {
+                canvas.removeEventListener("pointermove", onMove);
+                canvas.removeEventListener("pointerleave", onLeave);
+            };
+        }, [canvas, service]);
+
         useOrbitCameraControl(service);
 
         return html`
             <div class="stage">
                 <canvas width="900" height="600"></canvas>
-                <div class="hint">drag to orbit</div>
+                <div class="hint">move mouse to scare · drag to orbit</div>
             </div>
         `;
     }

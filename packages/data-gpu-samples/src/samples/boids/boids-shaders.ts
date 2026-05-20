@@ -18,6 +18,10 @@ struct Params {
     alignmentGain: f32,
     cohesionGain: f32,
     maxSpeed: f32,
+    // Scare point: xyz = world position, w = 1 when active else 0.
+    scareData: vec4f,
+    // x = radius, y = gain. zw unused but the vec4 keeps the struct std140-aligned.
+    scareTuning: vec4f,
 }
 
 struct BoidState {
@@ -133,6 +137,20 @@ fn update_boids(@builtin(global_invocation_id) gid: vec3u) {
         let alnForce = (alignment / nf - vel) * P.alignmentGain;
         let sepForce =  separation             * P.separationGain;
         newVel = newVel + (cohForce + alnForce + sepForce) * P.dt;
+    }
+
+    // Cursor scare: a strong outward force when the boid is within
+    // scareRadius of the cursor's world-projected point. Falls off
+    // linearly from full strength at distance 0 to zero at the radius.
+    if (P.scareData.w > 0.5) {
+        let toBoid = pos - P.scareData.xyz;
+        let d2 = dot(toBoid, toBoid);
+        let r = P.scareTuning.x;
+        if (d2 < r * r && d2 > 0.0001) {
+            let d = sqrt(d2);
+            let strength = (1.0 - d / r) * P.scareTuning.y;
+            newVel = newVel + (toBoid / d) * strength * P.dt;
+        }
     }
 
     let speed = length(newVel);

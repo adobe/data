@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import type { F32 } from "@adobe/data/math";
+import { Vec3, type F32 } from "@adobe/data/math";
 import { defaultSceneUniforms, graphics, orbitCamera } from "@adobe/data-gpu";
 import { computeShader, renderShader } from "./boids-shaders.js";
 
@@ -25,8 +25,11 @@ const MESH_STRIDE = 24;
 const DRAW_ARGS_SIZE = 20;
 // 2 × vec4f per boid.
 const BOID_STATE_STRIDE = 32;
-// 12 f32/u32 params.
-const PARAMS_SIZE = 48;
+// 12 scalar + 2 × vec4f params.
+const PARAMS_SIZE = 80;
+
+const SCARE_RADIUS = 3.0;
+const SCARE_GAIN = 18.0;
 
 // --- Initial state: clumped positions + curl-noise-like velocity field ----
 
@@ -143,12 +146,44 @@ export const boidsPlugin = Database.Plugin.create({
         boidsLastTime:     { default: 0 as F32, transient: true },
         boidsSceneBG:      { default: null as GPUBindGroup | null, transient: true },
         boidsSceneBuffer:  { default: null as GPUBuffer | null, transient: true },
+        // Cursor scare point in world space; w-component carries the active flag.
+        boidsScarePos:     { default: [0, 0, 0] as Vec3, transient: true },
+        boidsScareActive:  { default: 0 as F32, transient: true },
     },
     transactions: {
         setBoidsCount(t, count: number) {
             t.resources.boidsCount = count;
             // Force re-init by clearing the GPU bundle; the init system will rebuild.
             t.resources.boidsGpu = null;
+        },
+        /** Project a canvas-space NDC point onto the plane through the orbit
+         *  center perpendicular to the view, then set that as the scare point. */
+        setScareFromNdc(t, args: { ndcX: number; ndcY: number }) {
+            const cam = t.resources.camera;
+            if (!cam) return;
+            const fwd = Vec3.normalize(Vec3.subtract(cam.target, cam.position));
+            const right = Vec3.normalize(Vec3.cross(fwd, cam.up));
+            const upOrtho = Vec3.cross(right, fwd);
+            const tanHalfFov = Math.tan(cam.fieldOfView / 2);
+            const rx = args.ndcX * tanHalfFov * cam.aspect;
+            const ry = args.ndcY * tanHalfFov;
+            const dir = Vec3.normalize([
+                fwd[0] + right[0] * rx + upOrtho[0] * ry,
+                fwd[1] + right[1] * rx + upOrtho[1] * ry,
+                fwd[2] + right[2] * rx + upOrtho[2] * ry,
+            ]);
+            const denom = Vec3.dot(dir, fwd);
+            if (Math.abs(denom) < 1e-6) return;
+            const tau = Vec3.dot(Vec3.subtract(cam.target, cam.position), fwd) / denom;
+            t.resources.boidsScarePos = [
+                cam.position[0] + dir[0] * tau,
+                cam.position[1] + dir[1] * tau,
+                cam.position[2] + dir[2] * tau,
+            ];
+            t.resources.boidsScareActive = 1;
+        },
+        disableScare(t) {
+            t.resources.boidsScareActive = 0;
         },
         initializeScene(t) {
             t.resources.orbitCenter = [0, 0, 0];
@@ -357,6 +392,15 @@ export const boidsPlugin = Database.Plugin.create({
                 f32[9]  = 2.0;               // alignmentGain (strong velocity matching)
                 f32[10] = 0.6;               // cohesionGain (looser pull-in)
                 f32[11] = 9.0;               // maxSpeed
+                // scareData (vec4 at offset 48): xyz = world pos, w = active flag.
+                const scarePos = db.store.resources.boidsScarePos;
+                f32[12] = scarePos[0];
+                f32[13] = scarePos[1];
+                f32[14] = scarePos[2];
+                f32[15] = db.store.resources.boidsScareActive;
+                // scareTuning (vec4 at offset 64): x = radius, y = gain.
+                f32[16] = SCARE_RADIUS;
+                f32[17] = SCARE_GAIN;
                 device.queue.writeBuffer(gpu.params, 0, params);
 
                 const ping = db.store.resources.boidsPingFrame & 1;

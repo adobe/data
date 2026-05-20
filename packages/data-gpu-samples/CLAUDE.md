@@ -46,7 +46,4 @@ const MODEL_URL = "https://raw.githubusercontent.com/.../Fox.glb";
 
 ## When a sample genuinely needs a custom asset
 
-If no public source has what the sample demonstrates, host the asset
-yourself on a CDN you control (the team's S3 bucket, GitHub Pages, a
-gist with raw file links). Add the URL the same way. Do not check the
-file into this repo.
+Get explicit permission from the engineer with acceptance of the size, file type and location.

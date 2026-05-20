@@ -1,0 +1,380 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+
+import { Database } from "@adobe/data/ecs";
+import type { F32 } from "@adobe/data/math";
+import { defaultSceneUniforms, graphics, orbitCamera } from "@adobe/data-gpu";
+import { computeShader, renderShader } from "./boids-shaders.js";
+
+// --- Tunables --------------------------------------------------------------
+
+const GRID_DIM = 32;                      // cellCount = 32 768 — keeps avg cell
+                                          // occupancy low up through 1M boids.
+                                          // Serial scan still ~32 µs.
+const CELL_COUNT = GRID_DIM ** 3;
+const WORLD_EXTENT = 10;                  // half-extent of cubic toroidal world
+const CELL_SIZE = (WORLD_EXTENT * 2) / GRID_DIM;
+const DEFAULT_BOIDS = 50_000;
+
+// Per-vertex stride for the boid arrowhead (position + normal, packed).
+const MESH_STRIDE = 24;
+
+// 5 × u32 indirect-draw args.
+const DRAW_ARGS_SIZE = 20;
+// 2 × vec4f per boid.
+const BOID_STATE_STRIDE = 32;
+// 12 f32/u32 params.
+const PARAMS_SIZE = 48;
+
+// --- Mesh: 4-vertex tetrahedral arrowhead, +Z forward ----------------------
+
+function arrowheadMesh(): { vertices: Float32Array; indices: Uint16Array; indexCount: number } {
+    // position (3f) + outward normal (3f). Vertex normals taken as normalize(position - centroid).
+    const v: number[] = [];
+    const push = (x: number, y: number, z: number) => {
+        const len = Math.hypot(x, y, z) || 1;
+        v.push(x, y, z, x / len, y / len, z / len);
+    };
+    push( 0.00,  0.000,  0.15);  // tip
+    push( 0.04, -0.025, -0.05);  // back-bot-right
+    push(-0.04, -0.025, -0.05);  // back-bot-left
+    push( 0.00,  0.050, -0.05);  // back-top
+    const indices = new Uint16Array([
+        0, 1, 3,  // tip-right-top
+        0, 3, 2,  // tip-top-left
+        0, 2, 1,  // tip-bottom
+        1, 2, 3,  // back
+    ]);
+    return { vertices: new Float32Array(v), indices, indexCount: indices.length };
+}
+
+// --- Plugin ----------------------------------------------------------------
+
+interface ComputePipelines {
+    clearCells: GPUComputePipeline;
+    populateGrid: GPUComputePipeline;
+    prefixSum: GPUComputePipeline;
+    binBoids: GPUComputePipeline;
+    updateBoids: GPUComputePipeline;
+}
+
+interface BoidGpu {
+    params: GPUBuffer;
+    stateA: GPUBuffer;
+    stateB: GPUBuffer;
+    cellCounts: GPUBuffer;
+    cellOffsets: GPUBuffer;
+    cellWriteCursors: GPUBuffer;
+    sortedIndices: GPUBuffer;
+    drawArgs: GPUBuffer;
+    meshVB: GPUBuffer;
+    meshIB: GPUBuffer;
+    indexCount: number;
+    /** computeBG[0]: read=A,write=B; computeBG[1]: read=B,write=A. */
+    computeBG: [GPUBindGroup, GPUBindGroup];
+    /** renderBG[0]: read=B (matches computeBG[0]'s writeState); [1]: read=A. */
+    renderBG: [GPUBindGroup, GPUBindGroup];
+    pipelines: ComputePipelines;
+    renderPipeline: GPURenderPipeline;
+}
+
+export const boidsPlugin = Database.Plugin.create({
+    extends: Database.Plugin.combine(graphics, defaultSceneUniforms, orbitCamera),
+    resources: {
+        boidsCount:        { default: DEFAULT_BOIDS as number, transient: true },
+        boidsGpu:          { default: null as BoidGpu | null, transient: true },
+        boidsPingFrame:    { default: 0 as number, transient: true },
+        boidsLastTime:     { default: 0 as F32, transient: true },
+        boidsSceneBG:      { default: null as GPUBindGroup | null, transient: true },
+        boidsSceneBuffer:  { default: null as GPUBuffer | null, transient: true },
+    },
+    transactions: {
+        setBoidsCount(t, count: number) {
+            t.resources.boidsCount = count;
+            // Force re-init by clearing the GPU bundle; the init system will rebuild.
+            t.resources.boidsGpu = null;
+        },
+        initializeScene(t) {
+            t.resources.orbitCenter = [0, 0, 0];
+            t.resources.orbitRadius = WORLD_EXTENT * 2.6;
+            t.resources.orbitHeight = WORLD_EXTENT * 0.6;
+            t.resources.orbitAutoSpinSpeed = 0.06;
+            t.resources.orbitNearFactor = 0.005;
+            t.resources.orbitFarFactor = 4;
+        },
+    },
+    systems: {
+        boidsInit: {
+            create: db => () => {
+                const { device, boidsGpu, boidsCount } = db.store.resources;
+                if (!device || boidsGpu || boidsCount === 0) return;
+
+                const mesh = arrowheadMesh();
+
+                const meshVB = device.createBuffer({
+                    size: mesh.vertices.byteLength,
+                    usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+                });
+                device.queue.writeBuffer(meshVB, 0, mesh.vertices);
+
+                const meshIB = device.createBuffer({
+                    size: mesh.indices.byteLength,
+                    usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+                });
+                device.queue.writeBuffer(meshIB, 0, mesh.indices);
+
+                const params = device.createBuffer({
+                    size: PARAMS_SIZE,
+                    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+                });
+
+                const stateBytes = boidsCount * BOID_STATE_STRIDE;
+                const stateA = device.createBuffer({
+                    size: stateBytes,
+                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                });
+                const stateB = device.createBuffer({
+                    size: stateBytes,
+                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                });
+
+                // Seed stateA with random positions on a sphere and small random velocities.
+                const initState = new Float32Array(boidsCount * 8);
+                for (let i = 0; i < boidsCount; i++) {
+                    // Random direction
+                    const u = Math.random() * 2 - 1;
+                    const theta = Math.random() * Math.PI * 2;
+                    const r = Math.sqrt(1 - u * u);
+                    const dir = [r * Math.cos(theta), r * Math.sin(theta), u];
+                    const rad = WORLD_EXTENT * Math.cbrt(Math.random()) * 0.7;
+                    initState[i * 8 + 0] = dir[0] * rad;
+                    initState[i * 8 + 1] = dir[1] * rad;
+                    initState[i * 8 + 2] = dir[2] * rad;
+                    initState[i * 8 + 3] = 0;
+                    // Random small velocity
+                    const v = 1 + Math.random() * 1.5;
+                    initState[i * 8 + 4] = (Math.random() - 0.5) * v;
+                    initState[i * 8 + 5] = (Math.random() - 0.5) * v;
+                    initState[i * 8 + 6] = (Math.random() - 0.5) * v;
+                    initState[i * 8 + 7] = 0;
+                }
+                device.queue.writeBuffer(stateA, 0, initState);
+
+                const cellCounts = device.createBuffer({
+                    size: CELL_COUNT * 4,
+                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                });
+                const cellOffsets = device.createBuffer({
+                    size: CELL_COUNT * 4,
+                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                });
+                const cellWriteCursors = device.createBuffer({
+                    size: CELL_COUNT * 4,
+                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                });
+                const sortedIndices = device.createBuffer({
+                    size: boidsCount * 4,
+                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                });
+                const drawArgs = device.createBuffer({
+                    size: DRAW_ARGS_SIZE,
+                    usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                });
+                device.queue.writeBuffer(drawArgs, 0, new Uint32Array([mesh.indexCount, boidsCount, 0, 0, 0]));
+
+                // Compute layout + pipelines
+                const computeLayout = device.createBindGroupLayout({
+                    entries: [
+                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                    ],
+                });
+                const computePipelineLayout = device.createPipelineLayout({
+                    bindGroupLayouts: [computeLayout],
+                });
+                const computeModule = device.createShaderModule({ code: computeShader });
+                const makeCp = (entry: string): GPUComputePipeline => device.createComputePipeline({
+                    layout: computePipelineLayout,
+                    compute: { module: computeModule, entryPoint: entry },
+                });
+                const pipelines: ComputePipelines = {
+                    clearCells: makeCp("clear_cells"),
+                    populateGrid: makeCp("populate_grid"),
+                    prefixSum: makeCp("prefix_sum"),
+                    binBoids: makeCp("bin_boids"),
+                    updateBoids: makeCp("update_boids"),
+                };
+
+                // Two ping-pong compute bind groups.
+                const makeComputeBG = (read: GPUBuffer, write: GPUBuffer): GPUBindGroup =>
+                    device.createBindGroup({
+                        layout: computeLayout,
+                        entries: [
+                            { binding: 0, resource: { buffer: params } },
+                            { binding: 1, resource: { buffer: read } },
+                            { binding: 2, resource: { buffer: write } },
+                            { binding: 3, resource: { buffer: cellCounts } },
+                            { binding: 4, resource: { buffer: cellOffsets } },
+                            { binding: 5, resource: { buffer: cellWriteCursors } },
+                            { binding: 6, resource: { buffer: sortedIndices } },
+                            { binding: 7, resource: { buffer: drawArgs } },
+                        ],
+                    });
+                const computeBG: [GPUBindGroup, GPUBindGroup] = [
+                    makeComputeBG(stateA, stateB),
+                    makeComputeBG(stateB, stateA),
+                ];
+
+                // Render layout + pipeline
+                const sceneLayout = device.createBindGroupLayout({
+                    entries: [{
+                        binding: 0,
+                        visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                        buffer: { type: "uniform" },
+                    }],
+                });
+                const boidStorageLayout = device.createBindGroupLayout({
+                    entries: [{
+                        binding: 0,
+                        visibility: GPUShaderStage.VERTEX,
+                        buffer: { type: "read-only-storage" },
+                    }],
+                });
+                const renderModule = device.createShaderModule({ code: renderShader });
+                const renderPipeline = device.createRenderPipeline({
+                    layout: device.createPipelineLayout({ bindGroupLayouts: [sceneLayout, boidStorageLayout] }),
+                    vertex: {
+                        module: renderModule,
+                        entryPoint: "vs_main",
+                        buffers: [{
+                            arrayStride: MESH_STRIDE,
+                            stepMode: "vertex",
+                            attributes: [
+                                { format: "float32x3", offset: 0,  shaderLocation: 0 },
+                                { format: "float32x3", offset: 12, shaderLocation: 1 },
+                            ],
+                        }],
+                    },
+                    fragment: {
+                        module: renderModule,
+                        entryPoint: "fs_main",
+                        targets: [{ format: db.store.resources.canvasFormat }],
+                    },
+                    primitive: { topology: "triangle-list", cullMode: "none" },
+                    depthStencil: {
+                        format: db.store.resources.depthFormat,
+                        depthWriteEnabled: true,
+                        depthCompare: "less",
+                    },
+                });
+                const renderBG: [GPUBindGroup, GPUBindGroup] = [
+                    device.createBindGroup({
+                        layout: boidStorageLayout,
+                        entries: [{ binding: 0, resource: { buffer: stateB } }],
+                    }),
+                    device.createBindGroup({
+                        layout: boidStorageLayout,
+                        entries: [{ binding: 0, resource: { buffer: stateA } }],
+                    }),
+                ];
+
+                db.store.resources.boidsGpu = {
+                    params, stateA, stateB,
+                    cellCounts, cellOffsets, cellWriteCursors,
+                    sortedIndices, drawArgs,
+                    meshVB, meshIB, indexCount: mesh.indexCount,
+                    computeBG, renderBG, pipelines, renderPipeline,
+                };
+            },
+            schedule: { during: ["postUpdate"] },
+        },
+        boidsCompute: {
+            create: db => () => {
+                const gpu = db.store.resources.boidsGpu;
+                const { device, commandEncoder, boidsCount } = db.store.resources;
+                if (!gpu || !device || !commandEncoder) return;
+
+                const now = performance.now();
+                const last = db.store.resources.boidsLastTime || now;
+                const dt = Math.min((now - last) / 1000, 0.05);
+                db.store.resources.boidsLastTime = now;
+
+                // Refresh params each frame.
+                const params = new ArrayBuffer(PARAMS_SIZE);
+                const f32 = new Float32Array(params);
+                const u32 = new Uint32Array(params);
+                f32[0]  = dt;                // dt
+                f32[1]  = CELL_SIZE;         // cellSize
+                f32[2]  = WORLD_EXTENT;      // worldExtent
+                u32[3]  = boidsCount;        // boidsCount
+                u32[4]  = GRID_DIM;          // gridDim
+                u32[5]  = CELL_COUNT;        // cellCount
+                u32[6]  = gpu.indexCount;    // indexCount
+                f32[7]  = 0.6;               // separationDist
+                f32[8]  = 1.4;               // separationGain
+                f32[9]  = 1.0;               // alignmentGain
+                f32[10] = 1.0;               // cohesionGain
+                f32[11] = 4.0;               // maxSpeed
+                device.queue.writeBuffer(gpu.params, 0, params);
+
+                const ping = db.store.resources.boidsPingFrame & 1;
+                const bg = gpu.computeBG[ping];
+
+                const pass = commandEncoder.beginComputePass();
+                pass.setBindGroup(0, bg);
+
+                const cellWG = Math.ceil(CELL_COUNT / 64);
+                const boidWG = Math.ceil(boidsCount / 64);
+
+                pass.setPipeline(gpu.pipelines.clearCells);
+                pass.dispatchWorkgroups(cellWG);
+                pass.setPipeline(gpu.pipelines.populateGrid);
+                pass.dispatchWorkgroups(boidWG);
+                pass.setPipeline(gpu.pipelines.prefixSum);
+                pass.dispatchWorkgroups(1);
+                pass.setPipeline(gpu.pipelines.binBoids);
+                pass.dispatchWorkgroups(boidWG);
+                pass.setPipeline(gpu.pipelines.updateBoids);
+                pass.dispatchWorkgroups(boidWG);
+                pass.end();
+
+                db.store.resources.boidsPingFrame = ping + 1;
+            },
+            schedule: { during: ["physics"], after: ["boidsInit"] },
+        },
+        boidsRender: {
+            create: db => () => {
+                const gpu = db.store.resources.boidsGpu;
+                const { renderPassEncoder, device, sceneUniformsBuffer, boidsSceneBuffer, boidsSceneBG } = db.store.resources;
+                if (!gpu || !renderPassEncoder || !device || !sceneUniformsBuffer) return;
+
+                let sceneBG = boidsSceneBG;
+                if (boidsSceneBuffer !== sceneUniformsBuffer || !sceneBG) {
+                    sceneBG = device.createBindGroup({
+                        layout: gpu.renderPipeline.getBindGroupLayout(0),
+                        entries: [{ binding: 0, resource: { buffer: sceneUniformsBuffer } }],
+                    });
+                    db.store.resources.boidsSceneBG = sceneBG;
+                    db.store.resources.boidsSceneBuffer = sceneUniformsBuffer;
+                }
+
+                // The render bind group matches whichever buffer compute just wrote.
+                const written = (db.store.resources.boidsPingFrame - 1) & 1;
+                renderPassEncoder.setPipeline(gpu.renderPipeline);
+                renderPassEncoder.setBindGroup(0, sceneBG);
+                renderPassEncoder.setBindGroup(1, gpu.renderBG[written]);
+                renderPassEncoder.setVertexBuffer(0, gpu.meshVB);
+                renderPassEncoder.setIndexBuffer(gpu.meshIB, "uint16");
+                renderPassEncoder.drawIndexedIndirect(gpu.drawArgs, 0);
+            },
+            schedule: { during: ["render"] },
+        },
+    },
+});
+
+export type BoidsService = Database.Plugin.ToDatabase<typeof boidsPlugin>;

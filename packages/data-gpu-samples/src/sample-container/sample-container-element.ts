@@ -10,6 +10,7 @@ import { PbrIblInstanced } from "../samples/pbr-ibl-instanced/pbr-ibl-instanced.
 import { SolarSystem } from "../samples/solar-system/solar-system.js";
 import { AntiqueCamera } from "../samples/antique-camera/antique-camera.js";
 import { SkinnedFox } from "../samples/skinned-fox/skinned-fox.js";
+import { Boids } from "../samples/boids/boids.js";
 
 const tagName = "sample-container";
 
@@ -34,7 +35,7 @@ export class SampleContainerElement extends LitElement {
     }
 
     override render() {
-        const samples = ["hello-triangle", "pbr-model", "pbr-model-ibl", "metal-rough-spheres", "pbr-ibl-instanced", "solar-system", "antique-camera", "skinned-fox"];
+        const samples = ["hello-triangle", "pbr-model", "pbr-model-ibl", "metal-rough-spheres", "pbr-ibl-instanced", "solar-system", "antique-camera", "skinned-fox", "boids"];
         return html`
             <nav>
                 ${samples.map(s => html`<a href="?sample=${s}">${s}</a>`)}
@@ -48,6 +49,7 @@ export class SampleContainerElement extends LitElement {
                 ${this.sample === "solar-system" ? SolarSystem() : ""}
                 ${this.sample === "antique-camera" ? AntiqueCamera() : ""}
                 ${this.sample === "skinned-fox" ? SkinnedFox() : ""}
+                ${this.sample === "boids" ? Boids() : ""}
             </div>
         `;
     }

@@ -16,3 +16,4 @@ export * from "./boolean/index.js";
 // these are both math types and basic schema types.
 export { F32, I32, U32, F64 } from "../math/index.js";
 export * from "./time/index.js";
+export * from "./fractional-index/fractional-index.js";

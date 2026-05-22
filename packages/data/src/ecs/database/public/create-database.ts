@@ -1,10 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Store } from "../../store/index.js";
+import { ReadonlyStore, Store } from "../../store/index.js";
 import { Database, FromServiceFactories } from "../database.js";
 import { createReconcilingDatabase } from "../reconciling/create-reconciling-database.js";
 import { calculateSystemOrder } from "../calculate-system-order.js";
 import { createTransactionDispatcher } from "./create-transaction-dispatcher.js";
+import { observeSelectEntities } from "../observe-select-entities.js";
+import type { Entity } from "../../entity/entity.js";
 
 /**
  * For each system in newDeclarations that is not yet in systemFunctions: call create(db),
@@ -122,6 +124,13 @@ function createEmptyDatabase(sync: DatabaseSyncOptions | undefined): any {
     const computed: Record<string, unknown> = {};
     const extendedPlugins = new Set<Database.Plugin<any, any, any, any, any, any, any, any>>();
 
+    // The Store layer owns the IndexRegistry: it instantiates the registry,
+    // maintains it eagerly on every insert/update/delete, and exposes the
+    // typed handle map as `store.indexes`. The Database layer just surfaces
+    // the same reference (via spread / explicit field below) so users see
+    // `db.indexes.<name>` and `t.indexes.<name>` pointing at one source of
+    // truth.
+
     const partialDatabase: any = {
         serviceName: "ecs-database-service",
         ...reconcilingDatabase,
@@ -130,10 +139,43 @@ function createEmptyDatabase(sync: DatabaseSyncOptions | undefined): any {
         actions,
         services,
         computed,
+        indexes: store.indexes,
         store,
         system: { functions: systemFunctions, order: systemOrder },
         extend: undefined,
     };
+
+    // Auto-route `db.select(include, { where })` and `db.observe.select(...)`
+    // through a declared index when the where clause is exactly an equality
+    // match on the index's full key tuple and there is no order clause. Other
+    // shapes fall back to the archetype scan in the underlying store.
+    //
+    // The router dispatches through the user-visible handles in `store.indexes`
+    // so any override applied to the public handle — tests, instrumentation —
+    // takes effect for the routed path too.
+    const baseSelect = partialDatabase.select.bind(partialDatabase);
+    const indexAwareSelect = (include: any, options: any): readonly Entity[] => {
+        const routed = trySelectViaIndex(store, include, options);
+        if (routed !== null) return routed;
+        return baseSelect(include, options);
+    };
+    partialDatabase.select = indexAwareSelect;
+
+    // `observeSelectEntities` reads from its `store` parameter via only
+    // `store.select` and `store.locate`. A minimal façade backed by the
+    // index-aware select + the real `store.locate` satisfies that contract,
+    // and replacing `observe.select` here mutates the shared `observe` object
+    // (same reference as `observedDatabase.observe`) before any user code
+    // can subscribe — so the default instance created inside
+    // `createObservedDatabase` is cleanly dropped, with no stale closures.
+    const indexAwareStoreFacade = {
+        select: indexAwareSelect,
+        locate: store.locate.bind(store),
+    } as unknown as ReadonlyStore<any, any, any>;
+    partialDatabase.observe.select = observeSelectEntities(
+        indexAwareStoreFacade,
+        partialDatabase.observe.transactions,
+    );
 
     const extend = (plugin: Database.Plugin<any, any, any, any, any, any, any, any>) => {
         if (!extendedPlugins.has(plugin)) {
@@ -151,6 +193,12 @@ function createEmptyDatabase(sync: DatabaseSyncOptions | undefined): any {
             for (const name in pluginComputed) {
                 if (!(name in computed)) computed[name] = (pluginComputed[name] as (db: any) => unknown)(partialDatabase);
             }
+            // `reconcilingDatabase.extend(plugin)` above propagates down to
+            // `store.extend({ components, resources, archetypes, indexes })`,
+            // so the Store has already absorbed `plugin.indexes`. We just
+            // refresh our local indexes reference in case the underlying map
+            // got a new identity (it doesn't today, but stay defensive).
+            (partialDatabase as { indexes: unknown }).indexes = store.indexes;
             if (plugin.systems && Object.keys(plugin.systems).length > 0) {
                 Object.assign(allSystemDeclarations, plugin.systems);
                 systemOrder = calculateSystemOrder(allSystemDeclarations);
@@ -164,4 +212,99 @@ function createEmptyDatabase(sync: DatabaseSyncOptions | undefined): any {
 
     partialDatabase.extend = extend;
     return partialDatabase;
+}
+
+/**
+ * Returns the equality value implied by `where[key]` if and only if the
+ * condition is a pure equality — either a direct primitive value or a
+ * comparison object with exactly `{ "==": v }`. Returns the sentinel
+ * `NOT_EQUALITY` when the condition uses any other operator.
+ */
+const NOT_EQUALITY = Symbol("not-equality");
+const equalityValue = (cond: unknown): unknown | typeof NOT_EQUALITY => {
+    if (cond === null || typeof cond !== "object") return cond;
+    const keys = Object.keys(cond as object);
+    if (keys.length === 1 && keys[0] === "==") return (cond as Record<string, unknown>)["=="];
+    return NOT_EQUALITY;
+};
+
+/**
+ * Attempts to serve `select(include, options)` from a declared index.
+ *
+ * Returns `null` when no index applies; the caller must fall back to the
+ * archetype scan. Returns an `Entity[]` when an index can answer the query.
+ *
+ * Match conditions (intentionally conservative for V2):
+ *   - `options.where` is non-empty.
+ *   - `options.order` is absent (sort orders are routed in a follow-up).
+ *   - Every `where` key is a pure equality (`v` or `{ "==": v }`).
+ *   - The `where` keys, as a set, equal some index's `components`.
+ *
+ * The query planner accesses `store.indexes` (the user-visible handle map),
+ * so test spies and any future user-installed instrumentation see the call.
+ * Components for each index are recovered from the registry-internal handle
+ * (the handle exposes `find`/`findRange`/`get`; the components list is held
+ * by the underlying `RuntimeIndex`, which is the registry's source of
+ * truth). For the planner we treat the handle map structurally as
+ * `{ [name]: { find, components } }` because Store internally augments
+ * each handle with a `components` field — see `createStore`.
+ *
+ * After the index lookup returns candidate entities, each candidate is
+ * checked for archetype membership of every `include` component so the
+ * returned set respects the same archetype filter as the scan path.
+ */
+function trySelectViaIndex(
+    store: Store<any, any, any>,
+    include: readonly string[] | ReadonlySet<string>,
+    options: { where?: Record<string, unknown>; order?: Record<string, unknown> } | undefined,
+): readonly Entity[] | null {
+    const where = options?.where;
+    if (!where || options?.order) return null;
+    const whereKeys = Object.keys(where);
+    if (whereKeys.length === 0) return null;
+
+    // Collapse where to an { component -> equality-value } record, bailing if
+    // any condition is not a pure equality.
+    const values: Record<string, unknown> = {};
+    for (const k of whereKeys) {
+        const eq = equalityValue(where[k]);
+        if (eq === NOT_EQUALITY) return null;
+        values[k] = eq;
+    }
+
+    // Iterate the public handle map (store.indexes). Each handle carries a
+    // non-public `components` field placed by `createStore` for exactly
+    // this purpose; the dispatch goes through `handle.find` so spies and
+    // instrumentation see the call.
+    const handles = store.indexes as unknown as Readonly<Record<string, {
+        readonly components: readonly string[];
+        find(v: Record<string, unknown>): readonly Entity[];
+    }>>;
+    let matching: { components: readonly string[]; find: (v: Record<string, unknown>) => readonly Entity[] } | undefined;
+    for (const name of Object.keys(handles)) {
+        const handle = handles[name];
+        if (handle.components.length !== whereKeys.length) continue;
+        if (handle.components.every(c => c in values)) {
+            matching = handle;
+            break;
+        }
+    }
+    if (!matching) return null;
+
+    const candidates = matching.find(values);
+    if (candidates.length === 0) return [];
+
+    const includeArr = Array.from(include);
+    if (includeArr.length === 0) return candidates.slice();
+
+    const result: Entity[] = [];
+    for (const entity of candidates) {
+        const location = store.locate(entity);
+        if (!location) continue;
+        const cols = (location.archetype as { columns: Record<string, unknown> }).columns;
+        if (includeArr.every(c => cols[c] !== undefined)) {
+            result.push(entity);
+        }
+    }
+    return result;
 }

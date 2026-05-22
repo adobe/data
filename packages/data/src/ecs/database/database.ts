@@ -13,6 +13,7 @@ import { Components } from "../store/components.js";
 import { ArchetypeComponents } from "../store/archetype-components.js";
 import { RequiredComponents } from "../required-components.js";
 import { EntitySelectOptions } from "../store/entity-select-options.js";
+import { Filter } from "../../table/select-rows.js";
 import type { Service } from "../../service/index.js";
 import { createDatabase, type DatabaseSyncOptions } from "./public/create-database.js";
 import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
@@ -87,6 +88,17 @@ export type PluginComputedValue = Observe<unknown> | ((...args: any[]) => Observ
  */
 export type PluginComputedFactories<DB = any> = { readonly [K: string]: (db: DB) => PluginComputedValue };
 
+/**
+ * Plugin-level map of indexes. Keys are user-chosen index names; values are
+ * `Database.Index` declarations whose `components` tuple must reference real
+ * keys of `C`. The constraint is shaped to allow `RemoveIndex<...>` to strip
+ * the index signature and recover the literal map at the call site (same
+ * pattern as `ArchetypeComponents`).
+ */
+export type IndexDeclarations<C extends Components = any> = {
+  readonly [name: string]: Database.Index<C, readonly [StringKeyof<C>, ...StringKeyof<C>[]], boolean>;
+};
+
 export interface Database<
   C extends Components = {},
   R extends ResourceComponents = {},
@@ -96,11 +108,23 @@ export interface Database<
   AF extends ActionFunctions = {},
   SV = {},
   CV = unknown,
+  IX extends IndexDeclarations<C> = {},
 > extends ReadonlyStore<C, R, A>, Service {
   readonly transactions: F & Service;
   readonly actions: AF & Service;
   readonly services: SV;
   readonly computed: CV;
+  /**
+   * Lookup handles for the indexes declared by plugins on this database.
+   * Each key in `IX` becomes a `Database.Index.Handle` whose method shape
+   * is narrowed by the declared key tuple and unique flag.
+   *
+   * The handles are also the implementation path used by `db.select` /
+   * `db.observe.select` when a `where` / `order` matches a declared
+   * index — call sites do not need to be aware of which index served
+   * the query, but the same handle is what runs underneath.
+   */
+  readonly indexes: { readonly [K in keyof IX]: Database.Index.Handle<C, IX[K]> };
   readonly observe: {
     readonly components: { readonly [K in StringKeyof<C>]: Observe<void> };
     readonly resources: { readonly [K in StringKeyof<R>]: Observe<R[K]> };
@@ -180,7 +204,8 @@ export interface Database<
     S | StringKeyof<P['systems']>,
     AF & ToActionFunctions<RemoveIndex<P['actions']>>,
     SV & FromServiceFactories<RemoveIndex<P['services']>>,
-    CV & FromComputedFactories<RemoveIndex<P['computed']>>
+    CV & FromComputedFactories<RemoveIndex<P['computed']>>,
+    IX & RemoveIndex<P['indexes']>
   >;
 }
 
@@ -199,7 +224,8 @@ export namespace Database {
     StringKeyof<P['systems']>,
     ToActionFunctions<RemoveIndex<P['actions']>>,
     FromServiceFactories<RemoveIndex<P['services']>>,
-    FromComputedFactories<RemoveIndex<P['computed']>>
+    FromComputedFactories<RemoveIndex<P['computed']>>,
+    RemoveIndex<P['indexes']>
   >;
 
   export const create = createDatabase;
@@ -210,6 +236,63 @@ export namespace Database {
 
   export const observeSelectDeep = _observeSelectDeep;
 
+  /**
+   * Type-level declaration of an index over one or more components.
+   *
+   * - `components`: ordered, non-empty tuple of component keys. Order is
+   *   significant — it defines both the sort order the index produces and
+   *   the prefixes of a `where` / `order` clause the index can serve.
+   * - `unique`: when `true`, at most one entity may hold each key tuple.
+   *   Required to expose `Handle.get`. Defaults to `false`.
+   *
+   * Every key in `components` is statically checked against the database's
+   * component map `C`; an unknown name is a compile error at the plugin
+   * declaration site.
+   */
+  export type Index<
+    C extends Components = any,
+    Keys extends readonly [StringKeyof<C>, ...StringKeyof<C>[]] = any,
+    Unique extends boolean = false,
+  > = {
+    readonly components: Keys;
+    readonly unique?: Unique;
+  };
+
+  export namespace Index {
+    /**
+     * Per-index lookup handle exposed on `db.indexes.<name>`.
+     *
+     * Conditional intersection adds `get` only when `Unique` is exactly
+     * `true`, so `db.indexes.<nonUnique>.get(...)` is a type error at the
+     * call site without any runtime branch.
+     */
+    export type Handle<C extends Components, I extends Index<C, any, any>> =
+      I extends Index<C, infer Keys, infer Unique>
+        ? Keys extends readonly [StringKeyof<C>, ...StringKeyof<C>[]]
+          ? {
+              /** Entities whose full key tuple equals `values`. */
+              find(values: Pick<C, Keys[number]>): readonly Entity[];
+
+              /**
+               * Range query over the index. Reuses the existing
+               * `Filter` operator vocabulary (`==`, `!=`, `<`, `<=`,
+               * `>`, `>=`) from `table/select-rows.ts` so the same
+               * syntax that drives `select({ where })` describes
+               * index ranges.
+               *
+               * Runtime contract (not encodable in the type): equality
+               * on a leading prefix of the key tuple, an optional
+               * range on the next key, nothing after. Calls that
+               * violate this fall back to a scan.
+               */
+              findRange(range: Filter<Pick<C, Keys[number]>>): readonly Entity[];
+            } & (Unique extends true
+              ? { get(values: Pick<C, Keys[number]>): Entity | undefined }
+              : {})
+          : never
+        : never;
+  }
+
   export type Plugin<
     CS extends ComponentSchemas = any,
     RS extends ResourceSchemas = any,
@@ -218,7 +301,8 @@ export namespace Database {
     S extends string = any,
     AD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S> = any,
     SVF extends ServiceFactories = any,
-    CVF extends ComputedFactories = any
+    CVF extends ComputedFactories = any,
+    IX extends IndexDeclarations<FromSchemas<CS>> = any,
   > = {
     readonly components: CS;
     readonly resources: RS;
@@ -228,6 +312,7 @@ export namespace Database {
     readonly actions: AD;
     readonly services: SVF;
     readonly computed: CVF;
+    readonly indexes: IX;
   };
 
   export namespace Plugin {

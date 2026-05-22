@@ -14,6 +14,11 @@ import { ArchetypeComponents } from "../archetype-components.js";
 import { EntitySelectOptions } from "../entity-select-options.js";
 import { selectEntities } from "../core/select-entities.js";
 import { OptionalComponents } from "../../optional-components.js";
+import {
+    createIndexRegistry,
+    IndexDeclarationObject,
+    RuntimeIndex,
+} from "../../database/index-registry/index.js";
 
 export function createStore<
     CS extends ComponentSchemas = {},
@@ -49,6 +54,50 @@ export function createStore<
 
     const core = createCore(componentAndResourceSchemas) as unknown as Core<C>;
 
+    // Index registry. Owned at the Store layer because index state is
+    // *derived* from store data, and every mutation that needs to keep
+    // indexes in sync flows through Store methods (insert / update /
+    // delete). Higher layers (`db.indexes`, `t.indexes`) expose this same
+    // map by reference.
+    const indexRegistry = createIndexRegistry(
+        (entity) => {
+            const values = core.read(entity);
+            if (!values) return null;
+            // Strip `id` — it is never a useful index key.
+            const { id: _id, ...rest } = values as { id: Entity } & Record<string, unknown>;
+            return rest;
+        },
+        function* () {
+            // Iterate every live entity across all archetypes via the id column.
+            for (const archetype of core.queryArchetypes([])) {
+                const idColumn = archetype.columns.id;
+                for (let row = 0; row < archetype.rowCount; row++) {
+                    yield idColumn.get(row);
+                }
+            }
+        },
+    );
+
+    // Public handle map keyed by user-chosen name. Each entry exposes
+    // find/findRange (always) and get (when the index is unique). Same
+    // object reference flows up via spread to the Database layer.
+    const indexHandles: Record<string, unknown> = {};
+
+    const exposeIndexHandle = (name: string, idx: RuntimeIndex): void => {
+        if (name in indexHandles) return;
+        const handle: Record<string, unknown> = {
+            find: idx.find,
+            findRange: idx.findRange,
+            // Internal field used by the query planner in `createDatabase` to
+            // match a `where` clause against the declared key tuple. Not part
+            // of the public `Database.Index.Handle` type — exposed at runtime
+            // only.
+            components: idx.components,
+        };
+        if (idx.unique) handle.get = idx.get;
+        indexHandles[name] = handle;
+    };
+
     // Each resource will be stored as the only entity in an archetype of [id, <resourceName>]
     // The resource component we added above will contain the resource value
     const ensureResourceInitialized = (name: string, resourceSchema: Schema & { default: unknown }) => {
@@ -62,6 +111,9 @@ export function createStore<
             const insertValues = isEphemeral
                 ? { [resourceId]: resourceSchema.default, ephemeral: true }
                 : { [resourceId]: resourceSchema.default };
+            // Resource singleton inserts bypass index pre-check because
+            // resources are not typically indexed by their schema name and
+            // the singleton row is created exactly once.
             archetype.insert(insertValues as any);
         }
         if (!Object.prototype.hasOwnProperty.call(resources, name)) {
@@ -88,8 +140,74 @@ export function createStore<
 
     const archetypes = {} as any;
 
+    /**
+     * Wraps a raw Core archetype so `insert` maintains index state. Pre-checks
+     * unique constraints *before* the column mutation so a collision throws
+     * without partially mutating the store. Other archetype methods are
+     * passed through unchanged via the Proxy.
+     *
+     * Cached by raw archetype identity so repeated lookups
+     * (`store.archetypes.X`, `store.ensureArchetype([...])`) all return the
+     * same wrapper reference — code that uses `===` to compare archetypes
+     * keeps working.
+     */
+    const archetypeWrapCache = new WeakMap<object, any>();
+    const wrapArchetypeForIndexes = (archetype: any): any => {
+        const cached = archetypeWrapCache.get(archetype);
+        if (cached) return cached;
+        const rawInsert = archetype.insert.bind(archetype);
+        const wrappedInsert = (values: any) => {
+            indexRegistry.checkUniqueAvailableForInsert(values);
+            const entity = rawInsert(values);
+            indexRegistry.applyInsert(entity, values);
+            return entity;
+        };
+        const wrapped = new Proxy(archetype, {
+            get(target, prop, receiver) {
+                if (prop === "insert") return wrappedInsert;
+                return Reflect.get(target, prop, receiver);
+            },
+        });
+        archetypeWrapCache.set(archetype, wrapped);
+        return wrapped;
+    };
+
+    const ensureArchetype = ((componentNames: any) => {
+        return wrapArchetypeForIndexes(core.ensureArchetype(componentNames));
+    }) as Core<C>["ensureArchetype"];
+
+    // `queryArchetypes` and `locate` also surface archetypes — wrap them
+    // so `===` comparisons against `store.archetypes.X` continue to hold.
+    // Cached wrappers guarantee identity stability per raw archetype.
+    const queryArchetypes = ((include: any, options?: any) => {
+        const raw = core.queryArchetypes(include, options);
+        return raw.map((a) => wrapArchetypeForIndexes(a));
+    }) as Core<C>["queryArchetypes"];
+
+    const locate = ((entity: Entity) => {
+        const loc = core.locate(entity);
+        if (loc === null) return null;
+        return { archetype: wrapArchetypeForIndexes(loc.archetype), row: loc.row };
+    }) as Core<C>["locate"];
+
+    const updateEntity = (entity: Entity, values: any) => {
+        indexRegistry.checkUniqueAvailableForUpdate(entity, values);
+        core.update(entity, values);
+        indexRegistry.applyUpdate(entity);
+    };
+
+    const deleteEntity = (entity: Entity) => {
+        core.delete(entity);
+        indexRegistry.applyDelete(entity);
+    };
+
     const extend = (schema: Store.Schema<any, any, any>) => {
-        const { components: schemaComponents = {}, resources: schemaResources = {}, archetypes: schemaArchetypes = {} } = schema;
+        const {
+            components: schemaComponents = {},
+            resources: schemaResources = {},
+            archetypes: schemaArchetypes = {},
+            indexes: schemaIndexes = {},
+        } = schema;
         // components: existing must be identical if present
         for (const [name, newComponentSchema] of Object.entries(schemaComponents)) {
             if (name in componentAndResourceSchemas) {
@@ -119,7 +237,8 @@ export function createStore<
             ensureResourceInitialized(name, newResourceSchema as any);
         }
 
-        // archetypes: existing must be identical if present
+        // archetypes: existing must be identical if present.
+        // Wrap each archetype with index maintenance hooks at exposure time.
         for (const [name, newComponents] of Object.entries(schemaArchetypes)) {
             if (name in archetypeComponentNames) {
                 if (archetypeComponentNames[name as keyof typeof archetypeComponentNames] !== newComponents) {
@@ -129,7 +248,15 @@ export function createStore<
             }
             archetypeComponentNames[name as keyof typeof archetypeComponentNames] = newComponents as any;
             const archetype = core.ensureArchetype(["id", ...(newComponents as any)]);
-            (archetypes as any)[name] = archetype;
+            (archetypes as any)[name] = wrapArchetypeForIndexes(archetype);
+        }
+
+        // indexes: registry enforces (===)-or-throw on same name and
+        // structural duplicate detection across names.
+        for (const [name, decl] of Object.entries(schemaIndexes as Record<string, IndexDeclarationObject>)) {
+            indexRegistry.register(name, decl);
+            const idx = indexRegistry.indexes.get(name);
+            if (idx) exposeIndexHandle(name, idx);
         }
 
         return store as any;
@@ -137,15 +264,22 @@ export function createStore<
 
     const store: Store<C, R> = {
         ...core,
+        ensureArchetype,
+        queryArchetypes,
+        locate,
+        update: updateEntity,
+        delete: deleteEntity,
         resources,
         select,
         archetypes,
+        indexes: indexHandles as any,
         extend,
         reset: () => {
             core.reset();
             for (const [name, resourceSchema] of Object.entries(resourceSchemas)) {
                 ensureResourceInitialized(name, resourceSchema as any);
             }
+            indexRegistry.rebuild();
         },
         toData: () => core.toData(),
         fromData: (data: unknown) => {
@@ -153,6 +287,7 @@ export function createStore<
             for (const [name, resourceSchema] of Object.entries(resourceSchemas)) {
                 ensureResourceInitialized(name, resourceSchema as any);
             }
+            indexRegistry.rebuild();
         },
     };
 

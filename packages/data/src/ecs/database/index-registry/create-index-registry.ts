@@ -6,17 +6,12 @@ import { createIndex, IndexState, RuntimeIndex } from "./create-index.js";
 
 /**
  * Reads the post-transaction values of an entity, or returns null when the
- * entity does not exist. Supplied by `createDatabase` so the registry stays
- * decoupled from the store layer.
+ * entity does not exist. Supplied by `createStore` so the registry stays
+ * decoupled from the store layer. Used by `applyUpdate` to refresh an
+ * entity's key after a partial-patch update — the patch may not include
+ * every indexed component, so the registry re-reads the full record.
  */
 export type EntityReader = (entity: Entity) => Readonly<Record<string, unknown>> | null;
-
-/**
- * Iterates every live entity at the moment of the call. Used to populate a
- * newly registered index from existing state, and to rebuild all indexes
- * after `reset()` / `fromData()`.
- */
-export type EntityIterator = () => Iterable<Entity>;
 
 /**
  * Plugin-level declaration object as it appears in `plugin.indexes[name]`.
@@ -45,9 +40,9 @@ export interface IndexRegistry {
      * Three outcomes (matches `combinePlugins`' strictness and adds one new
      * rule for cross-name duplicates):
      *
-     * - Same `name` already registered with the *identity-equal* `decl`: no-op.
-     *   This is the benign idempotent path through repeated `db.extend(plugin)`
-     *   calls with the same plugin instance.
+     * - Same `name` already registered with the *identity-equal* `decl`:
+     *   returns `null` — no-op. This is the benign idempotent path through
+     *   repeated `db.extend(plugin)` calls with the same plugin instance.
      * - Same `name` already registered with a different `decl` object (even
      *   if structurally equal): throws. Indexes must reuse the same reference
      *   across plugins — same rule as components / transactions.
@@ -55,12 +50,24 @@ export interface IndexRegistry {
      *   shape (`components` order-equal, `unique` flag-equal): throws. Almost
      *   always an unintentional duplicate; the error names both indexes so
      *   the author can collapse them to one declaration.
+     *
+     * Returns the newly-created `RuntimeIndex` so the caller (createStore)
+     * can seed it from the matching archetypes — the registry deliberately
+     * does not iterate entities itself; that knowledge lives at the store
+     * layer where archetypes are addressable.
      */
-    register(name: string, decl: IndexDeclarationObject): void;
+    register(name: string, decl: IndexDeclarationObject): RuntimeIndex | null;
     /** Apply a transaction's changes to every registered index. */
     apply(result: TransactionResult<any>): void;
-    /** Drop all index entries and reseed from the current store contents. */
-    rebuild(): void;
+    /**
+     * Drop all index entries (every bucket and reverse-map cleared) without
+     * reseeding. The caller is responsible for re-populating from archetypes
+     * — see `createStore`'s `seedIndexFromArchetypes`. Done this way so each
+     * index only walks the archetypes that *could* contribute to it (those
+     * containing every one of its `components`), instead of every live
+     * entity in the database.
+     */
+    clear(): void;
     /**
      * Reflect a single insert into every registered index. Throws on
      * unique-key collision (the caller must call
@@ -101,7 +108,6 @@ const formatShape = (decl: IndexDeclarationObject): string =>
 
 export const createIndexRegistry = (
     read: EntityReader,
-    iterateEntities: EntityIterator,
 ): IndexRegistry => {
     const indexes = new Map<string, RuntimeIndex>();
     const entries = new Map<string, RegisteredEntry>();
@@ -109,17 +115,10 @@ export const createIndexRegistry = (
     // "different-name same-shape" check is O(1).
     const shapeToName = new Map<string, string>();
 
-    const seedIndex = (idx: RuntimeIndex): void => {
-        for (const entity of iterateEntities()) {
-            const values = read(entity);
-            if (values !== null) idx.add(entity, values);
-        }
-    };
-
-    const register = (name: string, decl: IndexDeclarationObject): void => {
+    const register = (name: string, decl: IndexDeclarationObject): RuntimeIndex | null => {
         const existing = entries.get(name);
         if (existing) {
-            if (existing.decl === decl) return; // identity match → benign re-register
+            if (existing.decl === decl) return null; // identity match → benign re-register
             throw new Error(
                 `Index "${name}" already registered with a different declaration object. ` +
                 `Indexes must reuse the same declaration reference across plugins ` +
@@ -147,9 +146,7 @@ export const createIndexRegistry = (
         indexes.set(name, idx);
         entries.set(name, { decl, index: idx });
         shapeToName.set(sk, name);
-        // Populate from existing entities so a plugin registered after data is
-        // loaded still sees the right index contents.
-        seedIndex(idx);
+        return idx;
     };
 
     const reflectEntity = (entity: Entity, change: unknown): void => {
@@ -175,9 +172,8 @@ export const createIndexRegistry = (
         }
     };
 
-    const rebuild = (): void => {
+    const clear = (): void => {
         for (const idx of indexes.values()) idx.clear();
-        for (const idx of indexes.values()) seedIndex(idx);
     };
 
     const applyInsert = (entity: Entity, values: Readonly<Record<string, unknown>>): void => {
@@ -243,7 +239,7 @@ export const createIndexRegistry = (
         indexes,
         register,
         apply,
-        rebuild,
+        clear,
         applyInsert,
         applyUpdate,
         applyDelete,

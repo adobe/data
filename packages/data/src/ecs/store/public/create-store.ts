@@ -59,6 +59,11 @@ export function createStore<
     // indexes in sync flows through Store methods (insert / update /
     // delete). Higher layers (`db.indexes`, `t.indexes`) expose this same
     // map by reference.
+    //
+    // The reader is only used for `applyUpdate` — the patch passed to
+    // `store.update` may omit components an index covers, so the registry
+    // re-reads the full record to recompute the key. Seeding goes through
+    // `seedIndexFromArchetypes` instead (see below).
     const indexRegistry = createIndexRegistry(
         (entity) => {
             const values = core.read(entity);
@@ -67,16 +72,32 @@ export function createStore<
             const { id: _id, ...rest } = values as { id: Entity } & Record<string, unknown>;
             return rest;
         },
-        function* () {
-            // Iterate every live entity across all archetypes via the id column.
-            for (const archetype of core.queryArchetypes([])) {
-                const idColumn = archetype.columns.id;
-                for (let row = 0; row < archetype.rowCount; row++) {
-                    yield idColumn.get(row);
-                }
-            }
-        },
     );
+
+    /**
+     * Populate an index from the archetypes whose component set is a
+     * superset of the index's `components`. Only those archetypes can
+     * possibly contribute — entities in any other archetype lack at
+     * least one of the indexed components, so they would never match
+     * `find` / `findRange` / `get` anyway.
+     *
+     * For each candidate archetype, the values record is built directly
+     * from the dense column buffers (no `store.read` / `locate`
+     * indirection) and handed to `idx.add` once per row.
+     */
+    const seedIndexFromArchetypes = (idx: RuntimeIndex): void => {
+        const archetypes = core.queryArchetypes(idx.components as readonly StringKeyof<C>[]);
+        for (const archetype of archetypes) {
+            const idCol = archetype.columns.id;
+            for (let row = 0; row < archetype.rowCount; row++) {
+                const values: Record<string, unknown> = {};
+                for (const c of idx.components) {
+                    values[c] = (archetype.columns as Record<string, { get(r: number): unknown }>)[c].get(row);
+                }
+                idx.add(idCol.get(row), values);
+            }
+        }
+    };
 
     // Public handle map keyed by user-chosen name. Each entry exposes
     // find/findRange (always) and get (when the index is unique). Same
@@ -252,11 +273,17 @@ export function createStore<
         }
 
         // indexes: registry enforces (===)-or-throw on same name and
-        // structural duplicate detection across names.
-        for (const [name, decl] of Object.entries(schemaIndexes as Record<string, IndexDeclarationObject>)) {
-            indexRegistry.register(name, decl);
-            const idx = indexRegistry.indexes.get(name);
-            if (idx) exposeIndexHandle(name, idx);
+        // structural duplicate detection across names. A new RuntimeIndex
+        // is returned when registration actually happened (vs. a benign
+        // identity-match re-register), in which case we seed it from the
+        // archetypes that contain its component set — and only those.
+        const declaredIndexes = schemaIndexes as Record<string, IndexDeclarationObject>;
+        for (const name in declaredIndexes) {
+            const newIdx = indexRegistry.register(name, declaredIndexes[name]);
+            if (newIdx) {
+                exposeIndexHandle(name, newIdx);
+                seedIndexFromArchetypes(newIdx);
+            }
         }
 
         return store as any;
@@ -279,7 +306,14 @@ export function createStore<
             for (const [name, resourceSchema] of Object.entries(resourceSchemas)) {
                 ensureResourceInitialized(name, resourceSchema as any);
             }
-            indexRegistry.rebuild();
+            // After reset, every index bucket is wiped. Resources are the
+            // only entities that exist post-reset; seed each index from
+            // archetypes so resource singletons whose components an index
+            // happens to cover still appear.
+            indexRegistry.clear();
+            for (const idx of indexRegistry.indexes.values()) {
+                seedIndexFromArchetypes(idx);
+            }
         },
         toData: () => core.toData(),
         fromData: (data: unknown) => {
@@ -287,7 +321,12 @@ export function createStore<
             for (const [name, resourceSchema] of Object.entries(resourceSchemas)) {
                 ensureResourceInitialized(name, resourceSchema as any);
             }
-            indexRegistry.rebuild();
+            // The loaded core has all entities; re-derive each index by
+            // walking only the archetypes that contain its components.
+            indexRegistry.clear();
+            for (const idx of indexRegistry.indexes.values()) {
+                seedIndexFromArchetypes(idx);
+            }
         },
     };
 

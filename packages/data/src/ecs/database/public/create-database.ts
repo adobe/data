@@ -195,10 +195,10 @@ function createEmptyDatabase(sync: DatabaseSyncOptions | undefined): any {
             }
             // `reconcilingDatabase.extend(plugin)` above propagates down to
             // `store.extend({ components, resources, archetypes, indexes })`,
-            // so the Store has already absorbed `plugin.indexes`. We just
-            // refresh our local indexes reference in case the underlying map
-            // got a new identity (it doesn't today, but stay defensive).
-            (partialDatabase as { indexes: unknown }).indexes = store.indexes;
+            // so the Store has already absorbed `plugin.indexes`. We refresh
+            // our local indexes reference in case the underlying map got a
+            // new identity (it doesn't today, but stay defensive).
+            partialDatabase.indexes = store.indexes;
             if (plugin.systems && Object.keys(plugin.systems).length > 0) {
                 Object.assign(allSystemDeclarations, plugin.systems);
                 systemOrder = calculateSystemOrder(allSystemDeclarations);

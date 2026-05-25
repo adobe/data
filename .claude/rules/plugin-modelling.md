@@ -6,35 +6,47 @@ paths:
 
 # Plugin modelling — model vs. system, authored vs. derived
 
-Two orthogonal questions to ask of every plugin:
+Each plugin has two orthogonal axes:
 
-1. **What in this plugin is *authored* — state the user writes / inserts /
-   sets?**
-2. **What in this plugin is *derived* — state a system produces from other
-   state?**
+1. **Authored** state — the user inserts / sets it. Designed by the human
+   architect.
+2. **Derived** state — a system produces it from other state. Implementation;
+   owned by the AI.
 
-The human architect designs the authored surface. Systems and derived state
-are implementation: the AI owns them. When discussing or sketching a plugin,
-**show only the authored surface unless explicitly asked about behaviour.**
+The human's mental model of a project is the union of every plugin's
+**authored surface**. Systems and derived state are how the world updates
+and renders — read their interface contract, not their innards.
 
 ## Two tiers of model plugins
 
-There is a small **core model** the primary consumers of the domain read,
-plus an open set of **authoring abstractions** that systems expand into
-core model state.
+- **Core** — the primary record types every consumer reads. Small, fixed,
+  shared.
+- **Authoring abstractions** — higher-level intents (orbit, animation,
+  procedural shape, particle emitter, constraint, …) that systems expand
+  into core state. Open-ended; each project picks what it needs.
 
-- **Core:** the primary record types of the domain. Fixed and small —
-  every consumer reads them.
-- **Authoring abstractions:** higher-level intents the user prefers to
-  write. Open-ended; a system translates each into core state.
+A plugin almost never holds both authored and derived data the user cares
+about. If it appears to, the derived data is the *implementation* of the
+authoring abstraction.
 
-The same plugin almost never contains both authored and derived data the
-user cares about. If it appears to, the derived data is the *implementation*
-of the authoring abstraction.
+## Shared conventions
 
-## Concise visualisation format
+- **Uppercase identifier** = archetype. **Lowercase** = component or
+  resource. Disambiguated by where declared (archetype vs. component vs.
+  resource section of the data plugin).
+- **Entity references** are typed `EntityId`; field names drop the `Ref`
+  suffix — the type carries the signal.
+- **Implementation prefixes** (`pbr`, `ibl`, …) belong in code where they
+  disambiguate cross-plugin reuse. Drop them in the conceptual view.
+- **`_` prefix** = ephemeral / derived / not part of the data model. The
+  human ignores it when modelling; system-graph views still display it.
+  Applies in code too, not just docs.
+- **Inline `: Type`** only on `_`-prefixed names. Persistent items get
+  their type from the data plugin where they're declared.
 
-When sketching a plugin, draw only the authored surface. Use this layout:
+## Model plugin format
+
+Authored surface only — no derived state, no systems.
 
 ```
 pluginName
@@ -48,73 +60,39 @@ pluginName
     ArchetypeName: [field, field, ...OtherArchetype]
 ```
 
-### Rules for the format
+- `...Other` composes another archetype's component list.
+- Shape comments (`// { … }`) stay on the same line; do not wrap.
 
-- **One indent level per nesting.** No noise lines, no blank rows.
-- **Reuse via `...Other`** in archetype lists when the new archetype
-  composes another. `Reply: [parent, ...Message]` reads instantly as
-  "a Reply is a Message plus a parent."
-- **Use `EntityId` for entity references**, not `number`. Drop the `Ref`
-  suffix on the field name — the type column already conveys "this is a
-  reference." Write `author: EntityId`, not `authorRef: number`.
-- **Drop implementation prefixes** from field names in the conceptual
-  model. Prefixes may stay in code where the same name lives across
-  plugins, but they don't belong in the user's mental model.
-- **Skip derived components, derived resources, and systems.** They are
-  not part of the authored surface. If a system writes back onto a
-  user-facing archetype, omit it here and document it separately as an
-  output of the relevant system.
-- **One line per field.** Types may include unions and `null` where the
-  field is optional. Trailing `// { ... }` shape comments stay on the same
-  line as the field; do not wrap them, even when long.
-
-## Worked example
-
-A chat domain — generic and concrete enough to show every element of the
-format:
+## System plugin format
 
 ```
-chatCore = combine(user, channel, message)
-
-user
-  components
-    name:   string
-    email:  string
-  archetypes
-    User: [name, email]
-
-channel
-  components
-    name:       string
-    createdBy:  EntityId
-  archetypes
-    Channel: [name, createdBy]
-
-message
-  components
-    text:    string
-    author:  EntityId
-    channel: EntityId
-    sentAt:  timestamp
-    parent:  EntityId         // used only by Reply
-  resources
-    activeChannel: EntityId
-  archetypes
-    Message: [text, author, channel, sentAt]
-    Reply:   [parent, ...Message]
+systemName              // high-level summary
+  query: ArchetypeExpr [, ArchetypeExpr ...]   // omit if resource-only
+  read:
+    name                                       // persistent — type from data plugin
+    _name: Type                                // ephemeral — type inline
+  write:
+    name                                       // writes a component / resource
+    _Archetype                                 // creates new entities of this archetype
+    // free-text side effect                   // draw calls, network sends, …
 ```
 
-The authored surface of the entire domain core is 11 component fields,
-1 resource, and 4 archetypes. Anything that ranks the feed, delivers
-notifications, indexes search, syncs with a peer, or renders the UI is
-implementation and does not appear here.
+- `read:` and `write:` are outlined one-per-line.
+- A system can have multiple independent queries; comma-separate them on
+  the `query:` line.
 
-## When designing or discussing a new plugin
+## Query DSL
 
-1. Write the authored surface in this format **first**.
-2. Then describe the system(s) that read/write it as a separate I/O
-   contract — "reads X, writes Y."
-3. Mark derived components on user-facing archetypes explicitly so the
-   reader knows they're system-written, not user-authored.
-4. Keep the user's mental model to the union of the authored surfaces.
-   The system tier expands as needed without changing it.
+- `Archetype` — entities matching the archetype.
+- `+component` — require this additional component.
+- `-component` — exclude entities that have it.
+- `Archetype+a-b+c` — left-to-right chain of `+` / `-`.
+- `Q1, Q2, ...` — multiple independent queries the system reads from.
+
+## Designing or discussing a plugin
+
+1. Write the authored surface (model format) **first**.
+2. Then each system as its own interface card with `query` / `read` /
+   `write`.
+3. The graph of `write:` → `read:` edges is the implementation; the union
+   of authored surfaces is the human's mental model.

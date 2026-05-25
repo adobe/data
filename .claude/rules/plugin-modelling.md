@@ -65,7 +65,8 @@ pluginName
   user-facing archetype, omit it here and document it separately as an
   output of the relevant system.
 - **One line per field.** Types may include unions and `null` where the
-  field is optional.
+  field is optional. Trailing `// { ... }` shape comments stay on the same
+  line as the field; do not wrap them, even when long.
 
 ## Worked example
 

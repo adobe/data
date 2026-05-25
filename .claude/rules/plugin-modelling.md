@@ -1,15 +1,15 @@
 ---
 paths:
-  - 'packages/**/plugins/**'
-  - 'packages/**/*-plugin.ts'
-  - 'packages/**/*-service.ts'
+  - '**/*plugin*'
+  - '**/*plugin*/**'
 ---
 
 # Plugin modelling — model vs. system, authored vs. derived
 
 Two orthogonal questions to ask of every plugin:
 
-1. **What in this plugin is *authored* — state the user writes/inserts/sets?**
+1. **What in this plugin is *authored* — state the user writes / inserts /
+   sets?**
 2. **What in this plugin is *derived* — state a system produces from other
    state?**
 
@@ -19,15 +19,14 @@ are implementation: the AI owns them. When discussing or sketching a plugin,
 
 ## Two tiers of model plugins
 
-There is a small **core model** every renderer needs, plus an open set of
-**authoring abstractions** that systems expand into core model state.
+There is a small **core model** the primary consumers of the domain read,
+plus an open set of **authoring abstractions** that systems expand into
+core model state.
 
-- **Core:** node, camera, light, model+geometry. These are the universal
-  vocabulary of "what the world contains."
-- **Authoring abstractions:** orbit (writes camera), procedural shape
-  (writes model+geometry), animation clip+player (writes any component),
-  particle emitter, constraint, state machine, ... Open-ended; each
-  project picks the ones it needs.
+- **Core:** the primary record types of the domain. Fixed and small —
+  every consumer reads them.
+- **Authoring abstractions:** higher-level intents the user prefers to
+  write. Open-ended; a system translates each into core state.
 
 The same plugin almost never contains both authored and derived data the
 user cares about. If it appears to, the derived data is the *implementation*
@@ -53,68 +52,68 @@ pluginName
 
 - **One indent level per nesting.** No noise lines, no blank rows.
 - **Reuse via `...Other`** in archetype lists when the new archetype
-  composes another. `Model: [geometry, ...Node]` reads instantly as
-  "a Model is a Node plus a geometry."
+  composes another. `Reply: [parent, ...Message]` reads instantly as
+  "a Reply is a Message plus a parent."
 - **Use `EntityId` for entity references**, not `number`. Drop the `Ref`
   suffix on the field name — the type column already conveys "this is a
-  reference." Write `geometry: EntityId`, not `geometryRef: number`.
-- **Drop implementation prefixes** (`pbr`, `ibl`, etc.) when writing the
-  conceptual model — `environmentUrl`, not `iblEnvironmentUrl`. The
-  prefix may stay in code where the same name lives across plugins, but
-  it doesn't belong in the user's mental model.
+  reference." Write `author: EntityId`, not `authorRef: number`.
+- **Drop implementation prefixes** from field names in the conceptual
+  model. Prefixes may stay in code where the same name lives across
+  plugins, but they don't belong in the user's mental model.
 - **Skip derived components, derived resources, and systems.** They are
   not part of the authored surface. If a system writes back onto a
-  user-facing archetype (e.g. `animationSkeletonRef` on `Model`), omit it
-  here and document it separately as an output of the relevant system.
+  user-facing archetype, omit it here and document it separately as an
+  output of the relevant system.
 - **One line per field.** Types may include unions and `null` where the
   field is optional.
 
-## Worked example: corePlugin
+## Worked example
+
+A chat domain — generic and concrete enough to show every element of the
+format:
 
 ```
-corePlugin = combine(node, camera, light, model)
+chatCore = combine(user, channel, message)
 
-node
+user
   components
-    position:  Vec3
-    rotation:  Quat
-    scale:     Vec3
-    parent:    EntityId       // 0 = root
-    visible:   boolean
+    name:   string
+    email:  string
   archetypes
-    Node: [position, rotation, scale, parent, visible]
+    User: [name, email]
 
-camera
-  resources
-    camera: Camera            // { position, target, up, fieldOfView,
-                              //   nearPlane, farPlane, aspect, orthographic }
-
-light
-  resources
-    lightDirection:   Vec3
-    lightColor:       Vec3
-    ambientStrength:  F32
-    environmentUrl:   string | null
-
-model
+channel
   components
-    modelUrl:  string         // on Geometry
-    geometry:  EntityId       // on Model
+    name:       string
+    createdBy:  EntityId
   archetypes
-    Geometry: [modelUrl]
-    Model:    [geometry, ...Node]
+    Channel: [name, createdBy]
+
+message
+  components
+    text:    string
+    author:  EntityId
+    channel: EntityId
+    sentAt:  timestamp
+    parent:  EntityId         // used only by Reply
+  resources
+    activeChannel: EntityId
+  archetypes
+    Message: [text, author, channel, sentAt]
+    Reply:   [parent, ...Message]
 ```
 
-That's the whole authored surface of a renderable scene: 20 fields, 1 struct
-resource, 4 scalar resources, 2 archetypes. Anything that loads, transforms,
-animates, skins, or renders is implementation and does not appear here.
+The authored surface of the entire domain core is 11 component fields,
+1 resource, and 4 archetypes. Anything that ranks the feed, delivers
+notifications, indexes search, syncs with a peer, or renders the UI is
+implementation and does not appear here.
 
-## When discussing or designing a new plugin
+## When designing or discussing a new plugin
 
 1. Write the authored surface in this format **first**.
-2. Then describe the system(s) that read/write it, as a separate I/O
-   contract — "reads X, writes Y to GPU / to component Z / each frame."
+2. Then describe the system(s) that read/write it as a separate I/O
+   contract — "reads X, writes Y."
 3. Mark derived components on user-facing archetypes explicitly so the
    reader knows they're system-written, not user-authored.
-4. Keep the human's view of the world to the union of the authored
-   surfaces. The system tier expands as needed without changing it.
+4. Keep the user's mental model to the union of the authored surfaces.
+   The system tier expands as needed without changing it.

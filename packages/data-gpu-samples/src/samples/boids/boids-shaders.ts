@@ -18,9 +18,11 @@ struct Params {
     alignmentGain: f32,
     cohesionGain: f32,
     maxSpeed: f32,
-    // Scare point: xyz = world position, w = 1 when active else 0.
-    scareData: vec4f,
-    // x = radius, y = gain. zw unused but the vec4 keeps the struct std140-aligned.
+    // Scare ray origin (eye): xyz = world position, w = 1 when active else 0.
+    scareOrigin: vec4f,
+    // Scare ray direction (unit, eye → cursor through far plane). xyz used; w padding.
+    scareDir: vec4f,
+    // x = radius (perpendicular distance cap), y = gain. zw padding.
     scareTuning: vec4f,
 }
 
@@ -139,17 +141,23 @@ fn update_boids(@builtin(global_invocation_id) gid: vec3u) {
         newVel = newVel + (cohForce + alnForce + sepForce) * P.dt;
     }
 
-    // Cursor scare: a strong outward force when the boid is within
-    // scareRadius of the cursor's world-projected point. Falls off
-    // linearly from full strength at distance 0 to zero at the radius.
-    if (P.scareData.w > 0.5) {
-        let toBoid = pos - P.scareData.xyz;
-        let d2 = dot(toBoid, toBoid);
-        let r = P.scareTuning.x;
-        if (d2 < r * r && d2 > 0.0001) {
-            let d = sqrt(d2);
-            let strength = (1.0 - d / r) * P.scareTuning.y;
-            newVel = newVel + (toBoid / d) * strength * P.dt;
+    // Cursor scare: outward force perpendicular to the eye→cursor ray.
+    // Boids near the line — at any depth — feel it, proportional to how
+    // close they are to the line. Boids behind the camera are ignored.
+    if (P.scareOrigin.w > 0.5) {
+        let origin = P.scareOrigin.xyz;
+        let dir    = P.scareDir.xyz;
+        let toBoid = pos - origin;
+        let tAlong = dot(toBoid, dir);
+        if (tAlong > 0.0) {
+            let perp = toBoid - dir * tAlong;
+            let d2   = dot(perp, perp);
+            let r    = P.scareTuning.x;
+            if (d2 < r * r && d2 > 0.0001) {
+                let d        = sqrt(d2);
+                let strength = (1.0 - d / r) * P.scareTuning.y;
+                newVel = newVel + (perp / d) * strength * P.dt;
+            }
         }
     }
 
@@ -231,8 +239,13 @@ fn vs_main(@builtin(instance_index) ii: u32, in: VIn) -> VOut {
     var out: VOut;
     out.clip        = scene.viewProjectionMatrix * vec4f(worldPos, 1.0);
     out.worldNormal = worldNormal;
-    let speedT = saturate(length(vel) / 5.0);
-    out.color = mix(vec3f(0.18, 0.55, 0.92), vec3f(1.0, 0.55, 0.15), speedT);
+    // Hue from facing direction: ±x, ±y, ±z each map to a distinct RGB
+    // wedge by remapping the unit vector from [-1,1] to [0,1] per channel.
+    // Intensity from speed: slow boids dim, fast ones bright.
+    let hue       = (forward + vec3f(1.0)) * 0.5;
+    let speedT    = saturate(length(vel) / 5.0);
+    let intensity = mix(0.35, 1.0, speedT);
+    out.color = hue * intensity;
     return out;
 }
 

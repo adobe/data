@@ -16,7 +16,7 @@ const CELL_COUNT = GRID_DIM ** 3;
 const CELL_SIZE = (WORLD_EXTENT * 2) / GRID_DIM;
 // Tuned for visible flocking. With viewR ≈ 1.6 and the 20-unit cube the
 // average neighbour count is ~8 — Reynolds' classic boid count band.
-const DEFAULT_BOIDS = 2_500;
+const DEFAULT_BOIDS = 4000;
 
 // Per-vertex stride for the boid arrowhead (position + normal, packed).
 const MESH_STRIDE = 24;
@@ -26,7 +26,7 @@ const DRAW_ARGS_SIZE = 20;
 // 2 × vec4f per boid.
 const BOID_STATE_STRIDE = 32;
 // 12 scalar + 2 × vec4f params.
-const PARAMS_SIZE = 80;
+const PARAMS_SIZE = 96;
 
 const SCARE_RADIUS = 3.0;
 const SCARE_GAIN = 18.0;
@@ -94,10 +94,10 @@ function arrowheadMesh(): { vertices: Float32Array; indices: Uint16Array; indexC
         v.push(x, y, z, x / len, y / len, z / len);
     };
     // 3× the previous scale so each boid is visible against the IBL skybox.
-    push( 0.00,  0.000,  0.45);  // tip
-    push( 0.12, -0.075, -0.15);  // back-bot-right
+    push(0.00, 0.000, 0.45);  // tip
+    push(0.12, -0.075, -0.15);  // back-bot-right
     push(-0.12, -0.075, -0.15);  // back-bot-left
-    push( 0.00,  0.150, -0.15);  // back-top
+    push(0.00, 0.150, -0.15);  // back-top
     const indices = new Uint16Array([
         0, 1, 3,  // tip-right-top
         0, 3, 2,  // tip-top-left
@@ -140,15 +140,18 @@ interface BoidGpu {
 export const boidsPlugin = Database.Plugin.create({
     extends: Database.Plugin.combine(graphics, sceneUniforms, orbit),
     resources: {
-        boidsCount:        { default: DEFAULT_BOIDS as number, transient: true },
-        boidsGpu:          { default: null as BoidGpu | null, transient: true },
-        boidsPingFrame:    { default: 0 as number, transient: true },
-        boidsLastTime:     { default: 0 as F32, transient: true },
-        boidsSceneBG:      { default: null as GPUBindGroup | null, transient: true },
-        boidsSceneBuffer:  { default: null as GPUBuffer | null, transient: true },
-        // Cursor scare point in world space; w-component carries the active flag.
-        boidsScarePos:     { default: [0, 0, 0] as Vec3, transient: true },
-        boidsScareActive:  { default: 0 as F32, transient: true },
+        boidsCount: { default: DEFAULT_BOIDS as number, transient: true },
+        boidsGpu: { default: null as BoidGpu | null, transient: true },
+        boidsPingFrame: { default: 0 as number, transient: true },
+        boidsLastTime: { default: 0 as F32, transient: true },
+        boidsSceneBG: { default: null as GPUBindGroup | null, transient: true },
+        boidsSceneBuffer: { default: null as GPUBuffer | null, transient: true },
+        // Cursor scare ray. Origin is the camera eye; dir is the unit vector
+        // from the eye through the cursor toward the far plane. Boids near
+        // this line are pushed perpendicular to it.
+        boidsScareOrigin: { default: [0, 0, 0] as Vec3, transient: true },
+        boidsScareDir: { default: [0, 0, 1] as Vec3, transient: true },
+        boidsScareActive: { default: 0 as F32, transient: true },
     },
     transactions: {
         setBoidsCount(t, count: number) {
@@ -156,8 +159,8 @@ export const boidsPlugin = Database.Plugin.create({
             // Force re-init by clearing the GPU bundle; the init system will rebuild.
             t.resources.boidsGpu = null;
         },
-        /** Project a canvas-space NDC point onto the plane through the orbit
-         *  center perpendicular to the view, then set that as the scare point. */
+        /** Cast a ray from the camera eye through the cursor (NDC) toward the
+         *  far plane. Any boid near that line — at any depth — will be scared. */
         setScareFromNdc(t, args: { ndcX: number; ndcY: number }) {
             const cam = t.resources.camera;
             if (!cam) return;
@@ -172,14 +175,8 @@ export const boidsPlugin = Database.Plugin.create({
                 fwd[1] + right[1] * rx + upOrtho[1] * ry,
                 fwd[2] + right[2] * rx + upOrtho[2] * ry,
             ]);
-            const denom = Vec3.dot(dir, fwd);
-            if (Math.abs(denom) < 1e-6) return;
-            const tau = Vec3.dot(Vec3.subtract(cam.target, cam.position), fwd) / denom;
-            t.resources.boidsScarePos = [
-                cam.position[0] + dir[0] * tau,
-                cam.position[1] + dir[1] * tau,
-                cam.position[2] + dir[2] * tau,
-            ];
+            t.resources.boidsScareOrigin = [cam.position[0], cam.position[1], cam.position[2]];
+            t.resources.boidsScareDir = dir;
             t.resources.boidsScareActive = 1;
         },
         disableScare(t) {
@@ -327,7 +324,7 @@ export const boidsPlugin = Database.Plugin.create({
                             arrayStride: MESH_STRIDE,
                             stepMode: "vertex",
                             attributes: [
-                                { format: "float32x3", offset: 0,  shaderLocation: 0 },
+                                { format: "float32x3", offset: 0, shaderLocation: 0 },
                                 { format: "float32x3", offset: 12, shaderLocation: 1 },
                             ],
                         }],
@@ -380,27 +377,32 @@ export const boidsPlugin = Database.Plugin.create({
                 const params = new ArrayBuffer(PARAMS_SIZE);
                 const f32 = new Float32Array(params);
                 const u32 = new Uint32Array(params);
-                f32[0]  = dt;                // dt
-                f32[1]  = CELL_SIZE;         // cellSize
-                f32[2]  = WORLD_EXTENT;      // worldExtent
-                u32[3]  = boidsCount;        // boidsCount
-                u32[4]  = GRID_DIM;          // gridDim
-                u32[5]  = CELL_COUNT;        // cellCount
-                u32[6]  = gpu.indexCount;    // indexCount
-                f32[7]  = 0.8;               // separationDist → viewR ≈ 1.6
-                f32[8]  = 3.0;               // separationGain (strong push-apart)
-                f32[9]  = 2.0;               // alignmentGain (strong velocity matching)
+                f32[0] = dt;                // dt
+                f32[1] = CELL_SIZE;         // cellSize
+                f32[2] = WORLD_EXTENT;      // worldExtent
+                u32[3] = boidsCount;        // boidsCount
+                u32[4] = GRID_DIM;          // gridDim
+                u32[5] = CELL_COUNT;        // cellCount
+                u32[6] = gpu.indexCount;    // indexCount
+                f32[7] = 0.8;               // separationDist → viewR ≈ 1.6
+                f32[8] = 3.0;               // separationGain (strong push-apart)
+                f32[9] = 2.0;               // alignmentGain (strong velocity matching)
                 f32[10] = 0.6;               // cohesionGain (looser pull-in)
                 f32[11] = 9.0;               // maxSpeed
-                // scareData (vec4 at offset 48): xyz = world pos, w = active flag.
-                const scarePos = db.store.resources.boidsScarePos;
-                f32[12] = scarePos[0];
-                f32[13] = scarePos[1];
-                f32[14] = scarePos[2];
+                // scareOrigin (vec4 at offset 48): xyz = eye pos, w = active flag.
+                const scareOrigin = db.store.resources.boidsScareOrigin;
+                f32[12] = scareOrigin[0];
+                f32[13] = scareOrigin[1];
+                f32[14] = scareOrigin[2];
                 f32[15] = db.store.resources.boidsScareActive;
-                // scareTuning (vec4 at offset 64): x = radius, y = gain.
-                f32[16] = SCARE_RADIUS;
-                f32[17] = SCARE_GAIN;
+                // scareDir (vec4 at offset 64): xyz = unit eye→cursor direction.
+                const scareDir = db.store.resources.boidsScareDir;
+                f32[16] = scareDir[0];
+                f32[17] = scareDir[1];
+                f32[18] = scareDir[2];
+                // scareTuning (vec4 at offset 80): x = radius, y = gain.
+                f32[20] = SCARE_RADIUS;
+                f32[21] = SCARE_GAIN;
                 device.queue.writeBuffer(gpu.params, 0, params);
 
                 const ping = db.store.resources.boidsPingFrame & 1;

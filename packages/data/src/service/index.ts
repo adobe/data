@@ -10,4 +10,5 @@ export {
 } from './progressive-result.js';
 
 export * from './async-data-service/index.js';
+export * from './ui-service/index.js';
 export * from './agentic-service/agentic-service.js';

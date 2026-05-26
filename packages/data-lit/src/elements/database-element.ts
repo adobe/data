@@ -4,12 +4,13 @@ import { LitElement } from 'lit';
 import { property } from 'lit/decorators.js';
 import { iterateSelfAndAncestors } from '../functions/index.js';
 import { Database } from '@adobe/data/ecs';
+import { UIService } from '@adobe/data/service';
 import { attachDecorator, withHooks } from '../index.js';
 
 export abstract class DatabaseElement<P extends Database.Plugin> extends LitElement {
 
   @property({ type: Object, reflect: false })
-  service!: Database.Plugin.ToDatabase<P>;
+  service!: UIService.FromService<Database.Plugin.ToDatabase<P>>;
 
   constructor() {
     super();
@@ -21,7 +22,7 @@ export abstract class DatabaseElement<P extends Database.Plugin> extends LitElem
   connectedCallback(): void {
     if (!this.service) {
       const service = this.findAncestorDatabase();
-      this.service = (service?.extend(this.plugin) ?? Database.create(this.plugin)) as unknown as Database.Plugin.ToDatabase<P>;
+      this.service = (service?.extend(this.plugin) ?? Database.create(this.plugin)) as unknown as UIService.FromService<Database.Plugin.ToDatabase<P>>;
     }
     super.connectedCallback();
   }

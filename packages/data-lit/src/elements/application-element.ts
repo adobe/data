@@ -10,6 +10,9 @@ export class ApplicationElement<MainService extends Service> extends LitElement 
   @property({ type: Object, reflect: false })
   service!: MainService;
 
+  @property({ attribute: false })
+  typeGuard?: (service: unknown) => service is MainService;
+
   constructor() {
     super();
     attachDecorator(this, 'render', withHooks);
@@ -27,9 +30,14 @@ export class ApplicationElement<MainService extends Service> extends LitElement 
   }
 
   protected findAncestorService(): MainService | void {
+    const { typeGuard } = this;
     for (const element of iterateSelfAndAncestors(this)) {
       const { service } = element as Partial<ApplicationElement<MainService>>;
-      if (isService(service)) {
+      if (typeGuard) {
+        if (typeGuard(service)) {
+          return service;
+        }
+      } else if (isService(service)) {
         return service;
       }
     }

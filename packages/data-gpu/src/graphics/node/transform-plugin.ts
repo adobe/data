@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Mat4x4, Quat } from "@adobe/data/math";
-import { node } from "./node-plugin.js";
+import { Node } from "./node.js";
 
 /**
  * transformCreateWorldMatrix
@@ -23,7 +23,7 @@ import { node } from "./node-plugin.js";
  *   matrix is already populated this frame.
  */
 export const transform = Database.Plugin.create({
-    extends: node,
+    extends: Node.plugin,
     systems: {
         transformCreateWorldMatrix: {
             create: db => () => {

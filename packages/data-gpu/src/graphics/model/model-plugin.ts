@@ -2,7 +2,7 @@
 
 import { Database, Entity } from "@adobe/data/ecs";
 import { Quat, type Vec3 } from "@adobe/data/math";
-import { node } from "../node/node-plugin.js";
+import { Node } from "../node/node.js";
 
 /**
  * Authored renderable scene. A `Geometry` is an asset identified by URL; a
@@ -12,8 +12,8 @@ import { node } from "../node/node-plugin.js";
  * Loading is performed by `modelLoader`, which reads the `modelUrl` and
  * produces the GPU primitives the renderers consume.
  */
-export const model = Database.Plugin.create({
-    extends: node,
+export const plugin = Database.Plugin.create({
+    extends: Node.plugin,
     components: {
         modelUrl: { type: "string" },
         geometry: Entity.schema,

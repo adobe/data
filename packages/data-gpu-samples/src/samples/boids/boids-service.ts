@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Vec3, type F32 } from "@adobe/data/math";
-import { sceneUniforms, graphics, orbit } from "@adobe/data-gpu";
+import { SceneUniforms, graphics, Orbit } from "@adobe/data-gpu";
 import { computeShader, renderShader } from "./boids-shaders.js";
 
 // --- Tunables --------------------------------------------------------------
@@ -138,7 +138,7 @@ interface BoidGpu {
 }
 
 export const boidsPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(graphics, sceneUniforms, orbit),
+    extends: Database.Plugin.combine(graphics, SceneUniforms.plugin, Orbit.plugin),
     resources: {
         boidsCount: { default: DEFAULT_BOIDS as number, transient: true },
         boidsGpu: { default: null as BoidGpu | null, transient: true },
@@ -183,12 +183,15 @@ export const boidsPlugin = Database.Plugin.create({
             t.resources.boidsScareActive = 0;
         },
         initializeScene(t) {
-            t.resources.orbitCenter = [0, 0, 0];
-            t.resources.orbitRadius = WORLD_EXTENT * 1.6;
-            t.resources.orbitHeight = WORLD_EXTENT * 0.3;
-            t.resources.orbitAutoSpinSpeed = 0.08;
-            t.resources.orbitNearFactor = 0.005;
-            t.resources.orbitFarFactor = 4;
+            t.resources.orbit = {
+                ...t.resources.orbit,
+                center:        [0, 0, 0],
+                radius:        WORLD_EXTENT * 1.6,
+                height:        WORLD_EXTENT * 0.3,
+                autoSpinSpeed: 0.08,
+                nearFactor:    0.005,
+                farFactor:     4,
+            };
         },
     },
     systems: {

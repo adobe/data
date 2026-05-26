@@ -2,10 +2,10 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Vec3 } from "@adobe/data/math";
-import { pbrIblRender, model, orbit } from "@adobe/data-gpu";
+import { pbrIblRender, Model, Orbit } from "@adobe/data-gpu";
 
 export const pbrIblInstancedPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrIblRender, orbit),
+    extends: Database.Plugin.combine(pbrIblRender, Orbit.plugin),
     transactions: {
         initializeScene(t, args: {
             modelUrl: string;
@@ -14,23 +14,29 @@ export const pbrIblInstancedPlugin = Database.Plugin.create({
             grid: number;
             spacing: number;
         }): number {
-            if (args.envUrl !== undefined) t.resources.environmentUrl = args.envUrl;
-            if (args.lightColor !== undefined) t.resources.lightColor = args.lightColor;
-            const geoId = model.transactions.insertGeometry(t, { modelUrl: args.modelUrl });
+            t.resources.light = {
+                ...t.resources.light,
+                environmentUrl: args.envUrl ?? t.resources.light.environmentUrl,
+                color:          args.lightColor ?? t.resources.light.color,
+            };
+            const geoId = Model.plugin.transactions.insertGeometry(t, { modelUrl: args.modelUrl });
             const offset = (args.grid - 1) / 2;
             for (let x = 0; x < args.grid; x++) {
                 for (let z = 0; z < args.grid; z++) {
-                    model.transactions.insertModel(t, {
+                    Model.plugin.transactions.insertModel(t, {
                         geometry: geoId,
                         position: [(x - offset) * args.spacing, 0, (z - offset) * args.spacing],
                     });
                 }
             }
-            t.resources.orbitFitGeometry = geoId;
-            t.resources.orbitFitRadiusOffset = offset * args.spacing;
-            t.resources.orbitFitRadiusFactor = 2;
-            t.resources.orbitFitHeightFactor = 0.5;
-            t.resources.orbitFitCenter = [0, 0, 0];
+            t.resources.orbit = {
+                ...t.resources.orbit,
+                fitGeometry:     geoId,
+                fitRadiusOffset: offset * args.spacing,
+                fitRadiusFactor: 2,
+                fitHeightFactor: 0.5,
+                fitCenter:       [0, 0, 0],
+            };
             return geoId;
         },
     },

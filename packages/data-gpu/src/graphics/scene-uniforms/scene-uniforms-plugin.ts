@@ -2,8 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { createStructBuffer, copyToGPUBuffer, getStructLayout, type TypedBuffer } from "@adobe/data/typed-buffer";
-import { camera } from "../camera/camera-plugin.js";
-import { light } from "../light/light-plugin.js";
+import { Light } from "../light/light.js";
 import { Camera } from "../camera/camera.js";
 import { SceneUniforms } from "./scene-uniforms.js";
 
@@ -14,14 +13,12 @@ const sceneUniformsStructLayout = getStructLayout(SceneUniforms.schema);
  *   query: —
  *   read:
  *     camera
- *     lightDirection
- *     lightColor
- *     ambientStrength
+ *     light
  *   write:
  *     _sceneUniformsBuffer: GPUBuffer
  */
-export const sceneUniforms = Database.Plugin.create({
-    extends: Database.Plugin.combine(camera, light),
+export const plugin = Database.Plugin.create({
+    extends: Database.Plugin.combine(Camera.plugin, Light.plugin),
     resources: {
         _sceneUniformsBuffer: { default: null as GPUBuffer | null, transient: true },
     },
@@ -30,7 +27,7 @@ export const sceneUniforms = Database.Plugin.create({
             create: db => {
                 let structBuffer: TypedBuffer<SceneUniforms> | null = null;
                 return () => {
-                    const { device, lightDirection, ambientStrength, lightColor } = db.store.resources;
+                    const { device, light } = db.store.resources;
                     const cam = db.store.resources.camera;
                     if (!device || !cam) return;
 
@@ -47,10 +44,10 @@ export const sceneUniforms = Database.Plugin.create({
 
                     structBuffer.set(0, {
                         viewProjectionMatrix: Camera.toViewProjection(cam),
-                        lightDirection,
-                        ambientStrength,
-                        lightColor,
-                        cameraPosition: cam.position,
+                        lightDirection:  light.direction,
+                        ambientStrength: light.ambientStrength,
+                        lightColor:      light.color,
+                        cameraPosition:  cam.position,
                     });
 
                     db.store.resources._sceneUniformsBuffer = copyToGPUBuffer(structBuffer, device, gpuBuffer);

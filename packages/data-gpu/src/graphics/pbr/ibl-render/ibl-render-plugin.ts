@@ -4,7 +4,6 @@ import { Database } from "@adobe/data/ecs";
 import { Mat4x4, Vec3 } from "@adobe/data/math";
 import { pbrCore } from "../pbr-core-plugin.js";
 import { modelLoader } from "../../model/model-loader-plugin.js";
-import { sceneUniforms } from "../../scene-uniforms/scene-uniforms-plugin.js";
 import { transform } from "../../node/transform-plugin.js";
 import { buildIblResources } from "./ibl/build-ibl-resources.js";
 import { parseHdr } from "./ibl/parse-hdr.js";
@@ -44,7 +43,7 @@ function createSkyboxBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
  *
  *   - pbrCore         (ephemeral primitive/material shape declarations)
  *   - modelLoader     (glTF → primitives)
- *   - sceneUniforms   (camera + light packed into a GPU buffer)
+ *   - SceneUniforms.plugin (camera + light packed into a GPU buffer)
  *   - transform       (Node TRS → _worldMatrix)
  *
  * The render system is skin-aware — if a primitive has a `_skinVertexBuffer`,
@@ -53,14 +52,14 @@ function createSkyboxBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
  * meshes.
  *
  * Adds its own systems:
- *   - iblInitSystem    : environmentUrl → IBL cube/2D textures
+ *   - iblInitSystem    : light.environmentUrl → IBL cube/2D textures
  *   - pbrIblRenderSystem: visible Models → drawIndexed calls
  *
  * Mutually exclusive with `pbrDirectRender` — both iterate the same
  * `_PbrPrimitive` archetype.
  */
 export const pbrIblRender = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrCore, modelLoader, sceneUniforms, transform),
+    extends: Database.Plugin.combine(pbrCore, modelLoader, SceneUniforms.plugin, transform),
     resources: {
         _iblEnvironment:  { default: null as GPUTexture | null, transient: true },
         _iblIrradiance:   { default: null as GPUTexture | null, transient: true },
@@ -73,8 +72,9 @@ export const pbrIblRender = Database.Plugin.create({
                 let started = false;
                 return () => {
                     if (started) return;
-                    const { device, environmentUrl } = db.store.resources;
+                    const { device, light } = db.store.resources;
                     if (!device) return;
+                    const environmentUrl = light.environmentUrl;
                     started = true;
 
                     const buildAndAssign = (hdr?: Awaited<ReturnType<typeof parseHdr>>) => {

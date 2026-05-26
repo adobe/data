@@ -4,7 +4,6 @@ import { Database } from "@adobe/data/ecs";
 import { Mat4x4 } from "@adobe/data/math";
 import { modelLoader } from "../../model/model-loader-plugin.js";
 import { pbrCore } from "../pbr-core-plugin.js";
-import { sceneUniforms } from "../../scene-uniforms/scene-uniforms-plugin.js";
 import { transform } from "../../node/transform-plugin.js";
 import { VisibleMaterial } from "../visible-material/visible-material.js";
 import { SceneUniforms } from "../../scene-uniforms/scene-uniforms.js";
@@ -18,13 +17,13 @@ import shaderSource from "./direct-shader.wgsl.js";
  *
  *   - pbrCore         (ephemeral primitive/material shape declarations)
  *   - modelLoader     (glTF → primitives)
- *   - sceneUniforms   (camera + light packed into a GPU buffer)
+ *   - SceneUniforms.plugin (camera + light packed into a GPU buffer)
  *   - transform       (Node TRS → _worldMatrix)
  *
  * Mutually exclusive with `pbrIblRender` — both iterate the same archetype.
  */
 export const pbrDirectRender = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrCore, modelLoader, sceneUniforms, transform),
+    extends: Database.Plugin.combine(pbrCore, modelLoader, SceneUniforms.plugin, transform),
     systems: {
         pbrDirectRenderSystem: {
             create: db => {

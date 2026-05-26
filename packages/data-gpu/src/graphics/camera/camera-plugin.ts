@@ -4,7 +4,7 @@ import { Database } from "@adobe/data/ecs";
 import { graphics } from "../graphics-plugin.js";
 import { Camera } from "./camera.js";
 
-export const camera = Database.Plugin.create({
+export const plugin = Database.Plugin.create({
     extends: graphics,
     resources: {
         camera: {

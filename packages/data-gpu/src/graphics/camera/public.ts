@@ -3,3 +3,4 @@
 export * from "./schema.js";
 export * from "./to-view-projection.js";
 export * from "./screen-to-world-ray.js";
+export { plugin } from "./camera-plugin.js";

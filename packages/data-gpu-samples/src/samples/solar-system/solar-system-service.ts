@@ -4,8 +4,8 @@ import { Database } from "@adobe/data/ecs";
 import { Vec3 } from "@adobe/data/math";
 import {
     animation,
-    model,
-    orbit,
+    Model,
+    Orbit,
     pbrIblRender,
     type AnimationTrack,
 } from "@adobe/data-gpu";
@@ -39,13 +39,16 @@ interface PlanetSpec {
 }
 
 export const solarSystemPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrIblRender, sphere, animation, orbit),
+    extends: Database.Plugin.combine(pbrIblRender, sphere, animation, Orbit.plugin),
     transactions: {
         initializeScene(t) {
-            t.resources.orbitCenter = [0, 0, 0];
-            t.resources.orbitRadius = 28;
-            t.resources.orbitHeight = 10;
-            t.resources.orbitAutoSpinSpeed = 0.12;
+            t.resources.orbit = {
+                ...t.resources.orbit,
+                center: [0, 0, 0],
+                radius: 28,
+                height: 10,
+                autoSpinSpeed: 0.12,
+            };
 
             const insertPlanet = (spec: PlanetSpec): number => {
                 const geo = sphere.transactions.insertSphere(t, {
@@ -56,7 +59,7 @@ export const solarSystemPlugin = Database.Plugin.create({
                     rings: 32,
                     segments: 64,
                 });
-                const planetId = model.transactions.insertModel(t, {
+                const planetId = Model.plugin.transactions.insertModel(t, {
                     geometry: geo,
                     position: spec.position,
                     scale: spec.scale,

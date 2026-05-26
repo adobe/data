@@ -6,21 +6,21 @@ import { True } from "@adobe/data/schema";
 
 /**
  * The transform-hierarchy core model. Every entity with a position in the
- * world is a `Node`.
+ * world is a `Node` — see `node.ts` for the field bundle.
  *
  * `_worldMatrix` is declared as a component but NOT listed on the authored
  * Node archetype — the `transform` system writes it via `db.store.update`,
  * which migrates each entity once into a wider archetype that includes it.
  * Renderers query for that post-migration archetype.
  */
-export const node = Database.Plugin.create({
+export const plugin = Database.Plugin.create({
     components: {
-        visible:        True.schema,
-        position:       Vec3.schema,
-        rotation:       Quat.schema,
-        scale:          Vec3.schema,
-        parent:         Entity.schema,
-        _worldMatrix:   Mat4x4.schema,
+        visible: True.schema,
+        position: Vec3.schema,
+        rotation: Quat.schema,
+        scale: Vec3.schema,
+        parent: Entity.schema,
+        _worldMatrix: Mat4x4.schema,
     },
     archetypes: {
         Node: ["position", "rotation", "scale", "parent", "visible"],

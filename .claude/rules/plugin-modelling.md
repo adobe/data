@@ -33,17 +33,60 @@ authoring abstraction.
 
 Each file whose primary export is a `Database.Plugin` (created or
 combined) ends in `-plugin.ts` — e.g. `node-plugin.ts`, `model-plugin.ts`,
-`pbr-core-plugin.ts`. The exported constant itself keeps its short
-concept name (`node`, `model`, `pbrCore`) so import sites stay terse.
+`pbr-core-plugin.ts`. The suffix is for discovery: cursor rules,
+codebase grep, and "find all plugins" tooling match `**/*-plugin.ts`
+without inspecting contents.
 
-The suffix is for discovery: cursor rules, codebase grep, and "find all
-plugins" tooling can match `**/*-plugin.ts` without inspecting
-contents. It also disambiguates plugin from type when a folder holds
-both (`camera/camera.ts` is the type; `camera/camera-plugin.ts` is the
-plugin).
+The exported constant's name depends on whether the folder also hosts a
+type namespace:
+
+- **Pure-plugin folder** (no owned type) → export the concept name
+  itself, lowercase. `node-plugin.ts` exports `node`. Import sites read
+  `import { node } from "..."; Database.Plugin.combine(node, ...)`.
+- **Type + plugin folder** (folder hosts both an owned type and its
+  plugin) → the plugin file exports `plugin`, re-exported through the
+  type's namespace. `camera-plugin.ts` exports `plugin`; `camera/public.ts`
+  re-exports it; consumers reach it as `Camera.plugin`. One import gives
+  both the type and the plugin.
 
 Files with helper exports, value types, schemas, or shaders do **not**
 take the suffix — only plugin files.
+
+## Resources and archetypes as types
+
+Prefer **one resource per plugin**, of an owned type that the folder also
+hosts. `light/` has one `light` resource of type `Light`; `orbit/` has
+one `orbit` resource of type `Orbit`. Splitting a single coherent
+concept into siblings (`lightDirection`, `lightColor`, `ambientStrength`)
+duplicates the concept's identity at every read site.
+
+For each **archetype** the plugin declares, add a TypeScript type with
+the same name describing one row's authored shape. `Node` is the type
+for the `Node` archetype's row. The components stay separate per
+typed-buffer-column convention; the type names the bundle so consumers
+can declare `const node: Node` after a read.
+
+Both cases follow the same folder shape:
+
+```
+<concept>/
+  <concept>.ts          # type + namespace
+  public.ts             # re-exports plugin (and any helpers)
+  <concept>-plugin.ts   # exports `plugin`
+```
+
+Consumers reach the plugin as `Concept.plugin` and the type as
+`Concept`. Pure-plugin folders (no owned type) still export their
+plugin under a lowercase concept name — see "File naming" below.
+
+**Exceptions:**
+- Plugins whose resources have genuinely independent lifecycles
+  (`graphics` — `device`, `canvas`, `commandEncoder`, each set at
+  different times) keep them as separate resources. Consolidating
+  would force any one write to replace the whole struct.
+- Ephemeral implementation archetypes (e.g. `_PbrPrimitive`,
+  `_VisibleMaterial`) don't need a value type — consumers iterate
+  them by archetype, never construct one.
 
 ## Shared conventions
 

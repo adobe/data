@@ -25,13 +25,18 @@ Guid.layout // → StructLayout { size: 16, type: 'array', fields: { 0,1,2,3 } }
 ## API
 
 ```ts
-Guid.create()                  // → Guid  RFC 4122 v4 via crypto.getRandomValues
-Guid.nil                       // → Guid  [0, 0, 0, 0]
+Guid.create()                  // → Guid    RFC 4122 v4 via crypto.getRandomValues
+Guid.nil                       // → Guid    [0, 0, 0, 0]
 Guid.equals(a, b)              // → boolean
-Guid.toUUID(g)                 // → "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
-Guid.fromUUID(s)               // → Guid  throws TypeError on bad input
-Guid.toUnserializableKey(g)    // → string  8-char WTF-16 key (see below)
+Guid.toUUID(g)                 // → string  "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"  ~950 ns
+Guid.fromUUID(s)               // → Guid    throws TypeError on bad input
+Guid.toUnserializableKey(g)    // → string  8-char WTF-16 Map key, NOT serializable  ~87 ns
 ```
+
+`toUUID` is for human-readable output and cross-system interop. Use
+`toUnserializableKey` on any hot path where the result stays in-process —
+it is **~11× faster** to produce and hashes faster as a Map key (~93 ns/set
+vs ~215 ns/set at N=100K).
 
 ### `Guid.toUnserializableKey`
 

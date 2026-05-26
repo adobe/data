@@ -18,7 +18,7 @@ import { Observe } from "../../observe/index.js";
 import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";
 import { Service } from "../service.js";
-import { UIService } from "./index.js";
+import { UIService } from "./ui-service.js";
 
 // ============================================================================
 // VALID UI SERVICE

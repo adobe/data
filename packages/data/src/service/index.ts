@@ -9,6 +9,6 @@ export {
     ErrorResultSchema, IntermediateResultSchema, SuccessResultSchema, ProgressiveResultSchema
 } from './progressive-result.js';
 
-export * from './async-data-service/index.js';
-export * from './ui-service/index.js';
+export * from './async-data-service/async-data-service.js';
+export * from './ui-service/ui-service.js';
 export * from './agentic-service/agentic-service.js';

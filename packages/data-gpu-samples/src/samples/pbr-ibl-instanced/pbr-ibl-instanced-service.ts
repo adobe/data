@@ -1,11 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { Quat, Vec3 } from "@adobe/data/math";
-import { orbitCamera, pbrIbl, pbrModelLoader } from "@adobe/data-gpu";
+import { Vec3 } from "@adobe/data/math";
+import { pbrIblRender, model, orbit } from "@adobe/data-gpu";
 
 export const pbrIblInstancedPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrIbl, pbrModelLoader, orbitCamera),
+    extends: Database.Plugin.combine(pbrIblRender, orbit),
     transactions: {
         initializeScene(t, args: {
             modelUrl: string;
@@ -14,25 +14,19 @@ export const pbrIblInstancedPlugin = Database.Plugin.create({
             grid: number;
             spacing: number;
         }): number {
-            if (args.envUrl !== undefined) t.resources.iblEnvironmentUrl = args.envUrl;
+            if (args.envUrl !== undefined) t.resources.environmentUrl = args.envUrl;
             if (args.lightColor !== undefined) t.resources.lightColor = args.lightColor;
-            const geoId = t.archetypes.Geometry.insert({ pbrModelUrl: args.modelUrl });
+            const geoId = model.transactions.insertGeometry(t, { modelUrl: args.modelUrl });
             const offset = (args.grid - 1) / 2;
             for (let x = 0; x < args.grid; x++) {
                 for (let z = 0; z < args.grid; z++) {
-                    t.archetypes.Model.insert({
-                        pbrGeometryRef: geoId,
+                    model.transactions.insertModel(t, {
+                        geometry: geoId,
                         position: [(x - offset) * args.spacing, 0, (z - offset) * args.spacing],
-                        rotation: Quat.identity,
-                        scale: [1, 1, 1],
-                        visible: true,
-                        parent: 0,
-                        animationSkeletonRef: 0,
                     });
                 }
             }
-            // Fit around the grid: extra radius for the grid extent, center at origin.
-            t.resources.orbitFitGeometryRef = geoId;
+            t.resources.orbitFitGeometry = geoId;
             t.resources.orbitFitRadiusOffset = offset * args.spacing;
             t.resources.orbitFitRadiusFactor = 2;
             t.resources.orbitFitHeightFactor = 0.5;

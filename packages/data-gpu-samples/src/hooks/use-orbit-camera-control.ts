@@ -11,7 +11,7 @@ interface OrbitControlService {
 }
 
 /**
- * Wires the host element's drag gesture to the `orbitCamera` plugin: drag
+ * Wires the host element's drag gesture to the `orbit` plugin: drag
  * moves rotate the orbit (pausing auto-spin), drag end un-pauses. Sensitivity
  * is in radians per drag pixel; default matches the previous samples.
  */

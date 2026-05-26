@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Vec3, type F32 } from "@adobe/data/math";
-import { defaultSceneUniforms, graphics, orbitCamera } from "@adobe/data-gpu";
+import { sceneUniforms, graphics, orbit } from "@adobe/data-gpu";
 import { computeShader, renderShader } from "./boids-shaders.js";
 
 // --- Tunables --------------------------------------------------------------
@@ -138,7 +138,7 @@ interface BoidGpu {
 }
 
 export const boidsPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(graphics, defaultSceneUniforms, orbitCamera),
+    extends: Database.Plugin.combine(graphics, sceneUniforms, orbit),
     resources: {
         boidsCount:        { default: DEFAULT_BOIDS as number, transient: true },
         boidsGpu:          { default: null as BoidGpu | null, transient: true },
@@ -431,17 +431,17 @@ export const boidsPlugin = Database.Plugin.create({
         boidsRender: {
             create: db => () => {
                 const gpu = db.store.resources.boidsGpu;
-                const { renderPassEncoder, device, sceneUniformsBuffer, boidsSceneBuffer, boidsSceneBG } = db.store.resources;
-                if (!gpu || !renderPassEncoder || !device || !sceneUniformsBuffer) return;
+                const { renderPassEncoder, device, _sceneUniformsBuffer, boidsSceneBuffer, boidsSceneBG } = db.store.resources;
+                if (!gpu || !renderPassEncoder || !device || !_sceneUniformsBuffer) return;
 
                 let sceneBG = boidsSceneBG;
-                if (boidsSceneBuffer !== sceneUniformsBuffer || !sceneBG) {
+                if (boidsSceneBuffer !== _sceneUniformsBuffer || !sceneBG) {
                     sceneBG = device.createBindGroup({
                         layout: gpu.renderPipeline.getBindGroupLayout(0),
-                        entries: [{ binding: 0, resource: { buffer: sceneUniformsBuffer } }],
+                        entries: [{ binding: 0, resource: { buffer: _sceneUniformsBuffer } }],
                     });
                     db.store.resources.boidsSceneBG = sceneBG;
-                    db.store.resources.boidsSceneBuffer = sceneUniformsBuffer;
+                    db.store.resources.boidsSceneBuffer = _sceneUniformsBuffer;
                 }
 
                 // The render bind group matches whichever buffer compute just wrote.

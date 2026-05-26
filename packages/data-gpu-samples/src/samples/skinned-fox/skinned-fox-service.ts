@@ -1,11 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { Quat, Vec3 } from "@adobe/data/math";
-import { orbitCamera, pbrIbl, pbrModelLoader, pbrSkinning } from "@adobe/data-gpu";
+import { Vec3 } from "@adobe/data/math";
+import { pbrIblRender, pbrSkinning, model, orbit } from "@adobe/data-gpu";
 
 export const skinnedFoxPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrIbl, pbrModelLoader, pbrSkinning, orbitCamera),
+    extends: Database.Plugin.combine(pbrIblRender, pbrSkinning, orbit),
     transactions: {
         initializeScene(t, args: {
             modelUrl: string;
@@ -13,19 +13,11 @@ export const skinnedFoxPlugin = Database.Plugin.create({
             lightColor?: Vec3;
             orbitFit?: { radiusFactor: number; heightFactor: number };
         }): number {
-            if (args.envUrl !== undefined) t.resources.iblEnvironmentUrl = args.envUrl;
+            if (args.envUrl !== undefined) t.resources.environmentUrl = args.envUrl;
             if (args.lightColor !== undefined) t.resources.lightColor = args.lightColor;
-            const geoId = t.archetypes.Geometry.insert({ pbrModelUrl: args.modelUrl });
-            t.archetypes.Model.insert({
-                pbrGeometryRef: geoId,
-                position: [0, 0, 0],
-                rotation: Quat.identity,
-                scale: [1, 1, 1],
-                visible: true,
-                parent: 0,
-                animationSkeletonRef: 0,
-            });
-            t.resources.orbitFitGeometryRef = geoId;
+            const geoId = model.transactions.insertGeometry(t, { modelUrl: args.modelUrl });
+            model.transactions.insertModel(t, { geometry: geoId });
+            t.resources.orbitFitGeometry = geoId;
             if (args.orbitFit) {
                 t.resources.orbitFitRadiusFactor = args.orbitFit.radiusFactor;
                 t.resources.orbitFitHeightFactor = args.orbitFit.heightFactor;

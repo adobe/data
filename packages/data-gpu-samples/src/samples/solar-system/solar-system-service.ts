@@ -1,15 +1,15 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { Quat, Vec3 } from "@adobe/data/math";
+import { Vec3 } from "@adobe/data/math";
 import {
     animation,
-    orbitCamera,
-    pbrIbl,
-    pbrModelLoader,
-    pbrShapes,
+    model,
+    orbit,
+    pbrIblRender,
     type AnimationTrack,
 } from "@adobe/data-gpu";
+import { sphere } from "./sphere-plugin.js";
 
 const TWO_PI = Math.PI * 2;
 const ORBIT_SEGMENTS = 64;
@@ -39,50 +39,44 @@ interface PlanetSpec {
 }
 
 export const solarSystemPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrIbl, pbrModelLoader, pbrShapes, animation, orbitCamera),
+    extends: Database.Plugin.combine(pbrIblRender, sphere, animation, orbit),
     transactions: {
         initializeScene(t) {
-            // Solar system uses a fixed orbit rather than bounds-fit.
             t.resources.orbitCenter = [0, 0, 0];
             t.resources.orbitRadius = 28;
             t.resources.orbitHeight = 10;
             t.resources.orbitAutoSpinSpeed = 0.12;
 
             const insertPlanet = (spec: PlanetSpec): number => {
-                const geo = t.archetypes.Sphere.insert({
-                    pbrSphereSpec: {
-                        color: spec.color,
-                        emissive: spec.emissive,
-                        metallic: spec.metallic,
-                        roughness: spec.roughness,
-                        rings: 32,
-                        segments: 64,
-                    },
+                const geo = sphere.transactions.insertSphere(t, {
+                    color: spec.color,
+                    emissive: spec.emissive,
+                    metallic: spec.metallic,
+                    roughness: spec.roughness,
+                    rings: 32,
+                    segments: 64,
                 });
-                const model = t.archetypes.Model.insert({
-                    pbrGeometryRef: geo,
+                const planetId = model.transactions.insertModel(t, {
+                    geometry: geo,
                     position: spec.position,
-                    rotation: Quat.identity,
                     scale: spec.scale,
-                    visible: true,
                     parent: spec.parent ?? 0,
-                    animationSkeletonRef: 0,
                 });
                 if (spec.orbitRadius !== undefined && spec.orbitSpeed !== undefined) {
                     const clip = t.archetypes.AnimationClip.insert({
                         animationClipTracks: [buildOrbitTrack(spec.orbitRadius)],
                         animationClipDuration: TWO_PI,
                     });
-                    t.archetypes.AnimationPlayer.insert({
+                    t.archetypes.Animation.insert({
                         animationClipRef: clip,
-                        animationTargets: [model],
+                        animationTargets: [planetId],
                         animationTime: 0,
                         animationSpeed: spec.orbitSpeed,
                         animationLoop: true,
                         animationPlaying: true,
                     });
                 }
-                return model;
+                return planetId;
             };
 
             const sun = insertPlanet({

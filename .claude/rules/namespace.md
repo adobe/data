@@ -49,6 +49,23 @@ as both type and namespace (`LogLevel.is(x)`, `LogLevel.values`).
 - Add `is` / `values` / per-member descriptors only when an external
   consumer actually needs them — not preemptively.
 
+## Multi-declaration files (when lumping is OK)
+
+Default stays one type / one helper per file. Two named exceptions:
+
+- **`<type>-functions.ts`** — sibling functions operating on one owned
+  type. Lives in that type's folder. Use when functions are small enough
+  that adjacency in one editor pane beats one-file-per-function.
+- **`<format>-schema.ts`** — TypeScript projection of a borrowed data
+  format (file format, wire protocol, third-party API). Plain `export
+  interface` only — no namespace, no helpers. Lives next to the parser/
+  emitter, not in a type folder.
+
+Never `*-types.ts`. "Types" is a meta-word the `.ts` extension already
+implies; the name has to predict the contents. If you can't beat
+`-types`, the file isn't a real lump — split per type, or inline at use
+site.
+
 ## Domain namespaces (for types you don't own)
 
 When utility functions operate on a platform or third-party type (e.g.

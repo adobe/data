@@ -35,7 +35,7 @@ export class SolarSystemElement extends DatabaseElement<typeof solarSystemPlugin
         useEffect(() => {
             if (!canvas) return;
             service.transactions.setCanvas(canvas);
-            service.transactions.setIblEnvironmentUrl(ENV_URL);
+            service.transactions.setEnvironmentUrl(ENV_URL);
             service.transactions.setLight({ color: [0.1, 0.1, 0.1] });
             service.transactions.initializeScene();
         }, [canvas, service]);

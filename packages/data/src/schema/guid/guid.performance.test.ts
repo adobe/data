@@ -208,7 +208,7 @@ describe(`Guid Map key comparison (N = ${N_MAP.toLocaleString()})`, () => {
 
     it("Map<string> set — 36-char UUID string", () => {
         const guids = Array.from({ length: N_MAP }, (_, i) => makeGuid(i));
-        const keys = guids.map(Guid.toString);
+        const keys = guids.map(Guid.toUUID);
         const map = new Map<string, number>();
 
         for (let j = 0; j < 1_000; j++) map.set(keys[j], j);
@@ -258,7 +258,7 @@ describe(`Guid Map key comparison (N = ${N_MAP.toLocaleString()})`, () => {
 
     it("Map<string> get — 36-char UUID string", () => {
         const guids = Array.from({ length: N_MAP }, (_, i) => makeGuid(i));
-        const keys = guids.map(Guid.toString);
+        const keys = guids.map(Guid.toUUID);
         const map = new Map<string, number>(keys.map((k, i) => [k, i]));
 
         let sink = 0;
@@ -311,11 +311,11 @@ describe(`Guid Map key comparison (N = ${N_MAP.toLocaleString()})`, () => {
         const guids = Array.from({ length: N_MAP }, (_, i) => makeGuid(i));
 
         // uuid-string
-        { let sink = ""; for (let j = 0; j < 1_000; j++) sink += Guid.toString(guids[j]).length;
+        { let sink = ""; for (let j = 0; j < 1_000; j++) sink += Guid.toUUID(guids[j]).length;
           const t0 = hrNow();
-          for (let i = 0; i < N_MAP; i++) sink += Guid.toString(guids[i]).length;
+          for (let i = 0; i < N_MAP; i++) sink += Guid.toUUID(guids[i]).length;
           const ms = hrNow() - t0;
-          console.log(`  uuid-string encode: ${nsPerOp(ms, N_MAP)}  key len: 36 chars`); expect(sink.length).toBeGreaterThan(0); }
+          console.log(`  toUUID encode:      ${nsPerOp(ms, N_MAP)}  key len: 36 chars`); expect(sink.length).toBeGreaterThan(0); }
 
         // bigint
         { let sink = 0n; for (let j = 0; j < 1_000; j++) sink += guidToBigInt(guids[j]);

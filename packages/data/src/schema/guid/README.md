@@ -28,8 +28,8 @@ Guid.layout // → StructLayout { size: 16, type: 'array', fields: { 0,1,2,3 } }
 Guid.create()                  // → Guid  RFC 4122 v4 via crypto.getRandomValues
 Guid.nil                       // → Guid  [0, 0, 0, 0]
 Guid.equals(a, b)              // → boolean
-Guid.toString(g)               // → "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
-Guid.fromString(s)             // → Guid  throws TypeError on bad input
+Guid.toUUID(g)                 // → "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx"
+Guid.fromUUID(s)               // → Guid  throws TypeError on bad input
 Guid.toUnserializableKey(g)    // → string  8-char WTF-16 key (see below)
 ```
 
@@ -45,7 +45,7 @@ corrupt on serialization (JSON, TextEncoder, postMessage). Do not store,
 transmit, or serialize the result.
 
 ```ts
-const key = Guid.toUnserializableKey(g); // fast — ~84–92 ns vs ~950 ns for toString
+const key = Guid.toUnserializableKey(g); // fast — ~84–92 ns vs ~950 ns for toUUID
 const map = new Map<string, SomeValue>();
 map.set(key, value);
 map.get(key);
@@ -120,9 +120,9 @@ any BigInt representation and has the same 16-byte linear memory footprint.
 
 **For Map/Set lookups keyed on GUIDs**, use `Guid.toUnserializableKey`. It
 matches BigInt on set speed, beats it on get, uses the same memory, and is
-**~10× faster to encode** than `Guid.toString`. The UUID string is the slowest
+**~10× faster to encode** than `Guid.toUUID`. The UUID string is the slowest
 option across all three dimensions.
 
-**Only use `Guid.toString` / `Guid.fromString` when human readability or
+**Only use `Guid.toUUID` / `Guid.fromUUID` when human readability or
 cross-system interop is required** (logging, APIs, serialization). On a hot
 lookup path, the 36-char UUID string costs ~1 µs per key just to produce.

@@ -4,7 +4,7 @@ import type { Guid } from "./index.js";
 
 const PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const fromString = (s: string): Guid => {
+export const fromUUID = (s: string): Guid => {
     if (!PATTERN.test(s)) {
         throw new TypeError(`Invalid GUID string: "${s}"`);
     }

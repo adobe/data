@@ -37,7 +37,7 @@ describe("Guid.create", () => {
     it("generates unique values", () => {
         const seen = new Set<string>();
         for (let i = 0; i < 100; i++) {
-            seen.add(Guid.toString(Guid.create()));
+            seen.add(Guid.toUUID(Guid.create()));
         }
         expect(seen.size).toBe(100);
     });

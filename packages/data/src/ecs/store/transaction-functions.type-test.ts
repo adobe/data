@@ -17,6 +17,8 @@ import type { Assert } from "../../types/assert.js";
 import type { Equal } from "../../types/equal.js";
 import type {
     AsyncArgsProvider,
+    ToAsyncTransactionFn,
+    ToSyncTransactionFn,
     ToTransactionFunctions,
 } from "./transaction-functions.js";
 import type { Entity } from "../entity/entity.js";
@@ -125,3 +127,30 @@ fns.restart({ unexpected: true });
 
 type AsyncConsumer<T> = (asyncArgs: AsyncArgsProvider<T>) => void;
 const _moveIsAssignable: AsyncConsumer<{ x: number; y: number }> = fns.move;
+
+// ---------------------------------------------------------------------------
+// Green: ToAsyncTransactionFn / ToSyncTransactionFn extract a single overload
+// so that consumers can pass a transaction by value without copy/pasting the
+// Input shape (TS only sees the *last* overload of an overloaded fn type for
+// structural assignment, `Parameters`, and `ReturnType`).
+// ---------------------------------------------------------------------------
+
+type _MoveAsync = Assert<Equal<
+    ToAsyncTransactionFn<SampleFns["move"]>,
+    (arg: AsyncArgsProvider<{ x: number; y: number }>) => Promise<void>
+>>;
+
+type _SpawnAsync = Assert<Equal<
+    ToAsyncTransactionFn<SampleFns["spawn"]>,
+    (arg: AsyncArgsProvider<{ kind: string }>) => Promise<Entity>
+>>;
+
+type _MoveSync = Assert<Equal<
+    ToSyncTransactionFn<SampleFns["move"]>,
+    (arg: { x: number; y: number }) => void
+>>;
+
+type _SpawnSync = Assert<Equal<
+    ToSyncTransactionFn<SampleFns["spawn"]>,
+    (arg: { kind: string }) => Entity
+>>;

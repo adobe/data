@@ -52,3 +52,30 @@ export type ToTransactionFunctions<T> = {
 
 export type TransactionFunction = (args?: any) => void | Entity;
 export type TransactionFunctions = { readonly [AF: string]: TransactionFunction };
+
+/**
+ * Extracts the `AsyncArgsProvider`-arg overload from a `ToTransactionFunctions`
+ * entry as a single-signature function. TypeScript's structural assignment and
+ * `Parameters` / `ReturnType` see only the *last* overload of an overloaded
+ * function type, which hides the async-provider overload when a transaction is
+ * passed by value (e.g. as a prop). This helper recovers the async-provider
+ * signature without forcing consumers to copy/paste the Input shape.
+ */
+export type ToAsyncTransactionFn<T> = T extends {
+    (arg: AsyncArgsProvider<infer Input>): Promise<infer R>;
+    (arg: any): any;
+}
+    ? (arg: AsyncArgsProvider<Input>) => Promise<R>
+    : never;
+
+/**
+ * Extracts the plain-arg (synchronous) overload from a `ToTransactionFunctions`
+ * entry as a single-signature function. Pairs with `ToAsyncTransactionFn`
+ * for consumers that need to type each call path independently.
+ */
+export type ToSyncTransactionFn<T> = T extends {
+    (arg: AsyncArgsProvider<any>): any;
+    (arg: infer Input): infer R;
+}
+    ? (arg: Input) => R
+    : never;

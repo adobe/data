@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Schema } from "../../schema/index.js";
-import { Vec3 } from "../index.js";
+import { Vec3 } from "../vec3/index.js";
 
 export const schema = {
     type: 'object',

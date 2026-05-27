@@ -1,7 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Vec3 } from "../../vec3/index.js";
-import { Aabb } from "../index.js";
+import type { Aabb } from "../index.js";
+import { center } from "../center.js";
+import { unit } from "../unit.js";
 import type { Face } from "./face.js";
 import { NEG_X } from "./neg-x.js";
 import { NEG_Y } from "./neg-y.js";
@@ -15,8 +17,8 @@ import { POS_Z } from "./pos-z.js";
  * @param position World position of the sample point
  * @param aabb Bounds used to compute the box center (defaults to unit cube)
  */
-export const fromPosition = (position: Vec3, aabb: Aabb = Aabb.unit): Face => {
-    const aabbCenter = Aabb.center(aabb);
+export const fromPosition = (position: Vec3, aabb: Aabb = unit): Face => {
+    const aabbCenter = center(aabb);
     const localPos = [
         position[0] - aabbCenter[0],
         position[1] - aabbCenter[1],

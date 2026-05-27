@@ -1,6 +1,6 @@
 {
   "name": "data-monorepo",
-  "version": "0.9.58",
+  "version": "0.9.59",
   "private": true,
   "scripts": {
     "build": "pnpm -r run build",

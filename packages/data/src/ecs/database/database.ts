@@ -6,7 +6,7 @@ import { ReadonlyStore, Store } from "../store/index.js";
 import { Entity } from "../entity/entity.js";
 import { EntityReadValues } from "../store/core/index.js";
 import { Observe } from "../../observe/index.js";
-import { TransactionResult } from "./transactional-store/index.js";
+import { TransactionContext, TransactionResult } from "./transactional-store/index.js";
 import { TransactionEnvelope } from "./reconciling/reconciling-database.js";
 import { StringKeyof, RemoveIndex } from "../../types/types.js";
 import { Components } from "../store/components.js";
@@ -235,6 +235,14 @@ export namespace Database {
     export const combine = combinePlugins;
     export type ToDatabase<P extends Database.Plugin> = Database.FromPlugin<P>;
     export type ToStore<P extends Database.Plugin> = Store<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>>;
+    /**
+     * The plugin's store as seen *inside a transaction body* — i.e. `ToStore<P>`
+     * plus the `userId` field added by the transaction dispatcher. Use this
+     * when typing helper functions that forward a transaction's store into
+     * another plugin's transaction declaration; `ToStore<P>` is the bare
+     * store type and does not include `userId`.
+     */
+    export type ToTransactionContext<P extends Database.Plugin> = TransactionContext<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>>;
     export type ToSystemDatabase<P extends Database.Plugin> = Database.FromPlugin<P> & {
       // Systems are allowed to access the database store directly.
       // This direct access will NOT trigger observable transactions.

@@ -17,3 +17,4 @@ export * from "./boolean/index.js";
 export { F32, I32, U32, F64 } from "../math/index.js";
 export * from "./time/index.js";
 export * from "./fractional-index/fractional-index.js";
+export * from "./guid/index.js";

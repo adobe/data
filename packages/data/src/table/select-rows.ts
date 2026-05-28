@@ -4,7 +4,7 @@ import { ReadonlyTable, Table } from "./table.js";
 /**
  * Comparison operators for declarative where clauses
  */
-type ComparisonOperator = "==" | "!=" | "<" | ">" | ">=" | "<=";
+export type ComparisonOperator = "==" | "!=" | "<" | ">" | ">=" | "<=";
 
 const negatedOperators = {
     "==": "!=",
@@ -18,14 +18,17 @@ const negatedOperators = {
 /**
  * Represents a comparison operation in a declarative where clause
  */
-type ComparisonOperation<T> = {
+export type ComparisonOperation<T> = {
     [P in ComparisonOperator]?: T;
 };
 
 /**
- * Represents a condition that can be either a direct value, comparison operation, or nested conditions
+ * Represents a condition that can be either a direct value, a comparison
+ * operation, or nested conditions. Exported because computed-index
+ * handles use it for their `findRange` argument — a single scalar key
+ * accepts the same operator vocabulary as a single column in `Filter`.
  */
-type WhereCondition<T> = ComparisonOperation<T> | T;
+export type WhereCondition<T> = ComparisonOperation<T> | T;
 
 const whereConditionToComparisonOperations = <T>(condition: WhereCondition<T>): ComparisonOperation<T> => {
     if (typeof condition === "object") {

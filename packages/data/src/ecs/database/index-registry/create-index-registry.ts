@@ -22,6 +22,19 @@ export type EntityReader = (entity: Entity) => Readonly<Record<string, unknown>>
 export type IndexDeclarationObject = {
     readonly components: readonly string[];
     readonly unique?: boolean;
+    /**
+     * Optional pure compute function from the user's declaration. When
+     * present the registry creates a computed index; the function is
+     * called positionally with the entity's indexed component values
+     * to derive the lookup key.
+     */
+    readonly compute?: (...args: any[]) => unknown;
+    /**
+     * Optional within-bucket sort order — see the `Index.order` field
+     * in `store/index-types.ts` for semantics. The registry passes this
+     * through verbatim; the comparator is built once inside `createIndex`.
+     */
+    readonly order?: { readonly [name: string]: boolean };
 };
 
 interface RegisteredEntry {
@@ -98,13 +111,45 @@ export interface IndexRegistry {
     checkUniqueAvailableForUpdate(entity: Entity, patch: Readonly<Record<string, unknown>>): void;
 }
 
-const shapeKey = (decl: IndexDeclarationObject): string => {
-    const unique = decl.unique ?? false;
-    return `${unique}\x1f${decl.components.join("\x1f")}`;
+/**
+ * Assigns a stable numeric id to each distinct `compute` function the
+ * process sees, so that two computed indexes with the same components +
+ * unique flag but *different* compute functions don't get flagged as
+ * structural duplicates. Raw indexes (no compute) get the sentinel "raw".
+ */
+const computeIds = new WeakMap<Function, number>();
+let nextComputeId = 0;
+const computeIdent = (fn: Function | undefined): string => {
+    if (fn === undefined) return "raw";
+    let id = computeIds.get(fn);
+    if (id === undefined) {
+        id = nextComputeId++;
+        computeIds.set(fn, id);
+    }
+    return `c${id}`;
 };
 
-const formatShape = (decl: IndexDeclarationObject): string =>
-    `components=[${decl.components.join(",")}] unique=${decl.unique ?? false}`;
+const orderShape = (order: IndexDeclarationObject["order"]): string => {
+    if (!order) return "";
+    // Object key order matters (it's the sort precedence) — preserve it.
+    return Object.entries(order).map(([k, v]) => `${k}:${v ? "a" : "d"}`).join(",");
+};
+
+const shapeKey = (decl: IndexDeclarationObject): string => {
+    const unique = decl.unique ?? false;
+    return [
+        unique,
+        decl.components.join("\x1f"),
+        computeIdent(decl.compute),
+        orderShape(decl.order),
+    ].join("\x1f");
+};
+
+const formatShape = (decl: IndexDeclarationObject): string => {
+    const kind = decl.compute ? "computed" : "raw";
+    const order = decl.order ? ` order=[${orderShape(decl.order)}]` : "";
+    return `components=[${decl.components.join(",")}] unique=${decl.unique ?? false} kind=${kind}${order}`;
+};
 
 export const createIndexRegistry = (
     read: EntityReader,
@@ -138,9 +183,19 @@ export const createIndexRegistry = (
             );
         }
 
+        if (decl.compute && decl.order) {
+            throw new Error(
+                `Index "${name}" declares both \`compute\` and \`order\`. ` +
+                `Computed indexes don't support within-bucket ordering in V1 — ` +
+                `the derived key and the entity components live in different ` +
+                `value spaces. Pick one.`,
+            );
+        }
         const state: IndexState = {
             components: decl.components,
             unique: decl.unique ?? false,
+            compute: decl.compute,
+            order: decl.order,
         };
         const idx = createIndex(state);
         indexes.set(name, idx);

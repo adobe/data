@@ -11,6 +11,7 @@ import type { StringKeyof, NoInfer, RemoveIndex } from "../../types/types.js";
 import { combinePlugins } from "./combine-plugins.js";
 import { Store } from "../store/store.js";
 
+
 /**
  * Direct-intersection return type for createPlugin.
  *

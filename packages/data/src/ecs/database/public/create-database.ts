@@ -272,17 +272,24 @@ function trySelectViaIndex(
         values[k] = eq;
     }
 
-    // Iterate the public handle map (store.indexes). Each handle carries a
-    // non-public `components` field placed by `createStore` for exactly
-    // this purpose; the dispatch goes through `handle.find` so spies and
-    // instrumentation see the call.
+    // Iterate the public handle map (store.indexes). Each handle carries
+    // non-public `components` / `computed` fields placed by `createStore`
+    // for exactly this purpose; the dispatch goes through `handle.find`
+    // so spies and instrumentation see the call.
     const handles = store.indexes as unknown as Readonly<Record<string, {
         readonly components: readonly string[];
+        readonly computed: boolean;
         find(v: Record<string, unknown>): readonly Entity[];
     }>>;
     let matching: { components: readonly string[]; find: (v: Record<string, unknown>) => readonly Entity[] } | undefined;
     for (const name of Object.keys(handles)) {
         const handle = handles[name];
+        // Computed indexes live in a different value space (the derived
+        // key, not the source columns). A raw `where: { col: v }` is a
+        // column-equality query — collapsing it to a `find(values)` on a
+        // computed index would pass the source values where a derived
+        // key is expected. Skip; fall back to scan.
+        if (handle.computed) continue;
         if (handle.components.length !== whereKeys.length) continue;
         if (handle.components.every(c => c in values)) {
             matching = handle;

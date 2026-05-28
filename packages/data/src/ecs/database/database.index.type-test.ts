@@ -435,6 +435,348 @@ function bareStoreWithoutIndexesStillTypechecks() {
 }
 
 // ============================================================================
+// COMPUTED INDEXES — positive type inference
+// ============================================================================
+
+// NOTE on `compute` parameter typing:
+//
+// TypeScript can't auto-infer `compute`'s argument types from the literal
+// `components` tuple in a plugin descriptor — that would require per-entry
+// contextual narrowing of a captured generic, which is circular. We tried
+// a per-entry mapped descriptor type; it broke `IX` inference entirely.
+//
+// So the user-side convention is: annotate `compute` arguments explicitly.
+// The annotations are then *checked* against the component value types:
+// passing `(age: string) => ...` when `age` is a `number` component is a
+// type error (see the negative tests further down). The `Key` (compute
+// return) is still inferred from the function body, so `find`/`get`/
+// `findRange` are correctly typed against the computed value type.
+
+function computedSingleKeyTypechecksArgs() {
+    const plugin = createPlugin({
+        components: {
+            firstName: { type: "string" },
+            lastName: { type: "string" },
+        },
+        archetypes: { Person: ["firstName", "lastName"] },
+        indexes: {
+            byLowerLast: {
+                components: ["lastName"],
+                compute: (last: string) => last.toLowerCase(),
+            },
+        },
+    });
+    const db = Database.create(plugin);
+
+    // The Key (compute return) is inferred as `string`, so `find` takes string.
+    type _CheckFind = Assert<Equal<Parameters<typeof db.indexes.byLowerLast.find>, [string]>>;
+    type _CheckFindReturn = Assert<Equal<ReturnType<typeof db.indexes.byLowerLast.find>, readonly Entity[]>>;
+
+    // findRange takes WhereCondition<string> — direct value or operator object.
+    type _CheckRangeReturn = Assert<Equal<
+        ReturnType<typeof db.indexes.byLowerLast.findRange>,
+        readonly Entity[]
+    >>;
+
+    // Non-unique computed handle does NOT have `get`.
+    type _NoGet = Assert<Equal<"get" extends keyof typeof db.indexes.byLowerLast ? true : false, false>>;
+}
+
+function computedCompoundTypechecksArgsInOrder() {
+    const plugin = createPlugin({
+        components: {
+            firstName: { type: "string" },
+            age: { type: "number" },
+        },
+        archetypes: { Person: ["firstName", "age"] },
+        indexes: {
+            byNameAndAge: {
+                components: ["firstName", "age"],
+                compute: (name: string, age: number) => `${name}:${age}`,
+            },
+        },
+    });
+    const db = Database.create(plugin);
+
+    type _CheckFind = Assert<Equal<Parameters<typeof db.indexes.byNameAndAge.find>, [string]>>;
+}
+
+function computedUniqueExposesGet() {
+    const plugin = createPlugin({
+        components: {
+            firstName: { type: "string" },
+            lastName: { type: "string" },
+        },
+        archetypes: { Person: ["firstName", "lastName"] },
+        indexes: {
+            byFullName: {
+                components: ["firstName", "lastName"],
+                compute: (first: string, last: string) => `${first} ${last}`.toLowerCase(),
+                unique: true,
+            },
+        },
+    });
+    const db = Database.create(plugin);
+
+    // get exists, takes Key (string here), returns Entity | undefined.
+    type _GetArg = Assert<Equal<Parameters<typeof db.indexes.byFullName.get>, [string]>>;
+    type _GetReturn = Assert<Equal<
+        ReturnType<typeof db.indexes.byFullName.get>,
+        Entity | undefined
+    >>;
+}
+
+function computedAlongsideRawIndexesDispatchCorrectly() {
+    const plugin = createPlugin({
+        components: {
+            name: { type: "string" },
+            email: { type: "string" },
+            score: { type: "number" },
+        },
+        archetypes: { User: ["name", "email", "score"] },
+        indexes: {
+            // raw — V1 shape
+            byEmail: { components: ["email"], unique: true },
+            // computed
+            byLowerName: {
+                components: ["name"],
+                compute: (n: string) => n.toLowerCase(),
+            },
+        },
+    });
+    const db = Database.create(plugin);
+
+    // Raw handle: find takes object Pick.
+    type _RawFind = Assert<Equal<
+        Parameters<typeof db.indexes.byEmail.find>,
+        [{ email: string }]
+    >>;
+    // Raw unique get: same picked-object key.
+    type _RawGet = Assert<Equal<
+        Parameters<typeof db.indexes.byEmail.get>,
+        [{ email: string }]
+    >>;
+
+    // Computed handle: find takes the scalar Key.
+    type _ComputedFind = Assert<Equal<
+        Parameters<typeof db.indexes.byLowerName.find>,
+        [string]
+    >>;
+}
+
+function computedNumericKeyInferred() {
+    const plugin = createPlugin({
+        components: {
+            x: { type: "number" },
+            y: { type: "number" },
+        },
+        archetypes: { Point: ["x", "y"] },
+        indexes: {
+            byQuadrant: {
+                components: ["x", "y"],
+                compute: (x: number, y: number) => (x >= 0 ? 1 : 0) + (y >= 0 ? 2 : 0),
+            },
+        },
+    });
+    const db = Database.create(plugin);
+
+    type _CheckFind = Assert<Equal<Parameters<typeof db.indexes.byQuadrant.find>, [number]>>;
+}
+
+// In-transaction `t.indexes` on a computed index takes the computed Key.
+function tIndexesOnComputedIndex() {
+    createPlugin({
+        components: {
+            firstName: { type: "string" },
+            lastName: { type: "string" },
+        },
+        archetypes: { Person: ["firstName", "lastName"] },
+        indexes: {
+            byFullName: {
+                components: ["firstName", "lastName"],
+                compute: (first: string, last: string) => `${first} ${last}`.toLowerCase(),
+                unique: true,
+            },
+        },
+        transactions: {
+            findByFullName: (t, key: string) => {
+                // get takes string (the Key), returns Entity | undefined
+                const e: Entity | undefined = t.indexes.byFullName.get(key);
+                return e;
+            },
+        },
+    });
+}
+
+// ============================================================================
+// SORTED INDEXES — `order` field type checks
+// ============================================================================
+
+function sortedOrderAcceptsKnownComponentNames() {
+    createPlugin({
+        components: {
+            parent: { type: "number" },
+            fractIndex: { type: "string" },
+        },
+        archetypes: { Child: ["parent", "fractIndex"] },
+        indexes: {
+            trackChildren: {
+                components: ["parent"],
+                order: { fractIndex: true },
+            },
+        },
+    });
+}
+
+function sortedOrderAcceptsMultiKey() {
+    createPlugin({
+        components: {
+            parent: { type: "number" },
+            priority: { type: "number" },
+            fractIndex: { type: "string" },
+        },
+        archetypes: { P: ["parent", "priority", "fractIndex"] },
+        indexes: {
+            priorityChildren: {
+                components: ["parent"],
+                order: { priority: false, fractIndex: true },
+            },
+        },
+    });
+}
+
+function invalidSortedOrderUnknownColumn() {
+    createPlugin({
+        components: {
+            parent: { type: "number" },
+            fractIndex: { type: "string" },
+        },
+        indexes: {
+            bad: {
+                components: ["parent"],
+                // @ts-expect-error - "bogus" is not a declared component
+                order: { bogus: true },
+            },
+        },
+    });
+}
+
+function invalidSortedOrderWrongDirectionType() {
+    createPlugin({
+        components: {
+            parent: { type: "number" },
+            fractIndex: { type: "string" },
+        },
+        indexes: {
+            bad: {
+                components: ["parent"],
+                // @ts-expect-error - direction must be boolean, not string
+                order: { fractIndex: "asc" },
+            },
+        },
+    });
+}
+
+// ============================================================================
+// COMPUTED INDEXES — negative type checks
+// ============================================================================
+
+// compute arg type annotation must be compatible with the component value
+// type. Annotating with the wrong scalar type fails the assignability
+// check at the registration site.
+function invalidComputeArgTypeMismatch() {
+    createPlugin({
+        components: {
+            age: { type: "number" },
+        },
+        indexes: {
+            badByAge: {
+                components: ["age"],
+                // @ts-expect-error - age is number, not string
+                compute: (age: string) => age.toLowerCase(),
+            },
+        },
+    });
+}
+
+// compute arg COUNT is not type-checkable: `compute` is declared as a
+// method (rather than a function-property arrow) so the `IX & XIX`
+// intersection in `Store.extend` survives `strictFunctionTypes` — see
+// the rationale in `store/index-types.ts`. The bivariance that enables
+// that also lets users supply fewer or extra args than `components`
+// has. The runtime contract is documented; the arg TYPES are still
+// checked against the component value types (covered by the test above).
+
+// Computed find requires the scalar Key, not the Pick<C, Keys[number]> shape.
+function invalidComputedFindObjectShape() {
+    const plugin = createPlugin({
+        components: { name: { type: "string" } },
+        archetypes: { Named: ["name"] },
+        indexes: {
+            byLowerName: {
+                components: ["name"],
+                compute: (n: string) => n.toLowerCase(),
+            },
+        },
+    });
+    const db = Database.create(plugin);
+
+    // @ts-expect-error - computed find takes Key (string), not Pick<C, Keys[number]>
+    db.indexes.byLowerName.find({ name: "alice" });
+}
+
+// Wrong scalar type on find for computed index.
+function invalidComputedFindWrongScalarType() {
+    const plugin = createPlugin({
+        components: { x: { type: "number" } },
+        archetypes: { P: ["x"] },
+        indexes: {
+            byX: {
+                components: ["x"],
+                compute: (x: number) => x * 2,
+            },
+        },
+    });
+    const db = Database.create(plugin);
+
+    // @ts-expect-error - Key is number, not string
+    db.indexes.byX.find("not a number");
+}
+
+// get is absent on non-unique computed indexes.
+function invalidGetOnNonUniqueComputed() {
+    const plugin = createPlugin({
+        components: { name: { type: "string" } },
+        archetypes: { Named: ["name"] },
+        indexes: {
+            byLowerName: {
+                components: ["name"],
+                compute: (n: string) => n.toLowerCase(),
+                // unique omitted -> non-unique
+            },
+        },
+    });
+    const db = Database.create(plugin);
+
+    // @ts-expect-error - get is only on unique indexes
+    db.indexes.byLowerName.get("alice");
+}
+
+// Unknown component name is still a type error in a computed index.
+function invalidComputedUnknownComponent() {
+    createPlugin({
+        components: { name: { type: "string" } },
+        indexes: {
+            badIdx: {
+                // @ts-expect-error - "bogus" is not a declared component
+                components: ["bogus"],
+                compute: (b: string) => b.toLowerCase(),
+            },
+        },
+    });
+}
+
+// ============================================================================
 // EXISTING NEGATIVE TESTS
 // ============================================================================
 

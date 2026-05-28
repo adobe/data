@@ -14,6 +14,7 @@ import { ArchetypeComponents } from "../store/archetype-components.js";
 import { RequiredComponents } from "../required-components.js";
 import { EntitySelectOptions } from "../store/entity-select-options.js";
 import { Filter } from "../../table/select-rows.js";
+import { Index as StoreIndex } from "../store/index-types.js";
 import type { Service } from "../../service/index.js";
 import { createDatabase, type DatabaseSyncOptions } from "./public/create-database.js";
 import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
@@ -89,15 +90,14 @@ export type PluginComputedValue = Observe<unknown> | ((...args: any[]) => Observ
 export type PluginComputedFactories<DB = any> = { readonly [K: string]: (db: DB) => PluginComputedValue };
 
 /**
- * Plugin-level map of indexes. Keys are user-chosen index names; values are
- * `Database.Index` declarations whose `components` tuple must reference real
- * keys of `C`. The constraint is shaped to allow `RemoveIndex<...>` to strip
- * the index signature and recover the literal map at the call site (same
- * pattern as `ArchetypeComponents`).
+ * Plugin-level map of indexes. Re-exported from `store/index-types.ts`
+ * where the canonical definition lives — same module that defines the
+ * unified `Index` type (raw + computed) so a single source of truth is
+ * shared between the Store layer (`store.indexes` typed handle map) and
+ * the Database layer (`db.indexes`, plugin descriptor constraint).
  */
-export type IndexDeclarations<C extends Components = any> = {
-  readonly [name: string]: Database.Index<C, readonly [StringKeyof<C>, ...StringKeyof<C>[]], boolean>;
-};
+export type { IndexDeclarations } from "../store/index-types.js";
+import type { IndexDeclarations } from "../store/index-types.js";
 
 export interface Database<
   C extends Components = {},
@@ -109,7 +109,7 @@ export interface Database<
   SV = {},
   CV = unknown,
   IX extends IndexDeclarations<C> = {},
-> extends ReadonlyStore<C, R, A>, Service {
+> extends ReadonlyStore<C, R, A, IX>, Service {
   readonly transactions: F & Service;
   readonly actions: AF & Service;
   readonly services: SV;
@@ -236,61 +236,22 @@ export namespace Database {
 
   export const observeSelectDeep = _observeSelectDeep;
 
-  /**
-   * Type-level declaration of an index over one or more components.
-   *
-   * - `components`: ordered, non-empty tuple of component keys. Order is
-   *   significant — it defines both the sort order the index produces and
-   *   the prefixes of a `where` / `order` clause the index can serve.
-   * - `unique`: when `true`, at most one entity may hold each key tuple.
-   *   Required to expose `Handle.get`. Defaults to `false`.
-   *
-   * Every key in `components` is statically checked against the database's
-   * component map `C`; an unknown name is a compile error at the plugin
-   * declaration site.
-   */
+  // The user-facing `Database.Index` namespace re-exports the canonical
+  // declaration and handle types from `store/index-types.ts`. Defining
+  // them there keeps the `Store` interface able to type `store.indexes`
+  // (a lower-layer concern) without an import cycle into this module.
+  // See `Index` (raw + computed) and `Index.Handle` (dispatches on
+  // `compute` presence) in `store/index-types.ts`.
   export type Index<
     C extends Components = any,
     Keys extends readonly [StringKeyof<C>, ...StringKeyof<C>[]] = any,
+    Key = any,
     Unique extends boolean = false,
-  > = {
-    readonly components: Keys;
-    readonly unique?: Unique;
-  };
+  > = StoreIndex<C, Keys, Key, Unique>;
 
   export namespace Index {
-    /**
-     * Per-index lookup handle exposed on `db.indexes.<name>`.
-     *
-     * Conditional intersection adds `get` only when `Unique` is exactly
-     * `true`, so `db.indexes.<nonUnique>.get(...)` is a type error at the
-     * call site without any runtime branch.
-     */
-    export type Handle<C extends Components, I extends Index<C, any, any>> =
-      I extends Index<C, infer Keys, infer Unique>
-        ? Keys extends readonly [StringKeyof<C>, ...StringKeyof<C>[]]
-          ? {
-              /** Entities whose full key tuple equals `values`. */
-              find(values: Pick<C, Keys[number]>): readonly Entity[];
-
-              /**
-               * Range query over the index. Reuses the existing
-               * `Filter` operator vocabulary (`==`, `!=`, `<`, `<=`,
-               * `>`, `>=`) from `table/select-rows.ts` so the same
-               * syntax that drives `select({ where })` describes
-               * index ranges.
-               *
-               * Runtime contract (not encodable in the type): equality
-               * on a leading prefix of the key tuple, an optional
-               * range on the next key, nothing after. Calls that
-               * violate this fall back to a scan.
-               */
-              findRange(range: Filter<Pick<C, Keys[number]>>): readonly Entity[];
-            } & (Unique extends true
-              ? { get(values: Pick<C, Keys[number]>): Entity | undefined }
-              : {})
-          : never
-        : never;
+    export type Handle<C extends Components, I extends StoreIndex<C, any, any, any>> =
+      StoreIndex.Handle<C, I>;
   }
 
   export type Plugin<

@@ -86,12 +86,22 @@ export function createStore<
      * indirection) and handed to `idx.add` once per row.
      */
     const seedIndexFromArchetypes = (idx: RuntimeIndex): void => {
-        const archetypes = core.queryArchetypes(idx.components as readonly StringKeyof<C>[]);
+        // We read both the bucket-key columns (`idx.components`) and the
+        // sort-key columns (`idx.order`) so the runtime's binary insert
+        // sees a populated sort tuple. `queryArchetypes` is given the
+        // full required-column set so archetypes missing any of them are
+        // skipped — same correctness rule as the steady-state insert
+        // path, where an entity without an indexed component isn't in
+        // the index.
+        const orderKeys = idx.order ? Object.keys(idx.order) : [];
+        const required: string[] = [...idx.components];
+        for (const k of orderKeys) if (!required.includes(k)) required.push(k);
+        const archetypes = core.queryArchetypes(required as readonly StringKeyof<C>[]);
         for (const archetype of archetypes) {
             const idCol = archetype.columns.id;
             for (let row = 0; row < archetype.rowCount; row++) {
                 const values: Record<string, unknown> = {};
-                for (const c of idx.components) {
+                for (const c of required) {
                     values[c] = (archetype.columns as Record<string, { get(r: number): unknown }>)[c].get(row);
                 }
                 idx.add(idCol.get(row), values);
@@ -109,11 +119,21 @@ export function createStore<
         const handle: Record<string, unknown> = {
             find: idx.find,
             findRange: idx.findRange,
-            // Internal field used by the query planner in `createDatabase` to
+            // Internal fields used by the query planner in `createDatabase` to
             // match a `where` clause against the declared key tuple. Not part
             // of the public `Database.Index.Handle` type — exposed at runtime
-            // only.
+            // only:
+            //
+            //   `components` — the source-column tuple the planner matches
+            //     against a `where` clause's key set.
+            //   `computed`   — true when this index derives its key via a
+            //     `compute` function. The planner skips computed indexes for
+            //     raw-where auto-routing because the source columns and the
+            //     derived key live in different value spaces (a
+            //     `where: { lastName: "Smith" }` is a column-equality query,
+            //     not a derived-key lookup).
             components: idx.components,
+            computed: idx.compute !== undefined,
         };
         if (idx.unique) handle.get = idx.get;
         indexHandles[name] = handle;

@@ -240,14 +240,10 @@ export namespace Database {
   // declaration and handle types from `store/index-types.ts`. Defining
   // them there keeps the `Store` interface able to type `store.indexes`
   // (a lower-layer concern) without an import cycle into this module.
-  // See `Index` (raw + computed) and `Index.Handle` (dispatches on
-  // `compute` presence) in `store/index-types.ts`.
+  // See `Index` and `Index.Handle` in `store/index-types.ts`.
   export type Index<
     C extends Components = any,
-    Keys extends readonly [StringKeyof<C>, ...StringKeyof<C>[]] = any,
-    Key = any,
-    Unique extends boolean = false,
-  > = StoreIndex<C, Keys, Key, Unique>;
+  > = StoreIndex<C, any, any, any>;
 
   export namespace Index {
     export type Handle<C extends Components, I extends StoreIndex<C, any, any, any>> =

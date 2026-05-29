@@ -1,22 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { StringKeyof } from "../../types/types.js";
-import { Filter, WhereCondition } from "../../table/select-rows.js";
 import type { Entity } from "../entity/entity.js";
 import { Components } from "./components.js";
-
-/**
- * Maps a tuple of component names to the corresponding tuple of component
- * value types, preserving order. Used as the rest-arg type of an index's
- * optional `compute` function so the function signature matches the
- * `components` tuple positionally.
- *
- * `-readonly` strips the readonly modifier so the result is suitable for
- * use as a function rest-parameter type.
- */
-type IndexedValues<C extends Components, Keys extends readonly StringKeyof<C>[]> = {
-    -readonly [I in keyof Keys]: C[Extract<Keys[I], StringKeyof<C>>];
-};
 
 /**
  * If `T` is an array type, the element type; otherwise `T` unchanged.
@@ -31,164 +17,153 @@ type IndexedValues<C extends Components, Keys extends readonly StringKeyof<C>[]>
 type ElementOf<T> = T extends readonly (infer E)[] ? E : T;
 
 /**
- * Type-level declaration of an index over one or more components.
+ * Per-slot extractor in a compound `key` declaration. Either:
+ * - a `StringKeyof<C>` — read the value of that column directly, or
+ * - a function — derive the slot's value from the index's read components.
+ */
+export type IndexKeySlot<C extends Components> =
+    | StringKeyof<C>
+    | ((...args: any[]) => unknown);
+
+/**
+ * The four shapes a `key` declaration can take. Drives the `find` / `get`
+ * argument type via {@link FindArg}.
  *
- * Two flavours share this single type, distinguished by the presence of
- * the optional `compute` function:
+ *  - `string` — read this one column. `find` takes a scalar.
+ *  - `readonly string[]` — read each of these columns. `find` takes
+ *    `{ col1: ..., col2: ... }` keyed by the column names themselves.
+ *  - `(...args) => Value` — derive the bucket key from the components.
+ *    `find` takes whatever the function returns (or its element type
+ *    when the return is an array — multi-value fan-out).
+ *  - slot map — name each part of a compound key; values are either
+ *    column-name strings (identity) or extractor functions. `find`
+ *    takes an object keyed by the slot names.
+ */
+export type IndexKey<C extends Components> =
+    | StringKeyof<C>
+    | readonly StringKeyof<C>[]
+    | ((...args: any[]) => unknown)
+    | { readonly [slot: string]: IndexKeySlot<C> };
+
+/**
+ * Within-bucket ordering. `by` declares the columns to read into the
+ * per-entity sort cache; `compare` (optional) is the comparator over
+ * `Pick<C, by[number]>`. When `compare` is omitted, the default is
+ * ascending across `by` from left to right with positional tie-break
+ * (`JS <` / `>` per column).
  *
- * - **Raw** (no `compute`): the lookup key is the component tuple itself.
- *   `Key` defaults to `Pick<C, Keys[number]>`. Handle methods take a
- *   component-keyed object — V1 behaviour, unchanged.
- * - **Computed** (with `compute`): the lookup key is whatever `compute`
- *   returns. `Key` is inferred from the function's return type. Handle
- *   methods take that derived key directly.
+ * `compare` is method shorthand for the same `IX & XIX` variance reason
+ * that `compute` was previously: `Store.extend`'s result intersects index
+ * declarations, which would otherwise trip `strictFunctionTypes` over
+ * contravariant parameter positions.
+ */
+export type IndexOrder<
+    C extends Components,
+    By extends readonly StringKeyof<C>[] = readonly StringKeyof<C>[],
+> = {
+    readonly by: By;
+    compare?(a: Pick<C, By[number]>, b: Pick<C, By[number]>): number;
+};
+
+/**
+ * Type-level declaration of an index.
  *
- * `compute` MUST be pure — same inputs always produce the same output,
- * no side effects, no dependence on state outside the arguments. The
- * registry caches the derived key at insert/update and re-derives on
- * every `update`; impurity corrupts the index. Not runtime-checked.
+ * - `key` is the only required field. Its shape drives the bucket layout
+ *   and the lookup argument type of `find` / `get` / `findRange`.
+ * - `order` (optional) maintains sorted iteration within each bucket.
+ * - `unique` (optional) — when true, at most one entity may hold each
+ *   bucket key; `get(arg)` is exposed and returns `Entity | null`.
+ * - `components` (optional) — names the columns extractor functions
+ *   read. Only needed when at least one function reads a column not
+ *   implied by a string-identity key entry.
  *
- * - Every key in `components` is statically checked against `C`.
- * - When `compute` is supplied, its arg list is type-checked against
- *   the component value types, in `components` order.
- *
- * Defined here (lowest layer) rather than in `database/database.ts` so the
- * `Store` interface can reference `Handle` for its `indexes` field without
- * causing a `store → database` import cycle. The `Database.Index`
- * namespace in `database/database.ts` re-exports these types as the
- * user-facing API.
+ * See `packages/data/src/ecs/README.md` for the full pattern catalogue.
  */
 export type Index<
     C extends Components = any,
-    Keys extends readonly [StringKeyof<C>, ...StringKeyof<C>[]] = any,
-    Key = Pick<C, Keys[number] & StringKeyof<C>>,
-    Unique extends boolean = false,
+    K extends IndexKey<C> = IndexKey<C>,
+    O extends IndexOrder<C, any> | undefined = IndexOrder<C, any> | undefined,
+    U extends boolean = boolean,
 > = {
-    readonly components: Keys;
-    /**
-     * Method shorthand (rather than a function-property arrow) so the
-     * parameter types are bivariant under intersection. Required because
-     * `Store.extend`'s result intersects `IX & XIX`, which would otherwise
-     * trip `strictFunctionTypes` over `compute`'s contravariant parameter
-     * positions. Inference (Key from the return type, arg types from
-     * `IndexedValues<C, Keys>`) still works as expected.
-     */
-    compute?(...args: IndexedValues<C, Keys>): Key;
-    readonly unique?: Unique;
-    /**
-     * Optional sort order maintained *within* each bucket. Keys reference
-     * component names on the indexed entity (not necessarily the same as
-     * `components`); values are `true` for ascending or `false` for
-     * descending. Object insertion order defines precedence — the first
-     * key is the primary sort, subsequent keys break ties.
-     *
-     * Same vocabulary as `db.select(include, { order })`. When omitted,
-     * bucket contents follow insertion order (V1 behavior).
-     *
-     * Performance: a comparator is bound once at index creation —
-     * single-key declarations get a specialized closure with no per-op
-     * overhead vs. an `order`-less index. Multi-key indexes only pay the
-     * iteration cost in the comparator they declared.
-     *
-     * Not supported alongside `compute` in V1: `compute` produces a
-     * derived key while `order` sorts by raw entity components — the
-     * two views don't compose cleanly. Declaring both throws at
-     * registration time.
-     */
-    readonly order?: { readonly [K in StringKeyof<C>]?: boolean };
+    readonly key: K;
+    readonly order?: O;
+    readonly unique?: U;
+    readonly components?: readonly StringKeyof<C>[];
 };
+
+/**
+ * Resolve a slot's contributed `find` field type. Strings are identity
+ * reads on the named column; functions yield their return type (element
+ * type if the return is an array).
+ */
+type SlotFindType<C extends Components, V> =
+    V extends StringKeyof<C>
+        ? ElementOf<C[V]>
+        : V extends (...args: any[]) => infer R
+            ? ElementOf<R>
+            : never;
+
+/** Argument type of `find` / `get` derived from the `key` shape. */
+type FindArg<C extends Components, K> =
+    K extends StringKeyof<C> ? ElementOf<C[K]>
+    : K extends readonly StringKeyof<C>[]
+        ? { readonly [P in K[number]]: ElementOf<C[P]> }
+    : K extends (...args: any[]) => infer R ? ElementOf<R>
+    : K extends Record<string, IndexKeySlot<C>>
+        ? { readonly [Slot in keyof K]: SlotFindType<C, K[Slot]> }
+    : never;
+
+/** Comparison-operator filter on a scalar bucket-key value. */
+type OperatorFilter<T> = {
+    readonly "=="?: T;
+    readonly "!="?: T;
+    readonly "<"?: T;
+    readonly "<="?: T;
+    readonly ">"?: T;
+    readonly ">="?: T;
+};
+
+/**
+ * `findRange` argument: each field of the find argument may be either an
+ * equality value or a `<,<=,>,>=,==,!=` operator filter. For scalar keys
+ * the entire argument may itself be an operator filter.
+ */
+type RangeArg<T> =
+    T extends object
+        ? { readonly [P in keyof T]?: T[P] | OperatorFilter<T[P]> }
+        : T | OperatorFilter<T>;
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace Index {
-    /**
-     * True when `I`'s declaration has a `compute` function. Used to choose
-     * between `RawHandle` and `ComputedHandle` shapes.
-     */
-    type IsComputed<I> = I extends { compute: (...args: any) => any } ? true : false;
-
-    /**
-     * Per-component lookup key shape. Each indexed component contributes
-     * its scalar value, or — for array-typed components — a single
-     * element of the array. The runtime auto-fans-out arrays at insert
-     * time so a `find` against a `Task { assigned: string[] }` takes
-     * `{ assigned: string }`, not `{ assigned: string[] }`.
-     */
-    type RawLookupKey<C extends Components, Keys extends readonly StringKeyof<C>[]> = {
-        [K in Keys[number]]: ElementOf<C[K]>;
-    };
-
-    /**
-     * Raw-index handle: lookup methods take the per-component lookup
-     * key shape (`RawLookupKey`). Array-typed components contribute
-     * their element type — multi-value indexes are transparent to the
-     * lookup signature.
-     */
-    type RawHandle<
-        C extends Components,
-        Keys extends readonly [StringKeyof<C>, ...StringKeyof<C>[]],
-        Unique extends boolean,
-    > = {
-        /** Entities whose key tuple equals `values` (element form for array components). */
-        find(values: RawLookupKey<C, Keys>): readonly Entity[];
-
-        /**
-         * Range query over the index. Reuses the existing `Filter`
-         * operator vocabulary (`==`, `!=`, `<`, `<=`, `>`, `>=`) from
-         * `table/select-rows.ts` so the same syntax that drives
-         * `select({ where })` describes index ranges. Per-component
-         * shape follows `RawLookupKey` — array components are queried
-         * by their element type.
-         */
-        findRange(range: Filter<RawLookupKey<C, Keys>>): readonly Entity[];
-    } & (Unique extends true
-        ? { get(values: RawLookupKey<C, Keys>): Entity | undefined }
-        : {});
-
-    /**
-     * Computed-index handle: lookup methods take the derived key value
-     * directly. When `compute` returns an array, the index auto-fans-out
-     * each element into its own bucket entry and the lookup methods take
-     * the element type (via `ElementOf<Key>`). `findRange` accepts a
-     * single-scalar `WhereCondition` — direct value or comparison
-     * operators — matching the vocabulary `Filter` already uses
-     * per-column.
-     */
-    type ComputedHandle<Key, Unique extends boolean> = {
-        find(key: ElementOf<Key>): readonly Entity[];
-        findRange(range: WhereCondition<ElementOf<Key>>): readonly Entity[];
-    } & (Unique extends true
-        ? { get(key: ElementOf<Key>): Entity | undefined }
-        : {});
-
-    /**
-     * Per-index lookup handle exposed on `db.indexes.<name>` and on
-     * `t.indexes.<name>` (inside transactions).
-     *
-     * Dispatches on the declaration's `compute` presence:
-     * - present → `ComputedHandle<Key, Unique>` (Key inferred from compute)
-     * - absent  → `RawHandle<C, Keys, Unique>`  (raw component-tuple lookup)
-     *
-     * In both branches the conditional intersection adds `get` only when
-     * `Unique extends true`, so `indexes.<nonUnique>.get(...)` is a type
-     * error at the call site without any runtime branch.
-     */
+    /** Public lookup handle exposed on `db.indexes.<name>` and `t.indexes.<name>`. */
     export type Handle<C extends Components, I extends Index<C, any, any, any>> =
-        I extends Index<C, infer Keys, infer Key, infer Unique>
-            ? Keys extends readonly [StringKeyof<C>, ...StringKeyof<C>[]]
-                ? IsComputed<I> extends true
-                    ? ComputedHandle<Key, Unique>
-                    : RawHandle<C, Keys, Unique>
-                : never
+        I extends Index<C, infer K, any, infer U>
+            ? {
+                find(arg: FindArg<C, K>): readonly Entity[];
+                findRange(arg: RangeArg<FindArg<C, K>>): readonly Entity[];
+            } & (U extends true
+                ? { get(arg: FindArg<C, K>): Entity | null }
+                : {})
             : never;
 }
 
 /**
  * Plugin-level / store-level map of indexes. Keys are user-chosen index
- * names; values are `Index` declarations whose `components` tuple must
- * reference real keys of `C`. The constraint is shaped to allow
- * `RemoveIndex<...>` to strip the index signature and recover the literal
- * map at the call site (same pattern as `ArchetypeComponents`).
+ * names; values are `Index` declarations whose `key` references real
+ * columns of `C`.
+ *
+ * The structural shape is inlined (rather than `Index<C, any, any, any>`) so
+ * that the per-entry `key`/`order` fields are actually constrained at the
+ * declaration site. With `Index<C, any, any, any>` the wildcard `any`
+ * generics widen `key` past `IndexKey<C>`, so a typo like `{ key: "bogus" }`
+ * silently passes the constraint. Inlining `key: IndexKey<C>` here makes
+ * the typo a type error at the plugin descriptor.
  */
 export type IndexDeclarations<C extends Components = any> = {
-    readonly [name: string]: Index<C, readonly [StringKeyof<C>, ...StringKeyof<C>[]], any, boolean>;
+    readonly [name: string]: {
+        readonly key: IndexKey<C>;
+        readonly order?: IndexOrder<C>;
+        readonly unique?: boolean;
+        readonly components?: readonly StringKeyof<C>[];
+    };
 };

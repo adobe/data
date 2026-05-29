@@ -243,11 +243,11 @@ const equalityValue = (cond: unknown): unknown | typeof NOT_EQUALITY => {
  * The query planner accesses `store.indexes` (the user-visible handle map),
  * so test spies and any future user-installed instrumentation see the call.
  * Components for each index are recovered from the registry-internal handle
- * (the handle exposes `find`/`findRange`/`get`; the components list is held
- * by the underlying `RuntimeIndex`, which is the registry's source of
- * truth). For the planner we treat the handle map structurally as
- * `{ [name]: { find, components } }` because Store internally augments
- * each handle with a `components` field — see `createStore`.
+ * (the handle exposes `find`/`findRange`/`get`; the column set is held by
+ * the underlying `RuntimeIndex`, which is the registry's source of truth).
+ * For the planner we treat the handle map structurally as
+ * `{ [name]: { findByValues, routableColumns } }` because Store internally
+ * augments each handle with these fields — see `createStore`.
  *
  * After the index lookup returns candidate entities, each candidate is
  * checked for archetype membership of every `include` component so the
@@ -272,33 +272,38 @@ function trySelectViaIndex(
         values[k] = eq;
     }
 
-    // Iterate the public handle map (store.indexes). Each handle carries
-    // non-public `components` / `computed` fields placed by `createStore`
-    // for exactly this purpose; the dispatch goes through `handle.find`
-    // so spies and instrumentation see the call.
+    // Iterate the public handle map (store.indexes). Each handle carries a
+    // non-public `routableColumns` field placed by `createStore` for exactly
+    // this purpose. `routableColumns: null` opts an index out of raw-where
+    // auto-routing (function and slot-map keys live in a value space the
+    // planner cannot infer from a where clause).
+    //
+    // For a matched index the planner builds the appropriate `find`
+    // argument: a scalar for a single-column key, the full values object
+    // for a multi-column key. The call goes through `handle.find` so any
+    // user-installed spy or instrumentation on the handle sees the
+    // dispatch.
     const handles = store.indexes as unknown as Readonly<Record<string, {
-        readonly components: readonly string[];
-        readonly computed: boolean;
-        find(v: Record<string, unknown>): readonly Entity[];
+        readonly routableColumns: readonly string[] | null;
+        find(v: unknown): readonly Entity[];
     }>>;
-    let matching: { components: readonly string[]; find: (v: Record<string, unknown>) => readonly Entity[] } | undefined;
+    let matchedHandle: typeof handles[string] | undefined;
+    let matchedCols: readonly string[] | undefined;
     for (const name of Object.keys(handles)) {
         const handle = handles[name];
-        // Computed indexes live in a different value space (the derived
-        // key, not the source columns). A raw `where: { col: v }` is a
-        // column-equality query — collapsing it to a `find(values)` on a
-        // computed index would pass the source values where a derived
-        // key is expected. Skip; fall back to scan.
-        if (handle.computed) continue;
-        if (handle.components.length !== whereKeys.length) continue;
-        if (handle.components.every(c => c in values)) {
-            matching = handle;
+        const cols = handle.routableColumns;
+        if (cols === null) continue;
+        if (cols.length !== whereKeys.length) continue;
+        if (cols.every(c => c in values)) {
+            matchedHandle = handle;
+            matchedCols = cols;
             break;
         }
     }
-    if (!matching) return null;
+    if (!matchedHandle || !matchedCols) return null;
 
-    const candidates = matching.find(values);
+    const findArg = matchedCols.length === 1 ? values[matchedCols[0]] : values;
+    const candidates = matchedHandle.find(findArg);
     if (candidates.length === 0) return [];
 
     const includeArr = Array.from(include);

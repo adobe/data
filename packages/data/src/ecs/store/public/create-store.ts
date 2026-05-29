@@ -86,16 +86,13 @@ export function createStore<
      * indirection) and handed to `idx.add` once per row.
      */
     const seedIndexFromArchetypes = (idx: RuntimeIndex): void => {
-        // We read both the bucket-key columns (`idx.components`) and the
-        // sort-key columns (`idx.order`) so the runtime's binary insert
-        // sees a populated sort tuple. `queryArchetypes` is given the
-        // full required-column set so archetypes missing any of them are
-        // skipped — same correctness rule as the steady-state insert
-        // path, where an entity without an indexed component isn't in
-        // the index.
-        const orderKeys = idx.order ? Object.keys(idx.order) : [];
-        const required: string[] = [...idx.components];
-        for (const k of orderKeys) if (!required.includes(k)) required.push(k);
+        // `idx.readColumns` already includes both bucket-key columns and
+        // sort columns (the RuntimeIndex unifies them at creation time).
+        // `queryArchetypes` filters to only those archetypes carrying the
+        // full set — entities in any other archetype lack at least one
+        // component the index touches and would never produce a key.
+        const required = idx.readColumns;
+        if (required.length === 0) return;
         const archetypes = core.queryArchetypes(required as readonly StringKeyof<C>[]);
         for (const archetype of archetypes) {
             const idCol = archetype.columns.id;
@@ -116,24 +113,32 @@ export function createStore<
 
     const exposeIndexHandle = (name: string, idx: RuntimeIndex): void => {
         if (name in indexHandles) return;
+        // Decide whether the auto-router can dispatch a raw-equality `where`
+        // clause to this index. Routable iff the key declaration is a pure
+        // column reference (bare string) or column tuple (string array) —
+        // function keys derive a value from inputs (live in a different value
+        // space than the source columns) and slot maps name parts arbitrarily
+        // (`{ team: "team", role: ... }`), so the planner cannot infer the
+        // column set from a where clause alone for either.
+        const key = idx.key;
+        let routableColumns: readonly string[] | null;
+        if (typeof key === "string") {
+            routableColumns = [key];
+        } else if (Array.isArray(key)) {
+            routableColumns = key as readonly string[];
+        } else {
+            routableColumns = null;
+        }
         const handle: Record<string, unknown> = {
             find: idx.find,
             findRange: idx.findRange,
-            // Internal fields used by the query planner in `createDatabase` to
-            // match a `where` clause against the declared key tuple. Not part
-            // of the public `Database.Index.Handle` type — exposed at runtime
-            // only:
-            //
-            //   `components` — the source-column tuple the planner matches
-            //     against a `where` clause's key set.
-            //   `computed`   — true when this index derives its key via a
-            //     `compute` function. The planner skips computed indexes for
-            //     raw-where auto-routing because the source columns and the
-            //     derived key live in different value spaces (a
-            //     `where: { lastName: "Smith" }` is a column-equality query,
-            //     not a derived-key lookup).
-            components: idx.components,
-            computed: idx.compute !== undefined,
+            // Internal planner-only field. Not part of the public
+            // `Database.Index.Handle` type. `routableColumns: null` opts the
+            // index out of raw-where auto-routing (function/slot-map keys).
+            // The planner reads this to pick a matching index and then
+            // calls `handle.find` (so user-installed spies on the handle
+            // intercept the routed call).
+            routableColumns,
         };
         if (idx.unique) handle.get = idx.get;
         indexHandles[name] = handle;

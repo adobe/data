@@ -1,327 +1,345 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Entity } from "../../entity/entity.js";
-import { Filter, getRowPredicateFromFilter } from "../../../table/select-rows.js";
 
-const KEY_SEPARATOR = "\x1f"; // ASCII unit separator — not a valid char in JSON output
-
-export interface IndexState {
-    /** Ordered list of component keys participating in the index. */
-    readonly components: readonly string[];
-    /** When true, at most one entity per key tuple. */
-    readonly unique: boolean;
-    /**
-     * Optional pure function: when present, the bucket key is the value
-     * this returns (the "derived key"), called with the entity's
-     * component values positionally in `components` order. When absent,
-     * the bucket key is the components tuple itself (raw index).
-     */
-    readonly compute?: (...args: unknown[]) => unknown;
-    /**
-     * Optional within-bucket sort order. Keys are component names on
-     * the indexed entity, values are direction booleans (`true` = asc,
-     * `false` = desc). Insertion order of keys defines precedence.
-     */
-    readonly order?: { readonly [name: string]: boolean };
-}
+// ============================================================================
+// Declaration shape (mirrors `Index` in store/index-types.ts at the value layer)
+// ============================================================================
 
 /**
- * Runtime instance of a single declared index. Owns the bucket maps and
- * exposes the same lookup methods that the type-level `Database.Index.Handle`
- * advertises (find/findRange/get for unique).
- *
- * Two flavours share this object — distinguished by `compute` being set or
- * not. For raw indexes the lookup methods take a `Record<componentKey,
- * value>` shape; for computed indexes they take the derived key value
- * directly. The runtime branches on `compute` to choose the right code
- * path. The static `Database.Index.Handle` type expresses this dispatch.
- *
- * **Array (multi-value) fan-out** is automatic. Any indexed value that
- * arrives as an array — a component column declared `T[]`, or a `compute`
- * return value — fans out into one bucket entry per element. Raw indexes
- * with multiple array-valued components fan out across the cartesian
- * product. The reverse map (`entityKeys`) stores the list of bucket keys
- * the entity currently sits in, so `update` / `remove` cleanly visit all
- * of them.
- *
- * Maintenance is incremental: `add` / `remove` / `update` are called from
- * the registry as mutations happen.
- *
- * Pre-check helpers (`checkUniqueAvailable`, `checkUniqueAvailableForUpdate`)
- * exist so the Store can detect a unique-key collision *before* mutating the
- * column store, keeping store and index consistent even when the user's
- * transaction body re-throws between mutations.
+ * `key` declaration variants. See `Index` in `store/index-types.ts` for
+ * the type-level mirror that drives `find` / `get` argument inference.
  */
-export interface RuntimeIndex extends IndexState {
+export type IndexKeyDecl =
+    | string                                           // bare column name → scalar find
+    | readonly string[]                                // column tuple → object find
+    | ((...args: any[]) => unknown)                    // function → scalar / fan-out element
+    | { readonly [slot: string]: string | ((...args: any[]) => unknown) };
+
+/** `order` declaration: read columns + optional comparator. */
+export type IndexOrderDecl = {
+    readonly by: readonly string[];
+    readonly compare?: (a: any, b: any) => number;
+};
+
+/**
+ * The shape a user (or higher layer) hands to `createIndex` for a single
+ * index. Mirrors the public `Index` type but loose-typed at this layer
+ * because the runtime doesn't have access to the host component map.
+ */
+export interface IndexState {
+    readonly key: IndexKeyDecl;
+    readonly order?: IndexOrderDecl;
+    readonly unique?: boolean;
     /**
-     * `values` is the entity's full component record (post-mutation). The
-     * runtime extracts only the indexed components, then either uses them
-     * directly as the key (raw) or feeds them to `compute` to derive one
-     * (computed). When any indexed component is missing from `values`,
-     * the entity is silently skipped (it can't be in this index). When
-     * any indexed value is an array, the entity is registered into one
-     * bucket per element (cartesian product for raw multi-component).
+     * Columns extractor functions read. Only required when at least one
+     * function in `key` reads from a column not already covered by a
+     * string identity in `key` or `order.by`.
      */
+    readonly components?: readonly string[];
+}
+
+// ============================================================================
+// Key serialization
+// ============================================================================
+
+/**
+ * Stable string serialization for a bucket key. Objects are key-sorted
+ * so `{a, b}` and `{b, a}` produce the same key. Used for the Map<string,
+ * Entity[]> bucket store.
+ */
+const serializeKey = (value: unknown): string => {
+    if (value === null || typeof value !== "object") {
+        return JSON.stringify(value);
+    }
+    if (Array.isArray(value)) {
+        return `[${value.map(serializeKey).join(",")}]`;
+    }
+    const keys = Object.keys(value as object).sort();
+    let out = "{";
+    for (let i = 0; i < keys.length; i++) {
+        if (i > 0) out += ",";
+        const k = keys[i];
+        out += JSON.stringify(k) + ":" + serializeKey((value as any)[k]);
+    }
+    out += "}";
+    return out;
+};
+
+/**
+ * Fan-out: given a single raw key value (scalar / array / object with
+ * possibly-array slots), produce every bucket key value the entity should
+ * be filed under. Array at top level → one entry per element. Object
+ * with array-valued slots → cartesian product across them.
+ */
+const expandBucketKeys = (keyValue: unknown): unknown[] => {
+    if (Array.isArray(keyValue)) return keyValue.length === 0 ? [] : keyValue;
+    if (keyValue !== null && typeof keyValue === "object") {
+        const entries = Object.entries(keyValue as Record<string, unknown>);
+        let acc: Record<string, unknown>[] = [{}];
+        for (const [k, v] of entries) {
+            const choices = Array.isArray(v) ? v : [v];
+            if (choices.length === 0) return [];
+            const next: Record<string, unknown>[] = [];
+            for (const partial of acc) {
+                for (const choice of choices) {
+                    next.push({ ...partial, [k]: choice });
+                }
+            }
+            acc = next;
+        }
+        return acc;
+    }
+    return [keyValue];
+};
+
+// ============================================================================
+// Key normalization
+// ============================================================================
+
+/**
+ * Compiled form of a `key` declaration. Produces the bucket-key value(s)
+ * for an entity at insert/update time, and the lookup-key value for a
+ * find/get argument.
+ */
+interface KeyExtractor {
+    /** Columns the extractor reads from entity values. */
+    readonly readColumns: readonly string[];
+    /** Returns the raw bucket key value for an entity (pre-fan-out). null = skip. */
+    extractFromEntity(values: Readonly<Record<string, unknown>>): unknown | null;
+    /** Returns the lookup key value for a find/get arg. */
+    extractFromLookup(arg: unknown): unknown;
+}
+
+const normalizeKey = (
+    keyDecl: IndexKeyDecl,
+    extraComponents: readonly string[],
+): KeyExtractor => {
+    // Bare column name
+    if (typeof keyDecl === "string") {
+        return {
+            readColumns: [keyDecl],
+            extractFromEntity: (values) => {
+                const v = values[keyDecl];
+                return v === undefined ? null : v;
+            },
+            extractFromLookup: (arg) => arg,
+        };
+    }
+    // String tuple
+    if (Array.isArray(keyDecl)) {
+        const cols = keyDecl as readonly string[];
+        return {
+            readColumns: cols,
+            extractFromEntity: (values) => {
+                const out: Record<string, unknown> = {};
+                for (const c of cols) {
+                    const v = values[c];
+                    if (v === undefined) return null;
+                    out[c] = v;
+                }
+                return out;
+            },
+            extractFromLookup: (arg) => arg,
+        };
+    }
+    // Function
+    if (typeof keyDecl === "function") {
+        return {
+            readColumns: extraComponents,
+            extractFromEntity: (values) => {
+                const args = extraComponents.map((c) => values[c]);
+                if (args.some((v) => v === undefined)) return null;
+                const out = (keyDecl as (...a: unknown[]) => unknown)(...args);
+                return out === undefined ? null : out;
+            },
+            extractFromLookup: (arg) => arg,
+        };
+    }
+    // Slot map
+    const slotEntries = Object.entries(keyDecl as Record<string, string | ((...args: any[]) => unknown)>);
+    // Read set: identity-string columns + extra components for functions.
+    const reads = new Set<string>();
+    for (const [, v] of slotEntries) if (typeof v === "string") reads.add(v);
+    for (const c of extraComponents) reads.add(c);
+    return {
+        readColumns: [...reads],
+        extractFromEntity: (values) => {
+            const out: Record<string, unknown> = {};
+            for (const [slot, ext] of slotEntries) {
+                if (typeof ext === "string") {
+                    const v = values[ext];
+                    if (v === undefined) return null;
+                    out[slot] = v;
+                } else {
+                    const args = extraComponents.map((c) => values[c]);
+                    if (args.some((v) => v === undefined)) return null;
+                    const v = (ext as (...a: unknown[]) => unknown)(...args);
+                    if (v === undefined) return null;
+                    out[slot] = v;
+                }
+            }
+            return out;
+        },
+        extractFromLookup: (arg) => arg,
+    };
+};
+
+// ============================================================================
+// Order normalization
+// ============================================================================
+
+interface OrderExtractor {
+    readonly readColumns: readonly string[];
+    /** Snapshot per-entity sort tuple. */
+    snapshot(values: Readonly<Record<string, unknown>>): Record<string, unknown> | null;
+    /** Comparator over the snapshots. */
+    compare(a: Record<string, unknown>, b: Record<string, unknown>): number;
+}
+
+const defaultCompare = (
+    by: readonly string[],
+): ((a: Record<string, unknown>, b: Record<string, unknown>) => number) =>
+    (a, b) => {
+        for (const c of by) {
+            const va = a[c] as any;
+            const vb = b[c] as any;
+            if (va === vb) continue;
+            if (va < vb) return -1;
+            return 1;
+        }
+        return 0;
+    };
+
+const normalizeOrder = (order: IndexOrderDecl): OrderExtractor => {
+    const { by, compare } = order;
+    const cmp = compare ?? defaultCompare(by);
+    return {
+        readColumns: by,
+        snapshot: (values) => {
+            const out: Record<string, unknown> = {};
+            for (const c of by) {
+                const v = values[c];
+                if (v === undefined) return null;
+                out[c] = v;
+            }
+            return out;
+        },
+        compare: cmp,
+    };
+};
+
+// ============================================================================
+// RuntimeIndex
+// ============================================================================
+
+/**
+ * Runtime instance of a single declared index. Public methods mirror
+ * `Index.Handle` in `store/index-types.ts`.
+ */
+export interface RuntimeIndex {
+    readonly unique: boolean;
+    /** Columns the index reads from entities, for the store-layer seed path. */
+    readonly readColumns: readonly string[];
+    /** Whether this index is sorted (`order` was declared). */
+    readonly sorted: boolean;
+    /** Underlying key declaration — exposed for the auto-router and dedup. */
+    readonly key: IndexKeyDecl;
+    /** Underlying order declaration, if any. */
+    readonly order: IndexOrderDecl | undefined;
+
     add(entity: Entity, values: Readonly<Record<string, unknown>>): void;
     remove(entity: Entity): void;
     update(entity: Entity, values: Readonly<Record<string, unknown>>): void;
     clear(): void;
     readonly size: number;
-    /**
-     * `arg` shape depends on `compute`:
-     * - Raw: `Record<componentKey, value>` — element form per component
-     *   (a single element when the underlying column is `T[]`).
-     * - Computed: the derived key value directly (element form when the
-     *   compute return is `T[]`).
-     */
+
     find(arg: unknown): readonly Entity[];
-    /**
-     * `arg` shape depends on `compute`:
-     * - Raw: a `Filter<Record<componentKey, value>>`.
-     * - Computed: a `WhereCondition<Key>` — either the key directly
-     *   (acts like find) or a single `ComparisonOperation<Key>`.
-     */
     findRange(arg: unknown): readonly Entity[];
-    /** Throws if `unique` is false. The type system also prevents this at the call site. */
-    get(arg: unknown): Entity | undefined;
+    get(arg: unknown): Entity | null;
+
     /**
-     * For unique indexes only — non-unique indexes return `null` without
-     * doing any work. Returns `null` when none of the (potentially-new)
-     * keys derived from `values` collide with an existing entry; returns
-     * the colliding existing entity when any does. Callers should throw
-     * on a non-null return *before* performing any mutation.
+     * For unique indexes: returns the existing entity holding any bucket
+     * key the new `values` would land in (excluding `excludeEntity` if
+     * provided), or null. Used by the Store-layer pre-check so unique
+     * conflicts throw before the column mutation.
      */
-    checkUniqueAvailable(values: Readonly<Record<string, unknown>>): Entity | null;
-    /**
-     * Like `checkUniqueAvailable` but for updates — `excludeEntity` is the
-     * entity currently being updated; a collision with itself is not a
-     * conflict. `values` must reflect the post-update state (caller is
-     * responsible for merging the patch with the entity's current values).
-     */
-    checkUniqueAvailableForUpdate(
-        excludeEntity: Entity,
+    checkUniqueAvailable(
         values: Readonly<Record<string, unknown>>,
+        excludeEntity: Entity | null,
     ): Entity | null;
 }
 
-const COMPARISON_OPS = ["==", "!=", "<", "<=", ">", ">="] as const;
-type ComparisonOp = typeof COMPARISON_OPS[number];
-
-/** Returns true when `range` is an object holding at least one operator key. */
-const isOperatorObject = (range: unknown): range is Partial<Record<ComparisonOp, unknown>> => {
-    if (range === null || typeof range !== "object") return false;
-    for (const op of COMPARISON_OPS) {
-        if (op in (range as object)) return true;
-    }
-    return false;
-};
-
-const matchesOperators = (value: unknown, ops: Partial<Record<ComparisonOp, unknown>>): boolean => {
-    for (const op of COMPARISON_OPS) {
-        if (!(op in ops)) continue;
-        const v = ops[op];
-        switch (op) {
-            case "==": if (!(value === v)) return false; break;
-            case "!=": if (!(value !== v)) return false; break;
-            case "<":  if (!((value as any) <  (v as any))) return false; break;
-            case "<=": if (!((value as any) <= (v as any))) return false; break;
-            case ">":  if (!((value as any) >  (v as any))) return false; break;
-            case ">=": if (!((value as any) >= (v as any))) return false; break;
-        }
-    }
-    return true;
-};
-
-/**
- * One bucket entry an entity should be filed into. For raw indexes
- * `rawValues` is the per-component values of this specific entry (after
- * any array fan-out); for computed indexes `derived` is the single
- * derived key value (the element after fan-out, if applicable).
- */
-interface BucketEntry {
-    readonly key: string;
-    readonly rawValues?: Record<string, unknown>;
-    readonly derived?: unknown;
-}
-
-/**
- * Build a comparator from an `order` declaration. Selected ONCE at index
- * creation; the resulting closure is the hot-path comparator used by
- * binary insert and the bulk-load sort. Single-key declarations get a
- * specialized closure — same code shape as a hand-written comparator
- * over one key — so single-key indexes pay no overhead vs. a hypothetical
- * `order: "fractIndex"` string form.
- *
- * `sortCache` is `Map<Entity, unknown[]>` holding the sort tuple per
- * entity. The comparator looks up entities through it without going
- * back to the store.
- */
-const buildComparator = (
-    order: { readonly [name: string]: boolean },
-    sortCache: Map<Entity, unknown[]>,
-): ((a: Entity, b: Entity) => number) => {
-    const keys = Object.keys(order);
-    const directions = keys.map((k) => order[k] !== false); // true = asc, false = desc
-    // The sort tuple stores `unknown` values — at the type level TS
-    // can't know they're comparable. Cast to `any` at the comparison
-    // sites: JS's `<` follows the user's chosen Key type's natural
-    // ordering (string lexicographic, number numeric), same as
-    // `select({ order })`'s subtraction-based comparator.
-    if (keys.length === 1) {
-        const asc = directions[0];
-        return (a, b) => {
-            const ta = sortCache.get(a)!;
-            const tb = sortCache.get(b)!;
-            const va = ta[0] as any; const vb = tb[0] as any;
-            if (va === vb) return 0;
-            if (va < vb) return asc ? -1 : 1;
-            return asc ? 1 : -1;
-        };
-    }
-    return (a, b) => {
-        const ta = sortCache.get(a)!;
-        const tb = sortCache.get(b)!;
-        for (let i = 0; i < keys.length; i++) {
-            const va = ta[i] as any; const vb = tb[i] as any;
-            if (va === vb) continue;
-            if (va < vb) return directions[i] ? -1 : 1;
-            return directions[i] ? 1 : -1;
-        }
-        return 0;
-    };
-};
-
 export const createIndex = (state: IndexState): RuntimeIndex => {
-    const { components, unique, compute, order } = state;
-    const isComputed = compute !== undefined;
-    const isSorted = order !== undefined && Object.keys(order).length > 0;
-    const orderKeys = isSorted ? Object.keys(order!) : [];
-    // Sort-key cache, populated at insert and refreshed at update. Only
-    // allocated when the index actually sorts.
-    const sortCache: Map<Entity, unknown[]> = isSorted ? new Map() : (undefined as never);
-    const comparator = isSorted ? buildComparator(order!, sortCache) : null;
+    const unique = state.unique ?? false;
+    const extraComponents = state.components ?? [];
+    const keyEx = normalizeKey(state.key, extraComponents);
+    const orderEx = state.order ? normalizeOrder(state.order) : null;
+    const sorted = orderEx !== null;
 
-    // Bucket payloads:
-    //  - non-unique → `Entity[]`
-    //  - unique     → single `Entity`
+    // All columns the index touches (key reads + sort reads). Used by
+    // the store to walk only relevant archetypes when seeding.
+    const readColumns = (() => {
+        const set = new Set<string>(keyEx.readColumns);
+        if (orderEx) for (const c of orderEx.readColumns) set.add(c);
+        return [...set];
+    })();
+
+    // Bucket payload:
+    //  - non-unique → Entity[]
+    //  - unique     → single Entity
     const buckets = new Map<string, Entity | Entity[]>();
-    // For raw indexes only: parsed component values per bucket, used by
-    // findRange so we never re-parse the serialized key. After fan-out
-    // each per-bucket entry holds element values (not the original
-    // array).
-    const bucketValues = new Map<string, Record<string, unknown>>();
-    // For computed indexes only: the derived Key value per bucket. Used
-    // by findRange to apply operator-based range queries against the
-    // original (un-serialized) key value.
-    const bucketKeyValue = new Map<string, unknown>();
-    // Reverse map: which bucket keys each entity currently sits in.
-    // With array fan-out an entity may appear in multiple buckets, so
-    // this is an array — single-element for the scalar case (the common
-    // path), longer for multi-value entries.
+    // The post-fan-out key value for each serialized bucket key. `findRange`
+    // reads this to apply per-bucket operator filters (find scans every
+    // bucket once and keeps the ones whose value matches the filter).
+    const bucketValueByKey = new Map<string, unknown>();
+    // Reverse map: which serialized bucket keys each entity sits in.
     const entityKeys = new Map<Entity, string[]>();
+    // Sort cache, if sorted.
+    const sortCache: Map<Entity, Record<string, unknown>> = sorted ? new Map() : (undefined as never);
 
-    /**
-     * Enumerate every (key, rawValues) bucket entry an entity should be
-     * filed into given its `values`. Cartesian product across any
-     * array-valued indexed components. Returns null when any indexed
-     * component is missing or any array is empty (entity isn't in this
-     * index).
-     */
-    const rawBucketEntries = (
+    // Helpers ---------------------------------------------------------------
+
+    /** Enumerate (serialized-key, post-fan-out-value) pairs for an entity. */
+    const bucketEntriesFor = (
         values: Readonly<Record<string, unknown>>,
-    ): BucketEntry[] | null => {
-        // Per-component element lists (length 1 for scalars).
-        const perComponent: Array<{ component: string; elements: unknown[] }> = [];
-        for (const c of components) {
-            const v = values[c];
-            if (v === undefined) return null;
-            if (Array.isArray(v)) {
-                if (v.length === 0) return null;
-                perComponent.push({ component: c, elements: v });
-            } else {
-                perComponent.push({ component: c, elements: [v] });
+    ): { key: string; value: unknown }[] => {
+        const raw = keyEx.extractFromEntity(values);
+        if (raw === null) return [];
+        const expanded = expandBucketKeys(raw);
+        const out: { key: string; value: unknown }[] = [];
+        const seen = new Set<string>();
+        for (const v of expanded) {
+            const s = serializeKey(v);
+            if (!seen.has(s)) {
+                seen.add(s);
+                out.push({ key: s, value: v });
             }
         }
-        const out: BucketEntry[] = [];
-        const walk = (i: number, parts: string[], indexed: Record<string, unknown>): void => {
-            if (i === perComponent.length) {
-                out.push({ key: parts.join(KEY_SEPARATOR), rawValues: { ...indexed } });
-                return;
-            }
-            const { component, elements } = perComponent[i];
-            for (const el of elements) {
-                parts.push(JSON.stringify(el));
-                indexed[component] = el;
-                walk(i + 1, parts, indexed);
-                parts.pop();
-                delete indexed[component];
-            }
-        };
-        walk(0, [], {});
         return out;
     };
 
-    /** Compute the bucket entries for a computed index (single or fanned-out). */
-    const computedBucketEntries = (
-        values: Readonly<Record<string, unknown>>,
-    ): BucketEntry[] | null => {
-        const args: unknown[] = [];
-        for (const c of components) {
-            const v = values[c];
-            if (v === undefined) return null;
-            args.push(v);
-        }
-        const result = compute!(...args);
-        if (result === undefined) return null;
-        if (Array.isArray(result)) {
-            if (result.length === 0) return null;
-            return result.map((el) => ({ key: JSON.stringify(el), derived: el }));
-        }
-        return [{ key: JSON.stringify(result), derived: result }];
-    };
+    /** Just the keys (used in many maintenance paths). */
+    const bucketKeysFor = (values: Readonly<Record<string, unknown>>): string[] =>
+        bucketEntriesFor(values).map((e) => e.key);
 
-    const bucketEntriesFor = (
-        values: Readonly<Record<string, unknown>>,
-    ): BucketEntry[] | null => isComputed
-        ? computedBucketEntries(values)
-        : rawBucketEntries(values);
+    const lookupKey = (arg: unknown): string => serializeKey(keyEx.extractFromLookup(arg));
 
-    /** Serialize a single lookup-arg element to its bucket key. */
-    const serializeLookupKey = (value: unknown): string | null => {
-        if (value === undefined) return null;
-        return JSON.stringify(value);
-    };
-
-    /** Build the per-key string from a lookup-arg record (raw indexes). */
-    const lookupKeyForRaw = (
-        values: Readonly<Record<string, unknown>>,
-    ): string | null => {
-        const parts: string[] = [];
-        for (const c of components) {
-            const v = values[c];
-            if (v === undefined) return null;
-            parts.push(JSON.stringify(v));
-        }
-        return parts.join(KEY_SEPARATOR);
-    };
-
-    /**
-     * Locate the insertion point in a sorted bucket for `entity`. Returns
-     * the index at which to splice the entity in.
-     */
-    const sortedInsertPosition = (arr: Entity[], entity: Entity): number => {
+    /** Binary-insertion position in a sorted bucket. */
+    const sortedPosition = (arr: Entity[], entity: Entity): number => {
         let lo = 0, hi = arr.length;
+        const ta = sortCache.get(entity)!;
         while (lo < hi) {
             const mid = (lo + hi) >>> 1;
-            if (comparator!(arr[mid], entity) <= 0) lo = mid + 1;
+            const tm = sortCache.get(arr[mid])!;
+            if (orderEx!.compare(tm, ta) <= 0) lo = mid + 1;
             else hi = mid;
         }
         return lo;
     };
 
-    /** Insert `entity` into a single bucket. Throws on unique conflict. */
-    const insertIntoBucket = (entity: Entity, entry: BucketEntry): void => {
-        const { key } = entry;
+    const insertIntoBucket = (entity: Entity, key: string, value: unknown): void => {
+        bucketValueByKey.set(key, value);
         if (unique) {
             const existing = buckets.get(key);
             if (existing !== undefined && existing !== entity) {
@@ -331,286 +349,237 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
                 );
             }
             buckets.set(key, entity);
-            if (entry.rawValues && !bucketValues.has(key)) {
-                bucketValues.set(key, entry.rawValues);
-            }
-            if (isComputed && !bucketKeyValue.has(key)) {
-                bucketKeyValue.set(key, entry.derived);
-            }
-        } else {
-            let arr = buckets.get(key) as Entity[] | undefined;
-            if (!arr) {
-                buckets.set(key, (arr = []));
-                if (entry.rawValues) bucketValues.set(key, entry.rawValues);
-                if (isComputed) bucketKeyValue.set(key, entry.derived);
-            }
-            if (isSorted) {
-                // Binary-insert keeps the bucket sorted at all times.
-                arr.splice(sortedInsertPosition(arr, entity), 0, entity);
-            } else {
-                arr.push(entity);
-            }
+            return;
         }
+        let arr = buckets.get(key) as Entity[] | undefined;
+        if (!arr) buckets.set(key, (arr = []));
+        if (sorted) arr.splice(sortedPosition(arr, entity), 0, entity);
+        else arr.push(entity);
     };
 
-    /** Remove `entity` from a single bucket and clean up empty buckets. */
     const removeFromBucket = (entity: Entity, key: string): void => {
         if (unique) {
             buckets.delete(key);
-            bucketValues.delete(key);
-            bucketKeyValue.delete(key);
-        } else {
-            const arr = buckets.get(key) as Entity[] | undefined;
-            if (!arr) return;
-            const idx = arr.indexOf(entity);
-            if (idx >= 0) {
-                if (isSorted) {
-                    // Order-preserving splice — can't use swap-with-last.
-                    arr.splice(idx, 1);
-                } else {
-                    arr[idx] = arr[arr.length - 1];
-                    arr.pop();
-                }
-            }
-            if (arr.length === 0) {
-                buckets.delete(key);
-                bucketValues.delete(key);
-                bucketKeyValue.delete(key);
-            }
+            bucketValueByKey.delete(key);
+            return;
+        }
+        const arr = buckets.get(key) as Entity[] | undefined;
+        if (!arr) return;
+        const idx = arr.indexOf(entity);
+        if (idx >= 0) {
+            if (sorted) arr.splice(idx, 1);
+            else { arr[idx] = arr[arr.length - 1]; arr.pop(); }
+        }
+        if (arr.length === 0) {
+            buckets.delete(key);
+            bucketValueByKey.delete(key);
         }
     };
 
-    /** Extract the sort tuple from `values` for this entity. */
-    const sortTupleFrom = (values: Readonly<Record<string, unknown>>): unknown[] =>
-        orderKeys.map((k) => values[k]);
+    // Public methods --------------------------------------------------------
 
     const add = (entity: Entity, values: Readonly<Record<string, unknown>>): void => {
         const entries = bucketEntriesFor(values);
-        if (entries === null) return;
-        // Dedup keys — an array with repeated elements (e.g. `["joe","joe"]`)
-        // produces duplicate fan-out entries; the entity should still land in
-        // each bucket exactly once.
+        if (entries.length === 0) return;
         if (unique) {
-            for (const entry of entries) {
-                const existing = buckets.get(entry.key);
+            for (const { key } of entries) {
+                const existing = buckets.get(key);
                 if (existing !== undefined && existing !== entity) {
                     throw new Error(
-                        `Unique index conflict on key ${entry.key}: ` +
+                        `Unique index conflict on key ${key}: ` +
                         `existing entity ${existing}, new entity ${entity}`,
                     );
                 }
             }
         }
-        // Populate the sort cache BEFORE `insertIntoBucket` so the binary
-        // search sees the entity's sort tuple via the comparator.
-        if (isSorted) sortCache.set(entity, sortTupleFrom(values));
-        const seen = new Set<string>();
-        const keys: string[] = [];
-        for (const entry of entries) {
-            if (seen.has(entry.key)) continue;
-            seen.add(entry.key);
-            insertIntoBucket(entity, entry);
-            keys.push(entry.key);
+        if (sorted) {
+            const snap = orderEx!.snapshot(values);
+            if (snap === null) return;
+            sortCache.set(entity, snap);
         }
-        entityKeys.set(entity, keys);
+        for (const { key, value } of entries) insertIntoBucket(entity, key, value);
+        entityKeys.set(entity, entries.map((e) => e.key));
     };
 
     const remove = (entity: Entity): void => {
         const keys = entityKeys.get(entity);
         if (!keys) return;
-        for (const key of keys) removeFromBucket(entity, key);
+        for (const k of keys) removeFromBucket(entity, k);
         entityKeys.delete(entity);
-        if (isSorted) sortCache.delete(entity);
+        if (sorted) sortCache.delete(entity);
     };
 
     const update = (entity: Entity, values: Readonly<Record<string, unknown>>): void => {
-        // Re-derive the full bucket set and diff against the current.
-        // Dedup `next` by key first so an array with repeated elements
-        // doesn't produce duplicate inserts.
-        const rawNext = bucketEntriesFor(values);
-        let next: BucketEntry[] | null = null;
-        const nextKeys: string[] = [];
-        if (rawNext) {
-            const seen = new Set<string>();
-            next = [];
-            for (const entry of rawNext) {
-                if (seen.has(entry.key)) continue;
-                seen.add(entry.key);
-                next.push(entry);
-                nextKeys.push(entry.key);
-            }
-        }
+        const nextEntries = bucketEntriesFor(values);
+        const nextKeys = nextEntries.map((e) => e.key);
         const prevKeys = entityKeys.get(entity) ?? [];
-
-        // For sorted indexes the sort tuple may have changed even when
-        // every bucket key stayed the same (e.g., entity's `fractIndex`
-        // moved but `parent` didn't). Detect a sort-tuple-only change
-        // and re-position the entity within its buckets in place.
-        if (isSorted && next && nextKeys.length === prevKeys.length) {
-            let sameBuckets = true;
-            for (let i = 0; i < nextKeys.length; i++) {
-                if (nextKeys[i] !== prevKeys[i]) { sameBuckets = false; break; }
-            }
-            if (sameBuckets) {
-                const oldTuple = sortCache.get(entity);
-                const newTuple = sortTupleFrom(values);
-                const tupleChanged = !oldTuple || newTuple.some((v, i) => v !== oldTuple[i]);
-                if (!tupleChanged) return;
-                // Update cache, then remove+reinsert the entity in each
-                // bucket to restore sorted order under the new tuple.
-                // (Cache must be updated AFTER removing — removeFromBucket
-                // uses the *old* position which the *old* comparator
-                // would have produced; with binary search it scans, so
-                // safe either way, but update cache between for clarity.)
-                if (!unique) {
-                    for (const key of nextKeys) {
-                        const arr = buckets.get(key) as Entity[] | undefined;
-                        if (!arr) continue;
-                        const idx = arr.indexOf(entity);
-                        if (idx >= 0) arr.splice(idx, 1);
-                    }
-                }
-                sortCache.set(entity, newTuple);
-                if (!unique) {
-                    for (const key of nextKeys) {
-                        const arr = buckets.get(key) as Entity[] | undefined;
-                        if (!arr) continue;
-                        arr.splice(sortedInsertPosition(arr, entity), 0, entity);
-                    }
-                }
-                return;
-            }
-        }
-
-        if (next && nextKeys.length === prevKeys.length) {
-            // Fast path: identical key sets, in same order — common when
-            // an update doesn't touch any indexed component (and, for
-            // sorted indexes, the sort tuple is also unchanged — handled
-            // above).
-            let identical = true;
-            for (let i = 0; i < nextKeys.length; i++) {
-                if (nextKeys[i] !== prevKeys[i]) { identical = false; break; }
-            }
-            if (identical && !isSorted) return;
-        }
-
         const nextSet = new Set(nextKeys);
         const prevSet = new Set(prevKeys);
 
-        // Unique pre-check on the new keys we don't already own.
-        if (unique && next) {
-            for (const entry of next) {
-                if (prevSet.has(entry.key)) continue;
-                const existing = buckets.get(entry.key);
+        // Unique pre-check on new keys we don't already own.
+        if (unique) {
+            for (const k of nextKeys) {
+                if (prevSet.has(k)) continue;
+                const existing = buckets.get(k);
                 if (existing !== undefined && existing !== entity) {
                     throw new Error(
-                        `Unique index conflict on key ${entry.key}: ` +
+                        `Unique index conflict on key ${k}: ` +
                         `existing entity ${existing}, new entity ${entity}`,
                     );
                 }
             }
         }
 
-        // Drop the buckets we left.
-        for (const key of prevKeys) {
-            if (!nextSet.has(key)) removeFromBucket(entity, key);
-        }
-        // Refresh sort cache before re-inserting so binary search sees
-        // the *new* sort tuple.
-        if (isSorted && next) sortCache.set(entity, sortTupleFrom(values));
-        // Insert into the buckets we joined.
-        if (next) {
-            for (const entry of next) {
-                if (!prevSet.has(entry.key)) insertIntoBucket(entity, entry);
+        // Sort-tuple change inside same bucket set → reposition in place.
+        const sameBuckets = nextKeys.length === prevKeys.length &&
+            nextKeys.every((k, i) => k === prevKeys[i]);
+        if (sameBuckets) {
+            if (!sorted) return;
+            const oldSnap = sortCache.get(entity);
+            const newSnap = orderEx!.snapshot(values);
+            if (newSnap === null) { remove(entity); return; }
+            const unchanged = oldSnap !== undefined &&
+                orderEx!.compare(oldSnap, newSnap) === 0;
+            if (unchanged) return;
+            if (!unique) {
+                for (const k of nextKeys) {
+                    const arr = buckets.get(k) as Entity[] | undefined;
+                    if (!arr) continue;
+                    const idx = arr.indexOf(entity);
+                    if (idx >= 0) arr.splice(idx, 1);
+                }
             }
+            sortCache.set(entity, newSnap);
+            if (!unique) {
+                for (const k of nextKeys) {
+                    const arr = buckets.get(k) as Entity[] | undefined;
+                    if (!arr) continue;
+                    arr.splice(sortedPosition(arr, entity), 0, entity);
+                }
+            }
+            return;
         }
 
+        // Bucket-set changed: drop the ones we left, refresh sort cache,
+        // insert into the new ones.
+        for (const k of prevKeys) if (!nextSet.has(k)) removeFromBucket(entity, k);
+        if (sorted) {
+            if (nextEntries.length === 0) sortCache.delete(entity);
+            else {
+                const snap = orderEx!.snapshot(values);
+                if (snap === null) { remove(entity); return; }
+                sortCache.set(entity, snap);
+            }
+        }
+        for (const { key, value } of nextEntries) {
+            if (!prevSet.has(key)) insertIntoBucket(entity, key, value);
+        }
         if (nextKeys.length === 0) entityKeys.delete(entity);
         else entityKeys.set(entity, nextKeys);
     };
 
     const clear = (): void => {
         buckets.clear();
-        bucketValues.clear();
-        bucketKeyValue.clear();
+        bucketValueByKey.clear();
         entityKeys.clear();
-        if (isSorted) sortCache.clear();
+        if (sorted) sortCache.clear();
     };
 
     const find = (arg: unknown): readonly Entity[] => {
-        const key = isComputed
-            ? serializeLookupKey(arg)
-            : lookupKeyForRaw(arg as Readonly<Record<string, unknown>>);
-        if (key === null) return [];
-        const bucket = buckets.get(key);
+        const k = lookupKey(arg);
+        const bucket = buckets.get(k);
         if (bucket === undefined) return [];
         return unique ? [bucket as Entity] : (bucket as Entity[]).slice();
     };
 
-    const findRange = (arg: unknown): readonly Entity[] =>
-        isComputed ? findRangeComputed(arg) : findRangeRaw(arg as Filter<Record<string, unknown>>);
+    // findRange supports the exact-match argument shape that `find` accepts,
+    // plus operator filters on the bucket key. Operators are
+    // ==, !=, <, <=, >, >=. For a scalar key (bare-string or function key),
+    // an operator object at the argument root applies to the scalar value.
+    // For an object key (tuple or slot map), each field can be either a
+    // value (equality) or an operator object.
+    //
+    // Implementation walks every bucket once. That cost is linear in the
+    // bucket count, but the alternative — maintaining a sorted index on the
+    // bucket key — is much heavier machinery for the same result on most
+    // workloads. The hot path for users is `find`, not `findRange`.
+    const isOperatorObject = (v: unknown): boolean => {
+        if (v === null || typeof v !== "object" || Array.isArray(v)) return false;
+        const keys = Object.keys(v as object);
+        if (keys.length === 0) return false;
+        for (const k of keys) {
+            if (k !== "==" && k !== "!=" && k !== "<" && k !== "<=" && k !== ">" && k !== ">=") {
+                return false;
+            }
+        }
+        return true;
+    };
 
-    // Dedup via Set — with array fan-out the same entity can sit in
-    // multiple buckets that all match a range, but the caller wants each
-    // entity at most once. For scalar indexes the dedup is a no-op.
-    const findRangeRaw = (range: Filter<Record<string, unknown>>): readonly Entity[] => {
-        const predicate = getRowPredicateFromFilter(range);
+    const matchesOps = (value: unknown, ops: Record<string, unknown>): boolean => {
+        for (const op in ops) {
+            const target = ops[op];
+            const v = value as any;
+            const t = target as any;
+            switch (op) {
+                case "==": if (!Object.is(v, t)) return false; break;
+                case "!=": if (Object.is(v, t)) return false; break;
+                case "<":  if (!(v <  t)) return false; break;
+                case "<=": if (!(v <= t)) return false; break;
+                case ">":  if (!(v >  t)) return false; break;
+                case ">=": if (!(v >= t)) return false; break;
+            }
+        }
+        return true;
+    };
+
+    const scalarKey = typeof state.key === "string" || typeof state.key === "function";
+
+    const matchesArg = (bucketValue: unknown, arg: unknown): boolean => {
+        if (scalarKey) {
+            if (isOperatorObject(arg)) return matchesOps(bucketValue, arg as Record<string, unknown>);
+            return Object.is(bucketValue, arg);
+        }
+        if (arg === null || typeof arg !== "object" || Array.isArray(arg)) return false;
+        for (const field in arg as Record<string, unknown>) {
+            const condition = (arg as Record<string, unknown>)[field];
+            const fieldValue = (bucketValue as Record<string, unknown>)[field];
+            if (isOperatorObject(condition)) {
+                if (!matchesOps(fieldValue, condition as Record<string, unknown>)) return false;
+            } else if (!Object.is(fieldValue, condition)) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    const findRange = (arg: unknown): readonly Entity[] => {
         const result = new Set<Entity>();
         for (const [key, bucketEntries] of buckets) {
-            const values = bucketValues.get(key)!;
-            const adapter = {
-                columns: Object.fromEntries(
-                    components.map(c => [c, { get: () => values[c] }]),
-                ),
-            };
-            if (predicate(adapter as never, 0)) {
-                if (unique) result.add(bucketEntries as Entity);
-                else for (const e of bucketEntries as Entity[]) result.add(e);
-            }
+            const bucketValue = bucketValueByKey.get(key);
+            if (!matchesArg(bucketValue, arg)) continue;
+            if (unique) result.add(bucketEntries as Entity);
+            else for (const e of bucketEntries as Entity[]) result.add(e);
         }
         return [...result];
     };
 
-    const findRangeComputed = (range: unknown): readonly Entity[] => {
-        if (!isOperatorObject(range)) return find(range);
-        const ops = range;
-        const result = new Set<Entity>();
-        for (const [key, bucketEntries] of buckets) {
-            const derived = bucketKeyValue.get(key);
-            if (matchesOperators(derived, ops)) {
-                if (unique) result.add(bucketEntries as Entity);
-                else for (const e of bucketEntries as Entity[]) result.add(e);
-            }
-        }
-        return [...result];
-    };
-
-    const getOne = (arg: unknown): Entity | undefined => {
+    const get = (arg: unknown): Entity | null => {
         if (!unique) {
             throw new Error("Database.Index.Handle.get is only available on unique indexes");
         }
-        const key = isComputed
-            ? serializeLookupKey(arg)
-            : lookupKeyForRaw(arg as Readonly<Record<string, unknown>>);
-        if (key === null) return undefined;
-        return buckets.get(key) as Entity | undefined;
+        const k = lookupKey(arg);
+        const bucket = buckets.get(k);
+        return bucket === undefined ? null : (bucket as Entity);
     };
 
-    /**
-     * For each bucket this `values` would land in, check whether the
-     * bucket is already claimed. Returns the FIRST colliding entity (if
-     * `excludeEntity` is given, collisions against that entity count as
-     * available). Used by both the insert and update pre-checks.
-     */
-    const findUniqueConflict = (
+    const checkUniqueAvailable = (
         values: Readonly<Record<string, unknown>>,
         excludeEntity: Entity | null,
     ): Entity | null => {
         if (!unique) return null;
-        const entries = bucketEntriesFor(values);
-        if (entries === null) return null;
-        for (const { key } of entries) {
-            const existing = buckets.get(key);
+        const keys = bucketKeysFor(values);
+        for (const k of keys) {
+            const existing = buckets.get(k);
             if (existing === undefined) continue;
             if (excludeEntity !== null && existing === excludeEntity) continue;
             return existing as Entity;
@@ -619,10 +588,11 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
     };
 
     return {
-        components,
         unique,
-        compute,
-        order,
+        readColumns,
+        sorted,
+        key: state.key,
+        order: state.order,
         add,
         remove,
         update,
@@ -630,9 +600,7 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
         get size() { return entityKeys.size; },
         find,
         findRange,
-        get: getOne,
-        checkUniqueAvailable: (values) => findUniqueConflict(values, null),
-        checkUniqueAvailableForUpdate: (excludeEntity, values) =>
-            findUniqueConflict(values, excludeEntity),
+        get: get as RuntimeIndex["get"],
+        checkUniqueAvailable,
     };
 };

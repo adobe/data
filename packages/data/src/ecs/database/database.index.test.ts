@@ -708,25 +708,44 @@ describe("t.indexes — eager maintenance inside transactions", () => {
         expect(db.indexes.byName.find("alice")).toEqual([]);
     });
 
-    it("unique conflict on insert rolls back atomically", () => {
+    it("unique conflict on insert is caught up-front — no partial store or index mutation", () => {
         const db = Database.create(plugin());
         const first = db.transactions.add({ name: "alice", email: "shared@x.com" });
+        // Snapshot pre-throw state so we can assert no drift.
+        const beforeRows = db.select(["email"]);
         expect(() =>
             db.transactions.add({ name: "alex", email: "shared@x.com" }),
         ).toThrow(/Unique index conflict/);
+
+        // The unique-key bucket still points at the original entity.
         expect(db.indexes.uniqueByEmail.get("shared@x.com")).toBe(first);
+        // No phantom row landed in either index or store. byName.find("alex")
+        // returning [] proves the secondary index never saw the row;
+        // db.select asserts the store itself never grew.
         expect(db.indexes.byName.find("alex")).toEqual([]);
+        const afterRows = db.select(["email"]);
+        expect([...afterRows].sort()).toEqual([...beforeRows].sort());
     });
 
-    it("unique conflict on update rolls back atomically", () => {
+    it("unique conflict on update is caught up-front — both stores stay consistent", () => {
         const db = Database.create(plugin());
         const e1 = db.transactions.add({ name: "alice", email: "a@a.com" });
         const e2 = db.transactions.add({ name: "bob", email: "b@b.com" });
+        // Snapshot pre-throw state.
+        const e1BeforeRead = db.read(e1);
+        const e2BeforeRead = db.read(e2);
+
         expect(() =>
             db.transactions.updateEmail({ entity: e1, newEmail: "b@b.com" }),
         ).toThrow(/Unique index conflict/);
+
+        // Index untouched on both keys.
         expect(db.indexes.uniqueByEmail.get("a@a.com")).toBe(e1);
         expect(db.indexes.uniqueByEmail.get("b@b.com")).toBe(e2);
+        // Underlying store untouched — e1's email is still "a@a.com",
+        // proving the pre-check fired before `core.update` ran.
+        expect(db.read(e1)).toEqual(e1BeforeRead);
+        expect(db.read(e2)).toEqual(e2BeforeRead);
     });
 });
 

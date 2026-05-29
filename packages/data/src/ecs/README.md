@@ -300,7 +300,35 @@ When `db.select(include, { where })` or `db.observe.select(...)` is called with 
 ### Maintenance and atomicity
 
 - Indexes are maintained *eagerly* per mutation, so `t.indexes.<name>` inside a transaction sees rows the transaction has just written.
-- Unique constraints are pre-checked before any column mutation. A conflict throws *from the offending insert/update call*; the existing transaction rollback path restores both the store and the index together.
+- Unique constraints are pre-checked before any column mutation. A conflict throws *from the offending insert/update call*; the existing transaction rollback path restores both the store and the index together. No partial mutation lands in either the store or the index.
+
+### Performance characteristics
+
+Index maintenance is optimized for the common pattern of **batched writes followed by reads**. Inserts never sort or scan; sorting (when an `order` is declared) is deferred to the first read that touches a dirty bucket.
+
+| Declaration | Per-insert cost | Notes |
+|---|---|---|
+| `key: "col"` (non-unique) | `O(1)` | Push to bucket array. |
+| `key: "col"`, `unique: true` | `O(1)` | Map set; throws on duplicate. |
+| `key: ["a", "b", …]` | `O(k)` where `k` = key arity | One serialized key per row. |
+| `key: (...) => v` (scalar) | `O(1 + compute)` | Compute runs once per row. |
+| `key: "arr"` where `arr: T[]` | `O(m)` where `m` = array length | One bucket per array element. |
+| `key: (...) => T[]` (multi) | `O(m + compute)` | Same fan-out, derived. |
+| `key: { slot: ..., ... }` | `O(s + Π array sizes)` | `s` = slot count; cartesian fan-out across array-valued slots. |
+| `+ order: { by, compare? }` | adds `O(b)` for the snapshot, `b` = `by.length`. No comparator calls. |
+
+Reads pay one catch-up sort the first time they touch a dirty bucket:
+
+| Read | First call after writes | Subsequent calls |
+|---|---|---|
+| `find(key)` (unsorted) | `O(1)` Map lookup + `O(n)` slice | same |
+| `find(key)` (sorted, dirty) | `O(n log n)` sort, then slice | `O(1)` Map lookup + `O(n)` slice |
+| `findRange(filter)` | `O(B)` walk + per-matched-bucket sort if dirty | per-matched-bucket sort only on first read after a write |
+| `get(key)` (unique) | `O(1)` Map lookup | same |
+
+`B` = total bucket count for the index. A `find` against a bucket that has not received any writes since the previous `find` is free (clean buckets aren't re-sorted).
+
+**Unique-conflict timing:** the conflict check runs *before* the column store mutates. The throw originates from the insert/update call; the rollback path restores any state the transaction touched. Verified by `database.index.test.ts` ("unique conflict on insert is caught up-front — no partial store or index mutation") and `database.index.performance.test.ts`.
 
 ## Transactions
 

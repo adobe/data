@@ -41,10 +41,17 @@ export class SolarSystemElement extends DatabaseElement<typeof solarSystemPlugin
 
         useOrbitCameraControl(service);
 
+        const onClick = (e: MouseEvent) => {
+            const target = e.currentTarget as HTMLCanvasElement;
+            const ndcX = (e.offsetX / target.clientWidth) * 2 - 1;
+            const ndcY = 1 - (e.offsetY / target.clientHeight) * 2;
+            service.actions.pickAndFit({ ndcX, ndcY });
+        };
+
         return html`
             <div class="stage">
-                <canvas width="900" height="600"></canvas>
-                <div class="hint">drag to orbit</div>
+                <canvas width="900" height="600" @click=${onClick}></canvas>
+                <div class="hint">drag to orbit · click to focus</div>
             </div>
         `;
     }

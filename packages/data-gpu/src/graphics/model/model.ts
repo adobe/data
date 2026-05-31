@@ -10,6 +10,7 @@ import type { Node } from "../node/node.js";
  */
 export interface Model extends Node {
     geometry: Entity;
+    pickable: true;
 }
 
 export * as Model from "./public.js";

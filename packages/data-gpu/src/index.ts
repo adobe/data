@@ -19,6 +19,8 @@ export { transform } from "./graphics/node/transform-plugin.js";
 export { pbrCore } from "./graphics/pbr/pbr-core-plugin.js";
 export { modelLoader } from "./graphics/model/model-loader-plugin.js";
 export { pbrSkinning } from "./graphics/pbr/skinning/skinning-plugin.js";
+export { picking } from "./graphics/picking/picking-plugin.js";
+export type { PickHit } from "./graphics/picking/pick-hit.js";
 
 // --- Render aggregators ---------------------------------------------------
 // User-facing single-include plugins that compose everything below into a

@@ -7,6 +7,7 @@ import {
     Model,
     Orbit,
     pbrIblRender,
+    picking,
     type AnimationTrack,
 } from "@adobe/data-gpu";
 import { sphere } from "./sphere-plugin.js";
@@ -39,7 +40,7 @@ interface PlanetSpec {
 }
 
 export const solarSystemPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrIblRender, sphere, animation, Orbit.plugin),
+    extends: Database.Plugin.combine(pbrIblRender, sphere, animation, Orbit.plugin, picking),
     transactions: {
         initializeScene(t) {
             t.resources.orbit = {
@@ -112,6 +113,15 @@ export const solarSystemPlugin = Database.Plugin.create({
                 position: [14, 0, 0], scale: [0.4, 0.4, 0.4], parent: sun,
                 orbitRadius: 14.0, orbitSpeed: 0.53,
             });
+        },
+    },
+    actions: {
+        /** Pick the Model under the cursor; if any, reframe the orbit on it. */
+        pickAndFit(db, args: { ndcX: number; ndcY: number }) {
+            const hit = db.actions.pickFromNdc(args);
+            if (!hit) return;
+            const geo = db.read(hit.entity)?.geometry;
+            if (geo) db.transactions.setOrbit({ fitGeometry: geo });
         },
     },
 });

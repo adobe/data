@@ -20,7 +20,7 @@ export const plugin = Database.Plugin.create({
     },
     archetypes: {
         Geometry: ["modelUrl"],
-        Model:    ["geometry", "position", "rotation", "scale", "visible", "parent"],
+        Model:    ["geometry", "position", "rotation", "scale", "visible", "parent", "pickable"],
     },
     transactions: {
         insertGeometry(t, args: { modelUrl: string }): number {
@@ -40,6 +40,7 @@ export const plugin = Database.Plugin.create({
                 scale:    args.scale    ?? [1, 1, 1],
                 visible:  true,
                 parent:   args.parent   ?? 0,
+                pickable: true,
             });
         },
     },

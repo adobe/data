@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database, Entity } from "@adobe/data/ecs";
-import { Mat4x4, Quat, Vec3 } from "@adobe/data/math";
+import { Aabb, Mat4x4, Quat, Vec3 } from "@adobe/data/math";
 import { True } from "@adobe/data/schema";
 
 /**
@@ -15,12 +15,14 @@ import { True } from "@adobe/data/schema";
  */
 export const plugin = Database.Plugin.create({
     components: {
-        visible: True.schema,
-        position: Vec3.schema,
-        rotation: Quat.schema,
-        scale: Vec3.schema,
-        parent: Entity.schema,
+        visible:      True.schema,
+        position:     Vec3.schema,
+        rotation:     Quat.schema,
+        scale:        Vec3.schema,
+        parent:       Entity.schema,
+        pickable:     True.schema,
         _worldMatrix: Mat4x4.schema,
+        _worldBounds: Aabb.schema,
     },
     archetypes: {
         Node: ["position", "rotation", "scale", "parent", "visible"],

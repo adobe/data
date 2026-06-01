@@ -79,6 +79,23 @@ export const physicsDropPlugin = Database.Plugin.create({
         },
     },
     systems: {
+        // Demonstrates the flag-gated collision event path: log each batch of
+        // events drained from the GPU, once per epoch (so resting contacts that
+        // re-report every readback aren't spammed every frame).
+        logCollisions: {
+            schedule: { during: ["postUpdate"] },
+            create: db => {
+                let lastEpoch = 0;
+                return () => {
+                    const { physicsEventEpoch, physicsCollisionEvents } = db.store.resources;
+                    if (physicsEventEpoch === lastEpoch) return;
+                    lastEpoch = physicsEventEpoch;
+                    for (const e of physicsCollisionEvents) {
+                        console.log(`[collision] flagged body ${e.bodyA} hit body ${e.bodyB} (penetration ${e.penetration.toFixed(3)})`);
+                    }
+                };
+            },
+        },
         dropRenderInit: {
             schedule: { during: ["postUpdate"], after: ["physicsInit"] },
             create: db => () => {

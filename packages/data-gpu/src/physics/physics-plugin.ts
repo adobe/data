@@ -3,24 +3,46 @@
 import { Database } from "@adobe/data/ecs";
 import { core } from "../core/core-plugin.js";
 import { physicsComputeShader } from "./physics-compute.wgsl.js";
+import type { CollisionEvent } from "./collision-event.js";
 
 /**
- * GPU XPBD physics — Phase B.
+ * GPU XPBD physics — Phase C.
  *
  * GPU-authoritative: body state lives in storage buffers, simulated entirely on
  * the GPU and exposed via `physicsPositionBuffer` / `physicsVelocityBuffer` /
  * `physicsRenderCount` for a renderer to vertex-pull. Depends only on `core`.
  *
- * Per frame: integrate (predict) → K Jacobi solve iterations (sphere-sphere
- * contacts + static world) → finalize (velocity from position delta). Spheres
- * fall, collide with each other, and stack. Body-body neighbour search is
- * currently brute-force O(N²) — a placeholder for the LBVH broadphase.
+ * Per frame: integrate (predict) → report (flag-gated collision events) → K
+ * Jacobi solve iterations (sphere-sphere contacts + static world) → finalize
+ * (velocity from position delta). Spheres fall, collide, and stack. Body-body
+ * neighbour search is currently brute-force O(N²) — a placeholder for the LBVH
+ * broadphase.
+ *
+ * Collision events: bodies flagged `REPORT_BODY_HITS` append to a GPU
+ * append-buffer (atomic counter + records). The buffer is copied to a mappable
+ * staging buffer and drained on the CPU into `physicsCollisionEvents`, with
+ * `physicsEventEpoch` bumped per batch so a consumer can log only new events.
+ * Readback is double-buffered via a small state machine — never stalls the
+ * frame. Cost is proportional to the number of flagged bodies.
  */
 
 const PARAMS_SIZE = 32;  // 8 × 4 bytes — see Params struct in the shader.
 const VEC4 = 16;
 const WORKGROUP = 64;
 const SOLVE_ITERATIONS = 4;
+
+const FLAG_REPORT_BODY_HITS = 1;
+const REPORT_THRESHOLD = 0.08;   // min penetration (world units) that emits an event
+const FLAGGED_BODY_COUNT = 4;    // how many bodies report their hits, for the demo
+const MAX_EVENTS = 256;
+const EVENT_HEADER = 16;         // atomic counter + 12 bytes padding
+const EVENT_RECORD = 16;         // a, b, penetration, pad
+const EVENTS_SIZE = EVENT_HEADER + MAX_EVENTS * EVENT_RECORD;
+
+// Staging readback state machine.
+const STAGING_FREE = 0;     // ready to receive a copy
+const STAGING_COPIED = 1;   // copy recorded this frame, awaiting map
+const STAGING_MAPPED = 2;   // mapAsync in flight, awaiting callback
 
 interface PhysicsConfig {
     gravity: number;
@@ -34,7 +56,11 @@ interface PhysicsGpu {
     pos: [GPUBuffer, GPUBuffer];   // ping-pong, xyz + radius
     vel: GPUBuffer;                // xyz + invMass
     prevPos: GPUBuffer;            // xyz
+    flags: GPUBuffer;              // u32 per body
+    events: GPUBuffer;             // atomic counter + records (storage, COPY_SRC)
+    staging: GPUBuffer;            // mappable copy of `events` (MAP_READ, COPY_DST)
     integratePipeline: GPUComputePipeline;
+    reportPipeline: GPUComputePipeline;
     solvePipeline: GPUComputePipeline;
     finalizePipeline: GPUComputePipeline;
     /** bg[r]: posIn = pos[r], posOut = pos[1-r]. */
@@ -62,6 +88,15 @@ function seedBodies(count: number, cfg: PhysicsConfig): { pos: Float32Array; vel
     return { pos, vel };
 }
 
+/** Flag the first few bodies to report their hits — the demo's event sources. */
+function seedFlags(count: number): Uint32Array {
+    const flags = new Uint32Array(count);
+    for (let i = 0; i < Math.min(FLAGGED_BODY_COUNT, count); i++) {
+        flags[i] = FLAG_REPORT_BODY_HITS;
+    }
+    return flags;
+}
+
 export const physics = Database.Plugin.create({
     extends: core,
     resources: {
@@ -81,6 +116,10 @@ export const physics = Database.Plugin.create({
         physicsPositionBuffer: { default: null as GPUBuffer | null, transient: true },
         physicsVelocityBuffer: { default: null as GPUBuffer | null, transient: true },
         physicsRenderCount: { default: 0 as number, transient: true },
+        // Flag-gated collision events drained from the GPU.
+        physicsCollisionEvents: { default: [] as CollisionEvent[], transient: true },
+        physicsEventEpoch: { default: 0 as number, transient: true },
+        physicsStagingState: { default: STAGING_FREE as number, transient: true },
     },
     transactions: {
         setPhysicsBodyCount(t, count: number) {
@@ -104,9 +143,13 @@ export const physics = Database.Plugin.create({
                 const pos1 = storage();
                 const vel = storage();
                 const prevPos = storage();
+                const flags = device.createBuffer({ size: count * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+                const events = device.createBuffer({ size: EVENTS_SIZE, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+                const staging = device.createBuffer({ size: EVENTS_SIZE, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
                 device.queue.writeBuffer(pos0, 0, seed.pos);
                 device.queue.writeBuffer(pos1, 0, seed.pos);
                 device.queue.writeBuffer(vel, 0, seed.vel);
+                device.queue.writeBuffer(flags, 0, seedFlags(count));
 
                 const module = device.createShaderModule({ code: physicsComputeShader });
                 const layout = device.createBindGroupLayout({
@@ -116,6 +159,8 @@ export const physics = Database.Plugin.create({
                         { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
                         { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
                         { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+                        { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
                     ],
                 });
                 const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
@@ -128,18 +173,22 @@ export const physics = Database.Plugin.create({
                         { binding: 2, resource: { buffer: posOut } },
                         { binding: 3, resource: { buffer: vel } },
                         { binding: 4, resource: { buffer: prevPos } },
+                        { binding: 5, resource: { buffer: flags } },
+                        { binding: 6, resource: { buffer: events } },
                     ],
                 });
 
                 db.store.resources.physicsGpu = {
-                    params, pos: [pos0, pos1], vel, prevPos,
+                    params, pos: [pos0, pos1], vel, prevPos, flags, events, staging,
                     integratePipeline: pipeline("integrate"),
+                    reportPipeline: pipeline("report"),
                     solvePipeline: pipeline("solve"),
                     finalizePipeline: pipeline("finalize"),
                     bindGroup: [bg(pos0, pos1), bg(pos1, pos0)],
                     count,
                 };
                 db.store.resources.physicsCurrent = 0;
+                db.store.resources.physicsStagingState = STAGING_FREE;
                 db.store.resources.physicsPositionBuffer = pos0;
                 db.store.resources.physicsVelocityBuffer = vel;
                 db.store.resources.physicsRenderCount = count;
@@ -165,8 +214,12 @@ export const physics = Database.Plugin.create({
                 f32[2] = physicsConfig.floorY;
                 f32[3] = physicsConfig.halfExtent;
                 f32[4] = physicsConfig.damping;
+                f32[5] = REPORT_THRESHOLD;
                 u32[6] = physicsGpu.count;
+                u32[7] = MAX_EVENTS;
                 device.queue.writeBuffer(physicsGpu.params, 0, buf);
+                // Reset the event counter; ordered before this frame's submit.
+                device.queue.writeBuffer(physicsGpu.events, 0, new Uint32Array([0]));
 
                 const wg = Math.ceil(physicsGpu.count / WORKGROUP);
                 const pass = commandEncoder.beginComputePass();
@@ -176,6 +229,12 @@ export const physics = Database.Plugin.create({
                 pass.setBindGroup(0, physicsGpu.bindGroup[cur]);
                 pass.dispatchWorkgroups(wg);
                 cur = 1 - cur;
+
+                // Report on the predicted positions (deepest penetration), before
+                // the solver resolves them. Read-only on positions, so no flip.
+                pass.setPipeline(physicsGpu.reportPipeline);
+                pass.setBindGroup(0, physicsGpu.bindGroup[cur]);
+                pass.dispatchWorkgroups(wg);
 
                 pass.setPipeline(physicsGpu.solvePipeline);
                 for (let k = 0; k < SOLVE_ITERATIONS; k++) {
@@ -189,10 +248,48 @@ export const physics = Database.Plugin.create({
                 pass.dispatchWorkgroups(wg);
                 pass.end();
 
+                // Snapshot events into the mappable staging buffer when it's free.
+                if (db.store.resources.physicsStagingState === STAGING_FREE) {
+                    commandEncoder.copyBufferToBuffer(physicsGpu.events, 0, physicsGpu.staging, 0, EVENTS_SIZE);
+                    db.store.resources.physicsStagingState = STAGING_COPIED;
+                }
+
                 db.store.resources.physicsCurrent = cur;
                 db.store.resources.physicsPositionBuffer = physicsGpu.pos[cur];
                 db.store.resources.physicsVelocityBuffer = physicsGpu.vel;
                 db.store.resources.physicsRenderCount = physicsGpu.count;
+            },
+        },
+        physicsEventReadback: {
+            // After the frame is submitted (postRender) the staging copy is in
+            // flight; map it without blocking. The callback resolves a frame or
+            // two later and publishes the drained events.
+            schedule: { after: ["postRender"] },
+            create: db => () => {
+                const gpu = db.store.resources.physicsGpu;
+                if (!gpu || db.store.resources.physicsStagingState !== STAGING_COPIED) return;
+
+                db.store.resources.physicsStagingState = STAGING_MAPPED;
+                gpu.staging.mapAsync(GPUMapMode.READ).then(() => {
+                    const range = gpu.staging.getMappedRange();
+                    const view = new DataView(range);
+                    const total = Math.min(view.getUint32(0, true), MAX_EVENTS);
+                    const events: CollisionEvent[] = [];
+                    for (let k = 0; k < total; k++) {
+                        const off = EVENT_HEADER + k * EVENT_RECORD;
+                        events.push({
+                            bodyA: view.getUint32(off + 0, true),
+                            bodyB: view.getUint32(off + 4, true),
+                            penetration: view.getFloat32(off + 8, true),
+                        });
+                    }
+                    gpu.staging.unmap();
+                    db.store.resources.physicsStagingState = STAGING_FREE;
+                    if (events.length > 0) {
+                        db.store.resources.physicsCollisionEvents = events;
+                        db.store.resources.physicsEventEpoch = db.store.resources.physicsEventEpoch + 1;
+                    }
+                });
             },
         },
     },

@@ -14,6 +14,7 @@ export { graphics } from "./graphics/graphics-plugin.js";
 
 // --- Physics (GPU XPBD, compute-only, depends on core not graphics) ----------
 export { physics } from "./physics/physics-plugin.js";
+export type { CollisionEvent } from "./physics/collision-event.js";
 
 // --- System plugins (consumed via aggregators) -------------------------------
 export { transform } from "./graphics/scene/node/transform-plugin.js";

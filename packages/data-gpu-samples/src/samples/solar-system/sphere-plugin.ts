@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Mat4x4 } from "@adobe/data/math";
-import { pbrCore, graphics, VisibleMaterial } from "@adobe/data-gpu";
+import { pbrCore, core, VisibleMaterial } from "@adobe/data-gpu";
 import { createSphereBuffers } from "./create-sphere.js";
 
 interface SphereSpec extends VisibleMaterial.ColorMaterialOptions {
@@ -17,7 +17,7 @@ interface SphereSpec extends VisibleMaterial.ColorMaterialOptions {
  * Model's `geometry`.
  */
 export const sphere = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrCore, graphics),
+    extends: Database.Plugin.combine(pbrCore, core),
     components: {
         sphereSpec: { default: null as unknown as SphereSpec },
     },

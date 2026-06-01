@@ -12,7 +12,7 @@ async function getWebGPUDevice() {
     return device;
 }
 
-export const graphics = Database.Plugin.create({
+export const core = Database.Plugin.create({
     extends: scheduler,
     resources: {
         device: { default: null as GPUDevice | null, transient: true },

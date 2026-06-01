@@ -1,11 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { graphics } from "../graphics-plugin.js";
+import { core } from "../core/core-plugin.js";
 import { Camera } from "./camera.js";
 
 export const plugin = Database.Plugin.create({
-    extends: graphics,
+    extends: core,
     resources: {
         camera: {
             default: {

@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Vec3, type F32 } from "@adobe/data/math";
-import { SceneUniforms, graphics, Orbit } from "@adobe/data-gpu";
+import { SceneUniforms, core, Orbit } from "@adobe/data-gpu";
 import { computeShader, renderShader } from "./boids-shaders.js";
 
 // --- Tunables --------------------------------------------------------------
@@ -138,7 +138,7 @@ interface BoidGpu {
 }
 
 export const boidsPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(graphics, SceneUniforms.plugin, Orbit.plugin),
+    extends: Database.Plugin.combine(core, SceneUniforms.plugin, Orbit.plugin),
     resources: {
         boidsCount: { default: DEFAULT_BOIDS as number, transient: true },
         boidsGpu: { default: null as BoidGpu | null, transient: true },

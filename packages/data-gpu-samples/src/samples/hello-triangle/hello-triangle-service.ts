@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { graphics } from "@adobe/data-gpu";
+import { core } from "@adobe/data-gpu";
 
 const triangleShader = `
 struct VertexOutput {
@@ -34,7 +34,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 `;
 
 export const helloTrianglePlugin = Database.Plugin.create({
-    extends: graphics,
+    extends: core,
     systems: {
         hello_triangle_render: {
             create: db => {

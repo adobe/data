@@ -4,7 +4,7 @@ import { Database } from "@adobe/data/ecs";
 import type { Aabb } from "@adobe/data/math";
 import { pbrCore } from "../../rendering/pbr-core-plugin.js";
 import { animation } from "../../animation/animation-plugin.js";
-import { graphics } from "../../graphics-plugin.js";
+import { core } from "../../core/core-plugin.js";
 import { Model } from "./model.js";
 import { loadGltfPrimitives, type GpuPrimitiveData } from "./gltf/load-gltf-model.js";
 import type { LoadedAnimation } from "./gltf/parse-animations.js";
@@ -34,7 +34,7 @@ export interface LoadedArgs {
  *     AnimationClip                       // when the glTF carries animations
  */
 export const modelLoader = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrCore, Model.plugin, graphics, animation),
+    extends: Database.Plugin.combine(pbrCore, Model.plugin, core, animation),
     components: {
         _bounds: { default: null as Aabb | null },
         _skinJointTemplate: { default: [] as JointTemplate[] },

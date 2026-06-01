@@ -154,6 +154,138 @@ fn closestOnBox(w: vec3f, xb: vec3f, qb: vec4f, he: vec3f) -> vec3f {
     return xb + qRot(qb, clamped);
 }
 
+// Half-width of a box (axes a0/a1/a2, half-extents he) projected onto unit axis L.
+fn boxExtent(a0: vec3f, a1: vec3f, a2: vec3f, he: vec3f, L: vec3f) -> f32 {
+    return he.x * abs(dot(a0, L)) + he.y * abs(dot(a1, L)) + he.z * abs(dot(a2, L));
+}
+
+// Midpoint of the closest points between segments p1q1 and p2q2 (Ericson).
+fn closestSeg(p1: vec3f, q1: vec3f, p2: vec3f, q2: vec3f) -> vec3f {
+    let d1 = q1 - p1;
+    let d2 = q2 - p2;
+    let r = p1 - p2;
+    let a = dot(d1, d1);
+    let e = dot(d2, d2);
+    let f = dot(d2, r);
+    let c = dot(d1, r);
+    let b = dot(d1, d2);
+    let denom = a * e - b * b;
+    var s = 0.0;
+    if (denom > 1e-8) { s = clamp((b * f - c * e) / denom, 0.0, 1.0); }
+    var tt = (b * s + f) / e;
+    if (tt < 0.0) { tt = 0.0; s = clamp(-c / a, 0.0, 1.0); }
+    else if (tt > 1.0) { tt = 1.0; s = clamp((b - c) / a, 0.0, 1.0); }
+    return 0.5 * ((p1 + d1 * s) + (p2 + d2 * tt));
+}
+
+// Box-box contacts for body i against body j via SAT. The min-penetration axis
+// gives the normal + depth (face axes preferred over edge crosses to avoid
+// jitter). Face contacts emit the incident face's vertices as a manifold (no
+// side-plane clip yet — depth is measured past the reference face plane); an
+// edge-edge contact emits one point at the closest approach. All corrections are
+// applied to body i only (write-self); body j's own thread handles its side.
+fn solveBoxBox(
+    xi: vec3f, qi: vec4f, invMi: f32, invIli: vec3f, hei: vec3f,
+    xj: vec3f, qj: vec4f, invMj: f32, invIlj: vec3f, hej: vec3f,
+    dx: ptr<function, vec3f>, dq: ptr<function, vec4f>,
+) {
+    var ai = array<vec3f, 3>(qRot(qi, vec3f(1, 0, 0)), qRot(qi, vec3f(0, 1, 0)), qRot(qi, vec3f(0, 0, 1)));
+    var aj = array<vec3f, 3>(qRot(qj, vec3f(1, 0, 0)), qRot(qj, vec3f(0, 1, 0)), qRot(qj, vec3f(0, 0, 1)));
+    let t = xj - xi;
+
+    var minPen = 3.4e38;
+    var axis = vec3f(0, 0, 1);
+    var refI = true;   // reference face belongs to box i
+    var faceK = 0u;    // index of the reference face axis
+    var edge = false;
+    var edgeK = 0u;
+    var edgeL = 0u;
+
+    // Face axes of i, then j.
+    for (var k = 0u; k < 3u; k = k + 1u) {
+        let L = ai[k];
+        let pen = boxExtent(ai[0], ai[1], ai[2], hei, L) + boxExtent(aj[0], aj[1], aj[2], hej, L) - abs(dot(t, L));
+        if (pen < 0.0) { return; }
+        if (pen < minPen) { minPen = pen; axis = L; refI = true; faceK = k; edge = false; }
+    }
+    for (var l = 0u; l < 3u; l = l + 1u) {
+        let L = aj[l];
+        let pen = boxExtent(ai[0], ai[1], ai[2], hei, L) + boxExtent(aj[0], aj[1], aj[2], hej, L) - abs(dot(t, L));
+        if (pen < 0.0) { return; }
+        if (pen < minPen) { minPen = pen; axis = L; refI = false; faceK = l; edge = false; }
+    }
+    // Edge-edge axes (slightly biased so a near-tie prefers a face contact).
+    for (var k = 0u; k < 3u; k = k + 1u) {
+        for (var l = 0u; l < 3u; l = l + 1u) {
+            var L = cross(ai[k], aj[l]);
+            let len = length(L);
+            if (len < 1e-6) { continue; }
+            L = L / len;
+            let pen = boxExtent(ai[0], ai[1], ai[2], hei, L) + boxExtent(aj[0], aj[1], aj[2], hej, L) - abs(dot(t, L));
+            if (pen < 0.0) { return; }
+            if (pen < minPen - 1e-3) { minPen = pen; axis = L; edge = true; edgeK = k; edgeL = l; }
+        }
+    }
+
+    if (dot(t, axis) < 0.0) { axis = -axis; }  // orient i → j
+    let nForI = -axis;                          // body i separates away from j
+
+    if (edge) {
+        // Centres of the two nearest parallel edges, then closest approach.
+        var ci = xi;
+        for (var m = 0u; m < 3u; m = m + 1u) {
+            if (m != edgeK) { ci = ci + sign(dot(axis, ai[m])) * hei[m] * ai[m]; }
+        }
+        var cj = xj;
+        for (var m = 0u; m < 3u; m = m + 1u) {
+            if (m != edgeL) { cj = cj - sign(dot(axis, aj[m])) * hej[m] * aj[m]; }
+        }
+        let p = closestSeg(ci - hei[edgeK] * ai[edgeK], ci + hei[edgeK] * ai[edgeK],
+                           cj - hej[edgeL] * aj[edgeL], cj + hej[edgeL] * aj[edgeL]);
+        let w2 = otherW(xj, qj, invMj, invIlj, p, nForI);
+        applyContact(xi, qi, invMi, invIli, p, nForI, minPen, w2, dx, dq);
+        return;
+    }
+
+    // Face contact. Reference box owns the axis; incident box supplies the face.
+    var refC = xi; var refHeK = hei[faceK]; var refN = axis;
+    var incC = xj;
+    var incA = aj; var incHe = hej;
+    if (!refI) {
+        refC = xj; refHeK = hej[faceK]; refN = -axis;
+        incC = xi; incA = ai; incHe = hei;
+    }
+
+    // Incident face = inc face whose normal is most anti-parallel to refN.
+    var m0 = 0u;
+    var best = abs(dot(incA[0], refN));
+    let d1a = abs(dot(incA[1], refN));
+    let d2a = abs(dot(incA[2], refN));
+    if (d1a > best) { best = d1a; m0 = 1u; }
+    if (d2a > best) { best = d2a; m0 = 2u; }
+    let incSign = -sign(dot(incA[m0], refN));
+    let faceCenter = incC + incSign * incHe[m0] * incA[m0];
+    let m1 = (m0 + 1u) % 3u;
+    let m2 = (m0 + 2u) % 3u;
+    let u = incHe[m1] * incA[m1];
+    let v = incHe[m2] * incA[m2];
+
+    var su = -1.0;
+    for (var iu = 0u; iu < 2u; iu = iu + 1u) {
+        var sv = -1.0;
+        for (var iv = 0u; iv < 2u; iv = iv + 1u) {
+            let vert = faceCenter + su * u + sv * v;
+            let depth = refHeK - dot(vert - refC, refN);  // past the reference face plane
+            if (depth > 0.0) {
+                let w2 = otherW(xj, qj, invMj, invIlj, vert, nForI);
+                applyContact(xi, qi, invMi, invIli, vert, nForI, depth, w2, dx, dq);
+            }
+            sv = sv + 2.0;
+        }
+        su = su + 2.0;
+    }
+}
+
 // Project body i out of the floor (y = floorY) and the four bin walls
 // (x,z = ±binExtent). Spheres contact at their support point; boxes at every
 // corner that breaches a plane, giving a multi-point manifold for flat rest.
@@ -257,8 +389,9 @@ fn solve(@builtin(global_invocation_id) gid: vec3u) {
                     let w2 = otherW(xj, qj, invMj, invIlj, cp, n);
                     applyContact(xi, qi, invMi, invIli, cp, n, pen, w2, &dx, &dq);
                 }
+            } else {
+                solveBoxBox(xi, qi, invMi, invIli, hei, xj, qj, invMj, invIlj, hej, &dx, &dq);
             }
-            // box-box: Phase D2.
         }
     }
 

@@ -90,7 +90,10 @@ export const physicsDropPlugin = Database.Plugin.create({
                     entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }],
                 });
                 const bodyLayout = device.createBindGroupLayout({
-                    entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } }],
+                    entries: [
+                        { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
+                        { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
+                    ],
                 });
                 const vbLayout: GPUVertexBufferLayout = {
                     arrayStride: POSITION_STRIDE,
@@ -136,8 +139,8 @@ export const physicsDropPlugin = Database.Plugin.create({
             schedule: { during: ["render"] },
             create: db => () => {
                 const gpu = db.store.resources.dropGpu;
-                const { device, renderPassEncoder, _sceneUniformsBuffer, physicsRenderBuffer, physicsRenderCount } = db.store.resources;
-                if (!gpu || !device || !renderPassEncoder || !_sceneUniformsBuffer || !physicsRenderBuffer) return;
+                const { device, renderPassEncoder, _sceneUniformsBuffer, physicsPositionBuffer, physicsVelocityBuffer, physicsRenderCount } = db.store.resources;
+                if (!gpu || !device || !renderPassEncoder || !_sceneUniformsBuffer || !physicsPositionBuffer || !physicsVelocityBuffer) return;
 
                 // Scene bind group, cached by the (stable) scene uniform buffer.
                 let sceneBG = gpu.sceneBG.get(_sceneUniformsBuffer);
@@ -148,14 +151,17 @@ export const physicsDropPlugin = Database.Plugin.create({
                     });
                     gpu.sceneBG.set(_sceneUniformsBuffer, sceneBG);
                 }
-                // Body bind group, cached per ping-pong buffer.
-                let bodyBG = gpu.bodyBG.get(physicsRenderBuffer);
+                // Body bind group, cached per ping-pong position buffer (velocity is stable).
+                let bodyBG = gpu.bodyBG.get(physicsPositionBuffer);
                 if (!bodyBG) {
                     bodyBG = device.createBindGroup({
                         layout: gpu.bodyLayout,
-                        entries: [{ binding: 0, resource: { buffer: physicsRenderBuffer } }],
+                        entries: [
+                            { binding: 0, resource: { buffer: physicsPositionBuffer } },
+                            { binding: 1, resource: { buffer: physicsVelocityBuffer } },
+                        ],
                     });
-                    gpu.bodyBG.set(physicsRenderBuffer, bodyBG);
+                    gpu.bodyBG.set(physicsPositionBuffer, bodyBG);
                 }
 
                 // Ground.

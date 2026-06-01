@@ -16,13 +16,9 @@ struct SceneUniforms {
     cameraPosition: vec3f,
 }
 
-struct Body {
-    pos: vec4f,   // xyz center, w = radius
-    vel: vec4f,   // xyz velocity, w = inverse mass
-}
-
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
-@group(1) @binding(0) var<storage, read> bodies: array<Body>;
+@group(1) @binding(0) var<storage, read> positions:  array<vec4f>;  // xyz + radius
+@group(1) @binding(1) var<storage, read> velocities: array<vec4f>;  // xyz + invMass
 
 struct VOut {
     @builtin(position) clip:   vec4f,
@@ -32,12 +28,12 @@ struct VOut {
 
 @vertex
 fn vs_sphere(@builtin(instance_index) ii: u32, @location(0) meshPos: vec3f) -> VOut {
-    let b = bodies[ii];
-    let world = b.pos.xyz + meshPos * b.pos.w;
+    let body = positions[ii];
+    let world = body.xyz + meshPos * body.w;
     var out: VOut;
     out.clip = scene.viewProjectionMatrix * vec4f(world, 1.0);
     out.normal = normalize(meshPos);
-    let speed = length(b.vel.xyz);
+    let speed = length(velocities[ii].xyz);
     out.color = mix(vec3f(0.25, 0.55, 0.95), vec3f(0.98, 0.45, 0.2), clamp(speed / 10.0, 0.0, 1.0));
     return out;
 }

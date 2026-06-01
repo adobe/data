@@ -1,76 +1,99 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 /**
- * Phase A XPBD integration kernel.
+ * Phase B XPBD sphere solver. Three entry points dispatched per frame:
  *
- * Each thread owns one body and integrates it through all substeps in
- * registers, reading from `bodiesIn` and writing to `bodiesOut` (ping-pong).
- * Phase A has no body-body interaction, so the write-self pattern is trivially
- * race-free and needs no spatial structure. Collision is against the static
- * world only — a ground plane plus four bin walls — resolved as velocity
- * reflection with restitution + tangential friction.
+ *   integrate  — predict positions from velocity + gravity, snapshot prevPos.
+ *   solve      — Jacobi position-based contact resolution (run K iterations):
+ *                each body reads neighbours, accumulates a mass-weighted
+ *                push-out correction, applies it, then projects out of the
+ *                static world (floor + bin walls). Writes only its own row, so
+ *                it is race-free — exactly the boids write-self pattern.
+ *   finalize   — derive velocity from the net position change (XPBD), damped.
  *
- * Body layout (2 × vec4f, 32 bytes):
- *   pos.xyz = world position, pos.w = radius
- *   vel.xyz = linear velocity, vel.w = inverse mass (unused in Phase A)
+ * State is split across separate buffers so the solver's hot loop reads only
+ * positions+radius (16 B/body): `pos` (ping-pong, xyz+radius), `vel`
+ * (xyz+invMass), `prevPos` (xyz).
  *
- * Phase B layers position-based contact constraints (body-body via the LBVH)
- * on top of this substep loop.
+ * NEIGHBOUR SEARCH IS BRUTE-FORCE O(N²) — a placeholder for the LBVH broadphase.
+ * The solver loop is broadphase-agnostic; swapping the inner `for j` scan for a
+ * BVH traversal changes nothing else.
  */
 export const physicsComputeShader = /* wgsl */ `
 struct Params {
-    dt:          f32,
-    gravity:     f32,
-    floorY:      f32,
-    halfExtent:  f32,   // bin half-size in x and z
-    restitution: f32,
-    friction:    f32,
-    substeps:    u32,
-    bodyCount:   u32,
-}
-
-struct Body {
-    pos: vec4f,   // xyz position, w = radius
-    vel: vec4f,   // xyz velocity, w = inverse mass
+    dt:         f32,
+    gravity:    f32,
+    floorY:     f32,
+    halfExtent: f32,
+    damping:    f32,
+    _pad0:      f32,
+    bodyCount:  u32,
+    _pad1:      u32,
 }
 
 @group(0) @binding(0) var<uniform> P: Params;
-@group(0) @binding(1) var<storage, read>       bodiesIn:  array<Body>;
-@group(0) @binding(2) var<storage, read_write> bodiesOut: array<Body>;
+@group(0) @binding(1) var<storage, read>       posIn:   array<vec4f>;  // xyz + radius
+@group(0) @binding(2) var<storage, read_write> posOut:  array<vec4f>;
+@group(0) @binding(3) var<storage, read_write> vel:     array<vec4f>;  // xyz + invMass
+@group(0) @binding(4) var<storage, read_write> prevPos: array<vec4f>;  // xyz
 
 @compute @workgroup_size(64)
 fn integrate(@builtin(global_invocation_id) gid: vec3u) {
     let i = gid.x;
     if (i >= P.bodyCount) { return; }
+    let p = posIn[i];
+    prevPos[i] = vec4f(p.xyz, 0.0);
+    var v = vel[i].xyz;
+    v.y = v.y - P.gravity * P.dt;
+    posOut[i] = vec4f(p.xyz + v * P.dt, p.w);
+    vel[i] = vec4f(v, vel[i].w);
+}
 
-    let body = bodiesIn[i];
-    var pos = body.pos.xyz;
-    let r   = body.pos.w;
-    var vel = body.vel.xyz;
+fn resolveStatic(p: ptr<function, vec3f>, r: f32) {
+    if ((*p).y - r < P.floorY) { (*p).y = P.floorY + r; }
+    let h = P.halfExtent;
+    if ((*p).x - r < -h) { (*p).x = -h + r; }
+    if ((*p).x + r >  h) { (*p).x =  h - r; }
+    if ((*p).z - r < -h) { (*p).z = -h + r; }
+    if ((*p).z + r >  h) { (*p).z =  h - r; }
+}
 
-    let sdt = P.dt / f32(P.substeps);
-    let h   = P.halfExtent;
+@compute @workgroup_size(64)
+fn solve(@builtin(global_invocation_id) gid: vec3u) {
+    let i = gid.x;
+    if (i >= P.bodyCount) { return; }
+    let me = posIn[i];
+    var p = me.xyz;
+    let r = me.w;
+    let wi = vel[i].w;            // inverse mass
 
-    for (var s = 0u; s < P.substeps; s = s + 1u) {
-        // Semi-implicit Euler: gravity, then advance.
-        vel.y = vel.y - P.gravity * sdt;
-        pos = pos + vel * sdt;
-
-        // Ground plane (half-space at floorY).
-        if (pos.y - r < P.floorY) {
-            pos.y = P.floorY + r;
-            if (vel.y < 0.0) { vel.y = -vel.y * P.restitution; }
-            vel.x = vel.x * P.friction;
-            vel.z = vel.z * P.friction;
+    var corr = vec3f(0.0);
+    // BRUTE FORCE — replace this scan with an LBVH traversal.
+    for (var j = 0u; j < P.bodyCount; j = j + 1u) {
+        if (j == i) { continue; }
+        let o = posIn[j];
+        let d = p - o.xyz;
+        let dist2 = dot(d, d);
+        let rr = r + o.w;
+        if (dist2 < rr * rr && dist2 > 1e-8) {
+            let dist = sqrt(dist2);
+            let wj = vel[j].w;
+            let denom = wi + wj;
+            let share = select(0.5, wi / denom, denom > 0.0);
+            corr = corr + (d / dist) * (rr - dist) * share;
         }
-        // Bin walls in x.
-        if (pos.x - r < -h) { pos.x = -h + r; if (vel.x < 0.0) { vel.x = -vel.x * P.restitution; } }
-        if (pos.x + r >  h) { pos.x =  h - r; if (vel.x > 0.0) { vel.x = -vel.x * P.restitution; } }
-        // Bin walls in z.
-        if (pos.z - r < -h) { pos.z = -h + r; if (vel.z < 0.0) { vel.z = -vel.z * P.restitution; } }
-        if (pos.z + r >  h) { pos.z =  h - r; if (vel.z > 0.0) { vel.z = -vel.z * P.restitution; } }
     }
+    p = p + corr;
+    resolveStatic(&p, r);
+    posOut[i] = vec4f(p, r);
+}
 
-    bodiesOut[i] = Body(vec4f(pos, r), vec4f(vel, body.vel.w));
+@compute @workgroup_size(64)
+fn finalize(@builtin(global_invocation_id) gid: vec3u) {
+    let i = gid.x;
+    if (i >= P.bodyCount) { return; }
+    let p = posIn[i].xyz;
+    let v = (p - prevPos[i].xyz) / P.dt * P.damping;
+    vel[i] = vec4f(v, vel[i].w);
 }
 `;

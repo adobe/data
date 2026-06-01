@@ -1,22 +1,25 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Database, scheduler } from "@adobe/data/ecs";
+import { Database } from "@adobe/data/ecs";
 import { Vec4 } from "@adobe/data/math";
+import { core } from "../core/core-plugin.js";
 
-async function getWebGPUDevice() {
-    const adapter = await navigator.gpu?.requestAdapter();
-    if (!adapter) {
-        return null;
-    }
-    const device = await adapter.requestDevice();
-    return device;
-}
-
-export const core = Database.Plugin.create({
-    extends: scheduler,
+/**
+ * Graphics presentation — extends the `core` GPU runtime with everything
+ * about drawing to a canvas: the swap-chain context, color/depth formats,
+ * the depth texture, and the per-frame render pass.
+ *
+ * Render-pass lifecycle, sandwiched between core's phase anchors with hard
+ * ordering edges (`during` is only a soft hint, so we use after/before):
+ * `beginRenderPass` runs after `preRender` and before `render` (pass open
+ * before draws); draw systems run `during: ["render"]`; `endRenderPass` runs
+ * after `render` and before `postRender` (pass closed after draws, before
+ * core submits the encoder). Compute-only consumers (e.g. `physics`) depend
+ * on `core` directly and never touch any of this.
+ */
+export const graphics = Database.Plugin.create({
+    extends: core,
     resources: {
-        device: { default: null as GPUDevice | null, transient: true },
-        commandEncoder: { default: null as GPUCommandEncoder | null, transient: true },
         renderPassEncoder: { default: null as GPURenderPassEncoder | null, transient: true },
         depthTexture: { default: null as GPUTexture | null, transient: true },
         clearColor: { default: [0, 0, 0, 1] as Vec4, transient: true },
@@ -28,46 +31,30 @@ export const core = Database.Plugin.create({
     transactions: {
         setCanvas(t, canvas: HTMLCanvasElement | null) {
             t.resources.canvas = canvas;
-        }
+        },
     },
     systems: {
-        input: {
-            create: _db => () => {}
-        },
-        preUpdate: {
+        configureCanvas: {
             create: db => () => {
                 const { device } = db.store.resources;
-                if (device) {
-                    db.store.resources.commandEncoder = device.createCommandEncoder();
-                    let { canvas, canvasContext, canvasFormat } = db.store.resources;
-                    if (canvas && !canvasContext) {
-                        canvasContext = db.store.resources.canvasContext = canvas.getContext("webgpu");
-                        if (!canvasContext) {
-                            throw new Error("No WebGPU context");
-                        }
-                        canvasContext.configure({
-                            device,
-                            format: canvasFormat,
-                            alphaMode: "premultiplied",
-                        });
+                if (!device) return;
+                let { canvasContext } = db.store.resources;
+                const { canvas, canvasFormat } = db.store.resources;
+                if (canvas && !canvasContext) {
+                    canvasContext = db.store.resources.canvasContext = canvas.getContext("webgpu");
+                    if (!canvasContext) {
+                        throw new Error("No WebGPU context");
                     }
+                    canvasContext.configure({
+                        device,
+                        format: canvasFormat,
+                        alphaMode: "premultiplied",
+                    });
                 }
             },
-            schedule: { after: ["input"] }
+            schedule: { after: ["preUpdate"], before: ["update"] },
         },
-        update: {
-            create: _db => () => {},
-            schedule: { after: ["preUpdate"] }
-        },
-        postUpdate: {
-            create: _db => () => {},
-            schedule: { after: ["update"] }
-        },
-        physics: {
-            create: _db => () => {},
-            schedule: { after: ["postUpdate"] }
-        },
-        preRender: {
+        beginRenderPass: {
             create: db => () => {
                 const { canvas, commandEncoder, clearColor, canvasContext, device, depthFormat } = db.store.resources;
                 let { depthTexture } = db.store.resources;
@@ -97,30 +84,17 @@ export const core = Database.Plugin.create({
                     },
                 });
             },
-            schedule: { after: ["physics"] }
+            schedule: { after: ["preRender"], before: ["render"] },
         },
-        render: {
-            create: db => {
-                getWebGPUDevice().then(device => {
-                    db.store.resources.device = device;
-                });
-                return () => {};
-            },
-            schedule: { after: ["preRender"] }
-        },
-        postRender: {
+        endRenderPass: {
             create: db => () => {
-                const { commandEncoder, renderPassEncoder, device } = db.store.resources;
+                const { renderPassEncoder } = db.store.resources;
                 if (renderPassEncoder) {
                     renderPassEncoder.end();
                     db.store.resources.renderPassEncoder = null;
                 }
-                if (commandEncoder && device) {
-                    device.queue.submit([commandEncoder.finish()]);
-                    db.store.resources.commandEncoder = null;
-                }
             },
-            schedule: { after: ["render"] }
+            schedule: { after: ["render"], before: ["postRender"] },
         },
     },
 });

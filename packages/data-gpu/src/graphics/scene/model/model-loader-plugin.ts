@@ -4,7 +4,7 @@ import { Database } from "@adobe/data/ecs";
 import type { Aabb } from "@adobe/data/math";
 import { pbrCore } from "../../rendering/pbr-core-plugin.js";
 import { animation } from "../../animation/animation-plugin.js";
-import { core } from "../../core/core-plugin.js";
+import { core } from "../../../core/core-plugin.js";
 import { Model } from "./model.js";
 import { loadGltfPrimitives, type GpuPrimitiveData } from "./gltf/load-gltf-model.js";
 import type { LoadedAnimation } from "./gltf/parse-animations.js";

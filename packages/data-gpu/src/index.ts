@@ -9,7 +9,8 @@ export { AnimationTrack } from "./graphics/animation/animation-track/animation-t
 export { InterpolationMode } from "./graphics/animation/interpolation-mode/interpolation-mode.js";
 
 // --- Infrastructure ----------------------------------------------------------
-export { core } from "./graphics/core/core-plugin.js";
+export { core } from "./core/core-plugin.js";
+export { graphics } from "./graphics/graphics-plugin.js";
 
 // --- System plugins (consumed via aggregators) -------------------------------
 export { transform } from "./graphics/scene/node/transform-plugin.js";

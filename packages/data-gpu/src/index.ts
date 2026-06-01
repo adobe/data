@@ -12,6 +12,9 @@ export { InterpolationMode } from "./graphics/animation/interpolation-mode/inter
 export { core } from "./core/core-plugin.js";
 export { graphics } from "./graphics/graphics-plugin.js";
 
+// --- Physics (GPU XPBD, compute-only, depends on core not graphics) ----------
+export { physics } from "./physics/physics-plugin.js";
+
 // --- System plugins (consumed via aggregators) -------------------------------
 export { transform } from "./graphics/scene/node/transform-plugin.js";
 export { pbrCore } from "./graphics/rendering/pbr-core-plugin.js";

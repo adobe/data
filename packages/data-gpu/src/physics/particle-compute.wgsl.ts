@@ -31,7 +31,7 @@ struct PParams {
 }
 
 @group(0) @binding(0) var<uniform> PP: PParams;
-@group(0) @binding(1) var<storage, read>       bodies:    array<vec4f>;  // xyz + radius (final)
+@group(0) @binding(1) var<storage, read>       bodies:    array<vec4f>;  // pose: 2 / body, [pos.xyz + boundingRadius, quat]
 @group(0) @binding(2) var<storage, read_write> particles: array<vec4f>;  // 3 vec4f per particle
 
 fn pcg(v: u32) -> u32 {
@@ -79,7 +79,7 @@ fn step(@builtin(global_invocation_id) gid: vec3u) {
         var bestPen = 0.0;
         var bestN = vec3f(0.0);
         for (var j = 0u; j < PP.bodyCount; j = j + 1u) {
-            let o = bodies[j];
+            let o = bodies[j * 2u];  // treat every body as its bounding sphere
             let d = pos - o.xyz;
             let dist = length(d);
             let pen = (size + o.w) - dist;

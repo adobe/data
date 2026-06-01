@@ -30,6 +30,26 @@ function unitSphere(rings: number, segments: number): { vertices: Float32Array; 
     return { vertices: new Float32Array(verts), indices: new Uint16Array(indices) };
 }
 
+const CUBE_STRIDE = 24; // vec3f position + vec3f normal.
+
+/** Unit cube in [-1,1]³, interleaved position+face-normal, 36 vertices. */
+function unitCube(): Float32Array {
+    const faces: { n: number[]; v: number[][] }[] = [
+        { n: [ 1, 0, 0], v: [[1, -1, -1], [1, 1, -1], [1, 1, 1], [1, -1, 1]] },
+        { n: [-1, 0, 0], v: [[-1, -1, 1], [-1, 1, 1], [-1, 1, -1], [-1, -1, -1]] },
+        { n: [0,  1, 0], v: [[-1, 1, -1], [-1, 1, 1], [1, 1, 1], [1, 1, -1]] },
+        { n: [0, -1, 0], v: [[-1, -1, 1], [-1, -1, -1], [1, -1, -1], [1, -1, 1]] },
+        { n: [0, 0,  1], v: [[1, -1, 1], [1, 1, 1], [-1, 1, 1], [-1, -1, 1]] },
+        { n: [0, 0, -1], v: [[-1, -1, -1], [-1, 1, -1], [1, 1, -1], [1, -1, -1]] },
+    ];
+    const out: number[] = [];
+    for (const f of faces) {
+        const [a, b, c, d] = f.v;
+        for (const v of [a, b, c, a, c, d]) out.push(v[0], v[1], v[2], f.n[0], f.n[1], f.n[2]);
+    }
+    return new Float32Array(out);
+}
+
 /** Flat quad at the floor spanning the bin (+margin), two triangles. */
 function groundQuad(half: number, y: number): Float32Array {
     const e = half + 1;
@@ -41,6 +61,7 @@ function groundQuad(half: number, y: number): Float32Array {
 
 interface DropGpu {
     spherePipeline: GPURenderPipeline;
+    boxPipeline: GPURenderPipeline;
     groundPipeline: GPURenderPipeline;
     particlePipeline: GPURenderPipeline;
     sceneLayout: GPUBindGroupLayout;
@@ -49,6 +70,8 @@ interface DropGpu {
     sphereVB: GPUBuffer;
     sphereIB: GPUBuffer;
     sphereIndexCount: number;
+    cubeVB: GPUBuffer;
+    cubeVertexCount: number;
     groundVB: GPUBuffer;
     groundVertexCount: number;
     /** Bind groups cached per (stable) buffer identity. Map mutation avoids
@@ -128,6 +151,20 @@ export const physicsDropPlugin = Database.Plugin.create({
                     primitive: { topology: "triangle-list", cullMode: "back" },
                     depthStencil,
                 });
+                const cubeVbLayout: GPUVertexBufferLayout = {
+                    arrayStride: CUBE_STRIDE,
+                    attributes: [
+                        { shaderLocation: 0, offset: 0, format: "float32x3" },
+                        { shaderLocation: 1, offset: 12, format: "float32x3" },
+                    ],
+                };
+                const boxPipeline = device.createRenderPipeline({
+                    layout: device.createPipelineLayout({ bindGroupLayouts: [sceneLayout, bodyLayout] }),
+                    vertex: { module, entryPoint: "vs_box", buffers: [cubeVbLayout] },
+                    fragment: { module, entryPoint: "fs_lit", targets: [{ format: canvasFormat }] },
+                    primitive: { topology: "triangle-list", cullMode: "none" },
+                    depthStencil,
+                });
                 const groundPipeline = device.createRenderPipeline({
                     layout: device.createPipelineLayout({ bindGroupLayouts: [sceneLayout] }),
                     vertex: { module, entryPoint: "vs_ground", buffers: [vbLayout] },
@@ -152,14 +189,19 @@ export const physicsDropPlugin = Database.Plugin.create({
                 const sphereIB = device.createBuffer({ size: sphere.indices.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
                 device.queue.writeBuffer(sphereIB, 0, sphere.indices);
 
+                const cube = unitCube();
+                const cubeVB = device.createBuffer({ size: cube.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
+                device.queue.writeBuffer(cubeVB, 0, cube);
+
                 const ground = groundQuad(physicsConfig.halfExtent, physicsConfig.floorY);
                 const groundVB = device.createBuffer({ size: ground.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
                 device.queue.writeBuffer(groundVB, 0, ground);
 
                 db.store.resources.dropGpu = {
-                    spherePipeline, groundPipeline, particlePipeline,
+                    spherePipeline, boxPipeline, groundPipeline, particlePipeline,
                     sceneLayout, bodyLayout, particleLayout,
                     sphereVB, sphereIB, sphereIndexCount: sphere.indices.length,
+                    cubeVB, cubeVertexCount: cube.length / 6,
                     groundVB, groundVertexCount: ground.length / 3,
                     sceneBG: new Map(),
                     bodyBG: new Map(),
@@ -209,6 +251,14 @@ export const physicsDropPlugin = Database.Plugin.create({
                 renderPassEncoder.setVertexBuffer(0, gpu.sphereVB);
                 renderPassEncoder.setIndexBuffer(gpu.sphereIB, "uint16");
                 renderPassEncoder.drawIndexed(gpu.sphereIndexCount, physicsRenderCount);
+
+                // Boxes (instanced cube, oriented + scaled per instance; the same
+                // body bind group, vs_box degenerates non-box instances).
+                renderPassEncoder.setPipeline(gpu.boxPipeline);
+                renderPassEncoder.setBindGroup(0, sceneBG);
+                renderPassEncoder.setBindGroup(1, bodyBG);
+                renderPassEncoder.setVertexBuffer(0, gpu.cubeVB);
+                renderPassEncoder.draw(gpu.cubeVertexCount, physicsRenderCount);
 
                 // Particles (instanced, same sphere mesh, vertex-pulled center+size).
                 if (physicsParticleBuffer && physicsParticleCount > 0) {

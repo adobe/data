@@ -1,11 +1,16 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 /**
- * Debug render for the physics-drop sample. Two pipelines sharing the scene
- * uniform bind group (group 0):
- *   - `vs_sphere`/`fs_lit`: instanced unit-sphere mesh, vertex-pulling each
- *     instance's center + radius from the physics body storage buffer (group 1).
- *   - `vs_ground`/`fs_ground`: a flat checkered quad at the floor for depth cue.
+ * Debug render for the physics-drop sample. Pipelines share the scene uniform
+ * bind group (group 0). Bodies (group 1) are vertex-pulled from the physics
+ * GPU buffers — `pose` (2 vec4f/body: pos+boundingRadius, quat) and `props`
+ * (4 vec4f/body: vel+invMass, angVel, invInertia, halfExtent+shapeEnum):
+ *   - `vs_sphere`/`fs_lit`: instanced unit sphere, scaled by radius; boxes
+ *     collapse to a degenerate point.
+ *   - `vs_box`/`fs_lit`: instanced unit cube, oriented by the quaternion and
+ *     scaled by half-extents; spheres collapse.
+ *   - `vs_ground`/`fs_ground`: a flat checkered quad at the floor.
+ *   - `vs_particle`/`fs_particle`: instanced sparks from the particle buffer.
  */
 export const physicsDropShader = /* wgsl */ `
 struct SceneUniforms {
@@ -17,8 +22,18 @@ struct SceneUniforms {
 }
 
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
-@group(1) @binding(0) var<storage, read> positions:  array<vec4f>;  // xyz + radius
-@group(1) @binding(1) var<storage, read> velocities: array<vec4f>;  // xyz + invMass
+@group(1) @binding(0) var<storage, read> pose:  array<vec4f>;  // 2 / body
+@group(1) @binding(1) var<storage, read> props: array<vec4f>;  // 4 / body
+
+fn qRot(q: vec4f, v: vec3f) -> vec3f {
+    let t = 2.0 * cross(q.xyz, v);
+    return v + q.w * t + cross(q.xyz, t);
+}
+
+fn bodyColor(ii: u32) -> vec3f {
+    let speed = length(props[ii * 4u].xyz);
+    return mix(vec3f(0.25, 0.55, 0.95), vec3f(0.98, 0.45, 0.2), clamp(speed / 10.0, 0.0, 1.0));
+}
 
 struct VOut {
     @builtin(position) clip:   vec4f,
@@ -28,13 +43,27 @@ struct VOut {
 
 @vertex
 fn vs_sphere(@builtin(instance_index) ii: u32, @location(0) meshPos: vec3f) -> VOut {
-    let body = positions[ii];
-    let world = body.xyz + meshPos * body.w;
+    let p = pose[ii * 2u];
+    let isSphere = props[ii * 4u + 3u].w < 0.5;
+    let r = select(0.0, p.w, isSphere);
     var out: VOut;
-    out.clip = scene.viewProjectionMatrix * vec4f(world, 1.0);
+    out.clip = scene.viewProjectionMatrix * vec4f(p.xyz + meshPos * r, 1.0);
     out.normal = normalize(meshPos);
-    let speed = length(velocities[ii].xyz);
-    out.color = mix(vec3f(0.25, 0.55, 0.95), vec3f(0.98, 0.45, 0.2), clamp(speed / 10.0, 0.0, 1.0));
+    out.color = bodyColor(ii);
+    return out;
+}
+
+@vertex
+fn vs_box(@builtin(instance_index) ii: u32, @location(0) cubePos: vec3f, @location(1) cubeNormal: vec3f) -> VOut {
+    let center = pose[ii * 2u].xyz;
+    let q = pose[ii * 2u + 1u];
+    let he = props[ii * 4u + 3u].xyz;
+    let isBox = props[ii * 4u + 3u].w > 0.5;
+    let scale = select(vec3f(0.0), he, isBox);
+    var out: VOut;
+    out.clip = scene.viewProjectionMatrix * vec4f(center + qRot(q, cubePos * scale), 1.0);
+    out.normal = qRot(q, cubeNormal);
+    out.color = bodyColor(ii);
     return out;
 }
 
@@ -48,7 +77,6 @@ fn fs_lit(in: VOut) -> @location(0) vec4f {
 }
 
 // Query-only particles: 3 vec4f per particle (pos+life, prev+size, vel+bounces).
-// Dead particles (life<=0 or size<=0) collapse to a degenerate point.
 @group(1) @binding(0) var<storage, read> particles: array<vec4f>;
 
 @vertex

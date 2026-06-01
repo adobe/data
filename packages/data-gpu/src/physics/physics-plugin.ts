@@ -7,17 +7,18 @@ import { particleComputeShader } from "./particle-compute.wgsl.js";
 import type { CollisionEvent } from "./collision-event.js";
 
 /**
- * GPU XPBD physics — Phase C.
+ * GPU rigid-body XPBD physics — Phase D.
  *
- * GPU-authoritative: body state lives in storage buffers, simulated entirely on
- * the GPU and exposed via `physicsPositionBuffer` / `physicsVelocityBuffer` /
+ * GPU-authoritative: body state (pose, velocity, orientation, inertia) lives in
+ * storage buffers, simulated entirely on the GPU and exposed via
+ * `physicsPositionBuffer` (pose) / `physicsVelocityBuffer` (props) /
  * `physicsRenderCount` for a renderer to vertex-pull. Depends only on `core`.
  *
- * Per frame: integrate (predict) → report (flag-gated collision events) → K
- * Jacobi solve iterations (sphere-sphere contacts + static world) → finalize
- * (velocity from position delta). Spheres fall, collide, and stack. Body-body
- * neighbour search is currently brute-force O(N²) — a placeholder for the LBVH
- * broadphase.
+ * Per frame: integrate (predict pose) → report (flag-gated collision events) → K
+ * Jacobi solve iterations (sphere-sphere, sphere-box, box-box contacts + static
+ * world) → finalize (linear + angular velocity from pose delta). Spheres and
+ * oriented cuboids of varied size fall, tumble, collide, and stack. Body-body
+ * neighbour search is brute-force O(N²) — a placeholder for the LBVH broadphase.
  *
  * Collision events: bodies flagged `REPORT_BODY_HITS` append to a GPU
  * append-buffer (atomic counter + records). The buffer is copied to a mappable
@@ -27,10 +28,16 @@ import type { CollisionEvent } from "./collision-event.js";
  * frame. Cost is proportional to the number of flagged bodies.
  */
 
-const PARAMS_SIZE = 32;  // 8 × 4 bytes — see Params struct in the shader.
-const VEC4 = 16;
+const PARAMS_SIZE = 32;   // 8 × 4 bytes — see Params struct in the shader.
+const POSE_STRIDE = 32;   // 2 × vec4f — [pos.xyz + boundingRadius, quat]
+const PROPS_STRIDE = 64;  // 4 × vec4f — vel+invMass, angVel, invInertia, halfExtent+shape
 const WORKGROUP = 64;
-const SOLVE_ITERATIONS = 4;
+const SOLVE_ITERATIONS = 6;
+
+const SHAPE_SPHERE = 0;
+const SHAPE_BOX = 1;
+const BOX_FRACTION = 0.4;  // share of bodies that are cuboids
+const DENSITY = 1;
 
 const FLAG_REPORT_BODY_HITS = 1;
 const REPORT_THRESHOLD = 0.08;   // min penetration (world units) that emits an event
@@ -60,9 +67,9 @@ interface PhysicsConfig {
 
 interface PhysicsGpu {
     params: GPUBuffer;
-    pos: [GPUBuffer, GPUBuffer];   // ping-pong, xyz + radius
-    vel: GPUBuffer;                // xyz + invMass
-    prevPos: GPUBuffer;            // xyz
+    pose: [GPUBuffer, GPUBuffer];  // ping-pong, [pos.xyz + boundingRadius, quat]
+    prev: GPUBuffer;               // [prevPos.xyz, prevQuat]
+    props: GPUBuffer;              // vel+invMass, angVel, invInertia, halfExtent+shape
     flags: GPUBuffer;              // u32 per body
     events: GPUBuffer;             // atomic counter + records (storage, COPY_SRC)
     staging: GPUBuffer;            // mappable copy of `events` (MAP_READ, COPY_DST)
@@ -70,35 +77,85 @@ interface PhysicsGpu {
     reportPipeline: GPUComputePipeline;
     solvePipeline: GPUComputePipeline;
     finalizePipeline: GPUComputePipeline;
-    /** bg[r]: posIn = pos[r], posOut = pos[1-r]. */
+    /** bg[r]: poseIn = pose[r], poseOut = pose[1-r]. */
     bindGroup: [GPUBindGroup, GPUBindGroup];
     count: number;
     // Query-only particles.
     particleParams: GPUBuffer;
     particles: GPUBuffer;
     particlePipeline: GPUComputePipeline;
-    /** particleBindGroup[r] reads the bodies in pos[r] (final positions). */
+    /** particleBindGroup[r] reads the bodies in pose[r] (final positions). */
     particleBindGroup: [GPUBindGroup, GPUBindGroup];
 }
 
-/** Seed spheres of varied size at rest above the floor. Returns pos + vel arrays. */
-function seedBodies(count: number, cfg: PhysicsConfig): { pos: Float32Array; vel: Float32Array } {
-    const pos = new Float32Array(count * 4);
-    const vel = new Float32Array(count * 4);
+/** A uniformly-random unit quaternion (Shoemake), xyzw. */
+function randomQuat(): [number, number, number, number] {
+    const u1 = Math.random(), u2 = Math.random(), u3 = Math.random();
+    const a = Math.sqrt(1 - u1), b = Math.sqrt(u1);
+    return [
+        a * Math.sin(2 * Math.PI * u2),
+        a * Math.cos(2 * Math.PI * u2),
+        b * Math.sin(2 * Math.PI * u3),
+        b * Math.cos(2 * Math.PI * u3),
+    ];
+}
+
+/**
+ * Seed a mix of spheres and oriented boxes of varied size, dropped above the
+ * floor. Returns the packed `pose` (2 vec4/body) and `props` (4 vec4/body)
+ * arrays. Mass and inverse inertia follow from shape + uniform density.
+ */
+function seedBodies(count: number, cfg: PhysicsConfig): { pose: Float32Array; props: Float32Array } {
+    const pose = new Float32Array(count * 8);
+    const props = new Float32Array(count * 16);
     const h = cfg.halfExtent;
     for (let i = 0; i < count; i++) {
-        const r = 0.3 + Math.random() * 0.6;
-        const o = i * 4;
-        pos[o + 0] = (Math.random() * 2 - 1) * (h - r);
-        pos[o + 1] = cfg.floorY + 2 + Math.random() * 18;
-        pos[o + 2] = (Math.random() * 2 - 1) * (h - r);
-        pos[o + 3] = r;
-        vel[o + 0] = (Math.random() * 2 - 1) * 1.5;
-        vel[o + 1] = 0;
-        vel[o + 2] = (Math.random() * 2 - 1) * 1.5;
-        vel[o + 3] = 1 / (r * r * r);  // inverse mass ~ 1/volume
+        const isBox = Math.random() < BOX_FRACTION;
+        let he: [number, number, number];
+        let boundingR: number;
+        let mass: number;
+        let invI: [number, number, number];
+        let quat: [number, number, number, number];
+
+        if (isBox) {
+            he = [0.3 + Math.random() * 0.4, 0.3 + Math.random() * 0.4, 0.3 + Math.random() * 0.4];
+            boundingR = Math.hypot(he[0], he[1], he[2]);
+            mass = DENSITY * 8 * he[0] * he[1] * he[2];
+            const ix = (mass / 3) * (he[1] * he[1] + he[2] * he[2]);
+            const iy = (mass / 3) * (he[0] * he[0] + he[2] * he[2]);
+            const iz = (mass / 3) * (he[0] * he[0] + he[1] * he[1]);
+            invI = [1 / ix, 1 / iy, 1 / iz];
+            quat = randomQuat();
+        } else {
+            const r = 0.3 + Math.random() * 0.6;
+            he = [r, r, r];
+            boundingR = r;
+            mass = DENSITY * (4 / 3) * Math.PI * r * r * r;
+            const i0 = 0.4 * mass * r * r;
+            invI = [1 / i0, 1 / i0, 1 / i0];
+            quat = [0, 0, 0, 1];
+        }
+
+        const p = i * 8;
+        pose[p + 0] = (Math.random() * 2 - 1) * (h - boundingR);
+        pose[p + 1] = cfg.floorY + 2 + Math.random() * 18;
+        pose[p + 2] = (Math.random() * 2 - 1) * (h - boundingR);
+        pose[p + 3] = boundingR;
+        pose[p + 4] = quat[0]; pose[p + 5] = quat[1]; pose[p + 6] = quat[2]; pose[p + 7] = quat[3];
+
+        const q = i * 16;
+        props[q + 0] = (Math.random() * 2 - 1) * 1.5;  // vel.x
+        props[q + 1] = 0;                               // vel.y
+        props[q + 2] = (Math.random() * 2 - 1) * 1.5;  // vel.z
+        props[q + 3] = 1 / mass;                        // invMass
+        props[q + 4] = isBox ? (Math.random() * 2 - 1) * 2 : 0;  // angVel.x
+        props[q + 5] = isBox ? (Math.random() * 2 - 1) * 2 : 0;  // angVel.y
+        props[q + 6] = isBox ? (Math.random() * 2 - 1) * 2 : 0;  // angVel.z
+        props[q + 8] = invI[0]; props[q + 9] = invI[1]; props[q + 10] = invI[2];
+        props[q + 12] = he[0]; props[q + 13] = he[1]; props[q + 14] = he[2];
+        props[q + 15] = isBox ? SHAPE_BOX : SHAPE_SPHERE;
     }
-    return { pos, vel };
+    return { pose, props };
 }
 
 /** Flag the first few bodies to report their hits — the demo's event sources. */
@@ -154,17 +211,18 @@ export const physics = Database.Plugin.create({
                 const seed = seedBodies(count, physicsConfig);
 
                 const params = device.createBuffer({ size: PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-                const storage = () => device.createBuffer({ size: count * VEC4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
-                const pos0 = storage();
-                const pos1 = storage();
-                const vel = storage();
-                const prevPos = storage();
-                const flags = device.createBuffer({ size: count * 4, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+                const buffer = (bytes: number) => device.createBuffer({ size: bytes, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+                const pose0 = buffer(count * POSE_STRIDE);
+                const pose1 = buffer(count * POSE_STRIDE);
+                const prev = buffer(count * POSE_STRIDE);
+                const propsBuf = buffer(count * PROPS_STRIDE);
+                const flags = buffer(count * 4);
                 const events = device.createBuffer({ size: EVENTS_SIZE, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
                 const staging = device.createBuffer({ size: EVENTS_SIZE, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
-                device.queue.writeBuffer(pos0, 0, seed.pos);
-                device.queue.writeBuffer(pos1, 0, seed.pos);
-                device.queue.writeBuffer(vel, 0, seed.vel);
+                device.queue.writeBuffer(pose0, 0, seed.pose);
+                device.queue.writeBuffer(pose1, 0, seed.pose);
+                device.queue.writeBuffer(prev, 0, seed.pose);
+                device.queue.writeBuffer(propsBuf, 0, seed.props);
                 device.queue.writeBuffer(flags, 0, seedFlags(count));
 
                 const module = device.createShaderModule({ code: physicsComputeShader });
@@ -181,14 +239,14 @@ export const physics = Database.Plugin.create({
                 });
                 const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
                 const pipeline = (entryPoint: string) => device.createComputePipeline({ layout: pipelineLayout, compute: { module, entryPoint } });
-                const bg = (posIn: GPUBuffer, posOut: GPUBuffer) => device.createBindGroup({
+                const bg = (poseIn: GPUBuffer, poseOut: GPUBuffer) => device.createBindGroup({
                     layout,
                     entries: [
                         { binding: 0, resource: { buffer: params } },
-                        { binding: 1, resource: { buffer: posIn } },
-                        { binding: 2, resource: { buffer: posOut } },
-                        { binding: 3, resource: { buffer: vel } },
-                        { binding: 4, resource: { buffer: prevPos } },
+                        { binding: 1, resource: { buffer: poseIn } },
+                        { binding: 2, resource: { buffer: poseOut } },
+                        { binding: 3, resource: { buffer: prev } },
+                        { binding: 4, resource: { buffer: propsBuf } },
                         { binding: 5, resource: { buffer: flags } },
                         { binding: 6, resource: { buffer: events } },
                     ],
@@ -220,20 +278,20 @@ export const physics = Database.Plugin.create({
                 });
 
                 db.store.resources.physicsGpu = {
-                    params, pos: [pos0, pos1], vel, prevPos, flags, events, staging,
+                    params, pose: [pose0, pose1], prev, props: propsBuf, flags, events, staging,
                     integratePipeline: pipeline("integrate"),
                     reportPipeline: pipeline("report"),
                     solvePipeline: pipeline("solve"),
                     finalizePipeline: pipeline("finalize"),
-                    bindGroup: [bg(pos0, pos1), bg(pos1, pos0)],
+                    bindGroup: [bg(pose0, pose1), bg(pose1, pose0)],
                     count,
                     particleParams, particles, particlePipeline,
-                    particleBindGroup: [pbg(pos0), pbg(pos1)],
+                    particleBindGroup: [pbg(pose0), pbg(pose1)],
                 };
                 db.store.resources.physicsCurrent = 0;
                 db.store.resources.physicsStagingState = STAGING_FREE;
-                db.store.resources.physicsPositionBuffer = pos0;
-                db.store.resources.physicsVelocityBuffer = vel;
+                db.store.resources.physicsPositionBuffer = pose0;
+                db.store.resources.physicsVelocityBuffer = propsBuf;
                 db.store.resources.physicsRenderCount = count;
                 db.store.resources.physicsParticleBuffer = particles;
                 db.store.resources.physicsParticleCount = PARTICLE_CAPACITY;
@@ -322,8 +380,8 @@ export const physics = Database.Plugin.create({
                 }
 
                 db.store.resources.physicsCurrent = cur;
-                db.store.resources.physicsPositionBuffer = physicsGpu.pos[cur];
-                db.store.resources.physicsVelocityBuffer = physicsGpu.vel;
+                db.store.resources.physicsPositionBuffer = physicsGpu.pose[cur];
+                db.store.resources.physicsVelocityBuffer = physicsGpu.props;
                 db.store.resources.physicsRenderCount = physicsGpu.count;
             },
         },

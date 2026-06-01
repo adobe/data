@@ -4,6 +4,7 @@ import { Database } from "@adobe/data/ecs";
 import { core } from "../core/core-plugin.js";
 import { physicsComputeShader } from "./physics-compute.wgsl.js";
 import { particleComputeShader } from "./particle-compute.wgsl.js";
+import { broadphaseComputeShader } from "./broadphase-compute.wgsl.js";
 import type { CollisionEvent } from "./collision-event.js";
 
 /**
@@ -58,6 +59,26 @@ const PARTICLE_STRIDE = 48;       // 3 × vec4f — see particle-compute.wgsl.
 const PARTICLE_PARAMS_SIZE = 32;  // 8 × 4 bytes — see PParams.
 const PARTICLE_RESTITUTION = 0.5;
 
+// LBVH broadphase.
+const BVH_PARAMS_SIZE = 16;       // count, npad, margin, pad — see BParams.
+const BVH_NODE_STRIDE = 32;       // 2 × vec4f / node.
+const SORT_SLOT = 256;            // minUniformBufferOffsetAlignment for dynamic offsets.
+const BVH_MARGIN = 0.6;           // leaf-AABB inflation: covers intra-frame solver
+                                  // displacement so candidates stay valid across the
+                                  // K solve iterations (the tree is built once, on the
+                                  // predicted poses, and not rebuilt per iteration).
+
+const nextPow2 = (n: number): number => { let p = 1; while (p < n) p <<= 1; return p; };
+
+/** Bitonic compare-exchange schedule: (j, k) for every pass, outer k then inner j. */
+function bitonicPasses(npad: number): { j: number; k: number }[] {
+    const passes: { j: number; k: number }[] = [];
+    for (let k = 2; k <= npad; k <<= 1) {
+        for (let j = k >> 1; j > 0; j >>= 1) passes.push({ j, k });
+    }
+    return passes;
+}
+
 interface PhysicsConfig {
     gravity: number;
     damping: number;
@@ -86,6 +107,21 @@ interface PhysicsGpu {
     particlePipeline: GPUComputePipeline;
     /** particleBindGroup[r] reads the bodies in pose[r] (final positions). */
     particleBindGroup: [GPUBindGroup, GPUBindGroup];
+    // LBVH broadphase, built each frame on the predicted poses.
+    bvhFlags: GPUBuffer;
+    bvhFlagsZero: Uint32Array;
+    sceneBoundsPipeline: GPUComputePipeline;
+    mortonPipeline: GPUComputePipeline;
+    bitonicPipeline: GPUComputePipeline;
+    buildPipeline: GPUComputePipeline;
+    leafBoundsPipeline: GPUComputePipeline;
+    refitPipeline: GPUComputePipeline;
+    /** buildBindGroup[r] reads predicted poses from pose[r]. */
+    buildBindGroup: [GPUBindGroup, GPUBindGroup];
+    /** group(1) for solve: the built node array + sorted leaves. */
+    treeBindGroup: GPUBindGroup;
+    npad: number;
+    sortPassCount: number;
 }
 
 /** A uniformly-random unit quaternion (Shoemake), xyzw. */
@@ -237,7 +273,16 @@ export const physics = Database.Plugin.create({
                         { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
                     ],
                 });
+                // The solver also reads the LBVH (group 1); the other kernels use
+                // only group 0.
+                const treeLayout = device.createBindGroupLayout({
+                    entries: [
+                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+                    ],
+                });
                 const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
+                const solvePipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout, treeLayout] });
                 const pipeline = (entryPoint: string) => device.createComputePipeline({ layout: pipelineLayout, compute: { module, entryPoint } });
                 const bg = (poseIn: GPUBuffer, poseOut: GPUBuffer) => device.createBindGroup({
                     layout,
@@ -249,6 +294,64 @@ export const physics = Database.Plugin.create({
                         { binding: 4, resource: { buffer: propsBuf } },
                         { binding: 5, resource: { buffer: flags } },
                         { binding: 6, resource: { buffer: events } },
+                    ],
+                });
+
+                // --- LBVH broadphase buffers + pipelines -------------------------
+                const npad = nextPow2(count);
+                const nodeCount = 2 * count - 1;
+                const passes = bitonicPasses(npad);
+                const bvhBounds = buffer(32);
+                const bvhKeys = buffer(npad * 4);
+                const bvhVals = buffer(npad * 4);
+                const bvhNodes = buffer(nodeCount * BVH_NODE_STRIDE);
+                const bvhParent = buffer(nodeCount * 4);
+                const bvhFlags = buffer(count * 4);
+                const bvhParams = device.createBuffer({ size: BVH_PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+                const sortParams = device.createBuffer({ size: passes.length * SORT_SLOT, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+                const bparams = new ArrayBuffer(BVH_PARAMS_SIZE);
+                new Uint32Array(bparams, 0, 2).set([count, npad]);
+                new Float32Array(bparams, 8, 1)[0] = BVH_MARGIN;
+                device.queue.writeBuffer(bvhParams, 0, bparams);
+                for (let p = 0; p < passes.length; p++) {
+                    device.queue.writeBuffer(sortParams, p * SORT_SLOT, new Uint32Array([passes[p].j, passes[p].k, 0, 0]));
+                }
+
+                const bvhModule = device.createShaderModule({ code: broadphaseComputeShader });
+                const buildLayout = device.createBindGroupLayout({
+                    entries: [
+                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 8, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform", hasDynamicOffset: true } },
+                    ],
+                });
+                const buildPipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [buildLayout] });
+                const buildPipe = (entryPoint: string) => device.createComputePipeline({ layout: buildPipelineLayout, compute: { module: bvhModule, entryPoint } });
+                const buildBg = (poseBuf: GPUBuffer) => device.createBindGroup({
+                    layout: buildLayout,
+                    entries: [
+                        { binding: 0, resource: { buffer: bvhParams } },
+                        { binding: 1, resource: { buffer: poseBuf } },
+                        { binding: 2, resource: { buffer: bvhBounds } },
+                        { binding: 3, resource: { buffer: bvhKeys } },
+                        { binding: 4, resource: { buffer: bvhVals } },
+                        { binding: 5, resource: { buffer: bvhNodes } },
+                        { binding: 6, resource: { buffer: bvhParent } },
+                        { binding: 7, resource: { buffer: bvhFlags } },
+                        { binding: 8, resource: { buffer: sortParams, size: 16 } },
+                    ],
+                });
+                const treeBg = device.createBindGroup({
+                    layout: treeLayout,
+                    entries: [
+                        { binding: 0, resource: { buffer: bvhNodes } },
+                        { binding: 1, resource: { buffer: bvhVals } },
                     ],
                 });
 
@@ -281,12 +384,23 @@ export const physics = Database.Plugin.create({
                     params, pose: [pose0, pose1], prev, props: propsBuf, flags, events, staging,
                     integratePipeline: pipeline("integrate"),
                     reportPipeline: pipeline("report"),
-                    solvePipeline: pipeline("solve"),
+                    solvePipeline: device.createComputePipeline({ layout: solvePipelineLayout, compute: { module, entryPoint: "solve" } }),
                     finalizePipeline: pipeline("finalize"),
                     bindGroup: [bg(pose0, pose1), bg(pose1, pose0)],
                     count,
                     particleParams, particles, particlePipeline,
                     particleBindGroup: [pbg(pose0), pbg(pose1)],
+                    bvhFlags, bvhFlagsZero: new Uint32Array(count),
+                    sceneBoundsPipeline: buildPipe("sceneBounds"),
+                    mortonPipeline: buildPipe("morton"),
+                    bitonicPipeline: buildPipe("bitonic"),
+                    buildPipeline: buildPipe("build"),
+                    leafBoundsPipeline: buildPipe("leafBounds"),
+                    refitPipeline: buildPipe("refit"),
+                    buildBindGroup: [buildBg(pose0), buildBg(pose1)],
+                    treeBindGroup: treeBg,
+                    npad,
+                    sortPassCount: passes.length,
                 };
                 db.store.resources.physicsCurrent = 0;
                 db.store.resources.physicsStagingState = STAGING_FREE;
@@ -321,17 +435,40 @@ export const physics = Database.Plugin.create({
                 u32[6] = physicsGpu.count;
                 u32[7] = MAX_EVENTS;
                 device.queue.writeBuffer(physicsGpu.params, 0, buf);
-                // Reset the event counter; ordered before this frame's submit.
+                // Reset the event counter + BVH refit flags; both ordered before
+                // this frame's submit (so they land before the compute pass runs).
                 device.queue.writeBuffer(physicsGpu.events, 0, new Uint32Array([0]));
+                device.queue.writeBuffer(physicsGpu.bvhFlags, 0, physicsGpu.bvhFlagsZero);
 
                 const wg = Math.ceil(physicsGpu.count / WORKGROUP);
+                const wgPad = Math.ceil(physicsGpu.npad / WORKGROUP);
                 const pass = commandEncoder.beginComputePass();
                 let cur = db.store.resources.physicsCurrent;
 
                 pass.setPipeline(physicsGpu.integratePipeline);
                 pass.setBindGroup(0, physicsGpu.bindGroup[cur]);
                 pass.dispatchWorkgroups(wg);
-                cur = 1 - cur;
+                cur = 1 - cur;  // predicted poses now in pose[cur]
+
+                // Build the LBVH over the predicted poses (pose[cur]).
+                const bb = physicsGpu.buildBindGroup[cur];
+                pass.setBindGroup(0, bb, [0]);
+                pass.setPipeline(physicsGpu.sceneBoundsPipeline);
+                pass.dispatchWorkgroups(1);
+                pass.setPipeline(physicsGpu.mortonPipeline);
+                pass.dispatchWorkgroups(wgPad);
+                pass.setPipeline(physicsGpu.bitonicPipeline);
+                for (let p = 0; p < physicsGpu.sortPassCount; p++) {
+                    pass.setBindGroup(0, bb, [p * SORT_SLOT]);
+                    pass.dispatchWorkgroups(wgPad);
+                }
+                pass.setBindGroup(0, bb, [0]);
+                pass.setPipeline(physicsGpu.buildPipeline);
+                pass.dispatchWorkgroups(wg);
+                pass.setPipeline(physicsGpu.leafBoundsPipeline);
+                pass.dispatchWorkgroups(wg);
+                pass.setPipeline(physicsGpu.refitPipeline);
+                pass.dispatchWorkgroups(wg);
 
                 // Report on the predicted positions (deepest penetration), before
                 // the solver resolves them. Read-only on positions, so no flip.
@@ -340,6 +477,7 @@ export const physics = Database.Plugin.create({
                 pass.dispatchWorkgroups(wg);
 
                 pass.setPipeline(physicsGpu.solvePipeline);
+                pass.setBindGroup(1, physicsGpu.treeBindGroup);
                 for (let k = 0; k < SOLVE_ITERATIONS; k++) {
                     pass.setBindGroup(0, physicsGpu.bindGroup[cur]);
                     pass.dispatchWorkgroups(wg);

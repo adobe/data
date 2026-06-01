@@ -331,6 +331,58 @@ fn resolveStatic(
     }
 }
 
+// LBVH read by the solver's traversal (built each frame in broadphase-compute).
+@group(1) @binding(0) var<storage, read> bvhNodes:  array<vec4f>;  // 2 / node
+@group(1) @binding(1) var<storage, read> bvhLeaves: array<u32>;    // sorted leaf → body id
+
+// One contact pair: dispatch on the shapes of i and j and accumulate i's share.
+fn solvePair(
+    i: u32, j: u32, xi: vec3f, qi: vec4f, invMi: f32, invIli: vec3f, shi: f32, hei: vec3f,
+    dx: ptr<function, vec3f>, dq: ptr<function, vec4f>,
+) {
+    if (j == i) { return; }
+    let xj = posOf(j);
+    let qj = quatOf(j);
+    let invMj = invMassOf(j);
+    let invIlj = invInertiaOf(j);
+    let shj = shapeOf(j);
+    let hej = halfExtentOf(j);
+
+    if (shi == SHAPE_SPHERE && shj == SHAPE_SPHERE) {
+        let sep = xi - xj;
+        let dist = length(sep);
+        let pen = (hei.x + hej.x) - dist;
+        if (pen > 0.0 && dist > 1e-6) {
+            let n = sep / dist;
+            let point = xj + n * hej.x;
+            let w2 = otherW(xj, qj, invMj, invIlj, point, n);
+            applyContact(xi, qi, invMi, invIli, point, n, pen, w2, dx, dq);
+        }
+    } else if (shi == SHAPE_SPHERE && shj == SHAPE_BOX) {
+        let cp = closestOnBox(xi, xj, qj, hej);
+        let d = xi - cp;
+        let dist = length(d);
+        let pen = hei.x - dist;
+        if (pen > 0.0 && dist > 1e-6) {
+            let n = d / dist;
+            let w2 = otherW(xj, qj, invMj, invIlj, cp, n);
+            applyContact(xi, qi, invMi, invIli, cp, n, pen, w2, dx, dq);
+        }
+    } else if (shi == SHAPE_BOX && shj == SHAPE_SPHERE) {
+        let cp = closestOnBox(xj, xi, qi, hei);
+        let d = cp - xj;
+        let dist = length(d);
+        let pen = hej.x - dist;
+        if (pen > 0.0 && dist > 1e-6) {
+            let n = d / dist;  // from sphere j toward box i
+            let w2 = otherW(xj, qj, invMj, invIlj, cp, n);
+            applyContact(xi, qi, invMi, invIli, cp, n, pen, w2, dx, dq);
+        }
+    } else {
+        solveBoxBox(xi, qi, invMi, invIli, hei, xj, qj, invMj, invIlj, hej, dx, dq);
+    }
+}
+
 // --- solve -------------------------------------------------------------------
 @compute @workgroup_size(64)
 fn solve(@builtin(global_invocation_id) gid: vec3u) {
@@ -347,50 +399,29 @@ fn solve(@builtin(global_invocation_id) gid: vec3u) {
     var dx = vec3f(0.0);
     var dq = vec4f(0.0);
 
-    if (invMi > 0.0) {
-        for (var j = 0u; j < P.bodyCount; j = j + 1u) {
-            if (j == i) { continue; }
-            let xj = posOf(j);
-            let brj = boundOf(j);
-            let sep = xi - xj;
-            if (dot(sep, sep) > (bri + brj) * (bri + brj)) { continue; }  // bounding reject
-            let qj = quatOf(j);
-            let invMj = invMassOf(j);
-            let invIlj = invInertiaOf(j);
-            let shj = shapeOf(j);
-            let hej = halfExtentOf(j);
-
-            if (shi == SHAPE_SPHERE && shj == SHAPE_SPHERE) {
-                let dist = length(sep);
-                let pen = (hei.x + hej.x) - dist;
-                if (pen > 0.0 && dist > 1e-6) {
-                    let n = sep / dist;
-                    let point = xj + n * hej.x;
-                    let w2 = otherW(xj, qj, invMj, invIlj, point, n);
-                    applyContact(xi, qi, invMi, invIli, point, n, pen, w2, &dx, &dq);
-                }
-            } else if (shi == SHAPE_SPHERE && shj == SHAPE_BOX) {
-                let cp = closestOnBox(xi, xj, qj, hej);
-                let d = xi - cp;
-                let dist = length(d);
-                let pen = hei.x - dist;
-                if (pen > 0.0 && dist > 1e-6) {
-                    let n = d / dist;
-                    let w2 = otherW(xj, qj, invMj, invIlj, cp, n);
-                    applyContact(xi, qi, invMi, invIli, cp, n, pen, w2, &dx, &dq);
-                }
-            } else if (shi == SHAPE_BOX && shj == SHAPE_SPHERE) {
-                let cp = closestOnBox(xj, xi, qi, hei);
-                let d = cp - xj;
-                let dist = length(d);
-                let pen = hej.x - dist;
-                if (pen > 0.0 && dist > 1e-6) {
-                    let n = d / dist;  // from sphere j toward box i
-                    let w2 = otherW(xj, qj, invMj, invIlj, cp, n);
-                    applyContact(xi, qi, invMi, invIli, cp, n, pen, w2, &dx, &dq);
-                }
-            } else {
-                solveBoxBox(xi, qi, invMi, invIli, hei, xj, qj, invMj, invIlj, hej, &dx, &dq);
+    if (invMi > 0.0 && P.bodyCount >= 2u) {
+        // Stackless-with-stack BVH traversal: gather candidates whose node AABB
+        // overlaps body i's bounding box, then run the precise contact per leaf.
+        let qmin = xi - vec3f(bri);
+        let qmax = xi + vec3f(bri);
+        let leafBase = P.bodyCount - 1u;
+        var stack: array<u32, 64>;
+        var sp = 0;
+        stack[0] = 0u;  // root
+        sp = 1;
+        loop {
+            if (sp <= 0) { break; }
+            sp = sp - 1;
+            let node = stack[sp];
+            let nmin = bvhNodes[node * 2u].xyz;
+            let nmax = bvhNodes[node * 2u + 1u].xyz;
+            if (any(qmax < nmin) || any(qmin > nmax)) { continue; }
+            if (node >= leafBase) {
+                solvePair(i, bvhLeaves[node - leafBase], xi, qi, invMi, invIli, shi, hei, &dx, &dq);
+            } else if (sp <= 62) {
+                stack[sp] = bitcast<u32>(bvhNodes[node * 2u].w);
+                stack[sp + 1] = bitcast<u32>(bvhNodes[node * 2u + 1u].w);
+                sp = sp + 2;
             }
         }
     }

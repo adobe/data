@@ -1,27 +1,17 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { useOrbitDragCamera } from "./use-orbit-drag-camera.js";
-
-/** Subset of an orbit-camera service that the drag hook drives. */
-interface OrbitControlService {
-    transactions: {
-        addOrbitAngle: (delta: number) => void;
-        resumeAutoSpin: () => void;
-    };
-}
+import { useElement, useEffect } from "@adobe/data-lit";
+import { attachOrbitDrag, type OrbitDragService } from "@adobe/data-gpu";
 
 /**
- * Wires the host element's drag gesture to the `orbit` plugin: drag
- * moves rotate the orbit (pausing auto-spin), drag end un-pauses. Sensitivity
- * is in radians per drag pixel; default matches the previous samples.
+ * Wires the host element's drag gesture to the `orbit` plugin via
+ * `attachOrbitDrag`. Drag rotates the orbit (pausing auto-spin);
+ * drag end un-pauses.
  */
 export function useOrbitCameraControl(
-    service: OrbitControlService,
+    service: OrbitDragService,
     options: { sensitivity?: number } = {},
 ): void {
-    const sensitivity = options.sensitivity ?? 0.01;
-    useOrbitDragCamera(
-        dx => service.transactions.addOrbitAngle(-dx * sensitivity),
-        () => service.transactions.resumeAutoSpin(),
-    );
+    const element = useElement();
+    useEffect(() => attachOrbitDrag(element as HTMLElement, service, options), [element, service]);
 }

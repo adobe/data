@@ -1,42 +1,79 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Database, type ReadonlyStore } from "@adobe/data/ecs";
+import { Database } from "@adobe/data/ecs";
 import { Aabb, type Line3 } from "@adobe/data/math";
+import { True } from "@adobe/data/schema";
 import { Camera } from "../camera/camera.js";
 import { screenToWorldRay } from "../camera/screen-to-world-ray.js";
-import { worldBounds } from "../model/world-bounds-plugin.js";
+import { worldBounds } from "../scene/model/world-bounds-plugin.js";
 import type { PickHit } from "./pick-hit.js";
 
 /**
- * Picking — ray-against-Model hit testing.
+ * Picking — ray-against-PickableModel hit testing.
  *
- * `pickRay(ray)` linear-scans every visible+pickable Model and tests the
- * ray against its `_worldBounds`. `pickFromNdc({ ndcX, ndcY })` reconstructs
- * the eye→cursor ray from `camera` + `canvas` resources and delegates.
+ * `PickableModel` extends `Model` with a `pickable` flag. The archetype
+ * gives a clean opt-in: insert via `insertPickableModel` and the entity
+ * participates in picking; plain `Model` entities are invisible to the
+ * ray-caster.
+ *
+ * `pickRay(ray)` scans every visible PickableModel with a `_worldBounds`
+ * column. `pickFromScreen({ x, y })` takes pixel coords (e.g. from
+ * `offsetX` / `offsetY` on a pointer event), converts them to NDC
+ * (Normalized Device Coordinates, x/y ∈ [-1, 1], origin at center),
+ * then reconstructs the eye→cursor ray and delegates to `pickRay`.
  *
  * Exposed as **actions** (not transactions) because picks return a
  * `PickHit | null` value — transactions are restricted to `Entity | void`.
  *
  * Future: replace the linear scan with a `broadphase` resource of type
- * `Broadphase` exposing `queryRay(ray, cb)` and `queryAabb(box, cb)`. The
- * current implementation is the reference; a uniform-grid or BVH impl, or a
- * GPU-compute version adapted from the boids spatial grid in
- * `data-gpu-samples/boids/`, plugs in without changing these action
- * signatures. Callers reach for `service.actions.pickRay(ray)` either way.
+ * `Broadphase` exposing `queryRay(ray, cb)` and `queryAabb(box, cb)`.
  */
 
-const pickRayImpl = (store: ReadonlyStore<any, any, any>, ray: Line3): PickHit | null => {
+const pickingBase = Database.Plugin.create({
+    extends: Database.Plugin.combine(worldBounds, Camera.plugin),
+    components: {
+        pickable: True.schema,
+    },
+    archetypes: {
+        PickableModel: ["geometry", "position", "rotation", "scale", "visible", "parent", "pickable"],
+    },
+    transactions: {
+        insertPickableModel(t, args: {
+            geometry: number;
+            position?: readonly [number, number, number];
+            rotation?: readonly [number, number, number, number];
+            scale?: readonly [number, number, number];
+            parent?: number;
+        }): number {
+            return t.archetypes.PickableModel.insert({
+                geometry:  args.geometry,
+                position:  args.position ?? [0, 0, 0],
+                rotation:  args.rotation ?? [0, 0, 0, 1],
+                scale:     args.scale    ?? [1, 1, 1],
+                visible:   true,
+                parent:    args.parent   ?? 0,
+                pickable:  true,
+            });
+        },
+    },
+});
+
+// `picking` adds only actions (no new C/R/A), so the `db` passed to every
+// action is structurally assignable to this type — full component typing
+// with no `any`.
+type PickingDB = Database.Plugin.ToDatabase<typeof pickingBase>;
+
+const pickRayImpl = (db: PickingDB, ray: Line3): PickHit | null => {
     let best: PickHit | null = null;
-    for (const arch of store.queryArchetypes([
+    for (const arch of db.queryArchetypes([
         "geometry", "visible", "pickable", "_worldBounds",
     ])) {
-        const ids = arch.columns.id;
-        const vis = arch.columns.visible;
-        const pick = arch.columns.pickable;
+        const ids    = arch.columns.id;
+        const vis    = arch.columns.visible;
         const bounds = arch.columns._worldBounds;
         for (let i = 0; i < arch.rowCount; i++) {
-            if (!vis.get(i) || !pick.get(i)) continue;
-            const alpha = Aabb.lineIntersection(bounds.get(i) as Aabb, ray);
+            if (!vis.get(i)) continue;
+            const alpha = Aabb.lineIntersection(bounds.get(i), ray);
             if (alpha < 0) continue;
             if (best === null || alpha < best.distance) {
                 best = { entity: ids.get(i), distance: alpha };
@@ -47,18 +84,17 @@ const pickRayImpl = (store: ReadonlyStore<any, any, any>, ray: Line3): PickHit |
 };
 
 export const picking = Database.Plugin.create({
-    extends: Database.Plugin.combine(worldBounds, Camera.plugin),
+    extends: pickingBase,
     actions: {
         pickRay(db, ray: Line3): PickHit | null {
             return pickRayImpl(db, ray);
         },
-        pickFromNdc(db, args: { ndcX: number; ndcY: number }): PickHit | null {
-            const cam = db.resources.camera;
+        pickFromScreen(db, args: { x: number; y: number }): PickHit | null {
+            const cam    = db.resources.camera;
             const canvas = db.resources.canvas;
             if (!cam || !canvas) return null;
-            const sx = (args.ndcX + 1) * 0.5 * canvas.width;
-            const sy = (1 - args.ndcY) * 0.5 * canvas.height;
-            const ray = screenToWorldRay(cam, sx, sy, canvas.width, canvas.height);
+            // Convert pixel coords → NDC (x/y ∈ [-1, 1], origin at canvas center).
+            const ray = screenToWorldRay(cam, args.x, args.y, canvas.width, canvas.height);
             return pickRayImpl(db, ray);
         },
     },

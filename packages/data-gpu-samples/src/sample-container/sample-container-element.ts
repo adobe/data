@@ -3,7 +3,6 @@
 import { LitElement, html, css } from "lit";
 import { customElement } from "lit/decorators.js";
 import { HelloTriangle } from "../samples/hello-triangle/hello-triangle.js";
-import { PbrModel } from "../samples/pbr-model/pbr-model.js";
 import { PbrModelIbl } from "../samples/pbr-model-ibl/pbr-model-ibl.js";
 import { MetalRoughSpheres } from "../samples/metal-rough-spheres/metal-rough-spheres.js";
 import { PbrIblInstanced } from "../samples/pbr-ibl-instanced/pbr-ibl-instanced.js";
@@ -35,14 +34,13 @@ export class SampleContainerElement extends LitElement {
     }
 
     override render() {
-        const samples = ["hello-triangle", "pbr-model", "pbr-model-ibl", "metal-rough-spheres", "pbr-ibl-instanced", "solar-system", "antique-camera", "skinned-fox", "boids"];
+        const samples = ["hello-triangle", "pbr-model-ibl", "metal-rough-spheres", "pbr-ibl-instanced", "solar-system", "antique-camera", "skinned-fox", "boids"];
         return html`
             <nav>
                 ${samples.map(s => html`<a href="?sample=${s}">${s}</a>`)}
             </nav>
             <div class="content">
                 ${this.sample === "hello-triangle" ? HelloTriangle() : ""}
-                ${this.sample === "pbr-model" ? PbrModel() : ""}
                 ${this.sample === "pbr-model-ibl" ? PbrModelIbl() : ""}
                 ${this.sample === "metal-rough-spheres" ? MetalRoughSpheres() : ""}
                 ${this.sample === "pbr-ibl-instanced" ? PbrIblInstanced() : ""}

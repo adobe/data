@@ -8,7 +8,7 @@ import { interpolate } from "./interpolate.js";
  * Samples a track at `time` and returns the interpolated component value.
  * `time` must already be wrapped into the clip's [0, duration] range by the caller.
  */
-export function sample(track: AnimationTrack, schema: Schema, time: number): any {
+export function sample(track: AnimationTrack, schema: Schema, time: number): number | number[] {
     const { times, values } = track;
     const keyCount = times.length;
     const stride = values.length / keyCount;
@@ -39,9 +39,9 @@ export function sample(track: AnimationTrack, schema: Schema, time: number): any
     return interpolate(schema, track.interpolation, prev, next, t);
 }
 
-function readKey(values: Float32Array, index: number, stride: number): any {
+function readKey(values: Float32Array, index: number, stride: number): number | number[] {
     if (stride === 1) return values[index];
-    const out = new Array(stride);
+    const out = new Array<number>(stride);
     const base = index * stride;
     for (let i = 0; i < stride; i++) out[i] = values[base + i];
     return out;

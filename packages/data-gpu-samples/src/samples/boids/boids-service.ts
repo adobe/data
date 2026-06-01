@@ -159,17 +159,22 @@ export const boidsPlugin = Database.Plugin.create({
             // Force re-init by clearing the GPU bundle; the init system will rebuild.
             t.resources.boidsGpu = null;
         },
-        /** Cast a ray from the camera eye through the cursor (NDC) toward the
-         *  far plane. Any boid near that line — at any depth — will be scared. */
-        setScareFromNdc(t, args: { ndcX: number; ndcY: number }) {
+        /** Cast a ray from the camera eye through the cursor toward the far plane.
+         *  Any boid near that line — at any depth — will be scared.
+         *  `x`/`y` are pixel coords (e.g. from a PointerEvent relative to the canvas).
+         *  Internally converts to NDC (x/y ∈ [-1, 1], origin at canvas center, y-up). */
+        setScareFromScreen(t, args: { x: number; y: number; width: number; height: number }) {
             const cam = t.resources.camera;
             if (!cam) return;
             const fwd = Vec3.normalize(Vec3.subtract(cam.target, cam.position));
             const right = Vec3.normalize(Vec3.cross(fwd, cam.up));
             const upOrtho = Vec3.cross(right, fwd);
             const tanHalfFov = Math.tan(cam.fieldOfView / 2);
-            const rx = args.ndcX * tanHalfFov * cam.aspect;
-            const ry = args.ndcY * tanHalfFov;
+            // NDC conversion: x ∈ [-1,1] left→right, y ∈ [-1,1] bottom→top.
+            const ndcX = (args.x / args.width) * 2 - 1;
+            const ndcY = 1 - (args.y / args.height) * 2;
+            const rx = ndcX * tanHalfFov * cam.aspect;
+            const ry = ndcY * tanHalfFov;
             const dir = Vec3.normalize([
                 fwd[0] + right[0] * rx + upOrtho[0] * ry,
                 fwd[1] + right[1] * rx + upOrtho[1] * ry,

@@ -117,8 +117,8 @@ export const solarSystemPlugin = Database.Plugin.create({
     },
     actions: {
         /** Pick the Model under the cursor; if any, reframe the orbit on it. */
-        pickAndFit(db, args: { ndcX: number; ndcY: number }) {
-            const hit = db.actions.pickFromNdc(args);
+        pickAndFit(db, args: { x: number; y: number }) {
+            const hit = db.actions.pickFromScreen(args);
             if (!hit) return;
             const geo = db.read(hit.entity)?.geometry;
             if (geo) db.transactions.setOrbit({ fitGeometry: geo });

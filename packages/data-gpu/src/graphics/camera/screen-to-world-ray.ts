@@ -4,6 +4,13 @@ import { Mat4x4, Vec3, Vec4, Line3 } from "@adobe/data/math";
 import type { Camera } from "./camera.js";
 import { toViewProjection } from "./to-view-projection.js";
 
+/**
+ * Builds a world-space ray from a canvas pixel coordinate.
+ * Pixel origin is top-left (matching `offsetX`/`offsetY` on pointer events).
+ * Internally converts to NDC (Normalized Device Coordinates: x/y ∈ [-1, 1],
+ * origin at canvas center, y-up) before unprojecting via the inverse
+ * view-projection matrix.
+ */
 export const screenToWorldRay = (
     cam: Camera,
     screenX: number,
@@ -12,6 +19,7 @@ export const screenToWorldRay = (
     canvasHeight: number,
     rayLength = 1000,
 ): Line3 => {
+    // NDC: x ∈ [-1, 1] left→right, y ∈ [-1, 1] bottom→top.
     const ndcX = (screenX / canvasWidth) * 2 - 1;
     const ndcY = 1 - (screenY / canvasHeight) * 2;
 

@@ -43,9 +43,12 @@ export class BoidsElement extends DatabaseElement<typeof boidsPlugin> {
             if (!canvas) return;
             const onMove = (e: PointerEvent) => {
                 const rect = canvas.getBoundingClientRect();
-                const ndcX = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
-                const ndcY = -(((e.clientY - rect.top)  / rect.height) * 2 - 1);
-                service.transactions.setScareFromNdc({ ndcX, ndcY });
+                service.transactions.setScareFromScreen({
+                    x: e.clientX - rect.left,
+                    y: e.clientY - rect.top,
+                    width: rect.width,
+                    height: rect.height,
+                });
             };
             const onLeave = () => service.transactions.disableScare();
             canvas.addEventListener("pointermove", onMove);

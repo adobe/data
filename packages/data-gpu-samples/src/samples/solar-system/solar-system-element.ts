@@ -42,10 +42,7 @@ export class SolarSystemElement extends DatabaseElement<typeof solarSystemPlugin
         useOrbitCameraControl(service);
 
         const onClick = (e: MouseEvent) => {
-            const target = e.currentTarget as HTMLCanvasElement;
-            const ndcX = (e.offsetX / target.clientWidth) * 2 - 1;
-            const ndcY = 1 - (e.offsetY / target.clientHeight) * 2;
-            service.actions.pickAndFit({ ndcX, ndcY });
+            service.actions.pickAndFit({ x: e.offsetX, y: e.offsetY });
         };
 
         return html`

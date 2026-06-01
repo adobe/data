@@ -42,8 +42,10 @@ function groundQuad(half: number, y: number): Float32Array {
 interface DropGpu {
     spherePipeline: GPURenderPipeline;
     groundPipeline: GPURenderPipeline;
+    particlePipeline: GPURenderPipeline;
     sceneLayout: GPUBindGroupLayout;
     bodyLayout: GPUBindGroupLayout;
+    particleLayout: GPUBindGroupLayout;
     sphereVB: GPUBuffer;
     sphereIB: GPUBuffer;
     sphereIndexCount: number;
@@ -53,6 +55,7 @@ interface DropGpu {
      *  reassigning fields on the read-only resource bundle. */
     sceneBG: Map<GPUBuffer, GPUBindGroup>;
     bodyBG: Map<GPUBuffer, GPUBindGroup>;
+    particleBG: Map<GPUBuffer, GPUBindGroup>;
 }
 
 export const physicsDropPlugin = Database.Plugin.create({
@@ -132,6 +135,16 @@ export const physicsDropPlugin = Database.Plugin.create({
                     primitive: { topology: "triangle-list", cullMode: "none" },
                     depthStencil,
                 });
+                const particleLayout = device.createBindGroupLayout({
+                    entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } }],
+                });
+                const particlePipeline = device.createRenderPipeline({
+                    layout: device.createPipelineLayout({ bindGroupLayouts: [sceneLayout, particleLayout] }),
+                    vertex: { module, entryPoint: "vs_particle", buffers: [vbLayout] },
+                    fragment: { module, entryPoint: "fs_particle", targets: [{ format: canvasFormat }] },
+                    primitive: { topology: "triangle-list", cullMode: "back" },
+                    depthStencil,
+                });
 
                 const sphere = unitSphere(12, 18);
                 const sphereVB = device.createBuffer({ size: sphere.vertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
@@ -144,11 +157,13 @@ export const physicsDropPlugin = Database.Plugin.create({
                 device.queue.writeBuffer(groundVB, 0, ground);
 
                 db.store.resources.dropGpu = {
-                    spherePipeline, groundPipeline, sceneLayout, bodyLayout,
+                    spherePipeline, groundPipeline, particlePipeline,
+                    sceneLayout, bodyLayout, particleLayout,
                     sphereVB, sphereIB, sphereIndexCount: sphere.indices.length,
                     groundVB, groundVertexCount: ground.length / 3,
                     sceneBG: new Map(),
                     bodyBG: new Map(),
+                    particleBG: new Map(),
                 };
             },
         },
@@ -156,7 +171,7 @@ export const physicsDropPlugin = Database.Plugin.create({
             schedule: { during: ["render"] },
             create: db => () => {
                 const gpu = db.store.resources.dropGpu;
-                const { device, renderPassEncoder, _sceneUniformsBuffer, physicsPositionBuffer, physicsVelocityBuffer, physicsRenderCount } = db.store.resources;
+                const { device, renderPassEncoder, _sceneUniformsBuffer, physicsPositionBuffer, physicsVelocityBuffer, physicsRenderCount, physicsParticleBuffer, physicsParticleCount } = db.store.resources;
                 if (!gpu || !device || !renderPassEncoder || !_sceneUniformsBuffer || !physicsPositionBuffer || !physicsVelocityBuffer) return;
 
                 // Scene bind group, cached by the (stable) scene uniform buffer.
@@ -194,6 +209,24 @@ export const physicsDropPlugin = Database.Plugin.create({
                 renderPassEncoder.setVertexBuffer(0, gpu.sphereVB);
                 renderPassEncoder.setIndexBuffer(gpu.sphereIB, "uint16");
                 renderPassEncoder.drawIndexed(gpu.sphereIndexCount, physicsRenderCount);
+
+                // Particles (instanced, same sphere mesh, vertex-pulled center+size).
+                if (physicsParticleBuffer && physicsParticleCount > 0) {
+                    let particleBG = gpu.particleBG.get(physicsParticleBuffer);
+                    if (!particleBG) {
+                        particleBG = device.createBindGroup({
+                            layout: gpu.particleLayout,
+                            entries: [{ binding: 0, resource: { buffer: physicsParticleBuffer } }],
+                        });
+                        gpu.particleBG.set(physicsParticleBuffer, particleBG);
+                    }
+                    renderPassEncoder.setPipeline(gpu.particlePipeline);
+                    renderPassEncoder.setBindGroup(0, sceneBG);
+                    renderPassEncoder.setBindGroup(1, particleBG);
+                    renderPassEncoder.setVertexBuffer(0, gpu.sphereVB);
+                    renderPassEncoder.setIndexBuffer(gpu.sphereIB, "uint16");
+                    renderPassEncoder.drawIndexed(gpu.sphereIndexCount, physicsParticleCount);
+                }
             },
         },
     },

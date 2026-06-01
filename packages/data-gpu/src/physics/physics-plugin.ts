@@ -3,6 +3,7 @@
 import { Database } from "@adobe/data/ecs";
 import { core } from "../core/core-plugin.js";
 import { physicsComputeShader } from "./physics-compute.wgsl.js";
+import { particleComputeShader } from "./particle-compute.wgsl.js";
 import type { CollisionEvent } from "./collision-event.js";
 
 /**
@@ -44,6 +45,12 @@ const STAGING_FREE = 0;     // ready to receive a copy
 const STAGING_COPIED = 1;   // copy recorded this frame, awaiting map
 const STAGING_MAPPED = 2;   // mapAsync in flight, awaiting callback
 
+// Query-only particles.
+const PARTICLE_CAPACITY = 2000;
+const PARTICLE_STRIDE = 48;       // 3 × vec4f — see particle-compute.wgsl.
+const PARTICLE_PARAMS_SIZE = 32;  // 8 × 4 bytes — see PParams.
+const PARTICLE_RESTITUTION = 0.5;
+
 interface PhysicsConfig {
     gravity: number;
     damping: number;
@@ -66,6 +73,12 @@ interface PhysicsGpu {
     /** bg[r]: posIn = pos[r], posOut = pos[1-r]. */
     bindGroup: [GPUBindGroup, GPUBindGroup];
     count: number;
+    // Query-only particles.
+    particleParams: GPUBuffer;
+    particles: GPUBuffer;
+    particlePipeline: GPUComputePipeline;
+    /** particleBindGroup[r] reads the bodies in pos[r] (final positions). */
+    particleBindGroup: [GPUBindGroup, GPUBindGroup];
 }
 
 /** Seed spheres of varied size at rest above the floor. Returns pos + vel arrays. */
@@ -112,10 +125,13 @@ export const physics = Database.Plugin.create({
         physicsGpu: { default: null as PhysicsGpu | null, transient: true },
         physicsLastTime: { default: 0 as number, transient: true },
         physicsCurrent: { default: 0 as number, transient: true },
+        physicsFrame: { default: 0 as number, transient: true },
         // Exposed to a renderer.
         physicsPositionBuffer: { default: null as GPUBuffer | null, transient: true },
         physicsVelocityBuffer: { default: null as GPUBuffer | null, transient: true },
         physicsRenderCount: { default: 0 as number, transient: true },
+        physicsParticleBuffer: { default: null as GPUBuffer | null, transient: true },
+        physicsParticleCount: { default: 0 as number, transient: true },
         // Flag-gated collision events drained from the GPU.
         physicsCollisionEvents: { default: [] as CollisionEvent[], transient: true },
         physicsEventEpoch: { default: 0 as number, transient: true },
@@ -178,6 +194,31 @@ export const physics = Database.Plugin.create({
                     ],
                 });
 
+                // Query-only particles. Buffer starts zeroed → all dead → the
+                // compute shader spawns each from the emitter on the first frame.
+                const particleParams = device.createBuffer({ size: PARTICLE_PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+                const particles = device.createBuffer({ size: PARTICLE_CAPACITY * PARTICLE_STRIDE, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST });
+                const particleModule = device.createShaderModule({ code: particleComputeShader });
+                const particleLayout = device.createBindGroupLayout({
+                    entries: [
+                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                    ],
+                });
+                const particlePipeline = device.createComputePipeline({
+                    layout: device.createPipelineLayout({ bindGroupLayouts: [particleLayout] }),
+                    compute: { module: particleModule, entryPoint: "step" },
+                });
+                const pbg = (bodies: GPUBuffer) => device.createBindGroup({
+                    layout: particleLayout,
+                    entries: [
+                        { binding: 0, resource: { buffer: particleParams } },
+                        { binding: 1, resource: { buffer: bodies } },
+                        { binding: 2, resource: { buffer: particles } },
+                    ],
+                });
+
                 db.store.resources.physicsGpu = {
                     params, pos: [pos0, pos1], vel, prevPos, flags, events, staging,
                     integratePipeline: pipeline("integrate"),
@@ -186,12 +227,16 @@ export const physics = Database.Plugin.create({
                     finalizePipeline: pipeline("finalize"),
                     bindGroup: [bg(pos0, pos1), bg(pos1, pos0)],
                     count,
+                    particleParams, particles, particlePipeline,
+                    particleBindGroup: [pbg(pos0), pbg(pos1)],
                 };
                 db.store.resources.physicsCurrent = 0;
                 db.store.resources.physicsStagingState = STAGING_FREE;
                 db.store.resources.physicsPositionBuffer = pos0;
                 db.store.resources.physicsVelocityBuffer = vel;
                 db.store.resources.physicsRenderCount = count;
+                db.store.resources.physicsParticleBuffer = particles;
+                db.store.resources.physicsParticleCount = PARTICLE_CAPACITY;
             },
         },
         physicsStep: {
@@ -246,6 +291,28 @@ export const physics = Database.Plugin.create({
                 pass.setPipeline(physicsGpu.finalizePipeline);
                 pass.setBindGroup(0, physicsGpu.bindGroup[cur]);
                 pass.dispatchWorkgroups(wg);
+
+                // Query-only particles, after the rigid solve so they read the
+                // bodies' final positions (pos[cur]). One-way: read bodies, write
+                // only the particle buffer.
+                const frame = db.store.resources.physicsFrame + 1;
+                db.store.resources.physicsFrame = frame;
+                const pbuf = new ArrayBuffer(PARTICLE_PARAMS_SIZE);
+                const pf32 = new Float32Array(pbuf);
+                const pu32 = new Uint32Array(pbuf);
+                pf32[0] = dt;
+                pf32[1] = physicsConfig.gravity;
+                pf32[2] = physicsConfig.floorY;
+                pf32[3] = physicsConfig.halfExtent;
+                pf32[4] = PARTICLE_RESTITUTION;
+                pu32[5] = frame;
+                pu32[6] = physicsGpu.count;
+                pu32[7] = PARTICLE_CAPACITY;
+                device.queue.writeBuffer(physicsGpu.particleParams, 0, pbuf);
+
+                pass.setPipeline(physicsGpu.particlePipeline);
+                pass.setBindGroup(0, physicsGpu.particleBindGroup[cur]);
+                pass.dispatchWorkgroups(Math.ceil(PARTICLE_CAPACITY / WORKGROUP));
                 pass.end();
 
                 // Snapshot events into the mappable staging buffer when it's free.

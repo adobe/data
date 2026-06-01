@@ -47,6 +47,31 @@ fn fs_lit(in: VOut) -> @location(0) vec4f {
     return vec4f(lit, 1.0);
 }
 
+// Query-only particles: 3 vec4f per particle (pos+life, prev+size, vel+bounces).
+// Dead particles (life<=0 or size<=0) collapse to a degenerate point.
+@group(1) @binding(0) var<storage, read> particles: array<vec4f>;
+
+@vertex
+fn vs_particle(@builtin(instance_index) ii: u32, @location(0) meshPos: vec3f) -> VOut {
+    let a = particles[ii * 3u + 0u];
+    let b = particles[ii * 3u + 1u];
+    let alive = a.w > 0.0 && b.w > 0.0;
+    let size = select(0.0, b.w, alive);
+    var out: VOut;
+    out.clip = scene.viewProjectionMatrix * vec4f(a.xyz + meshPos * size, 1.0);
+    out.normal = normalize(meshPos);
+    out.color = vec3f(1.0, 0.75, 0.2);  // bright spark
+    return out;
+}
+
+@fragment
+fn fs_particle(in: VOut) -> @location(0) vec4f {
+    let n = normalize(in.normal);
+    let L = normalize(-scene.lightDirection);
+    let diff = max(dot(n, L), 0.0);
+    return vec4f(in.color * (0.6 + diff * 0.6), 1.0);
+}
+
 struct GOut {
     @builtin(position) clip:  vec4f,
     @location(0)       world: vec3f,

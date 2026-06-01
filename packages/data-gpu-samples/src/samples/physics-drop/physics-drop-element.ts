@@ -41,7 +41,7 @@ export class PhysicsDropElement extends DatabaseElement<typeof physicsDropPlugin
         return html`
             <div class="stage">
                 <canvas width="900" height="600"></canvas>
-                <div class="hint">spheres falling · drag to orbit</div>
+                <div class="hint">spheres, cuboids &amp; sparks · drag to orbit</div>
             </div>
         `;
     }

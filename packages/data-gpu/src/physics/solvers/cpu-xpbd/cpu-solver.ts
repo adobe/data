@@ -338,41 +338,80 @@ const _satAxes: number[] = new Array(45);
 // --- position constraint (Gauss-Seidel: mutate both bodies in place) ---------
 const _gi = new Float32Array(3);
 const _gj = new Float32Array(3);
+const _drA = new Float32Array(3);
+const _drB = new Float32Array(3);
+const _loc = new Float32Array(3);
+const _wld = new Float32Array(3);
 
-function solvePosition(s: SolverState, a: number, b: number, compliance: number, dt: number): void {
-    const nx = _contact.nx, ny = _contact.ny, nz = _contact.nz, depth = _contact.depth;
-    const rax = _contact.px - s.pos[a * 3], ray = _contact.py - s.pos[a * 3 + 1], raz = _contact.pz - s.pos[a * 3 + 2];
-    const rbx = _contact.px - s.pos[b * 3], rby = _contact.py - s.pos[b * 3 + 1], rbz = _contact.pz - s.pos[b * 3 + 2];
+/** Generalized inverse mass of the pair along unit dir at arms ra, rb. */
+function genW(s: SolverState, a: number, b: number, rax: number, ray: number, raz: number, rbx: number, rby: number, rbz: number, dx: number, dy: number, dz: number): number {
+    const ranx = ray * dz - raz * dy, rany = raz * dx - rax * dz, ranz = rax * dy - ray * dx;
+    const rbnx = rby * dz - rbz * dy, rbny = rbz * dx - rbx * dz, rbnz = rbx * dy - rby * dx;
+    applyInvInertia(_gi, s.orient[a * 4], s.orient[a * 4 + 1], s.orient[a * 4 + 2], s.orient[a * 4 + 3], s.invInertia[a * 3], s.invInertia[a * 3 + 1], s.invInertia[a * 3 + 2], ranx, rany, ranz);
+    applyInvInertia(_gj, s.orient[b * 4], s.orient[b * 4 + 1], s.orient[b * 4 + 2], s.orient[b * 4 + 3], s.invInertia[b * 3], s.invInertia[b * 3 + 1], s.invInertia[b * 3 + 2], rbnx, rbny, rbnz);
+    return s.invMass[a] + ranx * _gi[0] + rany * _gi[1] + ranz * _gi[2] + s.invMass[b] + rbnx * _gj[0] + rbny * _gj[1] + rbnz * _gj[2];
+}
+
+/** Apply a positional impulse `lambda` along dir: body a moves +, body b moves −. */
+function applyPosCorr(s: SolverState, a: number, b: number, rax: number, ray: number, raz: number, rbx: number, rby: number, rbz: number, dx: number, dy: number, dz: number, lambda: number): void {
     const imA = s.invMass[a], imB = s.invMass[b];
-    // angular generalized inverse mass: (r×n)·Iinv·(r×n)
-    const ranx = ray * nz - raz * ny, rany = raz * nx - rax * nz, ranz = rax * ny - ray * nx;
-    const rbnx = rby * nz - rbz * ny, rbny = rbz * nx - rbx * nz, rbnz = rbx * ny - rby * nx;
-    applyInvInertia(_gi, s.orient[a * 4], s.orient[a * 4 + 1], s.orient[a * 4 + 2], s.orient[a * 4 + 3],
-        s.invInertia[a * 3], s.invInertia[a * 3 + 1], s.invInertia[a * 3 + 2], ranx, rany, ranz);
-    applyInvInertia(_gj, s.orient[b * 4], s.orient[b * 4 + 1], s.orient[b * 4 + 2], s.orient[b * 4 + 3],
-        s.invInertia[b * 3], s.invInertia[b * 3 + 1], s.invInertia[b * 3 + 2], rbnx, rbny, rbnz);
-    const wA = imA + ranx * _gi[0] + rany * _gi[1] + ranz * _gi[2];
-    const wB = imB + rbnx * _gj[0] + rbny * _gj[1] + rbnz * _gj[2];
-    const aTilde = compliance / (dt * dt);
-    const wSum = wA + wB + aTilde;
-    if (wSum <= 0) return;
-    const lambda = depth / wSum; // positional impulse magnitude
-    const px = lambda * nx, py = lambda * ny, pz = lambda * nz;
-    // body a moves +n, body b moves -n
+    const px = lambda * dx, py = lambda * dy, pz = lambda * dz;
     if (imA > 0) {
         s.pos[a * 3] += imA * px; s.pos[a * 3 + 1] += imA * py; s.pos[a * 3 + 2] += imA * pz;
-        applyInvInertia(_gi, s.orient[a * 4], s.orient[a * 4 + 1], s.orient[a * 4 + 2], s.orient[a * 4 + 3],
-            s.invInertia[a * 3], s.invInertia[a * 3 + 1], s.invInertia[a * 3 + 2],
-            ray * pz - raz * py, raz * px - rax * pz, rax * py - ray * px);
+        applyInvInertia(_gi, s.orient[a * 4], s.orient[a * 4 + 1], s.orient[a * 4 + 2], s.orient[a * 4 + 3], s.invInertia[a * 3], s.invInertia[a * 3 + 1], s.invInertia[a * 3 + 2], ray * pz - raz * py, raz * px - rax * pz, rax * py - ray * px);
         integrateQuat(s.orient, a, _gi[0], _gi[1], _gi[2]);
     }
     if (imB > 0) {
         s.pos[b * 3] -= imB * px; s.pos[b * 3 + 1] -= imB * py; s.pos[b * 3 + 2] -= imB * pz;
-        applyInvInertia(_gj, s.orient[b * 4], s.orient[b * 4 + 1], s.orient[b * 4 + 2], s.orient[b * 4 + 3],
-            s.invInertia[b * 3], s.invInertia[b * 3 + 1], s.invInertia[b * 3 + 2],
-            -(rby * pz - rbz * py), -(rbz * px - rbx * pz), -(rbx * py - rby * px));
+        applyInvInertia(_gj, s.orient[b * 4], s.orient[b * 4 + 1], s.orient[b * 4 + 2], s.orient[b * 4 + 3], s.invInertia[b * 3], s.invInertia[b * 3 + 1], s.invInertia[b * 3 + 2], -(rby * pz - rbz * py), -(rbz * px - rbx * pz), -(rbx * py - rby * px));
         integrateQuat(s.orient, b, _gj[0], _gj[1], _gj[2]);
     }
+}
+
+/** World displacement of body i's material point now at (Px,Py,Pz) since the
+ *  substep start (predicted pose vs prevPos/prevOrient). Static body → 0. */
+function contactDrift(s: SolverState, i: number, Px: number, Py: number, Pz: number, out: Float32Array): void {
+    const rx = Px - s.pos[i * 3], ry = Py - s.pos[i * 3 + 1], rz = Pz - s.pos[i * 3 + 2];
+    qRot(_loc, -s.orient[i * 4], -s.orient[i * 4 + 1], -s.orient[i * 4 + 2], s.orient[i * 4 + 3], rx, ry, rz);
+    qRot(_wld, s.prevOrient[i * 4], s.prevOrient[i * 4 + 1], s.prevOrient[i * 4 + 2], s.prevOrient[i * 4 + 3], _loc[0], _loc[1], _loc[2]);
+    out[0] = Px - (s.prevPos[i * 3] + _wld[0]);
+    out[1] = Py - (s.prevPos[i * 3 + 1] + _wld[1]);
+    out[2] = Pz - (s.prevPos[i * 3 + 2] + _wld[2]);
+}
+
+/**
+ * XPBD contact: non-penetration (compliant via α) plus position-based Coulomb
+ * friction. The friction correction removes the tangential drift the two
+ * surfaces accumulated this substep, but clamped so λt ≤ μ·λn — the contact
+ * sticks (static friction) until the tangential load exceeds μ× the normal
+ * load, then slides (dynamic). Load-scaled, unlike a fractional velocity decay.
+ */
+function solvePosition(s: SolverState, a: number, b: number, mu: number, compliance: number, dt: number): void {
+    const nx = _contact.nx, ny = _contact.ny, nz = _contact.nz, depth = _contact.depth;
+    const Px = _contact.px, Py = _contact.py, Pz = _contact.pz;
+    const rax = Px - s.pos[a * 3], ray = Py - s.pos[a * 3 + 1], raz = Pz - s.pos[a * 3 + 2];
+    const rbx = Px - s.pos[b * 3], rby = Py - s.pos[b * 3 + 1], rbz = Pz - s.pos[b * 3 + 2];
+    const wsN = genW(s, a, b, rax, ray, raz, rbx, rby, rbz, nx, ny, nz) + compliance / (dt * dt);
+    if (wsN <= 0) return;
+    const lambdaN = depth / wsN;
+    applyPosCorr(s, a, b, rax, ray, raz, rbx, rby, rbz, nx, ny, nz, lambdaN);
+
+    if (mu <= 0 || lambdaN <= 0) return;
+    // tangential drift of the two surfaces at the contact this substep
+    contactDrift(s, a, Px, Py, Pz, _drA);
+    contactDrift(s, b, Px, Py, Pz, _drB);
+    let tx = _drA[0] - _drB[0], ty = _drA[1] - _drB[1], tz = _drA[2] - _drB[2];
+    const tn = tx * nx + ty * ny + tz * nz;
+    tx -= tn * nx; ty -= tn * ny; tz -= tn * nz;
+    const tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+    if (tl < 1e-9) return;
+    tx /= tl; ty /= tl; tz /= tl;
+    const wT = genW(s, a, b, rax, ray, raz, rbx, rby, rbz, tx, ty, tz);
+    if (wT <= 0) return;
+    let lambdaT = tl / wT;
+    const maxT = mu * lambdaN;
+    if (lambdaT > maxT) lambdaT = maxT;          // dynamic-friction clamp
+    applyPosCorr(s, a, b, rax, ray, raz, rbx, rby, rbz, tx, ty, tz, -lambdaT); // oppose drift
 }
 
 /** q += 0.5 * (w,0) * q ; normalize. (w is the rotation-vector delta.) */
@@ -389,7 +428,7 @@ function integrateQuat(orient: Float32Array, i: number, wx: number, wy: number, 
 }
 
 // --- velocity constraint (restitution + friction, Gauss-Seidel) --------------
-function solveVelocity(s: SolverState, a: number, b: number, e: number, mu: number, threshold: number, roll: number, firstContact: boolean): void {
+function solveVelocity(s: SolverState, a: number, b: number, e: number, threshold: number, roll: number, firstContact: boolean): void {
     const nx = _contact.nx, ny = _contact.ny, nz = _contact.nz;
     const rax = _contact.px - s.pos[a * 3], ray = _contact.py - s.pos[a * 3 + 1], raz = _contact.pz - s.pos[a * 3 + 2];
     const rbx = _contact.px - s.pos[b * 3], rby = _contact.py - s.pos[b * 3 + 1], rbz = _contact.pz - s.pos[b * 3 + 2];
@@ -414,14 +453,8 @@ function solveVelocity(s: SolverState, a: number, b: number, e: number, mu: numb
     const goalVn = vnPre < -threshold ? Math.max(-e * vnPre, 0) : 0;
     const dvn = goalVn - vn;
     if (dvn > 0) applyVelImpulse(s, a, b, rax, ray, raz, rbx, rby, rbz, nx, ny, nz, dvn);
-
-    // friction: oppose tangential relative velocity (recompute rv after normal change is minor; reuse)
-    const vtx = rvx - vn * nx, vty = rvy - vn * ny, vtz = rvz - vn * nz;
-    const vtLen = Math.sqrt(vtx * vtx + vty * vty + vtz * vtz);
-    if (vtLen > 1e-6 && mu > 0) {
-        const tx = vtx / vtLen, ty = vty / vtLen, tz = vtz / vtLen;
-        applyVelImpulse(s, a, b, rax, ray, raz, rbx, rby, rbz, tx, ty, tz, -mu * vtLen);
-    }
+    // Tangential (sliding) friction is handled in the position solve (Coulomb,
+    // clamped by μ·λn); the velocity pass only does restitution + rolling/spin.
 
     // rolling + spinning friction: oppose the *relative angular* velocity at the
     // contact (once per pair, not per manifold point). Sliding friction can't
@@ -487,9 +520,10 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
             for (let p = 0; p < pairCount; p++) {
                 const a = pairA[p], b = pairB[p];
                 narrowphase(s, a, b);
+                const mu = Math.sqrt(s.friction[a] * s.friction[b]);
                 for (let ci = 0; ci < _mCount; ci++) {
                     setContact(ci);
-                    if (_contact.depth > 0) solvePosition(s, a, b, 0, sdt); // rigid (compliance deferred)
+                    if (_contact.depth > 0) solvePosition(s, a, b, mu, 0, sdt); // compliance wired in S3
                 }
             }
             for (let i = 0; i < s.count; i++) {
@@ -516,7 +550,7 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
             const roll = mu * cfg.rollingFriction;
             for (let ci = 0; ci < _mCount; ci++) {
                 setContact(ci);
-                if (_contact.depth > 0) solveVelocity(s, a, b, e, mu, cfg.restitutionThreshold, roll, ci === 0);
+                if (_contact.depth > 0) solveVelocity(s, a, b, e, cfg.restitutionThreshold, roll, ci === 0);
             }
         }
         for (let i = 0; i < s.count; i++) {
@@ -559,12 +593,13 @@ const _planeOff = new Float32Array(5);
 
 function resolveStatic(s: SolverState, i: number, cfg: SolverConfig): void {
     setupPlanes(cfg);
+    const mu = Math.sqrt(s.friction[i] * cfg.worldFriction);
     if (s.shape[i] === SHAPE_SPHERE) {
         const r = s.halfExtent[i * 3];
         for (let k = 0; k < (cfg.binExtent > 0 ? 5 : 1); k++) {
             const nx = _planeN[k * 3], ny = _planeN[k * 3 + 1], nz = _planeN[k * 3 + 2];
             const pen = _planeOff[k] - (s.pos[i * 3] * nx + s.pos[i * 3 + 1] * ny + s.pos[i * 3 + 2] * nz - r);
-            if (pen > 0) staticPush(s, i, nx, ny, nz, s.pos[i * 3] - nx * r, s.pos[i * 3 + 1] - ny * r, s.pos[i * 3 + 2] - nz * r, pen);
+            if (pen > 0) staticContact(s, i, nx, ny, nz, s.pos[i * 3] - nx * r, s.pos[i * 3 + 1] - ny * r, s.pos[i * 3 + 2] - nz * r, pen, mu);
         }
     } else {
         boxAxes(_ai, s, i);
@@ -577,23 +612,49 @@ function resolveStatic(s: SolverState, i: number, cfg: SolverConfig): void {
             for (let k = 0; k < (cfg.binExtent > 0 ? 5 : 1); k++) {
                 const nx = _planeN[k * 3], ny = _planeN[k * 3 + 1], nz = _planeN[k * 3 + 2];
                 const pen = _planeOff[k] - (cx * nx + cy * ny + cz * nz);
-                if (pen > 0) staticPush(s, i, nx, ny, nz, cx, cy, cz, pen);
+                if (pen > 0) staticContact(s, i, nx, ny, nz, cx, cy, cz, pen, mu);
             }
         }
     }
 }
 
-function staticPush(s: SolverState, i: number, nx: number, ny: number, nz: number, px: number, py: number, pz: number, depth: number): void {
-    const rx = px - s.pos[i * 3], ry = py - s.pos[i * 3 + 1], rz = pz - s.pos[i * 3 + 2];
-    const im = s.invMass[i];
-    const rnx = ry * nz - rz * ny, rny = rz * nx - rx * nz, rnz = rx * ny - ry * nx;
+/** Single-body generalized inverse mass along unit dir at arm r. */
+function genWStatic(s: SolverState, i: number, rx: number, ry: number, rz: number, dx: number, dy: number, dz: number): number {
+    const rnx = ry * dz - rz * dy, rny = rz * dx - rx * dz, rnz = rx * dy - ry * dx;
     applyInvInertia(_gi, s.orient[i * 4], s.orient[i * 4 + 1], s.orient[i * 4 + 2], s.orient[i * 4 + 3], s.invInertia[i * 3], s.invInertia[i * 3 + 1], s.invInertia[i * 3 + 2], rnx, rny, rnz);
-    const wA = im + rnx * _gi[0] + rny * _gi[1] + rnz * _gi[2];
-    if (wA <= 0) return;
-    const lambda = depth / wA;
-    s.pos[i * 3] += im * lambda * nx; s.pos[i * 3 + 1] += im * lambda * ny; s.pos[i * 3 + 2] += im * lambda * nz;
-    applyInvInertia(_gi, s.orient[i * 4], s.orient[i * 4 + 1], s.orient[i * 4 + 2], s.orient[i * 4 + 3], s.invInertia[i * 3], s.invInertia[i * 3 + 1], s.invInertia[i * 3 + 2], (ry * nz - rz * ny) * lambda, (rz * nx - rx * nz) * lambda, (rx * ny - ry * nx) * lambda);
+    return s.invMass[i] + rnx * _gi[0] + rny * _gi[1] + rnz * _gi[2];
+}
+
+/** Apply a positional impulse `lambda` along dir to body i alone (world static). */
+function applyStaticCorr(s: SolverState, i: number, rx: number, ry: number, rz: number, dx: number, dy: number, dz: number, lambda: number): void {
+    const im = s.invMass[i];
+    const px = lambda * dx, py = lambda * dy, pz = lambda * dz;
+    s.pos[i * 3] += im * px; s.pos[i * 3 + 1] += im * py; s.pos[i * 3 + 2] += im * pz;
+    applyInvInertia(_gi, s.orient[i * 4], s.orient[i * 4 + 1], s.orient[i * 4 + 2], s.orient[i * 4 + 3], s.invInertia[i * 3], s.invInertia[i * 3 + 1], s.invInertia[i * 3 + 2], ry * pz - rz * py, rz * px - rx * pz, rx * py - ry * px);
     integrateQuat(s.orient, i, _gi[0], _gi[1], _gi[2]);
+}
+
+/** Non-penetration + Coulomb friction against the immovable world (μ·λn clamp). */
+function staticContact(s: SolverState, i: number, nx: number, ny: number, nz: number, px: number, py: number, pz: number, depth: number, mu: number): void {
+    const rx = px - s.pos[i * 3], ry = py - s.pos[i * 3 + 1], rz = pz - s.pos[i * 3 + 2];
+    const wN = genWStatic(s, i, rx, ry, rz, nx, ny, nz);
+    if (wN <= 0) return;
+    const lambdaN = depth / wN;
+    applyStaticCorr(s, i, rx, ry, rz, nx, ny, nz, lambdaN);
+    if (mu <= 0) return;
+    contactDrift(s, i, px, py, pz, _drA);
+    let tx = _drA[0], ty = _drA[1], tz = _drA[2];
+    const tn = tx * nx + ty * ny + tz * nz;
+    tx -= tn * nx; ty -= tn * ny; tz -= tn * nz;
+    const tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+    if (tl < 1e-9) return;
+    tx /= tl; ty /= tl; tz /= tl;
+    const wT = genWStatic(s, i, rx, ry, rz, tx, ty, tz);
+    if (wT <= 0) return;
+    let lambdaT = tl / wT;
+    const maxT = mu * lambdaN;
+    if (lambdaT > maxT) lambdaT = maxT;
+    applyStaticCorr(s, i, rx, ry, rz, tx, ty, tz, -lambdaT);
 }
 
 function resolveStaticVelocity(s: SolverState, i: number, cfg: SolverConfig): void {
@@ -621,11 +682,8 @@ function resolveStaticVelocity(s: SolverState, i: number, cfg: SolverConfig): vo
         const goalVn = vnPre < -cfg.restitutionThreshold ? Math.max(-e * vnPre, 0) : 0;
         const dvn = goalVn - vn;
         if (dvn > 0) staticVelImpulse(s, i, rx, ry, rz, nx, ny, nz, dvn);
-        const vtx = vx - vn * nx, vty = vy - vn * ny, vtz = vz - vn * nz;
-        const vtLen = Math.sqrt(vtx * vtx + vty * vty + vtz * vtz);
-        if (vtLen > 1e-6 && mu > 0) {
-            staticVelImpulse(s, i, rx, ry, rz, vtx / vtLen, vty / vtLen, vtz / vtLen, -mu * vtLen);
-        }
+        // Sliding friction is handled in the position solve (Coulomb, μ·λn);
+        // the velocity pass only does restitution + rolling/spin.
         // rolling + spinning friction against the immovable world: dissipate the
         // body's rotation through the contact (we resolve it at a single support
         // point, so spin about the contact normal is otherwise never opposed).

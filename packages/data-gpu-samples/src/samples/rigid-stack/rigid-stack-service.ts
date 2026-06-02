@@ -3,7 +3,7 @@
 import { Database } from "@adobe/data/ecs";
 import { Quat } from "@adobe/data/math";
 import { graphics, physicsData, cpuXpbd, ColliderShape, Material, SceneUniforms, Orbit } from "@adobe/data-gpu";
-import { physicsDropShader } from "../physics-drop/physics-drop-render.wgsl.js";
+import { rigidStackShader } from "./rigid-stack-render.wgsl.js";
 
 const POSITION_STRIDE = 12;
 const CUBE_STRIDE = 24;
@@ -75,7 +75,7 @@ interface RigidGpu {
     bodyBG: GPUBindGroup;
 }
 
-const RENDER_COMPONENTS = ["position", "orientation", "halfExtents", "colliderShape", "linearVelocity"] as const;
+const RENDER_COMPONENTS = ["position", "orientation", "halfExtents", "colliderShape", "linearVelocity", "material"] as const;
 
 export const rigidStackPlugin = Database.Plugin.create({
     extends: Database.Plugin.combine(graphics, physicsData, cpuXpbd, SceneUniforms.plugin, Orbit.plugin),
@@ -173,7 +173,7 @@ export const rigidStackPlugin = Database.Plugin.create({
             create: db => () => {
                 const { device, rigidGpu, canvasFormat, depthFormat } = db.store.resources;
                 if (!device || rigidGpu) return;
-                const module = device.createShaderModule({ code: physicsDropShader });
+                const module = device.createShaderModule({ code: rigidStackShader });
                 const sceneLayout = device.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: "uniform" } }] });
                 const bodyLayout = device.createBindGroupLayout({ entries: [
                     { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } },
@@ -228,14 +228,16 @@ export const rigidStackPlugin = Database.Plugin.create({
                 let n = 0;
                 for (const arch of db.store.queryArchetypes(RENDER_COMPONENTS)) {
                     const pos = arch.columns.position, ori = arch.columns.orientation, he = arch.columns.halfExtents;
-                    const cs = arch.columns.colliderShape, lv = arch.columns.linearVelocity;
+                    const cs = arch.columns.colliderShape, lv = arch.columns.linearVelocity, mt = arch.columns.material;
                     for (let r = 0; r < arch.rowCount && n < MAX_INSTANCES; r++, n++) {
                         const p = pos.get(r), q = ori.get(r), e = he.get(r), v = lv.get(r);
                         const shapeIdx = ColliderShape.toIndex(cs.get(r));
+                        const col = Material.materialColor[mt.get(r)];
                         const bound = shapeIdx === 1 ? Math.hypot(e[0], e[1], e[2]) : e[0];
                         pose[n * 8] = p[0]; pose[n * 8 + 1] = p[1]; pose[n * 8 + 2] = p[2]; pose[n * 8 + 3] = bound;
                         pose[n * 8 + 4] = q[0]; pose[n * 8 + 5] = q[1]; pose[n * 8 + 6] = q[2]; pose[n * 8 + 7] = q[3];
                         props[n * 16] = v[0]; props[n * 16 + 1] = v[1]; props[n * 16 + 2] = v[2];
+                        props[n * 16 + 4] = col[0]; props[n * 16 + 5] = col[1]; props[n * 16 + 6] = col[2];
                         props[n * 16 + 12] = e[0]; props[n * 16 + 13] = e[1]; props[n * 16 + 14] = e[2]; props[n * 16 + 15] = shapeIdx;
                     }
                 }

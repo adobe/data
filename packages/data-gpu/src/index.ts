@@ -22,10 +22,6 @@ export { cpuXpbd } from "./physics/solvers/cpu-xpbd/cpu-xpbd-plugin.js";
 // --- Material registry (authored entities: physical + visible PBR props) ------
 export { Material } from "./material/material.js";
 
-// --- Physics: shelved GPU XPBD solver (compute-only, massive-scale path) ------
-export { physics } from "./physics/physics-plugin.js";
-export type { CollisionEvent } from "./physics/collision-event.js";
-
 // --- System plugins (consumed via aggregators) -------------------------------
 export { transform } from "./graphics/scene/node/transform-plugin.js";
 export { pbrCore } from "./graphics/rendering/pbr-core-plugin.js";

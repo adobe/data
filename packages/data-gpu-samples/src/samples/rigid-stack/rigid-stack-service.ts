@@ -52,8 +52,8 @@ export const rigidStackPlugin = Database.Plugin.create({
             };
             // Dynamic block stack: a grid of unit cubes resting on the floor.
             // Dynamic so we can verify the solver holds the stack and dropped
-            // bodies knock it around. A hair of vertical gap avoids initial
-            // face-coincidence ambiguity; they settle into contact.
+            // bodies knock it around. A small gap on every axis avoids initial
+            // face-coincidence (degenerate SAT normals); they settle into contact.
             const wood = t.resources.materials.wood;
             const GAP = 1.04; // unit cubes (1.0) spaced with a small gap on every axis
             const x0 = -(STACK_W - 1) / 2 * GAP, z0 = -(STACK_D - 1) / 2 * GAP;

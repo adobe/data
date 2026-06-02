@@ -33,7 +33,12 @@ const PARAMS_SIZE = 32;   // 8 × 4 bytes — see Params struct in the shader.
 const POSE_STRIDE = 32;   // 2 × vec4f — [pos.xyz + boundingRadius, quat]
 const PROPS_STRIDE = 64;  // 4 × vec4f — vel+invMass, angVel, invInertia, halfExtent+shape
 const WORKGROUP = 64;
-const SOLVE_ITERATIONS = 6;
+// Small-Steps XPBD: many small substeps with few iterations each is more stable
+// (and cheaper) than one big step with many iterations — small dt keeps
+// penetrations shallow, so position corrections (and the velocities rebuilt from
+// them) stay small instead of launching bodies.
+const SUBSTEPS = 8;
+const SOLVE_ITERS_PER_SUBSTEP = 1;
 
 const SHAPE_SPHERE = 0;
 const SHAPE_BOX = 1;
@@ -428,10 +433,11 @@ export const physics = Database.Plugin.create({
                 db.store.resources.physicsLastTime = now;
                 if (dt <= 0) return;
 
+                const sub = dt / SUBSTEPS;
                 const buf = new ArrayBuffer(PARAMS_SIZE);
                 const f32 = new Float32Array(buf);
                 const u32 = new Uint32Array(buf);
-                f32[0] = dt;
+                f32[0] = sub;  // body kernels integrate per substep
                 f32[1] = physicsConfig.gravity;
                 f32[2] = physicsConfig.floorY;
                 f32[3] = physicsConfig.halfExtent;
@@ -450,12 +456,9 @@ export const physics = Database.Plugin.create({
                 const pass = commandEncoder.beginComputePass();
                 let cur = db.store.resources.physicsCurrent;
 
-                pass.setPipeline(physicsGpu.integratePipeline);
-                pass.setBindGroup(0, physicsGpu.bindGroup[cur]);
-                pass.dispatchWorkgroups(wg);
-                cur = 1 - cur;  // predicted poses now in pose[cur]
-
-                // Build the LBVH over the predicted poses (pose[cur]).
+                // Build the LBVH once per frame on the current poses (pose[cur]),
+                // reused across all substeps — the leaf-AABB margin covers the
+                // small per-frame drift, so we pay the build cost only once.
                 const bb = physicsGpu.buildBindGroup[cur];
                 pass.setBindGroup(0, bb, [0]);
                 pass.setPipeline(physicsGpu.sceneBoundsPipeline);
@@ -475,27 +478,34 @@ export const physics = Database.Plugin.create({
                 pass.setPipeline(physicsGpu.refitPipeline);
                 pass.dispatchWorkgroups(wg);
 
-                // Report on the predicted positions (deepest penetration), before
-                // the solver resolves them. Read-only on positions, so no flip.
+                // Flag-gated collision events, once per frame on the current poses.
                 pass.setPipeline(physicsGpu.reportPipeline);
                 pass.setBindGroup(0, physicsGpu.bindGroup[cur]);
                 pass.dispatchWorkgroups(wg);
 
-                pass.setPipeline(physicsGpu.solvePipeline);
-                pass.setBindGroup(1, physicsGpu.treeBindGroup);
-                for (let k = 0; k < SOLVE_ITERATIONS; k++) {
+                // Substep loop: integrate → solve → finalize, each over `sub`. With
+                // one iteration per substep the ping-pong returns to `cur` each step.
+                for (let s = 0; s < SUBSTEPS; s++) {
+                    pass.setPipeline(physicsGpu.integratePipeline);
                     pass.setBindGroup(0, physicsGpu.bindGroup[cur]);
                     pass.dispatchWorkgroups(wg);
-                    cur = 1 - cur;
+                    cur = 1 - cur;  // predicted poses now in pose[cur]
+
+                    pass.setPipeline(physicsGpu.solvePipeline);
+                    for (let k = 0; k < SOLVE_ITERS_PER_SUBSTEP; k++) {
+                        pass.setBindGroup(0, physicsGpu.bindGroup[cur]);
+                        pass.setBindGroup(1, physicsGpu.treeBindGroup);
+                        pass.dispatchWorkgroups(wg);
+                        cur = 1 - cur;
+                    }
+
+                    pass.setPipeline(physicsGpu.finalizePipeline);
+                    pass.setBindGroup(0, physicsGpu.bindGroup[cur]);
+                    pass.dispatchWorkgroups(wg);
                 }
 
-                pass.setPipeline(physicsGpu.finalizePipeline);
-                pass.setBindGroup(0, physicsGpu.bindGroup[cur]);
-                pass.dispatchWorkgroups(wg);
-
-                // Query-only particles, after the rigid solve so they read the
-                // bodies' final positions (pos[cur]). One-way: read bodies, write
-                // only the particle buffer.
+                // Query-only particles, once per frame over the full dt, after the
+                // substeps so they read the bodies' final poses (pose[cur]).
                 const frame = db.store.resources.physicsFrame + 1;
                 db.store.resources.physicsFrame = frame;
                 const pbuf = new ArrayBuffer(PARTICLE_PARAMS_SIZE);

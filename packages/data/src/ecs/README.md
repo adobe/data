@@ -304,18 +304,20 @@ When `db.select(include, { where })` or `db.observe.select(...)` is called with 
 
 ### Performance characteristics
 
-Index maintenance is optimized for the common pattern of **batched writes followed by reads**. Inserts never sort or scan; sorting (when an `order` is declared) is deferred to the first read that touches a dirty bucket.
+Index maintenance is **O(b)** per change, where `b` is the number of buckets the affected entity occupies (usually 1, more for multi-value fan-out). It is *never* proportional to total entities in the index or to a bucket's size. Sorting (when an `order` is declared) is deferred to the first read that touches a dirty bucket.
 
-| Declaration | Per-insert cost | Notes |
-|---|---|---|
-| `key: "col"` (non-unique) | `O(1)` | Push to bucket array. |
-| `key: "col"`, `unique: true` | `O(1)` | Map set; throws on duplicate. |
-| `key: ["a", "b", …]` | `O(k)` where `k` = key arity | One serialized key per row. |
-| `key: (...) => v` (scalar) | `O(1 + compute)` | Compute runs once per row. |
-| `key: "arr"` where `arr: T[]` | `O(m)` where `m` = array length | One bucket per array element. |
-| `key: (...) => T[]` (multi) | `O(m + compute)` | Same fan-out, derived. |
-| `key: { slot: ..., ... }` | `O(s + Π array sizes)` | `s` = slot count; cartesian fan-out across array-valued slots. |
-| `+ order: { by, compare? }` | adds `O(b)` for the snapshot, `b` = `by.length`. No comparator calls. |
+| Declaration | Per-insert cost | Per-delete cost | Notes |
+|---|---|---|---|
+| `key: "col"` (non-unique) | `O(1)` | `O(1)` | `Set<Entity>` per bucket. |
+| `key: "col"`, `unique: true` | `O(1)` | `O(1)` | Map set; throws on duplicate. |
+| `key: ["a", "b", …]` | `O(k)` where `k` = key arity | `O(k)` | One serialized key per row. |
+| `key: (...) => v` (scalar) | `O(1 + compute)` | `O(1)` | Compute runs once per row. |
+| `key: "arr"` where `arr: T[]` | `O(m)` where `m` = array length | `O(m)` | One bucket per array element. |
+| `key: (...) => T[]` (multi) | `O(m + compute)` | `O(m)` | Same fan-out, derived. |
+| `key: { slot: ..., ... }` | `O(s + Π array sizes)` | `O(s + Π array sizes)` | `s` = slot count; cartesian fan-out across array-valued slots. |
+| `+ order: { by, compare? }` | adds `O(b)` for the snapshot | adds `O(b)` for cache invalidation. No comparator calls. |
+
+The crucial property: removing one entity from a non-unique bucket holding `N` entities is `O(1)`, not `O(N)`. Non-unique buckets are stored as `Set<Entity>` so `Set.delete` is the hot path — no `arr.indexOf` scan. Verified by `database.index.performance.test.ts`: deleting from a 40 000-entity bucket has the same per-delete cost as deleting from a 4 000-entity bucket.
 
 Reads pay one catch-up sort the first time they touch a dirty bucket:
 

@@ -286,9 +286,14 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
     })();
 
     // Bucket payload:
-    //  - non-unique → Entity[]
+    //  - non-unique → Set<Entity>  (membership; O(1) add + delete + has)
     //  - unique     → single Entity
-    const buckets = new Map<string, Entity | Entity[]>();
+    // We use a Set rather than an Entity[] so single-entity writes are
+    // O(1) in bucket size — `arr.indexOf` + `splice` / `swap-pop` would
+    // make remove and bucket-change updates O(bucket.size), which can be
+    // O(archetype.rowCount) in pathological cases (many entities sharing
+    // one bucket key).
+    const buckets = new Map<string, Entity | Set<Entity>>();
     // The post-fan-out key value for each serialized bucket key. `findRange`
     // reads this to apply per-bucket operator filters (find scans every
     // bucket once and keeps the ones whose value matches the filter).
@@ -297,12 +302,10 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
     const entityKeys = new Map<Entity, string[]>();
     // Sort cache, if sorted.
     const sortCache: Map<Entity, Record<string, unknown>> = sorted ? new Map() : (undefined as never);
-    // Sorted indexes use deferred-sort: inserts append to the bucket and
-    // mark it dirty; the first read of a dirty bucket sorts it once.
-    // Workloads dominated by batch inserts followed by reads pay
-    // O(k + n log n) instead of O(k · n) per batch of `k` inserts. Reads
-    // of clean buckets are free (Set membership check + slice).
-    const dirtyBuckets: Set<string> = sorted ? new Set() : (undefined as never);
+    // Cached sorted array per bucket — populated lazily by `find` /
+    // `findRange`, dropped on any write that touches the bucket. Lets
+    // repeated reads of the same bucket avoid re-materializing + re-sorting.
+    const sortedCache: Map<string, Entity[]> = sorted ? new Map() : (undefined as never);
 
     // Helpers ---------------------------------------------------------------
 
@@ -336,16 +339,20 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
         orderEx!.compare(sortCache.get(a)!, sortCache.get(b)!);
 
     /**
-     * Sort a dirty bucket once. Called from read paths only — write paths
-     * just mark dirty and append. The cost is `O(n log n)` for an `n`-sized
-     * bucket, paid once per read-after-writes; subsequent reads against the
-     * same bucket are free until the next write into it.
+     * Materialize a non-unique bucket as an `Entity[]`. For sorted indexes
+     * the result is cached and the cache is invalidated by writes — so
+     * repeated reads of the same bucket pay nothing after the first.
      */
-    const ensureSorted = (key: string): void => {
-        if (!sorted || !dirtyBuckets.has(key)) return;
-        const arr = buckets.get(key) as Entity[] | undefined;
-        if (arr && arr.length > 1) arr.sort(compareEntities);
-        dirtyBuckets.delete(key);
+    const materializeBucket = (key: string, set: Set<Entity>): Entity[] => {
+        if (sorted) {
+            const cached = sortedCache.get(key);
+            if (cached !== undefined) return cached;
+            const arr = [...set];
+            if (arr.length > 1) arr.sort(compareEntities);
+            sortedCache.set(key, arr);
+            return arr;
+        }
+        return [...set];
     };
 
     const insertIntoBucket = (entity: Entity, key: string, value: unknown): void => {
@@ -361,10 +368,10 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
             buckets.set(key, entity);
             return;
         }
-        let arr = buckets.get(key) as Entity[] | undefined;
-        if (!arr) buckets.set(key, (arr = []));
-        arr.push(entity);
-        if (sorted) dirtyBuckets.add(key);
+        let set = buckets.get(key) as Set<Entity> | undefined;
+        if (!set) buckets.set(key, (set = new Set()));
+        set.add(entity);
+        if (sorted) sortedCache.delete(key);
     };
 
     const removeFromBucket = (entity: Entity, key: string): void => {
@@ -373,24 +380,13 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
             bucketValueByKey.delete(key);
             return;
         }
-        const arr = buckets.get(key) as Entity[] | undefined;
-        if (!arr) return;
-        const idx = arr.indexOf(entity);
-        if (idx >= 0) {
-            if (sorted) {
-                // Preserve sort order (removing one element from a sorted
-                // array leaves it sorted), so no need to re-dirty the bucket.
-                arr.splice(idx, 1);
-            } else {
-                // Swap-pop: O(1).
-                arr[idx] = arr[arr.length - 1];
-                arr.pop();
-            }
-        }
-        if (arr.length === 0) {
+        const set = buckets.get(key) as Set<Entity> | undefined;
+        if (!set) return;
+        set.delete(entity);
+        if (sorted) sortedCache.delete(key);
+        if (set.size === 0) {
             buckets.delete(key);
             bucketValueByKey.delete(key);
-            if (sorted) dirtyBuckets.delete(key);
         }
     };
 
@@ -449,8 +445,8 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
         }
 
         // Same bucket set → only the per-entity sort snapshot may have
-        // changed. Refresh it and re-dirty the buckets so the next read
-        // re-sorts. No splice/scan up front.
+        // changed. Refresh it and drop the sort cache so the next read
+        // re-sorts. No bucket scan up front — O(b) total.
         const sameBuckets = nextKeys.length === prevKeys.length &&
             nextKeys.every((k, i) => k === prevKeys[i]);
         if (sameBuckets) {
@@ -460,7 +456,7 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
             const oldSnap = sortCache.get(entity);
             if (oldSnap !== undefined && orderEx!.compare(oldSnap, newSnap) === 0) return;
             sortCache.set(entity, newSnap);
-            if (!unique) for (const k of nextKeys) dirtyBuckets.add(k);
+            if (!unique) for (const k of nextKeys) sortedCache.delete(k);
             return;
         }
 
@@ -488,7 +484,7 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
         entityKeys.clear();
         if (sorted) {
             sortCache.clear();
-            dirtyBuckets.clear();
+            sortedCache.clear();
         }
     };
 
@@ -497,8 +493,12 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
         const bucket = buckets.get(k);
         if (bucket === undefined) return [];
         if (unique) return [bucket as Entity];
-        if (sorted) ensureSorted(k);
-        return (bucket as Entity[]).slice();
+        // Materialize a fresh array on each call to keep the returned
+        // result independent of internal mutations. For sorted indexes
+        // the inner sorted array is cached and reused across reads until
+        // the next write to the bucket — so successive reads only pay
+        // the slice, not the sort.
+        return materializeBucket(k, bucket as Set<Entity>).slice();
     };
 
     // findRange supports the exact-match argument shape that `find` accepts,
@@ -567,10 +567,12 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
             const bucketValue = bucketValueByKey.get(key);
             if (!matchesArg(bucketValue, arg)) continue;
             if (unique) { result.add(bucketEntries as Entity); continue; }
-            // Drain any dirty bucket we're about to read so within-bucket
-            // order is consistent with `find` semantics.
-            if (sorted) ensureSorted(key);
-            for (const e of bucketEntries as Entity[]) result.add(e);
+            // For sorted indexes, materialize the (cached) sorted array
+            // so per-bucket order is consistent with `find` semantics.
+            // Cross-bucket order is still arbitrary (the outer Set).
+            const set = bucketEntries as Set<Entity>;
+            const ordered = sorted ? materializeBucket(key, set) : set;
+            for (const e of ordered) result.add(e);
         }
         return [...result];
     };

@@ -145,6 +145,11 @@ function seedBodies(count: number, cfg: PhysicsConfig): { pose: Float32Array; pr
     const pose = new Float32Array(count * 8);
     const props = new Float32Array(count * 16);
     const h = cfg.halfExtent;
+    // Rain bodies down through a low-density column at random x/z so initial
+    // overlaps are rare and impacts are staggered. (A rigid non-overlap lattice
+    // collapses coherently and boils; dropping from too high just adds impact
+    // energy — incremental robustness against overlap is the substepper's job.)
+    const ySpan = 20;
     for (let i = 0; i < count; i++) {
         const isBox = Math.random() < BOX_FRACTION;
         let he: [number, number, number];
@@ -174,7 +179,7 @@ function seedBodies(count: number, cfg: PhysicsConfig): { pose: Float32Array; pr
 
         const p = i * 8;
         pose[p + 0] = (Math.random() * 2 - 1) * (h - boundingR);
-        pose[p + 1] = cfg.floorY + 2 + Math.random() * 18;
+        pose[p + 1] = cfg.floorY + 2 + Math.random() * ySpan;
         pose[p + 2] = (Math.random() * 2 - 1) * (h - boundingR);
         pose[p + 3] = boundingR;
         pose[p + 4] = quat[0]; pose[p + 5] = quat[1]; pose[p + 6] = quat[2]; pose[p + 7] = quat[3];

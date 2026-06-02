@@ -76,27 +76,49 @@ fn applyInvInertia(q: vec4f, invIl: vec3f, u: vec3f) -> vec3f {
     return qRot(q, invIl * qRot(qConj(q), u));
 }
 
+// Normalize a quaternion, falling back to the prior value if it collapsed to ~0.
+// A zero-length quaternion would normalize to NaN, and a single NaN body
+// poisons every neighbour it touches — the classic regional-explosion source.
+fn safeQuat(q: vec4f, prevQ: vec4f) -> vec4f {
+    let l = length(q);
+    if (l < 1e-6) { return prevQ; }
+    return q / l;
+}
+
 // --- integrate ---------------------------------------------------------------
 @compute @workgroup_size(64)
 fn integrate(@builtin(global_invocation_id) gid: vec3u) {
     let i = gid.x;
     if (i >= P.bodyCount) { return; }
-    let x = posOf(i);
+    var x = posOf(i);
     let q = quatOf(i);
+    let invM = invMassOf(i);
+    var v = props[i * 4u].xyz;
+    var w = props[i * 4u + 1u].xyz;
+
+    // Containment backstop: a body that has escaped the world (a solver blow-up)
+    // is snapped back and brought to rest. This stops a single runaway from
+    // ballooning the scene-AABB reduction — which would collapse every Morton
+    // code into one cell, degenerate the BVH, and explode the whole scene.
+    let lim = P.binExtent + 5.0;
+    let ceil = P.floorY + 400.0;
+    if (x.x < -lim || x.x > lim || x.z < -lim || x.z > lim || x.y < P.floorY - 5.0 || x.y > ceil) {
+        x = clamp(x, vec3f(-lim, P.floorY, -lim), vec3f(lim, ceil, lim));
+        v = vec3f(0.0);
+        w = vec3f(0.0);
+    }
+
     prev[i * 2u]      = vec4f(x, 0.0);
     prev[i * 2u + 1u] = q;
 
-    let invM = invMassOf(i);
-    var v = props[i * 4u].xyz;
     if (invM > 0.0) { v.y = v.y - P.gravity * P.dt; }
     let nx = x + v * P.dt;
-
-    let w = props[i * 4u + 1u].xyz;
-    let nq = normalize(q + 0.5 * P.dt * qMul(vec4f(w, 0.0), q));
+    let nq = safeQuat(q + 0.5 * P.dt * qMul(vec4f(w, 0.0), q), q);
 
     poseOut[i * 2u]      = vec4f(nx, boundOf(i));
     poseOut[i * 2u + 1u] = nq;
-    props[i * 4u] = vec4f(v, invM);
+    props[i * 4u]      = vec4f(v, invM);
+    props[i * 4u + 1u] = vec4f(w, 0.0);
 }
 
 // --- flag-gated collision events (bounding-sphere overlap on predicted pose) --
@@ -430,7 +452,7 @@ fn solve(@builtin(global_invocation_id) gid: vec3u) {
     resolveStatic(shi, xi, qi, invMi, invIli, hei, &dx, &dq);
 
     let nx = xi + dx;
-    let nq = normalize(qi + dq);
+    let nq = safeQuat(qi + dq, qi);
     poseOut[i * 2u]      = vec4f(nx, bri);
     poseOut[i * 2u + 1u] = nq;
 }

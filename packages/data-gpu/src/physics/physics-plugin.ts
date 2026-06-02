@@ -5,6 +5,7 @@ import { core } from "../core/core-plugin.js";
 import { physicsComputeShader } from "./physics-compute.wgsl.js";
 import { particleComputeShader } from "./particle-compute.wgsl.js";
 import { broadphaseComputeShader } from "./broadphase-compute.wgsl.js";
+import { Material } from "./material/material.js";
 import type { CollisionEvent } from "./collision-event.js";
 
 /**
@@ -43,7 +44,6 @@ const SOLVE_ITERS_PER_SUBSTEP = 2;
 const SHAPE_SPHERE = 0;
 const SHAPE_BOX = 1;
 const BOX_FRACTION = 0.4;  // share of bodies that are cuboids
-const DENSITY = 1;
 
 const FLAG_REPORT_BODY_HITS = 1;
 const REPORT_THRESHOLD = 0.08;   // min penetration (world units) that emits an event
@@ -157,6 +157,8 @@ function seedBodies(count: number, cfg: PhysicsConfig): { pose: Float32Array; pr
     const ySpan = 20;
     for (let i = 0; i < count; i++) {
         const isBox = Math.random() < BOX_FRACTION;
+        const materialIndex = Math.floor(Math.random() * Material.list.length);
+        const density = Material.properties[Material.list[materialIndex]].density;
         let he: [number, number, number];
         let boundingR: number;
         let mass: number;
@@ -166,7 +168,7 @@ function seedBodies(count: number, cfg: PhysicsConfig): { pose: Float32Array; pr
         if (isBox) {
             he = [0.3 + Math.random() * 0.4, 0.3 + Math.random() * 0.4, 0.3 + Math.random() * 0.4];
             boundingR = Math.hypot(he[0], he[1], he[2]);
-            mass = DENSITY * 8 * he[0] * he[1] * he[2];
+            mass = density * 8 * he[0] * he[1] * he[2];
             const ix = (mass / 3) * (he[1] * he[1] + he[2] * he[2]);
             const iy = (mass / 3) * (he[0] * he[0] + he[2] * he[2]);
             const iz = (mass / 3) * (he[0] * he[0] + he[1] * he[1]);
@@ -176,7 +178,7 @@ function seedBodies(count: number, cfg: PhysicsConfig): { pose: Float32Array; pr
             const r = 0.3 + Math.random() * 0.6;
             he = [r, r, r];
             boundingR = r;
-            mass = DENSITY * (4 / 3) * Math.PI * r * r * r;
+            mass = density * (4 / 3) * Math.PI * r * r * r;
             const i0 = 0.4 * mass * r * r;
             invI = [1 / i0, 1 / i0, 1 / i0];
             quat = [0, 0, 0, 1];
@@ -198,6 +200,7 @@ function seedBodies(count: number, cfg: PhysicsConfig): { pose: Float32Array; pr
         props[q + 5] = isBox ? (Math.random() * 2 - 1) * 2 : 0;  // angVel.y
         props[q + 6] = isBox ? (Math.random() * 2 - 1) * 2 : 0;  // angVel.z
         props[q + 8] = invI[0]; props[q + 9] = invI[1]; props[q + 10] = invI[2];
+        props[q + 11] = materialIndex;  // persistent: solver never writes invInertia.w
         props[q + 12] = he[0]; props[q + 13] = he[1]; props[q + 14] = he[2];
         props[q + 15] = isBox ? SHAPE_BOX : SHAPE_SPHERE;
     }

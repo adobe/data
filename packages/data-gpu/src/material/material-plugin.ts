@@ -17,6 +17,8 @@ import { standardMaterials } from "./standard-materials.js";
  */
 export const plugin = Database.Plugin.create({
     components: {
+        /** Reference (on a body, prop, or model) to a Material registry entity. */
+        material:             Entity.schema,
         name:                 { type: "string" },
         density:              F32.schema,
         restitution:          F32.schema,

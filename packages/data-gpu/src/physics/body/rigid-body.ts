@@ -7,7 +7,7 @@ import type { ColliderShape } from "./collider-shape/collider-shape.js";
 
 /**
  * One row of the `RigidBody` archetype — the authored surface every physics
- * solver reads, and whose `position`/`orientation`/velocity it writes back each
+ * solver reads, and whose `position`/`rotation`/velocity it writes back each
  * frame. Mass and inertia are *derived* from `colliderShape` + `halfExtents` +
  * `material` (see ColliderShape.massProperties), so they aren't stored here.
  */
@@ -19,7 +19,8 @@ export interface RigidBody {
     /** Reference to a Material registry entity (physical + visible props). */
     material: Entity;
     position: Vec3;
-    orientation: Quat;
+    /** Unified with Node.rotation so a body is directly renderable. */
+    rotation: Quat;
     linearVelocity: Vec3;
     angularVelocity: Vec3;
 }

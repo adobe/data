@@ -23,7 +23,7 @@ interface MatProps { density: number; restitution: number; friction: number }
  * a scene; swap this plugin for another solver without touching the data.
  */
 
-const COMPONENTS = ["bodyType", "colliderShape", "halfExtents", "material", "position", "orientation", "linearVelocity", "angularVelocity"] as const;
+const COMPONENTS = ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"] as const;
 
 const _v3: [number, number, number] = [0, 0, 0];
 const _v4: [number, number, number, number] = [0, 0, 0, 0];
@@ -92,7 +92,7 @@ export const cpuXpbd = Database.Plugin.create({
                 let i = 0;
                 for (const arch of db.store.queryArchetypes(COMPONENTS)) {
                     const bt = arch.columns.bodyType, cs = arch.columns.colliderShape, he = arch.columns.halfExtents;
-                    const mat = arch.columns.material, pos = arch.columns.position, ori = arch.columns.orientation;
+                    const mat = arch.columns.material, pos = arch.columns.position, ori = arch.columns.rotation;
                     const lv = arch.columns.linearVelocity, av = arch.columns.angularVelocity;
                     for (let r = 0; r < arch.rowCount; r++, i++) {
                         const dyn = BodyType.isDynamic(bt.get(r));
@@ -127,7 +127,7 @@ export const cpuXpbd = Database.Plugin.create({
                 // --- scatter: dynamic bodies → ECS columns (re-query, same order) ---
                 let j = 0;
                 for (const arch of db.store.queryArchetypes(COMPONENTS)) {
-                    const pos = arch.columns.position, ori = arch.columns.orientation;
+                    const pos = arch.columns.position, ori = arch.columns.rotation;
                     const lv = arch.columns.linearVelocity, av = arch.columns.angularVelocity;
                     for (let r = 0; r < arch.rowCount; r++, j++) {
                         const idx = j;

@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Quat } from "@adobe/data/math";
-import { graphics, physicsData, cpuXpbd, ColliderShape, SceneUniforms, Orbit } from "@adobe/data-gpu";
+import { graphics, physicsData, cpuXpbd, materialGpu, ColliderShape, SceneUniforms, Orbit } from "@adobe/data-gpu";
 import { rigidStackShader } from "./rigid-stack-render.wgsl.js";
 
 const POSITION_STRIDE = 12;
@@ -78,7 +78,7 @@ interface RigidGpu {
 const RENDER_COMPONENTS = ["position", "orientation", "halfExtents", "colliderShape", "linearVelocity", "material"] as const;
 
 export const rigidStackPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(graphics, physicsData, cpuXpbd, SceneUniforms.plugin, Orbit.plugin),
+    extends: Database.Plugin.combine(graphics, physicsData, cpuXpbd, materialGpu, SceneUniforms.plugin, Orbit.plugin),
     resources: {
         rigidGpu: { default: null as RigidGpu | null, transient: true },
         _spawnAccum: { default: 0 as number, transient: true },

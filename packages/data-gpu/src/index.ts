@@ -37,6 +37,7 @@ export type { PickHit } from "./graphics/picking/pick-hit.js";
 // --- Rendering ---------------------------------------------------------------
 export { rendering } from "./graphics/rendering/rendering-plugin.js";
 export { pbrIblRender } from "./graphics/rendering/ibl-render/ibl-render-plugin.js";
+export { materialGpu } from "./graphics/rendering/material-gpu/material-gpu-plugin.js";
 
 // --- Types (type + namespace, access .plugin for the ECS plugin) -------------
 export { Camera } from "./graphics/camera/camera.js";

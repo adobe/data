@@ -441,7 +441,10 @@ export const physics = Database.Plugin.create({
                 f32[1] = physicsConfig.gravity;
                 f32[2] = physicsConfig.floorY;
                 f32[3] = physicsConfig.halfExtent;
-                f32[4] = physicsConfig.damping;
+                // `damping` is a per-frame factor; finalize runs once per substep,
+                // so spread it across the substeps (else it compounds 8× and the
+                // sim crawls). 0.99/frame → 0.99^(1/8) per substep.
+                f32[4] = Math.pow(physicsConfig.damping, 1 / SUBSTEPS);
                 f32[5] = REPORT_THRESHOLD;
                 u32[6] = physicsGpu.count;
                 u32[7] = MAX_EVENTS;

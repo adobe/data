@@ -55,7 +55,8 @@ export const rigidStackPlugin = Database.Plugin.create({
             // bodies knock it around. A hair of vertical gap avoids initial
             // face-coincidence ambiguity; they settle into contact.
             const wood = t.resources.materials.wood;
-            const x0 = -(STACK_W - 1) / 2, z0 = -(STACK_D - 1) / 2;
+            const GAP = 1.04; // unit cubes (1.0) spaced with a small gap on every axis
+            const x0 = -(STACK_W - 1) / 2 * GAP, z0 = -(STACK_D - 1) / 2 * GAP;
             for (let y = 0; y < STACK_H; y++) {
                 for (let x = 0; x < STACK_W; x++) {
                     for (let z = 0; z < STACK_D; z++) {
@@ -64,7 +65,7 @@ export const rigidStackPlugin = Database.Plugin.create({
                             colliderShape: "box",
                             halfExtents: [0.5, 0.5, 0.5],
                             material: wood,
-                            position: [x0 + x, 0.55 + y * 1.02, z0 + z],
+                            position: [x0 + x * GAP, 0.55 + y * 1.04, z0 + z * GAP],
                             rotation: Quat.identity,
                             linearVelocity: [0, 0, 0],
                             angularVelocity: [0, 0, 0],

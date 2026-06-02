@@ -21,6 +21,16 @@
 export const SHAPE_SPHERE = 0;
 export const SHAPE_BOX = 1;
 
+/**
+ * Max speed (m/s) a single substep's penetration correction may impart. At
+ * sdt ≈ 1/600 s even a few-centimetre correction becomes tens of m/s, so a deep
+ * penetration (an under-resolved dense stack, a fast wake) would eject a body.
+ * Capping the per-substep corrected depth spreads deep overlaps over several
+ * substeps instead. Set above free-fall impact speed so normal contacts —
+ * whose per-substep penetration is small — are untouched.
+ */
+const MAX_CORRECTION_VELOCITY = 25;
+
 export interface SolverConfig {
     gravity: number;
     substeps: number;
@@ -406,20 +416,31 @@ function solvePosition(s: SolverState, a: number, b: number, mu: number, complia
     const Px = _contact.px, Py = _contact.py, Pz = _contact.pz;
     const rax = Px - s.pos[a * 3], ray = Py - s.pos[a * 3 + 1], raz = Pz - s.pos[a * 3 + 2];
     const rbx = Px - s.pos[b * 3], rby = Py - s.pos[b * 3 + 1], rbz = Pz - s.pos[b * 3 + 2];
+
+    // Measure the tangential drift *before* this contact's normal correction —
+    // otherwise the rotation that correction induces shows up as drift and the
+    // friction term "opposes" it, injecting energy (the dense-stack explosions).
+    let tx = 0, ty = 0, tz = 0, tl = 0;
+    if (mu > 0) {
+        contactDrift(s, a, Px, Py, Pz, _drA);
+        contactDrift(s, b, Px, Py, Pz, _drB);
+        tx = _drA[0] - _drB[0]; ty = _drA[1] - _drB[1]; tz = _drA[2] - _drB[2];
+        const tn = tx * nx + ty * ny + tz * nz;
+        tx -= tn * nx; ty -= tn * ny; tz -= tn * nz;
+        tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+    }
+
     const wsN = genW(s, a, b, rax, ray, raz, rbx, rby, rbz, nx, ny, nz) + compliance / (dt * dt);
     if (wsN <= 0) return;
-    const lambdaN = depth / wsN;
+    // Cap how much penetration a single substep resolves: at sdt ≈ 1/600 s even a
+    // few-cm correction becomes tens of m/s, so a deep penetration (under-resolved
+    // dense stack, fast wake) would otherwise eject a body. Recover deep overlaps
+    // over several substeps instead. The cap is above free-fall impact speed, so
+    // normal contacts are untouched.
+    const correctedDepth = depth < MAX_CORRECTION_VELOCITY * dt ? depth : MAX_CORRECTION_VELOCITY * dt;
+    const lambdaN = correctedDepth / wsN;
     applyPosCorr(s, a, b, rax, ray, raz, rbx, rby, rbz, nx, ny, nz, lambdaN);
-
-    if (mu <= 0 || lambdaN <= 0) return;
-    // tangential drift of the two surfaces at the contact this substep
-    contactDrift(s, a, Px, Py, Pz, _drA);
-    contactDrift(s, b, Px, Py, Pz, _drB);
-    let tx = _drA[0] - _drB[0], ty = _drA[1] - _drB[1], tz = _drA[2] - _drB[2];
-    const tn = tx * nx + ty * ny + tz * nz;
-    tx -= tn * nx; ty -= tn * ny; tz -= tn * nz;
-    const tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
-    if (tl < 1e-9) return;
+    if (mu <= 0 || lambdaN <= 0 || tl < 1e-9) return;
     tx /= tl; ty /= tl; tz /= tl;
     const wT = genW(s, a, b, rax, ray, raz, rbx, rby, rbz, tx, ty, tz);
     if (wT <= 0) return;
@@ -723,17 +744,21 @@ function applyStaticCorr(s: SolverState, i: number, rx: number, ry: number, rz: 
 /** Non-penetration + Coulomb friction against the immovable world (μ·λn clamp). */
 function staticContact(s: SolverState, i: number, nx: number, ny: number, nz: number, px: number, py: number, pz: number, depth: number, mu: number, compliance: number, dt: number): void {
     const rx = px - s.pos[i * 3], ry = py - s.pos[i * 3 + 1], rz = pz - s.pos[i * 3 + 2];
+    // tangential drift measured before this contact's normal correction (see solvePosition)
+    let tx = 0, ty = 0, tz = 0, tl = 0;
+    if (mu > 0) {
+        contactDrift(s, i, px, py, pz, _drA);
+        tx = _drA[0]; ty = _drA[1]; tz = _drA[2];
+        const tn = tx * nx + ty * ny + tz * nz;
+        tx -= tn * nx; ty -= tn * ny; tz -= tn * nz;
+        tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
+    }
     const wsN = genWStatic(s, i, rx, ry, rz, nx, ny, nz) + compliance / (dt * dt);
     if (wsN <= 0) return;
-    const lambdaN = depth / wsN;
+    const correctedDepth = depth < MAX_CORRECTION_VELOCITY * dt ? depth : MAX_CORRECTION_VELOCITY * dt;
+    const lambdaN = correctedDepth / wsN;
     applyStaticCorr(s, i, rx, ry, rz, nx, ny, nz, lambdaN);
-    if (mu <= 0) return;
-    contactDrift(s, i, px, py, pz, _drA);
-    let tx = _drA[0], ty = _drA[1], tz = _drA[2];
-    const tn = tx * nx + ty * ny + tz * nz;
-    tx -= tn * nx; ty -= tn * ny; tz -= tn * nz;
-    const tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
-    if (tl < 1e-9) return;
+    if (mu <= 0 || tl < 1e-9) return;
     tx /= tl; ty /= tl; tz /= tl;
     const wT = genWStatic(s, i, rx, ry, rz, tx, ty, tz);
     if (wT <= 0) return;

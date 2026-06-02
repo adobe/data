@@ -52,6 +52,7 @@ export interface SolverState {
     halfExtent: Float32Array;   // 3N
     restitution: Float32Array;  // N
     friction: Float32Array;     // N
+    compliance: Float32Array;   // N (contact softness, m/N; 0 = rigid)
     sleeping: Uint8Array;       // N (1 = asleep, skipped)
     // scratch (capacity N), reused across frames
     prevPos: Float32Array;      // 3N
@@ -74,6 +75,7 @@ export function createSolverState(capacity: number): SolverState {
         halfExtent: new Float32Array(capacity * 3),
         restitution: new Float32Array(capacity),
         friction: new Float32Array(capacity),
+        compliance: new Float32Array(capacity),
         sleeping: new Uint8Array(capacity),
         prevPos: new Float32Array(capacity * 3),
         prevOrient: new Float32Array(capacity * 4),
@@ -521,14 +523,15 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
                 const a = pairA[p], b = pairB[p];
                 narrowphase(s, a, b);
                 const mu = Math.sqrt(s.friction[a] * s.friction[b]);
+                const compliance = s.compliance[a] + s.compliance[b]; // series springs
                 for (let ci = 0; ci < _mCount; ci++) {
                     setContact(ci);
-                    if (_contact.depth > 0) solvePosition(s, a, b, mu, 0, sdt); // compliance wired in S3
+                    if (_contact.depth > 0) solvePosition(s, a, b, mu, compliance, sdt);
                 }
             }
             for (let i = 0; i < s.count; i++) {
                 if (s.dynamic[i] === 0) continue;
-                resolveStatic(s, i, cfg);
+                resolveStatic(s, i, cfg, sdt);
             }
         }
 
@@ -591,15 +594,16 @@ function angVelFromDelta(s: SolverState, i: number, sdt: number): void {
 const _planeN = new Float32Array(15);
 const _planeOff = new Float32Array(5);
 
-function resolveStatic(s: SolverState, i: number, cfg: SolverConfig): void {
+function resolveStatic(s: SolverState, i: number, cfg: SolverConfig, dt: number): void {
     setupPlanes(cfg);
     const mu = Math.sqrt(s.friction[i] * cfg.worldFriction);
+    const compliance = s.compliance[i];
     if (s.shape[i] === SHAPE_SPHERE) {
         const r = s.halfExtent[i * 3];
         for (let k = 0; k < (cfg.binExtent > 0 ? 5 : 1); k++) {
             const nx = _planeN[k * 3], ny = _planeN[k * 3 + 1], nz = _planeN[k * 3 + 2];
             const pen = _planeOff[k] - (s.pos[i * 3] * nx + s.pos[i * 3 + 1] * ny + s.pos[i * 3 + 2] * nz - r);
-            if (pen > 0) staticContact(s, i, nx, ny, nz, s.pos[i * 3] - nx * r, s.pos[i * 3 + 1] - ny * r, s.pos[i * 3 + 2] - nz * r, pen, mu);
+            if (pen > 0) staticContact(s, i, nx, ny, nz, s.pos[i * 3] - nx * r, s.pos[i * 3 + 1] - ny * r, s.pos[i * 3 + 2] - nz * r, pen, mu, compliance, dt);
         }
     } else {
         boxAxes(_ai, s, i);
@@ -612,7 +616,7 @@ function resolveStatic(s: SolverState, i: number, cfg: SolverConfig): void {
             for (let k = 0; k < (cfg.binExtent > 0 ? 5 : 1); k++) {
                 const nx = _planeN[k * 3], ny = _planeN[k * 3 + 1], nz = _planeN[k * 3 + 2];
                 const pen = _planeOff[k] - (cx * nx + cy * ny + cz * nz);
-                if (pen > 0) staticContact(s, i, nx, ny, nz, cx, cy, cz, pen, mu);
+                if (pen > 0) staticContact(s, i, nx, ny, nz, cx, cy, cz, pen, mu, compliance, dt);
             }
         }
     }
@@ -635,11 +639,11 @@ function applyStaticCorr(s: SolverState, i: number, rx: number, ry: number, rz: 
 }
 
 /** Non-penetration + Coulomb friction against the immovable world (μ·λn clamp). */
-function staticContact(s: SolverState, i: number, nx: number, ny: number, nz: number, px: number, py: number, pz: number, depth: number, mu: number): void {
+function staticContact(s: SolverState, i: number, nx: number, ny: number, nz: number, px: number, py: number, pz: number, depth: number, mu: number, compliance: number, dt: number): void {
     const rx = px - s.pos[i * 3], ry = py - s.pos[i * 3 + 1], rz = pz - s.pos[i * 3 + 2];
-    const wN = genWStatic(s, i, rx, ry, rz, nx, ny, nz);
-    if (wN <= 0) return;
-    const lambdaN = depth / wN;
+    const wsN = genWStatic(s, i, rx, ry, rz, nx, ny, nz) + compliance / (dt * dt);
+    if (wsN <= 0) return;
+    const lambdaN = depth / wsN;
     applyStaticCorr(s, i, rx, ry, rz, nx, ny, nz, lambdaN);
     if (mu <= 0) return;
     contactDrift(s, i, px, py, pz, _drA);

@@ -9,7 +9,7 @@ import { Material } from "../../../material/material.js";
 import { createSolverState, step, type SolverConfig, type SolverState } from "./cpu-solver.js";
 
 /** Physical props the solver reads off a referenced Material entity. */
-interface MatProps { density: number; restitution: number; friction: number }
+interface MatProps { density: number; restitution: number; friction: number; compliance: number }
 
 /**
  * CPU sequential-XPBD rigid-body solver — the first solver behind the shared
@@ -77,13 +77,13 @@ export const cpuXpbd = Database.Plugin.create({
 
                     // refresh the material lookup only when the material set changes
                     let mc = 0;
-                    for (const arch of db.store.queryArchetypes(["name", "density", "restitution", "friction"])) mc += arch.rowCount;
+                    for (const arch of db.store.queryArchetypes(["name", "density", "restitution", "friction", "compliance"])) mc += arch.rowCount;
                     if (mc !== matCount) {
                         matProps = new Map();
-                        for (const arch of db.store.queryArchetypes(["name", "density", "restitution", "friction"])) {
-                            const id = arch.columns.id, d = arch.columns.density, rs = arch.columns.restitution, fr = arch.columns.friction;
+                        for (const arch of db.store.queryArchetypes(["name", "density", "restitution", "friction", "compliance"])) {
+                            const id = arch.columns.id, d = arch.columns.density, rs = arch.columns.restitution, fr = arch.columns.friction, co = arch.columns.compliance;
                             for (let r = 0; r < arch.rowCount; r++) {
-                                matProps.set(id.get(r), { density: d.get(r), restitution: rs.get(r), friction: fr.get(r) });
+                                matProps.set(id.get(r), { density: d.get(r), restitution: rs.get(r), friction: fr.get(r), compliance: co.get(r) });
                             }
                         }
                         matCount = mc;
@@ -111,6 +111,7 @@ export const cpuXpbd = Database.Plugin.create({
                         state.angVel[i * 3] = w[0]; state.angVel[i * 3 + 1] = w[1]; state.angVel[i * 3 + 2] = w[2];
                         state.restitution[i] = m ? m.restitution : 0.2;
                         state.friction[i] = m ? m.friction : 0.5;
+                        state.compliance[i] = m ? m.compliance : 0;
                         if (dyn) {
                             const mp = ColliderShape.massProperties(cs.get(r), e, density);
                             state.invMass[i] = mp.inverseMass;

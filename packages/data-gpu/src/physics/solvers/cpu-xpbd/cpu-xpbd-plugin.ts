@@ -41,6 +41,7 @@ export const cpuXpbd = Database.Plugin.create({
                 sleepAngular: 0.2,
                 worldRestitution: 0.2,
                 worldFriction: 0.6,
+                rollingFriction: 0.2,
                 floorY: 0,
                 binExtent: 0,
             } satisfies SolverConfig as SolverConfig,

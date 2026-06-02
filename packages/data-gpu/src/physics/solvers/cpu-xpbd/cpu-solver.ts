@@ -30,6 +30,10 @@ export interface SolverConfig {
     sleepAngular: number;
     worldRestitution: number; // floor + walls
     worldFriction: number;
+    /** Rolling + spinning friction: per-substep fraction of relative angular
+     *  velocity dissipated at a contact, scaled by μ. 0 disables (bodies spin
+     *  forever in place — a single contact point can't oppose spin about itself). */
+    rollingFriction: number;
     floorY: number;
     binExtent: number;        // ±x/±z walls; <=0 disables walls
 }
@@ -385,7 +389,7 @@ function integrateQuat(orient: Float32Array, i: number, wx: number, wy: number, 
 }
 
 // --- velocity constraint (restitution + friction, Gauss-Seidel) --------------
-function solveVelocity(s: SolverState, a: number, b: number, e: number, mu: number, threshold: number): void {
+function solveVelocity(s: SolverState, a: number, b: number, e: number, mu: number, threshold: number, roll: number, firstContact: boolean): void {
     const nx = _contact.nx, ny = _contact.ny, nz = _contact.nz;
     const rax = _contact.px - s.pos[a * 3], ray = _contact.py - s.pos[a * 3 + 1], raz = _contact.pz - s.pos[a * 3 + 2];
     const rbx = _contact.px - s.pos[b * 3], rby = _contact.py - s.pos[b * 3 + 1], rbz = _contact.pz - s.pos[b * 3 + 2];
@@ -417,6 +421,20 @@ function solveVelocity(s: SolverState, a: number, b: number, e: number, mu: numb
     if (vtLen > 1e-6 && mu > 0) {
         const tx = vtx / vtLen, ty = vty / vtLen, tz = vtz / vtLen;
         applyVelImpulse(s, a, b, rax, ray, raz, rbx, rby, rbz, tx, ty, tz, -mu * vtLen);
+    }
+
+    // rolling + spinning friction: oppose the *relative angular* velocity at the
+    // contact (once per pair, not per manifold point). Sliding friction can't
+    // touch spin about the contact normal — its lever arm is zero — so without
+    // this a sphere spins on its axis forever and resting boxes keep a twist.
+    if (firstContact && roll > 0) {
+        const imA = s.invMass[a], imB = s.invMass[b];
+        const rwx = s.angVel[a * 3] - s.angVel[b * 3];
+        const rwy = s.angVel[a * 3 + 1] - s.angVel[b * 3 + 1];
+        const rwz = s.angVel[a * 3 + 2] - s.angVel[b * 3 + 2];
+        const fa = roll * (imB > 0 ? 0.5 : 1), fb = roll * (imA > 0 ? 0.5 : 1);
+        if (imA > 0) { s.angVel[a * 3] -= rwx * fa; s.angVel[a * 3 + 1] -= rwy * fa; s.angVel[a * 3 + 2] -= rwz * fa; }
+        if (imB > 0) { s.angVel[b * 3] += rwx * fb; s.angVel[b * 3 + 1] += rwy * fb; s.angVel[b * 3 + 2] += rwz * fb; }
     }
 }
 
@@ -495,9 +513,10 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
             narrowphase(s, a, b);
             const e = Math.sqrt(s.restitution[a] * s.restitution[b]);
             const mu = Math.sqrt(s.friction[a] * s.friction[b]);
+            const roll = mu * cfg.rollingFriction;
             for (let ci = 0; ci < _mCount; ci++) {
                 setContact(ci);
-                if (_contact.depth > 0) solveVelocity(s, a, b, e, mu, cfg.restitutionThreshold);
+                if (_contact.depth > 0) solveVelocity(s, a, b, e, mu, cfg.restitutionThreshold, roll, ci === 0);
             }
         }
         for (let i = 0; i < s.count; i++) {
@@ -606,6 +625,14 @@ function resolveStaticVelocity(s: SolverState, i: number, cfg: SolverConfig): vo
         const vtLen = Math.sqrt(vtx * vtx + vty * vty + vtz * vtz);
         if (vtLen > 1e-6 && mu > 0) {
             staticVelImpulse(s, i, rx, ry, rz, vtx / vtLen, vty / vtLen, vtz / vtLen, -mu * vtLen);
+        }
+        // rolling + spinning friction against the immovable world: dissipate the
+        // body's rotation through the contact (we resolve it at a single support
+        // point, so spin about the contact normal is otherwise never opposed).
+        const roll = mu * cfg.rollingFriction;
+        if (roll > 0) {
+            const f = 1 - Math.min(roll, 1);
+            s.angVel[i * 3] *= f; s.angVel[i * 3 + 1] *= f; s.angVel[i * 3 + 2] *= f;
         }
     }
 }

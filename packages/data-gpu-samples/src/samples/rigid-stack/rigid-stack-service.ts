@@ -9,7 +9,7 @@ const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_sma
 
 // Scene config.
 const BIN = 7;                 // half-extent of the floor / containing walls
-const STACK_W = 4, STACK_D = 4, STACK_H = 4;   // dynamic block stack (unit cubes)
+const STACK_W = 6, STACK_D = 6, STACK_H = 6;   // dynamic block stack (unit cubes)
 const SPAWN_INTERVAL = 0.18;   // seconds between dynamic drops
 const SPAWN_DELAY = 2.5;       // let the bare stack settle first, to verify it holds
 const DYNAMIC_CAP = 200;       // stop spawning at this many dropped bodies
@@ -39,7 +39,7 @@ export const rigidStackPlugin = Database.Plugin.create({
                 gravity: 18, floorY: 0, binExtent: BIN,
                 substeps: 10, iterations: 1,  // Small-Steps: narrowphase once per substep
                 restitutionThreshold: 1.5, sleepLinear: 0.2, sleepAngular: 0.2,
-                worldRestitution: 0.2, worldFriction: 0.6,
+                worldRestitution: 0.2, worldFriction: 0.6, rollingFriction: 0.2,
             };
             t.resources.orbit = {
                 ...t.resources.orbit,

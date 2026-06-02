@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Quat } from "@adobe/data/math";
-import { graphics, physicsData, cpuXpbd, ColliderShape, Material, SceneUniforms, Orbit } from "@adobe/data-gpu";
+import { graphics, physicsData, cpuXpbd, ColliderShape, SceneUniforms, Orbit } from "@adobe/data-gpu";
 import { rigidStackShader } from "./rigid-stack-render.wgsl.js";
 
 const POSITION_STRIDE = 12;
@@ -107,6 +107,7 @@ export const rigidStackPlugin = Database.Plugin.create({
             // floor. Dynamic so we can verify the solver holds the stack, and so
             // dropped bodies knock it around. A hair of vertical gap avoids
             // initial face-coincidence ambiguity; they settle into contact.
+            const wood = t.resources.materials.wood;
             const x0 = -(STACK_W - 1) / 2, z0 = -(STACK_D - 1) / 2;
             for (let y = 0; y < STACK_H; y++) {
                 for (let x = 0; x < STACK_W; x++) {
@@ -115,7 +116,7 @@ export const rigidStackPlugin = Database.Plugin.create({
                             bodyType: "dynamic",
                             colliderShape: "box",
                             halfExtents: [0.5, 0.5, 0.5],
-                            material: "wood",
+                            material: wood,
                             position: [x0 + x, 0.55 + y * 1.02, z0 + z],
                             orientation: Quat.identity,
                             linearVelocity: [0, 0, 0],
@@ -127,8 +128,8 @@ export const rigidStackPlugin = Database.Plugin.create({
         },
         spawnBody(t) {
             const isBox = Math.random() < 0.4;
-            const mats = Material.list;
-            const mat = mats[Math.floor(Math.random() * mats.length)];
+            const ids = Object.values(t.resources.materials);
+            const mat = ids[Math.floor(Math.random() * ids.length)];
             const he: [number, number, number] = isBox
                 ? [0.3 + Math.random() * 0.3, 0.3 + Math.random() * 0.3, 0.3 + Math.random() * 0.3]
                 : [0.3 + Math.random() * 0.4, 0, 0];
@@ -219,10 +220,29 @@ export const rigidStackPlugin = Database.Plugin.create({
             create: db => {
                 const pose = new Float32Array(MAX_INSTANCES * 8);
                 const props = new Float32Array(MAX_INSTANCES * 16);
+                // material entity → debug RGB (its baseColorFactor). Materials are
+                // added rarely / edited never, so the map is rebuilt only when the
+                // material count changes.
+                let matColor = new Map<number, [number, number, number]>();
+                let matCount = -1;
                 return () => {
                 const gpu = db.store.resources.rigidGpu;
                 const { device, renderPassEncoder, _sceneUniformsBuffer } = db.store.resources;
                 if (!gpu || !device || !renderPassEncoder || !_sceneUniformsBuffer) return;
+
+                let mc = 0;
+                for (const arch of db.store.queryArchetypes(["name", "baseColorFactor"])) mc += arch.rowCount;
+                if (mc !== matCount) {
+                    matColor = new Map();
+                    for (const arch of db.store.queryArchetypes(["name", "baseColorFactor"])) {
+                        const id = arch.columns.id, bc = arch.columns.baseColorFactor;
+                        for (let r = 0; r < arch.rowCount; r++) {
+                            const c = bc.get(r);
+                            matColor.set(id.get(r), [c[0], c[1], c[2]]);
+                        }
+                    }
+                    matCount = mc;
+                }
 
                 // pack ECS rigid-body columns → instance buffers
                 let n = 0;
@@ -232,7 +252,7 @@ export const rigidStackPlugin = Database.Plugin.create({
                     for (let r = 0; r < arch.rowCount && n < MAX_INSTANCES; r++, n++) {
                         const p = pos.get(r), q = ori.get(r), e = he.get(r), v = lv.get(r);
                         const shapeIdx = ColliderShape.toIndex(cs.get(r));
-                        const col = Material.materialColor[mt.get(r)];
+                        const col = matColor.get(mt.get(r)) ?? [0.7, 0.7, 0.7];
                         const bound = shapeIdx === 1 ? Math.hypot(e[0], e[1], e[2]) : e[0];
                         pose[n * 8] = p[0]; pose[n * 8 + 1] = p[1]; pose[n * 8 + 2] = p[2]; pose[n * 8 + 3] = bound;
                         pose[n * 8 + 4] = q[0]; pose[n * 8 + 5] = q[1]; pose[n * 8 + 6] = q[2]; pose[n * 8 + 7] = q[3];

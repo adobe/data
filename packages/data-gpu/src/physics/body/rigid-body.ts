@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
+import type { Entity } from "@adobe/data/ecs";
 import type { Vec3, Quat } from "@adobe/data/math";
 import type { BodyType } from "./body-type/body-type.js";
 import type { ColliderShape } from "./collider-shape/collider-shape.js";
-import type { Material } from "../material/material.js";
 
 /**
  * One row of the `RigidBody` archetype — the authored surface every physics
@@ -16,7 +16,8 @@ export interface RigidBody {
     colliderShape: ColliderShape;
     /** Box extents on all axes; sphere radius in `.x`. */
     halfExtents: Vec3;
-    material: Material;
+    /** Reference to a Material registry entity (physical + visible props). */
+    material: Entity;
     position: Vec3;
     orientation: Quat;
     linearVelocity: Vec3;

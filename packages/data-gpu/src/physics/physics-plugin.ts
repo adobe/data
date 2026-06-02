@@ -6,8 +6,21 @@ import { physicsComputeShader } from "./physics-compute.wgsl.js";
 import { particleComputeShader } from "./particle-compute.wgsl.js";
 import { broadphaseComputeShader } from "./broadphase-compute.wgsl.js";
 import { velocityComputeShader } from "./velocity-compute.wgsl.js";
-import { Material } from "./material/material.js";
 import type { CollisionEvent } from "./collision-event.js";
+
+/**
+ * The shelved GPU solver's self-contained material table — density,
+ * restitution, friction, compliance — indexed into the GPU material buffer.
+ * Decoupled from the ECS `Material` registry (which is now authored entities,
+ * not a fixed enum); this solver is shelved and keeps its own fixed table.
+ */
+const SHELVED_MATERIALS = [
+    { density: 1.1,  restitution: 0.80, friction: 0.90, compliance: 1e-5 },
+    { density: 0.6,  restitution: 0.35, friction: 0.70, compliance: 5e-7 },
+    { density: 2.6,  restitution: 0.20, friction: 0.85, compliance: 1e-8 },
+    { density: 7.8,  restitution: 0.45, friction: 0.50, compliance: 1e-9 },
+    { density: 0.92, restitution: 0.25, friction: 0.05, compliance: 5e-9 },
+] as const;
 
 /**
  * GPU rigid-body XPBD physics — Phase D.
@@ -82,11 +95,10 @@ const WORLD_FRICTION = 0.5;
 
 const nextPow2 = (n: number): number => { let p = 1; while (p < n) p <<= 1; return p; };
 
-/** Packed material properties for the GPU, in Material.list order. */
+/** Packed material properties for the GPU, in SHELVED_MATERIALS order. */
 function materialPropsData(): Float32Array {
-    const data = new Float32Array(Material.list.length * 4);
-    Material.list.forEach((m, i) => {
-        const p = Material.properties[m];
+    const data = new Float32Array(SHELVED_MATERIALS.length * 4);
+    SHELVED_MATERIALS.forEach((p, i) => {
         data[i * 4 + 0] = p.restitution;
         data[i * 4 + 1] = p.friction;
         data[i * 4 + 2] = p.compliance;
@@ -183,8 +195,8 @@ function seedBodies(count: number, cfg: PhysicsConfig): { pose: Float32Array; pr
     const ySpan = 20;
     for (let i = 0; i < count; i++) {
         const isBox = Math.random() < BOX_FRACTION;
-        const materialIndex = Math.floor(Math.random() * Material.list.length);
-        const density = Material.properties[Material.list[materialIndex]].density;
+        const materialIndex = Math.floor(Math.random() * SHELVED_MATERIALS.length);
+        const density = SHELVED_MATERIALS[materialIndex].density;
         let he: [number, number, number];
         let boundingR: number;
         let mass: number;
@@ -296,7 +308,7 @@ export const physics = Database.Plugin.create({
                 const staging = device.createBuffer({ size: EVENTS_SIZE, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
                 const velStart = buffer(count * POSE_STRIDE);
                 const velParams = device.createBuffer({ size: VEL_PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-                const matProps = buffer(Material.list.length * MAT_STRIDE);
+                const matProps = buffer(SHELVED_MATERIALS.length * MAT_STRIDE);
                 device.queue.writeBuffer(pose0, 0, seed.pose);
                 device.queue.writeBuffer(pose1, 0, seed.pose);
                 device.queue.writeBuffer(prev, 0, seed.pose);

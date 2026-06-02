@@ -1,10 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Database } from "@adobe/data/ecs";
+import { Database, Entity } from "@adobe/data/ecs";
 import { Vec3, Quat } from "@adobe/data/math";
 import { BodyType } from "./body/body-type/body-type.js";
 import { ColliderShape } from "./body/collider-shape/collider-shape.js";
-import { Material } from "./material/material.js";
 
 /**
  * The shared, solver-agnostic rigid-body data model — the seam every physics
@@ -28,7 +27,7 @@ export const physicsData = Database.Plugin.create({
         bodyType:        BodyType.schema,
         colliderShape:   ColliderShape.schema,
         halfExtents:     Vec3.schema,   // box extents; sphere radius in .x
-        material:        Material.schema,
+        material:        Entity.schema, // → a Material registry entity
         position:        Vec3.schema,
         orientation:     Quat.schema,
         linearVelocity:  Vec3.schema,

@@ -5,8 +5,11 @@ import { core } from "../../../core/core-plugin.js";
 import { physicsData } from "../../physics-data-plugin.js";
 import { BodyType } from "../../body/body-type/body-type.js";
 import { ColliderShape } from "../../body/collider-shape/collider-shape.js";
-import { Material } from "../../material/material.js";
+import { Material } from "../../../material/material.js";
 import { createSolverState, step, type SolverConfig, type SolverState } from "./cpu-solver.js";
+
+/** Physical props the solver reads off a referenced Material entity. */
+interface MatProps { density: number; restitution: number; friction: number }
 
 /**
  * CPU sequential-XPBD rigid-body solver — the first solver behind the shared
@@ -26,7 +29,7 @@ const _v3: [number, number, number] = [0, 0, 0];
 const _v4: [number, number, number, number] = [0, 0, 0, 0];
 
 export const cpuXpbd = Database.Plugin.create({
-    extends: Database.Plugin.combine(physicsData, core),
+    extends: Database.Plugin.combine(physicsData, core, Material.plugin),
     resources: {
         cpuPhysicsConfig: {
             default: {
@@ -51,6 +54,11 @@ export const cpuXpbd = Database.Plugin.create({
             create: db => {
                 let state: SolverState | null = null;
                 let lastTime = 0;
+                // Material props keyed by entity. Materials are added rarely and
+                // edited never, so the lookup is rebuilt only when the count of
+                // material entities changes — steady state does no material work.
+                let matProps = new Map<number, MatProps>();
+                let matCount = -1;
                 return () => {
                     const now = performance.now();
                     const last = lastTime || now;
@@ -66,6 +74,20 @@ export const cpuXpbd = Database.Plugin.create({
                         state = createSolverState(Math.max(total, 256));
                     }
 
+                    // refresh the material lookup only when the material set changes
+                    let mc = 0;
+                    for (const arch of db.store.queryArchetypes(["name", "density", "restitution", "friction"])) mc += arch.rowCount;
+                    if (mc !== matCount) {
+                        matProps = new Map();
+                        for (const arch of db.store.queryArchetypes(["name", "density", "restitution", "friction"])) {
+                            const id = arch.columns.id, d = arch.columns.density, rs = arch.columns.restitution, fr = arch.columns.friction;
+                            for (let r = 0; r < arch.rowCount; r++) {
+                                matProps.set(id.get(r), { density: d.get(r), restitution: rs.get(r), friction: fr.get(r) });
+                            }
+                        }
+                        matCount = mc;
+                    }
+
                 // --- gather: ECS columns → flat arrays -------------------------
                 let i = 0;
                 for (const arch of db.store.queryArchetypes(COMPONENTS)) {
@@ -76,7 +98,8 @@ export const cpuXpbd = Database.Plugin.create({
                         const dyn = BodyType.isDynamic(bt.get(r));
                         const shape = ColliderShape.toIndex(cs.get(r));
                         const e = he.get(r);
-                        const m = Material.properties[mat.get(r)];
+                        const m = matProps.get(mat.get(r));
+                        const density = m ? m.density : 1;
                         const p = pos.get(r), q = ori.get(r), v = lv.get(r), w = av.get(r);
                         state.dynamic[i] = dyn ? 1 : 0;
                         state.shape[i] = shape;
@@ -85,10 +108,10 @@ export const cpuXpbd = Database.Plugin.create({
                         state.orient[i * 4] = q[0]; state.orient[i * 4 + 1] = q[1]; state.orient[i * 4 + 2] = q[2]; state.orient[i * 4 + 3] = q[3];
                         state.vel[i * 3] = v[0]; state.vel[i * 3 + 1] = v[1]; state.vel[i * 3 + 2] = v[2];
                         state.angVel[i * 3] = w[0]; state.angVel[i * 3 + 1] = w[1]; state.angVel[i * 3 + 2] = w[2];
-                        state.restitution[i] = m.restitution;
-                        state.friction[i] = m.friction;
+                        state.restitution[i] = m ? m.restitution : 0.2;
+                        state.friction[i] = m ? m.friction : 0.5;
                         if (dyn) {
-                            const mp = ColliderShape.massProperties(cs.get(r), e, m.density);
+                            const mp = ColliderShape.massProperties(cs.get(r), e, density);
                             state.invMass[i] = mp.inverseMass;
                             state.invInertia[i * 3] = mp.inverseInertia[0]; state.invInertia[i * 3 + 1] = mp.inverseInertia[1]; state.invInertia[i * 3 + 2] = mp.inverseInertia[2];
                         } else {

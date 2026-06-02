@@ -33,6 +33,7 @@ export class RigidStackElement extends DatabaseElement<typeof rigidStackPlugin> 
         useEffect(() => {
             if (!canvas) return;
             service.transactions.setCanvas(canvas);
+            service.transactions.seedStandardMaterials();
             service.transactions.initializeScene();
         }, [canvas, service]);
 

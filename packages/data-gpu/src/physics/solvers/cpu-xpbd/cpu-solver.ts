@@ -157,7 +157,9 @@ function broadphase(s: SolverState, cell: number): void {
                     for (let k = 0; k < bucket.length; k++) {
                         const j = bucket[k];
                         if (s.dynamic[i] === 0 && s.dynamic[j] === 0) continue; // static-static
-                        if (s.sleeping[i] === 1 && s.sleeping[j] === 1) continue; // both at rest
+                        // NB: both-asleep pairs are still generated (kept cheap) so islands
+                        // stay connected and a woken island has its internal contacts ready
+                        // the same frame — only their *solve* is skipped (see the step loops).
                         // dedup: a pair co-occurs in several cells when bodies span them.
                         const key = i < j ? i * 1000003 + j : j * 1000003 + i;
                         if (seenPairs.has(key)) continue;
@@ -522,7 +524,6 @@ function isMoving(s: SolverState, i: number, cfg: SolverConfig): boolean {
 // wedged among rigid sleepers (which the under-iterated solver would eject) —
 // if any island member is moving, the whole island stays awake.
 let _parent = new Int32Array(256);
-let _minTimer = new Float32Array(256);
 
 function findRoot(x: number): number {
     while (_parent[x] !== x) { _parent[x] = _parent[_parent[x]]; x = _parent[x]; }
@@ -530,7 +531,7 @@ function findRoot(x: number): number {
 }
 
 function buildIslands(s: SolverState): void {
-    if (_parent.length < s.count) { _parent = new Int32Array(s.count); _minTimer = new Float32Array(s.count); }
+    if (_parent.length < s.count) _parent = new Int32Array(s.count);
     for (let i = 0; i < s.count; i++) _parent[i] = i;
     for (let p = 0; p < pairCount; p++) {
         const a = pairA[p], b = pairB[p];
@@ -635,30 +636,25 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
         }
     }
 
-    // Sleep by island: accumulate each awake body's rest timer when it's below
-    // threshold, then sleep a whole island only once *all* its members have been
-    // at rest for sleepTime (the island's minimum timer). One moving member
-    // (timer 0) keeps its entire island awake — so no awake body is ever wedged
-    // among sleepers. Already-asleep bodies stay so until `wake` rouses them.
+    // Sleep per body: a body sleeps once it has stayed below the rest threshold
+    // for sleepTime (a timer avoids freezing mid-settle), so a pile sleeps body
+    // by body as it quiesces — robust to one jittery body, unlike an
+    // island-minimum rule which a single mover would keep awake. Safety comes
+    // instead from the *wake* side: `wake` rouses the whole contact island, so a
+    // body is never left awake and wedged among rigid sleepers for long.
     for (let i = 0; i < s.count; i++) {
         if (s.dynamic[i] === 0 || s.sleeping[i] === 1) continue;
         const v2 = s.vel[i * 3] ** 2 + s.vel[i * 3 + 1] ** 2 + s.vel[i * 3 + 2] ** 2;
         const w2 = s.angVel[i * 3] ** 2 + s.angVel[i * 3 + 1] ** 2 + s.angVel[i * 3 + 2] ** 2;
-        if (v2 < cfg.sleepLinear * cfg.sleepLinear && w2 < cfg.sleepAngular * cfg.sleepAngular) s.sleepTimer[i] += dt;
-        else s.sleepTimer[i] = 0;
-    }
-    for (let i = 0; i < s.count; i++) _minTimer[i] = Infinity;
-    for (let i = 0; i < s.count; i++) {
-        if (s.dynamic[i] === 0 || s.sleeping[i] === 1) continue;
-        const r = findRoot(i);
-        if (s.sleepTimer[i] < _minTimer[r]) _minTimer[r] = s.sleepTimer[i];
-    }
-    for (let i = 0; i < s.count; i++) {
-        if (s.dynamic[i] === 0 || s.sleeping[i] === 1) continue;
-        if (_minTimer[findRoot(i)] >= cfg.sleepTime) {
-            s.sleeping[i] = 1;
-            s.vel[i * 3] = 0; s.vel[i * 3 + 1] = 0; s.vel[i * 3 + 2] = 0;
-            s.angVel[i * 3] = 0; s.angVel[i * 3 + 1] = 0; s.angVel[i * 3 + 2] = 0;
+        if (v2 < cfg.sleepLinear * cfg.sleepLinear && w2 < cfg.sleepAngular * cfg.sleepAngular) {
+            s.sleepTimer[i] += dt;
+            if (s.sleepTimer[i] >= cfg.sleepTime) {
+                s.sleeping[i] = 1;
+                s.vel[i * 3] = 0; s.vel[i * 3 + 1] = 0; s.vel[i * 3 + 2] = 0;
+                s.angVel[i * 3] = 0; s.angVel[i * 3 + 1] = 0; s.angVel[i * 3 + 2] = 0;
+            }
+        } else {
+            s.sleepTimer[i] = 0;
         }
     }
 }

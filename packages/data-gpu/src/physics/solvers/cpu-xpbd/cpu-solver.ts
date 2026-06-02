@@ -165,12 +165,35 @@ function boundingRadius(s: SolverState, i: number): number {
     return Math.sqrt(hx * hx + hy * hy + hz * hz);
 }
 
-// --- narrowphase: one representative contact for a pair ----------------------
-// Fills _contact with normal (b→a, a's separation dir), world point, depth.
-const _contact = { nx: 0, ny: 0, nz: 0, px: 0, py: 0, pz: 0, depth: 0, hit: false };
+// --- narrowphase: a contact manifold per pair --------------------------------
+// Normals point b→a (a's separation direction). Spheres/sphere-box yield 1
+// contact; box-box yields up to 4 (incident-face vertices) so stacks resist
+// tipping. `_contact` is the "current" contact the position/velocity solves
+// read — setContact(ci) loads it from the manifold.
+const MAX_MANIFOLD = 4;
+const _mN = new Float32Array(MAX_MANIFOLD * 3);
+const _mP = new Float32Array(MAX_MANIFOLD * 3);
+const _mD = new Float32Array(MAX_MANIFOLD);
+let _mCount = 0;
+const _contact = { nx: 0, ny: 0, nz: 0, px: 0, py: 0, pz: 0, depth: 0 };
+
+function pushContact(nx: number, ny: number, nz: number, px: number, py: number, pz: number, depth: number): void {
+    if (_mCount >= MAX_MANIFOLD || depth <= 0) return;
+    const i = _mCount;
+    _mN[i * 3] = nx; _mN[i * 3 + 1] = ny; _mN[i * 3 + 2] = nz;
+    _mP[i * 3] = px; _mP[i * 3 + 1] = py; _mP[i * 3 + 2] = pz;
+    _mD[i] = depth;
+    _mCount++;
+}
+
+function setContact(ci: number): void {
+    _contact.nx = _mN[ci * 3]; _contact.ny = _mN[ci * 3 + 1]; _contact.nz = _mN[ci * 3 + 2];
+    _contact.px = _mP[ci * 3]; _contact.py = _mP[ci * 3 + 1]; _contact.pz = _mP[ci * 3 + 2];
+    _contact.depth = _mD[ci];
+}
 
 function narrowphase(s: SolverState, a: number, b: number): void {
-    _contact.hit = false;
+    _mCount = 0;
     const sa = s.shape[a], sb = s.shape[b];
     if (sa === SHAPE_SPHERE && sb === SHAPE_SPHERE) sphereSphere(s, a, b);
     else if (sa === SHAPE_SPHERE && sb === SHAPE_BOX) sphereBox(s, a, b, false);
@@ -187,12 +210,8 @@ function sphereSphere(s: SolverState, a: number, b: number): void {
     const rr = ra + rb;
     if (d2 >= rr * rr || d2 < 1e-12) return;
     const d = Math.sqrt(d2);
-    _contact.nx = dx / d; _contact.ny = dy / d; _contact.nz = dz / d;
-    _contact.px = s.pos[b * 3] + _contact.nx * rb;
-    _contact.py = s.pos[b * 3 + 1] + _contact.ny * rb;
-    _contact.pz = s.pos[b * 3 + 2] + _contact.nz * rb;
-    _contact.depth = rr - d;
-    _contact.hit = true;
+    const nx = dx / d, ny = dy / d, nz = dz / d;
+    pushContact(nx, ny, nz, s.pos[b * 3] + nx * rb, s.pos[b * 3 + 1] + ny * rb, s.pos[b * 3 + 2] + nz * rb, rr - d);
 }
 
 // sphere `sp` vs box `bx`; flip=true means the box is body `a` (normal points b→a = toward box).
@@ -216,10 +235,7 @@ function sphereBox(s: SolverState, sp: number, bx: number, flip: boolean): void 
     dx /= d; dy /= d; dz /= d; // from box surface toward sphere
     // normal must point b→a (toward body a). If box is a (flip), normal toward box = -(toward sphere).
     const sgn = flip ? -1 : 1;
-    _contact.nx = dx * sgn; _contact.ny = dy * sgn; _contact.nz = dz * sgn;
-    _contact.px = wx; _contact.py = wy; _contact.pz = wz;
-    _contact.depth = r - d;
-    _contact.hit = true;
+    pushContact(dx * sgn, dy * sgn, dz * sgn, wx, wy, wz, r - d);
 }
 
 // box-box via SAT: min-penetration axis (normal) + a representative point.
@@ -239,22 +255,26 @@ function extentAlong(axes: Float32Array, he: number, he1: number, he2: number, l
         + he2 * Math.abs(axes[6] * lx + axes[7] * ly + axes[8] * lz);
 }
 
+const _ha = new Float32Array(3);
+const _hb = new Float32Array(3);
+
 function boxBox(s: SolverState, a: number, b: number): void {
     boxAxes(_ai, s, a);
     boxAxes(_bi, s, b);
-    const ha0 = s.halfExtent[a * 3], ha1 = s.halfExtent[a * 3 + 1], ha2 = s.halfExtent[a * 3 + 2];
-    const hb0 = s.halfExtent[b * 3], hb1 = s.halfExtent[b * 3 + 1], hb2 = s.halfExtent[b * 3 + 2];
-    const tx = s.pos[b * 3] - s.pos[a * 3], ty = s.pos[b * 3 + 1] - s.pos[a * 3 + 1], tz = s.pos[b * 3 + 2] - s.pos[a * 3 + 2];
-    let minPen = Infinity, axx = 0, axy = 0, axz = 1;
-    // 6 face axes + 9 edge crosses
+    _ha[0] = s.halfExtent[a * 3]; _ha[1] = s.halfExtent[a * 3 + 1]; _ha[2] = s.halfExtent[a * 3 + 2];
+    _hb[0] = s.halfExtent[b * 3]; _hb[1] = s.halfExtent[b * 3 + 1]; _hb[2] = s.halfExtent[b * 3 + 2];
+    const ax_ = s.pos[a * 3], ay_ = s.pos[a * 3 + 1], az_ = s.pos[a * 3 + 2];
+    const bx_ = s.pos[b * 3], by_ = s.pos[b * 3 + 1], bz_ = s.pos[b * 3 + 2];
+    const tx = bx_ - ax_, ty = by_ - ay_, tz = bz_ - az_;
+    let minPen = Infinity, axx = 0, axy = 0, axz = 1, bestAxis = 0;
     const cand: number[] = _satAxes;
     let n = 0;
     for (let k = 0; k < 3; k++) { cand[n++] = _ai[k * 3]; cand[n++] = _ai[k * 3 + 1]; cand[n++] = _ai[k * 3 + 2]; }
     for (let k = 0; k < 3; k++) { cand[n++] = _bi[k * 3]; cand[n++] = _bi[k * 3 + 1]; cand[n++] = _bi[k * 3 + 2]; }
     for (let k = 0; k < 3; k++) for (let l = 0; l < 3; l++) {
-        const ax = _ai[k * 3], ay = _ai[k * 3 + 1], az = _ai[k * 3 + 2];
-        const bx = _bi[l * 3], by = _bi[l * 3 + 1], bz = _bi[l * 3 + 2];
-        cand[n++] = ay * bz - az * by; cand[n++] = az * bx - ax * bz; cand[n++] = ax * by - ay * bx;
+        const ux = _ai[k * 3], uy = _ai[k * 3 + 1], uz = _ai[k * 3 + 2];
+        const vx = _bi[l * 3], vy = _bi[l * 3 + 1], vz = _bi[l * 3 + 2];
+        cand[n++] = uy * vz - uz * vy; cand[n++] = uz * vx - ux * vz; cand[n++] = ux * vy - uy * vx;
     }
     for (let c = 0; c < n; c += 3) {
         let lx = cand[c], ly = cand[c + 1], lz = cand[c + 2];
@@ -262,25 +282,52 @@ function boxBox(s: SolverState, a: number, b: number): void {
         if (len2 < 1e-8) continue;
         const inv = 1 / Math.sqrt(len2);
         lx *= inv; ly *= inv; lz *= inv;
-        const ea = extentAlong(_ai, ha0, ha1, ha2, lx, ly, lz);
-        const eb = extentAlong(_bi, hb0, hb1, hb2, lx, ly, lz);
-        const dist = Math.abs(tx * lx + ty * ly + tz * lz);
-        const pen = ea + eb - dist;
-        if (pen < 0) return; // separating axis found
-        if (pen < minPen) { minPen = pen; axx = lx; axy = ly; axz = lz; }
+        const ea = extentAlong(_ai, _ha[0], _ha[1], _ha[2], lx, ly, lz);
+        const eb = extentAlong(_bi, _hb[0], _hb[1], _hb[2], lx, ly, lz);
+        const pen = ea + eb - Math.abs(tx * lx + ty * ly + tz * lz);
+        if (pen < 0) return; // separating axis
+        if (pen < minPen - 1e-4) { minPen = pen; axx = lx; axy = ly; axz = lz; bestAxis = (c / 3) | 0; }
     }
-    // orient axis to point a→b, then n (b→a, a's separation) = -axis
-    if (tx * axx + ty * axy + tz * axz < 0) { axx = -axx; axy = -axy; axz = -axz; }
-    const nx = -axx, ny = -axy, nz = -axz;
-    // representative point: midpoint of the two support surfaces along n
-    const ea = extentAlong(_ai, ha0, ha1, ha2, nx, ny, nz);
-    const eb = extentAlong(_bi, hb0, hb1, hb2, nx, ny, nz);
-    const sax = s.pos[a * 3] - nx * ea, say = s.pos[a * 3 + 1] - ny * ea, saz = s.pos[a * 3 + 2] - nz * ea;
-    const sbx = s.pos[b * 3] + nx * eb, sby = s.pos[b * 3 + 1] + ny * eb, sbz = s.pos[b * 3 + 2] + nz * eb;
-    _contact.nx = nx; _contact.ny = ny; _contact.nz = nz;
-    _contact.px = 0.5 * (sax + sbx); _contact.py = 0.5 * (say + sby); _contact.pz = 0.5 * (saz + sbz);
-    _contact.depth = minPen;
-    _contact.hit = true;
+    if (tx * axx + ty * axy + tz * axz < 0) { axx = -axx; axy = -axy; axz = -axz; } // axis → a→b
+    const nx = -axx, ny = -axy, nz = -axz; // contact normal b→a (a's separation)
+
+    if (bestAxis >= 6) { // edge-edge: one representative contact
+        const ea = extentAlong(_ai, _ha[0], _ha[1], _ha[2], nx, ny, nz);
+        const eb = extentAlong(_bi, _hb[0], _hb[1], _hb[2], nx, ny, nz);
+        pushContact(nx, ny, nz,
+            0.5 * ((ax_ - nx * ea) + (bx_ + nx * eb)), 0.5 * ((ay_ - ny * ea) + (by_ + ny * eb)), 0.5 * ((az_ - nz * ea) + (bz_ + nz * eb)),
+            minPen);
+        return;
+    }
+    // face contact: reference owns the winning axis; clip incident face vertices.
+    const refIsA = bestAxis < 3;
+    const refIdx = refIsA ? bestAxis : bestAxis - 3;
+    const refN0 = refIsA ? axx : nx, refN1 = refIsA ? axy : ny, refN2 = refIsA ? axz : nz; // ref outward → inc
+    const refAx = refIsA ? _ai : _bi, incAx = refIsA ? _bi : _ai;
+    const refHe = refIsA ? _ha : _hb, incHe = refIsA ? _hb : _ha;
+    const rcx = refIsA ? ax_ : bx_, rcy = refIsA ? ay_ : by_, rcz = refIsA ? az_ : bz_;
+    const icx = refIsA ? bx_ : ax_, icy = refIsA ? by_ : ay_, icz = refIsA ? bz_ : az_;
+    void refAx;
+    // incident face = inc face most anti-parallel to refN
+    let m = 0, best = Math.abs(incAx[0] * refN0 + incAx[1] * refN1 + incAx[2] * refN2);
+    const d1 = Math.abs(incAx[3] * refN0 + incAx[4] * refN1 + incAx[5] * refN2);
+    const d2 = Math.abs(incAx[6] * refN0 + incAx[7] * refN1 + incAx[8] * refN2);
+    if (d1 > best) { best = d1; m = 1; }
+    if (d2 > best) { best = d2; m = 2; }
+    const dotM = incAx[m * 3] * refN0 + incAx[m * 3 + 1] * refN1 + incAx[m * 3 + 2] * refN2;
+    const sgn = dotM > 0 ? -1 : 1;
+    const m1 = (m + 1) % 3, m2 = (m + 2) % 3;
+    const fcx = icx + sgn * incHe[m] * incAx[m * 3], fcy = icy + sgn * incHe[m] * incAx[m * 3 + 1], fcz = icz + sgn * incHe[m] * incAx[m * 3 + 2];
+    const ux = incHe[m1] * incAx[m1 * 3], uy = incHe[m1] * incAx[m1 * 3 + 1], uz = incHe[m1] * incAx[m1 * 3 + 2];
+    const vx = incHe[m2] * incAx[m2 * 3], vy = incHe[m2] * incAx[m2 * 3 + 1], vz = incHe[m2] * incAx[m2 * 3 + 2];
+    const refHeN = refHe[refIdx];
+    for (let su = -1; su <= 1; su += 2) {
+        for (let sv = -1; sv <= 1; sv += 2) {
+            const px = fcx + su * ux + sv * vx, py = fcy + su * uy + sv * vy, pz = fcz + su * uz + sv * vz;
+            const depth = refHeN - ((px - rcx) * refN0 + (py - rcy) * refN1 + (pz - rcz) * refN2);
+            pushContact(nx, ny, nz, px, py, pz, depth);
+        }
+    }
 }
 const _satAxes: number[] = new Array(45);
 
@@ -422,9 +469,9 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
             for (let p = 0; p < pairCount; p++) {
                 const a = pairA[p], b = pairB[p];
                 narrowphase(s, a, b);
-                if (_contact.hit && _contact.depth > 0) {
-                    const compliance = Math.max(0, 0.5 * 0); // rigid for v1 (compliance wiring deferred)
-                    solvePosition(s, a, b, compliance, sdt);
+                for (let ci = 0; ci < _mCount; ci++) {
+                    setContact(ci);
+                    if (_contact.depth > 0) solvePosition(s, a, b, 0, sdt); // rigid (compliance deferred)
                 }
             }
             for (let i = 0; i < s.count; i++) {
@@ -445,12 +492,12 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
         // velocity pass: restitution + friction over pairs + static world
         for (let p = 0; p < pairCount; p++) {
             const a = pairA[p], b = pairB[p];
-            if (s.sleeping[a] === 1 && s.sleeping[b] === 1) continue;
             narrowphase(s, a, b);
-            if (_contact.hit && _contact.depth > 0) {
-                const e = Math.sqrt(s.restitution[a] * s.restitution[b]);
-                const mu = Math.sqrt(s.friction[a] * s.friction[b]);
-                solveVelocity(s, a, b, e, mu, cfg.restitutionThreshold);
+            const e = Math.sqrt(s.restitution[a] * s.restitution[b]);
+            const mu = Math.sqrt(s.friction[a] * s.friction[b]);
+            for (let ci = 0; ci < _mCount; ci++) {
+                setContact(ci);
+                if (_contact.depth > 0) solveVelocity(s, a, b, e, mu, cfg.restitutionThreshold);
             }
         }
         for (let i = 0; i < s.count; i++) {

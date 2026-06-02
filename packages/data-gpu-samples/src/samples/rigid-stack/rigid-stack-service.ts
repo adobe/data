@@ -13,9 +13,12 @@ const MAX_INSTANCES = 600;
 
 // Scene config.
 const BIN = 7;                 // half-extent of the floor / containing walls
-const STACK_W = 4, STACK_D = 4, STACK_H = 5;   // static block grid (unit cubes)
-const SPAWN_INTERVAL = 0.12;   // seconds between dynamic drops
-const DYNAMIC_CAP = 300;       // stop spawning at this many dynamic bodies
+const STACK_W = 4, STACK_D = 4, STACK_H = 4;   // dynamic block stack (unit cubes)
+const SPAWN_INTERVAL = 0.18;   // seconds between dynamic drops
+const SPAWN_DELAY = 2.5;       // let the bare stack settle first, to verify it holds
+const DYNAMIC_CAP = 200;       // stop spawning at this many dropped bodies
+const SPAWN_SPREAD = 2.5;      // ± x/z spawn area (roughly over the stack)
+const SPAWN_HEIGHT = 14;
 
 function unitSphere(rings: number, segments: number): { vertices: Float32Array; indices: Uint16Array } {
     const verts: number[] = [];
@@ -79,6 +82,7 @@ export const rigidStackPlugin = Database.Plugin.create({
     resources: {
         rigidGpu: { default: null as RigidGpu | null, transient: true },
         _spawnAccum: { default: 0 as number, transient: true },
+        _spawnElapsed: { default: 0 as number, transient: true },
         _spawnedDynamic: { default: 0 as number, transient: true },
         _spawnLastTime: { default: 0 as number, transient: true },
     },
@@ -99,17 +103,20 @@ export const rigidStackPlugin = Database.Plugin.create({
                 ...t.resources.light,
                 direction: [-2, -5, -3], color: [1.0, 0.98, 0.92], ambientStrength: 0.4,
             };
-            // Static block stack: a packed grid of unit cubes resting on the floor.
+            // Dynamic block stack: a grid of unit cubes resting on the static
+            // floor. Dynamic so we can verify the solver holds the stack, and so
+            // dropped bodies knock it around. A hair of vertical gap avoids
+            // initial face-coincidence ambiguity; they settle into contact.
             const x0 = -(STACK_W - 1) / 2, z0 = -(STACK_D - 1) / 2;
             for (let y = 0; y < STACK_H; y++) {
                 for (let x = 0; x < STACK_W; x++) {
                     for (let z = 0; z < STACK_D; z++) {
                         t.archetypes.RigidBody.insert({
-                            bodyType: "static",
+                            bodyType: "dynamic",
                             colliderShape: "box",
                             halfExtents: [0.5, 0.5, 0.5],
-                            material: "stone",
-                            position: [x0 + x, 0.5 + y, z0 + z],
+                            material: "wood",
+                            position: [x0 + x, 0.55 + y * 1.02, z0 + z],
                             orientation: Quat.identity,
                             linearVelocity: [0, 0, 0],
                             angularVelocity: [0, 0, 0],
@@ -130,9 +137,11 @@ export const rigidStackPlugin = Database.Plugin.create({
                 colliderShape: isBox ? "box" : "sphere",
                 halfExtents: he,
                 material: mat,
-                position: [(Math.random() * 2 - 1) * 3, 13 + Math.random() * 3, (Math.random() * 2 - 1) * 3],
+                position: [(Math.random() * 2 - 1) * SPAWN_SPREAD, SPAWN_HEIGHT, (Math.random() * 2 - 1) * SPAWN_SPREAD],
                 orientation: isBox ? randomQuat() : Quat.identity,
-                linearVelocity: [0, 0, 0],
+                // an initial downward toss so each body clears the spawn point
+                // before the next appears (no overlapping pile at the top).
+                linearVelocity: [0, -6, 0],
                 angularVelocity: [0, 0, 0],
             });
         },
@@ -147,6 +156,9 @@ export const rigidStackPlugin = Database.Plugin.create({
                 const last = db.store.resources._spawnLastTime || now;
                 const dt = Math.min((now - last) / 1000, 0.05);
                 db.store.resources._spawnLastTime = now;
+                const elapsed = db.store.resources._spawnElapsed + dt;
+                db.store.resources._spawnElapsed = elapsed;
+                if (elapsed < SPAWN_DELAY) return;  // let the bare stack settle + prove stable first
                 let accum = db.store.resources._spawnAccum + dt;
                 while (accum >= SPAWN_INTERVAL && db.store.resources._spawnedDynamic < DYNAMIC_CAP) {
                     accum -= SPAWN_INTERVAL;

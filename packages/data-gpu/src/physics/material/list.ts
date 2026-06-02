@@ -1,10 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import type { Material } from "./material.js";
+import { schema } from "./schema.js";
 
 /**
- * Stable material order. The index into this array is what a body stores on the
- * GPU and what indexes the material-properties buffer — do not reorder without
- * rebuilding that buffer.
+ * Stable material order — the schema's enum is the single source of truth. The
+ * index into this array is what the GPU stores per body and indexes the
+ * material-properties buffer by.
  */
-export const list: readonly Material[] = ["rubber", "wood", "stone", "steel", "ice"];
+export const list = schema.enum;

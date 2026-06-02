@@ -12,7 +12,14 @@ export { InterpolationMode } from "./graphics/animation/interpolation-mode/inter
 export { core } from "./core/core-plugin.js";
 export { graphics } from "./graphics/graphics-plugin.js";
 
-// --- Physics (GPU XPBD, compute-only, depends on core not graphics) ----------
+// --- Physics: shared rigid-body data model + pluggable solver seam -----------
+export { physicsData } from "./physics/physics-data-plugin.js";
+export type { RigidBody } from "./physics/body/rigid-body.js";
+export { BodyType } from "./physics/body/body-type/body-type.js";
+export { ColliderShape } from "./physics/body/collider-shape/collider-shape.js";
+export { Material } from "./physics/material/material.js";
+
+// --- Physics: shelved GPU XPBD solver (compute-only, massive-scale path) ------
 export { physics } from "./physics/physics-plugin.js";
 export type { CollisionEvent } from "./physics/collision-event.js";
 

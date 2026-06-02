@@ -5,6 +5,7 @@ import { core } from "../core/core-plugin.js";
 import { physicsComputeShader } from "./physics-compute.wgsl.js";
 import { particleComputeShader } from "./particle-compute.wgsl.js";
 import { broadphaseComputeShader } from "./broadphase-compute.wgsl.js";
+import { velocityComputeShader } from "./velocity-compute.wgsl.js";
 import { Material } from "./material/material.js";
 import type { CollisionEvent } from "./collision-event.js";
 
@@ -73,7 +74,25 @@ const BVH_MARGIN = 0.6;           // leaf-AABB inflation: covers intra-frame sol
                                   // K solve iterations (the tree is built once, on the
                                   // predicted poses, and not rebuilt per iteration).
 
+// Velocity pass (S2): restitution + friction at the velocity level.
+const VEL_PARAMS_SIZE = 32;     // 8 × 4 bytes — see VParams in velocity-compute.
+const MAT_STRIDE = 16;          // vec4 per material: restitution, friction, compliance, _
+const WORLD_RESTITUTION = 0.3;  // floor + walls
+const WORLD_FRICTION = 0.5;
+
 const nextPow2 = (n: number): number => { let p = 1; while (p < n) p <<= 1; return p; };
+
+/** Packed material properties for the GPU, in Material.list order. */
+function materialPropsData(): Float32Array {
+    const data = new Float32Array(Material.list.length * 4);
+    Material.list.forEach((m, i) => {
+        const p = Material.properties[m];
+        data[i * 4 + 0] = p.restitution;
+        data[i * 4 + 1] = p.friction;
+        data[i * 4 + 2] = p.compliance;
+    });
+    return data;
+}
 
 /** Bitonic compare-exchange schedule: (j, k) for every pass, outer k then inner j. */
 function bitonicPasses(npad: number): { j: number; k: number }[] {
@@ -127,6 +146,13 @@ interface PhysicsGpu {
     treeBindGroup: GPUBindGroup;
     npad: number;
     sortPassCount: number;
+    // Velocity pass (S2): restitution (+ friction in S2b).
+    velStart: GPUBuffer;
+    velParams: GPUBuffer;
+    matProps: GPUBuffer;
+    velStartBindGroup: GPUBindGroup;       // group(1) for integrate to write velStart
+    velocityPipeline: GPUComputePipeline;
+    velocityBindGroup: [GPUBindGroup, GPUBindGroup];  // group(0) per ping-pong pose
 }
 
 /** A uniformly-random unit quaternion (Shoemake), xyzw. */
@@ -222,7 +248,7 @@ export const physics = Database.Plugin.create({
         physicsConfig: {
             default: {
                 gravity: 18,
-                damping: 0.99,
+                damping: 0.998,  // light air drag; restitution<1 + friction do the real dissipation
                 floorY: 0,
                 halfExtent: 8,
             } satisfies PhysicsConfig as PhysicsConfig,
@@ -268,11 +294,15 @@ export const physics = Database.Plugin.create({
                 const flags = buffer(count * 4);
                 const events = device.createBuffer({ size: EVENTS_SIZE, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
                 const staging = device.createBuffer({ size: EVENTS_SIZE, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });
+                const velStart = buffer(count * POSE_STRIDE);
+                const velParams = device.createBuffer({ size: VEL_PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+                const matProps = buffer(Material.list.length * MAT_STRIDE);
                 device.queue.writeBuffer(pose0, 0, seed.pose);
                 device.queue.writeBuffer(pose1, 0, seed.pose);
                 device.queue.writeBuffer(prev, 0, seed.pose);
                 device.queue.writeBuffer(propsBuf, 0, seed.props);
                 device.queue.writeBuffer(flags, 0, seedFlags(count));
+                device.queue.writeBuffer(matProps, 0, materialPropsData());
 
                 const module = device.createShaderModule({ code: physicsComputeShader });
                 const layout = device.createBindGroupLayout({
@@ -294,7 +324,13 @@ export const physics = Database.Plugin.create({
                         { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
                     ],
                 });
+                // `integrate` writes velStart via group(1) binding 2 (separate from
+                // the tree at 0/1) — keeps it off the solver's group(0) budget.
+                const velStartLayout = device.createBindGroupLayout({
+                    entries: [{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }],
+                });
                 const pipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout] });
+                const integratePipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout, velStartLayout] });
                 const solvePipelineLayout = device.createPipelineLayout({ bindGroupLayouts: [layout, treeLayout] });
                 const pipeline = (entryPoint: string) => device.createComputePipeline({ layout: pipelineLayout, compute: { module, entryPoint } });
                 const bg = (poseIn: GPUBuffer, poseOut: GPUBuffer) => device.createBindGroup({
@@ -308,6 +344,14 @@ export const physics = Database.Plugin.create({
                         { binding: 5, resource: { buffer: flags } },
                         { binding: 6, resource: { buffer: events } },
                     ],
+                });
+                const velStartBindGroup = device.createBindGroup({
+                    layout: velStartLayout,
+                    entries: [{ binding: 2, resource: { buffer: velStart } }],
+                });
+                const integratePipeline = device.createComputePipeline({
+                    layout: integratePipelineLayout,
+                    compute: { module, entryPoint: "integrate" },
                 });
 
                 // --- LBVH broadphase buffers + pipelines -------------------------
@@ -368,6 +412,32 @@ export const physics = Database.Plugin.create({
                     ],
                 });
 
+                // --- Velocity pass (S2): restitution + friction --------------------
+                const velModule = device.createShaderModule({ code: velocityComputeShader });
+                const velLayout = device.createBindGroupLayout({
+                    entries: [
+                        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "uniform" } },
+                        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+                        { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },
+                        { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+                        { binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: "read-only-storage" } },
+                    ],
+                });
+                const velocityPipeline = device.createComputePipeline({
+                    layout: device.createPipelineLayout({ bindGroupLayouts: [velLayout, treeLayout] }),
+                    compute: { module: velModule, entryPoint: "velocitySolve" },
+                });
+                const velBg = (poseBuf: GPUBuffer) => device.createBindGroup({
+                    layout: velLayout,
+                    entries: [
+                        { binding: 0, resource: { buffer: velParams } },
+                        { binding: 1, resource: { buffer: poseBuf } },
+                        { binding: 2, resource: { buffer: propsBuf } },
+                        { binding: 3, resource: { buffer: velStart } },
+                        { binding: 4, resource: { buffer: matProps } },
+                    ],
+                });
+
                 // Query-only particles. Buffer starts zeroed → all dead → the
                 // compute shader spawns each from the emitter on the first frame.
                 const particleParams = device.createBuffer({ size: PARTICLE_PARAMS_SIZE, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
@@ -395,7 +465,7 @@ export const physics = Database.Plugin.create({
 
                 db.store.resources.physicsGpu = {
                     params, pose: [pose0, pose1], prev, props: propsBuf, flags, events, staging,
-                    integratePipeline: pipeline("integrate"),
+                    integratePipeline,
                     reportPipeline: pipeline("report"),
                     solvePipeline: device.createComputePipeline({ layout: solvePipelineLayout, compute: { module, entryPoint: "solve" } }),
                     finalizePipeline: pipeline("finalize"),
@@ -414,6 +484,10 @@ export const physics = Database.Plugin.create({
                     treeBindGroup: treeBg,
                     npad,
                     sortPassCount: passes.length,
+                    velStart, velParams, matProps,
+                    velStartBindGroup,
+                    velocityPipeline,
+                    velocityBindGroup: [velBg(pose0), velBg(pose1)],
                 };
                 db.store.resources.physicsCurrent = 0;
                 db.store.resources.physicsStagingState = STAGING_FREE;
@@ -457,6 +531,18 @@ export const physics = Database.Plugin.create({
                 device.queue.writeBuffer(physicsGpu.events, 0, new Uint32Array([0]));
                 device.queue.writeBuffer(physicsGpu.bvhFlags, 0, physicsGpu.bvhFlagsZero);
 
+                // Velocity-pass params (restitution/friction live in matProps).
+                const vbuf = new ArrayBuffer(VEL_PARAMS_SIZE);
+                const vf32 = new Float32Array(vbuf);
+                const vu32 = new Uint32Array(vbuf);
+                vf32[0] = sub;
+                vf32[1] = WORLD_RESTITUTION;
+                vf32[2] = WORLD_FRICTION;
+                vf32[4] = physicsConfig.floorY;
+                vf32[5] = physicsConfig.halfExtent;
+                vu32[6] = physicsGpu.count;
+                device.queue.writeBuffer(physicsGpu.velParams, 0, vbuf);
+
                 const wg = Math.ceil(physicsGpu.count / WORKGROUP);
                 const wgPad = Math.ceil(physicsGpu.npad / WORKGROUP);
                 const pass = commandEncoder.beginComputePass();
@@ -494,6 +580,7 @@ export const physics = Database.Plugin.create({
                 for (let s = 0; s < SUBSTEPS; s++) {
                     pass.setPipeline(physicsGpu.integratePipeline);
                     pass.setBindGroup(0, physicsGpu.bindGroup[cur]);
+                    pass.setBindGroup(1, physicsGpu.velStartBindGroup);  // integrate writes velStart
                     pass.dispatchWorkgroups(wg);
                     cur = 1 - cur;  // predicted poses now in pose[cur]
 
@@ -507,6 +594,13 @@ export const physics = Database.Plugin.create({
 
                     pass.setPipeline(physicsGpu.finalizePipeline);
                     pass.setBindGroup(0, physicsGpu.bindGroup[cur]);
+                    pass.dispatchWorkgroups(wg);
+
+                    // Velocity pass: restitution from the true approach velocity,
+                    // reading the final poses (pose[cur]) for contact geometry.
+                    pass.setPipeline(physicsGpu.velocityPipeline);
+                    pass.setBindGroup(0, physicsGpu.velocityBindGroup[cur]);
+                    pass.setBindGroup(1, physicsGpu.treeBindGroup);
                     pass.dispatchWorkgroups(wg);
                 }
 

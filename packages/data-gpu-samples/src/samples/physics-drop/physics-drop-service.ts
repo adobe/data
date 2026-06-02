@@ -90,8 +90,8 @@ export const physicsDropPlugin = Database.Plugin.create({
         initializeScene(t) {
             // Moderate count during the solver rework; pushed higher once the
             // compliant-XPBD + velocity-restitution solver lands.
-            t.resources.physicsConfig = { ...t.resources.physicsConfig, halfExtent: 12 };
-            t.resources.physicsBodyCount = 700;
+            t.resources.physicsConfig = { ...t.resources.physicsConfig, halfExtent: 11 };
+            t.resources.physicsBodyCount = 400;
             const cfg = t.resources.physicsConfig;
             t.resources.orbit = {
                 ...t.resources.orbit,

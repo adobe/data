@@ -65,6 +65,10 @@ struct Events { count: atomic<u32>, _p0: u32, _p1: u32, _p2: u32, data: array<Co
 @group(0) @binding(4) var<storage, read_write> props:   array<vec4f>;  // 4 / body
 @group(0) @binding(5) var<storage, read>       flags:   array<u32>;
 @group(0) @binding(6) var<storage, read_write> events:  Events;
+// velStart lives in group(1) binding 2 (the solver's tree uses group(1) 0/1),
+// so only the integrate kernel binds it and the solve stage stays within the
+// 8-storage-buffer limit.
+@group(1) @binding(2) var<storage, read_write> velStart: array<vec4f>;  // 2/body: v, ω at substep start
 
 // --- accessors ---------------------------------------------------------------
 fn posOf(i: u32) -> vec3f    { return poseIn[i * 2u].xyz; }
@@ -132,6 +136,10 @@ fn integrate(@builtin(global_invocation_id) gid: vec3u) {
     poseOut[i * 2u + 1u] = nq;
     props[i * 4u]      = vec4f(v, invM);
     props[i * 4u + 1u] = vec4f(w, 0.0);
+    // Snapshot the predicted (pre-solve) velocity — the velocity pass reads this
+    // to compute the restitution target from the true approach velocity.
+    velStart[i * 2u]      = vec4f(v, 0.0);
+    velStart[i * 2u + 1u] = vec4f(w, 0.0);
 }
 
 // --- flag-gated collision events (bounding-sphere overlap on predicted pose) --
@@ -500,11 +508,8 @@ fn finalize(@builtin(global_invocation_id) gid: vec3u) {
     if (speed > MAX_SPEED) { v = v * (MAX_SPEED / speed); }
     let spin = length(w);
     if (spin > MAX_ANGVEL) { w = w * (MAX_ANGVEL / spin); }
-    // Sleep near-rest bodies so dense packs settle fully instead of shimmering.
-    if (speed < SLEEP_LINEAR && spin < SLEEP_ANGULAR) {
-        v = vec3f(0.0);
-        w = vec3f(0.0);
-    }
+    // Sleep is applied at the end of the velocity pass (which runs after this),
+    // so it isn't undone by restitution/friction re-energizing the body.
 
     props[i * 4u]      = vec4f(v, invMassOf(i));
     props[i * 4u + 1u] = vec4f(w, 0.0);

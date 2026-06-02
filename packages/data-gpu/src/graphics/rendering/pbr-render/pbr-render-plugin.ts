@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database, type Entity } from "@adobe/data/ecs";
-import { Mat4x4, Quat } from "@adobe/data/math";
 import { pbrIblRender } from "../ibl-render/ibl-render-plugin.js";
 import { materialGpu } from "../material-gpu/material-gpu-plugin.js";
 import { SceneUniforms } from "../../scene/scene-uniforms/scene-uniforms.js";
@@ -27,11 +26,25 @@ function createIblBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
     });
 }
 
-function trs(p: readonly number[], q: readonly [number, number, number, number], s: readonly number[]): Mat4x4 {
-    return Mat4x4.multiply(
-        Mat4x4.translation(p[0], p[1], p[2]),
-        Mat4x4.multiply(Quat.toMat4(q), Mat4x4.scaling(s[0], s[1], s[2])),
-    );
+/**
+ * Compose a column-major TRS matrix directly into `out[o..o+15]` — no
+ * allocation, reading position/rotation/scale straight from their column typed
+ * arrays. Matches `translation · Quat.toMat4 · scaling`. Runs once per visible
+ * drawable per frame, so the array churn of the math-helper form matters.
+ */
+function composeTrs(
+    out: Float32Array, o: number,
+    p: ArrayLike<number>, pi: number, q: ArrayLike<number>, qi: number, s: ArrayLike<number>, si: number,
+): void {
+    const qx = q[qi], qy = q[qi + 1], qz = q[qi + 2], qw = q[qi + 3];
+    const sx = s[si], sy = s[si + 1], sz = s[si + 2];
+    const xx = qx * qx, yy = qy * qy, zz = qz * qz;
+    const xy = qx * qy, xz = qx * qz, yz = qy * qz;
+    const wx = qw * qx, wy = qw * qy, wz = qw * qz;
+    out[o] = (1 - 2 * (yy + zz)) * sx; out[o + 1] = (2 * (xy + wz)) * sx; out[o + 2] = (2 * (xz - wy)) * sx; out[o + 3] = 0;
+    out[o + 4] = (2 * (xy - wz)) * sy; out[o + 5] = (1 - 2 * (xx + zz)) * sy; out[o + 6] = (2 * (yz + wx)) * sy; out[o + 7] = 0;
+    out[o + 8] = (2 * (xz + wy)) * sz; out[o + 9] = (2 * (yz - wx)) * sz; out[o + 10] = (1 - 2 * (xx + yy)) * sz; out[o + 11] = 0;
+    out[o + 12] = p[pi]; out[o + 13] = p[pi + 1]; out[o + 14] = p[pi + 2]; out[o + 15] = 1;
 }
 
 /**
@@ -71,6 +84,11 @@ export const pbrRender = Database.Plugin.create({
                 const instCache = new Map<Entity, Inst>();
                 let matScratch = new Float32Array(16);
                 let layerScratch = new Uint32Array(1);
+                // Per-frame matrix arena (composed TRS, one mat4 per drawable) + per-geometry
+                // draw lists (matrix offset + layer). All pooled and reused across frames —
+                // the gather runs over every visible body each frame, so zero allocation here.
+                let mats = new Float32Array(64 * 16);
+                const batches = new Map<Entity, { off: number[]; layer: number[] }>();
 
                 return () => {
                     const {
@@ -132,23 +150,30 @@ export const pbrRender = Database.Plugin.create({
                         matCount = mc;
                     }
 
-                    // gather visible primitive drawables grouped by geometry
-                    interface Draw { matrix: Mat4x4; layer: number }
-                    const byGeo = new Map<Entity, Draw[]>();
+                    // Gather visible primitive drawables grouped by geometry. Compose each
+                    // world matrix straight from the position/rotation/scale column typed
+                    // arrays into the pooled `mats` arena — no per-row array allocation.
+                    for (const b of batches.values()) { b.off.length = 0; b.layer.length = 0; }
+                    let drawCount = 0;
                     for (const arch of db.store.queryArchetypes(DRAWABLE)) {
-                        const geo = arch.columns.geometry, vis = arch.columns.visible;
-                        const pos = arch.columns.position, rot = arch.columns.rotation, scl = arch.columns.scale, mat = arch.columns.material;
+                        const vis = arch.columns.visible, geo = arch.columns.geometry, mat = arch.columns.material;
+                        const posArr = arch.columns.position.getTypedArray();
+                        const rotArr = arch.columns.rotation.getTypedArray();
+                        const sclArr = arch.columns.scale.getTypedArray();
                         for (let i = 0; i < arch.rowCount; i++) {
                             if (!vis.get(i)) continue;
                             const layer = matLayer.get(mat.get(i));
                             if (layer === undefined) continue;
+                            if ((drawCount + 1) * 16 > mats.length) { const grown = new Float32Array(mats.length * 2); grown.set(mats); mats = grown; }
+                            composeTrs(mats, drawCount * 16, posArr, i * 3, rotArr, i * 4, sclArr, i * 3);
                             const g = geo.get(i);
-                            let arr = byGeo.get(g);
-                            if (!arr) { arr = []; byGeo.set(g, arr); }
-                            arr.push({ matrix: trs(pos.get(i), rot.get(i), scl.get(i)), layer });
+                            let b = batches.get(g);
+                            if (!b) { b = { off: [], layer: [] }; batches.set(g, b); }
+                            b.off.push(drawCount); b.layer.push(layer);
+                            drawCount++;
                         }
                     }
-                    if (byGeo.size === 0) return;
+                    if (drawCount === 0) return;
 
                     renderPassEncoder.setPipeline(pipeline);
                     renderPassEncoder.setBindGroup(0, sceneBindGroup);
@@ -158,11 +183,11 @@ export const pbrRender = Database.Plugin.create({
                     for (const arch of db.store.queryArchetypes(PRIMITIVE)) {
                         const vbs = arch.columns._vertexBuffer, ibs = arch.columns._indexBuffer;
                         const counts = arch.columns._indexCount, formats = arch.columns._indexFormat;
-                        const geoRefs = arch.columns._geometry, nodeMats = arch.columns._nodeLocalMatrix, primIds = arch.columns.id;
+                        const geoRefs = arch.columns._geometry, primIds = arch.columns.id;
                         for (let i = 0; i < arch.rowCount; i++) {
-                            const draws = byGeo.get(geoRefs.get(i));
-                            if (!draws) continue;
-                            const n = draws.length;
+                            const b = batches.get(geoRefs.get(i));
+                            if (!b || b.off.length === 0) continue;
+                            const n = b.off.length;
                             const primId = primIds.get(i);
 
                             let entry = instCache.get(primId);
@@ -180,10 +205,13 @@ export const pbrRender = Database.Plugin.create({
                             }
                             if (matScratch.length < n * 16) matScratch = new Float32Array(n * 16);
                             if (layerScratch.length < n) layerScratch = new Uint32Array(n);
-                            const nodeMatrix = nodeMats.get(i);
+                            // Copy this geometry's matrices out of the arena into a contiguous
+                            // upload buffer. Primitive node matrices are identity (flat shapes;
+                            // glTF hierarchy goes through pbrIblRender), so no extra multiply.
                             for (let j = 0; j < n; j++) {
-                                matScratch.set(Mat4x4.multiply(draws[j].matrix, nodeMatrix), j * 16);
-                                layerScratch[j] = draws[j].layer;
+                                const src = b.off[j] * 16, dst = j * 16;
+                                for (let k = 0; k < 16; k++) matScratch[dst + k] = mats[src + k];
+                                layerScratch[j] = b.layer[j];
                             }
                             device.queue.writeBuffer(entry.buffer, 0, matScratch, 0, n * 16);
                             device.queue.writeBuffer(entry.layerBuffer, 0, layerScratch, 0, n);

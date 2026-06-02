@@ -28,6 +28,9 @@ export interface SolverConfig {
     restitutionThreshold: number;
     sleepLinear: number;
     sleepAngular: number;
+    /** Seconds a body must stay below the sleep thresholds before it sleeps
+     *  (skipped by integrate/solve/broadphase until a moving body contacts it). */
+    sleepTime: number;
     worldRestitution: number; // floor + walls
     worldFriction: number;
     /** Rolling + spinning friction: per-substep fraction of relative angular
@@ -54,6 +57,7 @@ export interface SolverState {
     friction: Float32Array;     // N
     compliance: Float32Array;   // N (contact softness, m/N; 0 = rigid)
     sleeping: Uint8Array;       // N (1 = asleep, skipped)
+    sleepTimer: Float32Array;   // N (seconds continuously below the sleep threshold)
     // scratch (capacity N), reused across frames
     prevPos: Float32Array;      // 3N
     prevOrient: Float32Array;   // 4N
@@ -77,6 +81,7 @@ export function createSolverState(capacity: number): SolverState {
         friction: new Float32Array(capacity),
         compliance: new Float32Array(capacity),
         sleeping: new Uint8Array(capacity),
+        sleepTimer: new Float32Array(capacity),
         prevPos: new Float32Array(capacity * 3),
         prevOrient: new Float32Array(capacity * 4),
         velStart: new Float32Array(capacity * 3),
@@ -152,6 +157,7 @@ function broadphase(s: SolverState, cell: number): void {
                     for (let k = 0; k < bucket.length; k++) {
                         const j = bucket[k];
                         if (s.dynamic[i] === 0 && s.dynamic[j] === 0) continue; // static-static
+                        if (s.sleeping[i] === 1 && s.sleeping[j] === 1) continue; // both at rest
                         // dedup: a pair co-occurs in several cells when bodies span them.
                         const key = i < j ? i * 1000003 + j : j * 1000003 + i;
                         if (seenPairs.has(key)) continue;
@@ -345,18 +351,23 @@ const _drB = new Float32Array(3);
 const _loc = new Float32Array(3);
 const _wld = new Float32Array(3);
 
+// Effective inverse mass/inertia: a sleeping body is immovable (0), so awake
+// bodies rest on it like a static collider until a moving body wakes it.
+function imOf(s: SolverState, i: number): number { return s.sleeping[i] === 1 ? 0 : s.invMass[i]; }
+
 /** Generalized inverse mass of the pair along unit dir at arms ra, rb. */
 function genW(s: SolverState, a: number, b: number, rax: number, ray: number, raz: number, rbx: number, rby: number, rbz: number, dx: number, dy: number, dz: number): number {
     const ranx = ray * dz - raz * dy, rany = raz * dx - rax * dz, ranz = rax * dy - ray * dx;
     const rbnx = rby * dz - rbz * dy, rbny = rbz * dx - rbx * dz, rbnz = rbx * dy - rby * dx;
-    applyInvInertia(_gi, s.orient[a * 4], s.orient[a * 4 + 1], s.orient[a * 4 + 2], s.orient[a * 4 + 3], s.invInertia[a * 3], s.invInertia[a * 3 + 1], s.invInertia[a * 3 + 2], ranx, rany, ranz);
-    applyInvInertia(_gj, s.orient[b * 4], s.orient[b * 4 + 1], s.orient[b * 4 + 2], s.orient[b * 4 + 3], s.invInertia[b * 3], s.invInertia[b * 3 + 1], s.invInertia[b * 3 + 2], rbnx, rbny, rbnz);
-    return s.invMass[a] + ranx * _gi[0] + rany * _gi[1] + ranz * _gi[2] + s.invMass[b] + rbnx * _gj[0] + rbny * _gj[1] + rbnz * _gj[2];
+    const sa = s.sleeping[a] === 1 ? 0 : 1, sb = s.sleeping[b] === 1 ? 0 : 1;
+    applyInvInertia(_gi, s.orient[a * 4], s.orient[a * 4 + 1], s.orient[a * 4 + 2], s.orient[a * 4 + 3], sa * s.invInertia[a * 3], sa * s.invInertia[a * 3 + 1], sa * s.invInertia[a * 3 + 2], ranx, rany, ranz);
+    applyInvInertia(_gj, s.orient[b * 4], s.orient[b * 4 + 1], s.orient[b * 4 + 2], s.orient[b * 4 + 3], sb * s.invInertia[b * 3], sb * s.invInertia[b * 3 + 1], sb * s.invInertia[b * 3 + 2], rbnx, rbny, rbnz);
+    return imOf(s, a) + ranx * _gi[0] + rany * _gi[1] + ranz * _gi[2] + imOf(s, b) + rbnx * _gj[0] + rbny * _gj[1] + rbnz * _gj[2];
 }
 
 /** Apply a positional impulse `lambda` along dir: body a moves +, body b moves −. */
 function applyPosCorr(s: SolverState, a: number, b: number, rax: number, ray: number, raz: number, rbx: number, rby: number, rbz: number, dx: number, dy: number, dz: number, lambda: number): void {
-    const imA = s.invMass[a], imB = s.invMass[b];
+    const imA = imOf(s, a), imB = imOf(s, b);
     const px = lambda * dx, py = lambda * dy, pz = lambda * dz;
     if (imA > 0) {
         s.pos[a * 3] += imA * px; s.pos[a * 3 + 1] += imA * py; s.pos[a * 3 + 2] += imA * pz;
@@ -467,19 +478,20 @@ function solveVelocity(s: SolverState, a: number, b: number, e: number, threshol
         const rwx = s.angVel[a * 3] - s.angVel[b * 3];
         const rwy = s.angVel[a * 3 + 1] - s.angVel[b * 3 + 1];
         const rwz = s.angVel[a * 3 + 2] - s.angVel[b * 3 + 2];
-        if (s.shape[a] === SHAPE_SPHERE && s.invMass[a] > 0) { s.angVel[a * 3] -= rwx * roll; s.angVel[a * 3 + 1] -= rwy * roll; s.angVel[a * 3 + 2] -= rwz * roll; }
-        if (s.shape[b] === SHAPE_SPHERE && s.invMass[b] > 0) { s.angVel[b * 3] += rwx * roll; s.angVel[b * 3 + 1] += rwy * roll; s.angVel[b * 3 + 2] += rwz * roll; }
+        if (s.shape[a] === SHAPE_SPHERE && imOf(s, a) > 0) { s.angVel[a * 3] -= rwx * roll; s.angVel[a * 3 + 1] -= rwy * roll; s.angVel[a * 3 + 2] -= rwz * roll; }
+        if (s.shape[b] === SHAPE_SPHERE && imOf(s, b) > 0) { s.angVel[b * 3] += rwx * roll; s.angVel[b * 3 + 1] += rwy * roll; s.angVel[b * 3 + 2] += rwz * roll; }
     }
 }
 
 // apply a velocity impulse along (dx,dy,dz) that changes the relative velocity
 // along that direction by `dRel` (split by generalized inverse mass).
 function applyVelImpulse(s: SolverState, a: number, b: number, rax: number, ray: number, raz: number, rbx: number, rby: number, rbz: number, dx: number, dy: number, dz: number, dRel: number): void {
-    const imA = s.invMass[a], imB = s.invMass[b];
+    const imA = imOf(s, a), imB = imOf(s, b);
+    const sa = s.sleeping[a] === 1 ? 0 : 1, sb = s.sleeping[b] === 1 ? 0 : 1;
     const ranx = ray * dz - raz * dy, rany = raz * dx - rax * dz, ranz = rax * dy - ray * dx;
     const rbnx = rby * dz - rbz * dy, rbny = rbz * dx - rbx * dz, rbnz = rbx * dy - rby * dx;
-    applyInvInertia(_gi, s.orient[a * 4], s.orient[a * 4 + 1], s.orient[a * 4 + 2], s.orient[a * 4 + 3], s.invInertia[a * 3], s.invInertia[a * 3 + 1], s.invInertia[a * 3 + 2], ranx, rany, ranz);
-    applyInvInertia(_gj, s.orient[b * 4], s.orient[b * 4 + 1], s.orient[b * 4 + 2], s.orient[b * 4 + 3], s.invInertia[b * 3], s.invInertia[b * 3 + 1], s.invInertia[b * 3 + 2], rbnx, rbny, rbnz);
+    applyInvInertia(_gi, s.orient[a * 4], s.orient[a * 4 + 1], s.orient[a * 4 + 2], s.orient[a * 4 + 3], sa * s.invInertia[a * 3], sa * s.invInertia[a * 3 + 1], sa * s.invInertia[a * 3 + 2], ranx, rany, ranz);
+    applyInvInertia(_gj, s.orient[b * 4], s.orient[b * 4 + 1], s.orient[b * 4 + 2], s.orient[b * 4 + 3], sb * s.invInertia[b * 3], sb * s.invInertia[b * 3 + 1], sb * s.invInertia[b * 3 + 2], rbnx, rbny, rbnz);
     const wA = imA + ranx * _gi[0] + rany * _gi[1] + ranz * _gi[2];
     const wB = imB + rbnx * _gj[0] + rbny * _gj[1] + rbnz * _gj[2];
     const wSum = wA + wB;
@@ -496,17 +508,69 @@ function applyVelImpulse(s: SolverState, a: number, b: number, rax: number, ray:
     }
 }
 
+/** A body is "moving" if it exceeds the sleep thresholds — only such bodies
+ *  wake their resting neighbours (a slowly-settling body must not). */
+function isMoving(s: SolverState, i: number, cfg: SolverConfig): boolean {
+    const v2 = s.vel[i * 3] ** 2 + s.vel[i * 3 + 1] ** 2 + s.vel[i * 3 + 2] ** 2;
+    const w2 = s.angVel[i * 3] ** 2 + s.angVel[i * 3 + 1] ** 2 + s.angVel[i * 3 + 2] ** 2;
+    return v2 > cfg.sleepLinear * cfg.sleepLinear || w2 > cfg.sleepAngular * cfg.sleepAngular;
+}
+
+// --- contact islands (union-find over dynamic-dynamic pairs) ------------------
+// Bodies connected through contacts form an island that sleeps and wakes as a
+// unit. This is what makes sleeping safe: you never get a lone awake body
+// wedged among rigid sleepers (which the under-iterated solver would eject) —
+// if any island member is moving, the whole island stays awake.
+let _parent = new Int32Array(256);
+let _minTimer = new Float32Array(256);
+
+function findRoot(x: number): number {
+    while (_parent[x] !== x) { _parent[x] = _parent[_parent[x]]; x = _parent[x]; }
+    return x;
+}
+
+function buildIslands(s: SolverState): void {
+    if (_parent.length < s.count) { _parent = new Int32Array(s.count); _minTimer = new Float32Array(s.count); }
+    for (let i = 0; i < s.count; i++) _parent[i] = i;
+    for (let p = 0; p < pairCount; p++) {
+        const a = pairA[p], b = pairB[p];
+        if (s.dynamic[a] === 1 && s.dynamic[b] === 1) {
+            const ra = findRoot(a), rb = findRoot(b);
+            if (ra !== rb) _parent[ra] = rb;
+        }
+    }
+}
+
+/** Wake a single body: reset its rest timer and sync prevPose to current so the
+ *  finalize step (vel = Δpose/dt) doesn't read a stale, pre-sleep pose. */
+function wakeOne(s: SolverState, i: number): void {
+    s.sleeping[i] = 0;
+    s.sleepTimer[i] = 0;
+    s.prevPos[i * 3] = s.pos[i * 3]; s.prevPos[i * 3 + 1] = s.pos[i * 3 + 1]; s.prevPos[i * 3 + 2] = s.pos[i * 3 + 2];
+    s.prevOrient[i * 4] = s.orient[i * 4]; s.prevOrient[i * 4 + 1] = s.orient[i * 4 + 1]; s.prevOrient[i * 4 + 2] = s.orient[i * 4 + 2]; s.prevOrient[i * 4 + 3] = s.orient[i * 4 + 3];
+}
+
+/** Wake body i and every sleeping body in its contact island. */
+function wake(s: SolverState, i: number): void {
+    if (s.sleeping[i] === 0) return;
+    const root = findRoot(i);
+    for (let j = 0; j < s.count; j++) {
+        if (s.sleeping[j] === 1 && findRoot(j) === root) wakeOne(s, j);
+    }
+}
+
 // --- the step ----------------------------------------------------------------
 export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
     if (s.count === 0) return;
     const cellSize = 3.0; // ≥ largest body diameter — fewer multi-cell spans → fewer dup pairs
     broadphase(s, cellSize);
+    buildIslands(s);
     const sdt = dt / cfg.substeps;
 
     for (let sub = 0; sub < cfg.substeps; sub++) {
         // integrate dynamic, awake bodies
         for (let i = 0; i < s.count; i++) {
-            if (s.dynamic[i] === 0) continue;
+            if (s.dynamic[i] === 0 || s.sleeping[i] === 1) continue;
             s.prevPos[i * 3] = s.pos[i * 3]; s.prevPos[i * 3 + 1] = s.pos[i * 3 + 1]; s.prevPos[i * 3 + 2] = s.pos[i * 3 + 2];
             s.prevOrient[i * 4] = s.orient[i * 4]; s.prevOrient[i * 4 + 1] = s.orient[i * 4 + 1]; s.prevOrient[i * 4 + 2] = s.orient[i * 4 + 2]; s.prevOrient[i * 4 + 3] = s.orient[i * 4 + 3];
             s.vel[i * 3 + 1] -= cfg.gravity * sdt;
@@ -520,7 +584,16 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
         for (let iter = 0; iter < cfg.iterations; iter++) {
             for (let p = 0; p < pairCount; p++) {
                 const a = pairA[p], b = pairB[p];
+                if (s.sleeping[a] === 1 && s.sleeping[b] === 1) continue;
                 narrowphase(s, a, b);
+                if (_mCount === 0) continue;
+                // A resting body wakes only when a genuinely moving body touches
+                // it (a slowly-settling neighbour mustn't, or the pile churns
+                // awake forever). Until then it stays asleep and the solve treats
+                // it as immovable (imOf → 0), so awake bodies rest on it like a
+                // static collider — no sink-through.
+                if (s.sleeping[a] === 1 && isMoving(s, b, cfg)) wake(s, a);
+                if (s.sleeping[b] === 1 && isMoving(s, a, cfg)) wake(s, b);
                 const mu = Math.sqrt(s.friction[a] * s.friction[b]);
                 const compliance = s.compliance[a] + s.compliance[b]; // series springs
                 for (let ci = 0; ci < _mCount; ci++) {
@@ -529,14 +602,14 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
                 }
             }
             for (let i = 0; i < s.count; i++) {
-                if (s.dynamic[i] === 0) continue;
+                if (s.dynamic[i] === 0 || s.sleeping[i] === 1) continue;
                 resolveStatic(s, i, cfg, sdt);
             }
         }
 
         // finalize: velocity from pose delta
         for (let i = 0; i < s.count; i++) {
-            if (s.dynamic[i] === 0) continue;
+            if (s.dynamic[i] === 0 || s.sleeping[i] === 1) continue;
             s.vel[i * 3] = (s.pos[i * 3] - s.prevPos[i * 3]) / sdt;
             s.vel[i * 3 + 1] = (s.pos[i * 3 + 1] - s.prevPos[i * 3 + 1]) / sdt;
             s.vel[i * 3 + 2] = (s.pos[i * 3 + 2] - s.prevPos[i * 3 + 2]) / sdt;
@@ -546,6 +619,7 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
         // velocity pass: restitution + friction over pairs + static world
         for (let p = 0; p < pairCount; p++) {
             const a = pairA[p], b = pairB[p];
+            if (s.sleeping[a] === 1 && s.sleeping[b] === 1) continue;
             narrowphase(s, a, b);
             const e = Math.sqrt(s.restitution[a] * s.restitution[b]);
             const mu = Math.sqrt(s.friction[a] * s.friction[b]);
@@ -556,22 +630,35 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
             }
         }
         for (let i = 0; i < s.count; i++) {
-            if (s.dynamic[i] === 0) continue;
+            if (s.dynamic[i] === 0 || s.sleeping[i] === 1) continue;
             resolveStaticVelocity(s, i, cfg);
         }
     }
 
-    // sleep dynamic bodies that have come to rest
+    // Sleep by island: accumulate each awake body's rest timer when it's below
+    // threshold, then sleep a whole island only once *all* its members have been
+    // at rest for sleepTime (the island's minimum timer). One moving member
+    // (timer 0) keeps its entire island awake — so no awake body is ever wedged
+    // among sleepers. Already-asleep bodies stay so until `wake` rouses them.
     for (let i = 0; i < s.count; i++) {
-        if (s.dynamic[i] === 0) continue;
+        if (s.dynamic[i] === 0 || s.sleeping[i] === 1) continue;
         const v2 = s.vel[i * 3] ** 2 + s.vel[i * 3 + 1] ** 2 + s.vel[i * 3 + 2] ** 2;
         const w2 = s.angVel[i * 3] ** 2 + s.angVel[i * 3 + 1] ** 2 + s.angVel[i * 3 + 2] ** 2;
-        if (v2 < cfg.sleepLinear * cfg.sleepLinear && w2 < cfg.sleepAngular * cfg.sleepAngular) {
+        if (v2 < cfg.sleepLinear * cfg.sleepLinear && w2 < cfg.sleepAngular * cfg.sleepAngular) s.sleepTimer[i] += dt;
+        else s.sleepTimer[i] = 0;
+    }
+    for (let i = 0; i < s.count; i++) _minTimer[i] = Infinity;
+    for (let i = 0; i < s.count; i++) {
+        if (s.dynamic[i] === 0 || s.sleeping[i] === 1) continue;
+        const r = findRoot(i);
+        if (s.sleepTimer[i] < _minTimer[r]) _minTimer[r] = s.sleepTimer[i];
+    }
+    for (let i = 0; i < s.count; i++) {
+        if (s.dynamic[i] === 0 || s.sleeping[i] === 1) continue;
+        if (_minTimer[findRoot(i)] >= cfg.sleepTime) {
             s.sleeping[i] = 1;
             s.vel[i * 3] = 0; s.vel[i * 3 + 1] = 0; s.vel[i * 3 + 2] = 0;
             s.angVel[i * 3] = 0; s.angVel[i * 3 + 1] = 0; s.angVel[i * 3 + 2] = 0;
-        } else {
-            s.sleeping[i] = 0;
         }
     }
 }

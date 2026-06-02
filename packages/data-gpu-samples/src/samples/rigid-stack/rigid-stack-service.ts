@@ -38,7 +38,7 @@ export const rigidStackPlugin = Database.Plugin.create({
                 ...t.resources.cpuPhysicsConfig,
                 gravity: 18, floorY: 0, binExtent: BIN,
                 substeps: 10, iterations: 1,  // Small-Steps: narrowphase once per substep
-                restitutionThreshold: 1.5, sleepLinear: 0.2, sleepAngular: 0.2,
+                restitutionThreshold: 1.5, sleepLinear: 0.5, sleepAngular: 0.6, sleepTime: 0.5,
                 worldRestitution: 0.2, worldFriction: 0.6, rollingFriction: 0.2,
             };
             t.resources.orbit = {

@@ -92,8 +92,8 @@ export const physicsDropPlugin = Database.Plugin.create({
             // more bodies than the old O(N²) scan ran comfortably, kept shallow
             // enough that the 6-iteration Jacobi solver settles it cleanly. (Denser
             // packs need substepping / more iterations — a separate solver change.)
-            t.resources.physicsConfig = { ...t.resources.physicsConfig, halfExtent: 12 };
-            t.resources.physicsBodyCount = 700;
+            t.resources.physicsConfig = { ...t.resources.physicsConfig, halfExtent: 18 };
+            t.resources.physicsBodyCount = 1500;
             const cfg = t.resources.physicsConfig;
             t.resources.orbit = {
                 ...t.resources.orbit,

@@ -42,6 +42,19 @@ const SHAPE_SPHERE: f32 = 0.0;
 const SHAPE_BOX:    f32 = 1.0;
 const REPORT_BODY_HITS: u32 = 1u;
 
+// Under-relaxation: a body's simultaneous contacts are averaged (not summed), so
+// a body in a dense pack can't overshoot by stacking independent push-outs.
+const RELAX: f32 = 1.0;
+// Energy budget: a hard per-body speed cap. Substepping already keeps the
+// reconstructed velocities physical; this clamps any residual launch so kinetic
+// energy can't run away (½m·v² bounded ⇔ |v| bounded).
+const MAX_SPEED:  f32 = 40.0;
+const MAX_ANGVEL: f32 = 30.0;
+// Sleep: dissipate the last sliver of energy so a body in a dense contact graph
+// settles fully instead of micro-jittering forever (the other end of the budget).
+const SLEEP_LINEAR:  f32 = 0.35;
+const SLEEP_ANGULAR: f32 = 0.35;
+
 struct CollisionEvent { a: u32, b: u32, penetration: f32, _pad: u32, }
 struct Events { count: atomic<u32>, _p0: u32, _p1: u32, _p2: u32, data: array<CollisionEvent>, }
 
@@ -147,7 +160,7 @@ fn report(@builtin(global_invocation_id) gid: vec3u) {
 fn applyContact(
     xi: vec3f, qi: vec4f, invMi: f32, invIli: vec3f,
     point: vec3f, n: vec3f, depth: f32, wOther: f32,
-    dx: ptr<function, vec3f>, dq: ptr<function, vec4f>,
+    dx: ptr<function, vec3f>, dq: ptr<function, vec4f>, cnt: ptr<function, f32>,
 ) {
     let ri = point - xi;
     let rn = cross(ri, n);
@@ -159,6 +172,7 @@ fn applyContact(
     *dx = *dx + invMi * p;
     let dw = applyInvInertia(qi, invIli, cross(ri, p));
     *dq = *dq + 0.5 * qMul(vec4f(dw, 0.0), qi);
+    *cnt = *cnt + 1.0;  // contacts are averaged (under-relaxed) by the caller
 }
 
 // Generalised inverse mass of the other body along n at its contact arm — used
@@ -209,7 +223,7 @@ fn closestSeg(p1: vec3f, q1: vec3f, p2: vec3f, q2: vec3f) -> vec3f {
 fn solveBoxBox(
     xi: vec3f, qi: vec4f, invMi: f32, invIli: vec3f, hei: vec3f,
     xj: vec3f, qj: vec4f, invMj: f32, invIlj: vec3f, hej: vec3f,
-    dx: ptr<function, vec3f>, dq: ptr<function, vec4f>,
+    dx: ptr<function, vec3f>, dq: ptr<function, vec4f>, cnt: ptr<function, f32>,
 ) {
     var ai = array<vec3f, 3>(qRot(qi, vec3f(1, 0, 0)), qRot(qi, vec3f(0, 1, 0)), qRot(qi, vec3f(0, 0, 1)));
     var aj = array<vec3f, 3>(qRot(qj, vec3f(1, 0, 0)), qRot(qj, vec3f(0, 1, 0)), qRot(qj, vec3f(0, 0, 1)));
@@ -265,7 +279,7 @@ fn solveBoxBox(
         let p = closestSeg(ci - hei[edgeK] * ai[edgeK], ci + hei[edgeK] * ai[edgeK],
                            cj - hej[edgeL] * aj[edgeL], cj + hej[edgeL] * aj[edgeL]);
         let w2 = otherW(xj, qj, invMj, invIlj, p, nForI);
-        applyContact(xi, qi, invMi, invIli, p, nForI, minPen, w2, dx, dq);
+        applyContact(xi, qi, invMi, invIli, p, nForI, minPen, w2, dx, dq, cnt);
         return;
     }
 
@@ -300,7 +314,7 @@ fn solveBoxBox(
             let depth = refHeK - dot(vert - refC, refN);  // past the reference face plane
             if (depth > 0.0) {
                 let w2 = otherW(xj, qj, invMj, invIlj, vert, nForI);
-                applyContact(xi, qi, invMi, invIli, vert, nForI, depth, w2, dx, dq);
+                applyContact(xi, qi, invMi, invIli, vert, nForI, depth, w2, dx, dq, cnt);
             }
             sv = sv + 2.0;
         }
@@ -313,7 +327,7 @@ fn solveBoxBox(
 // corner that breaches a plane, giving a multi-point manifold for flat rest.
 fn resolveStatic(
     shape: f32, xi: vec3f, qi: vec4f, invMi: f32, invIli: vec3f, he: vec3f,
-    dx: ptr<function, vec3f>, dq: ptr<function, vec4f>,
+    dx: ptr<function, vec3f>, dq: ptr<function, vec4f>, cnt: ptr<function, f32>,
 ) {
     if (invMi <= 0.0) { return; }
     let h = P.binExtent;
@@ -330,7 +344,7 @@ fn resolveStatic(
             let n = normals[k];
             let pen = offsets[k] - (dot(xi, n) - r);  // >0 when the support point is past the plane
             if (pen > 0.0) {
-                applyContact(xi, qi, invMi, invIli, xi - n * r, n, pen, 0.0, dx, dq);
+                applyContact(xi, qi, invMi, invIli, xi - n * r, n, pen, 0.0, dx, dq, cnt);
             }
         }
     } else {
@@ -346,7 +360,7 @@ fn resolveStatic(
                 let n = normals[k];
                 let pen = offsets[k] - dot(corner, n);
                 if (pen > 0.0) {
-                    applyContact(xi, qi, invMi, invIli, corner, n, pen, 0.0, dx, dq);
+                    applyContact(xi, qi, invMi, invIli, corner, n, pen, 0.0, dx, dq, cnt);
                 }
             }
         }
@@ -360,7 +374,7 @@ fn resolveStatic(
 // One contact pair: dispatch on the shapes of i and j and accumulate i's share.
 fn solvePair(
     i: u32, j: u32, xi: vec3f, qi: vec4f, invMi: f32, invIli: vec3f, shi: f32, hei: vec3f,
-    dx: ptr<function, vec3f>, dq: ptr<function, vec4f>,
+    dx: ptr<function, vec3f>, dq: ptr<function, vec4f>, cnt: ptr<function, f32>,
 ) {
     if (j == i) { return; }
     let xj = posOf(j);
@@ -378,7 +392,7 @@ fn solvePair(
             let n = sep / dist;
             let point = xj + n * hej.x;
             let w2 = otherW(xj, qj, invMj, invIlj, point, n);
-            applyContact(xi, qi, invMi, invIli, point, n, pen, w2, dx, dq);
+            applyContact(xi, qi, invMi, invIli, point, n, pen, w2, dx, dq, cnt);
         }
     } else if (shi == SHAPE_SPHERE && shj == SHAPE_BOX) {
         let cp = closestOnBox(xi, xj, qj, hej);
@@ -388,7 +402,7 @@ fn solvePair(
         if (pen > 0.0 && dist > 1e-6) {
             let n = d / dist;
             let w2 = otherW(xj, qj, invMj, invIlj, cp, n);
-            applyContact(xi, qi, invMi, invIli, cp, n, pen, w2, dx, dq);
+            applyContact(xi, qi, invMi, invIli, cp, n, pen, w2, dx, dq, cnt);
         }
     } else if (shi == SHAPE_BOX && shj == SHAPE_SPHERE) {
         let cp = closestOnBox(xj, xi, qi, hei);
@@ -398,10 +412,10 @@ fn solvePair(
         if (pen > 0.0 && dist > 1e-6) {
             let n = d / dist;  // from sphere j toward box i
             let w2 = otherW(xj, qj, invMj, invIlj, cp, n);
-            applyContact(xi, qi, invMi, invIli, cp, n, pen, w2, dx, dq);
+            applyContact(xi, qi, invMi, invIli, cp, n, pen, w2, dx, dq, cnt);
         }
     } else {
-        solveBoxBox(xi, qi, invMi, invIli, hei, xj, qj, invMj, invIlj, hej, dx, dq);
+        solveBoxBox(xi, qi, invMi, invIli, hei, xj, qj, invMj, invIlj, hej, dx, dq, cnt);
     }
 }
 
@@ -420,6 +434,7 @@ fn solve(@builtin(global_invocation_id) gid: vec3u) {
 
     var dx = vec3f(0.0);
     var dq = vec4f(0.0);
+    var cnt = 0.0;
 
     if (invMi > 0.0 && P.bodyCount >= 2u) {
         // Stackless-with-stack BVH traversal: gather candidates whose node AABB
@@ -439,7 +454,7 @@ fn solve(@builtin(global_invocation_id) gid: vec3u) {
             let nmax = bvhNodes[node * 2u + 1u].xyz;
             if (any(qmax < nmin) || any(qmin > nmax)) { continue; }
             if (node >= leafBase) {
-                solvePair(i, bvhLeaves[node - leafBase], xi, qi, invMi, invIli, shi, hei, &dx, &dq);
+                solvePair(i, bvhLeaves[node - leafBase], xi, qi, invMi, invIli, shi, hei, &dx, &dq, &cnt);
             } else if (sp <= 62) {
                 stack[sp] = bitcast<u32>(bvhNodes[node * 2u].w);
                 stack[sp + 1] = bitcast<u32>(bvhNodes[node * 2u + 1u].w);
@@ -449,7 +464,15 @@ fn solve(@builtin(global_invocation_id) gid: vec3u) {
     }
 
     // Static world: floor + 4 bin walls, treated as immovable (wOther = 0).
-    resolveStatic(shi, xi, qi, invMi, invIli, hei, &dx, &dq);
+    resolveStatic(shi, xi, qi, invMi, invIli, hei, &dx, &dq, &cnt);
+
+    // Average this body's simultaneous corrections (under-relaxation): summing
+    // independent per-contact push-outs overshoots in dense packs and boils.
+    if (cnt > 0.0) {
+        let inv = RELAX / cnt;
+        dx = dx * inv;
+        dq = dq * inv;
+    }
 
     let nx = xi + dx;
     let nq = safeQuat(qi + dq, qi);
@@ -467,10 +490,21 @@ fn finalize(@builtin(global_invocation_id) gid: vec3u) {
     let px = prev[i * 2u].xyz;
     let pq = prev[i * 2u + 1u];
 
-    let v = (x - px) / P.dt * P.damping;
+    var v = (x - px) / P.dt * P.damping;
     var dq = qMul(q, qConj(pq));
     if (dq.w < 0.0) { dq = -dq; }
-    let w = 2.0 * dq.xyz / P.dt * P.damping;
+    var w = 2.0 * dq.xyz / P.dt * P.damping;
+
+    // Energy budget: cap speed + spin so a residual bad contact can't launch.
+    let speed = length(v);
+    if (speed > MAX_SPEED) { v = v * (MAX_SPEED / speed); }
+    let spin = length(w);
+    if (spin > MAX_ANGVEL) { w = w * (MAX_ANGVEL / spin); }
+    // Sleep near-rest bodies so dense packs settle fully instead of shimmering.
+    if (speed < SLEEP_LINEAR && spin < SLEEP_ANGULAR) {
+        v = vec3f(0.0);
+        w = vec3f(0.0);
+    }
 
     props[i * 4u]      = vec4f(v, invMassOf(i));
     props[i * 4u + 1u] = vec4f(w, 0.0);

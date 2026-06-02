@@ -38,7 +38,7 @@ const WORKGROUP = 64;
 // penetrations shallow, so position corrections (and the velocities rebuilt from
 // them) stay small instead of launching bodies.
 const SUBSTEPS = 8;
-const SOLVE_ITERS_PER_SUBSTEP = 1;
+const SOLVE_ITERS_PER_SUBSTEP = 2;
 
 const SHAPE_SPHERE = 0;
 const SHAPE_BOX = 1;

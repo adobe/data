@@ -91,8 +91,10 @@ export const modelLoader = Database.Plugin.create({
                         for (let i = 0; i < arch.rowCount; i++) {
                             const id = ids.get(i);
                             if (inFlight.has(id)) continue;
+                            const url = urls.get(i);
+                            if (!url) continue;   // procedural geometries (shapes) carry no URL
                             inFlight.add(id);
-                            loadGltfPrimitives(device, urls.get(i))
+                            loadGltfPrimitives(device, url)
                                 .then(loaded => {
                                     db.transactions.insertLoadedPrimitives({
                                         geometry: id,

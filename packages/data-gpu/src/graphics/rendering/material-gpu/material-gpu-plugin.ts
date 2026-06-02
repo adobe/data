@@ -49,24 +49,25 @@ export const materialGpu = Database.Plugin.create({
                     const { device } = db.store.resources;
                     if (!device) return;
 
-                    if (!arrays || !palette) {
-                        arrays = createMaterialArrays(device);
-                        palette = device.createBuffer({
-                            size: MAX_MATERIAL_LAYERS * PALETTE_STRIDE,
-                            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-                        });
-                        db.store.resources._materialArrays = arrays;
-                        db.store.resources._materialPalette = palette;
-                        db.store.resources._materialBindGroup = createMaterialBindGroup(device, arrays, palette);
-                    }
-
                     // Assign a layer to each material that lacks one. Tail→head:
                     // every visited row migrates out (gains _layerIndex), so the
-                    // removal is always from the tail — no hole-fill shift.
+                    // removal is always from the tail — no hole-fill shift. The GPU
+                    // arrays are created lazily on the first material, so glTF-only
+                    // scenes (no materials) allocate nothing.
                     for (const arch of db.store.queryArchetypes(["name", ...MATERIAL_COMPONENTS], { exclude: ["_layerIndex"] })) {
                         const c = arch.columns;
                         for (let i = arch.rowCount - 1; i >= 0; i--) {
                             if (nextLayer >= MAX_MATERIAL_LAYERS) break;
+                            if (!arrays || !palette) {
+                                arrays = createMaterialArrays(device);
+                                palette = device.createBuffer({
+                                    size: MAX_MATERIAL_LAYERS * PALETTE_STRIDE,
+                                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                                });
+                                db.store.resources._materialArrays = arrays;
+                                db.store.resources._materialPalette = palette;
+                                db.store.resources._materialBindGroup = createMaterialBindGroup(device, arrays, palette);
+                            }
                             const id = c.id.get(i);
                             const layer = nextLayer++;
                             writePaletteLayer(device, palette, layer, {

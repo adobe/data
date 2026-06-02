@@ -1,35 +1,20 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database, type Entity } from "@adobe/data/ecs";
-import { Mat4x4, Quat, Vec3 } from "@adobe/data/math";
-import { graphics } from "../../graphics-plugin.js";
-import { model } from "../../scene/model/model-plugin.js";
-import { pbrCore } from "../pbr-core-plugin.js";
+import { Mat4x4, Quat } from "@adobe/data/math";
+import { pbrIblRender } from "../ibl-render/ibl-render-plugin.js";
 import { materialGpu } from "../material-gpu/material-gpu-plugin.js";
-import { Light } from "../../scene/light/light.js";
 import { SceneUniforms } from "../../scene/scene-uniforms/scene-uniforms.js";
 import { StandardVertex } from "../standard-vertex/standard-vertex.js";
 import { createMaterialBindGroupLayout } from "../material-gpu/material-bind-group.js";
-import { buildIblResources } from "../ibl-render/ibl/build-ibl-resources.js";
-import { parseHdr } from "../ibl-render/ibl/parse-hdr.js";
 import { buildPbrArrayShader } from "./pbr-array-shader.wgsl.js";
-import skyboxShader from "../ibl-render/skybox-shader.wgsl.js";
 
+// Must match pbrIblRender's bake so the array shader's prefiltered-mip math agrees.
 const PREFILTERED_MIP_COUNT = 7;
 
-/** Drawable components: any Model-shaped entity with a material reference. */
+/** Drawable: any visible entity with a geometry ref, a transform, and a material. */
 const DRAWABLE = ["geometry", "visible", "position", "rotation", "scale", "material"] as const;
 const PRIMITIVE = ["_vertexBuffer", "_indexBuffer", "_indexCount", "_indexFormat", "_geometry", "_nodeLocalMatrix"] as const;
-
-function createSkyboxBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
-    return device.createBindGroupLayout({
-        entries: [
-            { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } },
-            { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float", viewDimension: "cube" } },
-            { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
-        ],
-    });
-}
 
 function createIblBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
     return device.createBindGroupLayout({
@@ -50,52 +35,24 @@ function trs(p: readonly number[], q: readonly [number, number, number, number],
 }
 
 /**
- * pbrRender — the unified PBR + IBL renderer for instanced primitives (and,
- * after convergence, glTF). Binds the shared `materialGpu` set once and selects
- * a material per instance by its material entity's `_layerIndex`. Drawables are
- * any visible entity with a `geometry` ref + transform + `material`; their world
- * matrix is computed directly from `position`/`rotation`/`scale` (flat, no
- * hierarchy) and instanced per geometry into a single `drawIndexed`.
+ * pbrRender — the single PBR + IBL renderer. It extends `pbrIblRender`, reusing
+ * its IBL bake, skybox, scene/material bind groups and glTF draw path verbatim,
+ * and adds one extra draw query for **instanced primitives** whose material
+ * comes from the shared `materialGpu` arrays (selected per instance by the
+ * material entity's `_layerIndex`). Two efficient queries, one render plugin:
+ *
+ *   - glTF models  → per-material bind group, native-resolution textures (pbrIblRender)
+ *   - primitives   → shared texture_2d_array + per-instance layer (this system)
+ *
+ * The primitive system runs after `pbrIblRenderSystem` so the skybox is drawn
+ * first. World matrices are computed directly from `position`/`rotation`/`scale`
+ * (primitives are flat — no hierarchy), so it's independent of `transform`.
  */
 export const pbrRender = Database.Plugin.create({
-    extends: Database.Plugin.combine(graphics, SceneUniforms.plugin, materialGpu, pbrCore, model, Light.plugin),
-    resources: {
-        _iblEnvironment: { default: null as GPUTexture | null, transient: true },
-        _iblIrradiance:  { default: null as GPUTexture | null, transient: true },
-        _iblPrefiltered: { default: null as GPUTexture | null, transient: true },
-        _iblBrdfLut:     { default: null as GPUTexture | null, transient: true },
-    },
+    extends: Database.Plugin.combine(pbrIblRender, materialGpu),
     systems: {
-        pbrIblInit: {
-            schedule: { during: ["preRender"] },
-            create: db => {
-                let started = false;
-                return () => {
-                    if (started) return;
-                    const { device, light } = db.store.resources;
-                    if (!device) return;
-                    started = true;
-                    const assign = (hdr?: Awaited<ReturnType<typeof parseHdr>>): void => {
-                        const r = buildIblResources(device, { prefilteredMipCount: PREFILTERED_MIP_COUNT, hdrSource: hdr });
-                        db.store.resources._iblEnvironment = r.environment;
-                        db.store.resources._iblIrradiance = r.irradiance;
-                        db.store.resources._iblPrefiltered = r.prefiltered;
-                        db.store.resources._iblBrdfLut = r.brdfLut;
-                    };
-                    const url = light.environmentUrl;
-                    if (url) {
-                        fetch(url)
-                            .then(r => { if (!r.ok) throw new Error(`HDR ${r.status}`); return r.arrayBuffer(); })
-                            .then(buf => assign(parseHdr(buf)))
-                            .catch(err => { console.warn("[pbrRender] HDR load failed; procedural fallback", err); assign(); });
-                    } else {
-                        assign();
-                    }
-                };
-            },
-        },
-        pbrRenderSystem: {
-            schedule: { during: ["render"], after: ["pbrIblInit"] },
+        pbrPrimitiveRenderSystem: {
+            schedule: { during: ["render"], after: ["beginRenderPass", "pbrIblRenderSystem"], before: ["endRenderPass"] },
             create: db => {
                 let pipeline: GPURenderPipeline | null = null;
                 let sceneLayout: GPUBindGroupLayout | null = null;
@@ -107,15 +64,6 @@ export const pbrRender = Database.Plugin.create({
                 let cachedSceneBuffer: GPUBuffer | null = null;
                 let cachedIrradiance: GPUTexture | null = null;
 
-                // Skybox (environment map) — standard technique shared with pbrIblRender.
-                let skyboxPipeline: GPURenderPipeline | null = null;
-                let skyboxLayout: GPUBindGroupLayout | null = null;
-                let skyboxBindGroup: GPUBindGroup | null = null;
-                let skyboxUniform: GPUBuffer | null = null;
-                let cachedSkyEnv: GPUTexture | null = null;
-                const skyScratch = new Float32Array(12);
-
-                // material entity → layer (rebuilt only when the material count changes)
                 let matLayer = new Map<Entity, number>();
                 let matCount = -1;
 
@@ -126,8 +74,8 @@ export const pbrRender = Database.Plugin.create({
 
                 return () => {
                     const {
-                        device, renderPassEncoder, canvasFormat, depthFormat, _sceneUniformsBuffer, camera,
-                        _materialBindGroup, _iblEnvironment, _iblIrradiance, _iblPrefiltered, _iblBrdfLut,
+                        device, renderPassEncoder, canvasFormat, depthFormat, _sceneUniformsBuffer,
+                        _materialBindGroup, _iblIrradiance, _iblPrefiltered, _iblBrdfLut,
                     } = db.store.resources;
                     if (!device || !renderPassEncoder || !_sceneUniformsBuffer || !_materialBindGroup) return;
                     if (!_iblIrradiance || !_iblPrefiltered || !_iblBrdfLut) return;
@@ -172,44 +120,6 @@ export const pbrRender = Database.Plugin.create({
                         cachedIrradiance = _iblIrradiance;
                     }
 
-                    // --- Skybox (environment map): draw first, depth "always"/no-write ---
-                    if (camera && _iblEnvironment) {
-                        if (!skyboxLayout) skyboxLayout = createSkyboxBindGroupLayout(device);
-                        if (!skyboxUniform) skyboxUniform = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-                        if (!skyboxPipeline) {
-                            const sm = device.createShaderModule({ code: skyboxShader });
-                            skyboxPipeline = device.createRenderPipeline({
-                                layout: device.createPipelineLayout({ bindGroupLayouts: [skyboxLayout] }),
-                                vertex: { module: sm, entryPoint: "vs_skybox" },
-                                fragment: { module: sm, entryPoint: "fs_skybox", targets: [{ format: canvasFormat }] },
-                                primitive: { topology: "triangle-list" },
-                                depthStencil: { format: depthFormat, depthWriteEnabled: false, depthCompare: "always" },
-                            });
-                        }
-                        if (_iblEnvironment !== cachedSkyEnv || !skyboxBindGroup) {
-                            skyboxBindGroup = device.createBindGroup({
-                                layout: skyboxLayout,
-                                entries: [
-                                    { binding: 0, resource: { buffer: skyboxUniform } },
-                                    { binding: 1, resource: _iblEnvironment.createView({ dimension: "cube" }) },
-                                    { binding: 2, resource: iblSampler },
-                                ],
-                            });
-                            cachedSkyEnv = _iblEnvironment;
-                        }
-                        const forward = Vec3.normalize(Vec3.subtract(camera.target, camera.position));
-                        const right = Vec3.normalize(Vec3.cross(forward, camera.up));
-                        const up = Vec3.cross(right, forward);
-                        const tanHalfFov = Math.tan(camera.fieldOfView / 2);
-                        skyScratch[0] = right[0]; skyScratch[1] = right[1]; skyScratch[2] = right[2]; skyScratch[3] = camera.aspect;
-                        skyScratch[4] = up[0]; skyScratch[5] = up[1]; skyScratch[6] = up[2]; skyScratch[7] = tanHalfFov;
-                        skyScratch[8] = forward[0]; skyScratch[9] = forward[1]; skyScratch[10] = forward[2]; skyScratch[11] = 0;
-                        device.queue.writeBuffer(skyboxUniform, 0, skyScratch);
-                        renderPassEncoder.setPipeline(skyboxPipeline);
-                        renderPassEncoder.setBindGroup(0, skyboxBindGroup);
-                        renderPassEncoder.draw(3);
-                    }
-
                     // material → layer, refreshed only when the material set grows
                     let mc = 0;
                     for (const arch of db.store.queryArchetypes(["_layerIndex"])) mc += arch.rowCount;
@@ -222,7 +132,7 @@ export const pbrRender = Database.Plugin.create({
                         matCount = mc;
                     }
 
-                    // gather visible drawables grouped by geometry
+                    // gather visible primitive drawables grouped by geometry
                     interface Draw { matrix: Mat4x4; layer: number }
                     const byGeo = new Map<Entity, Draw[]>();
                     for (const arch of db.store.queryArchetypes(DRAWABLE)) {

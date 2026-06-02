@@ -17,8 +17,8 @@ export interface MaterialArrays {
 
 /** Fixed layer size every material map is resampled to. */
 export const MATERIAL_TEXTURE_SIZE = 512;
-/** Maximum distinct materials (array layers). */
-export const MAX_MATERIAL_LAYERS = 64;
+/** Maximum distinct materials (array layers). 16 × 512² × 5 maps ≈ 80 MB. */
+export const MAX_MATERIAL_LAYERS = 16;
 /** Bytes per palette entry: baseColor(vec4) + emissive/metallic(vec4) + rough/normal/occlusion(vec4). */
 export const PALETTE_STRIDE = 48;
 

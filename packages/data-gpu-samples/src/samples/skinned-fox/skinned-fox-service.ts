@@ -2,10 +2,10 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Vec3 } from "@adobe/data/math";
-import { pbrIblRender, pbrSkinning, Model, Orbit } from "@adobe/data-gpu";
+import { pbrRender, pbrSkinning, Model, Orbit } from "@adobe/data-gpu";
 
 export const skinnedFoxPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrIblRender, pbrSkinning, Orbit.plugin),
+    extends: Database.Plugin.combine(pbrRender, pbrSkinning, Orbit.plugin),
     transactions: {
         initializeScene(t, args: {
             modelUrl: string;

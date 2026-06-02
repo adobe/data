@@ -409,7 +409,7 @@ export const pbrIblRender = Database.Plugin.create({
                     }
                 };
             },
-            schedule: { during: ["render"], after: ["iblInitSystem", "transformSystem"] },
+            schedule: { during: ["render"], after: ["beginRenderPass", "iblInitSystem", "transformSystem"], before: ["endRenderPass"] },
         },
     },
 });

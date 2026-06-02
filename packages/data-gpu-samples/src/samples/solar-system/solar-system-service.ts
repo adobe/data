@@ -6,7 +6,7 @@ import {
     animation,
     Model,
     Orbit,
-    pbrIblRender,
+    pbrRender,
     picking,
     type AnimationTrack,
 } from "@adobe/data-gpu";
@@ -40,7 +40,7 @@ interface PlanetSpec {
 }
 
 export const solarSystemPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrIblRender, sphere, animation, Orbit.plugin, picking),
+    extends: Database.Plugin.combine(pbrRender, sphere, animation, Orbit.plugin, picking),
     transactions: {
         initializeScene(t) {
             t.resources.orbit = {

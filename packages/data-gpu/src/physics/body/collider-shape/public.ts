@@ -4,4 +4,3 @@ export { schema } from "./schema.js";
 export { list } from "./list.js";
 export { toIndex } from "./to-index.js";
 export { massProperties } from "./mass-properties.js";
-export type { MassProperties } from "./mass-properties.js";

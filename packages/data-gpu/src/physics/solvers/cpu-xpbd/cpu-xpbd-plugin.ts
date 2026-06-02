@@ -25,9 +25,6 @@ interface MatProps { density: number; restitution: number; friction: number; com
 
 const COMPONENTS = ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"] as const;
 
-const _v3: [number, number, number] = [0, 0, 0];
-const _v4: [number, number, number, number] = [0, 0, 0, 0];
-
 export const cpuXpbd = Database.Plugin.create({
     extends: Database.Plugin.combine(physicsData, core, Material.plugin),
     resources: {
@@ -91,35 +88,38 @@ export const cpuXpbd = Database.Plugin.create({
                     }
 
                 // --- gather: ECS columns → flat arrays -------------------------
+                // Direct typed-array access: Vec3/Quat columns are flat Float32Array
+                // struct buffers, so `getTypedArray()` + indexing avoids the per-row
+                // array allocation that `column.get(r)` does (GC churn at 60fps).
                 let i = 0;
                 for (const arch of db.store.queryArchetypes(COMPONENTS)) {
-                    const bt = arch.columns.bodyType, cs = arch.columns.colliderShape, he = arch.columns.halfExtents;
-                    const mat = arch.columns.material, pos = arch.columns.position, ori = arch.columns.rotation;
-                    const lv = arch.columns.linearVelocity, av = arch.columns.angularVelocity;
+                    const bt = arch.columns.bodyType, cs = arch.columns.colliderShape, mat = arch.columns.material;
+                    const heArr = arch.columns.halfExtents.getTypedArray();
+                    const posArr = arch.columns.position.getTypedArray();
+                    const oriArr = arch.columns.rotation.getTypedArray();
+                    const lvArr = arch.columns.linearVelocity.getTypedArray();
+                    const avArr = arch.columns.angularVelocity.getTypedArray();
                     for (let r = 0; r < arch.rowCount; r++, i++) {
+                        const shape = cs.get(r);
                         const dyn = BodyType.isDynamic(bt.get(r));
-                        const shape = ColliderShape.toIndex(cs.get(r));
-                        const e = he.get(r);
                         const m = matProps.get(mat.get(r));
-                        const density = m ? m.density : 1;
-                        const p = pos.get(r), q = ori.get(r), v = lv.get(r), w = av.get(r);
+                        const r3 = r * 3, r4 = r * 4, i3 = i * 3, i4 = i * 4;
+                        const hx = heArr[r3], hy = heArr[r3 + 1], hz = heArr[r3 + 2];
                         state.dynamic[i] = dyn ? 1 : 0;
-                        state.shape[i] = shape;
-                        state.halfExtent[i * 3] = e[0]; state.halfExtent[i * 3 + 1] = e[1]; state.halfExtent[i * 3 + 2] = e[2];
-                        state.pos[i * 3] = p[0]; state.pos[i * 3 + 1] = p[1]; state.pos[i * 3 + 2] = p[2];
-                        state.orient[i * 4] = q[0]; state.orient[i * 4 + 1] = q[1]; state.orient[i * 4 + 2] = q[2]; state.orient[i * 4 + 3] = q[3];
-                        state.vel[i * 3] = v[0]; state.vel[i * 3 + 1] = v[1]; state.vel[i * 3 + 2] = v[2];
-                        state.angVel[i * 3] = w[0]; state.angVel[i * 3 + 1] = w[1]; state.angVel[i * 3 + 2] = w[2];
+                        state.shape[i] = ColliderShape.toIndex(shape);
+                        state.halfExtent[i3] = hx; state.halfExtent[i3 + 1] = hy; state.halfExtent[i3 + 2] = hz;
+                        state.pos[i3] = posArr[r3]; state.pos[i3 + 1] = posArr[r3 + 1]; state.pos[i3 + 2] = posArr[r3 + 2];
+                        state.orient[i4] = oriArr[r4]; state.orient[i4 + 1] = oriArr[r4 + 1]; state.orient[i4 + 2] = oriArr[r4 + 2]; state.orient[i4 + 3] = oriArr[r4 + 3];
+                        state.vel[i3] = lvArr[r3]; state.vel[i3 + 1] = lvArr[r3 + 1]; state.vel[i3 + 2] = lvArr[r3 + 2];
+                        state.angVel[i3] = avArr[r3]; state.angVel[i3 + 1] = avArr[r3 + 1]; state.angVel[i3 + 2] = avArr[r3 + 2];
                         state.restitution[i] = m ? m.restitution : 0.2;
                         state.friction[i] = m ? m.friction : 0.5;
                         state.compliance[i] = m ? m.compliance : 0;
                         if (dyn) {
-                            const mp = ColliderShape.massProperties(cs.get(r), e, density);
-                            state.invMass[i] = mp.inverseMass;
-                            state.invInertia[i * 3] = mp.inverseInertia[0]; state.invInertia[i * 3 + 1] = mp.inverseInertia[1]; state.invInertia[i * 3 + 2] = mp.inverseInertia[2];
+                            state.invMass[i] = ColliderShape.massProperties(shape, hx, hy, hz, m ? m.density : 1, state.invInertia, i3);
                         } else {
                             state.invMass[i] = 0;
-                            state.invInertia[i * 3] = 0; state.invInertia[i * 3 + 1] = 0; state.invInertia[i * 3 + 2] = 0;
+                            state.invInertia[i3] = 0; state.invInertia[i3 + 1] = 0; state.invInertia[i3 + 2] = 0;
                         }
                     }
                 }
@@ -128,17 +128,20 @@ export const cpuXpbd = Database.Plugin.create({
                 step(state, dt, db.store.resources.cpuPhysicsConfig);
 
                 // --- scatter: dynamic bodies → ECS columns (re-query, same order) ---
+                // Direct typed-array writes — no transaction, no per-row allocation.
                 let j = 0;
                 for (const arch of db.store.queryArchetypes(COMPONENTS)) {
-                    const pos = arch.columns.position, ori = arch.columns.rotation;
-                    const lv = arch.columns.linearVelocity, av = arch.columns.angularVelocity;
+                    const posArr = arch.columns.position.getTypedArray();
+                    const oriArr = arch.columns.rotation.getTypedArray();
+                    const lvArr = arch.columns.linearVelocity.getTypedArray();
+                    const avArr = arch.columns.angularVelocity.getTypedArray();
                     for (let r = 0; r < arch.rowCount; r++, j++) {
-                        const idx = j;
-                        if (state.dynamic[idx] === 0) continue;
-                        _v3[0] = state.pos[idx * 3]; _v3[1] = state.pos[idx * 3 + 1]; _v3[2] = state.pos[idx * 3 + 2]; pos.set(r, _v3);
-                        _v4[0] = state.orient[idx * 4]; _v4[1] = state.orient[idx * 4 + 1]; _v4[2] = state.orient[idx * 4 + 2]; _v4[3] = state.orient[idx * 4 + 3]; ori.set(r, _v4);
-                        _v3[0] = state.vel[idx * 3]; _v3[1] = state.vel[idx * 3 + 1]; _v3[2] = state.vel[idx * 3 + 2]; lv.set(r, _v3);
-                        _v3[0] = state.angVel[idx * 3]; _v3[1] = state.angVel[idx * 3 + 1]; _v3[2] = state.angVel[idx * 3 + 2]; av.set(r, _v3);
+                        if (state.dynamic[j] === 0) continue;
+                        const r3 = r * 3, r4 = r * 4, j3 = j * 3, j4 = j * 4;
+                        posArr[r3] = state.pos[j3]; posArr[r3 + 1] = state.pos[j3 + 1]; posArr[r3 + 2] = state.pos[j3 + 2];
+                        oriArr[r4] = state.orient[j4]; oriArr[r4 + 1] = state.orient[j4 + 1]; oriArr[r4 + 2] = state.orient[j4 + 2]; oriArr[r4 + 3] = state.orient[j4 + 3];
+                        lvArr[r3] = state.vel[j3]; lvArr[r3 + 1] = state.vel[j3 + 1]; lvArr[r3 + 2] = state.vel[j3 + 2];
+                        avArr[r3] = state.angVel[j3]; avArr[r3 + 1] = state.angVel[j3 + 1]; avArr[r3 + 2] = state.angVel[j3 + 2];
                     }
                 }
                 };

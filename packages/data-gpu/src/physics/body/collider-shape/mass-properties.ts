@@ -1,31 +1,30 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import type { Vec3 } from "@adobe/data/math";
 import type { ColliderShape } from "./collider-shape.js";
 
-export interface MassProperties {
-    inverseMass: number;
-    /** Diagonal inverse inertia in body-local space. */
-    inverseInertia: Vec3;
-}
-
 /**
- * Mass + diagonal inertia for a shape of the given size and density. The
- * per-shape formulas live here (with the type) rather than leaking the shape
- * members into the solver. Density comes from the body's material.
+ * Mass + diagonal inverse inertia for a shape of the given half-extents and
+ * density. The per-shape formulas live here (with the type) rather than leaking
+ * the shape members into the solver. Allocation-free: the diagonal inverse
+ * inertia is written into `outInvInertia[o..o+2]` and the inverse mass returned
+ * (this runs per dynamic body per frame in the solver gather). Density comes
+ * from the body's material.
  */
-export function massProperties(shape: ColliderShape, halfExtents: Vec3, density: number): MassProperties {
+export function massProperties(
+    shape: ColliderShape, hx: number, hy: number, hz: number, density: number,
+    outInvInertia: Float32Array, o: number,
+): number {
     if (shape === "box") {
-        const [hx, hy, hz] = halfExtents;
         const mass = density * 8 * hx * hy * hz;
         const ix = (mass / 3) * (hy * hy + hz * hz);
         const iy = (mass / 3) * (hx * hx + hz * hz);
         const iz = (mass / 3) * (hx * hx + hy * hy);
-        return { inverseMass: 1 / mass, inverseInertia: [1 / ix, 1 / iy, 1 / iz] };
+        outInvInertia[o] = 1 / ix; outInvInertia[o + 1] = 1 / iy; outInvInertia[o + 2] = 1 / iz;
+        return 1 / mass;
     }
-    // sphere — radius in halfExtents.x
-    const r = halfExtents[0];
-    const mass = density * (4 / 3) * Math.PI * r * r * r;
-    const i = 0.4 * mass * r * r;
-    return { inverseMass: 1 / mass, inverseInertia: [1 / i, 1 / i, 1 / i] };
+    // sphere — radius in hx
+    const mass = density * (4 / 3) * Math.PI * hx * hx * hx;
+    const inv = 1 / (0.4 * mass * hx * hx);
+    outInvInertia[o] = inv; outInvInertia[o + 1] = inv; outInvInertia[o + 2] = inv;
+    return 1 / mass;
 }

@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database, type Entity } from "@adobe/data/ecs";
-import { Mat4x4, Quat } from "@adobe/data/math";
+import { Mat4x4, Quat, Vec3 } from "@adobe/data/math";
 import { graphics } from "../../graphics-plugin.js";
 import { model } from "../../scene/model/model-plugin.js";
 import { pbrCore } from "../pbr-core-plugin.js";
@@ -13,12 +13,23 @@ import { createMaterialBindGroupLayout } from "../material-gpu/material-bind-gro
 import { buildIblResources } from "../ibl-render/ibl/build-ibl-resources.js";
 import { parseHdr } from "../ibl-render/ibl/parse-hdr.js";
 import { buildPbrArrayShader } from "./pbr-array-shader.wgsl.js";
+import skyboxShader from "../ibl-render/skybox-shader.wgsl.js";
 
 const PREFILTERED_MIP_COUNT = 7;
 
 /** Drawable components: any Model-shaped entity with a material reference. */
 const DRAWABLE = ["geometry", "visible", "position", "rotation", "scale", "material"] as const;
 const PRIMITIVE = ["_vertexBuffer", "_indexBuffer", "_indexCount", "_indexFormat", "_geometry", "_nodeLocalMatrix"] as const;
+
+function createSkyboxBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
+    return device.createBindGroupLayout({
+        entries: [
+            { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: "uniform" } },
+            { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: "float", viewDimension: "cube" } },
+            { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: "filtering" } },
+        ],
+    });
+}
 
 function createIblBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
     return device.createBindGroupLayout({
@@ -96,6 +107,14 @@ export const pbrRender = Database.Plugin.create({
                 let cachedSceneBuffer: GPUBuffer | null = null;
                 let cachedIrradiance: GPUTexture | null = null;
 
+                // Skybox (environment map) — standard technique shared with pbrIblRender.
+                let skyboxPipeline: GPURenderPipeline | null = null;
+                let skyboxLayout: GPUBindGroupLayout | null = null;
+                let skyboxBindGroup: GPUBindGroup | null = null;
+                let skyboxUniform: GPUBuffer | null = null;
+                let cachedSkyEnv: GPUTexture | null = null;
+                const skyScratch = new Float32Array(12);
+
                 // material entity → layer (rebuilt only when the material count changes)
                 let matLayer = new Map<Entity, number>();
                 let matCount = -1;
@@ -107,8 +126,8 @@ export const pbrRender = Database.Plugin.create({
 
                 return () => {
                     const {
-                        device, renderPassEncoder, canvasFormat, depthFormat, _sceneUniformsBuffer,
-                        _materialBindGroup, _iblIrradiance, _iblPrefiltered, _iblBrdfLut,
+                        device, renderPassEncoder, canvasFormat, depthFormat, _sceneUniformsBuffer, camera,
+                        _materialBindGroup, _iblEnvironment, _iblIrradiance, _iblPrefiltered, _iblBrdfLut,
                     } = db.store.resources;
                     if (!device || !renderPassEncoder || !_sceneUniformsBuffer || !_materialBindGroup) return;
                     if (!_iblIrradiance || !_iblPrefiltered || !_iblBrdfLut) return;
@@ -151,6 +170,44 @@ export const pbrRender = Database.Plugin.create({
                             ],
                         });
                         cachedIrradiance = _iblIrradiance;
+                    }
+
+                    // --- Skybox (environment map): draw first, depth "always"/no-write ---
+                    if (camera && _iblEnvironment) {
+                        if (!skyboxLayout) skyboxLayout = createSkyboxBindGroupLayout(device);
+                        if (!skyboxUniform) skyboxUniform = device.createBuffer({ size: 48, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+                        if (!skyboxPipeline) {
+                            const sm = device.createShaderModule({ code: skyboxShader });
+                            skyboxPipeline = device.createRenderPipeline({
+                                layout: device.createPipelineLayout({ bindGroupLayouts: [skyboxLayout] }),
+                                vertex: { module: sm, entryPoint: "vs_skybox" },
+                                fragment: { module: sm, entryPoint: "fs_skybox", targets: [{ format: canvasFormat }] },
+                                primitive: { topology: "triangle-list" },
+                                depthStencil: { format: depthFormat, depthWriteEnabled: false, depthCompare: "always" },
+                            });
+                        }
+                        if (_iblEnvironment !== cachedSkyEnv || !skyboxBindGroup) {
+                            skyboxBindGroup = device.createBindGroup({
+                                layout: skyboxLayout,
+                                entries: [
+                                    { binding: 0, resource: { buffer: skyboxUniform } },
+                                    { binding: 1, resource: _iblEnvironment.createView({ dimension: "cube" }) },
+                                    { binding: 2, resource: iblSampler },
+                                ],
+                            });
+                            cachedSkyEnv = _iblEnvironment;
+                        }
+                        const forward = Vec3.normalize(Vec3.subtract(camera.target, camera.position));
+                        const right = Vec3.normalize(Vec3.cross(forward, camera.up));
+                        const up = Vec3.cross(right, forward);
+                        const tanHalfFov = Math.tan(camera.fieldOfView / 2);
+                        skyScratch[0] = right[0]; skyScratch[1] = right[1]; skyScratch[2] = right[2]; skyScratch[3] = camera.aspect;
+                        skyScratch[4] = up[0]; skyScratch[5] = up[1]; skyScratch[6] = up[2]; skyScratch[7] = tanHalfFov;
+                        skyScratch[8] = forward[0]; skyScratch[9] = forward[1]; skyScratch[10] = forward[2]; skyScratch[11] = 0;
+                        device.queue.writeBuffer(skyboxUniform, 0, skyScratch);
+                        renderPassEncoder.setPipeline(skyboxPipeline);
+                        renderPassEncoder.setBindGroup(0, skyboxBindGroup);
+                        renderPassEncoder.draw(3);
                     }
 
                     // material → layer, refreshed only when the material set grows

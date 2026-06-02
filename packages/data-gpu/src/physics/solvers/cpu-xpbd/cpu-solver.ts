@@ -459,17 +459,16 @@ function solveVelocity(s: SolverState, a: number, b: number, e: number, threshol
     // clamped by μ·λn); the velocity pass only does restitution + rolling/spin.
 
     // rolling + spinning friction: oppose the *relative angular* velocity at the
-    // contact (once per pair, not per manifold point). Sliding friction can't
-    // touch spin about the contact normal — its lever arm is zero — so without
-    // this a sphere spins on its axis forever and resting boxes keep a twist.
+    // contact (once per pair). Only spheres need it — a sphere's single contact
+    // sits on its spin axis, so neither sliding nor position friction can stop
+    // it spinning/rolling. Boxes resist spin geometrically via their multi-point
+    // contact patch (position-solve friction at the corners), so they're left be.
     if (firstContact && roll > 0) {
-        const imA = s.invMass[a], imB = s.invMass[b];
         const rwx = s.angVel[a * 3] - s.angVel[b * 3];
         const rwy = s.angVel[a * 3 + 1] - s.angVel[b * 3 + 1];
         const rwz = s.angVel[a * 3 + 2] - s.angVel[b * 3 + 2];
-        const fa = roll * (imB > 0 ? 0.5 : 1), fb = roll * (imA > 0 ? 0.5 : 1);
-        if (imA > 0) { s.angVel[a * 3] -= rwx * fa; s.angVel[a * 3 + 1] -= rwy * fa; s.angVel[a * 3 + 2] -= rwz * fa; }
-        if (imB > 0) { s.angVel[b * 3] += rwx * fb; s.angVel[b * 3 + 1] += rwy * fb; s.angVel[b * 3 + 2] += rwz * fb; }
+        if (s.shape[a] === SHAPE_SPHERE && s.invMass[a] > 0) { s.angVel[a * 3] -= rwx * roll; s.angVel[a * 3 + 1] -= rwy * roll; s.angVel[a * 3 + 2] -= rwz * roll; }
+        if (s.shape[b] === SHAPE_SPHERE && s.invMass[b] > 0) { s.angVel[b * 3] += rwx * roll; s.angVel[b * 3 + 1] += rwy * roll; s.angVel[b * 3 + 2] += rwz * roll; }
     }
 }
 
@@ -688,11 +687,11 @@ function resolveStaticVelocity(s: SolverState, i: number, cfg: SolverConfig): vo
         if (dvn > 0) staticVelImpulse(s, i, rx, ry, rz, nx, ny, nz, dvn);
         // Sliding friction is handled in the position solve (Coulomb, μ·λn);
         // the velocity pass only does restitution + rolling/spin.
-        // rolling + spinning friction against the immovable world: dissipate the
-        // body's rotation through the contact (we resolve it at a single support
-        // point, so spin about the contact normal is otherwise never opposed).
+        // rolling + spinning friction against the immovable world — spheres only
+        // (a box resolves the floor at its corners, so its spin is already
+        // opposed by the position-solve friction there).
         const roll = mu * cfg.rollingFriction;
-        if (roll > 0) {
+        if (roll > 0 && s.shape[i] === SHAPE_SPHERE) {
             const f = 1 - Math.min(roll, 1);
             s.angVel[i * 3] *= f; s.angVel[i * 3 + 1] *= f; s.angVel[i * 3 + 2] *= f;
         }

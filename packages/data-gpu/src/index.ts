@@ -18,6 +18,7 @@ export type { RigidBody } from "./physics/body/rigid-body.js";
 export { BodyType } from "./physics/body/body-type/body-type.js";
 export { ColliderShape } from "./physics/body/collider-shape/collider-shape.js";
 export { Material } from "./physics/material/material.js";
+export { cpuXpbd } from "./physics/solvers/cpu-xpbd/cpu-xpbd-plugin.js";
 
 // --- Physics: shelved GPU XPBD solver (compute-only, massive-scale path) ------
 export { physics } from "./physics/physics-plugin.js";

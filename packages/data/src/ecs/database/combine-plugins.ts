@@ -26,15 +26,16 @@ export type CombinePlugins<Plugins extends readonly Database.Plugin[]> = Databas
   >,
   {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['actions'] }>,
   {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['services'] }>,
-  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['computed'] }>
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['computed'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['indexes'] }>
 >;
 
 
 /**
  * Combines multiple plugins into a single plugin.
- * All plugin properties (components, resources, archetypes, computed, transactions, systems, actions, services)
+ * All plugin properties (components, resources, archetypes, indexes, computed, transactions, systems, actions, services)
  * require identity (===) when the same key exists across plugins.
- * 
+ *
  * IMPORTANT: Services are merged in order, preserving the initialization order
  * so that extended plugin services are initialized before current plugin services.
  */
@@ -48,9 +49,10 @@ export function combinePlugins<
   Extract<UnionAll<{ [K in keyof Plugins]: StringKeyof<Plugins[K]['systems']> }>, string>,
   {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['actions'] }>,
   {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['services'] }>,
-  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['computed'] }>
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['computed'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['indexes'] }>
 > {
-  const keys = ['services', 'components', 'resources', 'archetypes', 'computed', 'transactions', 'actions', 'systems'] as const;
+  const keys = ['services', 'components', 'resources', 'archetypes', 'indexes', 'computed', 'transactions', 'actions', 'systems'] as const;
 
   const merge = (base: any, next: any) =>
     Object.fromEntries(keys.map(key => {
@@ -70,7 +72,7 @@ export function combinePlugins<
       return [key, merged];
     }));
 
-  const emptyPlugin = { components: {}, resources: {}, archetypes: {}, computed: {}, transactions: {}, actions: {}, systems: {}, services: {} };
+  const emptyPlugin = { components: {}, resources: {}, archetypes: {}, indexes: {}, computed: {}, transactions: {}, actions: {}, systems: {}, services: {} };
 
   // Merge all plugins together
   const result = plugins.reduce(merge, emptyPlugin);

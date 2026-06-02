@@ -10,6 +10,7 @@ import { StringKeyof } from "../../../types/types.js";
 import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { FromSchemas } from "../../../schema/from-schemas.js";
 import { Undoable } from "../undoable.js";
+import { IndexDeclarations } from "../../store/index-types.js";
 
 /**
  * The first argument passed to every transaction function. Extends the full
@@ -24,7 +25,8 @@ export type TransactionContext<
     C extends Components,
     R extends ResourceComponents,
     A extends ArchetypeComponents<StringKeyof<C>>,
-> = Store<C, R, A> & {
+    IX extends IndexDeclarations<C> = {},
+> = Store<C, R, A, IX> & {
     readonly userId: number | string | undefined;
 };
 
@@ -32,7 +34,8 @@ export interface TransactionalStore<
     C extends Components = never,
     R extends ResourceComponents = never,
     A extends ArchetypeComponents<StringKeyof<C>> = never,
-> extends ReadonlyStore<C, R, A> {
+    IX extends IndexDeclarations<C> = {},
+> extends ReadonlyStore<C, R, A, IX> {
     /**
      * Execute a transaction on the store.
      * The transactionFunction must NOT directly mutate archetype rows as those changes would not be captured.

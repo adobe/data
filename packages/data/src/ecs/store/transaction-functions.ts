@@ -5,20 +5,24 @@ import { Components } from "./components.js";
 import { ResourceComponents } from "./resource-components.js";
 import { ArchetypeComponents } from "./archetype-components.js";
 import { StringKeyof } from "../../types/types.js";
+import { IndexDeclarations } from "./index-types.js";
 import type { TransactionContext } from "../database/transactional-store/transactional-store.js";
 
 export type TransactionDeclaration<
     C extends Components,
     R extends ResourceComponents,
     A extends ArchetypeComponents<StringKeyof<C>>,
-    Input extends any | void = any> = (t: TransactionContext<C, R, A>, input: Input) => void | Entity;
+    IX extends IndexDeclarations<C> = {},
+    Input extends any | void = any> = (t: TransactionContext<C, R, A, IX>, input: Input) => void | Entity;
 
 export type AsyncArgsProvider<T> = () => Promise<T> | AsyncGenerator<T>;
 
 export type TransactionDeclarations<
     C extends Components,
     R extends ResourceComponents,
-    A extends ArchetypeComponents<StringKeyof<C>>> = { readonly [Q: string]: TransactionDeclaration<C, R, A> };
+    A extends ArchetypeComponents<StringKeyof<C>>,
+    IX extends IndexDeclarations<C> = {},
+> = { readonly [Q: string]: TransactionDeclaration<C, R, A, IX> };
 
 /**
  * Converts from TransactionDeclarations to TransactionFunctions by removing

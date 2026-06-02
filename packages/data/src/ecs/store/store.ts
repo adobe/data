@@ -16,6 +16,7 @@ import { ComponentSchemas } from "../component-schemas.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { createStore } from "./public/create-store.js";
 import { OptionalComponents } from "../optional-components.js";
+import { Index, IndexDeclarations } from "./index-types.js";
 
 interface BaseStore<C extends object = never> {
     select<
@@ -31,9 +32,11 @@ export interface ReadonlyStore<
     C extends Components = never,
     R extends ResourceComponents = never,
     A extends ArchetypeComponents<StringKeyof<C>> = never,
+    IX extends IndexDeclarations<C> = {},
 > extends BaseStore<C>, ReadonlyCore<C> {
     readonly resources: { readonly [K in StringKeyof<R>]: R[K] };
     readonly archetypes: { readonly [K in StringKeyof<A>]: ReadonlyArchetype<RequiredComponents & { [P in A[K][number]]: (C & RequiredComponents & OptionalComponents)[P] }> }
+    readonly indexes: { readonly [K in keyof IX]: Index.Handle<C, IX[K]> };
 }
 
 export type ToReadonlyStore<T extends Store> = T extends Store<infer C, infer R> ? ReadonlyStore<C, R> : never;
@@ -45,6 +48,7 @@ export interface Store<
     C extends Components = {},
     R extends ResourceComponents = {},
     A extends ArchetypeComponents<StringKeyof<C>> = {},
+    IX extends IndexDeclarations<C> = {},
 > extends BaseStore<C>, Core<C> {
     /**
      * This is used when a store is used to represent a transaction.
@@ -53,10 +57,17 @@ export interface Store<
     undoable?: Undoable;
     readonly resources: { -readonly [K in StringKeyof<R>]: R[K] };
     readonly archetypes: { -readonly [K in StringKeyof<A>]: Archetype<RequiredComponents & { [P in A[K][number]]: (C & RequiredComponents & OptionalComponents)[P] }> }
+    /**
+     * Index handles keyed by user-chosen name. Returned handles are the
+     * same references at the Store layer and the Database layer; mutations
+     * to the store keep them in sync as a side effect of every
+     * insert/update/delete.
+     */
+    readonly indexes: { readonly [K in keyof IX]: Index.Handle<C, IX[K]> };
     /** Wipe all entities and reset resources to plugin defaults. O(num_archetypes + num_resources). */
     reset(): void;
     fromData(data: unknown): void
-    extend<S extends Store.Schema>(schema: S): S extends Store.Schema<infer XC, infer XR, infer XA> ? Store<C & XC, R & XR, A & XA> : never;
+    extend<S extends Store.Schema>(schema: S): S extends Store.Schema<infer XC, infer XR, infer XA, infer XIX> ? Store<C & XC, R & XR, A & XA, IX & XIX> : never;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -71,24 +82,29 @@ export namespace Store {
         CS extends ComponentSchemas = any,
         RS extends ResourceSchemas = any,
         A extends ArchetypeComponents<StringKeyof<CS>> = any,
+        IX extends IndexDeclarations<FromSchemas<CS>> = {},
     > = {
         readonly components: CS;
         readonly resources: RS;
         readonly archetypes: A;
+        // Optional so existing literals that pre-date the indexes field stay
+        // assignable. Consumers default missing values to `{}` at runtime.
+        readonly indexes?: IX;
     };
 
-    export type FromSchema<T> = T extends Store.Schema<infer CS, infer RS, infer A> ? Store<FromSchemas<CS>, FromSchemas<RS>, A> : never;
+    export type FromSchema<T> = T extends Store.Schema<infer CS, infer RS, infer A, infer IX> ? Store<FromSchemas<CS>, FromSchemas<RS>, A, IX> : never;
 
     export namespace Schema {
 
-        export type Intersect<T extends readonly Schema<any, any, any>[]> =
+        export type Intersect<T extends readonly Schema<any, any, any, any>[]> =
             Store.Schema<
-                {} & IntersectTuple<{ [K in keyof T]: T[K] extends Schema<infer C, infer R, infer A> ? C : never }>,
-                {} & IntersectTuple<{ [K in keyof T]: T[K] extends Schema<any, infer R, any> ? R : never }>,
-                {} & IntersectTuple<{ [K in keyof T]: T[K] extends Schema<any, any, infer A> ? A : never }>
+                {} & IntersectTuple<{ [K in keyof T]: T[K] extends Schema<infer C, any, any, any> ? C : never }>,
+                {} & IntersectTuple<{ [K in keyof T]: T[K] extends Schema<any, infer R, any, any> ? R : never }>,
+                {} & IntersectTuple<{ [K in keyof T]: T[K] extends Schema<any, any, infer A, any> ? A : never }>,
+                {} & IntersectTuple<{ [K in keyof T]: T[K] extends Schema<any, any, any, infer IX> ? IX : never }>
             >
 
-        type S = Intersect<[Store.Schema<{ a: { type: "number" } }, { b: { default: "string" } }, {}>, Store.Schema<{ c: { type: "number" } }, { d: { default: "string" } }, {}>, Store.Schema<{ e: { type: "number" } }, { f: { default: "string" } }, {}>]>
+        type S = Intersect<[Store.Schema<{ a: { type: "number" } }, { b: { default: "string" } }, {}, {}>, Store.Schema<{ c: { type: "number" } }, { d: { default: "string" } }, {}, {}>, Store.Schema<{ e: { type: "number" } }, { f: { default: "string" } }, {}, {}>]>
         type CheckIntersect = Assert<Equal<S, {
             readonly components: {
                 a: {
@@ -113,19 +129,20 @@ export namespace Store {
                 };
             };
             readonly archetypes: {};
+            readonly indexes?: {};
         }>>;
 
         /**
          * Creates a Store schema with optional properties. All schema properties
-         * (components, resources, archetypes) are optional and default to empty
-         * objects when not provided.
-         * 
+         * (components, resources, archetypes, indexes) are optional and default
+         * to empty objects when not provided.
+         *
          * @param schema - Partial store schema. Omit any properties you don't need.
          * @param dependencies - Optional array of schemas to merge with. Properties from
          *                       dependencies are merged with the schema, with dependencies
          *                       taking precedence for overlapping properties.
          * @returns The merged schema with all properties from the schema and dependencies
-         * 
+         *
          * @example
          * ```typescript
          * // Minimal schema with only components
@@ -134,7 +151,7 @@ export namespace Store {
          *     position: { type: "number" }
          *   }
          * });
-         * 
+         *
          * // Schema with dependencies
          * const extended = Store.Schema.create({
          *   components: { velocity: { type: "number" } }
@@ -145,24 +162,27 @@ export namespace Store {
             const CS extends ComponentSchemas = {},
             const RS extends ResourceSchemas = {},
             const A extends ArchetypeComponents<StringKeyof<CS& Intersect<D>["components"]>> = {},
-            const D extends readonly Store.Schema<any, any, any>[] = [],
+            const IX extends IndexDeclarations<FromSchemas<CS & Intersect<D>["components"]>> = {},
+            const D extends readonly Store.Schema<any, any, any, any>[] = [],
         >(
             schema: Partial<{
                 components: CS;
                 resources: RS;
                 archetypes: A;
+                indexes: IX;
             }>,
             dependencies?: D
-        ): Intersect<[Store.Schema<CS & Intersect<D>["components"], RS, A>, ...D]> {
-            const { components = {}, resources = {}, archetypes = {} } = schema;
+        ): Intersect<[Store.Schema<CS & Intersect<D>["components"], RS, A, IX>, ...D]> {
+            const { components = {}, resources = {}, archetypes = {}, indexes = {} } = schema;
             return (dependencies ?? []).reduce((acc, curr) => {
                 return {
                     components: { ...acc.components, ...curr.components },
                     resources: { ...acc.resources, ...curr.resources },
                     archetypes: { ...acc.archetypes, ...curr.archetypes },
+                    indexes: { ...acc.indexes, ...curr.indexes },
                 }
             },
-                { components, resources, archetypes } as any
+                { components, resources, archetypes, indexes } as any
             );
         }
 
@@ -191,7 +211,7 @@ type CheckStoreFromSchema = Store.FromSchema<Store.Schema<{
 }, {
     Particle: ["particle"],
     DynamicParticle: ["particle", "velocity"],
-}>>;
+}, {}>>;
 declare const testStore: CheckStoreFromSchema;
 type A = typeof testStore.archetypes.DynamicParticle;
 type CheckDynamicParticle = Assert<Equal<typeof testStore.archetypes.DynamicParticle, Archetype<RequiredComponents & {

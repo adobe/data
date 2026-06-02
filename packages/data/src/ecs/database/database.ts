@@ -13,6 +13,8 @@ import { Components } from "../store/components.js";
 import { ArchetypeComponents } from "../store/archetype-components.js";
 import { RequiredComponents } from "../required-components.js";
 import { EntitySelectOptions } from "../store/entity-select-options.js";
+import { Filter } from "../../table/select-rows.js";
+import { Index as StoreIndex } from "../store/index-types.js";
 import type { Service } from "../../service/index.js";
 import { createDatabase, type DatabaseSyncOptions } from "./public/create-database.js";
 import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
@@ -87,6 +89,16 @@ export type PluginComputedValue = Observe<unknown> | ((...args: any[]) => Observ
  */
 export type PluginComputedFactories<DB = any> = { readonly [K: string]: (db: DB) => PluginComputedValue };
 
+/**
+ * Plugin-level map of indexes. Re-exported from `store/index-types.ts`
+ * where the canonical definition lives — same module that defines the
+ * unified `Index` type (raw + computed) so a single source of truth is
+ * shared between the Store layer (`store.indexes` typed handle map) and
+ * the Database layer (`db.indexes`, plugin descriptor constraint).
+ */
+export type { IndexDeclarations } from "../store/index-types.js";
+import type { IndexDeclarations } from "../store/index-types.js";
+
 export interface Database<
   C extends Components = {},
   R extends ResourceComponents = {},
@@ -96,11 +108,23 @@ export interface Database<
   AF extends ActionFunctions = {},
   SV = {},
   CV = unknown,
-> extends ReadonlyStore<C, R, A>, Service {
+  IX extends IndexDeclarations<C> = {},
+> extends ReadonlyStore<C, R, A, IX>, Service {
   readonly transactions: F & Service;
   readonly actions: AF & Service;
   readonly services: SV;
   readonly computed: CV;
+  /**
+   * Lookup handles for the indexes declared by plugins on this database.
+   * Each key in `IX` becomes a `Database.Index.Handle` whose method shape
+   * is narrowed by the declared key tuple and unique flag.
+   *
+   * The handles are also the implementation path used by `db.select` /
+   * `db.observe.select` when a `where` / `order` matches a declared
+   * index — call sites do not need to be aware of which index served
+   * the query, but the same handle is what runs underneath.
+   */
+  readonly indexes: { readonly [K in keyof IX]: Database.Index.Handle<C, IX[K]> };
   readonly observe: {
     readonly components: { readonly [K in StringKeyof<C>]: Observe<void> };
     readonly resources: { readonly [K in StringKeyof<R>]: Observe<R[K]> };
@@ -180,7 +204,8 @@ export interface Database<
     S | StringKeyof<P['systems']>,
     AF & ToActionFunctions<RemoveIndex<P['actions']>>,
     SV & FromServiceFactories<RemoveIndex<P['services']>>,
-    CV & FromComputedFactories<RemoveIndex<P['computed']>>
+    CV & FromComputedFactories<RemoveIndex<P['computed']>>,
+    IX & RemoveIndex<P['indexes']>
   >;
 }
 
@@ -199,7 +224,8 @@ export namespace Database {
     StringKeyof<P['systems']>,
     ToActionFunctions<RemoveIndex<P['actions']>>,
     FromServiceFactories<RemoveIndex<P['services']>>,
-    FromComputedFactories<RemoveIndex<P['computed']>>
+    FromComputedFactories<RemoveIndex<P['computed']>>,
+    RemoveIndex<P['indexes']>
   >;
 
   export const create = createDatabase;
@@ -210,6 +236,20 @@ export namespace Database {
 
   export const observeSelectDeep = _observeSelectDeep;
 
+  // The user-facing `Database.Index` namespace re-exports the canonical
+  // declaration and handle types from `store/index-types.ts`. Defining
+  // them there keeps the `Store` interface able to type `store.indexes`
+  // (a lower-layer concern) without an import cycle into this module.
+  // See `Index` and `Index.Handle` in `store/index-types.ts`.
+  export type Index<
+    C extends Components = any,
+  > = StoreIndex<C, any, any, any>;
+
+  export namespace Index {
+    export type Handle<C extends Components, I extends StoreIndex<C, any, any, any>> =
+      StoreIndex.Handle<C, I>;
+  }
+
   export type Plugin<
     CS extends ComponentSchemas = any,
     RS extends ResourceSchemas = any,
@@ -218,7 +258,8 @@ export namespace Database {
     S extends string = any,
     AD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S> = any,
     SVF extends ServiceFactories = any,
-    CVF extends ComputedFactories = any
+    CVF extends ComputedFactories = any,
+    IX extends IndexDeclarations<FromSchemas<CS>> = any,
   > = {
     readonly components: CS;
     readonly resources: RS;
@@ -228,6 +269,7 @@ export namespace Database {
     readonly actions: AD;
     readonly services: SVF;
     readonly computed: CVF;
+    readonly indexes: IX;
   };
 
   export namespace Plugin {

@@ -135,6 +135,203 @@ const worldPlugin = Database.Plugin.create({
 });
 ```
 
+## Indexes
+
+Indexes give O(1) lookup by some derived or column-valued key. Declare them on the plugin alongside components and archetypes; the runtime maintains them automatically on every insert/update/delete and exposes typed lookup handles at `db.indexes.<name>` and `t.indexes.<name>` (inside transactions).
+
+### Declaration shape
+
+| Field | Required | Shape |
+|---|---|---|
+| `key` | yes | `string` ∣ `string[]` ∣ `(args) => Value` ∣ `{ slot: string ∣ (args) => Value }` |
+| `order` | no | `{ by: string[]; compare?: (a, b) => number }` |
+| `unique` | no | `boolean` — when `true`, exposes `get(key) → Entity \| null` |
+| `components` | only when an extractor function reads a column not already implied by an identity string in `key`/`order` | `string[]` |
+
+`find(key) → readonly Entity[]` returns every entity in the matching bucket (sorted if `order` is declared). `get(key) → Entity | null` is exposed only on unique indexes; `null` means "we know this key has no entity," never `undefined`. Array values (a `T[]` column, or a `compute` return that is `T[]`) auto-fan-out into one bucket entry per element.
+
+### Pattern catalogue
+
+#### Raw indexes (identity reads from columns)
+
+**Single-column unique lookup**
+```ts
+indexes: {
+    byEmail: { key: "email", unique: true },
+}
+// db.indexes.byEmail.get("alice@x.com") → Entity | null
+```
+
+**Multi-column compound unique** — `MappedChildOf` style when both parts are top-level columns:
+```ts
+indexes: {
+    playerSlot: { key: ["team", "position"], unique: true },
+}
+// db.indexes.playerSlot.get({ team: T, position: "qb" }) → Entity | null
+```
+
+**Non-unique by single column** — `ChildOf` style:
+```ts
+indexes: {
+    childrenOf: { key: "parent" },
+}
+// db.indexes.childrenOf.find(P) → readonly Entity[]
+```
+
+**Sorted children** — `OrderedChildOf` style with top-level columns:
+```ts
+indexes: {
+    orderedChildrenOf: { key: "parent", order: { by: ["fractIndex"] } },
+}
+// db.indexes.orderedChildrenOf.find(P) → readonly Entity[]   // sorted by fractIndex
+```
+
+**Multi-value (array column)** — per-element fan-out is automatic:
+```ts
+indexes: {
+    tasksByAssignee: { key: "assigned" },   // assigned: string[]
+}
+// db.indexes.tasksByAssignee.find("joe") → all tasks where assigned includes "joe"
+```
+
+#### Computed indexes (function-derived)
+
+**Scalar derived key** (case-insensitive lookup):
+```ts
+indexes: {
+    byEmailCi: { components: ["email"], key: (email) => email.toLowerCase() },
+}
+// db.indexes.byEmailCi.find("ALICE@x.com") → readonly Entity[]
+```
+
+**Multi-value computed** — `compute` returns an array, each element becomes a bucket entry:
+```ts
+indexes: {
+    docsByKeyword: { components: ["body"], key: (body) => extractTags(body) },
+}
+// db.indexes.docsByKeyword.find("typescript")
+```
+
+**Compound key from nested data** — `MappedChildOf` when the relationship data lives in one nested component:
+```ts
+// player: { parent: Team, key: Position }
+indexes: {
+    playerByRoster: {
+        components: ["player"],
+        key: { team: (p) => p.parent, position: (p) => p.key },
+        unique: true,
+    },
+}
+// db.indexes.playerByRoster.get({ team: T, position: "qb" }) → Entity | null
+```
+
+**Sorted from nested data** — `OrderedChildOf` with nested struct:
+```ts
+// foo: { parent: Entity, order: FractionalIndex }
+indexes: {
+    orderedChildrenOfFoo: {
+        components: ["foo"],
+        key: (f) => f.parent,
+        order: {
+            by: ["foo"],
+            compare: (a, b) => a.foo.order < b.foo.order ? -1 : 1,
+        },
+    },
+}
+// db.indexes.orderedChildrenOfFoo.find(T) → readonly Entity[]   // sorted by foo.order
+```
+
+#### Combined / advanced
+
+**Mixed identity + derived parts in one compound key**:
+```ts
+indexes: {
+    playerByTeamRole: {
+        components: ["player"],
+        key: {
+            team: "team",                // identity from top-level `team` column
+            role: (p) => p.position,     // derived from nested player.position
+        },
+        unique: true,
+    },
+}
+// db.indexes.playerByTeamRole.get({ team: T, role: "qb" }) → Entity | null
+```
+
+**Computed mapped *and* sorted** — full `SortedMappedChildOf`:
+```ts
+indexes: {
+    orderedRoster: {
+        components: ["item"],
+        key: { team: (i) => i.parent, role: (i) => i.key },
+        order: {
+            by: ["item"],
+            compare: (a, b) => a.item.fractIndex.localeCompare(b.item.fractIndex),
+        },
+        unique: true,
+    },
+}
+// db.indexes.orderedRoster.get({ team: T, role: "qb" }) → Entity | null
+```
+
+**Custom comparator** — descending, mixed direction, locale-aware, semver, etc.:
+```ts
+indexes: {
+    tasksByPriority: {
+        key: "owner",
+        order: {
+            by: ["priority", "due"],
+            compare: (a, b) => b.priority - a.priority || a.due - b.due,   // priority desc, due asc
+        },
+    },
+}
+// db.indexes.tasksByPriority.find(ownerEntity) → readonly Entity[]   // ordered per comparator
+```
+
+### Order semantics
+
+- `order` is always a single object: `{ by, compare? }`. `by` declares which columns are read into the per-entity sort cache; `compare` (if present) is the comparator over `Pick<C, by>`. When `compare` is omitted, the default is ascending across `by` left-to-right with positional tie-break.
+- All direction control happens through the comparator — there are no `asc: true | false` booleans. Descending, mixed direction, case-insensitive, semver, and natural-sort comparators are all written the same way.
+
+### Auto-routing of `select`
+
+When `db.select(include, { where })` or `db.observe.select(...)` is called with a `where` clause that exactly matches the `key` of a declared raw index by equality, the query is served from the index instead of scanning archetypes. No code-site change required — declare the index and the planner picks it up. Other query shapes fall through to the archetype scan unchanged.
+
+### Maintenance and atomicity
+
+- Indexes are maintained *eagerly* per mutation, so `t.indexes.<name>` inside a transaction sees rows the transaction has just written.
+- Unique constraints are pre-checked before any column mutation. A conflict throws *from the offending insert/update call*; the existing transaction rollback path restores both the store and the index together. No partial mutation lands in either the store or the index.
+
+### Performance characteristics
+
+Index maintenance is **O(b)** per change, where `b` is the number of buckets the affected entity occupies (usually 1, more for multi-value fan-out). It is *never* proportional to total entities in the index or to a bucket's size. Sorting (when an `order` is declared) is deferred to the first read that touches a dirty bucket.
+
+| Declaration | Per-insert cost | Per-delete cost | Notes |
+|---|---|---|---|
+| `key: "col"` (non-unique) | `O(1)` | `O(1)` | `Set<Entity>` per bucket. |
+| `key: "col"`, `unique: true` | `O(1)` | `O(1)` | Map set; throws on duplicate. |
+| `key: ["a", "b", …]` | `O(k)` where `k` = key arity | `O(k)` | One serialized key per row. |
+| `key: (...) => v` (scalar) | `O(1 + compute)` | `O(1)` | Compute runs once per row. |
+| `key: "arr"` where `arr: T[]` | `O(m)` where `m` = array length | `O(m)` | One bucket per array element. |
+| `key: (...) => T[]` (multi) | `O(m + compute)` | `O(m)` | Same fan-out, derived. |
+| `key: { slot: ..., ... }` | `O(s + Π array sizes)` | `O(s + Π array sizes)` | `s` = slot count; cartesian fan-out across array-valued slots. |
+| `+ order: { by, compare? }` | adds `O(b)` for the snapshot | adds `O(b)` for cache invalidation. No comparator calls. |
+
+The crucial property: removing one entity from a non-unique bucket holding `N` entities is `O(1)`, not `O(N)`. Non-unique buckets are stored as `Set<Entity>` so `Set.delete` is the hot path — no `arr.indexOf` scan. Verified by `database.index.performance.test.ts`: deleting from a 40 000-entity bucket has the same per-delete cost as deleting from a 4 000-entity bucket.
+
+Reads pay one catch-up sort the first time they touch a dirty bucket:
+
+| Read | First call after writes | Subsequent calls |
+|---|---|---|
+| `find(key)` (unsorted) | `O(1)` Map lookup + `O(n)` slice | same |
+| `find(key)` (sorted, dirty) | `O(n log n)` sort, then slice | `O(1)` Map lookup + `O(n)` slice |
+| `findRange(filter)` | `O(B)` walk + per-matched-bucket sort if dirty | per-matched-bucket sort only on first read after a write |
+| `get(key)` (unique) | `O(1)` Map lookup | same |
+
+`B` = total bucket count for the index. A `find` against a bucket that has not received any writes since the previous `find` is free (clean buckets aren't re-sorted).
+
+**Unique-conflict timing:** the conflict check runs *before* the column store mutates. The throw originates from the insert/update call; the rollback path restores any state the transaction touched. Verified by `database.index.test.ts` ("unique conflict on insert is caught up-front — no partial store or index mutation") and `database.index.performance.test.ts`.
+
 ## Transactions
 
 Transactions are synchronous, deterministic functions that mutate the store. They automatically produce undo/redo operations and notify observers.

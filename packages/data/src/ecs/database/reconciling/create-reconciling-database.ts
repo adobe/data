@@ -32,8 +32,6 @@ export function createReconcilingDatabase<
     store: Store<C, R, A>,
     transactionDeclarations: TD,
 ): ReconcilingDatabase<C, R, A, TD> {
-    type TransactionName = Extract<keyof TD, string>;
-
     const transactionDeclarationsRef: TransactionDeclarations<C, R, A> = {
         ...transactionDeclarations,
     };

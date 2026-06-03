@@ -14,13 +14,22 @@
     "test": "vitest --run --passWithNoTests",
     "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
   },
+  "sideEffects": false,
   "dependencies": {
-    "@adobe/data": "workspace:*",
+    "@adobe/data": "workspace:*"
+  },
+  "peerDependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",
     "jolt-physics": "^1.0.0"
   },
+  "peerDependenciesMeta": {
+    "@dimforge/rapier3d-compat": { "optional": true },
+    "jolt-physics": { "optional": true }
+  },
   "devDependencies": {
+    "@dimforge/rapier3d-compat": "^0.19.3",
     "@webgpu/types": "^0.1.61",
+    "jolt-physics": "^1.0.0",
     "typescript": "^5.8.3",
     "vitest": "^1.6.0"
   },

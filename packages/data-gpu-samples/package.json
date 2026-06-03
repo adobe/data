@@ -13,6 +13,8 @@
     "@adobe/data": "workspace:*",
     "@adobe/data-gpu": "workspace:*",
     "@adobe/data-lit": "workspace:*",
+    "@dimforge/rapier3d-compat": "^0.19.3",
+    "jolt-physics": "^1.0.0",
     "lit": "^3.3.1"
   },
   "devDependencies": {

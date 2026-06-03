@@ -319,7 +319,12 @@ function boxBox(s: SolverState, a: number, b: number): void {
             minPen);
         return;
     }
-    // face contact: reference owns the winning axis; clip incident face vertices.
+    // face contact: clip the incident face against the reference face's lateral
+    // bounds (Sutherland–Hodgman), then keep the penetrating points. The
+    // reference owns the winning SAT axis. The lateral clip is what makes
+    // extreme size ratios safe: without it a small box on the big floor (or the
+    // big floor as the incident face) emits contacts at the larger face's far
+    // corners with large depths, violently ejecting the body.
     const refIsA = bestAxis < 3;
     const refIdx = refIsA ? bestAxis : bestAxis - 3;
     const refN0 = refIsA ? axx : nx, refN1 = refIsA ? axy : ny, refN2 = refIsA ? axz : nz; // ref outward → inc
@@ -327,7 +332,6 @@ function boxBox(s: SolverState, a: number, b: number): void {
     const refHe = refIsA ? _ha : _hb, incHe = refIsA ? _hb : _ha;
     const rcx = refIsA ? ax_ : bx_, rcy = refIsA ? ay_ : by_, rcz = refIsA ? az_ : bz_;
     const icx = refIsA ? bx_ : ax_, icy = refIsA ? by_ : ay_, icz = refIsA ? bz_ : az_;
-    void refAx;
     // incident face = inc face most anti-parallel to refN
     let m = 0, best = Math.abs(incAx[0] * refN0 + incAx[1] * refN1 + incAx[2] * refN2);
     const d1 = Math.abs(incAx[3] * refN0 + incAx[4] * refN1 + incAx[5] * refN2);
@@ -340,16 +344,50 @@ function boxBox(s: SolverState, a: number, b: number): void {
     const fcx = icx + sgn * incHe[m] * incAx[m * 3], fcy = icy + sgn * incHe[m] * incAx[m * 3 + 1], fcz = icz + sgn * incHe[m] * incAx[m * 3 + 2];
     const ux = incHe[m1] * incAx[m1 * 3], uy = incHe[m1] * incAx[m1 * 3 + 1], uz = incHe[m1] * incAx[m1 * 3 + 2];
     const vx = incHe[m2] * incAx[m2 * 3], vy = incHe[m2] * incAx[m2 * 3 + 1], vz = incHe[m2] * incAx[m2 * 3 + 2];
+    // incident face's 4 corners, ring order (CCW in u,v), world space
+    _poly[0] = fcx - ux - vx; _poly[1] = fcy - uy - vy; _poly[2] = fcz - uz - vz;
+    _poly[3] = fcx + ux - vx; _poly[4] = fcy + uy - vy; _poly[5] = fcz + uz - vz;
+    _poly[6] = fcx + ux + vx; _poly[7] = fcy + uy + vy; _poly[8] = fcz + uz + vz;
+    _poly[9] = fcx - ux + vx; _poly[10] = fcy - uy + vy; _poly[11] = fcz - uz + vz;
+    // clip against the reference face's four side planes (tangent axes r1, r2,
+    // measured from the reference body centre — the face is offset only along refN).
+    const r1 = (refIdx + 1) % 3, r2 = (refIdx + 2) % 3;
+    const t1x = refAx[r1 * 3], t1y = refAx[r1 * 3 + 1], t1z = refAx[r1 * 3 + 2];
+    const t2x = refAx[r2 * 3], t2y = refAx[r2 * 3 + 1], t2z = refAx[r2 * 3 + 2];
+    let cnt = clipHalfSpace(_poly, 4, _poly2, t1x, t1y, t1z, rcx, rcy, rcz, refHe[r1], 1);
+    cnt = clipHalfSpace(_poly2, cnt, _poly, t1x, t1y, t1z, rcx, rcy, rcz, refHe[r1], -1);
+    cnt = clipHalfSpace(_poly, cnt, _poly2, t2x, t2y, t2z, rcx, rcy, rcz, refHe[r2], 1);
+    cnt = clipHalfSpace(_poly2, cnt, _poly, t2x, t2y, t2z, rcx, rcy, rcz, refHe[r2], -1);
     const refHeN = refHe[refIdx];
-    for (let su = -1; su <= 1; su += 2) {
-        for (let sv = -1; sv <= 1; sv += 2) {
-            const px = fcx + su * ux + sv * vx, py = fcy + su * uy + sv * vy, pz = fcz + su * uz + sv * vz;
-            const depth = refHeN - ((px - rcx) * refN0 + (py - rcy) * refN1 + (pz - rcz) * refN2);
-            pushContact(nx, ny, nz, px, py, pz, depth);
-        }
+    for (let k = 0; k < cnt; k++) {
+        const px = _poly[k * 3], py = _poly[k * 3 + 1], pz = _poly[k * 3 + 2];
+        const depth = refHeN - ((px - rcx) * refN0 + (py - rcy) * refN1 + (pz - rcz) * refN2);
+        pushContact(nx, ny, nz, px, py, pz, depth);
     }
 }
 const _satAxes: number[] = new Array(45);
+// Clip ring-ordered polygon `inp` (count verts, xyz triples) by the half-space
+// { s·dot(p − C, T) ≤ bound } into `out`; returns the new vertex count. A convex
+// polygon clipped by a plane gains at most one vertex, so a quad through four
+// planes stays ≤ 8 — the buffers below. Allocation-free (Sutherland–Hodgman).
+const _poly = new Float32Array(8 * 3);
+const _poly2 = new Float32Array(8 * 3);
+function clipHalfSpace(inp: Float32Array, count: number, out: Float32Array, Tx: number, Ty: number, Tz: number, Cx: number, Cy: number, Cz: number, bound: number, s: number): number {
+    let oc = 0;
+    for (let i = 0; i < count; i++) {
+        const j = (i + 1) % count;
+        const pix = inp[i * 3], piy = inp[i * 3 + 1], piz = inp[i * 3 + 2];
+        const pjx = inp[j * 3], pjy = inp[j * 3 + 1], pjz = inp[j * 3 + 2];
+        const di = s * ((pix - Cx) * Tx + (piy - Cy) * Ty + (piz - Cz) * Tz) - bound; // ≤0 inside
+        const dj = s * ((pjx - Cx) * Tx + (pjy - Cy) * Ty + (pjz - Cz) * Tz) - bound;
+        if (di <= 0) { out[oc * 3] = pix; out[oc * 3 + 1] = piy; out[oc * 3 + 2] = piz; oc++; }
+        if ((di <= 0) !== (dj <= 0)) {
+            const t = di / (di - dj);
+            out[oc * 3] = pix + t * (pjx - pix); out[oc * 3 + 1] = piy + t * (pjy - piy); out[oc * 3 + 2] = piz + t * (pjz - piz); oc++;
+        }
+    }
+    return oc;
+}
 
 // --- position constraint (Gauss-Seidel: mutate both bodies in place) ---------
 const _gi = new Float32Array(3);

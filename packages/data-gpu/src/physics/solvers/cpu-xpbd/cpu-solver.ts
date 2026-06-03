@@ -21,16 +21,6 @@
 export const SHAPE_SPHERE = 0;
 export const SHAPE_BOX = 1;
 
-/**
- * Max speed (m/s) a single substep's penetration correction may impart. At
- * sdt ≈ 1/600 s even a few-centimetre correction becomes tens of m/s, so a deep
- * penetration (an under-resolved dense stack, a fast wake) would eject a body.
- * Capping the per-substep corrected depth spreads deep overlaps over several
- * substeps instead. Set above free-fall impact speed so normal contacts —
- * whose per-substep penetration is small — are untouched.
- */
-const MAX_CORRECTION_VELOCITY = 25;
-
 export interface SolverConfig {
     gravity: number;
     substeps: number;
@@ -45,11 +35,11 @@ export interface SolverConfig {
      *  velocity dissipated at a contact, scaled by μ. 0 disables (bodies spin
      *  forever in place — a single contact point can't oppose spin about itself). */
     rollingFriction: number;
-    /** Hard ceiling (m/s) on a body's reconstructed speed each substep. Bounds
-     *  the position-based-velocity blow-up when a body wedged among many
-     *  contacts sums each manifold's capped correction. Set comfortably above the
-     *  scene's real top speed; 0 disables. */
-    maxLinearVelocity: number;
+    /** Position-solve under-relaxation (0..1). Over-constrained contacts (a body
+     *  wedged among several) over-shoot if each contact applies its full
+     *  correction in one pass; ω<1 with a few `iterations` converges to the
+     *  consistent rest position without the overshoot that `v=Δx/h` would launch. */
+    relaxation: number;
 }
 
 /** Flat SoA body state. Index i: pos[3i], orient[4i] (xyzw), vel[3i], etc. */
@@ -450,7 +440,7 @@ function contactDrift(s: SolverState, i: number, Px: number, Py: number, Pz: num
  * sticks (static friction) until the tangential load exceeds μ× the normal
  * load, then slides (dynamic). Load-scaled, unlike a fractional velocity decay.
  */
-function solvePosition(s: SolverState, a: number, b: number, mu: number, compliance: number, dt: number, w: number): void {
+function solvePosition(s: SolverState, a: number, b: number, mu: number, compliance: number, dt: number, relax: number): void {
     const nx = _contact.nx, ny = _contact.ny, nz = _contact.nz, depth = _contact.depth;
     const Px = _contact.px, Py = _contact.py, Pz = _contact.pz;
     const rax = Px - s.pos[a * 3], ray = Py - s.pos[a * 3 + 1], raz = Pz - s.pos[a * 3 + 2];
@@ -471,23 +461,13 @@ function solvePosition(s: SolverState, a: number, b: number, mu: number, complia
 
     const wsN = genW(s, a, b, rax, ray, raz, rbx, rby, rbz, nx, ny, nz) + compliance / (dt * dt);
     if (wsN <= 0) return;
-    // Cap how much penetration a single substep resolves: at sdt ≈ 1/600 s even a
-    // few-cm correction becomes tens of m/s, so a deep penetration (under-resolved
-    // dense stack, fast wake) would otherwise eject a body. Recover deep overlaps
-    // over several substeps instead. The cap is above free-fall impact speed, so
-    // normal contacts are untouched.
-    // `w` (= 1 / contacts in this manifold) shares one normal correction across
-    // the manifold's coplanar points. Without it each of the (up to 4) contacts
-    // pushes the body out by the *full* penetration, so a deep impact resolves
-    // ~4× over and `vel = Δx/dt` ejects the body at a multiple of the cap.
-    const cappedDepth = depth < MAX_CORRECTION_VELOCITY * dt ? depth : MAX_CORRECTION_VELOCITY * dt;
-    const lambdaN = (cappedDepth * w) / wsN;
+    const lambdaN = relax * depth / wsN;
     applyPosCorr(s, a, b, rax, ray, raz, rbx, rby, rbz, nx, ny, nz, lambdaN);
     if (mu <= 0 || lambdaN <= 0 || tl < 1e-9) return;
     tx /= tl; ty /= tl; tz /= tl;
     const wT = genW(s, a, b, rax, ray, raz, rbx, rby, rbz, tx, ty, tz);
     if (wT <= 0) return;
-    let lambdaT = (tl * w) / wT;
+    let lambdaT = relax * tl / wT;
     const maxT = mu * lambdaN;
     if (lambdaT > maxT) lambdaT = maxT;          // dynamic-friction clamp
     applyPosCorr(s, a, b, rax, ray, raz, rbx, rby, rbz, tx, ty, tz, -lambdaT); // oppose drift
@@ -529,9 +509,16 @@ function solveVelocity(s: SolverState, a: number, b: number, e: number, threshol
     const sbz = s.velStart[b * 3 + 2] + (s.angVelStart[b * 3] * rby - s.angVelStart[b * 3 + 1] * rbx);
     const vnPre = (sax - sbx) * nx + (say - sby) * ny + (saz - sbz) * nz;
 
+    // Set the normal velocity to the restitution target (two-sided), rather than
+    // only ever increasing it. The position solve reconstructs velocity as Δx/h,
+    // which leaves a *separating* velocity behind whenever it pushes a body out
+    // of penetration (gravity each substep, or a wedge squeezing a body). Only
+    // ever adding (the old `dvn > 0`) let that spurious outward velocity survive
+    // and accumulate — a resting/wedged body would hop and gain energy. Removing
+    // the excess separation down to the restitution target (0 at rest) is the
+    // Müller-2019 velocity update and is what makes resting contacts dissipative.
     const goalVn = vnPre < -threshold ? Math.max(-e * vnPre, 0) : 0;
-    const dvn = goalVn - vn;
-    if (dvn > 0) applyVelImpulse(s, a, b, rax, ray, raz, rbx, rby, rbz, nx, ny, nz, dvn);
+    applyVelImpulse(s, a, b, rax, ray, raz, rbx, rby, rbz, nx, ny, nz, goalVn - vn);
     // Tangential (sliding) friction is handled in the position solve (Coulomb,
     // clamped by μ·λn); the velocity pass only does restitution + rolling/spin.
 
@@ -661,31 +648,19 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
                 if (s.sleeping[b] === 1 && isMoving(s, a, cfg)) wake(s, b);
                 const mu = Math.sqrt(s.friction[a] * s.friction[b]);
                 const compliance = s.compliance[a] + s.compliance[b]; // series springs
-                const w = 1 / _mCount; // share one correction across the manifold's points
                 for (let ci = 0; ci < _mCount; ci++) {
                     setContact(ci);
-                    if (_contact.depth > 0) solvePosition(s, a, b, mu, compliance, sdt, w);
+                    if (_contact.depth > 0) solvePosition(s, a, b, mu, compliance, sdt, cfg.relaxation);
                 }
             }
         }
 
         // finalize: velocity from pose delta
-        const vmax = cfg.maxLinearVelocity, vmax2 = vmax * vmax;
         for (let i = 0; i < s.count; i++) {
             if (s.dynamic[i] === 0 || s.sleeping[i] === 1) continue;
-            let vx = (s.pos[i * 3] - s.prevPos[i * 3]) / sdt;
-            let vy = (s.pos[i * 3 + 1] - s.prevPos[i * 3 + 1]) / sdt;
-            let vz = (s.pos[i * 3 + 2] - s.prevPos[i * 3 + 2]) / sdt;
-            // Bound the per-body speed. Position-based velocity (Δx/sdt) turns any
-            // residual penetration into velocity, and a body wedged among many
-            // contacts sums each manifold's capped correction into a runaway
-            // ejection. Clamping the reconstructed speed contains that without
-            // affecting bodies in normal motion (whose Δx/sdt is the real speed).
-            if (vmax > 0) {
-                const v2 = vx * vx + vy * vy + vz * vz;
-                if (v2 > vmax2) { const sc = vmax / Math.sqrt(v2); vx *= sc; vy *= sc; vz *= sc; }
-            }
-            s.vel[i * 3] = vx; s.vel[i * 3 + 1] = vy; s.vel[i * 3 + 2] = vz;
+            s.vel[i * 3] = (s.pos[i * 3] - s.prevPos[i * 3]) / sdt;
+            s.vel[i * 3 + 1] = (s.pos[i * 3 + 1] - s.prevPos[i * 3 + 1]) / sdt;
+            s.vel[i * 3 + 2] = (s.pos[i * 3 + 2] - s.prevPos[i * 3 + 2]) / sdt;
             angVelFromDelta(s, i, sdt);
         }
 

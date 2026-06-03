@@ -3,19 +3,21 @@
 import { html, css } from "lit";
 import { customElement } from "lit/decorators.js";
 import { DatabaseElement, useEffect, useElement } from "@adobe/data-lit";
-import { rigidStackPlugin } from "./rigid-stack-service.js";
+import { rigidStackRapierPlugin } from "./rigid-stack-service.js";
 import { useOrbitCameraControl } from "../../hooks/use-orbit-camera-control.js";
 
-const tagName = "rigid-stack-cpu";
+const tagName = "rigid-stack-rapier";
 
 declare global {
     interface HTMLElementTagNameMap {
-        [tagName]: RigidStackElement;
+        [tagName]: RigidStackRapierElement;
     }
 }
 
+/** Same scene + render path as the CPU element, driven by the Rapier solver
+ *  plugin instead — the side-by-side reference. */
 @customElement(tagName)
-export class RigidStackElement extends DatabaseElement<typeof rigidStackPlugin> {
+export class RigidStackRapierElement extends DatabaseElement<typeof rigidStackRapierPlugin> {
     static styles = css`
         :host { display: block; }
         .stage { position: relative; }
@@ -24,7 +26,7 @@ export class RigidStackElement extends DatabaseElement<typeof rigidStackPlugin> 
         .hint { position: absolute; top: 0.5rem; left: 0.5rem; padding: 0.25rem 0.5rem; background: rgba(0,0,0,0.5); color: #aaa; font: 11px/1 ui-monospace, monospace; border-radius: 4px; }
     `;
 
-    get plugin() { return rigidStackPlugin; }
+    get plugin() { return rigidStackRapierPlugin; }
 
     override render() {
         const canvas = useElement("canvas");
@@ -42,7 +44,7 @@ export class RigidStackElement extends DatabaseElement<typeof rigidStackPlugin> 
         return html`
             <div class="stage">
                 <canvas width="460" height="560"></canvas>
-                <div class="hint">CPU-XPBD (ours) · drag to orbit</div>
+                <div class="hint">Rapier (reference) · drag to orbit</div>
             </div>
         `;
     }

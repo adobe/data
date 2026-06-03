@@ -36,14 +36,14 @@ export const cpuXpbd = Database.Plugin.create({
         cpuPhysicsConfig: {
             default: {
                 gravity: 18,
-                substeps: 8,
-                iterations: 4,
+                substeps: 10,
+                iterations: 1,
                 restitutionThreshold: 1.5,
                 sleepLinear: 0.5,
                 sleepAngular: 0.6,
                 sleepTime: 0.5,
                 rollingFriction: 0.2,
-                maxLinearVelocity: 40,
+                relaxation: 1,
             } satisfies SolverConfig as SolverConfig,
         },
     },

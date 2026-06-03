@@ -13,10 +13,11 @@ interface MatProps { density: number; restitution: number; friction: number; com
 
 /**
  * CPU sequential-XPBD rigid-body solver — the first solver behind the shared
- * `physicsData` seam. Each frame it gathers the RigidBody columns into flat
- * arrays, runs the sequential (Gauss-Seidel) solver, and scatters the updated
- * pose + velocity back onto dynamic bodies. Static/kinematic bodies are
- * colliders only (inverse mass 0, never integrated, never written back).
+ * `physicsData` seam. Each frame it gathers the RigidBody + StaticCollider
+ * columns into flat arrays, runs the sequential (Gauss-Seidel) solver, and
+ * scatters the updated pose + velocity back onto dynamic bodies. StaticCollider
+ * and kinematic bodies are colliders only (inverse mass 0, never integrated,
+ * never written back) — floors and walls are just static colliders.
  *
  * Mass + inertia are derived per body from shape + material density. Combine
  * with `physicsData` (and a renderer that reads the canonical transforms) to run
@@ -24,6 +25,10 @@ interface MatProps { density: number; restitution: number; friction: number; com
  */
 
 const COMPONENTS = ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"] as const;
+// StaticCollider rows: same colliders, no velocity columns. `exclude` keeps this
+// query from also matching dynamic RigidBody (which has linearVelocity).
+const STATIC_COMPONENTS = ["colliderShape", "halfExtents", "material", "position", "rotation"] as const;
+const STATIC_EXCLUDE = { exclude: ["linearVelocity"] } as const;
 
 export const cpuXpbd = Database.Plugin.create({
     extends: Database.Plugin.combine(physicsData, core, Material.plugin),
@@ -37,11 +42,7 @@ export const cpuXpbd = Database.Plugin.create({
                 sleepLinear: 0.5,
                 sleepAngular: 0.6,
                 sleepTime: 0.5,
-                worldRestitution: 0.2,
-                worldFriction: 0.6,
                 rollingFriction: 0.2,
-                floorY: 0,
-                binExtent: 0,
             } satisfies SolverConfig as SolverConfig,
         },
     },
@@ -64,9 +65,10 @@ export const cpuXpbd = Database.Plugin.create({
                     const dt = frameDt < 0.033 ? frameDt : 0.033;
                     if (dt <= 0) return;
 
-                    // count bodies, (re)allocate state if needed
+                    // count bodies (dynamic/kinematic + static colliders), (re)allocate state if needed
                     let total = 0;
                     for (const arch of db.store.queryArchetypes(COMPONENTS)) total += arch.rowCount;
+                    for (const arch of db.store.queryArchetypes(STATIC_COMPONENTS, STATIC_EXCLUDE)) total += arch.rowCount;
                     if (total === 0) return;
                     if (!state || state.pos.length < total * 3) {
                         state = createSolverState(Math.max(total, 256));
@@ -120,6 +122,33 @@ export const cpuXpbd = Database.Plugin.create({
                             state.invMass[i] = 0;
                             state.invInertia[i3] = 0; state.invInertia[i3 + 1] = 0; state.invInertia[i3 + 2] = 0;
                         }
+                    }
+                }
+                // static colliders: gathered after the movable bodies (so dynamic
+                // indices — and their persistent sleep state — stay stable across
+                // frames). Inverse mass 0, zero velocity, never written back.
+                for (const arch of db.store.queryArchetypes(STATIC_COMPONENTS, STATIC_EXCLUDE)) {
+                    const cs = arch.columns.colliderShape, mat = arch.columns.material;
+                    const heArr = arch.columns.halfExtents.getTypedArray();
+                    const posArr = arch.columns.position.getTypedArray();
+                    const oriArr = arch.columns.rotation.getTypedArray();
+                    for (let r = 0; r < arch.rowCount; r++, i++) {
+                        const shape = cs.get(r);
+                        const m = matProps.get(mat.get(r));
+                        const r3 = r * 3, r4 = r * 4, i3 = i * 3, i4 = i * 4;
+                        state.dynamic[i] = 0;
+                        state.sleeping[i] = 0; state.sleepTimer[i] = 0;
+                        state.shape[i] = ColliderShape.toIndex(shape);
+                        state.halfExtent[i3] = heArr[r3]; state.halfExtent[i3 + 1] = heArr[r3 + 1]; state.halfExtent[i3 + 2] = heArr[r3 + 2];
+                        state.pos[i3] = posArr[r3]; state.pos[i3 + 1] = posArr[r3 + 1]; state.pos[i3 + 2] = posArr[r3 + 2];
+                        state.orient[i4] = oriArr[r4]; state.orient[i4 + 1] = oriArr[r4 + 1]; state.orient[i4 + 2] = oriArr[r4 + 2]; state.orient[i4 + 3] = oriArr[r4 + 3];
+                        state.vel[i3] = 0; state.vel[i3 + 1] = 0; state.vel[i3 + 2] = 0;
+                        state.angVel[i3] = 0; state.angVel[i3 + 1] = 0; state.angVel[i3 + 2] = 0;
+                        state.restitution[i] = m ? m.restitution : 0.2;
+                        state.friction[i] = m ? m.friction : 0.5;
+                        state.compliance[i] = m ? m.compliance : 0;
+                        state.invMass[i] = 0;
+                        state.invInertia[i3] = 0; state.invInertia[i3 + 1] = 0; state.invInertia[i3 + 2] = 0;
                     }
                 }
                 state.count = i;

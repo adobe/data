@@ -16,6 +16,7 @@ export { graphics } from "./graphics/graphics-plugin.js";
 // --- Physics: shared rigid-body data model + pluggable solver seam -----------
 export { physicsData } from "./physics/physics-data-plugin.js";
 export type { RigidBody } from "./physics/body/rigid-body.js";
+export type { StaticCollider } from "./physics/body/static-collider.js";
 export { BodyType } from "./physics/body/body-type/body-type.js";
 export { ColliderShape } from "./physics/body/collider-shape/collider-shape.js";
 export { cpuXpbd } from "./physics/solvers/cpu-xpbd/cpu-xpbd-plugin.js";

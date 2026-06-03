@@ -16,10 +16,16 @@ import { Material } from "../material/material.js";
  * A **solver plugin** `extends` this, may keep its own private `_`-prefixed
  * internal state (broadphase, caches, GPU buffers), and each frame reads the
  * authored state and writes back `position`/`rotation`/velocity for dynamic
- * bodies. Static bodies are colliders only (never integrated); kinematic bodies
- * are driven externally. A renderer reads the canonical transforms, decoupled
- * from which solver produced them — so solvers (CPU-XPBD now, the shelved GPU
- * one or Rapier later) are interchangeable over identical authored scenes.
+ * bodies. A renderer reads the canonical transforms, decoupled from which
+ * solver produced them — so solvers (CPU-XPBD now, the shelved GPU one or
+ * Rapier later) are interchangeable over identical authored scenes.
+ *
+ * Two archetypes share these components:
+ *   - **RigidBody** — `dynamic` or `kinematic` bodies that move; carries
+ *     velocities and a `bodyType` discriminator.
+ *   - **StaticCollider** — immovable colliders (floor, wall, ramp, scenery).
+ *     No velocities (never integrated) and no `bodyType` (the archetype *is*
+ *     the static classification) — a lean row for the bulk-static workload.
  *
  * Mass + inertia are derived per solver from shape + material (not stored here).
  */
@@ -36,5 +42,6 @@ export const physicsData = Database.Plugin.create({
     },
     archetypes: {
         RigidBody: ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"],
+        StaticCollider: ["colliderShape", "halfExtents", "material", "position", "rotation"],
     },
 });

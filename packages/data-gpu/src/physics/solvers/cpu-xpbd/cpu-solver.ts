@@ -41,14 +41,10 @@ export interface SolverConfig {
     /** Seconds a body must stay below the sleep thresholds before it sleeps
      *  (skipped by integrate/solve/broadphase until a moving body contacts it). */
     sleepTime: number;
-    worldRestitution: number; // floor + walls
-    worldFriction: number;
     /** Rolling + spinning friction: per-substep fraction of relative angular
      *  velocity dissipated at a contact, scaled by μ. 0 disables (bodies spin
      *  forever in place — a single contact point can't oppose spin about itself). */
     rollingFriction: number;
-    floorY: number;
-    binExtent: number;        // ±x/±z walls; <=0 disables walls
 }
 
 /** Flat SoA body state. Index i: pos[3i], orient[4i] (xyzw), vel[3i], etc. */
@@ -602,7 +598,7 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
             integrateQuat(s.orient, i, s.angVel[i * 3] * sdt, s.angVel[i * 3 + 1] * sdt, s.angVel[i * 3 + 2] * sdt);
         }
 
-        // position iterations (Gauss-Seidel over pairs + static world)
+        // position iterations (Gauss-Seidel over contact pairs)
         for (let iter = 0; iter < cfg.iterations; iter++) {
             for (let p = 0; p < pairCount; p++) {
                 const a = pairA[p], b = pairB[p];
@@ -623,10 +619,6 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
                     if (_contact.depth > 0) solvePosition(s, a, b, mu, compliance, sdt);
                 }
             }
-            for (let i = 0; i < s.count; i++) {
-                if (s.dynamic[i] === 0 || s.sleeping[i] === 1) continue;
-                resolveStatic(s, i, cfg, sdt);
-            }
         }
 
         // finalize: velocity from pose delta
@@ -638,7 +630,7 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
             angVelFromDelta(s, i, sdt);
         }
 
-        // velocity pass: restitution + friction over pairs + static world
+        // velocity pass: restitution + friction over contact pairs
         for (let p = 0; p < pairCount; p++) {
             const a = pairA[p], b = pairB[p];
             if (s.sleeping[a] === 1 && s.sleeping[b] === 1) continue;
@@ -650,10 +642,6 @@ export function step(s: SolverState, dt: number, cfg: SolverConfig): void {
                 setContact(ci);
                 if (_contact.depth > 0) solveVelocity(s, a, b, e, cfg.restitutionThreshold, roll, ci === 0);
             }
-        }
-        for (let i = 0; i < s.count; i++) {
-            if (s.dynamic[i] === 0 || s.sleeping[i] === 1) continue;
-            resolveStaticVelocity(s, i, cfg);
         }
     }
 
@@ -693,132 +681,8 @@ function angVelFromDelta(s: SolverState, i: number, sdt: number): void {
     s.angVel[i * 3] = (2 * dqx) / sdt; s.angVel[i * 3 + 1] = (2 * dqy) / sdt; s.angVel[i * 3 + 2] = (2 * dqz) / sdt;
 }
 
-// static world (floor + bin walls) as immovable position constraints.
-const _planeN = new Float32Array(15);
-const _planeOff = new Float32Array(5);
-
-function resolveStatic(s: SolverState, i: number, cfg: SolverConfig, dt: number): void {
-    setupPlanes(cfg);
-    const mu = Math.sqrt(s.friction[i] * cfg.worldFriction);
-    const compliance = s.compliance[i];
-    if (s.shape[i] === SHAPE_SPHERE) {
-        const r = s.halfExtent[i * 3];
-        for (let k = 0; k < (cfg.binExtent > 0 ? 5 : 1); k++) {
-            const nx = _planeN[k * 3], ny = _planeN[k * 3 + 1], nz = _planeN[k * 3 + 2];
-            const pen = _planeOff[k] - (s.pos[i * 3] * nx + s.pos[i * 3 + 1] * ny + s.pos[i * 3 + 2] * nz - r);
-            if (pen > 0) staticContact(s, i, nx, ny, nz, s.pos[i * 3] - nx * r, s.pos[i * 3 + 1] - ny * r, s.pos[i * 3 + 2] - nz * r, pen, mu, compliance, dt);
-        }
-    } else {
-        boxAxes(_ai, s, i);
-        const h0 = s.halfExtent[i * 3], h1 = s.halfExtent[i * 3 + 1], h2 = s.halfExtent[i * 3 + 2];
-        for (let c = 0; c < 8; c++) {
-            const s0 = (c & 1) ? 1 : -1, s1 = (c & 2) ? 1 : -1, s2 = (c & 4) ? 1 : -1;
-            const cx = s.pos[i * 3] + _ai[0] * h0 * s0 + _ai[3] * h1 * s1 + _ai[6] * h2 * s2;
-            const cy = s.pos[i * 3 + 1] + _ai[1] * h0 * s0 + _ai[4] * h1 * s1 + _ai[7] * h2 * s2;
-            const cz = s.pos[i * 3 + 2] + _ai[2] * h0 * s0 + _ai[5] * h1 * s1 + _ai[8] * h2 * s2;
-            for (let k = 0; k < (cfg.binExtent > 0 ? 5 : 1); k++) {
-                const nx = _planeN[k * 3], ny = _planeN[k * 3 + 1], nz = _planeN[k * 3 + 2];
-                const pen = _planeOff[k] - (cx * nx + cy * ny + cz * nz);
-                if (pen > 0) staticContact(s, i, nx, ny, nz, cx, cy, cz, pen, mu, compliance, dt);
-            }
-        }
-    }
-}
-
-/** Single-body generalized inverse mass along unit dir at arm r. */
-function genWStatic(s: SolverState, i: number, rx: number, ry: number, rz: number, dx: number, dy: number, dz: number): number {
-    const rnx = ry * dz - rz * dy, rny = rz * dx - rx * dz, rnz = rx * dy - ry * dx;
-    applyInvInertia(_gi, s.orient[i * 4], s.orient[i * 4 + 1], s.orient[i * 4 + 2], s.orient[i * 4 + 3], s.invInertia[i * 3], s.invInertia[i * 3 + 1], s.invInertia[i * 3 + 2], rnx, rny, rnz);
-    return s.invMass[i] + rnx * _gi[0] + rny * _gi[1] + rnz * _gi[2];
-}
-
-/** Apply a positional impulse `lambda` along dir to body i alone (world static). */
-function applyStaticCorr(s: SolverState, i: number, rx: number, ry: number, rz: number, dx: number, dy: number, dz: number, lambda: number): void {
-    const im = s.invMass[i];
-    const px = lambda * dx, py = lambda * dy, pz = lambda * dz;
-    s.pos[i * 3] += im * px; s.pos[i * 3 + 1] += im * py; s.pos[i * 3 + 2] += im * pz;
-    applyInvInertia(_gi, s.orient[i * 4], s.orient[i * 4 + 1], s.orient[i * 4 + 2], s.orient[i * 4 + 3], s.invInertia[i * 3], s.invInertia[i * 3 + 1], s.invInertia[i * 3 + 2], ry * pz - rz * py, rz * px - rx * pz, rx * py - ry * px);
-    integrateQuat(s.orient, i, _gi[0], _gi[1], _gi[2]);
-}
-
-/** Non-penetration + Coulomb friction against the immovable world (μ·λn clamp). */
-function staticContact(s: SolverState, i: number, nx: number, ny: number, nz: number, px: number, py: number, pz: number, depth: number, mu: number, compliance: number, dt: number): void {
-    const rx = px - s.pos[i * 3], ry = py - s.pos[i * 3 + 1], rz = pz - s.pos[i * 3 + 2];
-    // tangential drift measured before this contact's normal correction (see solvePosition)
-    let tx = 0, ty = 0, tz = 0, tl = 0;
-    if (mu > 0) {
-        contactDrift(s, i, px, py, pz, _drA);
-        tx = _drA[0]; ty = _drA[1]; tz = _drA[2];
-        const tn = tx * nx + ty * ny + tz * nz;
-        tx -= tn * nx; ty -= tn * ny; tz -= tn * nz;
-        tl = Math.sqrt(tx * tx + ty * ty + tz * tz);
-    }
-    const wsN = genWStatic(s, i, rx, ry, rz, nx, ny, nz) + compliance / (dt * dt);
-    if (wsN <= 0) return;
-    const correctedDepth = depth < MAX_CORRECTION_VELOCITY * dt ? depth : MAX_CORRECTION_VELOCITY * dt;
-    const lambdaN = correctedDepth / wsN;
-    applyStaticCorr(s, i, rx, ry, rz, nx, ny, nz, lambdaN);
-    if (mu <= 0 || tl < 1e-9) return;
-    tx /= tl; ty /= tl; tz /= tl;
-    const wT = genWStatic(s, i, rx, ry, rz, tx, ty, tz);
-    if (wT <= 0) return;
-    let lambdaT = tl / wT;
-    const maxT = mu * lambdaN;
-    if (lambdaT > maxT) lambdaT = maxT;
-    applyStaticCorr(s, i, rx, ry, rz, tx, ty, tz, -lambdaT);
-}
-
-function resolveStaticVelocity(s: SolverState, i: number, cfg: SolverConfig): void {
-    setupPlanes(cfg);
-    const reach = s.shape[i] === SHAPE_SPHERE ? s.halfExtent[i * 3] : 0;
-    boxAxes(_ai, s, i);
-    const h0 = s.halfExtent[i * 3], h1 = s.halfExtent[i * 3 + 1], h2 = s.halfExtent[i * 3 + 2];
-    const e = Math.sqrt(s.restitution[i] * cfg.worldRestitution);
-    const mu = Math.sqrt(s.friction[i] * cfg.worldFriction);
-    for (let k = 0; k < (cfg.binExtent > 0 ? 5 : 1); k++) {
-        const nx = _planeN[k * 3], ny = _planeN[k * 3 + 1], nz = _planeN[k * 3 + 2];
-        const support = s.shape[i] === SHAPE_SPHERE ? reach : extentAlong(_ai, h0, h1, h2, nx, ny, nz);
-        const pen = _planeOff[k] - (s.pos[i * 3] * nx + s.pos[i * 3 + 1] * ny + s.pos[i * 3 + 2] * nz - support);
-        if (pen <= 0) continue;
-        const px = s.pos[i * 3] - nx * support, py = s.pos[i * 3 + 1] - ny * support, pz = s.pos[i * 3 + 2] - nz * support;
-        const rx = px - s.pos[i * 3], ry = py - s.pos[i * 3 + 1], rz = pz - s.pos[i * 3 + 2];
-        const vx = s.vel[i * 3] + (s.angVel[i * 3 + 1] * rz - s.angVel[i * 3 + 2] * ry);
-        const vy = s.vel[i * 3 + 1] + (s.angVel[i * 3 + 2] * rx - s.angVel[i * 3] * rz);
-        const vz = s.vel[i * 3 + 2] + (s.angVel[i * 3] * ry - s.angVel[i * 3 + 1] * rx);
-        const vn = vx * nx + vy * ny + vz * nz;
-        const sx = s.velStart[i * 3] + (s.angVelStart[i * 3 + 1] * rz - s.angVelStart[i * 3 + 2] * ry);
-        const sy = s.velStart[i * 3 + 1] + (s.angVelStart[i * 3 + 2] * rx - s.angVelStart[i * 3] * rz);
-        const sz = s.velStart[i * 3 + 2] + (s.angVelStart[i * 3] * ry - s.angVelStart[i * 3 + 1] * rx);
-        const vnPre = sx * nx + sy * ny + sz * nz;
-        const goalVn = vnPre < -cfg.restitutionThreshold ? Math.max(-e * vnPre, 0) : 0;
-        const dvn = goalVn - vn;
-        if (dvn > 0) staticVelImpulse(s, i, rx, ry, rz, nx, ny, nz, dvn);
-        // Sliding friction is handled in the position solve (Coulomb, μ·λn);
-        // the velocity pass only does restitution + rolling/spin.
-        // rolling + spinning friction against the immovable world — spheres only
-        // (a box resolves the floor at its corners, so its spin is already
-        // opposed by the position-solve friction there).
-        const roll = mu * cfg.rollingFriction;
-        if (roll > 0 && s.shape[i] === SHAPE_SPHERE) {
-            const f = 1 - Math.min(roll, 1);
-            s.angVel[i * 3] *= f; s.angVel[i * 3 + 1] *= f; s.angVel[i * 3 + 2] *= f;
-        }
-    }
-}
-
-function staticVelImpulse(s: SolverState, i: number, rx: number, ry: number, rz: number, dx: number, dy: number, dz: number, dRel: number): void {
-    const im = s.invMass[i];
-    const rnx = ry * dz - rz * dy, rny = rz * dx - rx * dz, rnz = rx * dy - ry * dx;
-    applyInvInertia(_gi, s.orient[i * 4], s.orient[i * 4 + 1], s.orient[i * 4 + 2], s.orient[i * 4 + 3], s.invInertia[i * 3], s.invInertia[i * 3 + 1], s.invInertia[i * 3 + 2], rnx, rny, rnz);
-    const wA = im + rnx * _gi[0] + rny * _gi[1] + rnz * _gi[2];
-    if (wA <= 0) return;
-    const j = dRel / wA;
-    s.vel[i * 3] += im * j * dx; s.vel[i * 3 + 1] += im * j * dy; s.vel[i * 3 + 2] += im * j * dz;
-    s.angVel[i * 3] += _gi[0] * j; s.angVel[i * 3 + 1] += _gi[1] * j; s.angVel[i * 3 + 2] += _gi[2] * j;
-}
-
-function setupPlanes(cfg: SolverConfig): void {
-    const h = cfg.binExtent;
-    _planeN.set([0, 1, 0, 1, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, -1]);
-    _planeOff[0] = cfg.floorY; _planeOff[1] = -h; _planeOff[2] = -h; _planeOff[3] = -h; _planeOff[4] = -h;
-}
+// Floors, walls and scenery are ordinary StaticCollider bodies (inverse mass 0)
+// gathered alongside dynamic bodies, so they collide through the same
+// broadphase + narrowphase + position/velocity solve — no special-case world
+// planes. The solver knows nothing about "floors"; an immovable collider is
+// just a body the position/velocity corrections can't move.

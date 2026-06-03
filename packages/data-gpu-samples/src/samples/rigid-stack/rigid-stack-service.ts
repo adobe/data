@@ -18,10 +18,13 @@ const SPAWN_HEIGHT = 14;
 
 /**
  * rigid-stack — CPU-XPBD physics rendered through the unified PBR + IBL path.
- * A 4×4×4 dynamic wood stack rests on a stone floor; mixed-material bodies drop
- * in and knock it around. Bodies become renderable via `physicsRenderBridge`
- * (geometry by shape, scale from half-extents); the floor is a render-only
- * `Prop`. Swap `pbrRender` for `rigidStackDebugRender` to use the flat shader.
+ * A 4×4×4 dynamic wood stack rests on a stone floor inside a low-walled bin;
+ * mixed-material bodies drop in and knock it around. Floor and walls are
+ * immovable `StaticCollider` boxes — the solver collides dynamics against them
+ * through the same contact path as body-body, with no special-case world
+ * planes. Every body (static or dynamic) becomes renderable via
+ * `physicsRenderBridge` (geometry by shape, scale from half-extents). Swap
+ * `pbrRender` for `rigidStackDebugRender` to use the flat shader.
  */
 export const rigidStackPlugin = Database.Plugin.create({
     extends: Database.Plugin.combine(pbrRender, cpuXpbd, shapeGeometry, physicsRenderBridge, Orbit.plugin),
@@ -29,16 +32,15 @@ export const rigidStackPlugin = Database.Plugin.create({
         _spawnAccum: { default: 0 as number, transient: true },
         _spawnElapsed: { default: 0 as number, transient: true },
         _spawnedDynamic: { default: 0 as number, transient: true },
-        _floorDone: { default: false as boolean, transient: true },
     },
     transactions: {
         initializeScene(t) {
             t.resources.cpuPhysicsConfig = {
                 ...t.resources.cpuPhysicsConfig,
-                gravity: 18, floorY: 0, binExtent: BIN,
+                gravity: 18,
                 substeps: 10, iterations: 1,  // Small-Steps: narrowphase once per substep
                 restitutionThreshold: 1.5, sleepLinear: 0.5, sleepAngular: 0.6, sleepTime: 0.5,
-                worldRestitution: 0.2, worldFriction: 0.6, rollingFriction: 0.2,
+                rollingFriction: 0.2,
             };
             t.resources.orbit = {
                 ...t.resources.orbit,
@@ -49,6 +51,18 @@ export const rigidStackPlugin = Database.Plugin.create({
                 environmentUrl: ENV_URL,
                 direction: [-2, -5, -3], color: [1.0, 0.98, 0.92], ambientStrength: 0.4,
             };
+            // Stone bin: a floor slab (top face at y = 0) and four low walls,
+            // all immovable StaticCollider boxes. The render bridge gives them
+            // geometry once the shape meshes load — no separate render-only prop.
+            const stone = t.resources.materials.stone;
+            const wall = (position: [number, number, number], halfExtents: [number, number, number]) =>
+                t.archetypes.StaticCollider.insert({ colliderShape: "box", halfExtents, material: stone, position, rotation: Quat.identity });
+            wall([0, -0.5, 0], [BIN + 1, 0.5, BIN + 1]);              // floor slab
+            const WH = 2;                                            // wall half-height (walls 0 → 2·WH)
+            wall([ BIN, WH, 0], [0.5, WH, BIN + 1]);                 // +x
+            wall([-BIN, WH, 0], [0.5, WH, BIN + 1]);                 // −x
+            wall([0, WH,  BIN], [BIN + 1, WH, 0.5]);                 // +z
+            wall([0, WH, -BIN], [BIN + 1, WH, 0.5]);                 // −z
             // Dynamic block stack: a grid of unit cubes resting on the floor.
             // Dynamic so we can verify the solver holds the stack and dropped
             // bodies knock it around. A small gap on every axis avoids initial
@@ -73,18 +87,6 @@ export const rigidStackPlugin = Database.Plugin.create({
                 }
             }
         },
-        // Render-only stone floor: a flat cube whose top sits at y = 0 (matching
-        // the solver's analytic floor). Inserted once the shape geometry exists.
-        insertFloor(t, args: { geometry: number; material: number }) {
-            t.archetypes.Prop.insert({
-                geometry: args.geometry,
-                position: [0, -0.5, 0],
-                rotation: Quat.identity,
-                scale: [BIN + 1, 0.5, BIN + 1],
-                visible: true,
-                material: args.material,
-            });
-        },
         spawnBody(t) {
             const isBox = Math.random() < 0.4;
             const ids = Object.values(t.resources.materials);
@@ -107,18 +109,6 @@ export const rigidStackPlugin = Database.Plugin.create({
         },
     },
     systems: {
-        // Place the stone floor once the shape geometry + materials are ready.
-        floorInit: {
-            schedule: { during: ["update"] },
-            create: db => () => {
-                if (db.store.resources._floorDone) return;
-                const shapes = db.store.resources._shapeGeometry;
-                const stone = db.store.resources.materials.stone;
-                if (!shapes || stone === undefined) return;
-                db.transactions.insertFloor({ geometry: shapes.cube, material: stone });
-                db.store.resources._floorDone = true;
-            },
-        },
         // Drop a dynamic body every SPAWN_INTERVAL until the cap.
         spawner: {
             schedule: { during: ["update"] },

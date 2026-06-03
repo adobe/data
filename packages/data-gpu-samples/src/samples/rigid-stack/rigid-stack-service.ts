@@ -4,6 +4,7 @@ import { Database } from "@adobe/data/ecs";
 import { Quat } from "@adobe/data/math";
 import { pbrRender, cpuXpbd, shapeGeometry, physicsRenderBridge, Orbit } from "@adobe/data-gpu";
 import { rapierSolver } from "../../solvers/rapier-solver-plugin.js";
+import { joltSolver } from "../../solvers/jolt-solver-plugin.js";
 
 // Studio HDR for IBL © Poly Haven, CC0.
 const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr";
@@ -146,3 +147,4 @@ const rigidStackScene = Database.Plugin.create({
 
 export const rigidStackPlugin = Database.Plugin.combine(rigidStackScene, cpuXpbd);
 export const rigidStackRapierPlugin = Database.Plugin.combine(rigidStackScene, rapierSolver);
+export const rigidStackJoltPlugin = Database.Plugin.combine(rigidStackScene, joltSolver);

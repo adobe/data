@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite",
     "dev:all": "pnpm --parallel --filter @adobe/data --filter @adobe/data-gpu --filter data-gpu-samples run dev",
-    "build": "vite build"
+    "build": "vite build",
+    "test": "vitest --run --passWithNoTests"
   },
   "dependencies": {
     "@adobe/data": "workspace:*",
@@ -20,6 +21,7 @@
     "@webgpu/types": "^0.1.61",
     "typescript": "^5.8.3",
     "vite": "^5.1.1",
-    "vite-plugin-checker": "^0.12.0"
+    "vite-plugin-checker": "^0.12.0",
+    "vitest": "^1.6.0"
   }
 }

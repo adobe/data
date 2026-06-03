@@ -5,8 +5,13 @@ import { createStructBuffer, copyToGPUBuffer, getStructLayout, type TypedBuffer 
 import { Light } from "../light/light.js";
 import { Camera } from "../../camera/camera.js";
 import { SceneUniforms } from "./scene-uniforms.js";
+// Import the schema from its own module, not via the SceneUniforms namespace:
+// this runs at module load and the namespace barrel cycles back here, leaving
+// `SceneUniforms.schema` undefined under Node's load order (browsers tolerate it
+// via live bindings). The direct import has no cycle.
+import { schema as sceneUniformsSchema } from "./schema.js";
 
-const sceneUniformsStructLayout = getStructLayout(SceneUniforms.schema);
+const sceneUniformsStructLayout = getStructLayout(sceneUniformsSchema);
 
 /**
  * sceneUniforms

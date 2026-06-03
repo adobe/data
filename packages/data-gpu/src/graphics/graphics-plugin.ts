@@ -25,7 +25,15 @@ export const graphics = Database.Plugin.create({
         clearColor: { default: [0, 0, 0, 1] as Vec4, transient: true },
         canvas: { default: null as HTMLCanvasElement | null, transient: true },
         canvasContext: { default: null as GPUCanvasContext | null, transient: true },
-        canvasFormat: { default: navigator.gpu.getPreferredCanvasFormat(), transient: true },
+        // Guarded for headless hosts (Node): this default is evaluated at module
+        // load, and `navigator` is browser-only. Rendering re-derives the real
+        // preferred format when a canvas is configured; the placeholder is unused.
+        canvasFormat: {
+            default: (typeof navigator !== "undefined" && navigator.gpu
+                ? navigator.gpu.getPreferredCanvasFormat()
+                : "bgra8unorm") as GPUTextureFormat,
+            transient: true,
+        },
         depthFormat: { default: "depth24plus" as GPUTextureFormat, transient: true },
     },
     transactions: {

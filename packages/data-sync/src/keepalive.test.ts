@@ -8,7 +8,7 @@
 // listeners, which higher layers wire to a reconnect flow.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { Database } from "@adobe/data/ecs";
+import { Database, createRebaseReplayConcurrency } from "@adobe/data/ecs";
 import type { ClientMessage, ServerMessage } from "./transport.js";
 import { createLoopbackTransport } from "./loopback-transport.js";
 import { createSyncServer } from "./create-sync-server.js";
@@ -21,7 +21,7 @@ const plugin = Database.Plugin.create({
     transactions: {},
 });
 
-const makeDb = (userId: string) => Database.create(plugin, { sync: { userId } });
+const makeDb = (userId: string) => Database.create(plugin, { concurrency: createRebaseReplayConcurrency(userId) });
 
 describe("sync keep-alive (ping/pong)", () => {
     beforeEach(() => {

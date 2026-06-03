@@ -4,7 +4,7 @@
 // construction. Pumps results into a negotiation database via transactions
 // so the UI can render purely from observable state.
 
-import { Database } from "@adobe/data/ecs";
+import { Database, createRebaseReplayConcurrency } from "@adobe/data/ecs";
 import { createSyncServer, createSyncService, createLoopbackTransport, type SyncService } from "@adobe/data-sync";
 import { startHostSignaling, startJoinerSignaling, type HostConnection, type JoinerConnection } from "../signaling.js";
 import { createRenegotiator, type Renegotiator } from "../renegotiator.js";
@@ -161,7 +161,7 @@ export const createNegotiationController = (
     ) => {
         if (!gameDb) {
             log(`creating game DB for userId=${userId}`);
-            gameDb = Database.create(config.gamePlugin, { sync: { userId } });
+            gameDb = Database.create(config.gamePlugin, { concurrency: createRebaseReplayConcurrency(userId) });
         }
         wireSync();
         db.transactions.setGameDb({ gameDb });

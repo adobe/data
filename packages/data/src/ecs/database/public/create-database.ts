@@ -2,10 +2,12 @@
 
 import { ReadonlyStore, Store } from "../../store/index.js";
 import { Database, FromServiceFactories } from "../database.js";
-import { createReconcilingDatabase } from "../reconciling/create-reconciling-database.js";
 import { calculateSystemOrder } from "../calculate-system-order.js";
 import { createTransactionDispatcher } from "./create-transaction-dispatcher.js";
 import { observeSelectEntities } from "../observe-select-entities.js";
+import { createObservedDatabase } from "../observed/create-observed-database.js";
+import { createImmediateConcurrency } from "../concurrency/immediate-concurrency.js";
+import type { ConcurrencyStrategy, ConcurrencyStrategyFactory } from "../concurrency/concurrency-strategy.js";
 import type { Entity } from "../../entity/entity.js";
 
 /**
@@ -25,31 +27,6 @@ function createAndAssignSystems(
     }
 }
 
-/**
- * Sync-related options. Presence of `sync` means "this database is going to
- * be attached to a sync service", which has two consequences:
- *
- *   1. Every locally-generated `TransactionEnvelope` is stamped with
- *      `userId`, and the reconciler keys its transient queue by the
- *      compound `(userId, id)` so two peers' independent local id counters
- *      cannot collide.
- *   2. The transaction wrapper enters deferred-commit mode: calls to
- *      `db.transactions.X(args)` apply locally as transients (negative
- *      time) and wait for the server's echoed `committed` envelope to
- *      promote them via the reconciler's rebase-replay. This is required
- *      for cross-peer entity-id determinism under concurrent edits.
- *
- * If `sync` is omitted the database operates in local-only mode: commits
- * apply immediately with positive time, no envelope stamping, no deferred
- * promotion.
- */
-export interface DatabaseSyncOptions {
-    /**
-     * Stable peer/session identifier. Must be unique across all peers
-     * sharing the same sync server.
-     */
-    readonly userId: number | string;
-}
 
 interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, any, any, any, any>> {
     /**
@@ -57,8 +34,17 @@ interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, an
      * For each service injected here, we will use it and not call the normal service factory function.
      */
     services?: { [K in keyof FromServiceFactories<P['services']>]?: FromServiceFactories<P['services']>[K] };
-    /** See {@link DatabaseSyncOptions}. */
-    sync?: DatabaseSyncOptions;
+    /**
+     * Concurrency strategy that controls how locally-initiated transactions
+     * are applied and how inbound envelopes are reconciled.
+     *
+     * Built-in strategies:
+     *   - `createImmediateConcurrency()` — commits apply immediately, no
+     *     rollback queue. Default when omitted.
+     *   - `createRebaseReplayConcurrency(userId)` — deferred-commit mode with
+     *     full rollback-and-replay for multi-peer synchronisation.
+     */
+    concurrency?: ConcurrencyStrategyFactory;
 }
 
 export function createDatabase(): Database<{}, {}, {}, {}, never, {}, {}, {}>
@@ -72,7 +58,7 @@ export function createDatabase(
     plugin?: Database.Plugin<any, any, any, any, any, any, any, any>,
     options?: CreateDatabaseOptions<any>,
 ): any {
-    const db = createEmptyDatabase(options?.sync);
+    const db = createEmptyDatabase(options?.concurrency);
     if (plugin === undefined) {
         return db;
     }
@@ -86,21 +72,33 @@ export function createDatabase(
  * Creates a database with empty store, no transactions, actions, services, computed, or systems.
  * All content is added via .extend(plugin). Single code path for extension.
  */
-function createEmptyDatabase(sync: DatabaseSyncOptions | undefined): any {
+function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined): any {
     const store = Store.create({
         components: {},
         resources: {},
         archetypes: {},
     });
-    const reconcilingDatabase = createReconcilingDatabase(store, {} as any);
+
+    const observedDatabase = createObservedDatabase(store);
+
+    // The transaction declarations dict is shared with the strategy via the
+    // getTransaction closure: extend() updates it, the strategy reads from it.
+    const transactionDeclarationsRef: Record<string, ((ctx: any, args: unknown) => void | Entity) | undefined> = {};
+    const getTransaction = (name: string) => transactionDeclarationsRef[name];
+
+    const strategyFactory = concurrency ?? createImmediateConcurrency();
+    const strategy: ConcurrencyStrategy = strategyFactory(observedDatabase.execute, getTransaction);
 
     // The dispatcher owns everything envelope-related: id allocation,
     // commit/transient/cancel intent decisions, the deferred-commit
-    // behaviour implied by sync mode, and resolving plain/promise/async-
+    // behaviour implied by the strategy, and resolving plain/promise/async-
     // generator argument shapes. We just plug its outputs into the
     // database surface.
-    const dispatcher = createTransactionDispatcher(reconcilingDatabase.apply, sync);
-    (reconcilingDatabase.observe as any).envelopes = dispatcher.envelopes;
+    const dispatcher = createTransactionDispatcher(strategy.apply, {
+        deferredCommit: strategy.deferredCommit,
+        userId: strategy.userId,
+    });
+    (observedDatabase.observe as any).envelopes = dispatcher.envelopes;
 
     const transactions: any = { serviceName: "ecs-database-transactions-service" };
     const addTransactionWrappers = (transactionDecls: Record<string, any>) => {
@@ -131,10 +129,25 @@ function createEmptyDatabase(sync: DatabaseSyncOptions | undefined): any {
     // `db.indexes.<name>` and `t.indexes.<name>` pointing at one source of
     // truth.
 
+    const toData = strategy.toData
+        ? () => strategy.toData!(() => observedDatabase.toData())
+        : () => observedDatabase.toData();
+    const fromData = strategy.fromData
+        ? (data: unknown) => strategy.fromData!((d) => observedDatabase.fromData(d), data)
+        : (data: unknown) => observedDatabase.fromData(data);
+
     const partialDatabase: any = {
         serviceName: "ecs-database-service",
-        ...reconcilingDatabase,
-        sync,
+        ...observedDatabase,
+        concurrency: strategy,
+        apply: strategy.apply,
+        cancel: strategy.cancel,
+        reset: () => {
+            strategy.onReset();
+            observedDatabase.reset();
+        },
+        toData,
+        fromData,
         transactions,
         actions,
         services,
@@ -180,7 +193,14 @@ function createEmptyDatabase(sync: DatabaseSyncOptions | undefined): any {
     const extend = (plugin: Database.Plugin<any, any, any, any, any, any, any, any>) => {
         if (!extendedPlugins.has(plugin)) {
             extendedPlugins.add(plugin);
-            reconcilingDatabase.extend(plugin);
+            observedDatabase.extend(plugin);
+
+            // Update the shared transaction declarations ref so the strategy's
+            // getTransaction closure sees the new names during replay.
+            if (plugin.transactions) {
+                Object.assign(transactionDeclarationsRef, plugin.transactions);
+            }
+
             const pluginTransactions = plugin.transactions ?? {};
             const pluginActions = plugin.actions ?? {};
             const pluginServices = plugin.services ?? {};
@@ -193,7 +213,7 @@ function createEmptyDatabase(sync: DatabaseSyncOptions | undefined): any {
             for (const name in pluginComputed) {
                 if (!(name in computed)) computed[name] = (pluginComputed[name] as (db: any) => unknown)(partialDatabase);
             }
-            // `reconcilingDatabase.extend(plugin)` above propagates down to
+            // `observedDatabase.extend(plugin)` above propagates down to
             // `store.extend({ components, resources, archetypes, indexes })`,
             // so the Store has already absorbed `plugin.indexes`. We refresh
             // our local indexes reference in case the underlying map got a

@@ -8,7 +8,7 @@
 // envelopes transparently.
 
 import { describe, it, expect } from "vitest";
-import { Database } from "@adobe/data/ecs";
+import { Database, createRebaseReplayConcurrency } from "@adobe/data/ecs";
 import { createLoopbackTransport } from "./loopback-transport.js";
 import { createSyncServer } from "./create-sync-server.js";
 import { createSyncService } from "./create-sync-service.js";
@@ -49,7 +49,7 @@ const plugin = Database.Plugin.create({
     },
 });
 
-const makeDb = (userId: string) => Database.create(plugin, { sync: { userId } });
+const makeDb = (userId: string) => Database.create(plugin, { concurrency: createRebaseReplayConcurrency(userId) });
 
 const snap = (db: ReturnType<typeof makeDb>) =>
     db.select(["x", "y", "label"])

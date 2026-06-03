@@ -16,7 +16,8 @@ import { EntitySelectOptions } from "../store/entity-select-options.js";
 import { Filter } from "../../table/select-rows.js";
 import { Index as StoreIndex } from "../store/index-types.js";
 import type { Service } from "../../service/index.js";
-import { createDatabase, type DatabaseSyncOptions } from "./public/create-database.js";
+import { createDatabase } from "./public/create-database.js";
+import type { ConcurrencyStrategy } from "./concurrency/concurrency-strategy.js";
 import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
@@ -181,13 +182,12 @@ export interface Database<
    */
   readonly cancel: (id: number, userId?: number | string) => void;
   /**
-   * The sync options the database was created with, or `undefined` for a
-   * local-only database. Sync services read this to (a) confirm the
-   * database was created in sync mode and (b) recover the `userId` for
-   * authentication / logging without having to thread it through
-   * separately.
+   * The concurrency strategy the database was created with. Sync services
+   * read `concurrency.userId` to recover the peer identifier and check
+   * `concurrency.deferredCommit` to confirm the database is in the
+   * appropriate mode for multi-peer operation.
    */
-  readonly sync: DatabaseSyncOptions | undefined;
+  readonly concurrency: ConcurrencyStrategy;
   readonly system: {
     /** System create() return value, or null when create() returns void. Key is always present. */
     readonly functions: { readonly [K in S]: SystemFunction | null };

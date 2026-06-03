@@ -143,7 +143,6 @@ export const boidsPlugin = Database.Plugin.create({
         boidsCount: { default: DEFAULT_BOIDS as number, transient: true },
         boidsGpu: { default: null as BoidGpu | null, transient: true },
         boidsPingFrame: { default: 0 as number, transient: true },
-        boidsLastTime: { default: 0 as F32, transient: true },
         boidsSceneBG: { default: null as GPUBindGroup | null, transient: true },
         boidsSceneBuffer: { default: null as GPUBuffer | null, transient: true },
         // Cursor scare ray. Origin is the camera eye; dir is the unit vector
@@ -376,10 +375,7 @@ export const boidsPlugin = Database.Plugin.create({
                 const { device, commandEncoder, boidsCount } = db.store.resources;
                 if (!gpu || !device || !commandEncoder) return;
 
-                const now = performance.now();
-                const last = db.store.resources.boidsLastTime || now;
-                const dt = Math.min((now - last) / 1000, 0.05);
-                db.store.resources.boidsLastTime = now;
+                const dt = db.store.resources.frameTime.dt;
 
                 // Refresh params each frame.
                 const params = new ArrayBuffer(PARAMS_SIZE);

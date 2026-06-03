@@ -52,17 +52,16 @@ export const cpuXpbd = Database.Plugin.create({
             // deep-readonly, which would block writing the flat Float32Arrays).
             create: db => {
                 let state: SolverState | null = null;
-                let lastTime = 0;
                 // Material props keyed by entity. Materials are added rarely and
                 // edited never, so the lookup is rebuilt only when the count of
                 // material entities changes — steady state does no material work.
                 let matProps = new Map<number, MatProps>();
                 let matCount = -1;
                 return () => {
-                    const now = performance.now();
-                    const last = lastTime || now;
-                    const dt = Math.min((now - last) / 1000, 0.033);
-                    lastTime = now;
+                    // Clamp below the frame clock's own cap: the sequential XPBD
+                    // solve needs a tighter bound (~30 fps) to stay stable.
+                    const frameDt = db.store.resources.frameTime.dt;
+                    const dt = frameDt < 0.033 ? frameDt : 0.033;
                     if (dt <= 0) return;
 
                     // count bodies, (re)allocate state if needed

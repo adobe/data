@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database, scheduler } from "@adobe/data/ecs";
+import { FrameTime } from "./frame-time/frame-time.js";
 
 async function getWebGPUDevice() {
     const adapter = await navigator.gpu?.requestAdapter();
@@ -20,9 +21,12 @@ async function getWebGPUDevice() {
  * → render → postRender. The command encoder is created at `preUpdate` and
  * submitted at `postRender`; consumers record render passes (graphics) or
  * compute passes (physics) into it during the phases between.
+ *
+ * Composes `FrameTime` over the scheduler so every downstream system has the
+ * `frameTime` resource — per-frame `dt` / `elapsed` — without re-deriving it.
  */
 export const core = Database.Plugin.create({
-    extends: scheduler,
+    extends: Database.Plugin.combine(scheduler, FrameTime.plugin),
     resources: {
         device: { default: null as GPUDevice | null, transient: true },
         commandEncoder: { default: null as GPUCommandEncoder | null, transient: true },

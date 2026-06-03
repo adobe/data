@@ -10,6 +10,7 @@ export { InterpolationMode } from "./graphics/animation/interpolation-mode/inter
 
 // --- Infrastructure ----------------------------------------------------------
 export { core } from "./core/core-plugin.js";
+export { FrameTime } from "./core/frame-time/frame-time.js";
 export { graphics } from "./graphics/graphics-plugin.js";
 
 // --- Physics: shared rigid-body data model + pluggable solver seam -----------

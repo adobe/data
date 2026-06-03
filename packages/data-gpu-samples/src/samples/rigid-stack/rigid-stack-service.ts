@@ -29,7 +29,6 @@ export const rigidStackPlugin = Database.Plugin.create({
         _spawnAccum: { default: 0 as number, transient: true },
         _spawnElapsed: { default: 0 as number, transient: true },
         _spawnedDynamic: { default: 0 as number, transient: true },
-        _spawnLastTime: { default: 0 as number, transient: true },
         _floorDone: { default: false as boolean, transient: true },
     },
     transactions: {
@@ -125,10 +124,7 @@ export const rigidStackPlugin = Database.Plugin.create({
             schedule: { during: ["update"] },
             create: db => () => {
                 if (db.store.resources._spawnedDynamic >= DYNAMIC_CAP) return;
-                const now = performance.now();
-                const last = db.store.resources._spawnLastTime || now;
-                const dt = Math.min((now - last) / 1000, 0.05);
-                db.store.resources._spawnLastTime = now;
+                const dt = db.store.resources.frameTime.dt;
                 const elapsed = db.store.resources._spawnElapsed + dt;
                 db.store.resources._spawnElapsed = elapsed;
                 if (elapsed < SPAWN_DELAY) return;  // let the bare stack settle + prove stable first

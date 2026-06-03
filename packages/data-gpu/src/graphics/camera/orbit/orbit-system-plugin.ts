@@ -17,16 +17,13 @@ export const orbitSystem = Database.Plugin.create({
     systems: {
         _orbitCameraSystem: {
             create: db => {
-                let lastTime = performance.now();
                 return () => {
                     const { orbit, camera: cam } = db.store.resources;
                     if (!cam) return;
-                    const now = performance.now();
                     if (orbit.autoSpin) {
-                        const dt = (now - lastTime) / 1000;
+                        const dt = db.store.resources.frameTime.dt;
                         db.store.resources.orbit = { ...orbit, angle: orbit.angle + dt * orbit.autoSpinSpeed };
                     }
-                    lastTime = now;
                     const angle = db.store.resources.orbit.angle;
                     db.store.resources.camera = {
                         ...cam,

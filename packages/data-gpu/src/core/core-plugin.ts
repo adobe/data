@@ -4,7 +4,12 @@ import { Database, scheduler } from "@adobe/data/ecs";
 import { FrameTime } from "./frame-time/frame-time.js";
 
 async function getWebGPUDevice() {
-    const adapter = await navigator.gpu?.requestAdapter();
+    // Guard for headless hosts (Node) where `navigator` doesn't exist: the
+    // simulation runs without a GPU device; only rendering needs one.
+    if (typeof navigator === "undefined" || !navigator.gpu) {
+        return null;
+    }
+    const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) {
         return null;
     }

@@ -11,6 +11,14 @@ export const scheduler = createPlugin({
     systems: {
         schedulerSystem: {
             create: (db) => {
+                // The frame loop runs on requestAnimationFrame in the browser. In a
+                // headless host (Node — tests, server-side simulation) there is no
+                // rAF; fall back to a no-op so the database still constructs and the
+                // host can drive frames itself by invoking `db.system.functions` in
+                // `db.system.order`. This keeps a simulation fully runnable with no
+                // rendering attached.
+                const raf: (cb: () => void) => unknown =
+                    typeof requestAnimationFrame !== "undefined" ? requestAnimationFrame : () => 0;
                 // Execute one frame
                 const executeFrame = async () => {
                     if (db.resources.schedulerState === "running") {
@@ -39,12 +47,12 @@ export const scheduler = createPlugin({
                     }
 
                     if (db.resources.schedulerState !== "disposed") {
-                        requestAnimationFrame(executeFrame);
+                        raf(executeFrame);
                     }
                 };
 
                 // Defer execution until after all systems are created and db.system.functions is populated
-                requestAnimationFrame(executeFrame);
+                raf(executeFrame);
 
                 // Return a no-op system function (the real work happens in the RAF loop)
                 return () => {

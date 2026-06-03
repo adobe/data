@@ -43,6 +43,7 @@ export const cpuXpbd = Database.Plugin.create({
                 sleepAngular: 0.6,
                 sleepTime: 0.5,
                 rollingFriction: 0.2,
+                maxLinearVelocity: 40,
             } satisfies SolverConfig as SolverConfig,
         },
     },

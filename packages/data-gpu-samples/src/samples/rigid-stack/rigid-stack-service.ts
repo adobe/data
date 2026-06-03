@@ -10,11 +10,11 @@ const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_sma
 // Scene config.
 const BIN = 7;                 // half-extent of the floor / containing walls
 const STACK_W = 4, STACK_D = 4, STACK_H = 4;   // dynamic block stack (unit cubes)
-const SPAWN_INTERVAL = 0.18;   // seconds between dynamic drops
+const SPAWN_INTERVAL = 0.2;    // seconds between dynamic drops
 const SPAWN_DELAY = 2.5;       // let the bare stack settle first, to verify it holds
-const DYNAMIC_CAP = 200;       // stop spawning at this many dropped bodies
+const DYNAMIC_CAP = 80;        // stop spawning at this many dropped bodies
 const SPAWN_SPREAD = 2.5;      // ± x/z spawn area (roughly over the stack)
-const SPAWN_HEIGHT = 14;
+const SPAWN_HEIGHT = 6;        // low drop: keeps impact speed under the solver's velocity clamp
 
 /**
  * rigid-stack — CPU-XPBD physics rendered through the unified PBR + IBL path.
@@ -38,31 +38,36 @@ export const rigidStackPlugin = Database.Plugin.create({
             t.resources.cpuPhysicsConfig = {
                 ...t.resources.cpuPhysicsConfig,
                 gravity: 18,
-                substeps: 10, iterations: 1,  // Small-Steps: narrowphase once per substep
+                substeps: 10, iterations: 4,  // more Gauss-Seidel iterations → dense piles converge
                 restitutionThreshold: 1.5, sleepLinear: 0.5, sleepAngular: 0.6, sleepTime: 0.5,
-                rollingFriction: 0.2,
+                rollingFriction: 0.2, maxLinearVelocity: 14,
             };
             t.resources.orbit = {
                 ...t.resources.orbit,
-                center: [0, 3, 0], radius: 26, height: 12, autoSpinSpeed: 0.12,
+                center: [0, 1, 0], radius: 22, height: 22, autoSpinSpeed: 0.12,
             };
             t.resources.light = {
                 ...t.resources.light,
                 environmentUrl: ENV_URL,
                 direction: [-2, -5, -3], color: [1.0, 0.98, 0.92], ambientStrength: 0.4,
             };
-            // Stone bin: a floor slab (top face at y = 0) and four low walls,
-            // all immovable StaticCollider boxes. The render bridge gives them
+            // Stone bin: a floor slab (top face at y = 0) and four walls, all
+            // immovable StaticCollider boxes. The render bridge gives them
             // geometry once the shape meshes load — no separate render-only prop.
+            // Static boxes are deliberately THICK: unlike the old analytic floor
+            // (an infinite half-space), a finite box has a far side, and a body
+            // pressed past its mid-plane is ejected out the back. Thickness keeps
+            // the far face out of reach under stacking load.
             const stone = t.resources.materials.stone;
+            const FT = 2;                                            // floor/wall half-thickness
             const wall = (position: [number, number, number], halfExtents: [number, number, number]) =>
                 t.archetypes.StaticCollider.insert({ colliderShape: "box", halfExtents, material: stone, position, rotation: Quat.identity });
-            wall([0, -0.5, 0], [BIN + 1, 0.5, BIN + 1]);              // floor slab
-            const WH = 2;                                            // wall half-height (walls 0 → 2·WH)
-            wall([ BIN, WH, 0], [0.5, WH, BIN + 1]);                 // +x
-            wall([-BIN, WH, 0], [0.5, WH, BIN + 1]);                 // −x
-            wall([0, WH,  BIN], [BIN + 1, WH, 0.5]);                 // +z
-            wall([0, WH, -BIN], [BIN + 1, WH, 0.5]);                 // −z
+            wall([0, -FT, 0], [BIN + 1, FT, BIN + 1]);               // floor slab (top at y = 0)
+            const WH = 4;                                            // wall half-height (walls 0 → 2·WH)
+            wall([ BIN, WH, 0], [FT, WH, BIN + 1]);                  // +x
+            wall([-BIN, WH, 0], [FT, WH, BIN + 1]);                  // −x
+            wall([0, WH,  BIN], [BIN + 1, WH, FT]);                  // +z
+            wall([0, WH, -BIN], [BIN + 1, WH, FT]);                  // −z
             // Dynamic block stack: a grid of unit cubes resting on the floor.
             // Dynamic so we can verify the solver holds the stack and dropped
             // bodies knock it around. A small gap on every axis avoids initial
@@ -101,9 +106,7 @@ export const rigidStackPlugin = Database.Plugin.create({
                 material: mat,
                 position: [(Math.random() * 2 - 1) * SPAWN_SPREAD, SPAWN_HEIGHT, (Math.random() * 2 - 1) * SPAWN_SPREAD],
                 rotation: isBox ? randomQuat() : Quat.identity,
-                // an initial downward toss so each body clears the spawn point
-                // before the next appears (no overlapping pile at the top).
-                linearVelocity: [0, -6, 0],
+                linearVelocity: [0, 0, 0],
                 angularVelocity: [0, 0, 0],
             });
         },

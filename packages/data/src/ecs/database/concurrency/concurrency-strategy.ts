@@ -5,23 +5,6 @@ import type { TransactionContext, TransactionResult } from "../transactional-sto
 import type { TransactionEnvelope } from "../reconciling/reconciling-database.js";
 
 /**
- * A function that executes a transaction against the store, fires observers,
- * and returns the mutation record. This is the observed database's `execute`.
- */
-export type ConcurrencyExecuteFn = (
-    fn: (ctx: TransactionContext<any, any, any>) => void | Entity,
-    options?: { transient?: boolean; userId?: number | string },
-) => TransactionResult<unknown>;
-
-/**
- * A function that looks up a registered transaction function by name.
- * Returns undefined when the name is not yet registered.
- */
-export type ConcurrencyGetTransactionFn = (
-    name: string,
-) => ((ctx: TransactionContext<any, any, any>, args: unknown) => void | Entity) | undefined;
-
-/**
  * The interface every concurrency strategy must satisfy.
  *
  * A strategy encapsulates all decisions about how locally-initiated
@@ -72,26 +55,43 @@ export interface ConcurrencyStrategy {
     readonly onReset: () => void;
 
     /**
-     * If provided, wraps `db.toData()`. The strategy is responsible for
-     * calling `base()` and handling rollback/replay around it.
-     * Omit when the strategy has no transient state that needs to be
-     * excluded from the serialized snapshot.
+     * Called immediately before `db.toData()` serializes the store.
+     * Strategies with a transient queue should roll back transients here so
+     * the snapshot contains only committed state.
      */
-    readonly toData?: (base: () => unknown) => unknown;
+    readonly onBeforeToData?: () => void;
 
     /**
-     * If provided, wraps `db.fromData()`. The strategy is responsible for
-     * calling `base(data)` and handling replay after the load.
-     * Omit when the strategy has no transient queue to replay.
+     * Called immediately after `db.toData()` serializes the store.
+     * Strategies that roll back in `onBeforeToData` should replay here to
+     * restore the in-progress transient state.
      */
-    readonly fromData?: (base: (data: unknown) => void, data: unknown) => void;
+    readonly onAfterToData?: () => void;
+
+    /**
+     * Called immediately after `db.fromData()` loads a snapshot into the
+     * store. Strategies with a transient queue should replay pending
+     * transients here so in-progress work is visible after a data load.
+     */
+    readonly onAfterFromData?: () => void;
 }
 
 /**
  * Factory that creates a `ConcurrencyStrategy` bound to the given execute
  * and transaction-lookup functions. Called once per database at construction.
+ *
+ * `execute` is the observed database's execute — it applies a transaction,
+ * fires observers, and returns the mutation record.
+ *
+ * `getTransaction` looks up a registered transaction function by name,
+ * returning undefined when the name has not yet been registered via extend.
  */
 export type ConcurrencyStrategyFactory = (
-    execute: ConcurrencyExecuteFn,
-    getTransaction: ConcurrencyGetTransactionFn,
+    execute: (
+        fn: (ctx: TransactionContext<any, any, any>) => void | Entity,
+        options?: { transient?: boolean; userId?: number | string },
+    ) => TransactionResult<unknown>,
+    getTransaction: (
+        name: string,
+    ) => ((ctx: TransactionContext<any, any, any>, args: unknown) => void | Entity) | undefined,
 ) => ConcurrencyStrategy;

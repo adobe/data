@@ -51,8 +51,16 @@ export function createReconcilingDatabase<
             applier.onReset();
             observedDatabase.reset();
         },
-        toData: () => applier.toData(() => observedDatabase.toData()),
-        fromData: (data: unknown) => applier.fromData((d) => observedDatabase.fromData(d), data),
+        toData: () => {
+            applier.rollbackAllTransients();
+            const data = observedDatabase.toData();
+            applier.replayAllTransients();
+            return data;
+        },
+        fromData: (data: unknown) => {
+            observedDatabase.fromData(data);
+            applier.replayAllTransients();
+        },
         apply: applier.apply as ReconcilingDatabase<C, R, A, TD>["apply"],
         cancel: applier.cancel,
         extend: (plugin: any) => {

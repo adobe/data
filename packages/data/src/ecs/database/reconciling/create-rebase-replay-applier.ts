@@ -4,7 +4,7 @@ import { applyOperations } from "../transactional-store/apply-operations.js";
 import { TransactionResult } from "../transactional-store/index.js";
 import { TransactionEnvelope } from "./reconciling-database.js";
 import { ReconcilingEntry, ReconcilingEntryOps } from "./reconciling-entry.js";
-import type { ConcurrencyExecuteFn, ConcurrencyGetTransactionFn } from "../concurrency/concurrency-strategy.js";
+import type { ConcurrencyStrategyFactory } from "../concurrency/concurrency-strategy.js";
 
 /**
  * Core rebase-replay logic shared by {@link createReconcilingDatabase} (legacy
@@ -23,15 +23,15 @@ import type { ConcurrencyExecuteFn, ConcurrencyGetTransactionFn } from "../concu
  * broadcast arrived.
  */
 export function createRebaseReplayApplier(
-    execute: ConcurrencyExecuteFn,
-    getTransaction: ConcurrencyGetTransactionFn,
+    ...args: Parameters<ConcurrencyStrategyFactory>
 ): {
     apply: (envelope: TransactionEnvelope) => TransactionResult<unknown> | undefined;
     cancel: (id: number, userId?: number | string) => void;
     onReset: () => void;
-    toData: (base: () => unknown) => unknown;
-    fromData: (base: (data: unknown) => void, data: unknown) => void;
+    rollbackAllTransients: () => void;
+    replayAllTransients: () => TransactionResult<unknown> | undefined;
 } {
+    const [execute, getTransaction] = args;
     const reconcilingEntries: ReconcilingEntry[] = [];
 
     const rollbackEntryResult = (entry: ReconcilingEntry) => {
@@ -135,17 +135,5 @@ export function createRebaseReplayApplier(
         reconcilingEntries.length = 0;
     };
 
-    const toData = (base: () => unknown): unknown => {
-        rollbackAllTransients();
-        const data = base();
-        replayAllTransients();
-        return data;
-    };
-
-    const fromData = (base: (data: unknown) => void, data: unknown): void => {
-        base(data);
-        replayAllTransients();
-    };
-
-    return { apply, cancel, onReset, toData, fromData };
+    return { apply, cancel, onReset, rollbackAllTransients, replayAllTransients };
 }

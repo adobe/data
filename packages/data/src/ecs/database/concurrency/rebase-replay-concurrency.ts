@@ -15,22 +15,23 @@ import type { ConcurrencyStrategy, ConcurrencyStrategyFactory } from "./concurre
  *   - Every outbound envelope is stamped with `userId` so the reconciler's
  *     compound `(userId, id)` key keeps concurrent peers' id counters from
  *     colliding.
- *   - `toData` / `fromData` roll back and replay the transient queue around
- *     serialisation so snapshots always contain only committed state.
+ *   - `onBeforeToData` / `onAfterToData` roll back and replay the transient
+ *     queue around serialisation so snapshots always contain only committed state.
  *
  * @param userId Stable peer/session identifier unique across all peers
  *   sharing the same sync server.
  */
 export const createRebaseReplayConcurrency = (userId: number | string): ConcurrencyStrategyFactory =>
-    (execute, getTransaction): ConcurrencyStrategy => {
-        const applier = createRebaseReplayApplier(execute, getTransaction);
+    (...args): ConcurrencyStrategy => {
+        const applier = createRebaseReplayApplier(...args);
         return {
             deferredCommit: true,
             userId,
             apply: applier.apply,
             cancel: applier.cancel,
             onReset: applier.onReset,
-            toData: applier.toData,
-            fromData: applier.fromData,
+            onBeforeToData: applier.rollbackAllTransients,
+            onAfterToData: applier.replayAllTransients,
+            onAfterFromData: applier.replayAllTransients,
         };
     };

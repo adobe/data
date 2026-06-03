@@ -129,12 +129,16 @@ function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined
     // `db.indexes.<name>` and `t.indexes.<name>` pointing at one source of
     // truth.
 
-    const toData = strategy.toData
-        ? () => strategy.toData!(() => observedDatabase.toData())
-        : () => observedDatabase.toData();
-    const fromData = strategy.fromData
-        ? (data: unknown) => strategy.fromData!((d) => observedDatabase.fromData(d), data)
-        : (data: unknown) => observedDatabase.fromData(data);
+    const toData = () => {
+        strategy.onBeforeToData?.();
+        const data = observedDatabase.toData();
+        strategy.onAfterToData?.();
+        return data;
+    };
+    const fromData = (data: unknown) => {
+        observedDatabase.fromData(data);
+        strategy.onAfterFromData?.();
+    };
 
     const partialDatabase: any = {
         serviceName: "ecs-database-service",

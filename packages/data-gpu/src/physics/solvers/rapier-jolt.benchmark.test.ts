@@ -1,14 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { describe, it, expect } from "vitest";
-import { runSolverBenchmark, cpuXpbd } from "@adobe/data-gpu";
+import { runSolverBenchmark } from "./solver-benchmark.js";
+import { cpuXpbd } from "./cpu-xpbd/cpu-xpbd-plugin.js";
 import { rapierSolver } from "./rapier-solver-plugin.js";
 import { joltSolver } from "./jolt-solver-plugin.js";
 
 // Side-by-side performance baseline of every solver through the shared harness.
-// This lives in the samples package because that is where `rapierSolver` (and
-// its WASM dependency) lives; the harness itself is exported from @adobe/data-gpu.
-//   npx vitest --run src/solvers/rapier-solver.benchmark.test.ts
+//   npx vitest --run src/physics/solvers/rapier-jolt.benchmark.test.ts
 describe("solver benchmarks", () => {
     const OPTS = { bodies: 256, frames: 300 };
 

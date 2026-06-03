@@ -2,16 +2,17 @@
 
 import RAPIER from "@dimforge/rapier3d-compat";
 import { Database, type Entity } from "@adobe/data/ecs";
-import { core, physicsData, BodyType, ColliderShape } from "@adobe/data-gpu";
+import { core } from "../../core/core-plugin.js";
+import { physicsData } from "../physics-data-plugin.js";
+import { BodyType } from "../body/body-type/body-type.js";
+import { ColliderShape } from "../body/collider-shape/collider-shape.js";
 
 /**
  * A second rigid-body solver behind the same `physicsData` seam — the
  * battle-tested Rapier engine (dimforge, Rust→WASM). It reads the identical
  * authored components (`RigidBody` + `StaticCollider`) and writes back
  * `position`/`rotation`/velocity for dynamic bodies, exactly like `cpuXpbd`, so
- * the same scene runs unchanged on either solver. This both gives us a robust
- * reference and proves the solver seam from *outside* `@adobe/data-gpu` (this
- * plugin only consumes the package's public exports).
+ * the same scene runs unchanged on either solver.
  *
  * Rapier's WASM must be initialised before use; per the repo's no-top-level-await
  * rule, the init promise lives in the system closure and is awaited lazily — the

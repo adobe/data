@@ -2,7 +2,10 @@
 
 import initJolt from "jolt-physics";
 import { Database, type Entity } from "@adobe/data/ecs";
-import { core, physicsData, BodyType, ColliderShape } from "@adobe/data-gpu";
+import { core } from "../../core/core-plugin.js";
+import { physicsData } from "../physics-data-plugin.js";
+import { BodyType } from "../body/body-type/body-type.js";
+import { ColliderShape } from "../body/collider-shape/collider-shape.js";
 
 /**
  * A third rigid-body solver behind the same `physicsData` seam — Jolt Physics
@@ -91,7 +94,7 @@ export const joltSolver = Database.Plugin.create({
 
                 return () => {
                     if (!J || !bodyInterface || !joltInterface) {
-                        if (!initStarted) { initStarted = true; initJolt().then(j => { J = j; setup(j); }); }
+                        if (!initStarted) { initStarted = true; initJolt().then((j: JoltModule) => { J = j; setup(j); }); }
                         return; // WASM not ready yet
                     }
                     const jolt = J, bi = bodyInterface;

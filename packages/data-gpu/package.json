@@ -15,7 +15,9 @@
     "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
   },
   "dependencies": {
-    "@adobe/data": "workspace:*"
+    "@adobe/data": "workspace:*",
+    "@dimforge/rapier3d-compat": "^0.19.3",
+    "jolt-physics": "^1.0.0"
   },
   "devDependencies": {
     "@webgpu/types": "^0.1.61",

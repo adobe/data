@@ -20,6 +20,8 @@ export type { StaticCollider } from "./physics/body/static-collider.js";
 export { BodyType } from "./physics/body/body-type/body-type.js";
 export { ColliderShape } from "./physics/body/collider-shape/collider-shape.js";
 export { cpuXpbd } from "./physics/solvers/cpu-xpbd/cpu-xpbd-plugin.js";
+export { rapierSolver } from "./physics/solvers/rapier-solver-plugin.js";
+export { joltSolver } from "./physics/solvers/jolt-solver-plugin.js";
 export { runSolverBenchmark } from "./physics/solvers/solver-benchmark.js";
 export type { SolverBenchmarkOptions, SolverBenchmarkResult } from "./physics/solvers/solver-benchmark.js";
 

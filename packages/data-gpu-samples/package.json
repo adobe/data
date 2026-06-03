@@ -7,22 +7,18 @@
   "scripts": {
     "dev": "vite",
     "dev:all": "pnpm --parallel --filter @adobe/data --filter @adobe/data-gpu --filter data-gpu-samples run dev",
-    "build": "vite build",
-    "test": "vitest --run --passWithNoTests"
+    "build": "vite build"
   },
   "dependencies": {
     "@adobe/data": "workspace:*",
     "@adobe/data-gpu": "workspace:*",
     "@adobe/data-lit": "workspace:*",
-    "@dimforge/rapier3d-compat": "^0.19.3",
-    "jolt-physics": "^1.0.0",
     "lit": "^3.3.1"
   },
   "devDependencies": {
     "@webgpu/types": "^0.1.61",
     "typescript": "^5.8.3",
     "vite": "^5.1.1",
-    "vite-plugin-checker": "^0.12.0",
-    "vitest": "^1.6.0"
+    "vite-plugin-checker": "^0.12.0"
   }
 }

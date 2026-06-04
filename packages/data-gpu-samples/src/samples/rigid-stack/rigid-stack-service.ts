@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Quat } from "@adobe/data/math";
-import { pbrRender, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, interpolation, Orbit } from "@adobe/data-gpu";
+import { pbrRender, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, Orbit } from "@adobe/data-gpu";
 
 // Studio HDR for IBL © Poly Haven, CC0.
 const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr";
@@ -59,7 +59,7 @@ const DROPS: Drop[] = (() => {
  * side. The drop sequence is deterministic (seeded), so both see it identically.
  */
 const rigidStackScene = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrRender, shapeGeometry, physicsRenderBridge, interpolation, Orbit.plugin),
+    extends: Database.Plugin.combine(pbrRender, shapeGeometry, physicsRenderBridge, Orbit.plugin),
     resources: {
         _spawnAccum: { default: 0 as number, transient: true },
         _spawnElapsed: { default: 0 as number, transient: true },

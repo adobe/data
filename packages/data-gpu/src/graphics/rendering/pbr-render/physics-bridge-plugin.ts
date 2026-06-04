@@ -5,6 +5,7 @@ import { physicsData } from "../../../physics/physics-data-plugin.js";
 import { ColliderShape } from "../../../physics/body/collider-shape/collider-shape.js";
 import { model } from "../../scene/model/model-plugin.js";
 import { shapeGeometry } from "../../scene/model/shape/shape-geometry-plugin.js";
+import { interpolation } from "../interpolation-plugin.js";
 
 /**
  * physicsRenderBridge — makes colliders renderable by `pbrRender`. Once the
@@ -14,11 +15,16 @@ import { shapeGeometry } from "../../scene/model/shape/shape-geometry-plugin.js"
  * and `visible`. Because physics `rotation`/`position` are the same components
  * the renderer reads, there is no per-frame sync: this only migrates new bodies.
  *
+ * It also folds in `interpolation`, so dynamic bodies render at the smooth,
+ * render-rate display pose for free (the solver steps on a fixed clock that need
+ * not match the render rate) — bridging physics to the renderer is exactly when
+ * you want that. Use `interpolation` directly only with a custom (non-bridge) path.
+ *
  * Also declares `Prop` — a render-only placed geometry with a material that is
  * not a physics body at all (decorative scenery with no collider).
  */
 export const physicsRenderBridge = Database.Plugin.create({
-    extends: Database.Plugin.combine(physicsData, model, shapeGeometry),
+    extends: Database.Plugin.combine(physicsData, model, shapeGeometry, interpolation),
     archetypes: {
         Prop: ["geometry", "position", "rotation", "scale", "visible", "material"],
     },

@@ -194,6 +194,30 @@ export interface Database<
     /** Tier order for execution. Looser type allows extended dbs to be assignable to base. */
     readonly order: ReadonlyArray<ReadonlyArray<string>>;
   }
+  /**
+   * Serialize the database to a plain data snapshot.
+   *
+   * KNOWN BUG (pre-existing, tracked before merge): the returned snapshot
+   * holds **live references** to the store's column buffers — see
+   * `archetype.toData()` returning `{ columns: archetype.columns, ... }`. It
+   * is only valid until the next store mutation; callers must serialize it
+   * immediately.
+   *
+   * This breaks the "exclude in-flight transients from the snapshot" intent of
+   * every concurrency strategy that uses the rollback→serialize→replay dance
+   * (`onBeforeToData`/`onAfterToData`): the synchronous `onAfterToData` replay
+   * mutates the very buffers the snapshot points at *before* the caller
+   * receives it, so a database persisted while transient/optimistic edits are
+   * pending will silently include those uncommitted edits. Affects both
+   * `createRebaseReplayConcurrency` and `createRollForwardConcurrency` (and the
+   * legacy `createReconcilingDatabase`). The existing reconciler tests never
+   * caught it because they only assert the snapshot is truthy, never round-trip
+   * it back.
+   *
+   * Fix options under consideration: have `toData()` return a detached
+   * (deep-copied) snapshot, or restructure the hooks so serialization happens
+   * against a copy taken while transients are rolled back.
+   */
   toData(): unknown
   fromData(data: unknown): void
   extend<P extends Database.Plugin>(plugin: P): Database<

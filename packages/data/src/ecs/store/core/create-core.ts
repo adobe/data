@@ -200,10 +200,10 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         update: updateEntity,
         compact,
         reset: resetCore,
-        toData: () => ({
+        toData: (copy = false) => ({
             componentSchemas,
-            entityLocationTableData: persistentLocationTable.toData(),
-            archetypesData: archetypes.map(archetype => archetype.toData())
+            entityLocationTableData: persistentLocationTable.toData(copy),
+            archetypesData: archetypes.map(archetype => archetype.toData(copy))
         }),
         fromData: (data: any) => {
             Object.assign(componentSchemas, data.componentSchemas);

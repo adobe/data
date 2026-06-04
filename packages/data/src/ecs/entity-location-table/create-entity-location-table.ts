@@ -96,8 +96,8 @@ const createPositiveEntityLocationTable = (initialCapacity: number = 16): Entity
             freeListHead = -1;
             nextIndex = 0;
         },
-        toData: () => ({
-            entities,
+        toData: (copy = false) => ({
+            entities: copy ? entities.slice() : entities,
             freeListHead,
             nextIndex,
             capacity,

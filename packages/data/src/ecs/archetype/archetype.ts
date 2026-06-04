@@ -26,13 +26,20 @@ interface BaseArchetype {
 }
 export interface ReadonlyArchetype<C extends RequiredComponents> extends BaseArchetype, ReadonlyTable<C> {
     readonly components: ComponentSet<StringKeyof<C>>;
-    toData: () => unknown
+    /**
+     * Serialize the archetype. When `copy` is true each column buffer is
+     * detached (`.copy()`) so the snapshot survives later mutation of the live
+     * archetype; otherwise the snapshot references the live column buffers
+     * (faster, but only valid until the next mutation).
+     */
+    toData: (copy?: boolean) => unknown
 }
 
 export interface Archetype<C extends RequiredComponents = RequiredComponents> extends BaseArchetype, Table<C> {
     readonly components: ComponentSet<StringKeyof<C>>;
     insert: <T extends EntityInsertValues<C>>(rowData: Exact<EntityInsertValues<C>, T>) => Entity;
-    toData: () => unknown
+    /** See {@link ReadonlyArchetype.toData}. */
+    toData: (copy?: boolean) => unknown
     fromData: (data: unknown) => void
 }
 

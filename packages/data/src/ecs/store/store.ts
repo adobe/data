@@ -25,7 +25,14 @@ interface BaseStore<C extends object = never> {
         include: readonly Include[] | ReadonlySet<string>,
         options?: EntitySelectOptions<C & OptionalComponents, Pick<C & RequiredComponents & OptionalComponents, Include>>
     ): readonly Entity[];
-    toData(): unknown
+    /**
+     * Serialize the store to a plain snapshot. When `copy` is true the snapshot
+     * is detached from the live store (column/entity buffers are copied) so it
+     * remains valid after subsequent mutations; otherwise it references live
+     * buffers and is only valid until the next mutation. See `Database.toData()`
+     * for the bug this `copy` flag addresses for transient-bearing strategies.
+     */
+    toData(copy?: boolean): unknown
 }
 
 export interface ReadonlyStore<

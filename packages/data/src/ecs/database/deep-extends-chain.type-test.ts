@@ -401,8 +401,8 @@ type HasStringIndex<T> = string extends keyof T ? true : false;
 // Readonly<any>=any, and any & EntityReadValues<C> = any, which is
 // assignable to any concrete return type.
 //
-// This test reproduces the pattern used by consumers like firefly-platform's
-// MainService interface to verify that the assignment compiles.
+// This test reproduces the pattern used by downstream consumers' service
+// interfaces to verify that the assignment compiles.
 // ============================================================================
 
 import type { ReadonlyArchetype } from "../archetype/archetype.js";

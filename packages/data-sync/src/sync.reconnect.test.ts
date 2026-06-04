@@ -11,7 +11,7 @@
 //   6. End-to-end: new server (session mismatch) → reset + full replay.
 
 import { describe, it, expect, vi } from "vitest";
-import { Database } from "@adobe/data/ecs";
+import { Database, createRebaseReplayConcurrency } from "@adobe/data/ecs";
 import { createLoopbackTransport } from "./loopback-transport.js";
 import { createSyncServer } from "./create-sync-server.js";
 import { createSyncService } from "./create-sync-service.js";
@@ -39,7 +39,7 @@ const plugin = Database.Plugin.create({
     },
 });
 
-const makeDb = (userId: string) => Database.create(plugin, { sync: { userId } });
+const makeDb = (userId: string) => Database.create(plugin, { concurrency: createRebaseReplayConcurrency(userId) });
 const entityCount = (db: ReturnType<typeof makeDb>) => db.select(["x", "label"]).length;
 const labels = (db: ReturnType<typeof makeDb>) =>
     db.select(["label"]).map(e => db.read(e)?.label as string).sort();

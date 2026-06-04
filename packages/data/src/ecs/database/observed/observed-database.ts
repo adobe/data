@@ -36,7 +36,7 @@ export interface ObservedDatabase<
     };
     readonly execute: (handler: (ctx: TransactionContext<C, R, A>) => Entity | void, options?: { transient?: boolean; userId?: number | string }) => TransactionResult<C>;
     readonly reset: () => void;
-    readonly toData: () => unknown;
+    readonly toData: (copy?: boolean) => unknown;
     readonly fromData: (data: unknown) => void;
     readonly extend: <
         P extends Database.Plugin<any, any, any, any, any>

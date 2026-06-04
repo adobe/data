@@ -16,7 +16,8 @@ import { EntitySelectOptions } from "../store/entity-select-options.js";
 import { Filter } from "../../table/select-rows.js";
 import { Index as StoreIndex } from "../store/index-types.js";
 import type { Service } from "../../service/index.js";
-import { createDatabase, type DatabaseSyncOptions } from "./public/create-database.js";
+import { createDatabase } from "./public/create-database.js";
+import type { ConcurrencyStrategy } from "./concurrency/concurrency-strategy.js";
 import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
@@ -181,19 +182,40 @@ export interface Database<
    */
   readonly cancel: (id: number, userId?: number | string) => void;
   /**
-   * The sync options the database was created with, or `undefined` for a
-   * local-only database. Sync services read this to (a) confirm the
-   * database was created in sync mode and (b) recover the `userId` for
-   * authentication / logging without having to thread it through
-   * separately.
+   * The concurrency strategy the database was created with. Sync services
+   * read `concurrency.userId` to recover the peer identifier and check
+   * `concurrency.deferredCommit` to confirm the database is in the
+   * appropriate mode for multi-peer operation.
    */
-  readonly sync: DatabaseSyncOptions | undefined;
+  readonly concurrency: ConcurrencyStrategy;
   readonly system: {
     /** System create() return value, or null when create() returns void. Key is always present. */
     readonly functions: { readonly [K in S]: SystemFunction | null };
     /** Tier order for execution. Looser type allows extended dbs to be assignable to base. */
     readonly order: ReadonlyArray<ReadonlyArray<string>>;
   }
+  /**
+   * Serialize the database to a plain data snapshot.
+   *
+   * For a concurrency strategy that replays transients after serialization
+   * (`onAfterToData` — i.e. `createRebaseReplayConcurrency` /
+   * `createRollForwardConcurrency` / the legacy `createReconcilingDatabase`),
+   * this returns a snapshot **detached** from the live store: it rolls the
+   * transients back, serializes a copy of the committed state (`store.toData`
+   * with `copy: true` — columns and the entity table are cloned), then replays.
+   * So a database persisted with optimistic edits in flight contains only
+   * committed state, and the snapshot survives the subsequent replay.
+   *
+   * For strategies with no replay hook (the default `createImmediateConcurrency`),
+   * the faster live-reference snapshot is returned — it shares the store's
+   * buffers and is only valid until the next mutation, so callers must serialize
+   * it before mutating the database again.
+   *
+   * Historical note: the detach above fixes a bug where the live-reference
+   * snapshot was corrupted by the post-serialization replay, silently leaking
+   * in-flight transients into persisted state. The old reconciler tests missed
+   * it because they only asserted the snapshot was truthy, never round-tripped it.
+   */
   toData(): unknown
   fromData(data: unknown): void
   extend<P extends Database.Plugin>(plugin: P): Database<

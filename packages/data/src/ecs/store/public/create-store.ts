@@ -340,7 +340,7 @@ export function createStore<
                 seedIndexFromArchetypes(idx);
             }
         },
-        toData: () => core.toData(),
+        toData: (copy = false) => core.toData(copy),
         fromData: (data: unknown) => {
             core.fromData(data);
             for (const [name, resourceSchema] of Object.entries(resourceSchemas)) {

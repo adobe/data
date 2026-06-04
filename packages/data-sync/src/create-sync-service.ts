@@ -9,11 +9,11 @@ import type { ClientTransport, ServerMessage } from "./transport.js";
 export interface SyncServiceOptions {
     /**
      * The database to wire into the sync layer. Must have been created with
-     * `Database.create(plugin, { sync: { userId } })` where `userId` is
-     * unique per peer — the reconciler's transient queue uses
-     * `(userId, id)` as its compound key to keep concurrent peers from
-     * colliding, and the wrapper's deferred-commit semantics are required
-     * for cross-peer entity-id determinism.
+     * `createRebaseReplayConcurrency(userId)` as its concurrency strategy,
+     * where `userId` is unique per peer — the reconciler's transient queue
+     * uses `(userId, id)` as its compound key to keep concurrent peers from
+     * colliding, and the deferred-commit semantics are required for cross-peer
+     * entity-id determinism.
      */
     readonly database: Database<any, any, any, any>;
     /** Transport connecting this peer to the sync server. */
@@ -109,7 +109,9 @@ export interface SyncService {
  *
  * @example
  * ```ts
- * const db = Database.create(myPlugin, { sync: { userId: crypto.randomUUID() } });
+ * const db = Database.create(myPlugin, {
+ *     concurrency: createRebaseReplayConcurrency(crypto.randomUUID()),
+ * });
  * const sync = createSyncService({ database: db, transport: ws });
  *
  * db.transactions.spawnUnit({ x: 0, y: 0, hp: 100 });
@@ -131,9 +133,9 @@ export const createSyncService = (options: SyncServiceOptions): SyncService => {
     } = options;
     const log = logger ?? (() => undefined);
 
-    if (database.sync === undefined) {
+    if (!database.concurrency.deferredCommit || database.concurrency.userId === undefined) {
         throw new Error(
-            "createSyncService: database was not created in sync mode. Pass `sync: { userId }` to `Database.create`.",
+            "createSyncService: database must use createRebaseReplayConcurrency(userId) as its concurrency strategy.",
         );
     }
 

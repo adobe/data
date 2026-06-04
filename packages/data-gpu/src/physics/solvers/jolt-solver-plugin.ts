@@ -13,7 +13,7 @@ import { ColliderShape } from "../body/collider-shape/collider-shape.js";
  * (Jorrit Rouwe, C++→WASM, the engine from *Horizon Forbidden West*). Like the
  * Rapier plugin it reads the identical authored components (`RigidBody` +
  * `StaticCollider`) and writes back `position`/`rotation`/velocity for dynamic
- * bodies, so the same scene runs unchanged on cpuXpbd / rapierSolver / joltSolver.
+ * bodies, so the same scene runs unchanged on rapierSolver / joltSolver.
  *
  * Jolt's WASM initialises asynchronously; per the repo's no-top-level-await rule
  * the init promise lives in the system closure and the system no-ops until the
@@ -21,7 +21,7 @@ import { ColliderShape } from "../body/collider-shape/collider-shape.js";
  * is contained in this one module.
  */
 
-const GRAVITY = 18; // matches the cpuXpbd / rapier samples so all three are comparable
+const GRAVITY = 18; // matches rapierSolver so the two solvers are directly comparable
 
 // Two object layers (Jolt's collision-filtering requirement): statics don't
 // collide with each other, dynamics collide with everything.

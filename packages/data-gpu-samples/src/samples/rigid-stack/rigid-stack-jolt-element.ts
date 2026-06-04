@@ -43,7 +43,7 @@ export class RigidStackJoltElement extends DatabaseElement<typeof rigidStackJolt
         return html`
             <div class="stage">
                 <canvas width="460" height="560"></canvas>
-                <div class="hint">Jolt (reference) · drag to orbit</div>
+                <div class="hint">Jolt (default) · drag to orbit</div>
             </div>
         `;
     }

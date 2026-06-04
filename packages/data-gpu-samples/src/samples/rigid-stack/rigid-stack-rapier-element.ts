@@ -44,7 +44,7 @@ export class RigidStackRapierElement extends DatabaseElement<typeof rigidStackRa
         return html`
             <div class="stage">
                 <canvas width="460" height="560"></canvas>
-                <div class="hint">Rapier (reference) · drag to orbit</div>
+                <div class="hint">Rapier (alt: many dynamics) · drag to orbit</div>
             </div>
         `;
     }

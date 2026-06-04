@@ -4,7 +4,7 @@ import { Database } from "@adobe/data/ecs";
 
 /**
  * Headless benchmark harness for a physics **solver plugin** (anything built on
- * the `physicsData` seam — `cpuXpbd`, `rapierSolver`, …). It builds a fixed,
+ * the `physicsData` seam — `rapierSolver`, `joltSolver`, …). It builds a fixed,
  * deterministic scene (a floor + a grid of bodies dropped to pile up), then
  * advances the simulation at a fixed timestep as fast as the CPU allows and
  * reports the wall-clock cost per frame. No rendering, no rAF, no GPU — so the

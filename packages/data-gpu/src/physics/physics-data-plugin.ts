@@ -17,8 +17,8 @@ import { Material } from "../material/material.js";
  * internal state (broadphase, caches, GPU buffers), and each frame reads the
  * authored state and writes back `position`/`rotation`/velocity for dynamic
  * bodies. A renderer reads the canonical transforms, decoupled from which
- * solver produced them — so solvers (CPU-XPBD now, the shelved GPU one or
- * Rapier later) are interchangeable over identical authored scenes.
+ * solver produced them — so solvers (`joltSolver`, `rapierSolver`; the GPU XPBD
+ * solver is shelved) are interchangeable over identical authored scenes.
  *
  * Two archetypes share these components:
  *   - **RigidBody** — `dynamic` or `kinematic` bodies that move; carries

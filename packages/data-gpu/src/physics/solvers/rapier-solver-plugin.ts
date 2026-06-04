@@ -12,15 +12,15 @@ import { ColliderShape } from "../body/collider-shape/collider-shape.js";
  * A second rigid-body solver behind the same `physicsData` seam — the
  * battle-tested Rapier engine (dimforge, Rust→WASM). It reads the identical
  * authored components (`RigidBody` + `StaticCollider`) and writes back
- * `position`/`rotation`/velocity for dynamic bodies, exactly like `cpuXpbd`, so
- * the same scene runs unchanged on either solver.
+ * `position`/`rotation`/velocity for dynamic bodies, exactly like `joltSolver`,
+ * so the same scene runs unchanged on either solver.
  *
  * Rapier's WASM must be initialised before use; per the repo's no-top-level-await
  * rule, the init promise lives in the system closure and is awaited lazily — the
  * system no-ops until the world exists, then runs every frame.
  */
 
-const GRAVITY = 18; // matches the cpuXpbd sample so the two solvers are comparable
+const GRAVITY = 18; // matches joltSolver so the two solvers are directly comparable
 
 const RIGID = ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"] as const;
 const STATIC = ["colliderShape", "halfExtents", "material", "position", "rotation"] as const;

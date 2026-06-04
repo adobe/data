@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Quat } from "@adobe/data/math";
-import { pbrRender, cpuXpbd, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, Orbit } from "@adobe/data-gpu";
+import { pbrRender, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, Orbit } from "@adobe/data-gpu";
 
 // Studio HDR for IBL © Poly Haven, CC0.
 const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr";
@@ -19,8 +19,8 @@ const IDENTITY: [number, number, number, number] = [...Quat.identity];
 
 /**
  * One deterministic drop. The sequence is precomputed from a fixed seed so that
- * two services running different solvers (cpuXpbd vs rapierSolver) get the
- * *identical* scene — a fair side-by-side comparison.
+ * two services running different solvers (Rapier vs Jolt) get the *identical*
+ * scene — a fair side-by-side comparison.
  */
 interface Drop { box: boolean; he: [number, number, number]; pos: [number, number, number]; quat: [number, number, number, number]; }
 
@@ -54,9 +54,9 @@ const DROPS: Drop[] = (() => {
  * `StaticCollider` boxes; every body becomes renderable via `physicsRenderBridge`.
  *
  * This **base** plugin is solver-agnostic — scene + spawning only. A solver is
- * combined in below (`cpuXpbd` or `rapierSolver`); the same scene runs on either
- * through the shared `physicsData` seam, so the two are compared side by side.
- * The drop sequence is deterministic (seeded), so both solvers see it identically.
+ * combined in below (`rapierSolver` or `joltSolver`); the same scene runs on
+ * either through the shared `physicsData` seam, so the two are compared side by
+ * side. The drop sequence is deterministic (seeded), so both see it identically.
  */
 const rigidStackScene = Database.Plugin.create({
     extends: Database.Plugin.combine(pbrRender, shapeGeometry, physicsRenderBridge, Orbit.plugin),
@@ -143,6 +143,5 @@ const rigidStackScene = Database.Plugin.create({
     },
 });
 
-export const rigidStackPlugin = Database.Plugin.combine(rigidStackScene, cpuXpbd);
 export const rigidStackRapierPlugin = Database.Plugin.combine(rigidStackScene, rapierSolver);
 export const rigidStackJoltPlugin = Database.Plugin.combine(rigidStackScene, joltSolver);

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Database } from "@adobe/data/ecs";
+import { Database, type Entity } from "@adobe/data/ecs";
 import { Quat } from "@adobe/data/math";
 import { pbrRender, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, Orbit } from "@adobe/data-gpu";
 
@@ -15,6 +15,7 @@ const SPAWN_DELAY = 2.5;       // let the bare stack settle first, to verify it 
 const DYNAMIC_CAP = 120;       // stop spawning at this many dropped bodies
 const SPAWN_SPREAD = 2.5;      // ± x/z spawn area (roughly over the stack)
 const SPAWN_HEIGHT = 12;
+const SWEEP_AMP = 5.0, SWEEP_SPEED = 0.7, SWEEP_Y = 1.0; // kinematic bar sweep
 const IDENTITY: [number, number, number, number] = [...Quat.identity];
 
 /**
@@ -64,6 +65,7 @@ const rigidStackScene = Database.Plugin.create({
         _spawnAccum: { default: 0 as number, transient: true },
         _spawnElapsed: { default: 0 as number, transient: true },
         _spawnedDynamic: { default: 0 as number, transient: true },
+        _sweeper: { default: 0 as Entity, transient: true }, // the kinematic bar
     },
     transactions: {
         initializeScene(t) {
@@ -105,6 +107,13 @@ const rigidStackScene = Database.Plugin.create({
                     }
                 }
             }
+            // A kinematic steel bar that sweeps across the bin, plowing the stack —
+            // its pose is authored each frame by the `sweep` system; the solver moves
+            // it as a kinematic body that pushes the dynamics but is never pushed back.
+            t.resources._sweeper = t.archetypes.RigidBody.insert({
+                bodyType: "kinematic", colliderShape: "box", halfExtents: [0.4, 1.0, BIN - 1], material: t.resources.materials.steel,
+                position: [-SWEEP_AMP, SWEEP_Y, 0], rotation: IDENTITY, linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0],
+            });
         },
         spawnBody(t, args: { index: number }) {
             const d = DROPS[args.index];
@@ -138,6 +147,17 @@ const rigidStackScene = Database.Plugin.create({
                     db.store.resources._spawnedDynamic = db.store.resources._spawnedDynamic + 1;
                 }
                 db.store.resources._spawnAccum = accum;
+            },
+        },
+        // Author the kinematic bar's pose: a horizontal sweep along x. The solver
+        // reads this pose and drives the kinematic body to it each step.
+        sweep: {
+            schedule: { during: ["update"] },
+            create: db => () => {
+                const id = db.store.resources._sweeper;
+                if (!id) return;
+                const x = Math.sin(db.store.resources.frameTime.elapsed * SWEEP_SPEED - Math.PI / 2) * SWEEP_AMP;
+                db.store.update(id, { position: [x, SWEEP_Y, 0] });
             },
         },
     },

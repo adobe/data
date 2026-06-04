@@ -33,6 +33,11 @@ const SNAPSHOT = ["bodyType", "position", "rotation", "_prevPosition", "_prevRot
 // frame — the win for the "many static, few dynamic" target.
 const NEW_RIGID = { exclude: ["_rapierBody"] } as const;
 const NEW_STATIC = { exclude: ["linearVelocity", "_rapierBody"] } as const;
+// Kinematic bodies, by archetype shape (no per-row value test): they have
+// `bodyType` (so not a StaticCollider) and are mirrored (`_rapierBody`) but never
+// gained `_prevPosition` (only dynamics do) — so excluding it isolates kinematics.
+const KINEMATIC = ["bodyType", "position", "rotation", "_rapierBody"] as const;
+const KINEMATIC_ONLY = { exclude: ["_prevPosition"] } as const;
 
 interface MatProps { density: number; restitution: number; friction: number }
 
@@ -55,12 +60,16 @@ export const rapierSolver = Database.Plugin.create({
                     return { density: m?.density ?? 1, restitution: m?.restitution ?? 0.2, friction: m?.friction ?? 0.5 };
                 };
 
-                const ensureBody = (id: Entity, dynamic: boolean, shape: ColliderShape, hx: number, hy: number, hz: number, mat: Entity, px: number, py: number, pz: number, q: ArrayLike<number>, vx: number, vy: number, vz: number): void => {
+                const ensureBody = (id: Entity, motion: BodyType, shape: ColliderShape, hx: number, hy: number, hz: number, mat: Entity, px: number, py: number, pz: number, q: ArrayLike<number>, vx: number, vy: number, vz: number): void => {
                     if (!world || bodies.has(id)) return;
                     const m = matPropsOf(mat);
-                    const desc = dynamic ? RAPIER.RigidBodyDesc.dynamic() : RAPIER.RigidBodyDesc.fixed();
+                    // dynamic = simulated; kinematic = position-driven (pushes dynamics,
+                    // isn't pushed back); fixed = immovable collider.
+                    const desc = motion === "dynamic" ? RAPIER.RigidBodyDesc.dynamic()
+                        : motion === "kinematic" ? RAPIER.RigidBodyDesc.kinematicPositionBased()
+                            : RAPIER.RigidBodyDesc.fixed();
                     desc.setTranslation(px, py, pz).setRotation({ x: q[0], y: q[1], z: q[2], w: q[3] });
-                    if (dynamic) desc.setLinvel(vx, vy, vz);
+                    if (motion === "dynamic") desc.setLinvel(vx, vy, vz);
                     const body = world.createRigidBody(desc);
                     const col = shape === "sphere" ? RAPIER.ColliderDesc.ball(hx) : RAPIER.ColliderDesc.cuboid(hx, hy, hz);
                     col.setRestitution(m.restitution).setFriction(m.friction).setDensity(m.density);
@@ -85,11 +94,13 @@ export const rapierSolver = Database.Plugin.create({
                         const ids = arch.columns.id, bt = arch.columns.bodyType, cs = arch.columns.colliderShape, mat = arch.columns.material;
                         const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation, lv = arch.columns.linearVelocity;
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
-                            const id = ids.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r), v = lv.get(r);
-                            ensureBody(id, BodyType.isDynamic(bt.get(r)), cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o, v[0], v[1], v[2]);
-                            // tag as mirrored + migrate on the derived prev-pose snapshot
-                            // (seeded to the spawn pose; the interpolator reads it next frame)
-                            db.store.update(id, { _rapierBody: true, _prevPosition: p, _prevRotation: o });
+                            const id = ids.get(r), bodyType = bt.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r), v = lv.get(r);
+                            ensureBody(id, bodyType, cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o, v[0], v[1], v[2]);
+                            // Tag as mirrored. Dynamics also migrate onto the derived prev-pose
+                            // snapshot (the interpolator reads it); kinematic bodies are authored
+                            // each frame, so they render at the live pose with no snapshot — the
+                            // _prevPosition absence is exactly what the kinematic-drive query keys on.
+                            db.store.update(id, BodyType.isDynamic(bodyType) ? { _rapierBody: true, _prevPosition: p, _prevRotation: o } : { _rapierBody: true });
                         }
                     }
                     for (const arch of db.store.queryArchetypes(STATIC, NEW_STATIC)) {
@@ -97,7 +108,7 @@ export const rapierSolver = Database.Plugin.create({
                         const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation;
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
                             const id = ids.get(r), h = he.get(r), p = pos.get(r);
-                            ensureBody(id, false, cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r), 0, 0, 0);
+                            ensureBody(id, "static", cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r), 0, 0, 0);
                             db.store.update(id, { _rapierBody: true });
                         }
                     }
@@ -109,6 +120,22 @@ export const rapierSolver = Database.Plugin.create({
                     const clock = db.store.resources.physicsClock;
                     const steps = clock.steps;
                     if (steps === 0) return; // no sim time accrued — leave pose + snapshot intact
+
+                    // Drive kinematic bodies to their authored pose: Rapier moves a
+                    // position-based kinematic toward the target over the step, deriving
+                    // the velocity that pushes dynamics. (Author the pose however you like —
+                    // a system, animation, input — the solver just follows it.)
+                    for (const arch of db.store.queryArchetypes(KINEMATIC, KINEMATIC_ONLY)) {
+                        const ids = arch.columns.id;
+                        const pos = arch.columns.position.getTypedArray(), ori = arch.columns.rotation.getTypedArray();
+                        for (let r = 0; r < arch.rowCount; r++) {
+                            const body = bodies.get(ids.get(r));
+                            if (!body) continue;
+                            const r3 = r * 3, r4 = r * 4;
+                            body.setNextKinematicTranslation({ x: pos[r3], y: pos[r3 + 1], z: pos[r3 + 2] });
+                            body.setNextKinematicRotation({ x: ori[r4], y: ori[r4 + 1], z: ori[r4 + 2], w: ori[r4 + 3] });
+                        }
+                    }
                     for (const arch of db.store.queryArchetypes(SNAPSHOT)) {
                         const bt = arch.columns.bodyType;
                         const pos = arch.columns.position.getTypedArray(), ori = arch.columns.rotation.getTypedArray();

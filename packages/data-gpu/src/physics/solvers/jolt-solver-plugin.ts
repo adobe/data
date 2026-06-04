@@ -38,11 +38,18 @@ const SNAPSHOT = ["bodyType", "position", "rotation", "_prevPosition", "_prevRot
 // re-scanning every body each frame.
 const NEW_RIGID = { exclude: ["_joltBody"] } as const;
 const NEW_STATIC = { exclude: ["linearVelocity", "_joltBody"] } as const;
+// Kinematic bodies, by archetype shape (no per-row value test): they have
+// `bodyType` (so not a StaticCollider) and are mirrored (`_joltBody`) but never
+// gained `_prevPosition` (only dynamics do) — so excluding it isolates kinematics.
+const KINEMATIC = ["bodyType", "position", "rotation", "_joltBody"] as const;
+const KINEMATIC_ONLY = { exclude: ["_prevPosition"] } as const;
 
 type JoltModule = Awaited<ReturnType<typeof initJolt>>;
 type JBody = InstanceType<JoltModule["Body"]>;
 type JBodyInterface = InstanceType<JoltModule["BodyInterface"]>;
 type JJoltInterface = InstanceType<JoltModule["JoltInterface"]>;
+type JRVec3 = InstanceType<JoltModule["RVec3"]>;
+type JQuat = InstanceType<JoltModule["Quat"]>;
 
 interface MatProps { restitution: number; friction: number }
 
@@ -59,6 +66,7 @@ export const joltSolver = Database.Plugin.create({
                 let initStarted = false;
                 let joltInterface: JJoltInterface | null = null;
                 let bodyInterface: JBodyInterface | null = null;
+                let kPos: JRVec3 | null = null, kRot: JQuat | null = null; // reused kinematic-drive temporaries
                 const bodies = new Map<Entity, JBody>(); // entity → Jolt body
 
                 const matPropsOf = (id: Entity): MatProps => {
@@ -84,19 +92,24 @@ export const joltSolver = Database.Plugin.create({
                     physicsSystem.SetGravity(g);
                     jolt.destroy(g);
                     bodyInterface = physicsSystem.GetBodyInterface();
+                    kPos = new jolt.RVec3(0, 0, 0); kRot = new jolt.Quat(0, 0, 0, 1);
                 };
 
-                const ensureBody = (jolt: JoltModule, bi: JBodyInterface, id: Entity, dynamic: boolean, shape: ColliderShape, hx: number, hy: number, hz: number, mat: Entity, px: number, py: number, pz: number, q: ArrayLike<number>): void => {
+                const ensureBody = (jolt: JoltModule, bi: JBodyInterface, id: Entity, motion: BodyType, shape: ColliderShape, hx: number, hy: number, hz: number, mat: Entity, px: number, py: number, pz: number, q: ArrayLike<number>): void => {
                     if (bodies.has(id)) return;
                     const m = matPropsOf(mat);
                     const half = shape === "sphere" ? null : new jolt.Vec3(hx, hy, hz);
                     const shp = shape === "sphere" ? new jolt.SphereShape(hx) : new jolt.BoxShape(half!);
                     const pos = new jolt.RVec3(px, py, pz), rot = new jolt.Quat(q[0], q[1], q[2], q[3]);
-                    const settings = new jolt.BodyCreationSettings(shp, pos, rot, dynamic ? jolt.EMotionType_Dynamic : jolt.EMotionType_Static, dynamic ? L_DYNAMIC : L_STATIC);
+                    // dynamic = simulated; kinematic = position-driven (pushes dynamics, in the
+                    // dynamic layer so it collides with them); static = immovable collider.
+                    const motionType = motion === "dynamic" ? jolt.EMotionType_Dynamic
+                        : motion === "kinematic" ? jolt.EMotionType_Kinematic : jolt.EMotionType_Static;
+                    const settings = new jolt.BodyCreationSettings(shp, pos, rot, motionType, motion === "static" ? L_STATIC : L_DYNAMIC);
                     settings.mRestitution = m.restitution;
                     settings.mFriction = m.friction;
                     const body = bi.CreateBody(settings);
-                    bi.AddBody(body.GetID(), dynamic ? jolt.EActivation_Activate : jolt.EActivation_DontActivate);
+                    bi.AddBody(body.GetID(), motion === "static" ? jolt.EActivation_DontActivate : jolt.EActivation_Activate);
                     bodies.set(id, body);
                     // free the construction temporaries (the body keeps a ref to the shape)
                     jolt.destroy(settings); jolt.destroy(pos); jolt.destroy(rot);
@@ -118,11 +131,13 @@ export const joltSolver = Database.Plugin.create({
                         const ids = arch.columns.id, bt = arch.columns.bodyType, cs = arch.columns.colliderShape, mat = arch.columns.material;
                         const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation;
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
-                            const id = ids.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r);
-                            ensureBody(jolt, bi, id, BodyType.isDynamic(bt.get(r)), cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o);
-                            // tag as mirrored + migrate on the derived prev-pose snapshot
-                            // (seeded to the spawn pose; the interpolator reads it next frame)
-                            db.store.update(id, { _joltBody: true, _prevPosition: p, _prevRotation: o });
+                            const id = ids.get(r), bodyType = bt.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r);
+                            ensureBody(jolt, bi, id, bodyType, cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o);
+                            // Tag as mirrored. Dynamics also migrate onto the derived prev-pose
+                            // snapshot (the interpolator reads it); kinematic bodies are authored
+                            // each frame, so they render at the live pose with no snapshot — the
+                            // _prevPosition absence is exactly what the kinematic-drive query keys on.
+                            db.store.update(id, BodyType.isDynamic(bodyType) ? { _joltBody: true, _prevPosition: p, _prevRotation: o } : { _joltBody: true });
                         }
                     }
                     for (const arch of db.store.queryArchetypes(STATIC, NEW_STATIC)) {
@@ -130,7 +145,7 @@ export const joltSolver = Database.Plugin.create({
                         const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation;
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
                             const id = ids.get(r), h = he.get(r), p = pos.get(r);
-                            ensureBody(jolt, bi, id, false, cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r));
+                            ensureBody(jolt, bi, id, "static", cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r));
                             db.store.update(id, { _joltBody: true });
                         }
                     }
@@ -142,6 +157,23 @@ export const joltSolver = Database.Plugin.create({
                     const clock = db.store.resources.physicsClock;
                     const steps = clock.steps;
                     if (steps === 0) return; // no sim time accrued — leave pose + snapshot intact
+
+                    // Drive kinematic bodies to their authored pose: MoveKinematic derives
+                    // the velocity to reach the target over the step, so the body pushes
+                    // dynamics. (Author the pose however you like; the solver just follows.)
+                    const dt = clock.fixedDt * steps;
+                    for (const arch of db.store.queryArchetypes(KINEMATIC, KINEMATIC_ONLY)) {
+                        const ids = arch.columns.id;
+                        const pos = arch.columns.position.getTypedArray(), ori = arch.columns.rotation.getTypedArray();
+                        for (let r = 0; r < arch.rowCount; r++) {
+                            const body = bodies.get(ids.get(r));
+                            if (!body || !kPos || !kRot) continue;
+                            const r3 = r * 3, r4 = r * 4;
+                            kPos.Set(pos[r3], pos[r3 + 1], pos[r3 + 2]);
+                            kRot.Set(ori[r4], ori[r4 + 1], ori[r4 + 2], ori[r4 + 3]);
+                            bi.MoveKinematic(body.GetID(), kPos, kRot, dt);
+                        }
+                    }
                     for (const arch of db.store.queryArchetypes(SNAPSHOT)) {
                         const bt = arch.columns.bodyType;
                         const pos = arch.columns.position.getTypedArray(), ori = arch.columns.rotation.getTypedArray();

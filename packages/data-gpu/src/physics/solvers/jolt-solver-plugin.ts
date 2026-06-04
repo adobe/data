@@ -98,8 +98,12 @@ export const joltSolver = Database.Plugin.create({
                 const ensureBody = (jolt: JoltModule, bi: JBodyInterface, id: Entity, motion: BodyType, shape: ColliderShape, hx: number, hy: number, hz: number, mat: Entity, px: number, py: number, pz: number, q: ArrayLike<number>): void => {
                     if (bodies.has(id)) return;
                     const m = matPropsOf(mat);
-                    const half = shape === "sphere" ? null : new jolt.Vec3(hx, hy, hz);
-                    const shp = shape === "sphere" ? new jolt.SphereShape(hx) : new jolt.BoxShape(half!);
+                    // box needs a Vec3 half-extent temporary; sphere/capsule are scalar.
+                    // capsule: Y-aligned, halfHeight = cylinder half (hy), radius = hx.
+                    const half = shape === "box" ? new jolt.Vec3(hx, hy, hz) : null;
+                    const shp = shape === "sphere" ? new jolt.SphereShape(hx)
+                        : shape === "capsule" ? new jolt.CapsuleShape(hy, hx)
+                            : new jolt.BoxShape(half!);
                     const pos = new jolt.RVec3(px, py, pz), rot = new jolt.Quat(q[0], q[1], q[2], q[3]);
                     // dynamic = simulated; kinematic = position-driven (pushes dynamics, in the
                     // dynamic layer so it collides with them); static = immovable collider.

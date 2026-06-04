@@ -2,4 +2,4 @@
 
 import { Schema } from "@adobe/data/schema";
 
-export const schema = { type: "string", enum: ["sphere", "box"] } as const satisfies Schema;
+export const schema = { type: "string", enum: ["sphere", "box", "capsule"] } as const satisfies Schema;

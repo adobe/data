@@ -22,6 +22,23 @@ export function massProperties(
         outInvInertia[o] = 1 / ix; outInvInertia[o + 1] = 1 / iy; outInvInertia[o + 2] = 1 / iz;
         return 1 / mass;
     }
+    if (shape === "capsule") {
+        // Y-aligned: radius r = hx, cylinder half-height = hy (length L = 2·hy).
+        // A cylinder plus two hemispheres (together one sphere of radius r).
+        const r = hx, L = 2 * hy;
+        const mc = density * Math.PI * r * r * L;          // cylinder
+        const ms = density * (4 / 3) * Math.PI * r * r * r; // two hemispheres = a sphere
+        const mass = mc + ms;
+        // axial (Y): cylinder ½mc r² + sphere ⅖ms r²
+        const iy = 0.5 * mc * r * r + 0.4 * ms * r * r;
+        // transverse (X = Z): cylinder about centre, plus each hemisphere's own
+        // inertia (83/320·mh r²) shifted by parallel axis to the capsule centre
+        // (COM offset L/2 + 3r/8). See standard capsule-inertia derivation.
+        const d = L / 2 + 3 * r / 8;
+        const ix = mc * (L * L / 12 + r * r / 4) + ms * ((83 / 320) * r * r + d * d);
+        outInvInertia[o] = 1 / ix; outInvInertia[o + 1] = 1 / iy; outInvInertia[o + 2] = 1 / ix;
+        return 1 / mass;
+    }
     // sphere — radius in hx
     const mass = density * (4 / 3) * Math.PI * hx * hx * hx;
     const inv = 1 / (0.4 * mass * hx * hx);

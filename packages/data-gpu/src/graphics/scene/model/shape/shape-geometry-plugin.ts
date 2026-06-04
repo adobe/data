@@ -5,7 +5,8 @@ import { Mat4x4 } from "@adobe/data/math";
 import { pbrCore } from "../../../rendering/pbr-core-plugin.js";
 import { core } from "../../../../core/core-plugin.js";
 import { model } from "../model-plugin.js";
-import { unitSphere, unitCube, type ShapeMesh } from "./shape-mesh.js";
+import { unitSphere, unitCube } from "./shape-mesh.js";
+import { uploadShapeMesh } from "./upload-shape-mesh.js";
 
 /**
  * shapeGeometry — registers procedural unit-sphere and unit-cube geometries as
@@ -47,16 +48,8 @@ export const shapeGeometry = Database.Plugin.create({
                     const { device } = db.store.resources;
                     if (!device) return;
 
-                    const upload = (mesh: ShapeMesh): { vb: GPUBuffer; ib: GPUBuffer; count: number } => {
-                        const vb = device.createBuffer({ size: mesh.vertices.byteLength, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST });
-                        device.queue.writeBuffer(vb, 0, mesh.vertices);
-                        const ib = device.createBuffer({ size: mesh.indices.byteLength, usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST });
-                        device.queue.writeBuffer(ib, 0, mesh.indices);
-                        return { vb, ib, count: mesh.indices.length };
-                    };
-
-                    const s = upload(unitSphere());
-                    const c = upload(unitCube());
+                    const s = uploadShapeMesh(device, unitSphere());
+                    const c = uploadShapeMesh(device, unitCube());
                     const sphere = db.transactions.insertShapePrimitive({ vertexBuffer: s.vb, indexBuffer: s.ib, indexCount: s.count });
                     const cube = db.transactions.insertShapePrimitive({ vertexBuffer: c.vb, indexBuffer: c.ib, indexCount: c.count });
                     db.store.resources._shapeGeometry = { sphere, cube };

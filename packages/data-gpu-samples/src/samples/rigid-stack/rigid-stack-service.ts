@@ -2,7 +2,7 @@
 
 import { Database, type Entity } from "@adobe/data/ecs";
 import { Quat } from "@adobe/data/math";
-import { pbrRender, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, Orbit } from "@adobe/data-gpu";
+import { pbrRender, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, ColliderShape, Orbit } from "@adobe/data-gpu";
 
 // Studio HDR for IBL © Poly Haven, CC0.
 const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr";
@@ -23,7 +23,7 @@ const IDENTITY: [number, number, number, number] = [...Quat.identity];
  * two services running different solvers (Rapier vs Jolt) get the *identical*
  * scene — a fair side-by-side comparison.
  */
-interface Drop { box: boolean; he: [number, number, number]; pos: [number, number, number]; quat: [number, number, number, number]; }
+interface Drop { shape: ColliderShape; he: [number, number, number]; pos: [number, number, number]; quat: [number, number, number, number]; }
 
 function seededRng(seed: number): () => number {
     let a = seed >>> 0;
@@ -37,12 +37,16 @@ function randomQuat(r: () => number): [number, number, number, number] {
 const DROPS: Drop[] = (() => {
     const r = seededRng(0x1234abcd), out: Drop[] = [];
     for (let i = 0; i < DYNAMIC_CAP; i++) {
-        const box = r() < 0.4;
+        const k = r();
+        const shape: ColliderShape = k < 0.34 ? "box" : k < 0.67 ? "capsule" : "sphere";
+        // box: 3 half-extents; capsule: [radius, cylinder half-height]; sphere: [radius]
+        const he: [number, number, number] = shape === "box" ? [0.3 + r() * 0.3, 0.3 + r() * 0.3, 0.3 + r() * 0.3]
+            : shape === "capsule" ? [0.28 + r() * 0.15, 0.35 + r() * 0.35, 0]
+                : [0.3 + r() * 0.4, 0, 0];
         out.push({
-            box,
-            he: box ? [0.3 + r() * 0.3, 0.3 + r() * 0.3, 0.3 + r() * 0.3] : [0.3 + r() * 0.4, 0, 0],
+            shape, he,
             pos: [(r() * 2 - 1) * SPAWN_SPREAD, SPAWN_HEIGHT, (r() * 2 - 1) * SPAWN_SPREAD],
-            quat: box ? randomQuat(r) : [0, 0, 0, 1],
+            quat: shape === "sphere" ? [0, 0, 0, 1] : randomQuat(r),
         });
     }
     return out;
@@ -120,7 +124,7 @@ const rigidStackScene = Database.Plugin.create({
             const mats = Object.values(t.resources.materials);
             t.archetypes.RigidBody.insert({
                 bodyType: "dynamic",
-                colliderShape: d.box ? "box" : "sphere",
+                colliderShape: d.shape,
                 halfExtents: d.he,
                 material: mats[args.index % mats.length],
                 position: d.pos,

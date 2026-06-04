@@ -57,6 +57,47 @@ const CUBE_FACES: Face[] = [
     { n: [0, 0, -1], u: [-1, 0, 0], v: [0, 1, 0] },
 ];
 
+/**
+ * Y-aligned capsule: a cylinder (radius `r`, half-height `halfHeight`) capped by
+ * two hemispheres of radius `r`, centred at the origin (total height
+ * 2·(halfHeight + r)). Unlike the sphere/cube, a capsule has two independent
+ * dimensions and spherical caps that must not distort under non-uniform scale —
+ * so it is built at its real size and rendered with unit scale (the bridge caches
+ * one mesh per distinct radius/half-height). Rings run top pole → bottom pole;
+ * the two equator rings (`ny = 0`, full radius) bound the straight cylinder wall.
+ */
+export function capsuleMesh(r: number, halfHeight: number, capRings = 8, segments = 24): ShapeMesh {
+    const rows: { y: number; rr: number; ny: number }[] = [];
+    for (let i = 0; i <= capRings; i++) {               // top cap: pole → equator
+        const a = (i / capRings) * (Math.PI / 2);
+        rows.push({ y: halfHeight + r * Math.cos(a), rr: r * Math.sin(a), ny: Math.cos(a) });
+    }
+    rows.push({ y: -halfHeight, rr: r, ny: 0 });          // cylinder bottom rim
+    for (let i = 1; i <= capRings; i++) {               // bottom cap: equator → pole
+        const b = (i / capRings) * (Math.PI / 2);
+        rows.push({ y: -halfHeight - r * Math.sin(b), rr: r * Math.cos(b), ny: -Math.sin(b) });
+    }
+    const verts: number[] = [];
+    const stride = segments + 1;
+    for (let row = 0; row < rows.length; row++) {
+        const { y, rr, ny } = rows[row];
+        const rad = Math.sqrt(Math.max(0, 1 - ny * ny)); // radial component of the unit normal
+        for (let seg = 0; seg <= segments; seg++) {
+            const phi = (seg / segments) * Math.PI * 2;
+            const cp = Math.cos(phi), sp = Math.sin(phi);
+            push(verts, rr * cp, y, rr * sp, rad * cp, ny, rad * sp, -sp, 0, cp, 1, seg / segments, row / (rows.length - 1));
+        }
+    }
+    const indices: number[] = [];
+    for (let row = 0; row < rows.length - 1; row++) {
+        for (let seg = 0; seg < segments; seg++) {
+            const a = row * stride + seg, b = a + stride;
+            indices.push(a, b, a + 1, a + 1, b, b + 1);
+        }
+    }
+    return { vertices: new Float32Array(verts), indices: new Uint16Array(indices) };
+}
+
 /** Cube spanning [-1, 1] on each axis, one material-space UV per face. */
 export function unitCube(): ShapeMesh {
     const verts: number[] = [];

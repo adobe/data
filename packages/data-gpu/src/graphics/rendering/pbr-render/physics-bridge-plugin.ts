@@ -1,10 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Database } from "@adobe/data/ecs";
+import { Database, type Entity } from "@adobe/data/ecs";
 import { physicsData } from "../../../physics/physics-data-plugin.js";
-import { ColliderShape } from "../../../physics/body/collider-shape/collider-shape.js";
 import { model } from "../../scene/model/model-plugin.js";
 import { shapeGeometry } from "../../scene/model/shape/shape-geometry-plugin.js";
+import { capsuleMesh } from "../../scene/model/shape/shape-mesh.js";
+import { uploadShapeMesh } from "../../scene/model/shape/upload-shape-mesh.js";
 import { interpolation } from "../interpolation-plugin.js";
 
 /**
@@ -31,23 +32,42 @@ export const physicsRenderBridge = Database.Plugin.create({
     systems: {
         physicsBridge: {
             schedule: { during: ["postUpdate"] },
-            create: db => () => {
-                const shapes = db.store.resources._shapeGeometry;
-                if (!shapes) return;
-                for (const arch of db.store.queryArchetypes(["colliderShape", "halfExtents"], { exclude: ["geometry"] })) {
-                    const ids = arch.columns.id, css = arch.columns.colliderShape, hes = arch.columns.halfExtents;
-                    // Tail→head: every visited body migrates out (gains geometry).
-                    for (let i = arch.rowCount - 1; i >= 0; i--) {
-                        const isBox = ColliderShape.toIndex(css.get(i)) === 1;
-                        const he = hes.get(i);
-                        const scale: [number, number, number] = isBox ? [he[0], he[1], he[2]] : [he[0], he[0], he[0]];
-                        db.store.update(ids.get(i), {
-                            geometry: isBox ? shapes.cube : shapes.sphere,
-                            scale,
-                            visible: true,
-                        });
+            create: db => {
+                // Sphere/cube are unit meshes scaled by half-extents. A capsule can't
+                // be non-uniformly scaled (its caps would distort), so it's built at its
+                // real size and drawn at unit scale — one mesh per distinct (radius,
+                // half-height), cached here (scenes use very few capsule sizes).
+                const capsuleGeometry = new Map<string, Entity>();
+                const ensureCapsule = (device: GPUDevice, r: number, hy: number): Entity => {
+                    const key = `${r}:${hy}`;
+                    let geo = capsuleGeometry.get(key);
+                    if (geo === undefined) {
+                        const m = uploadShapeMesh(device, capsuleMesh(r, hy));
+                        geo = db.transactions.insertShapePrimitive({ vertexBuffer: m.vb, indexBuffer: m.ib, indexCount: m.count });
+                        capsuleGeometry.set(key, geo);
                     }
-                }
+                    return geo;
+                };
+                return () => {
+                    const shapes = db.store.resources._shapeGeometry;
+                    const device = db.store.resources.device;
+                    if (!shapes || !device) return;
+                    for (const arch of db.store.queryArchetypes(["colliderShape", "halfExtents"], { exclude: ["geometry"] })) {
+                        const ids = arch.columns.id, css = arch.columns.colliderShape, hes = arch.columns.halfExtents;
+                        // Tail→head: every visited body migrates out (gains geometry).
+                        for (let i = arch.rowCount - 1; i >= 0; i--) {
+                            const shape = css.get(i), he = hes.get(i);
+                            // capsule renders at unit scale (mesh is real-size); sphere/cube scale by half-extents.
+                            const geometry = shape === "box" ? shapes.cube
+                                : shape === "capsule" ? ensureCapsule(device, he[0], he[1])
+                                    : shapes.sphere;
+                            const scale: [number, number, number] = shape === "box" ? [he[0], he[1], he[2]]
+                                : shape === "capsule" ? [1, 1, 1]
+                                    : [he[0], he[0], he[0]];
+                            db.store.update(ids.get(i), { geometry, scale, visible: true });
+                        }
+                    }
+                };
             },
         },
     },

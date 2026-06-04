@@ -71,7 +71,10 @@ export const rapierSolver = Database.Plugin.create({
                     desc.setTranslation(px, py, pz).setRotation({ x: q[0], y: q[1], z: q[2], w: q[3] });
                     if (motion === "dynamic") desc.setLinvel(vx, vy, vz);
                     const body = world.createRigidBody(desc);
-                    const col = shape === "sphere" ? RAPIER.ColliderDesc.ball(hx) : RAPIER.ColliderDesc.cuboid(hx, hy, hz);
+                    // capsule: Y-aligned, halfHeight = cylinder half (hy), radius = hx.
+                    const col = shape === "sphere" ? RAPIER.ColliderDesc.ball(hx)
+                        : shape === "capsule" ? RAPIER.ColliderDesc.capsule(hy, hx)
+                            : RAPIER.ColliderDesc.cuboid(hx, hy, hz);
                     col.setRestitution(m.restitution).setFriction(m.friction).setDensity(m.density);
                     world.createCollider(col, body);
                     bodies.set(id, body);

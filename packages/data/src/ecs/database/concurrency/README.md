@@ -150,9 +150,3 @@ immediately).
 - `db.concurrency` exposes the live strategy. `data-sync` reads
   `concurrency.deferredCommit` and `concurrency.userId` to confirm a database is
   in a sync-capable mode.
-- For a fundamentally different engine (CRDT, OT, authoritative server), prefer a
-  *new strategy* over an outer `(db) => db` decorator: concurrency must
-  participate before transactions are wrapped and needs `execute`/`getTransaction`,
-  neither of which is on the public surface. Outer decorators are the right tool
-  only for concerns that ride entirely on the finished public API (logging,
-  metrics, tracing).

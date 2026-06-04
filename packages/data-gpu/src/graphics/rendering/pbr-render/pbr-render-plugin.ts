@@ -3,6 +3,7 @@
 import { Database, type Entity } from "@adobe/data/ecs";
 import { pbrIblRender } from "../ibl-render/ibl-render-plugin.js";
 import { materialGpu } from "../material-gpu/material-gpu-plugin.js";
+import { displayTransform } from "../display-transform-plugin.js";
 import { SceneUniforms } from "../../scene/scene-uniforms/scene-uniforms.js";
 import { StandardVertex } from "../standard-vertex/standard-vertex.js";
 import { createMaterialBindGroupLayout } from "../material-gpu/material-bind-group.js";
@@ -13,7 +14,16 @@ const PREFILTERED_MIP_COUNT = 7;
 
 /** Drawable: any visible entity with a geometry ref, a transform, and a material. */
 const DRAWABLE = ["geometry", "visible", "position", "rotation", "scale", "material"] as const;
+// Bodies carrying a derived display pose (interpolation-plugin) draw at it instead
+// of the canonical pose; everything else (statics, props, non-physics instances)
+// draws straight from position/rotation. Splitting the gather by archetype shape
+// avoids a per-row "has display pose?" branch.
+const DRAWABLE_INTERP = [...DRAWABLE, "_renderPosition", "_renderRotation"] as const;
+const DRAWABLE_DIRECT = { exclude: ["_renderPosition"] } as const;
 const PRIMITIVE = ["_vertexBuffer", "_indexBuffer", "_indexCount", "_indexFormat", "_geometry", "_nodeLocalMatrix"] as const;
+
+/** Minimal column shape the gather reads — satisfied by either query's columns. */
+interface Col<T> { get(i: number): T }
 
 function createIblBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
     return device.createBindGroupLayout({
@@ -62,7 +72,7 @@ function composeTrs(
  * (primitives are flat — no hierarchy), so it's independent of `transform`.
  */
 export const pbrRender = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrIblRender, materialGpu),
+    extends: Database.Plugin.combine(pbrIblRender, materialGpu, displayTransform),
     systems: {
         pbrPrimitiveRenderSystem: {
             schedule: { during: ["render"], after: ["beginRenderPass", "pbrIblRenderSystem"], before: ["endRenderPass"] },
@@ -151,16 +161,16 @@ export const pbrRender = Database.Plugin.create({
                     }
 
                     // Gather visible primitive drawables grouped by geometry. Compose each
-                    // world matrix straight from the position/rotation/scale column typed
-                    // arrays into the pooled `mats` arena — no per-row array allocation.
+                    // world matrix straight from the chosen pose/scale column typed arrays
+                    // into the pooled `mats` arena — no per-row array allocation. Two passes:
+                    // bodies with a display pose use it; everything else uses position/rotation.
                     for (const b of batches.values()) { b.off.length = 0; b.layer.length = 0; }
                     let drawCount = 0;
-                    for (const arch of db.store.queryArchetypes(DRAWABLE)) {
-                        const vis = arch.columns.visible, geo = arch.columns.geometry, mat = arch.columns.material;
-                        const posArr = arch.columns.position.getTypedArray();
-                        const rotArr = arch.columns.rotation.getTypedArray();
-                        const sclArr = arch.columns.scale.getTypedArray();
-                        for (let i = 0; i < arch.rowCount; i++) {
+                    const gather = (
+                        rowCount: number, vis: Col<boolean>, geo: Col<Entity>, mat: Col<Entity>,
+                        posArr: ArrayLike<number>, rotArr: ArrayLike<number>, sclArr: ArrayLike<number>,
+                    ): void => {
+                        for (let i = 0; i < rowCount; i++) {
                             if (!vis.get(i)) continue;
                             const layer = matLayer.get(mat.get(i));
                             if (layer === undefined) continue;
@@ -172,6 +182,14 @@ export const pbrRender = Database.Plugin.create({
                             b.off.push(drawCount); b.layer.push(layer);
                             drawCount++;
                         }
+                    };
+                    for (const arch of db.store.queryArchetypes(DRAWABLE_INTERP)) {
+                        gather(arch.rowCount, arch.columns.visible, arch.columns.geometry, arch.columns.material,
+                            arch.columns._renderPosition.getTypedArray(), arch.columns._renderRotation.getTypedArray(), arch.columns.scale.getTypedArray());
+                    }
+                    for (const arch of db.store.queryArchetypes(DRAWABLE, DRAWABLE_DIRECT)) {
+                        gather(arch.rowCount, arch.columns.visible, arch.columns.geometry, arch.columns.material,
+                            arch.columns.position.getTypedArray(), arch.columns.rotation.getTypedArray(), arch.columns.scale.getTypedArray());
                     }
                     if (drawCount === 0) return;
 

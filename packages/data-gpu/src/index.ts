@@ -43,6 +43,8 @@ export { pbrIblRender } from "./graphics/rendering/ibl-render/ibl-render-plugin.
 export { materialGpu } from "./graphics/rendering/material-gpu/material-gpu-plugin.js";
 export { pbrRender } from "./graphics/rendering/pbr-render/pbr-render-plugin.js";
 export { physicsRenderBridge } from "./graphics/rendering/pbr-render/physics-bridge-plugin.js";
+export { displayTransform } from "./graphics/rendering/display-transform-plugin.js";
+export { interpolation } from "./graphics/rendering/interpolation-plugin.js";
 export { shapeGeometry } from "./graphics/scene/model/shape/shape-geometry-plugin.js";
 
 // --- Types (type + namespace, access .plugin for the ECS plugin) -------------

@@ -7,8 +7,8 @@ import type { ConcurrencyStrategy, ConcurrencyStrategyFactory } from "./concurre
 
 /**
  * A pending local edit, kept in the buffer until the server confirms it.
- * Mirrors the coediting design's `{ envelope, locallyComputedUndo }` entry
- * shape, plus the captured post-image (`redo`) tuples.
+ * Holds the originating envelope identity, the captured post-image (`redo`)
+ * tuples, and a locally-computed `undo`.
  */
 type RollForwardEntry = {
     readonly id: number;
@@ -29,24 +29,23 @@ type RollForwardEntry = {
 };
 
 /**
- * Client-side implementation of the LES coediting concurrency model
- * (Adobe-Firefly/firefly-platform#10369). Provided to prove the
+ * Roll-forward reconciliation: a client-side optimistic concurrency model for
+ * collaborative / multi-peer editing. Provided to prove the
  * {@link ConcurrencyStrategy} seam can host a fundamentally different
  * reconciliation engine than {@link createRebaseReplayConcurrency} — it is
  * not currently wired into a real transport.
  *
  * The defining difference from {@link createRebaseReplayConcurrency}:
  *
- *   - **Roll-forward, not re-execute** (coediting decision 5B). On rebase,
- *     each pending local edit is replayed by re-applying its captured
- *     post-image tuples, *not* by re-running its transaction function. A
- *     transaction that reads current state and derives a new value (e.g.
- *     "add 10 to whatever is there") therefore preserves the value it
- *     originally produced, regardless of how the confirmed base shifted
- *     underneath it. Re-execution would instead recompute against the new
- *     base.
+ *   - **Roll-forward, not re-execute.** On rebase, each pending local edit is
+ *     replayed by re-applying its captured post-image tuples, *not* by
+ *     re-running its transaction function. A transaction that reads current
+ *     state and derives a new value (e.g. "add 10 to whatever is there")
+ *     therefore preserves the value it originally produced, regardless of how
+ *     the confirmed base shifted underneath it. Re-execution would instead
+ *     recompute against the new base.
  *
- * The rebase sequence on a confirmed (positive-time) delta matches the PR:
+ * The rebase sequence on a confirmed (positive-time) delta:
  *   1. roll back all pending entries newest-to-oldest (apply their undo),
  *   2. apply the confirmed delta,
  *   3. replay the remaining pending entries oldest-to-newest by re-applying

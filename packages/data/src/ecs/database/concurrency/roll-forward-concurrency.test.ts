@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 //
 // Verifies the pluggable-concurrency seam by running a client-side
-// implementation of the LES coediting model (roll-forward replay) through the
-// public `createDatabase` API, and contrasting it with the built-in
-// rebase-replay strategy on an identical scenario.
+// roll-forward replay strategy through the public `createDatabase` API, and
+// contrasting it with the built-in rebase-replay strategy on an identical
+// scenario.
 
 import { describe, it, expect, vi } from "vitest";
 import { Database } from "../database.js";

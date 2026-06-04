@@ -16,7 +16,8 @@ import type { ConcurrencyStrategy, ConcurrencyStrategyFactory } from "./concurre
  *     applied directly without rolling back other pending transients. This
  *     means entity-id allocation is NOT deterministic across peers under
  *     concurrent edits — use this only when there is a single writer or
- *     when an external layer manages replay (e.g. a coediting wrapper).
+ *     when an external layer manages replay (e.g. a collaborative-editing
+ *     wrapper).
  *   - Async generator transients are still supported: each yield applies
  *     the intermediate state immediately and rolls it back when the next
  *     yield or the final commit arrives. Cancel rolls back the last

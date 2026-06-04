@@ -15,7 +15,7 @@ import type { TransactionEnvelope } from "../reconciling/reconciling-database.js
  *
  *   - `createImmediateConcurrency()` — commits apply immediately, no
  *     rollback queue. Use this as the base database for external wrappers
- *     (e.g. a coediting layer that manages its own replay buffer).
+ *     (e.g. a collaborative-editing layer that manages its own replay buffer).
  *
  *   - `createRebaseReplayConcurrency(userId)` — commits apply locally as
  *     transients and wait for the sync server's echoed committed envelope to

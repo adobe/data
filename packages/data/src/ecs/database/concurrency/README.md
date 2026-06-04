@@ -92,8 +92,8 @@ The two built-ins are the reference implementations and bracket the design space
   preserving). Shares `createRebaseReplayApplier`.
 - **`roll-forward`** — replays pending edits by re-applying captured post-image
   tuples (`applyOperations(t, entry.redo)`), not by re-running their functions
-  (deterministic w.r.t. base drift). A client-side model of the LES coediting
-  design; present mainly to prove the seam.
+  (deterministic w.r.t. base drift). A client-side collaborative-editing model;
+  present mainly to prove the seam.
 
 ## Invariants — read before implementing
 

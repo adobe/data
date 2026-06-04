@@ -109,6 +109,13 @@ export const rapierSolver = Database.Plugin.create({
                             if (!BodyType.isDynamic(bt.get(r))) continue;
                             const body = bodies.get(ids.get(r));
                             if (!body) continue;
+                            // PERF residual: rapier3d-compat returns a fresh {x,y,z}/{x,y,z,w}
+                            // object from each of these getters → ~4 small allocations per
+                            // dynamic body per frame (GC pressure). It scales with the *dynamic*
+                            // count only (small for our target), and the compat binding offers
+                            // no out-param read, so it's left as-is. If dynamic counts ever get
+                            // large, drop to rapier's raw bindings (rawBodies / a flat buffer)
+                            // to read straight into our typed arrays with zero allocation.
                             const t = body.translation(), rot = body.rotation(), v = body.linvel(), w = body.angvel();
                             const r3 = r * 3, r4 = r * 4;
                             pos[r3] = t.x; pos[r3 + 1] = t.y; pos[r3 + 2] = t.z;

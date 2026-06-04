@@ -2,6 +2,7 @@
 
 import initJolt from "jolt-physics";
 import { Database, type Entity } from "@adobe/data/ecs";
+import { True } from "@adobe/data/schema";
 import { core } from "../../core/core-plugin.js";
 import { physicsData } from "../physics-data-plugin.js";
 import { BodyType } from "../body/body-type/body-type.js";
@@ -29,7 +30,11 @@ const BP_STATIC = 0, BP_DYNAMIC = 1, NUM_BP_LAYERS = 2;
 
 const RIGID = ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"] as const;
 const STATIC = ["colliderShape", "halfExtents", "material", "position", "rotation"] as const;
-const STATIC_EXCLUDE = { exclude: ["linearVelocity"] } as const;
+// Sync only over bodies not yet mirrored into Jolt (excluded by the `_joltBody`
+// tag added on creation) → steady state iterates zero rows instead of
+// re-scanning every body each frame.
+const NEW_RIGID = { exclude: ["_joltBody"] } as const;
+const NEW_STATIC = { exclude: ["linearVelocity", "_joltBody"] } as const;
 
 type JoltModule = Awaited<ReturnType<typeof initJolt>>;
 type JBody = InstanceType<JoltModule["Body"]>;
@@ -40,6 +45,9 @@ interface MatProps { restitution: number; friction: number }
 
 export const joltSolver = Database.Plugin.create({
     extends: Database.Plugin.combine(physicsData, core),
+    components: {
+        _joltBody: True.schema, // tag: this body has been mirrored into the Jolt world
+    },
     systems: {
         joltStep: {
             schedule: { during: ["physics"] },
@@ -99,25 +107,26 @@ export const joltSolver = Database.Plugin.create({
                     }
                     const jolt = J, bi = bodyInterface;
 
-                    // sync: create a Jolt body for every authored body not yet mirrored
-                    for (const arch of db.store.queryArchetypes(RIGID)) {
+                    // sync: mirror only bodies not yet in Jolt (excluded by tag),
+                    // then tag them. Tail→head since every row migrates out on
+                    // tagging; reads via column accessors (robust to migration, and
+                    // this loop only touches genuinely-new bodies, so it's cold).
+                    for (const arch of db.store.queryArchetypes(RIGID, NEW_RIGID)) {
                         const ids = arch.columns.id, bt = arch.columns.bodyType, cs = arch.columns.colliderShape, mat = arch.columns.material;
-                        const he = arch.columns.halfExtents.getTypedArray(), pos = arch.columns.position.getTypedArray(), ori = arch.columns.rotation.getTypedArray();
-                        for (let r = 0; r < arch.rowCount; r++) {
-                            const id = ids.get(r);
-                            if (bodies.has(id)) continue;
-                            const r3 = r * 3, r4 = r * 4;
-                            ensureBody(jolt, bi, id, BodyType.isDynamic(bt.get(r)), cs.get(r), he[r3], he[r3 + 1], he[r3 + 2], mat.get(r), pos[r3], pos[r3 + 1], pos[r3 + 2], [ori[r4], ori[r4 + 1], ori[r4 + 2], ori[r4 + 3]]);
+                        const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation;
+                        for (let r = arch.rowCount - 1; r >= 0; r--) {
+                            const id = ids.get(r), h = he.get(r), p = pos.get(r);
+                            ensureBody(jolt, bi, id, BodyType.isDynamic(bt.get(r)), cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r));
+                            db.store.update(id, { _joltBody: true });
                         }
                     }
-                    for (const arch of db.store.queryArchetypes(STATIC, STATIC_EXCLUDE)) {
+                    for (const arch of db.store.queryArchetypes(STATIC, NEW_STATIC)) {
                         const ids = arch.columns.id, cs = arch.columns.colliderShape, mat = arch.columns.material;
-                        const he = arch.columns.halfExtents.getTypedArray(), pos = arch.columns.position.getTypedArray(), ori = arch.columns.rotation.getTypedArray();
-                        for (let r = 0; r < arch.rowCount; r++) {
-                            const id = ids.get(r);
-                            if (bodies.has(id)) continue;
-                            const r3 = r * 3, r4 = r * 4;
-                            ensureBody(jolt, bi, id, false, cs.get(r), he[r3], he[r3 + 1], he[r3 + 2], mat.get(r), pos[r3], pos[r3 + 1], pos[r3 + 2], [ori[r4], ori[r4 + 1], ori[r4 + 2], ori[r4 + 3]]);
+                        const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation;
+                        for (let r = arch.rowCount - 1; r >= 0; r--) {
+                            const id = ids.get(r), h = he.get(r), p = pos.get(r);
+                            ensureBody(jolt, bi, id, false, cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r));
+                            db.store.update(id, { _joltBody: true });
                         }
                     }
 

@@ -2,6 +2,7 @@
 
 import RAPIER from "@dimforge/rapier3d-compat";
 import { Database, type Entity } from "@adobe/data/ecs";
+import { True } from "@adobe/data/schema";
 import { core } from "../../core/core-plugin.js";
 import { physicsData } from "../physics-data-plugin.js";
 import { BodyType } from "../body/body-type/body-type.js";
@@ -23,12 +24,20 @@ const GRAVITY = 18; // matches the cpuXpbd sample so the two solvers are compara
 
 const RIGID = ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"] as const;
 const STATIC = ["colliderShape", "halfExtents", "material", "position", "rotation"] as const;
-const STATIC_EXCLUDE = { exclude: ["linearVelocity"] } as const;
+// Sync only over bodies not yet mirrored into Rapier: a private `_rapierBody`
+// tag is added once a body is created, and excluded here, so steady state
+// iterates zero rows (archetype-level) instead of re-scanning every body each
+// frame — the win for the "many static, few dynamic" target.
+const NEW_RIGID = { exclude: ["_rapierBody"] } as const;
+const NEW_STATIC = { exclude: ["linearVelocity", "_rapierBody"] } as const;
 
 interface MatProps { density: number; restitution: number; friction: number }
 
 export const rapierSolver = Database.Plugin.create({
     extends: Database.Plugin.combine(physicsData, core),
+    components: {
+        _rapierBody: True.schema, // tag: this body has been mirrored into the Rapier world
+    },
     systems: {
         rapierStep: {
             schedule: { during: ["physics"] },
@@ -65,26 +74,26 @@ export const rapierSolver = Database.Plugin.create({
                         return; // WASM not ready yet
                     }
 
-                    // sync: create a Rapier body for every authored body not yet mirrored
-                    for (const arch of db.store.queryArchetypes(RIGID)) {
+                    // sync: mirror only bodies not yet in Rapier (excluded by tag),
+                    // then tag them. Iterate tail→head since every row migrates out
+                    // on tagging. Reads use column accessors (robust to the migration;
+                    // this loop only touches genuinely-new bodies, so it's cold).
+                    for (const arch of db.store.queryArchetypes(RIGID, NEW_RIGID)) {
                         const ids = arch.columns.id, bt = arch.columns.bodyType, cs = arch.columns.colliderShape, mat = arch.columns.material;
-                        const he = arch.columns.halfExtents.getTypedArray(), pos = arch.columns.position.getTypedArray();
-                        const ori = arch.columns.rotation.getTypedArray(), lv = arch.columns.linearVelocity.getTypedArray();
-                        for (let r = 0; r < arch.rowCount; r++) {
-                            const id = ids.get(r);
-                            if (bodies.has(id)) continue;
-                            const r3 = r * 3, r4 = r * 4;
-                            ensureBody(id, BodyType.isDynamic(bt.get(r)), cs.get(r), he[r3], he[r3 + 1], he[r3 + 2], mat.get(r), pos[r3], pos[r3 + 1], pos[r3 + 2], [ori[r4], ori[r4 + 1], ori[r4 + 2], ori[r4 + 3]], lv[r3], lv[r3 + 1], lv[r3 + 2]);
+                        const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation, lv = arch.columns.linearVelocity;
+                        for (let r = arch.rowCount - 1; r >= 0; r--) {
+                            const id = ids.get(r), h = he.get(r), p = pos.get(r), v = lv.get(r);
+                            ensureBody(id, BodyType.isDynamic(bt.get(r)), cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r), v[0], v[1], v[2]);
+                            db.store.update(id, { _rapierBody: true });
                         }
                     }
-                    for (const arch of db.store.queryArchetypes(STATIC, STATIC_EXCLUDE)) {
+                    for (const arch of db.store.queryArchetypes(STATIC, NEW_STATIC)) {
                         const ids = arch.columns.id, cs = arch.columns.colliderShape, mat = arch.columns.material;
-                        const he = arch.columns.halfExtents.getTypedArray(), pos = arch.columns.position.getTypedArray(), ori = arch.columns.rotation.getTypedArray();
-                        for (let r = 0; r < arch.rowCount; r++) {
-                            const id = ids.get(r);
-                            if (bodies.has(id)) continue;
-                            const r3 = r * 3, r4 = r * 4;
-                            ensureBody(id, false, cs.get(r), he[r3], he[r3 + 1], he[r3 + 2], mat.get(r), pos[r3], pos[r3 + 1], pos[r3 + 2], [ori[r4], ori[r4 + 1], ori[r4 + 2], ori[r4 + 3]], 0, 0, 0);
+                        const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation;
+                        for (let r = arch.rowCount - 1; r >= 0; r--) {
+                            const id = ids.get(r), h = he.get(r), p = pos.get(r);
+                            ensureBody(id, false, cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r), 0, 0, 0);
+                            db.store.update(id, { _rapierBody: true });
                         }
                     }
 

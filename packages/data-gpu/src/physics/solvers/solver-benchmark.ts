@@ -25,6 +25,11 @@ export interface SolverBenchmarkOptions {
     dt?: number;
     /** Fraction of `bodies` that are spheres (rest are boxes). Default 0.5. */
     sphereFraction?: number;
+    /** Extra *static* collider boxes laid out as resting scenery. They barely
+     *  cost the engine (nothing moves) but they ARE mirrored once and then scanned
+     *  by a naive per-frame sync — so this isolates the gather/sync overhead, which
+     *  is the realistic "many static, few dynamic" target workload. Default 0. */
+    staticBodies?: number;
 }
 
 export interface SolverBenchmarkResult {
@@ -62,6 +67,7 @@ export async function runSolverBenchmark(solver: Database.Plugin, opts: SolverBe
     const warmupFrames = opts.warmupFrames ?? 90;
     const dt = opts.dt ?? 1 / 60;
     const sphereFraction = opts.sphereFraction ?? 0.5;
+    const staticBodies = opts.staticBodies ?? 0;
 
     // The solver plugin extends `physicsData`, so the RigidBody / StaticCollider
     // archetypes and the `frameTime` resource exist on the created database. The
@@ -69,7 +75,7 @@ export async function runSolverBenchmark(solver: Database.Plugin, opts: SolverBe
     // shape (runtime invariant: these members exist on any physicsData solver).
     const db = Database.create(solver) as unknown as LooseDb;
 
-    buildScene(db, bodies, sphereFraction);
+    buildScene(db, bodies, sphereFraction, staticBodies);
 
     // Drive one frame: set a fixed dt, then run every system except the rAF/clock
     // ones (we supply dt ourselves so timing is deterministic and high-rate).
@@ -108,12 +114,26 @@ export async function runSolverBenchmark(solver: Database.Plugin, opts: SolverBe
  *  drops a short distance and piles up — a steady-state contact workload. The
  *  floor is deliberately thick (a finite box has a far side) and the drop is
  *  short, so a correct solver never tunnels: end-state avgY/maxV then cleanly
- *  separate a stable solver from an exploding one. */
-function buildScene(db: LooseDb, bodies: number, sphereFraction: number): void {
+ *  separate a stable solver from an exploding one. Optional `staticBodies` adds
+ *  resting static scenery to exercise the sync/gather path at scale. */
+function buildScene(db: LooseDb, bodies: number, sphereFraction: number, staticBodies: number): void {
     db.store.archetypes.StaticCollider.insert({
         colliderShape: "box", halfExtents: [12, 2, 12], material: 0,
         position: [0, -2, 0], rotation: [0, 0, 0, 1], // top face at y = 0
     });
+    // resting static scenery far from the action (negligible engine cost, but it
+    // is mirrored once and then scanned every frame by a naive per-frame sync)
+    if (staticBodies > 0) {
+        const side = Math.ceil(Math.cbrt(staticBodies));
+        let n = 0;
+        for (let x = 0; x < side && n < staticBodies; x++)
+            for (let y = 0; y < side && n < staticBodies; y++)
+                for (let z = 0; z < side && n < staticBodies; z++, n++)
+                    db.store.archetypes.StaticCollider.insert({
+                        colliderShape: "box", halfExtents: [0.4, 0.4, 0.4], material: 0,
+                        position: [100 + x, y, z], rotation: [0, 0, 0, 1],
+                    });
+    }
     const side = Math.ceil(Math.cbrt(bodies));
     const gap = 1.5, base = -((side - 1) / 2) * gap; // spaced so the initial drop is non-overlapping
     let n = 0;

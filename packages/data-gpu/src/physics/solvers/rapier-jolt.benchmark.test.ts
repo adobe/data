@@ -23,4 +23,19 @@ describe("solver benchmarks", () => {
         expect(rap.frames).toBe(300);
         expect(jol.frames).toBe(300);
     }, 90_000);
+
+    // The "many static, few dynamic" target: thousands of resting static bodies
+    // plus a handful of dynamics. The solver's per-frame sync must NOT re-scan
+    // every body — bodies already mirrored into the engine are tagged and
+    // excluded, so steady-state iteration is ~zero. (Measured win at 20k static:
+    // jolt 0.53→0.07 ms/frame, rapier 1.51→1.13.)
+    it("scales with many static bodies (sync excludes already-mirrored)", async () => {
+        const OPTS_S = { bodies: 64, staticBodies: 8000, frames: 120, warmupFrames: 60 };
+        const rap = await runSolverBenchmark(rapierSolver, OPTS_S);
+        const jol = await runSolverBenchmark(joltSolver, OPTS_S);
+        // eslint-disable-next-line no-console
+        console.log(`\n${OPTS_S.staticBodies} static + ${OPTS_S.bodies} dynamic\nrapierSolver ${rap.msPerFrame.toFixed(3)} ms/frame\njoltSolver   ${jol.msPerFrame.toFixed(3)} ms/frame\n`);
+        expect(rap.frames).toBe(120);
+        expect(jol.frames).toBe(120);
+    }, 90_000);
 });

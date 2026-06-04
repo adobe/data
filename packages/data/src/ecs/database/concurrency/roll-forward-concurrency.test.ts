@@ -121,21 +121,25 @@ describe("createRollForwardConcurrency — pluggable concurrency viability", () 
         expect(db.read(reseeded)?.counter).toBe(7);
     });
 
-    it("toData rolls transients back and forward around serialization without disturbing live state", () => {
+    it("toData serializes only committed state and leaves the live transient intact", () => {
         const db = makeDb(createRollForwardConcurrency("A"));
         const entity = seedCommittedCounter(db, 0);
         db.transactions.bumpFromCurrent({ entity });
         expect(db.read(entity)?.counter).toBe(10);
 
         const snapshot = db.toData();
-        expect(snapshot).toBeTruthy();
 
-        // The onBeforeToData / onAfterToData hooks fired around serialization,
-        // so the live optimistic transient is still present afterward.
-        // (As with the built-in rebase-replay reconciler, the snapshot itself
-        // references live store buffers and is only valid until the next
-        // mutation — callers serialize it immediately.)
+        // The live optimistic transient survives the rollback→serialize→replay.
         expect(db.read(entity)?.counter).toBe(10);
+
+        // The snapshot is a detached copy of committed state only: loading it
+        // into a fresh database yields the committed base (0), not the pending
+        // optimistic value (10). This must hold even though `onAfterToData`
+        // replayed the transient back onto the live store after serialization.
+        const loaded = Database.create(plugin);
+        loaded.fromData(snapshot);
+        const loadedValues = loaded.select(["counter"]).map(e => loaded.read(e)?.counter);
+        expect(loadedValues).toEqual([0]);
     });
 });
 

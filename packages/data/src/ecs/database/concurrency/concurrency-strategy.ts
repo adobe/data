@@ -59,10 +59,10 @@ export interface ConcurrencyStrategy {
      * Strategies with a transient queue should roll back transients here so
      * the snapshot contains only committed state.
      *
-     * KNOWN BUG: `db.toData()` returns live buffer references, and
-     * `onAfterToData` replay mutates them before the caller serializes — so
-     * this rollback does not actually keep transients out of a persisted
-     * snapshot today. See `Database.toData()` for the full writeup.
+     * When this hook (together with `onAfterToData`) is present, `db.toData()`
+     * serializes a detached copy of the store between the two hooks, so the
+     * `onAfterToData` replay cannot corrupt the returned snapshot. See
+     * `Database.toData()`.
      */
     readonly onBeforeToData?: () => void;
 

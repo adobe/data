@@ -50,8 +50,10 @@ export function createReconcilingDatabase<
             observedDatabase.reset();
         },
         toData: () => {
+            // Detach the snapshot from live buffers: replayAllTransients below
+            // mutates them and would otherwise corrupt the returned snapshot.
             applier.rollbackAllTransients();
-            const data = observedDatabase.toData();
+            const data = observedDatabase.toData(true);
             applier.replayAllTransients();
             return data;
         },

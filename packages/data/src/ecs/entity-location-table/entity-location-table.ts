@@ -9,6 +9,12 @@ export interface EntityLocationTable {
     locate: (entity: Entity) => EntityLocation | null;
     /** Wipe all entity records. O(1). Next allocate starts from entity 0 again. */
     reset: () => void;
-    toData: () => unknown;
+    /**
+     * Serialize the table. When `copy` is true the backing `entities` buffer is
+     * detached (sliced) so the snapshot survives later mutation of the live
+     * table; otherwise the snapshot references the live buffer (faster, but only
+     * valid until the next mutation).
+     */
+    toData: (copy?: boolean) => unknown;
     fromData: (data: unknown) => void;
 }

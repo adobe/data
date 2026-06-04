@@ -33,7 +33,13 @@ export interface ReadonlyCore<
     read<T extends RequiredComponents>(entity: Entity, minArchetype: ReadonlyArchetype<T> | Archetype<T>): Readonly<T> & EntityReadValues<C> | null;
     read(entity: Entity): EntityReadValues<C> | null;
     get<K extends StringKeyof<C>>(entity: Entity, component: K): C[K] | undefined;
-    toData(): unknown
+    /**
+     * Serialize the core. When `copy` is true the snapshot is detached from the
+     * live store (column and entity buffers are copied) so it survives later
+     * mutation; otherwise it references live buffers — faster, but only valid
+     * until the next mutation. See {@link Store.toData} bug notes.
+     */
+    toData(copy?: boolean): unknown
 }
 
 /**

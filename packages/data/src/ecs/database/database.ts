@@ -197,26 +197,24 @@ export interface Database<
   /**
    * Serialize the database to a plain data snapshot.
    *
-   * KNOWN BUG (pre-existing, tracked before merge): the returned snapshot
-   * holds **live references** to the store's column buffers — see
-   * `archetype.toData()` returning `{ columns: archetype.columns, ... }`. It
-   * is only valid until the next store mutation; callers must serialize it
-   * immediately.
+   * For a concurrency strategy that replays transients after serialization
+   * (`onAfterToData` — i.e. `createRebaseReplayConcurrency` /
+   * `createRollForwardConcurrency` / the legacy `createReconcilingDatabase`),
+   * this returns a snapshot **detached** from the live store: it rolls the
+   * transients back, serializes a copy of the committed state (`store.toData`
+   * with `copy: true` — columns and the entity table are cloned), then replays.
+   * So a database persisted with optimistic edits in flight contains only
+   * committed state, and the snapshot survives the subsequent replay.
    *
-   * This breaks the "exclude in-flight transients from the snapshot" intent of
-   * every concurrency strategy that uses the rollback→serialize→replay dance
-   * (`onBeforeToData`/`onAfterToData`): the synchronous `onAfterToData` replay
-   * mutates the very buffers the snapshot points at *before* the caller
-   * receives it, so a database persisted while transient/optimistic edits are
-   * pending will silently include those uncommitted edits. Affects both
-   * `createRebaseReplayConcurrency` and `createRollForwardConcurrency` (and the
-   * legacy `createReconcilingDatabase`). The existing reconciler tests never
-   * caught it because they only assert the snapshot is truthy, never round-trip
-   * it back.
+   * For strategies with no replay hook (the default `createImmediateConcurrency`),
+   * the faster live-reference snapshot is returned — it shares the store's
+   * buffers and is only valid until the next mutation, so callers must serialize
+   * it before mutating the database again.
    *
-   * Fix options under consideration: have `toData()` return a detached
-   * (deep-copied) snapshot, or restructure the hooks so serialization happens
-   * against a copy taken while transients are rolled back.
+   * Historical note: the detach above fixes a bug where the live-reference
+   * snapshot was corrupted by the post-serialization replay, silently leaking
+   * in-flight transients into persisted state. The old reconciler tests missed
+   * it because they only asserted the snapshot was truthy, never round-tripped it.
    */
   toData(): unknown
   fromData(data: unknown): void

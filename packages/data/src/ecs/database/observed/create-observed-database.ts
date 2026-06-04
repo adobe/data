@@ -180,7 +180,7 @@ export function createObservedDatabase<
             store.reset();
             notifyAllObserversStoreReloaded();
         },
-        toData: () => store.toData(),
+        toData: (copy = false) => store.toData(copy),
         fromData: (data: unknown) => {
             store.fromData(data);
             notifyAllObserversStoreReloaded();

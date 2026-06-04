@@ -130,9 +130,17 @@ function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined
     // truth.
 
     const toData = () => {
+        // Fast path: a strategy with no replay hook leaves the store untouched
+        // after serialization, so a live-reference snapshot is safe.
+        if (!strategy.onAfterToData) {
+            return observedDatabase.toData();
+        }
+        // A replay strategy mutates the live buffers in `onAfterToData`, which
+        // would corrupt a live-reference snapshot. Capture a detached copy of
+        // the committed (rolled-back) state before replaying.
         strategy.onBeforeToData?.();
-        const data = observedDatabase.toData();
-        strategy.onAfterToData?.();
+        const data = observedDatabase.toData(true);
+        strategy.onAfterToData();
         return data;
     };
     const fromData = (data: unknown) => {

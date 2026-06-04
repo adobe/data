@@ -3,7 +3,7 @@
 import RAPIER from "@dimforge/rapier3d-compat";
 import { Database, type Entity } from "@adobe/data/ecs";
 import { True } from "@adobe/data/schema";
-import { core } from "../../core/core-plugin.js";
+import { physicsClock } from "../physics-clock-plugin.js";
 import { physicsData } from "../physics-data-plugin.js";
 import { BodyType } from "../body/body-type/body-type.js";
 import { ColliderShape } from "../body/collider-shape/collider-shape.js";
@@ -24,6 +24,9 @@ const GRAVITY = 18; // matches joltSolver so the two solvers are directly compar
 
 const RIGID = ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"] as const;
 const STATIC = ["colliderShape", "halfExtents", "material", "position", "rotation"] as const;
+// Dynamic bodies carry the derived prev-pose snapshot (added on first sync) used
+// for render interpolation; this query reads/writes it alongside the live pose.
+const SNAPSHOT = ["bodyType", "position", "rotation", "_prevPosition", "_prevRotation"] as const;
 // Sync only over bodies not yet mirrored into Rapier: a private `_rapierBody`
 // tag is added once a body is created, and excluded here, so steady state
 // iterates zero rows (archetype-level) instead of re-scanning every body each
@@ -34,13 +37,13 @@ const NEW_STATIC = { exclude: ["linearVelocity", "_rapierBody"] } as const;
 interface MatProps { density: number; restitution: number; friction: number }
 
 export const rapierSolver = Database.Plugin.create({
-    extends: Database.Plugin.combine(physicsData, core),
+    extends: Database.Plugin.combine(physicsData, physicsClock),
     components: {
         _rapierBody: True.schema, // tag: this body has been mirrored into the Rapier world
     },
     systems: {
         rapierStep: {
-            schedule: { during: ["physics"] },
+            schedule: { during: ["physics"], after: ["advancePhysicsClock"] },
             create: db => {
                 let world: RAPIER.World | null = null;
                 let initStarted = false;
@@ -82,9 +85,11 @@ export const rapierSolver = Database.Plugin.create({
                         const ids = arch.columns.id, bt = arch.columns.bodyType, cs = arch.columns.colliderShape, mat = arch.columns.material;
                         const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation, lv = arch.columns.linearVelocity;
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
-                            const id = ids.get(r), h = he.get(r), p = pos.get(r), v = lv.get(r);
-                            ensureBody(id, BodyType.isDynamic(bt.get(r)), cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r), v[0], v[1], v[2]);
-                            db.store.update(id, { _rapierBody: true });
+                            const id = ids.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r), v = lv.get(r);
+                            ensureBody(id, BodyType.isDynamic(bt.get(r)), cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o, v[0], v[1], v[2]);
+                            // tag as mirrored + migrate on the derived prev-pose snapshot
+                            // (seeded to the spawn pose; the interpolator reads it next frame)
+                            db.store.update(id, { _rapierBody: true, _prevPosition: p, _prevRotation: o });
                         }
                     }
                     for (const arch of db.store.queryArchetypes(STATIC, NEW_STATIC)) {
@@ -97,8 +102,26 @@ export const rapierSolver = Database.Plugin.create({
                         }
                     }
 
-                    world.timestep = db.store.resources.frameTime.dt < 0.033 ? db.store.resources.frameTime.dt : 0.033;
-                    world.step();
+                    // Step on the fixed clock: 0..N steps of `fixedDt` this frame
+                    // (decoupled from the render rate). On a stepping frame, snapshot
+                    // the pose entering the final step into `_prevPosition`/`_prevRotation`
+                    // first, so the pre-render interpolator can blend prev→current.
+                    const clock = db.store.resources.physicsClock;
+                    const steps = clock.steps;
+                    if (steps === 0) return; // no sim time accrued — leave pose + snapshot intact
+                    for (const arch of db.store.queryArchetypes(SNAPSHOT)) {
+                        const bt = arch.columns.bodyType;
+                        const pos = arch.columns.position.getTypedArray(), ori = arch.columns.rotation.getTypedArray();
+                        const pp = arch.columns._prevPosition.getTypedArray(), pr = arch.columns._prevRotation.getTypedArray();
+                        for (let r = 0; r < arch.rowCount; r++) {
+                            if (!BodyType.isDynamic(bt.get(r))) continue;
+                            const r3 = r * 3, r4 = r * 4;
+                            pp[r3] = pos[r3]; pp[r3 + 1] = pos[r3 + 1]; pp[r3 + 2] = pos[r3 + 2];
+                            pr[r4] = ori[r4]; pr[r4 + 1] = ori[r4 + 1]; pr[r4 + 2] = ori[r4 + 2]; pr[r4 + 3] = ori[r4 + 3];
+                        }
+                    }
+                    world.timestep = clock.fixedDt;
+                    for (let s = 0; s < steps; s++) world.step();
 
                     // write the dynamic bodies' new pose + velocity back onto the canonical columns
                     for (const arch of db.store.queryArchetypes(RIGID)) {

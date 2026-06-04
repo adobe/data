@@ -27,6 +27,13 @@ import { Material } from "../material/material.js";
  *     No velocities (never integrated) and no `bodyType` (the archetype *is*
  *     the static classification) — a lean row for the bulk-static workload.
  *
+ * `_prevPosition`/`_prevRotation` are derived (`_`-prefixed): the solver snapshots
+ * the pose *before* its final fixed step into them, so a render-rate interpolation
+ * pass can smoothly blend the previous → current simulated pose (see
+ * `physics-clock-plugin` + `interpolation-plugin`). Like `_worldMatrix`, they are
+ * *not* in the authored archetype — the solver migrates them onto each dynamic
+ * body the first time it mirrors it, so authors never supply derived state.
+ *
  * Mass + inertia are derived per solver from shape + material (not stored here).
  */
 export const physicsData = Database.Plugin.create({
@@ -39,6 +46,8 @@ export const physicsData = Database.Plugin.create({
         rotation:        Quat.schema, // unified with Node.rotation so a body renders directly
         linearVelocity:  Vec3.schema,
         angularVelocity: Vec3.schema,
+        _prevPosition:   Vec3.schema, // derived: pose before the last fixed step (render interpolation)
+        _prevRotation:   Quat.schema,
     },
     archetypes: {
         RigidBody: ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"],

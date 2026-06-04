@@ -3,7 +3,7 @@
 import initJolt from "jolt-physics";
 import { Database, type Entity } from "@adobe/data/ecs";
 import { True } from "@adobe/data/schema";
-import { core } from "../../core/core-plugin.js";
+import { physicsClock } from "../physics-clock-plugin.js";
 import { physicsData } from "../physics-data-plugin.js";
 import { BodyType } from "../body/body-type/body-type.js";
 import { ColliderShape } from "../body/collider-shape/collider-shape.js";
@@ -30,6 +30,9 @@ const BP_STATIC = 0, BP_DYNAMIC = 1, NUM_BP_LAYERS = 2;
 
 const RIGID = ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"] as const;
 const STATIC = ["colliderShape", "halfExtents", "material", "position", "rotation"] as const;
+// Dynamic bodies carry the derived prev-pose snapshot (added on first sync) used
+// for render interpolation; this query reads/writes it alongside the live pose.
+const SNAPSHOT = ["bodyType", "position", "rotation", "_prevPosition", "_prevRotation"] as const;
 // Sync only over bodies not yet mirrored into Jolt (excluded by the `_joltBody`
 // tag added on creation) → steady state iterates zero rows instead of
 // re-scanning every body each frame.
@@ -44,13 +47,13 @@ type JJoltInterface = InstanceType<JoltModule["JoltInterface"]>;
 interface MatProps { restitution: number; friction: number }
 
 export const joltSolver = Database.Plugin.create({
-    extends: Database.Plugin.combine(physicsData, core),
+    extends: Database.Plugin.combine(physicsData, physicsClock),
     components: {
         _joltBody: True.schema, // tag: this body has been mirrored into the Jolt world
     },
     systems: {
         joltStep: {
-            schedule: { during: ["physics"] },
+            schedule: { during: ["physics"], after: ["advancePhysicsClock"] },
             create: db => {
                 let J: JoltModule | null = null;
                 let initStarted = false;
@@ -115,9 +118,11 @@ export const joltSolver = Database.Plugin.create({
                         const ids = arch.columns.id, bt = arch.columns.bodyType, cs = arch.columns.colliderShape, mat = arch.columns.material;
                         const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation;
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
-                            const id = ids.get(r), h = he.get(r), p = pos.get(r);
-                            ensureBody(jolt, bi, id, BodyType.isDynamic(bt.get(r)), cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r));
-                            db.store.update(id, { _joltBody: true });
+                            const id = ids.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r);
+                            ensureBody(jolt, bi, id, BodyType.isDynamic(bt.get(r)), cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o);
+                            // tag as mirrored + migrate on the derived prev-pose snapshot
+                            // (seeded to the spawn pose; the interpolator reads it next frame)
+                            db.store.update(id, { _joltBody: true, _prevPosition: p, _prevRotation: o });
                         }
                     }
                     for (const arch of db.store.queryArchetypes(STATIC, NEW_STATIC)) {
@@ -130,8 +135,25 @@ export const joltSolver = Database.Plugin.create({
                         }
                     }
 
-                    const dt = db.store.resources.frameTime.dt;
-                    joltInterface.Step(dt < 0.033 ? dt : 0.033, 1);
+                    // Step on the fixed clock: 0..N steps of `fixedDt` this frame
+                    // (decoupled from the render rate). On a stepping frame, snapshot
+                    // the pose entering the final step into `_prevPosition`/`_prevRotation`
+                    // first, so the pre-render interpolator can blend prev→current.
+                    const clock = db.store.resources.physicsClock;
+                    const steps = clock.steps;
+                    if (steps === 0) return; // no sim time accrued — leave pose + snapshot intact
+                    for (const arch of db.store.queryArchetypes(SNAPSHOT)) {
+                        const bt = arch.columns.bodyType;
+                        const pos = arch.columns.position.getTypedArray(), ori = arch.columns.rotation.getTypedArray();
+                        const pp = arch.columns._prevPosition.getTypedArray(), pr = arch.columns._prevRotation.getTypedArray();
+                        for (let r = 0; r < arch.rowCount; r++) {
+                            if (!BodyType.isDynamic(bt.get(r))) continue;
+                            const r3 = r * 3, r4 = r * 4;
+                            pp[r3] = pos[r3]; pp[r3 + 1] = pos[r3 + 1]; pp[r3 + 2] = pos[r3 + 2];
+                            pr[r4] = ori[r4]; pr[r4 + 1] = ori[r4 + 1]; pr[r4 + 2] = ori[r4 + 2]; pr[r4 + 3] = ori[r4 + 3];
+                        }
+                    }
+                    for (let s = 0; s < steps; s++) joltInterface.Step(clock.fixedDt, 1);
 
                     // write the dynamic bodies' new pose + velocity back onto the canonical columns
                     for (const arch of db.store.queryArchetypes(RIGID)) {

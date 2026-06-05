@@ -90,7 +90,7 @@ function validComputedScalarFind() {
             email: { type: "string" },
         },
         indexes: {
-            byEmailCi: { key: { email: (c) => c.email.toLowerCase() }, components: ["email"] },
+            byEmailCi: { key: { email: (c) => c.email!.toLowerCase() }, components: ["email"] },
         },
     });
 
@@ -108,7 +108,7 @@ function validComputedMultiValueFanout() {
             body: { type: "string" },
         },
         indexes: {
-            byKeyword: { key: { keyword: (c) => c.body.split(/\s+/) }, components: ["body"] },
+            byKeyword: { key: { keyword: (c) => c.body!.split(/\s+/) }, components: ["body"] },
         },
     });
 

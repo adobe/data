@@ -201,7 +201,7 @@ describe("Index insertion big-O", () => {
                 archetypes: { User: ["email"] },
                 indexes: {
                     byEmailCi: {
-                        key: { email: (c) => c.email.toLowerCase() },
+                        key: { email: (c) => c.email!.toLowerCase() },
                         components: ["email"],
                     },
                 },
@@ -224,7 +224,7 @@ describe("Index insertion big-O", () => {
                 archetypes: { Doc: ["body"] },
                 indexes: {
                     docsByKeyword: {
-                        key: { keyword: (c) => c.body.split(/\s+/) },
+                        key: { keyword: (c) => c.body!.split(/\s+/) },
                         components: ["body"],
                     },
                 },
@@ -256,7 +256,7 @@ describe("Index insertion big-O", () => {
                     playerByTeamRole: {
                         key: {
                             team: "team",
-                            role: (c) => c.roster.role,
+                            role: (c) => c.roster!.role,
                         },
                         components: ["roster"],
                     },

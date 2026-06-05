@@ -152,9 +152,9 @@ Indexes give O(1) lookup by some derived or column-valued key. Declare them on t
 
 - `key: "col"` — sugar for the one-column tuple `["col"]`; the argument is `{ col: value }`.
 - `key: ["a", "b"]` — one field per column: `{ a, b }`.
-- `key: { slot: … }` — one field per slot. A **computed** key is a slot map whose value is an extractor, e.g. `{ emailLower: (c) => c.email.toLowerCase() }`; the argument is `{ emailLower: string }`. (There is no bare `(…) => value` key form — a computed value needs a name to appear in the object, so it lives in a slot.)
+- `key: { slot: … }` — one field per slot. A **computed** key is a slot map whose value is an extractor, e.g. `{ emailLower: (c) => c.email!.toLowerCase() }`; the argument is `{ emailLower: string }`. (There is no bare `(…) => value` key form — a computed value needs a name to appear in the object, so it lives in a slot.)
 
-Each **extractor receives a single named object** `c` of the index's declared `components` (e.g. `(c) => c.email.toLowerCase()`), not positional arguments — so there's no argument-order to get wrong, and `c.fieldName` is type-checked.
+Each **extractor receives a single named object** `c` of the component values, read by name (`c.email`) rather than by argument position. Its type is `Partial<C>`: at runtime only the index's declared `components` are populated, and the type marks every field optional rather than unsafely implying all of `C` is present — so use `!` / `?.` on the components you declared (`(c) => c.email!.toLowerCase()`).
 
 `find(arg) → readonly Entity[]` returns every entity in the matching bucket (sorted if `order` is declared). `get(arg) → Entity | null` is exposed only on unique indexes; `null` means "we know this key has no entity," never `undefined`. Array values (a `T[]` column, or an extractor that returns `T[]`) auto-fan-out into one bucket entry per element, so the field takes the element type (`find({ assigned: "joe" })` against `assigned: string[]`).
 
@@ -206,12 +206,12 @@ indexes: {
 
 #### Computed indexes (extractor in a slot)
 
-A computed key is a slot map; each extractor receives a single named object `c` of the index's `components` and returns the slot's value. The slot name becomes the lookup field.
+A computed key is a slot map; each extractor receives a single named object `c` (`Partial<C>` — declared `components` are the ones populated) and returns the slot's value. The slot name becomes the lookup field.
 
 **Scalar derived key** (case-insensitive lookup):
 ```ts
 indexes: {
-    byEmailCi: { components: ["email"], key: { email: (c) => c.email.toLowerCase() } },
+    byEmailCi: { components: ["email"], key: { email: (c) => c.email!.toLowerCase() } },
 }
 // db.indexes.byEmailCi.find({ email: "ALICE@x.com" }) → readonly Entity[]
 ```
@@ -219,7 +219,7 @@ indexes: {
 **Multi-value computed** — an extractor that returns an array fans each element into its own bucket entry:
 ```ts
 indexes: {
-    docsByKeyword: { components: ["body"], key: { keyword: (c) => extractTags(c.body) } },
+    docsByKeyword: { components: ["body"], key: { keyword: (c) => extractTags(c.body!) } },
 }
 // db.indexes.docsByKeyword.find({ keyword: "typescript" })
 ```
@@ -230,7 +230,7 @@ indexes: {
 indexes: {
     playerByRoster: {
         components: ["player"],
-        key: { team: (c) => c.player.parent, position: (c) => c.player.key },
+        key: { team: (c) => c.player!.parent, position: (c) => c.player!.key },
         unique: true,
     },
 }
@@ -243,7 +243,7 @@ indexes: {
 indexes: {
     orderedChildrenOfFoo: {
         components: ["foo"],
-        key: { parent: (c) => c.foo.parent },
+        key: { parent: (c) => c.foo!.parent },
         order: {
             by: ["foo"],
             compare: (a, b) => a.foo.order < b.foo.order ? -1 : 1,
@@ -262,7 +262,7 @@ indexes: {
         components: ["player"],
         key: {
             team: "team",                  // identity from top-level `team` column
-            role: (c) => c.player.position, // derived from nested player.position
+            role: (c) => c.player!.position, // derived from nested player.position
         },
         unique: true,
     },
@@ -275,7 +275,7 @@ indexes: {
 indexes: {
     orderedRoster: {
         components: ["item"],
-        key: { team: (c) => c.item.parent, role: (c) => c.item.key },
+        key: { team: (c) => c.item!.parent, role: (c) => c.item!.key },
         order: {
             by: ["item"],
             compare: (a, b) => a.item.fractIndex.localeCompare(b.item.fractIndex),

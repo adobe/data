@@ -21,13 +21,17 @@ type ElementOf<T> = T extends readonly (infer E)[] ? E : T;
  * Per-slot extractor in a compound `key` declaration. Either:
  * - a `StringKeyof<C>` — read the value of that column directly, or
  * - a function — derive the slot's value from a single **named object** of the
- *   index's component values (e.g. `(c) => c.email.toLowerCase()`), not from
- *   positional arguments. The object carries the index's declared
- *   `components`, so the extractor reads them by name.
+ *   component values, read by name (e.g. `(c) => c.email!.toLowerCase()`), not
+ *   from positional arguments.
+ *
+ * The argument is typed `Partial<C>`: at runtime only the index's declared
+ * `components` are populated, and the type marks every field optional rather
+ * than unsafely implying all of `C` is present — so the extractor acknowledges
+ * possible absence (use `!` / `?.` on the components you declared).
  */
 export type IndexKeySlot<C extends Components> =
     | StringKeyof<C>
-    | ((components: C) => unknown);
+    | ((components: Partial<C>) => unknown);
 
 /**
  * The three shapes a `key` declaration can take. Every shape resolves to a

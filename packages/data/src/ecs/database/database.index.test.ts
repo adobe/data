@@ -600,7 +600,7 @@ describe("Pattern 6 — computed scalar (byEmailCi)", () => {
         components: { email: { type: "string" } },
         archetypes: { User: ["email"] },
         indexes: {
-            byEmailCi: { key: { email: (c) => c.email.toLowerCase() }, components: ["email"] },
+            byEmailCi: { key: { email: (c) => c.email!.toLowerCase() }, components: ["email"] },
         },
         transactions: {
             add: (t, email: string) => t.archetypes.User.insert({ email }),
@@ -643,7 +643,7 @@ describe("Pattern 7 — multi-value computed (docsByKeyword)", () => {
             docsByKeyword: {
                 key: {
                     keyword: (c) =>
-                        c.body.toLowerCase().split(/\s+/).filter((s) => s.length > 0),
+                        c.body!.toLowerCase().split(/\s+/).filter((s) => s.length > 0),
                 },
                 components: ["body"],
             },
@@ -686,8 +686,8 @@ describe("Pattern 8 — compound from nested data (playerByRoster)", () => {
         indexes: {
             playerByRoster: {
                 key: {
-                    team: (c) => c.roster.team,
-                    position: (c) => c.roster.position,
+                    team: (c) => c.roster!.team,
+                    position: (c) => c.roster!.position,
                 },
                 unique: true,
                 components: ["roster"],
@@ -728,7 +728,7 @@ describe("Pattern 10 — mixed identity + derived slots (playerByTeamRole)", () 
             playerByTeamRole: {
                 key: {
                     team: "team",
-                    role: (c) => c.roster.role,
+                    role: (c) => c.roster!.role,
                 },
                 unique: true,
                 components: ["roster"],
@@ -895,7 +895,7 @@ describe("auto-routing of db.select", () => {
             archetypes: { U: ["name"] },
             indexes: {
                 byLowerName: {
-                    key: { name: (c) => c.name.toLowerCase() },
+                    key: { name: (c) => c.name!.toLowerCase() },
                     components: ["name"],
                 },
             },

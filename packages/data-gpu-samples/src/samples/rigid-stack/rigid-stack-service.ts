@@ -2,10 +2,13 @@
 
 import { Database, type Entity } from "@adobe/data/ecs";
 import { Quat } from "@adobe/data/math";
-import { pbrRender, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, ColliderShape, Orbit } from "@adobe/data-gpu";
+import { pbrRender, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, modelCollider, ColliderShape, Orbit } from "@adobe/data-gpu";
 
 // Studio HDR for IBL © Poly Haven, CC0.
 const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr";
+// DamagedHelmet glTF © Khronos Group, CC-BY 4.0 — dropped as a dynamic body whose
+// convex-hull collider is auto-generated from its mesh (modelCollider).
+const HELMET_URL = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/DamagedHelmet/glTF-Binary/DamagedHelmet.glb";
 
 // Scene config. The bin is split into two zones so the moving bar doesn't
 // demolish the stack: the **right** half holds the stable stack; the **left**
@@ -83,7 +86,7 @@ const DROPS: Drop[] = (() => {
  * side. The drop sequence is deterministic (seeded), so both see it identically.
  */
 const rigidStackScene = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrRender, shapeGeometry, physicsRenderBridge, Orbit.plugin),
+    extends: Database.Plugin.combine(pbrRender, shapeGeometry, physicsRenderBridge, modelCollider, Orbit.plugin),
     resources: {
         _spawnAccum: { default: 0 as number, transient: true },
         _spawnElapsed: { default: 0 as number, transient: true },
@@ -149,6 +152,20 @@ const rigidStackScene = Database.Plugin.create({
                 bodyType: "kinematic", colliderShape: "box", halfExtents: [0.4, 1.0, BIN - 1], material: t.resources.materials.steel,
                 position: [SWEEP_CX - SWEEP_AMP, SWEEP_Y, 0], rotation: IDENTITY, linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0],
             });
+            // A downloaded glTF model dropped as dynamic bodies: it renders in full
+            // detail but collides as a convex hull auto-generated from its mesh
+            // (colliderShape "hull" + no collision data ⇒ modelCollider fills it). One
+            // shared Geometry, three staggered instances. (To hand-author the collider
+            // instead, pass `convexPoints`/`colliderMesh` here and generation is skipped.)
+            const helmet = t.archetypes.Geometry.insert({ modelUrl: HELMET_URL });
+            for (let i = 0; i < 3; i++) {
+                t.archetypes.ModelBody.insert({
+                    geometry: helmet, scale: [1.5, 1.5, 1.5], visible: true, parent: 0,
+                    bodyType: "dynamic", colliderShape: "hull", halfExtents: [0, 0, 0], material: t.resources.materials.steel,
+                    position: [SPAWN_CX - 2 + i * 2, 15 + i * 5, -1 + i],
+                    rotation: randomQuat(seededRng(0x5eed + i)), linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0],
+                });
+            }
         },
         spawnBody(t, args: { index: number }) {
             const d = DROPS[args.index];

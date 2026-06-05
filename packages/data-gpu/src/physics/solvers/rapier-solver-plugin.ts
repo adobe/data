@@ -60,6 +60,14 @@ export const rapierSolver = Database.Plugin.create({
                     return { density: m?.density ?? 1, restitution: m?.restitution ?? 0.2, friction: m?.friction ?? 0.5 };
                 };
 
+                // hull/mesh colliders may be auto-generated from a model that's still
+                // loading — defer mirroring such a body until its collision data exists.
+                const colliderReady = (id: Entity, shape: ColliderShape): boolean => {
+                    if (shape !== "hull" && shape !== "mesh") return true;
+                    const r = db.store.read(id) as { convexPoints?: unknown; colliderMesh?: unknown } | null;
+                    return !!(r?.convexPoints || r?.colliderMesh);
+                };
+
                 const ensureBody = (id: Entity, motion: BodyType, shape: ColliderShape, hx: number, hy: number, hz: number, mat: Entity, px: number, py: number, pz: number, q: ArrayLike<number>, vx: number, vy: number, vz: number): void => {
                     if (!world || bodies.has(id)) return;
                     const m = matPropsOf(mat);
@@ -106,8 +114,9 @@ export const rapierSolver = Database.Plugin.create({
                         const ids = arch.columns.id, bt = arch.columns.bodyType, cs = arch.columns.colliderShape, mat = arch.columns.material;
                         const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation, lv = arch.columns.linearVelocity;
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
-                            const id = ids.get(r), bodyType = bt.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r), v = lv.get(r);
-                            ensureBody(id, bodyType, cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o, v[0], v[1], v[2]);
+                            const id = ids.get(r), bodyType = bt.get(r), shape = cs.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r), v = lv.get(r);
+                            if (!colliderReady(id, shape)) continue; // auto-collider not generated yet
+                            ensureBody(id, bodyType, shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o, v[0], v[1], v[2]);
                             // Tag as mirrored. Dynamics also migrate onto the derived prev-pose
                             // snapshot (the interpolator reads it); kinematic bodies are authored
                             // each frame, so they render at the live pose with no snapshot — the
@@ -119,8 +128,9 @@ export const rapierSolver = Database.Plugin.create({
                         const ids = arch.columns.id, cs = arch.columns.colliderShape, mat = arch.columns.material;
                         const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation;
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
-                            const id = ids.get(r), h = he.get(r), p = pos.get(r);
-                            ensureBody(id, "static", cs.get(r), h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r), 0, 0, 0);
+                            const id = ids.get(r), shape = cs.get(r), h = he.get(r), p = pos.get(r);
+                            if (!colliderReady(id, shape)) continue; // auto-collider not generated yet
+                            ensureBody(id, "static", shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r), 0, 0, 0);
                             db.store.update(id, { _rapierBody: true });
                         }
                     }

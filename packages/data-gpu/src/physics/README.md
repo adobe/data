@@ -44,11 +44,14 @@ lose track. Keep it honest about approximations and limitations.
   auto-collider on purpose; they deform); `boneColliders` spawns a kinematic
   capsule per bone and tracks the animated skeleton (`jointWorldMatrix · offset`).
   Demo: the `ragdoll` sample (CesiumMan walk). Flipping to dynamic is next.
-- [ ] **Ragdoll controller + humanoid sample** — per-bone bodies + joints with
-  anatomical limits; bones `kinematic` (animation-driven) while alive, flip to
-  `dynamic` on death/strike (joints + gravity flop, seeded from last animated
-  velocity + impact). The hard part is the per-bone world↔local skeleton
-  reconciliation. Lands an open-source rigged humanoid that ragdolls.
+- [x] **Ragdoll controller + humanoid sample** — `triggerRagdoll` joints each
+  bone capsule to its nearest capsule-bearing ancestor, flips them
+  `kinematic→dynamic`, stops the animation; `reconcileRagdoll` writes the
+  physics pose back onto the skeleton (world↔local) so the skinned mesh flops.
+  Demo: the `ragdoll` sample (CesiumMan walks, then collapses onto the floor).
+  *v1 uses point joints + rapierSolver; cone (swing-twist) anatomical limits,
+  the Jolt kinematic→dynamic flip, Jolt collisionGroup support, and
+  velocity-seeding from the last animated motion are follow-ups.*
 - [ ] **Collision events + groups/masks + sensors** — contact callbacks drained
   to ECS; per-body layer masks; overlap-only sensor colliders.
 - [ ] **Spatial queries** — raycast / shape-cast / overlap against the broadphase

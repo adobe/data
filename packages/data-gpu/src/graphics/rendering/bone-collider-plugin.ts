@@ -118,11 +118,11 @@ export const boneColliders = Database.Plugin.create({
             create: db => () => {
                 if (!db.store.resources._ragdollTrigger) return;
                 db.store.resources._ragdollTrigger = false;
-                // joint entity → its capsule + current world pose
-                const byJoint = new Map<Entity, { capsule: Entity; world: Mat4x4 }>();
+                // joint entity → its capsule + current world pose + rotation
+                const byJoint = new Map<Entity, { capsule: Entity; world: Mat4x4; rot: Quat }>();
                 for (const arch of db.store.queryArchetypes(["_boneJoint", "position", "rotation"])) {
                     const ids = arch.columns.id, bj = arch.columns._boneJoint, pc = arch.columns.position, rc = arch.columns.rotation;
-                    for (let i = 0; i < arch.rowCount; i++) byJoint.set(bj.get(i), { capsule: ids.get(i), world: compose(pc.get(i), rc.get(i)) });
+                    for (let i = 0; i < arch.rowCount; i++) { const r = rc.get(i); byJoint.set(bj.get(i), { capsule: ids.get(i), world: compose(pc.get(i), r), rot: r }); }
                 }
                 for (const arch of db.store.queryArchetypes(["_boneJoint", "position", "rotation"])) {
                     const ids = arch.columns.id, bj = arch.columns._boneJoint, pc = arch.columns.position, rc = arch.columns.rotation;
@@ -135,12 +135,18 @@ export const boneColliders = Database.Plugin.create({
                         if (!parent) continue; // root capsule: unconstrained
                         const jw = db.store.get(joint, "_worldMatrix") as Mat4x4 | undefined;
                         const origin: Vec3 = jw ? [jw[12], jw[13], jw[14]] : [pc.get(i)[0], pc.get(i)[1], pc.get(i)[2]];
-                        const childWorld = compose(pc.get(i), rc.get(i));
+                        const childRot = rc.get(i);
+                        const childWorld = compose(pc.get(i), childRot);
+                        // cone reference = the child bone's current axis (its capsule +Y), in the
+                        // parent's frame; the swing-twist joint then limits how far the bone can
+                        // deviate from this rest pose — anatomical limits, not a free ball.
+                        const boneDirWorld = Quat.rotateVec3(childRot, [0, 1, 0]);
+                        const axis = Quat.rotateVec3(Quat.inverse(parent.rot), boneDirWorld);
                         db.store.archetypes.Joint.insert({
-                            jointType: "point", jointBodyA: parent.capsule, jointBodyB: ids.get(i),
+                            jointType: "cone", jointBodyA: parent.capsule, jointBodyB: ids.get(i),
                             jointAnchorA: Mat4x4.multiplyVec3(Mat4x4.inverse(parent.world), origin),
                             jointAnchorB: Mat4x4.multiplyVec3(Mat4x4.inverse(childWorld), origin),
-                            jointAxis: [0, 1, 0], jointMinLimit: 0, jointMaxLimit: 0, jointSwingLimit: 0,
+                            jointAxis: axis, jointMinLimit: -0.5, jointMaxLimit: 0.5, jointSwingLimit: 0.9, // ~±29° twist, ~52° swing cone
                         });
                     }
                 }

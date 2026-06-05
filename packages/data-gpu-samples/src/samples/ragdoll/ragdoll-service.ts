@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeometry, rapierSolver, Model, Orbit } from "@adobe/data-gpu";
+import { pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeometry, joltSolver, Model, Orbit } from "@adobe/data-gpu";
 
 /**
  * ragdoll — a rigged humanoid plays its walk clip while one capsule per bone,
@@ -11,7 +11,7 @@ import { pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeomet
  * step). The capsules render over the character as a debug visualisation.
  */
 export const ragdollPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeometry, rapierSolver, Orbit.plugin),
+    extends: Database.Plugin.combine(pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeometry, joltSolver, Orbit.plugin),
     transactions: {
         initializeScene(t, args: { modelUrl: string; envUrl?: string }): number {
             t.resources.light = {

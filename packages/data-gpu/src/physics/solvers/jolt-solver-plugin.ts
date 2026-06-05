@@ -25,9 +25,11 @@ import type { ColliderMesh } from "../body/collider-mesh.js";
 
 const GRAVITY = 18; // matches rapierSolver so the two solvers are directly comparable
 
-// Two object layers (Jolt's collision-filtering requirement): statics don't
-// collide with each other, dynamics collide with everything.
-const L_STATIC = 0, L_DYNAMIC = 1, NUM_OBJECT_LAYERS = 2;
+// Object layers (Jolt's collision-filtering requirement): statics don't collide
+// with each other; dynamics collide with everything; the RAGDOLL layer collides
+// with the world (static + dynamic) but NOT itself — so a collisionGroup>0 body
+// (a ragdoll's bones) never self-collides.
+const L_STATIC = 0, L_DYNAMIC = 1, L_RAGDOLL = 2, NUM_OBJECT_LAYERS = 3;
 const BP_STATIC = 0, BP_DYNAMIC = 1, NUM_BP_LAYERS = 2;
 
 const RIGID = ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"] as const;
@@ -112,9 +114,12 @@ export const joltSolver = Database.Plugin.create({
                     const objectFilter = new jolt.ObjectLayerPairFilterTable(NUM_OBJECT_LAYERS);
                     objectFilter.EnableCollision(L_STATIC, L_DYNAMIC);
                     objectFilter.EnableCollision(L_DYNAMIC, L_DYNAMIC);
+                    objectFilter.EnableCollision(L_STATIC, L_RAGDOLL);
+                    objectFilter.EnableCollision(L_DYNAMIC, L_RAGDOLL); // ragdoll collides with the world, not itself
                     const bp = new jolt.BroadPhaseLayerInterfaceTable(NUM_OBJECT_LAYERS, NUM_BP_LAYERS);
                     bp.MapObjectToBroadPhaseLayer(L_STATIC, new jolt.BroadPhaseLayer(BP_STATIC));
                     bp.MapObjectToBroadPhaseLayer(L_DYNAMIC, new jolt.BroadPhaseLayer(BP_DYNAMIC));
+                    bp.MapObjectToBroadPhaseLayer(L_RAGDOLL, new jolt.BroadPhaseLayer(BP_DYNAMIC));
                     const settings = new jolt.JoltSettings();
                     settings.mObjectLayerPairFilter = objectFilter;
                     settings.mBroadPhaseLayerInterface = bp;
@@ -172,7 +177,10 @@ export const joltSolver = Database.Plugin.create({
                     // dynamic layer so it collides with them); static = immovable collider.
                     const motionType = motion === "dynamic" ? jolt.EMotionType_Dynamic
                         : motion === "kinematic" ? jolt.EMotionType_Kinematic : jolt.EMotionType_Static;
-                    const settings = new jolt.BodyCreationSettings(shp, pos, rot, motionType, motion === "static" ? L_STATIC : L_DYNAMIC);
+                    // collisionGroup>0 ⇒ the no-self-collide RAGDOLL layer.
+                    const grp = (db.store.read(id) as { collisionGroup?: number } | null)?.collisionGroup ?? 0;
+                    const layer = motion === "static" ? L_STATIC : grp > 0 ? L_RAGDOLL : L_DYNAMIC;
+                    const settings = new jolt.BodyCreationSettings(shp, pos, rot, motionType, layer);
                     settings.mRestitution = m.restitution;
                     settings.mFriction = m.friction;
                     const body = bi.CreateBody(settings);
@@ -291,17 +299,31 @@ export const joltSolver = Database.Plugin.create({
                     // the velocity to reach the target over the step, so the body pushes
                     // dynamics. (Author the pose however you like; the solver just follows.)
                     const dt = clock.fixedDt * steps;
+                    const toFlip: Entity[] = []; // kinematic bodies whose bodyType became "dynamic" (ragdoll)
                     for (const arch of db.store.queryArchetypes(KINEMATIC, KINEMATIC_ONLY)) {
-                        const ids = arch.columns.id;
+                        const ids = arch.columns.id, bt = arch.columns.bodyType;
                         const pos = arch.columns.position.getTypedArray(), ori = arch.columns.rotation.getTypedArray();
                         for (let r = 0; r < arch.rowCount; r++) {
                             const body = bodies.get(ids.get(r));
                             if (!body || !kPos || !kRot) continue;
+                            if (bt.get(r) === "dynamic") { toFlip.push(ids.get(r)); continue; }
                             const r3 = r * 3, r4 = r * 4;
                             kPos.Set(pos[r3], pos[r3 + 1], pos[r3 + 2]);
                             kRot.Set(ori[r4], ori[r4 + 1], ori[r4 + 2], ori[r4 + 3]);
                             bi.MoveKinematic(body.GetID(), kPos, kRot, dt);
                         }
+                    }
+                    // Flip kinematic→dynamic (after the loop — migrating the row moves the typed
+                    // arrays): become dynamic + gain the prev-pose snapshot, so it's simulated.
+                    for (const id of toFlip) {
+                        const body = bodies.get(id);
+                        if (!body) continue;
+                        bi.SetMotionType(body.GetID(), jolt.EMotionType_Dynamic, jolt.EActivation_Activate);
+                        const rec = db.store.read(id) as { position: ArrayLike<number>; rotation: ArrayLike<number> };
+                        db.store.update(id, {
+                            _prevPosition: [rec.position[0], rec.position[1], rec.position[2]],
+                            _prevRotation: [rec.rotation[0], rec.rotation[1], rec.rotation[2], rec.rotation[3]],
+                        });
                     }
                     for (const arch of db.store.queryArchetypes(SNAPSHOT)) {
                         const bt = arch.columns.bodyType;

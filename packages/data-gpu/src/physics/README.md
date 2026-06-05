@@ -48,10 +48,11 @@ lose track. Keep it honest about approximations and limitations.
   bone capsule to its nearest capsule-bearing ancestor, flips them
   `kinematic→dynamic`, stops the animation; `reconcileRagdoll` writes the
   physics pose back onto the skeleton (world↔local) so the skinned mesh flops.
-  Demo: the `ragdoll` sample (CesiumMan walks, then collapses onto the floor).
-  *v1 uses point joints + rapierSolver; cone (swing-twist) anatomical limits,
-  the Jolt kinematic→dynamic flip, Jolt collisionGroup support, and
-  velocity-seeding from the last animated motion are follow-ups.*
+  Demo: the `ragdoll` sample (CesiumMan walks, then collapses onto the floor)
+  using **cone (swing-twist) joints** so the limbs hold anatomical angles instead
+  of folding freely, on **joltSolver** (with the Jolt kinematic→dynamic flip + a
+  no-self-collide ragdoll layer). *Per-joint limit tuning and velocity-seeding
+  from the last animated motion (so a strike throws it) are follow-ups.*
 - [ ] **Collision events + groups/masks + sensors** — contact callbacks drained
   to ECS; per-body layer masks; overlap-only sensor colliders.
 - [ ] **Spatial queries** — raycast / shape-cast / overlap against the broadphase

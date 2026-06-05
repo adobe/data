@@ -52,8 +52,9 @@ export const physicsData = Database.Plugin.create({
         _prevRotation:   Quat.schema,
         // Bodies sharing the same non-zero collisionGroup do not collide with each
         // other (they still collide with group 0 / the world) — e.g. a ragdoll's
-        // bones. 0 = default (collide with everything). Honored by rapierSolver;
-        // joltSolver support is a follow-up (see README).
+        // bones. 0 = default (collide with everything). Honored by both solvers
+        // (Rapier per-collider groups; Jolt a no-self-collide object layer). Note:
+        // it's currently binary (group 0 vs "some non-zero group"), not per-id masks.
         collisionGroup:  F32.schema,
         // Authored collision geometry for shapes `halfExtents` can't describe.
         // Runtime objects (variable length, no schema): the solver reads them once

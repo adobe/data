@@ -150,6 +150,8 @@ Indexes give O(1) lookup by some derived or column-valued key. Declare them on t
 
 `find(key) → readonly Entity[]` returns every entity in the matching bucket (sorted if `order` is declared). `get(key) → Entity | null` is exposed only on unique indexes; `null` means "we know this key has no entity," never `undefined`. Array values (a `T[]` column, or a `compute` return that is `T[]`) auto-fan-out into one bucket entry per element.
 
+`observe(key) → Observe<readonly Entity[]>` is the reactive form of `find`. It emits the current bucket synchronously on subscribe, then re-emits — on a microtask after a committed transaction — whenever that bucket's membership *or order* changes, and stays silent for transactions that touch only other buckets. Prefer it over pairing `db.observe.select(..., { where })` with `find`: a sort-key-only reorder changes the index's order but not the `where` result, so the `select` form silently swallows the reorder while `observe` reports it.
+
 ### Pattern catalogue
 
 #### Raw indexes (identity reads from columns)

@@ -5,10 +5,12 @@ import { Database, FromServiceFactories } from "../database.js";
 import { calculateSystemOrder } from "../calculate-system-order.js";
 import { createTransactionDispatcher } from "./create-transaction-dispatcher.js";
 import { observeSelectEntities } from "../observe-select-entities.js";
+import { observeIndexEntities } from "../observe-index-entities.js";
 import { createObservedDatabase } from "../observed/create-observed-database.js";
 import { createImmediateConcurrency } from "../concurrency/immediate-concurrency.js";
 import type { ConcurrencyStrategy, ConcurrencyStrategyFactory } from "../concurrency/concurrency-strategy.js";
 import type { Entity } from "../../entity/entity.js";
+import type { Observe } from "../../../observe/index.js";
 
 /**
  * For each system in newDeclarations that is not yet in systemFunctions: call create(db),
@@ -202,6 +204,30 @@ function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined
         partialDatabase.observe.transactions,
     );
 
+    // Reactive index handles. Each index's `observe(arg)` is built from its
+    // handle's `find` + `readColumns` and fires on the same transaction-commit
+    // boundary as `observe.select` (see `observeIndexEntities`). Attached at
+    // the Database layer because the Store layer that creates the handles has
+    // no transaction observable. `db.indexes` and `t.indexes` share the same
+    // handle objects, so attaching here covers both.
+    const observeIndex = observeIndexEntities(partialDatabase.observe.transactions);
+    const attachIndexObservers = () => {
+        // Structural view of the handle map: the Store augments each handle
+        // with `find` + `readColumns` (the same internal contract the query
+        // planner relies on for `find` + `routableColumns`).
+        const handles = store.indexes as unknown as Record<string, {
+            find(arg: unknown): readonly Entity[];
+            readColumns: readonly string[];
+            observe?: (arg: unknown) => Observe<readonly Entity[]>;
+        }>;
+        for (const name in handles) {
+            const handle = handles[name];
+            if (handle.observe) continue;
+            handle.observe = observeIndex(handle.find, handle.readColumns);
+        }
+    };
+    attachIndexObservers();
+
     const extend = (plugin: Database.Plugin<any, any, any, any, any, any, any, any>) => {
         if (!extendedPlugins.has(plugin)) {
             extendedPlugins.add(plugin);
@@ -231,6 +257,7 @@ function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined
             // our local indexes reference in case the underlying map got a
             // new identity (it doesn't today, but stay defensive).
             partialDatabase.indexes = store.indexes;
+            attachIndexObservers();
             if (plugin.systems && Object.keys(plugin.systems).length > 0) {
                 Object.assign(allSystemDeclarations, plugin.systems);
                 systemOrder = calculateSystemOrder(allSystemDeclarations);

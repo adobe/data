@@ -5,6 +5,7 @@ import { Database } from "./database.js";
 import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";
 import { Entity } from "../entity/entity.js";
+import { Observe } from "../../observe/index.js";
 
 /**
  * Database-level type checks for the new index API. The exhaustive
@@ -156,6 +157,10 @@ function validSortedOrderShape() {
     type Handle = DB["indexes"]["orderedChildrenOf"];
     // Order doesn't change find's argument shape — still the scalar parent value.
     type _FindArg = Assert<Equal<Parameters<Handle["find"]>[0], number>>;
+    // `observe` mirrors `find`'s argument shape and yields an Observe of the
+    // sorted bucket.
+    type _ObserveArg = Assert<Equal<Parameters<Handle["observe"]>[0], number>>;
+    type _ObserveRet = Assert<Equal<ReturnType<Handle["observe"]>, Observe<readonly Entity[]>>>;
 }
 
 function validIndexesEmptyByDefault() {

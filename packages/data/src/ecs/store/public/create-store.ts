@@ -139,6 +139,12 @@ export function createStore<
             // calls `handle.find` (so user-installed spies on the handle
             // intercept the routed call).
             routableColumns,
+            // Internal field consumed by the Database layer to build the
+            // reactive `handle.observe`: the columns (key + sort) whose change
+            // can alter this bucket's contents or order. The handle's public
+            // `observe` is attached at the Database layer because it must fire
+            // on the transaction-commit boundary, which only exists there.
+            readColumns: idx.readColumns,
         };
         if (idx.unique) handle.get = idx.get;
         indexHandles[name] = handle;

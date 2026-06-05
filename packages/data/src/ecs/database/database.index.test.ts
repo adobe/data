@@ -203,6 +203,339 @@ describe("Pattern 4 — sorted children (orderedChildrenOf)", () => {
     });
 });
 
+describe("Pattern 4 — observe(arg): reactive sorted bucket view", () => {
+    const plugin = () => Database.Plugin.create({
+        components: {
+            parent: { type: "number" },
+            fractIndex: { type: "string" },
+        },
+        archetypes: { Child: ["parent", "fractIndex"] },
+        indexes: {
+            orderedChildrenOf: {
+                key: "parent",
+                order: { by: ["fractIndex"] },
+            },
+        },
+        transactions: {
+            add: (t, args: { parent: number; fractIndex: string }) =>
+                t.archetypes.Child.insert(args),
+            move: (t, args: { entity: number; fractIndex: string }) =>
+                t.update(args.entity, { fractIndex: args.fractIndex }),
+            reparent: (t, args: { entity: number; parent: number }) =>
+                t.update(args.entity, { parent: args.parent }),
+            delete: (t, e: number) => t.delete(e),
+        },
+    });
+
+    it("emits the initial sorted list synchronously on subscribe", () => {
+        const db = Database.create(plugin());
+        const c = db.transactions.add({ parent: 7, fractIndex: "c" });
+        const a = db.transactions.add({ parent: 7, fractIndex: "a" });
+        const b = db.transactions.add({ parent: 7, fractIndex: "b" });
+
+        const emissions: number[][] = [];
+        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+            (entities) => { emissions.push([...entities]); },
+        );
+        expect(emissions).toEqual([[a, b, c]]);
+        unsub();
+    });
+
+    it("emits the re-sorted list when an entity is inserted into the bucket", async () => {
+        const db = Database.create(plugin());
+        const a = db.transactions.add({ parent: 7, fractIndex: "a" });
+        const c = db.transactions.add({ parent: 7, fractIndex: "c" });
+
+        const emissions: number[][] = [];
+        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+            (entities) => { emissions.push([...entities]); },
+        );
+        const b = db.transactions.add({ parent: 7, fractIndex: "b" });
+        await Promise.resolve();
+
+        expect(emissions[0]).toEqual([a, c]);
+        expect(emissions[emissions.length - 1]).toEqual([a, b, c]);
+        unsub();
+    });
+
+    it("emits a reorder when only the sort key changes (regression case)", async () => {
+        const db = Database.create(plugin());
+        const a = db.transactions.add({ parent: 7, fractIndex: "a" });
+        const b = db.transactions.add({ parent: 7, fractIndex: "b" });
+        const c = db.transactions.add({ parent: 7, fractIndex: "c" });
+
+        const emissions: number[][] = [];
+        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+            (entities) => { emissions.push([...entities]); },
+        );
+        expect(emissions[0]).toEqual([a, b, c]);
+
+        // Reorder-only transaction: parent (the bucket key) is untouched, so a
+        // `where`-only observe.select would never see this. The index does.
+        db.transactions.move({ entity: b, fractIndex: "z" });
+        await Promise.resolve();
+        expect(emissions[emissions.length - 1]).toEqual([a, c, b]);
+        unsub();
+    });
+
+    it("emits the shrunken list when an entity is deleted from the bucket", async () => {
+        const db = Database.create(plugin());
+        const a = db.transactions.add({ parent: 7, fractIndex: "a" });
+        const b = db.transactions.add({ parent: 7, fractIndex: "b" });
+
+        const emissions: number[][] = [];
+        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+            (entities) => { emissions.push([...entities]); },
+        );
+        db.transactions.delete(b);
+        await Promise.resolve();
+
+        expect(emissions[emissions.length - 1]).toEqual([a]);
+        unsub();
+    });
+
+    it("does NOT emit when an unrelated bucket's entity changes", async () => {
+        const db = Database.create(plugin());
+        db.transactions.add({ parent: 7, fractIndex: "a" });
+        const other = db.transactions.add({ parent: 9, fractIndex: "a" });
+
+        const emissions: number[][] = [];
+        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+            (entities) => { emissions.push([...entities]); },
+        );
+        expect(emissions).toHaveLength(1);
+
+        // A child of a *different* parent moves. Same component (`fractIndex`)
+        // changes, so the observer is woken and recomputes — but its own
+        // bucket is unchanged, so no second emission.
+        db.transactions.move({ entity: other, fractIndex: "z" });
+        await Promise.resolve();
+        expect(emissions).toHaveLength(1);
+        unsub();
+    });
+
+    it("emits on both buckets when an entity reparents between them", async () => {
+        const db = Database.create(plugin());
+        const a = db.transactions.add({ parent: 7, fractIndex: "a" });
+        const m = db.transactions.add({ parent: 7, fractIndex: "b" });
+
+        const fromSeven: number[][] = [];
+        const toNine: number[][] = [];
+        const unsub7 = db.indexes.orderedChildrenOf.observe(7)((e) => fromSeven.push([...e]));
+        const unsub9 = db.indexes.orderedChildrenOf.observe(9)((e) => toNine.push([...e]));
+
+        db.transactions.reparent({ entity: m, parent: 9 });
+        await Promise.resolve();
+
+        expect(fromSeven[fromSeven.length - 1]).toEqual([a]);
+        expect(toNine[toNine.length - 1]).toEqual([m]);
+        unsub7();
+        unsub9();
+    });
+
+    it("unsubscribe stops further emissions", async () => {
+        const db = Database.create(plugin());
+        db.transactions.add({ parent: 7, fractIndex: "a" });
+
+        const emissions: number[][] = [];
+        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+            (entities) => { emissions.push([...entities]); },
+        );
+        expect(emissions).toHaveLength(1);
+        unsub();
+
+        db.transactions.add({ parent: 7, fractIndex: "b" });
+        await Promise.resolve();
+        expect(emissions).toHaveLength(1);
+    });
+});
+
+describe("observe(arg) — additional edge cases", () => {
+    const sortedPlugin = () => Database.Plugin.create({
+        components: {
+            parent: { type: "number" },
+            fractIndex: { type: "string" },
+        },
+        archetypes: { Child: ["parent", "fractIndex"] },
+        indexes: {
+            orderedChildrenOf: { key: "parent", order: { by: ["fractIndex"] } },
+            childrenOf: { key: "parent" },
+        },
+        transactions: {
+            add: (t, args: { parent: number; fractIndex: string }) =>
+                t.archetypes.Child.insert(args),
+            move: (t, args: { entity: number; fractIndex: string }) =>
+                t.update(args.entity, { fractIndex: args.fractIndex }),
+            delete: (t, e: number) => t.delete(e),
+        },
+    });
+
+    it("emits [] for an initially-empty bucket, then the entity once populated", async () => {
+        const db = Database.create(sortedPlugin());
+        const emissions: number[][] = [];
+        const unsub = db.indexes.orderedChildrenOf.observe(42)(
+            (e) => emissions.push([...e]),
+        );
+        expect(emissions).toEqual([[]]);
+
+        const e = db.transactions.add({ parent: 42, fractIndex: "a" });
+        await Promise.resolve();
+        expect(emissions[emissions.length - 1]).toEqual([e]);
+        unsub();
+    });
+
+    it("emits [] when the last entity leaves the bucket", async () => {
+        const db = Database.create(sortedPlugin());
+        const only = db.transactions.add({ parent: 7, fractIndex: "a" });
+        const emissions: number[][] = [];
+        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+            (e) => emissions.push([...e]),
+        );
+        db.transactions.delete(only);
+        await Promise.resolve();
+        expect(emissions[emissions.length - 1]).toEqual([]);
+        unsub();
+    });
+
+    it("notifies every subscriber of the same bucket", async () => {
+        const db = Database.create(sortedPlugin());
+        const a = db.transactions.add({ parent: 7, fractIndex: "a" });
+
+        const first: number[][] = [];
+        const second: number[][] = [];
+        const unsub1 = db.indexes.orderedChildrenOf.observe(7)((e) => first.push([...e]));
+        const unsub2 = db.indexes.orderedChildrenOf.observe(7)((e) => second.push([...e]));
+
+        const b = db.transactions.add({ parent: 7, fractIndex: "b" });
+        await Promise.resolve();
+
+        expect(first[first.length - 1]).toEqual([a, b]);
+        expect(second[second.length - 1]).toEqual([a, b]);
+        unsub1();
+        unsub2();
+    });
+
+    it("coalesces several transactions before the microtask into one emission", async () => {
+        const db = Database.create(sortedPlugin());
+        const a = db.transactions.add({ parent: 7, fractIndex: "a" });
+
+        const emissions: number[][] = [];
+        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+            (e) => emissions.push([...e]),
+        );
+        // Three synchronous transactions, no awaits in between.
+        const c = db.transactions.add({ parent: 7, fractIndex: "c" });
+        const b = db.transactions.add({ parent: 7, fractIndex: "b" });
+        db.transactions.move({ entity: c, fractIndex: "d" });
+        await Promise.resolve();
+
+        // Initial emit + exactly one coalesced emit reflecting the final state.
+        expect(emissions).toHaveLength(2);
+        expect(emissions[1]).toEqual([a, b, c]);
+        unsub();
+    });
+
+    it("does not re-emit when a touched bucket ends a transaction unchanged", async () => {
+        const db = Database.create(sortedPlugin());
+        const a = db.transactions.add({ parent: 7, fractIndex: "a" });
+
+        const emissions: number[][] = [];
+        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+            (e) => emissions.push([...e]),
+        );
+        // Move the only child to a new sort key and back within the same
+        // microtask window: the bucket is woken but its final sequence is
+        // identical, so no second emission.
+        db.transactions.move({ entity: a, fractIndex: "z" });
+        db.transactions.move({ entity: a, fractIndex: "a" });
+        await Promise.resolve();
+        expect(emissions).toHaveLength(1);
+        unsub();
+    });
+
+    it("works on a non-sorted index — membership changes still emit", async () => {
+        const db = Database.create(sortedPlugin());
+        const a = db.transactions.add({ parent: 7, fractIndex: "a" });
+
+        const emissions: number[][] = [];
+        const unsub = db.indexes.childrenOf.observe(7)(
+            (e) => emissions.push([...e].sort()),
+        );
+        expect(emissions[0]).toEqual([a]);
+
+        const b = db.transactions.add({ parent: 7, fractIndex: "b" });
+        await Promise.resolve();
+        expect(emissions[emissions.length - 1]).toEqual([a, b].sort());
+        unsub();
+    });
+
+    const priorityPlugin = () => Database.Plugin.create({
+        components: {
+            owner: { type: "number" },
+            priority: { type: "number" },
+            due: { type: "number" },
+        },
+        archetypes: { Task: ["owner", "priority", "due"] },
+        indexes: {
+            tasksByPriority: {
+                key: "owner",
+                order: {
+                    by: ["priority", "due"],
+                    compare: (
+                        a: { priority: number; due: number },
+                        b: { priority: number; due: number },
+                    ) => b.priority - a.priority || a.due - b.due,
+                },
+            },
+        },
+        transactions: {
+            add: (t, args: { owner: number; priority: number; due: number }) =>
+                t.archetypes.Task.insert(args),
+            setPriority: (t, args: { entity: number; priority: number }) =>
+                t.update(args.entity, { priority: args.priority }),
+            setDue: (t, args: { entity: number; due: number }) =>
+                t.update(args.entity, { due: args.due }),
+        },
+    });
+
+    it("re-sorts under a custom comparator when the primary sort key changes", async () => {
+        const db = Database.create(priorityPlugin());
+        const low = db.transactions.add({ owner: 1, priority: 1, due: 100 });
+        const high = db.transactions.add({ owner: 1, priority: 3, due: 50 });
+
+        const emissions: number[][] = [];
+        const unsub = db.indexes.tasksByPriority.observe(1)(
+            (e) => emissions.push([...e]),
+        );
+        // priority desc → [high, low].
+        expect(emissions[0]).toEqual([high, low]);
+
+        db.transactions.setPriority({ entity: low, priority: 5 });
+        await Promise.resolve();
+        expect(emissions[emissions.length - 1]).toEqual([low, high]);
+        unsub();
+    });
+
+    it("re-sorts when only the secondary (tie-break) sort component changes", async () => {
+        const db = Database.create(priorityPlugin());
+        // Equal priority → ordered by `due` asc.
+        const early = db.transactions.add({ owner: 1, priority: 2, due: 10 });
+        const late = db.transactions.add({ owner: 1, priority: 2, due: 20 });
+
+        const emissions: number[][] = [];
+        const unsub = db.indexes.tasksByPriority.observe(1)(
+            (e) => emissions.push([...e]),
+        );
+        expect(emissions[0]).toEqual([early, late]);
+
+        // Push `early`'s due past `late`'s — flips the tie-break order.
+        db.transactions.setDue({ entity: early, due: 30 });
+        await Promise.resolve();
+        expect(emissions[emissions.length - 1]).toEqual([late, early]);
+        unsub();
+    });
+});
+
 describe("Pattern 5 — multi-value (array column → fan-out): tasksByAssignee", () => {
     const plugin = () => Database.Plugin.create({
         components: {

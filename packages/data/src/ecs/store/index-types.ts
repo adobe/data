@@ -2,6 +2,7 @@
 
 import { StringKeyof } from "../../types/types.js";
 import type { Entity } from "../entity/entity.js";
+import type { Observe } from "../../observe/index.js";
 import { Components } from "./components.js";
 
 /**
@@ -141,6 +142,15 @@ export namespace Index {
             ? {
                 find(arg: FindArg<C, K>): readonly Entity[];
                 findRange(arg: RangeArg<FindArg<C, K>>): readonly Entity[];
+                /**
+                 * Reactive view of `find(arg)`. Emits the current sorted
+                 * bucket synchronously on subscribe, then again — on a
+                 * microtask after a committed transaction — whenever the
+                 * observed bucket's membership *or order* changes. Unlike
+                 * pairing `observe.select` with `find`, a sort-key-only
+                 * reorder is never silently swallowed.
+                 */
+                observe(arg: FindArg<C, K>): Observe<readonly Entity[]>;
             } & (U extends true
                 ? { get(arg: FindArg<C, K>): Entity | null }
                 : {})

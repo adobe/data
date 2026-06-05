@@ -37,8 +37,8 @@ function validSingleKeyScalarFind() {
     type DB = Database.FromPlugin<typeof plugin>;
     type Handle = DB["indexes"]["byName"];
 
-    // Single-string key → find takes the scalar value of that column.
-    type _FindArg = Assert<Equal<Parameters<Handle["find"]>[0], string>>;
+    // Single-string key → find takes a named object `{ col: value }`.
+    type _FindArg = Assert<Equal<Parameters<Handle["find"]>[0], { readonly name: string }>>;
     type _FindRet = Assert<Equal<ReturnType<Handle["find"]>, readonly Entity[]>>;
     type _RangeRet = Assert<Equal<ReturnType<Handle["findRange"]>, readonly Entity[]>>;
     // No `get` on non-unique handle.
@@ -79,8 +79,8 @@ function validUniqueExposesGet() {
     type DB = Database.FromPlugin<typeof plugin>;
     type Handle = DB["indexes"]["uniqueByEmail"];
 
-    // get returns Entity | null (null = known absent).
-    type _GetArg = Assert<Equal<Parameters<Handle["get"]>[0], string>>;
+    // get returns Entity | null (null = known absent); arg is a named object.
+    type _GetArg = Assert<Equal<Parameters<Handle["get"]>[0], { readonly email: string }>>;
     type _GetRet = Assert<Equal<ReturnType<Handle["get"]>, Entity | null>>;
 }
 
@@ -90,15 +90,16 @@ function validComputedScalarFind() {
             email: { type: "string" },
         },
         indexes: {
-            byEmailCi: { key: (email: string) => email.toLowerCase() },
+            byEmailCi: { key: { email: (c) => c.email.toLowerCase() }, components: ["email"] },
         },
     });
 
     type DB = Database.FromPlugin<typeof plugin>;
     type Handle = DB["indexes"]["byEmailCi"];
 
-    // Function key → find takes the function's return type.
-    type _FindArg = Assert<Equal<Parameters<Handle["find"]>[0], string>>;
+    // Computed (single-slot) key → find takes a named object whose field is
+    // the slot, typed by the extractor's return.
+    type _FindArg = Assert<Equal<Parameters<Handle["find"]>[0], { readonly email: string }>>;
 }
 
 function validComputedMultiValueFanout() {
@@ -107,15 +108,15 @@ function validComputedMultiValueFanout() {
             body: { type: "string" },
         },
         indexes: {
-            byKeyword: { key: (body: string) => body.split(/\s+/) },
+            byKeyword: { key: { keyword: (c) => c.body.split(/\s+/) }, components: ["body"] },
         },
     });
 
     type DB = Database.FromPlugin<typeof plugin>;
     type Handle = DB["indexes"]["byKeyword"];
 
-    // Array-returning function → find takes the element type.
-    type _FindArg = Assert<Equal<Parameters<Handle["find"]>[0], string>>;
+    // Array-returning computed slot → find field takes the element type.
+    type _FindArg = Assert<Equal<Parameters<Handle["find"]>[0], { readonly keyword: string }>>;
 }
 
 function validSlotMapFind() {
@@ -155,11 +156,11 @@ function validSortedOrderShape() {
 
     type DB = Database.FromPlugin<typeof plugin>;
     type Handle = DB["indexes"]["orderedChildrenOf"];
-    // Order doesn't change find's argument shape — still the scalar parent value.
-    type _FindArg = Assert<Equal<Parameters<Handle["find"]>[0], number>>;
+    // Order doesn't change find's argument shape — still the named `{ parent }`.
+    type _FindArg = Assert<Equal<Parameters<Handle["find"]>[0], { readonly parent: number }>>;
     // `observe` mirrors `find`'s argument shape and yields an Observe of the
     // sorted bucket.
-    type _ObserveArg = Assert<Equal<Parameters<Handle["observe"]>[0], number>>;
+    type _ObserveArg = Assert<Equal<Parameters<Handle["observe"]>[0], { readonly parent: number }>>;
     type _ObserveRet = Assert<Equal<ReturnType<Handle["observe"]>, Observe<readonly Entity[]>>>;
 }
 
@@ -208,9 +209,9 @@ function tIndexesAvailableInsideTransactions() {
         },
         transactions: {
             ensureUnique: (t, args: { name: string; email: string }) => {
-                const existing: Entity | null = t.indexes.uniqueByEmail.get(args.email);
+                const existing: Entity | null = t.indexes.uniqueByEmail.get({ email: args.email });
                 if (existing !== null) return existing;
-                const sameName: readonly Entity[] = t.indexes.byName.find(args.name);
+                const sameName: readonly Entity[] = t.indexes.byName.find({ name: args.name });
                 if (sameName.length > 0) return sameName[0];
                 return t.archetypes.User.insert(args);
             },
@@ -329,7 +330,7 @@ function invalidFindOnNonUnique() {
     };
 }
 
-function invalidFindWrongScalarType() {
+function invalidFindWrongFieldType() {
     const plugin = createPlugin({
         components: { team: { type: "number" } },
         indexes: { byTeam: { key: "team" } },
@@ -337,8 +338,12 @@ function invalidFindWrongScalarType() {
 
     type DB = Database.FromPlugin<typeof plugin>;
     const _bad = (db: DB) => {
-        // @ts-expect-error - team is a number, not a string
-        db.indexes.byTeam.find("not a number");
+        // @ts-expect-error - the `team` field is a number, not a string
+        db.indexes.byTeam.find({ team: "not a number" });
+        // @ts-expect-error - a bare scalar is no longer accepted; arg is an object
+        db.indexes.byTeam.find(1);
+        // valid call
+        db.indexes.byTeam.find({ team: 1 });
     };
 }
 
@@ -368,9 +373,9 @@ function invalidUniqueGetWrongType() {
 
     type DB = Database.FromPlugin<typeof plugin>;
     const _bad = (db: DB) => {
-        // @ts-expect-error - email is a string, not a number
-        db.indexes.uniqueByEmail.get(42);
+        // @ts-expect-error - email must be a string
+        db.indexes.uniqueByEmail.get({ email: 42 });
         // valid call
-        db.indexes.uniqueByEmail.get("x@y.z");
+        db.indexes.uniqueByEmail.get({ email: "x@y.z" });
     };
 }

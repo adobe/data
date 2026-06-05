@@ -11,10 +11,9 @@ import type { Entity } from "../../entity/entity.js";
  * the type-level mirror that drives `find` / `get` argument inference.
  */
 export type IndexKeyDecl =
-    | string                                           // bare column name → scalar find
+    | string                                           // bare column name → sugar for [column]
     | readonly string[]                                // column tuple → object find
-    | ((...args: any[]) => unknown)                    // function → scalar / fan-out element
-    | { readonly [slot: string]: string | ((...args: any[]) => unknown) };
+    | { readonly [slot: string]: string | ((components: Record<string, unknown>) => unknown) };  // slot map (computed keys take a named component object)
 
 /** `order` declaration: read columns + optional comparator. */
 export type IndexOrderDecl = {
@@ -115,20 +114,13 @@ const normalizeKey = (
     keyDecl: IndexKeyDecl,
     extraComponents: readonly string[],
 ): KeyExtractor => {
-    // Bare column name
-    if (typeof keyDecl === "string") {
-        return {
-            readColumns: [keyDecl],
-            extractFromEntity: (values) => {
-                const v = values[keyDecl];
-                return v === undefined ? null : v;
-            },
-            extractFromLookup: (arg) => arg,
-        };
-    }
+    // A bare column name is sugar for the single-column tuple `[col]`: the
+    // bucket key and the lookup arg are both the named object `{ col: value }`,
+    // so there is no scalar form to special-case below.
+    const decl = typeof keyDecl === "string" ? [keyDecl] : keyDecl;
     // String tuple
-    if (Array.isArray(keyDecl)) {
-        const cols = keyDecl as readonly string[];
+    if (Array.isArray(decl)) {
+        const cols = decl as readonly string[];
         return {
             readColumns: cols,
             extractFromEntity: (values) => {
@@ -143,21 +135,9 @@ const normalizeKey = (
             extractFromLookup: (arg) => arg,
         };
     }
-    // Function
-    if (typeof keyDecl === "function") {
-        return {
-            readColumns: extraComponents,
-            extractFromEntity: (values) => {
-                const args = extraComponents.map((c) => values[c]);
-                if (args.some((v) => v === undefined)) return null;
-                const out = (keyDecl as (...a: unknown[]) => unknown)(...args);
-                return out === undefined ? null : out;
-            },
-            extractFromLookup: (arg) => arg,
-        };
-    }
     // Slot map
-    const slotEntries = Object.entries(keyDecl as Record<string, string | ((...args: any[]) => unknown)>);
+    type SlotExtractor = (components: Record<string, unknown>) => unknown;
+    const slotEntries = Object.entries(decl as Record<string, string | SlotExtractor>);
     // Read set: identity-string columns + extra components for functions.
     const reads = new Set<string>();
     for (const [, v] of slotEntries) if (typeof v === "string") reads.add(v);
@@ -165,6 +145,20 @@ const normalizeKey = (
     return {
         readColumns: [...reads],
         extractFromEntity: (values) => {
+            // Computed slots receive a single named object of the index's
+            // declared `components` (not positional args), so an extractor
+            // reads `c.email` rather than relying on argument order.
+            let componentValues: Record<string, unknown> | null = null;
+            const componentObject = (): Record<string, unknown> | null => {
+                if (componentValues) return componentValues;
+                const obj: Record<string, unknown> = {};
+                for (const c of extraComponents) {
+                    const cv = values[c];
+                    if (cv === undefined) return null;
+                    obj[c] = cv;
+                }
+                return (componentValues = obj);
+            };
             const out: Record<string, unknown> = {};
             for (const [slot, ext] of slotEntries) {
                 if (typeof ext === "string") {
@@ -172,9 +166,9 @@ const normalizeKey = (
                     if (v === undefined) return null;
                     out[slot] = v;
                 } else {
-                    const args = extraComponents.map((c) => values[c]);
-                    if (args.some((v) => v === undefined)) return null;
-                    const v = (ext as (...a: unknown[]) => unknown)(...args);
+                    const components = componentObject();
+                    if (components === null) return null;
+                    const v = (ext as SlotExtractor)(components);
                     if (v === undefined) return null;
                     out[slot] = v;
                 }
@@ -541,13 +535,9 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
         return true;
     };
 
-    const scalarKey = typeof state.key === "string" || typeof state.key === "function";
-
+    // Every index key is object-shaped (a single column is sugar for a
+    // one-field object), so a `findRange` arg is always matched per field.
     const matchesArg = (bucketValue: unknown, arg: unknown): boolean => {
-        if (scalarKey) {
-            if (isOperatorObject(arg)) return matchesOps(bucketValue, arg as Record<string, unknown>);
-            return Object.is(bucketValue, arg);
-        }
         if (arg === null || typeof arg !== "object" || Array.isArray(arg)) return false;
         for (const field in arg as Record<string, unknown>) {
             const condition = (arg as Record<string, unknown>)[field];

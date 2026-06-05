@@ -201,7 +201,7 @@ describe("Index insertion big-O", () => {
                 archetypes: { User: ["email"] },
                 indexes: {
                     byEmailCi: {
-                        key: (email: string) => email.toLowerCase(),
+                        key: { email: (c) => c.email.toLowerCase() },
                         components: ["email"],
                     },
                 },
@@ -224,7 +224,7 @@ describe("Index insertion big-O", () => {
                 archetypes: { Doc: ["body"] },
                 indexes: {
                     docsByKeyword: {
-                        key: (body: string) => body.split(/\s+/),
+                        key: { keyword: (c) => c.body.split(/\s+/) },
                         components: ["body"],
                     },
                 },
@@ -256,7 +256,7 @@ describe("Index insertion big-O", () => {
                     playerByTeamRole: {
                         key: {
                             team: "team",
-                            role: (r: { role: string }) => r.role,
+                            role: (c) => c.roster.role,
                         },
                         components: ["roster"],
                     },
@@ -421,13 +421,13 @@ describe("Index read after batched inserts", () => {
         }
 
         const firstReadTime = measureMs(() => {
-            const out = db.indexes.ordered.find(0);
+            const out = db.indexes.ordered.find({ parent: 0 });
             expect(out.length).toBe(n);
             // Verify the sort actually happened.
             expect(out[0]).toBeDefined();
         });
         const secondReadTime = measureMs(() => {
-            const out = db.indexes.ordered.find(0);
+            const out = db.indexes.ordered.find({ parent: 0 });
             expect(out.length).toBe(n);
         });
 

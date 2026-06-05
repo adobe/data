@@ -823,6 +823,17 @@ describe("string ordering is by code point, never locale", () => {
         // index ever sorts via localeCompare — the no-locale guard.
         expect(db.indexes.byGroupSorted.find({ group: 1 })).toEqual([zero, A, Z, a]);
     });
+
+    it("ordered db.select sorts strings by code point (not numeric subtraction, not locale)", () => {
+        const db = Database.create(plugin());
+        const a = db.transactions.add({ group: 1, label: "a" });
+        const Z = db.transactions.add({ group: 1, label: "Z" });
+        const zero = db.transactions.add({ group: 1, label: "0" });
+        const A = db.transactions.add({ group: 1, label: "A" });
+        // No `where`, so this hits the archetype-scan sort in selectEntities —
+        // which previously used `a - b` (NaN for strings). Now code-point.
+        expect(db.select(["label"], { order: { label: true } })).toEqual([zero, A, Z, a]);
+    });
 });
 
 describe("archetype-scoped index", () => {

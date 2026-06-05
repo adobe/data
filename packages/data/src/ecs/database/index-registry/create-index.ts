@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Entity } from "../../entity/entity.js";
+import { compare } from "../../../functions/compare.js";
 
 // ============================================================================
 // Declaration shape (mirrors `Index` in store/index-types.ts at the value layer)
@@ -204,11 +205,8 @@ const defaultCompare = (
 ): ((a: Record<string, unknown>, b: Record<string, unknown>) => number) =>
     (a, b) => {
         for (const c of by) {
-            const va = a[c] as any;
-            const vb = b[c] as any;
-            if (va === vb) continue;
-            if (va < vb) return -1;
-            return 1;
+            const cmp = compare(a[c] as any, b[c] as any);
+            if (cmp !== 0) return cmp;
         }
         return 0;
     };

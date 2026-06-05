@@ -293,7 +293,7 @@ indexes: {
         order: {
             // code-point compare — never localeCompare (see Order semantics)
             by: ["item"],
-            compare: (a, b) => FractionalIndex.compare(a.item.fractIndex, b.item.fractIndex),
+            compare: (a, b) => compare(a.item.fractIndex, b.item.fractIndex),  // from @adobe/data/functions
         },
         unique: true,
     },
@@ -319,7 +319,7 @@ indexes: {
 
 - `order` is always a single object: `{ by, compare? }`. `by` declares which columns are read into the per-entity sort cache; `compare` (if present) is the comparator over `Pick<C, by>`. When `compare` is omitted, the default is ascending across `by` left-to-right with positional tie-break.
 - All direction control happens through the comparator — there are no `asc: true | false` booleans. Descending, mixed direction, case-insensitive, semver, and natural-sort comparators are all written the same way.
-- **String ordering is by code point, never locale.** The default comparator uses `<` / `>` (code-point), and you should too in custom comparators — use `FractionalIndex.compare` for fractional-index keys rather than `String.prototype.localeCompare`. `localeCompare` is collation-dependent (varies by host locale) and so would make index order non-deterministic across machines.
+- **String ordering is by code point, never locale.** The default comparator and the ordered-query sort both use the canonical `compare` from `@adobe/data/functions` (`<` / `>` — code-point for strings, numeric for numbers), and you should too in custom `compare` callbacks rather than `String.prototype.localeCompare`. `localeCompare` is collation-dependent (varies by host locale) and would make index / query order non-deterministic across machines.
 
 ### Auto-routing of `select`
 

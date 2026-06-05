@@ -62,11 +62,25 @@ type JPhysicsSystem = InstanceType<JoltModule["PhysicsSystem"]>;
 
 interface MatProps { restitution: number; friction: number }
 
+/** The live Jolt world, published once WASM init completes, so Jolt-native
+ *  extensions (e.g. `joltRagdoll`) can add their own bodies/constraints into the
+ *  same physics system the solver steps. The RAGDOLL object layer (no
+ *  self-collision) is exposed for ragdoll parts. */
+export interface JoltContext {
+    jolt: JoltModule;
+    physicsSystem: JPhysicsSystem;
+    bodyInterface: JBodyInterface;
+    ragdollLayer: number;
+}
+
 export const joltSolver = Database.Plugin.create({
     extends: Database.Plugin.combine(physicsData, jointData, physicsClock),
     components: {
         _joltBody: True.schema, // tag: this body has been mirrored into the Jolt world
         _joltJoint: True.schema, // tag: this joint has been mirrored into the Jolt world
+    },
+    resources: {
+        _joltContext: { default: null as JoltContext | null, transient: true },
     },
     systems: {
         joltStep: {
@@ -198,7 +212,13 @@ export const joltSolver = Database.Plugin.create({
 
                 return () => {
                     if (!J || !bodyInterface || !joltInterface) {
-                        if (!initStarted) { initStarted = true; initJolt().then((j: JoltModule) => { J = j; setup(j); }); }
+                        if (!initStarted) {
+                            initStarted = true;
+                            initJolt().then((j: JoltModule) => {
+                                J = j; setup(j);
+                                db.store.resources._joltContext = { jolt: j, physicsSystem: physicsSystem!, bodyInterface: bodyInterface!, ragdollLayer: L_RAGDOLL };
+                            });
+                        }
                         return; // WASM not ready yet
                     }
                     const jolt = J, bi = bodyInterface;

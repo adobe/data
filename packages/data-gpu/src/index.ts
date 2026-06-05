@@ -51,6 +51,7 @@ export { interpolation } from "./graphics/rendering/interpolation-plugin.js";
 export { modelCollider } from "./graphics/rendering/model-collider-plugin.js";
 export { boneColliders } from "./graphics/rendering/bone-collider-plugin.js";
 export { ragdollTrigger } from "./graphics/rendering/ragdoll-trigger-plugin.js";
+export { joltRagdoll } from "./graphics/rendering/jolt-ragdoll-plugin.js";
 export { fitBoneCapsules } from "./physics/ragdoll/fit-bone-capsules.js";
 export type { BoneCapsule } from "./physics/ragdoll/fit-bone-capsules.js";
 export { shapeGeometry } from "./graphics/scene/model/shape/shape-geometry-plugin.js";

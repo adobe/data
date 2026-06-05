@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeometry, ragdollTrigger, rapierSolver, joltSolver, Model, Orbit } from "@adobe/data-gpu";
+import { pbrRender, pbrSkinning, boneColliders, joltRagdoll, physicsRenderBridge, shapeGeometry, ragdollTrigger, rapierSolver, Model, Orbit } from "@adobe/data-gpu";
 
 /**
  * ragdoll — a rigged humanoid walks, then goes limp and collapses onto the floor.
@@ -9,10 +9,10 @@ import { pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeomet
  * (`ragdollScene`): per-bone capsules are auto-fitted from the skin and track the
  * walk, then `triggerRagdoll` flips them to dynamic so the skinned mesh flops.
  *
- * Jolt shows the cone (swing-twist) anatomical limits; Rapier (whose binding has
- * no cone constraint) shows a free-ball ragdoll — an honest side-by-side. The
- * base is backend-agnostic via `ragdollTrigger`, so a Jolt-native `Ragdoll`
- * backend can later replace our generic one on the Jolt panel.
+ * The two panels use **different ragdoll backends** through the same scene +
+ * `ragdollTrigger`: Jolt runs its **native `Ragdoll`** (`joltRagdoll` — swing-twist
+ * limits, parent-child collision filtering, pose-driven), while Rapier runs **our
+ * generic `boneColliders`** (free-ball, since Rapier's binding has no cone joint).
  */
 const ragdollScene = Database.Plugin.create({
     extends: Database.Plugin.combine(pbrRender, pbrSkinning, shapeGeometry, physicsRenderBridge, ragdollTrigger, Orbit.plugin),
@@ -69,4 +69,4 @@ const ragdollScene = Database.Plugin.create({
 });
 
 export const ragdollRapierPlugin = Database.Plugin.combine(ragdollScene, boneColliders, rapierSolver);
-export const ragdollJoltPlugin = Database.Plugin.combine(ragdollScene, boneColliders, joltSolver);
+export const ragdollJoltPlugin = Database.Plugin.combine(ragdollScene, joltRagdoll); // joltRagdoll brings joltSolver

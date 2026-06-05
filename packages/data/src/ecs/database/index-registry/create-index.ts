@@ -317,10 +317,11 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
     const bucketEntriesFor = (
         values: Readonly<Record<string, unknown>>,
     ): { key: string; value: unknown }[] => {
-        // Archetype scope: an entity that lacks any of the scoped archetype's
-        // components is out of scope and indexed in no bucket — this is what
-        // excludes entities from other archetypes that merely share the key.
-        for (const c of scopeColumns) if (values[c] === undefined) return [];
+        // No per-entity scope check here: archetype scope is enforced upstream
+        // by the registry's archetype-keyed dispatch (an index is only invoked
+        // for archetypes whose components are a superset of its `readColumns`,
+        // which includes the scope columns), so any entity reaching this point
+        // is already in scope.
         const raw = keyEx.extractFromEntity(values);
         if (raw === null) return [];
         const expanded = expandBucketKeys(raw);

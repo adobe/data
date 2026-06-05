@@ -223,9 +223,11 @@ export function createStore<
         if (cached) return cached;
         const rawInsert = archetype.insert.bind(archetype);
         const wrappedInsert = (values: any) => {
-            indexRegistry.checkUniqueAvailableForInsert(values);
+            // `archetype` is the raw core archetype — its id + component set
+            // let the registry dispatch to only the applicable indexes.
+            indexRegistry.checkUniqueAvailableForInsert(archetype, values);
             const entity = rawInsert(values);
-            indexRegistry.applyInsert(entity, values);
+            indexRegistry.applyInsert(entity, archetype, values);
             return entity;
         };
         const wrapped = new Proxy(archetype, {
@@ -258,13 +260,18 @@ export function createStore<
 
     const updateEntity = (entity: Entity, values: any) => {
         indexRegistry.checkUniqueAvailableForUpdate(entity, values);
+        // `update` can move the entity to a different archetype (when it
+        // adds/removes components), so capture both ends for dispatch.
+        const from = core.locate(entity)?.archetype ?? null;
         core.update(entity, values);
-        indexRegistry.applyUpdate(entity);
+        const to = core.locate(entity)?.archetype ?? null;
+        indexRegistry.applyUpdate(entity, from, to);
     };
 
     const deleteEntity = (entity: Entity) => {
+        const archetype = core.locate(entity)?.archetype ?? null;
         core.delete(entity);
-        indexRegistry.applyDelete(entity);
+        indexRegistry.applyDelete(entity, archetype);
     };
 
     const extend = (schema: Store.Schema<any, any, any>) => {

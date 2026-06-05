@@ -903,6 +903,40 @@ describe("archetype-scoped index", () => {
     });
 });
 
+describe("archetype-changing update keeps indexes correct (dispatch union)", () => {
+    // `byTag` only applies to archetypes that have `tag`. Adding/removing the
+    // `tag` component moves the entity between archetypes, so the entity must
+    // enter / leave the index accordingly — this exercises the registry's
+    // union(from, to) dispatch for updates that change archetype.
+    const plugin = () => Database.Plugin.create({
+        components: { tag: { type: "string" }, name: { type: "string" } },
+        archetypes: { Tagged: ["tag", "name"], Named: ["name"] },
+        indexes: { byTag: { key: "tag" } },
+        transactions: {
+            addTagged: (t, a: { tag: string; name: string }) => t.archetypes.Tagged.insert(a),
+            addNamed: (t, a: { name: string }) => t.archetypes.Named.insert(a),
+            setTag: (t, a: { entity: number; tag: string }) => t.update(a.entity, { tag: a.tag }),
+            removeTag: (t, e: number) => t.update(e, { tag: undefined }),
+        },
+    });
+
+    it("removes the entity from the index when an update drops the indexed component", () => {
+        const db = Database.create(plugin());
+        const e = db.transactions.addTagged({ tag: "x", name: "n" });
+        expect(db.indexes.byTag.find({ tag: "x" })).toEqual([e]);
+        db.transactions.removeTag(e);   // Tagged -> Named: byTag no longer applies
+        expect(db.indexes.byTag.find({ tag: "x" })).toEqual([]);
+    });
+
+    it("adds the entity to the index when an update introduces the indexed component", () => {
+        const db = Database.create(plugin());
+        const e = db.transactions.addNamed({ name: "n" });
+        expect(db.indexes.byTag.find({ tag: "y" })).toEqual([]);
+        db.transactions.setTag({ entity: e, tag: "y" });   // Named -> Tagged: enters byTag
+        expect(db.indexes.byTag.find({ tag: "y" })).toEqual([e]);
+    });
+});
+
 describe("findRange — operator filters on the bucket key", () => {
     it("filters by range operators on a tuple-keyed index", () => {
         const plugin = Database.Plugin.create({

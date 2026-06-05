@@ -1,8 +1,21 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Entity } from "../../entity/entity.js";
+import type { ArchetypeId } from "../../archetype/archetype.js";
 import type { TransactionResult } from "../transactional-store/index.js";
 import { createIndex, IndexKeyDecl, IndexOrderDecl, IndexState, RuntimeIndex } from "./create-index.js";
+
+/**
+ * The minimal archetype shape the registry needs to dispatch a mutation to
+ * only the indexes that apply to it: a stable id (cache key) and the component
+ * set. An index applies to an archetype iff the archetype's components are a
+ * superset of the index's `readColumns` — which already folds in the
+ * archetype-scope columns, so this single check covers scoping too.
+ */
+export type IndexableArchetype = {
+    readonly id: ArchetypeId;
+    readonly components: ReadonlySet<string>;
+};
 
 /**
  * Reads the post-transaction values of an entity, or returns null when the
@@ -58,14 +71,23 @@ export interface IndexRegistry {
     apply(result: TransactionResult<any>): void;
     /** Drop all bucket entries without reseeding. */
     clear(): void;
-    /** Reflect a single insert. Throws on unique conflict — pre-check first. */
-    applyInsert(entity: Entity, values: Readonly<Record<string, unknown>>): void;
-    /** Reflect a single update by re-reading the entity's full values. */
-    applyUpdate(entity: Entity): void;
-    /** Reflect a single delete. */
-    applyDelete(entity: Entity): void;
-    /** Throws if any unique index would collide. Call before mutating. */
-    checkUniqueAvailableForInsert(values: Readonly<Record<string, unknown>>): void;
+    /**
+     * Reflect a single insert into the entity's archetype. Dispatches to only
+     * the indexes applicable to that archetype — O(applicable), not O(indexes).
+     */
+    applyInsert(entity: Entity, archetype: IndexableArchetype, values: Readonly<Record<string, unknown>>): void;
+    /**
+     * Reflect a single update by re-reading the entity's full values. `from`
+     * is the archetype before the update, `to` the archetype after (they
+     * differ only when the update added/removed components); the union of
+     * their applicable indexes is updated so an entity that changes archetype
+     * is removed from indexes it left and added to those it entered.
+     */
+    applyUpdate(entity: Entity, from: IndexableArchetype | null, to: IndexableArchetype | null): void;
+    /** Reflect a single delete from the entity's (pre-delete) archetype. */
+    applyDelete(entity: Entity, archetype: IndexableArchetype | null): void;
+    /** Throws if any unique index applicable to the insert archetype would collide. Call before mutating. */
+    checkUniqueAvailableForInsert(archetype: IndexableArchetype, values: Readonly<Record<string, unknown>>): void;
     /** Like the insert version, but excludes self-collisions for `entity`. */
     checkUniqueAvailableForUpdate(entity: Entity, patch: Readonly<Record<string, unknown>>): void;
 }
@@ -124,6 +146,24 @@ export const createIndexRegistry = (
     const entries = new Map<string, RegisteredEntry>();
     const shapeToName = new Map<string, string>();
 
+    // archetype id -> indexes applicable to it (readColumns ⊆ components),
+    // computed lazily on first mutation to an archetype and cached. Archetypes
+    // are immutable, so an entry only goes stale when a new index registers —
+    // we clear the whole cache there. This turns per-mutation index dispatch
+    // from O(all indexes) into an O(1) lookup + O(applicable) walk.
+    const applicableCache = new Map<ArchetypeId, RuntimeIndex[]>();
+    const indexesFor = (archetype: IndexableArchetype): RuntimeIndex[] => {
+        let list = applicableCache.get(archetype.id);
+        if (list === undefined) {
+            list = [];
+            for (const idx of indexes.values()) {
+                if (idx.readColumns.every((c) => archetype.components.has(c))) list.push(idx);
+            }
+            applicableCache.set(archetype.id, list);
+        }
+        return list;
+    };
+
     const register = (name: string, decl: IndexDeclarationObject): RuntimeIndex | null => {
         const existing = entries.get(name);
         if (existing) {
@@ -164,6 +204,8 @@ export const createIndexRegistry = (
         indexes.set(name, idx);
         entries.set(name, { decl, index: idx });
         shapeToName.set(sk, name);
+        // A new index can apply to already-seen archetypes — drop the cache.
+        applicableCache.clear();
         return idx;
     };
 
@@ -191,35 +233,55 @@ export const createIndexRegistry = (
         for (const idx of indexes.values()) idx.clear();
     };
 
-    const applyInsert = (entity: Entity, values: Readonly<Record<string, unknown>>): void => {
-        if (indexes.size === 0) return;
-        for (const idx of indexes.values()) idx.add(entity, values);
+    // Names are needed for conflict messages; resolve lazily from the map.
+    const nameOf = (index: RuntimeIndex): string => {
+        for (const [name, idx] of indexes) if (idx === index) return name;
+        return "<index>";
     };
 
-    const applyUpdate = (entity: Entity): void => {
+    const applyInsert = (entity: Entity, archetype: IndexableArchetype, values: Readonly<Record<string, unknown>>): void => {
+        if (indexes.size === 0) return;
+        for (const idx of indexesFor(archetype)) idx.add(entity, values);
+    };
+
+    const applyUpdate = (entity: Entity, from: IndexableArchetype | null, to: IndexableArchetype | null): void => {
         if (indexes.size === 0) return;
         const values = read(entity);
         if (values === null) {
-            for (const idx of indexes.values()) idx.remove(entity);
+            // Entity gone — remove from everything it could have been in.
+            for (const idx of from ? indexesFor(from) : indexes.values()) idx.remove(entity);
             return;
         }
-        for (const idx of indexes.values()) idx.update(entity, values);
+        // Update the indexes of the destination archetype; when the update
+        // changed archetype, also the source's, so the entity is dropped from
+        // indexes it no longer belongs to. Each `idx.update` re-derives the
+        // entity's buckets from `values`, so add / move / remove all fall out
+        // of the same call.
+        const toList = to ? indexesFor(to) : [];
+        for (const idx of toList) idx.update(entity, values);
+        if (from && (!to || from.id !== to.id)) {
+            const seen = toList.length > 0 ? new Set(toList) : null;
+            for (const idx of indexesFor(from)) {
+                if (seen === null || !seen.has(idx)) idx.update(entity, values);
+            }
+        }
     };
 
-    const applyDelete = (entity: Entity): void => {
+    const applyDelete = (entity: Entity, archetype: IndexableArchetype | null): void => {
         if (indexes.size === 0) return;
-        for (const idx of indexes.values()) idx.remove(entity);
+        for (const idx of archetype ? indexesFor(archetype) : indexes.values()) idx.remove(entity);
     };
 
     const checkUniqueAvailableForInsert = (
+        archetype: IndexableArchetype,
         values: Readonly<Record<string, unknown>>,
     ): void => {
-        for (const [name, idx] of indexes) {
+        for (const idx of indexesFor(archetype)) {
             if (!idx.unique) continue;
             const collidesWith = idx.checkUniqueAvailable(values, null);
             if (collidesWith !== null) {
                 throw new Error(
-                    `Unique index conflict on "${name}": existing entity ${collidesWith}.`,
+                    `Unique index conflict on "${nameOf(idx)}": existing entity ${collidesWith}.`,
                 );
             }
         }
@@ -229,14 +291,16 @@ export const createIndexRegistry = (
         entity: Entity,
         patch: Readonly<Record<string, unknown>>,
     ): void => {
-        let hasUnique = false;
-        for (const idx of indexes.values()) { if (idx.unique) { hasUnique = true; break; } }
-        if (!hasUnique) return;
         const current = read(entity);
         if (current === null) return;
         const effective: Record<string, unknown> = { ...current, ...patch };
         for (const [name, idx] of indexes) {
             if (!idx.unique) continue;
+            // Applicability gate (replaces the per-entity scope check inside
+            // the index): only test indexes whose read columns the post-update
+            // entity actually has, so a scoped unique index is never checked
+            // against an entity outside its archetype.
+            if (!idx.readColumns.every((c) => effective[c] !== undefined)) continue;
             const collidesWith = idx.checkUniqueAvailable(effective, entity);
             if (collidesWith !== null) {
                 throw new Error(

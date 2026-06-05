@@ -5,6 +5,7 @@ import { Database, type Entity } from "@adobe/data/ecs";
 import { True } from "@adobe/data/schema";
 import { physicsClock } from "../physics-clock-plugin.js";
 import { physicsData } from "../physics-data-plugin.js";
+import { jointData } from "../joint/joint-plugin.js";
 import { BodyType } from "../body/body-type/body-type.js";
 import { ColliderShape } from "../body/collider-shape/collider-shape.js";
 
@@ -38,13 +39,16 @@ const NEW_STATIC = { exclude: ["linearVelocity", "_rapierBody"] } as const;
 // gained `_prevPosition` (only dynamics do) — so excluding it isolates kinematics.
 const KINEMATIC = ["bodyType", "position", "rotation", "_rapierBody"] as const;
 const KINEMATIC_ONLY = { exclude: ["_prevPosition"] } as const;
+const JOINT = ["jointType", "jointBodyA", "jointBodyB", "jointAnchorA", "jointAnchorB", "jointAxis", "jointMinLimit", "jointMaxLimit"] as const;
+const NEW_JOINT = { exclude: ["_rapierJoint"] } as const;
 
 interface MatProps { density: number; restitution: number; friction: number }
 
 export const rapierSolver = Database.Plugin.create({
-    extends: Database.Plugin.combine(physicsData, physicsClock),
+    extends: Database.Plugin.combine(physicsData, jointData, physicsClock),
     components: {
         _rapierBody: True.schema, // tag: this body has been mirrored into the Rapier world
+        _rapierJoint: True.schema, // tag: this joint has been mirrored into the Rapier world
     },
     systems: {
         rapierStep: {
@@ -132,6 +136,27 @@ export const rapierSolver = Database.Plugin.create({
                             if (!colliderReady(id, shape)) continue; // auto-collider not generated yet
                             ensureBody(id, "static", shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r), 0, 0, 0);
                             db.store.update(id, { _rapierBody: true });
+                        }
+                    }
+
+                    // Mirror new joints once both their bodies exist (tag + exclude;
+                    // tail→head since tagging migrates the row). Anchors are body-local.
+                    for (const arch of db.store.queryArchetypes(JOINT, NEW_JOINT)) {
+                        const ids = arch.columns.id, jt = arch.columns.jointType;
+                        const ba = arch.columns.jointBodyA, bb = arch.columns.jointBodyB;
+                        const aa = arch.columns.jointAnchorA, ab = arch.columns.jointAnchorB, axc = arch.columns.jointAxis;
+                        const lo = arch.columns.jointMinLimit, hi = arch.columns.jointMaxLimit;
+                        for (let r = arch.rowCount - 1; r >= 0; r--) {
+                            const a = bodies.get(ba.get(r)), b = bodies.get(bb.get(r));
+                            if (!a || !b) continue; // a body isn't mirrored yet — retry next frame
+                            const type = jt.get(r), pa = aa.get(r), pb = ab.get(r), ax = axc.get(r), min = lo.get(r), max = hi.get(r);
+                            const A = { x: pa[0], y: pa[1], z: pa[2] }, B = { x: pb[0], y: pb[1], z: pb[2] };
+                            let jd: RAPIER.JointData;
+                            if (type === "fixed") jd = RAPIER.JointData.fixed(A, { x: 0, y: 0, z: 0, w: 1 }, B, { x: 0, y: 0, z: 0, w: 1 });
+                            else if (type === "hinge") { jd = RAPIER.JointData.revolute(A, B, { x: ax[0], y: ax[1], z: ax[2] }); if (min < max) { jd.limitsEnabled = true; jd.limits = [min, max]; } }
+                            else jd = RAPIER.JointData.spherical(A, B);
+                            world.createImpulseJoint(jd, a, b, true);
+                            db.store.update(ids.get(r), { _rapierJoint: true });
                         }
                     }
 

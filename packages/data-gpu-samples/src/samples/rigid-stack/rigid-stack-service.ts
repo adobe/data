@@ -2,7 +2,7 @@
 
 import { Database, type Entity } from "@adobe/data/ecs";
 import { Quat } from "@adobe/data/math";
-import { pbrRender, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, modelCollider, ColliderShape, Orbit } from "@adobe/data-gpu";
+import { pbrRender, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, modelCollider, jointData, ColliderShape, Orbit } from "@adobe/data-gpu";
 
 // Studio HDR for IBL © Poly Haven, CC0.
 const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr";
@@ -86,7 +86,7 @@ const DROPS: Drop[] = (() => {
  * side. The drop sequence is deterministic (seeded), so both see it identically.
  */
 const rigidStackScene = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrRender, shapeGeometry, physicsRenderBridge, modelCollider, Orbit.plugin),
+    extends: Database.Plugin.combine(pbrRender, shapeGeometry, physicsRenderBridge, modelCollider, jointData, Orbit.plugin),
     resources: {
         _spawnAccum: { default: 0 as number, transient: true },
         _spawnElapsed: { default: 0 as number, transient: true },
@@ -165,6 +165,31 @@ const rigidStackScene = Database.Plugin.create({
                     position: [SPAWN_CX - 2 + i * 2, 15 + i * 5, -1 + i],
                     rotation: randomQuat(seededRng(0x5eed + i)), linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0],
                 });
+            }
+            // A hanging chain: a static anchor + capsule links joined by `point` (ball)
+            // joints, so it swings freely and the sweeping bar knocks it around. Each
+            // link's ends are at ±(halfHeight + radius) in its local Y; consecutive
+            // anchors coincide in world space, so the chain forms taut.
+            const LINK_HY = 0.4, LINK_R = 0.22, LINK_END = LINK_HY + LINK_R, LINK_LEN = 2 * LINK_END;
+            const CX = SWEEP_CX, CZ = BIN - 3, ANCHOR_Y = 9, ANCHOR_HH = 0.25;
+            const steel = t.resources.materials.steel;
+            const anchor = t.archetypes.StaticCollider.insert({
+                colliderShape: "box", halfExtents: [0.3, ANCHOR_HH, 0.3], material: steel,
+                position: [CX, ANCHOR_Y, CZ], rotation: IDENTITY,
+            });
+            let prev = anchor, prevBottom: [number, number, number] = [0, -ANCHOR_HH, 0];
+            for (let i = 0; i < 6; i++) {
+                const link = t.archetypes.RigidBody.insert({
+                    bodyType: "dynamic", colliderShape: "capsule", halfExtents: [LINK_R, LINK_HY, 0], material: steel,
+                    position: [CX, ANCHOR_Y - ANCHOR_HH - LINK_END - i * LINK_LEN, CZ],
+                    rotation: IDENTITY, linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0],
+                });
+                t.archetypes.Joint.insert({
+                    jointType: "point", jointBodyA: prev, jointBodyB: link,
+                    jointAnchorA: prevBottom, jointAnchorB: [0, LINK_END, 0],
+                    jointAxis: [0, 0, 1], jointMinLimit: 0, jointMaxLimit: 0,
+                });
+                prev = link; prevBottom = [0, -LINK_END, 0];
             }
         },
         spawnBody(t, args: { index: number }) {

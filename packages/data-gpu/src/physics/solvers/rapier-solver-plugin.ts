@@ -39,7 +39,7 @@ const NEW_STATIC = { exclude: ["linearVelocity", "_rapierBody"] } as const;
 // gained `_prevPosition` (only dynamics do) — so excluding it isolates kinematics.
 const KINEMATIC = ["bodyType", "position", "rotation", "_rapierBody"] as const;
 const KINEMATIC_ONLY = { exclude: ["_prevPosition"] } as const;
-const JOINT = ["jointType", "jointBodyA", "jointBodyB", "jointAnchorA", "jointAnchorB", "jointAxis", "jointMinLimit", "jointMaxLimit"] as const;
+const JOINT = ["jointType", "jointBodyA", "jointBodyB", "jointAnchorA", "jointAnchorB", "jointAxis", "jointMinLimit", "jointMaxLimit", "jointSwingLimit"] as const;
 const NEW_JOINT = { exclude: ["_rapierJoint"] } as const;
 
 interface MatProps { density: number; restitution: number; friction: number }
@@ -72,7 +72,7 @@ export const rapierSolver = Database.Plugin.create({
                     return !!(r?.convexPoints || r?.colliderMesh);
                 };
 
-                const ensureBody = (id: Entity, motion: BodyType, shape: ColliderShape, hx: number, hy: number, hz: number, mat: Entity, px: number, py: number, pz: number, q: ArrayLike<number>, vx: number, vy: number, vz: number): void => {
+                const ensureBody = (id: Entity, motion: BodyType, shape: ColliderShape, hx: number, hy: number, hz: number, mat: Entity, px: number, py: number, pz: number, q: ArrayLike<number>, vx: number, vy: number, vz: number, wx: number, wy: number, wz: number): void => {
                     if (!world || bodies.has(id)) return;
                     const m = matPropsOf(mat);
                     // dynamic = simulated; kinematic = position-driven (pushes dynamics,
@@ -81,7 +81,7 @@ export const rapierSolver = Database.Plugin.create({
                         : motion === "kinematic" ? RAPIER.RigidBodyDesc.kinematicPositionBased()
                             : RAPIER.RigidBodyDesc.fixed();
                     desc.setTranslation(px, py, pz).setRotation({ x: q[0], y: q[1], z: q[2], w: q[3] });
-                    if (motion === "dynamic") desc.setLinvel(vx, vy, vz);
+                    if (motion === "dynamic") { desc.setLinvel(vx, vy, vz); desc.setAngvel({ x: wx, y: wy, z: wz }); }
                     const body = world.createRigidBody(desc);
                     // capsule: Y-aligned, halfHeight = cylinder half (hy), radius = hx.
                     // hull: convex hull of the authored point cloud (read once here).
@@ -116,11 +116,11 @@ export const rapierSolver = Database.Plugin.create({
                     // this loop only touches genuinely-new bodies, so it's cold).
                     for (const arch of db.store.queryArchetypes(RIGID, NEW_RIGID)) {
                         const ids = arch.columns.id, bt = arch.columns.bodyType, cs = arch.columns.colliderShape, mat = arch.columns.material;
-                        const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation, lv = arch.columns.linearVelocity;
+                        const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation, lv = arch.columns.linearVelocity, av = arch.columns.angularVelocity;
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
-                            const id = ids.get(r), bodyType = bt.get(r), shape = cs.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r), v = lv.get(r);
+                            const id = ids.get(r), bodyType = bt.get(r), shape = cs.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r), v = lv.get(r), w = av.get(r);
                             if (!colliderReady(id, shape)) continue; // auto-collider not generated yet
-                            ensureBody(id, bodyType, shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o, v[0], v[1], v[2]);
+                            ensureBody(id, bodyType, shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o, v[0], v[1], v[2], w[0], w[1], w[2]);
                             // Tag as mirrored. Dynamics also migrate onto the derived prev-pose
                             // snapshot (the interpolator reads it); kinematic bodies are authored
                             // each frame, so they render at the live pose with no snapshot — the
@@ -134,7 +134,7 @@ export const rapierSolver = Database.Plugin.create({
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
                             const id = ids.get(r), shape = cs.get(r), h = he.get(r), p = pos.get(r);
                             if (!colliderReady(id, shape)) continue; // auto-collider not generated yet
-                            ensureBody(id, "static", shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r), 0, 0, 0);
+                            ensureBody(id, "static", shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r), 0, 0, 0, 0, 0, 0);
                             db.store.update(id, { _rapierBody: true });
                         }
                     }
@@ -154,6 +154,9 @@ export const rapierSolver = Database.Plugin.create({
                             let jd: RAPIER.JointData;
                             if (type === "fixed") jd = RAPIER.JointData.fixed(A, { x: 0, y: 0, z: 0, w: 1 }, B, { x: 0, y: 0, z: 0, w: 1 });
                             else if (type === "hinge") { jd = RAPIER.JointData.revolute(A, B, { x: ax[0], y: ax[1], z: ax[2] }); if (min < max) { jd.limitsEnabled = true; jd.limits = [min, max]; } }
+                            // point — and cone: the rapier3d-compat binding has no cone/swing-twist
+                            // limit, so a `cone` joint is approximated as a free spherical (use joltSolver
+                            // for anatomical ragdoll limits; see physics/README.md).
                             else jd = RAPIER.JointData.spherical(A, B);
                             world.createImpulseJoint(jd, a, b, true);
                             db.store.update(ids.get(r), { _rapierJoint: true });

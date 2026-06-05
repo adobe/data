@@ -45,7 +45,7 @@ const NEW_STATIC = { exclude: ["linearVelocity", "_joltBody"] } as const;
 // gained `_prevPosition` (only dynamics do) — so excluding it isolates kinematics.
 const KINEMATIC = ["bodyType", "position", "rotation", "_joltBody"] as const;
 const KINEMATIC_ONLY = { exclude: ["_prevPosition"] } as const;
-const JOINT = ["jointType", "jointBodyA", "jointBodyB", "jointAnchorA", "jointAnchorB", "jointAxis", "jointMinLimit", "jointMaxLimit"] as const;
+const JOINT = ["jointType", "jointBodyA", "jointBodyB", "jointAnchorA", "jointAnchorB", "jointAxis", "jointMinLimit", "jointMaxLimit", "jointSwingLimit"] as const;
 const NEW_JOINT = { exclude: ["_joltJoint"] } as const;
 
 type JoltModule = Awaited<ReturnType<typeof initJolt>>;
@@ -129,7 +129,7 @@ export const joltSolver = Database.Plugin.create({
                     kPos = new jolt.RVec3(0, 0, 0); kRot = new jolt.Quat(0, 0, 0, 1);
                 };
 
-                const ensureBody = (jolt: JoltModule, bi: JBodyInterface, id: Entity, motion: BodyType, shape: ColliderShape, hx: number, hy: number, hz: number, mat: Entity, px: number, py: number, pz: number, q: ArrayLike<number>): void => {
+                const ensureBody = (jolt: JoltModule, bi: JBodyInterface, id: Entity, motion: BodyType, shape: ColliderShape, hx: number, hy: number, hz: number, mat: Entity, px: number, py: number, pz: number, q: ArrayLike<number>, vx: number, vy: number, vz: number, wx: number, wy: number, wz: number): void => {
                     if (bodies.has(id)) return;
                     const m = matPropsOf(mat);
                     // box needs a Vec3 half-extent temporary; sphere/capsule are scalar;
@@ -177,6 +177,11 @@ export const joltSolver = Database.Plugin.create({
                     settings.mFriction = m.friction;
                     const body = bi.CreateBody(settings);
                     bi.AddBody(body.GetID(), motion === "static" ? jolt.EActivation_DontActivate : jolt.EActivation_Activate);
+                    if (motion === "dynamic" && (vx || vy || vz || wx || wy || wz)) {
+                        const lv = new jolt.Vec3(vx, vy, vz), av = new jolt.Vec3(wx, wy, wz);
+                        bi.SetLinearAndAngularVelocity(body.GetID(), lv, av);
+                        jolt.destroy(lv); jolt.destroy(av);
+                    }
                     bodies.set(id, body);
                     // free the construction temporaries (the body keeps a ref to the shape)
                     jolt.destroy(settings); jolt.destroy(pos); jolt.destroy(rot);
@@ -196,11 +201,11 @@ export const joltSolver = Database.Plugin.create({
                     // this loop only touches genuinely-new bodies, so it's cold).
                     for (const arch of db.store.queryArchetypes(RIGID, NEW_RIGID)) {
                         const ids = arch.columns.id, bt = arch.columns.bodyType, cs = arch.columns.colliderShape, mat = arch.columns.material;
-                        const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation;
+                        const he = arch.columns.halfExtents, pos = arch.columns.position, ori = arch.columns.rotation, lv = arch.columns.linearVelocity, av = arch.columns.angularVelocity;
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
-                            const id = ids.get(r), bodyType = bt.get(r), shape = cs.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r);
+                            const id = ids.get(r), bodyType = bt.get(r), shape = cs.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r), v = lv.get(r), w = av.get(r);
                             if (!colliderReady(id, shape)) continue; // auto-collider not generated yet
-                            ensureBody(jolt, bi, id, bodyType, shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o);
+                            ensureBody(jolt, bi, id, bodyType, shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o, v[0], v[1], v[2], w[0], w[1], w[2]);
                             // Tag as mirrored. Dynamics also migrate onto the derived prev-pose
                             // snapshot (the interpolator reads it); kinematic bodies are authored
                             // each frame, so they render at the live pose with no snapshot — the
@@ -214,7 +219,7 @@ export const joltSolver = Database.Plugin.create({
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
                             const id = ids.get(r), shape = cs.get(r), h = he.get(r), p = pos.get(r);
                             if (!colliderReady(id, shape)) continue; // auto-collider not generated yet
-                            ensureBody(jolt, bi, id, "static", shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r));
+                            ensureBody(jolt, bi, id, "static", shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r), 0, 0, 0, 0, 0, 0);
                             db.store.update(id, { _joltBody: true });
                         }
                     }
@@ -223,7 +228,7 @@ export const joltSolver = Database.Plugin.create({
                     // Anchors/axes are body-local; map to world (Jolt WorldSpace) via spawn pose.
                     for (const arch of db.store.queryArchetypes(JOINT, NEW_JOINT)) {
                         const ids = arch.columns.id, jt = arch.columns.jointType, ba = arch.columns.jointBodyA, bbc = arch.columns.jointBodyB;
-                        const aa = arch.columns.jointAnchorA, ab = arch.columns.jointAnchorB, axc = arch.columns.jointAxis, lo = arch.columns.jointMinLimit, hi = arch.columns.jointMaxLimit;
+                        const aa = arch.columns.jointAnchorA, ab = arch.columns.jointAnchorB, axc = arch.columns.jointAxis, lo = arch.columns.jointMinLimit, hi = arch.columns.jointMaxLimit, sw = arch.columns.jointSwingLimit;
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
                             const a = bodies.get(ba.get(r)), b = bodies.get(bbc.get(r));
                             if (!a || !b || !physicsSystem) continue; // a body isn't mirrored yet — retry next frame
@@ -246,6 +251,21 @@ export const joltSolver = Database.Plugin.create({
                                 hs.mHingeAxis1 = h1; hs.mHingeAxis2 = h2; hs.mNormalAxis1 = n1; hs.mNormalAxis2 = n2;
                                 const min = lo.get(r), max = hi.get(r); if (min < max) { hs.mLimitsMin = min; hs.mLimitsMax = max; }
                                 settings = hs; temps.push(h1, h2, n1, n2, hs);
+                            } else if (type === "cone") {
+                                // swing-twist: bone axis bound to a (symmetric) cone around the
+                                // reference axis, plus a twist range about it — anatomical limits.
+                                const ax = axc.get(r);
+                                rotateInto(recA.rotation, ax[0], ax[1], ax[2], wAxis); perpInto(wAxis, wNorm);
+                                const t1 = new jolt.Vec3(wAxis[0], wAxis[1], wAxis[2]), t2 = new jolt.Vec3(wAxis[0], wAxis[1], wAxis[2]);
+                                const pa1 = new jolt.Vec3(wNorm[0], wNorm[1], wNorm[2]), pa2 = new jolt.Vec3(wNorm[0], wNorm[1], wNorm[2]);
+                                const cs = new jolt.SwingTwistConstraintSettings();
+                                cs.mSpace = jolt.EConstraintSpace_WorldSpace; cs.mPosition1 = p1; cs.mPosition2 = p2;
+                                cs.mTwistAxis1 = t1; cs.mTwistAxis2 = t2; cs.mPlaneAxis1 = pa1; cs.mPlaneAxis2 = pa2;
+                                cs.mSwingType = jolt.ESwingType_Cone;
+                                const swing = sw.get(r); cs.mNormalHalfConeAngle = swing; cs.mPlaneHalfConeAngle = swing;
+                                const min = lo.get(r), max = hi.get(r);
+                                cs.mTwistMinAngle = min < max ? min : -Math.PI; cs.mTwistMaxAngle = min < max ? max : Math.PI;
+                                settings = cs; temps.push(t1, t2, pa1, pa2, cs);
                             } else if (type === "fixed") {
                                 const fs = new jolt.FixedConstraintSettings(); fs.mSpace = jolt.EConstraintSpace_WorldSpace; fs.mPoint1 = p1; fs.mPoint2 = p2;
                                 settings = fs; temps.push(fs);

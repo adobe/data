@@ -27,11 +27,11 @@ lose track. Keep it honest about approximations and limitations.
 - [x] **Efficient mirroring** — tag+exclude sync (O(new)), `getTypedArray`
   write-back, reverse iteration on migrating loops.
 
-## In progress
-
-- [ ] **Joints / constraints** — `fixed`, `point` (ball), `hinge` (revolute,
-  with angle limits), connecting two bodies. Demo: a hanging chain. The
-  prerequisite for ragdoll.
+- [x] **Joints / constraints** — `fixed`, `point` (ball), `hinge` (revolute +
+  angle limits), `cone` (swing-twist: swing cone + twist range — anatomical
+  ragdoll limits). Demo: a hanging chain + a cone-limited arm. *`cone` limits are
+  full on Jolt; the Rapier compat binding has no cone constraint, so it
+  approximates `cone` as a free `point` — use `joltSolver` for ragdoll limits.*
 
 ## Next
 
@@ -47,8 +47,6 @@ lose track. Keep it honest about approximations and limitations.
   `dynamic` on death/strike (joints + gravity flop, seeded from last animated
   velocity + impact). The hard part is the per-bone world↔local skeleton
   reconciliation. Lands an open-source rigged humanoid that ragdolls.
-- [ ] **Cone-twist / swing-twist joint limits** — anatomical shoulder/hip limits
-  (Jolt `SwingTwistConstraint`, Rapier generic) for believable ragdolls.
 - [ ] **Collision events + groups/masks + sensors** — contact callbacks drained
   to ECS; per-body layer masks; overlap-only sensor colliders.
 - [ ] **Spatial queries** — raycast / shape-cast / overlap against the broadphase

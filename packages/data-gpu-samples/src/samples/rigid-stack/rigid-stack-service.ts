@@ -187,10 +187,29 @@ const rigidStackScene = Database.Plugin.create({
                 t.archetypes.Joint.insert({
                     jointType: "point", jointBodyA: prev, jointBodyB: link,
                     jointAnchorA: prevBottom, jointAnchorB: [0, LINK_END, 0],
-                    jointAxis: [0, 0, 1], jointMinLimit: 0, jointMaxLimit: 0,
+                    jointAxis: [0, 0, 1], jointMinLimit: 0, jointMaxLimit: 0, jointSwingLimit: 0,
                 });
                 prev = link; prevBottom = [0, -LINK_END, 0];
             }
+            // A cone (swing-twist) joint, off in a clear corner: a horizontal capsule
+            // arm pinned at its inner end to a floating post, free to swing only within
+            // a ~36° cone of the +x reference. Gravity droops it; on joltSolver the cone
+            // stops it at the limit (it sticks out, leaning), while rapierSolver (no cone
+            // limit in its binding) lets it hang straight down — the documented difference.
+            const ARM_END = 1.1, ARM_ROT: [number, number, number, number] = [0, 0, -Math.SQRT1_2, Math.SQRT1_2]; // local +Y → world +x
+            const post = t.archetypes.StaticCollider.insert({
+                colliderShape: "box", halfExtents: [0.3, 0.3, 0.3], material: steel,
+                position: [-3, 5, -BIN + 1.5], rotation: IDENTITY,
+            });
+            const arm = t.archetypes.RigidBody.insert({
+                bodyType: "dynamic", colliderShape: "capsule", halfExtents: [0.2, 0.9, 0], material: steel,
+                position: [-3 + ARM_END, 5, -BIN + 1.5], rotation: ARM_ROT, linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0],
+            });
+            t.archetypes.Joint.insert({
+                jointType: "cone", jointBodyA: post, jointBodyB: arm,
+                jointAnchorA: [0, 0, 0], jointAnchorB: [0, -ARM_END, 0],
+                jointAxis: [1, 0, 0], jointMinLimit: 0, jointMaxLimit: 0, jointSwingLimit: Math.PI / 5,
+            });
         },
         spawnBody(t, args: { index: number }) {
             const d = DROPS[args.index];

@@ -9,9 +9,10 @@ import type { JointType } from "./joint-type/joint-type.js";
  * whichever physics solver is active. Anchors are in each body's local frame;
  * at rest the two anchor points coincide in world space (the joint location).
  *
- * `jointAxis` is the hinge axis (body-A local) for `hinge`, ignored otherwise.
- * `jointMinLimit`/`jointMaxLimit` bound the hinge angle (radians); a range where
- * `min >= max` means "no limit" (free hinge).
+ * `jointAxis` is the reference axis (body-A local) for `hinge` and `cone`,
+ * ignored otherwise. `jointMinLimit`/`jointMaxLimit` bound the hinge angle, or
+ * the `cone` twist angle, in radians (`min >= max` ⇒ free); `jointSwingLimit` is
+ * the `cone` swing half-angle.
  */
 export interface Joint {
     jointType: JointType;
@@ -22,4 +23,5 @@ export interface Joint {
     jointAxis: Vec3;
     jointMinLimit: number;
     jointMaxLimit: number;
+    jointSwingLimit: number;
 }

@@ -18,6 +18,7 @@ export interface LoadedArgs {
     skinInverseBindMatrices: Float32Array | null;
     animations: LoadedAnimation[];
     collision: { positions: Float32Array; indices: Uint32Array } | null;
+    skinVertices: { positions: Float32Array; joints: Uint32Array; weights: Float32Array } | null;
 }
 
 /**
@@ -44,6 +45,9 @@ export const modelLoader = Database.Plugin.create({
         // CPU-retained model-space collision geometry (auto-collider source).
         _cpuPositions: { default: null as Float32Array | null },
         _cpuIndices: { default: null as Uint32Array | null },
+        // CPU-retained skin (mesh-bind positions + 4 joints + 4 weights per vertex),
+        // for fitting per-bone ragdoll capsules.
+        _cpuSkin: { default: null as { positions: Float32Array; joints: Uint32Array; weights: Float32Array } | null },
     },
     transactions: {
         insertLoadedPrimitives(t, args: LoadedArgs) {
@@ -81,6 +85,7 @@ export const modelLoader = Database.Plugin.create({
                 _animationClipRefs: clipRefs,
                 _cpuPositions: args.collision?.positions ?? null,
                 _cpuIndices: args.collision?.indices ?? null,
+                _cpuSkin: args.skinVertices,
             });
         },
     },
@@ -110,6 +115,7 @@ export const modelLoader = Database.Plugin.create({
                                         skinInverseBindMatrices: loaded.skin?.inverseBindMatrices ?? null,
                                         animations: loaded.animations,
                                         collision: loaded.collision,
+                                        skinVertices: loaded.skinVertices,
                                     });
                                 })
                                 .catch(err => {

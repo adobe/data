@@ -38,6 +38,10 @@ export interface LoadedGltfData {
      *  positions (each baked by its node matrix) + indices, aggregated. Null when
      *  the model has no static geometry (e.g. skin-only). */
     collision: { positions: Float32Array; indices: Uint32Array } | null;
+    /** Skinned vertices retained on the CPU (mesh-bind positions + 4 joint
+     *  indices + 4 weights per vertex), for fitting per-bone ragdoll capsules.
+     *  Null for non-skinned models. */
+    skinVertices: { positions: Float32Array; joints: Uint32Array; weights: Float32Array } | null;
 }
 
 function expandBounds(
@@ -101,6 +105,8 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
     const primitives: GpuPrimitiveData[] = [];
     // CPU-retained collision geometry (model space, non-skinned primitives only).
     const collPositions: number[] = [], collIndices: number[] = [];
+    // CPU-retained skin vertices (mesh-bind space, skinned primitives only).
+    const skinPos: number[] = [], skinJoints: number[] = [], skinWeights: number[] = [];
 
     for (let nodeIdx = 0; nodeIdx < (json.nodes ?? []).length; nodeIdx++) {
         const node = json.nodes![nodeIdx];
@@ -173,6 +179,18 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
                     );
                 }
                 for (let k = 0; k < indices.length; k++) collIndices.push(indices[k] + vbase);
+            } else if (packed.skinningAttributes) {
+                // Retain skin vertices (mesh-bind positions + joints/weights) for
+                // fitting per-bone ragdoll capsules. Skinning attributes pack 8 words
+                // per vertex: joints (u32×4) in words 0–3, weights (f32×4) in 4–7.
+                const verts = packed.vertices, stride = packed.vertices.length / packed.vertexCount;
+                const sj = new Uint32Array(packed.skinningAttributes), sw = new Float32Array(packed.skinningAttributes);
+                for (let v = 0; v < packed.vertexCount; v++) {
+                    const o = v * stride, s = v * 8;
+                    skinPos.push(verts[o], verts[o + 1], verts[o + 2]);
+                    skinJoints.push(sj[s], sj[s + 1], sj[s + 2], sj[s + 3]);
+                    skinWeights.push(sw[s + 4], sw[s + 5], sw[s + 6], sw[s + 7]);
+                }
             }
 
             const materialBindGroup = buildMaterialBindGroup(
@@ -197,5 +215,6 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
         skin,
         animations,
         collision: collPositions.length ? { positions: new Float32Array(collPositions), indices: new Uint32Array(collIndices) } : null,
+        skinVertices: skinPos.length ? { positions: new Float32Array(skinPos), joints: new Uint32Array(skinJoints), weights: new Float32Array(skinWeights) } : null,
     };
 }

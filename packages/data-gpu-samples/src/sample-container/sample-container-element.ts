@@ -11,6 +11,7 @@ import { AntiqueCamera } from "../samples/antique-camera/antique-camera.js";
 import { SkinnedFox } from "../samples/skinned-fox/skinned-fox.js";
 import { Boids } from "../samples/boids/boids.js";
 import { RigidStack } from "../samples/rigid-stack/rigid-stack.js";
+import { Ragdoll } from "../samples/ragdoll/ragdoll.js";
 
 const tagName = "sample-container";
 
@@ -35,7 +36,7 @@ export class SampleContainerElement extends LitElement {
     }
 
     override render() {
-        const samples = ["hello-triangle", "pbr-model-ibl", "metal-rough-spheres", "pbr-ibl-instanced", "solar-system", "antique-camera", "skinned-fox", "boids", "rigid-stack"];
+        const samples = ["hello-triangle", "pbr-model-ibl", "metal-rough-spheres", "pbr-ibl-instanced", "solar-system", "antique-camera", "skinned-fox", "boids", "rigid-stack", "ragdoll"];
         return html`
             <nav>
                 ${samples.map(s => html`<a href="?sample=${s}">${s}</a>`)}
@@ -50,6 +51,7 @@ export class SampleContainerElement extends LitElement {
                 ${this.sample === "skinned-fox" ? SkinnedFox() : ""}
                 ${this.sample === "boids" ? Boids() : ""}
                 ${this.sample === "rigid-stack" ? RigidStack() : ""}
+                ${this.sample === "ragdoll" ? Ragdoll() : ""}
             </div>
         `;
     }

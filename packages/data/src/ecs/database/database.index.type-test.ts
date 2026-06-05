@@ -164,6 +164,28 @@ function validSortedOrderShape() {
     type _ObserveRet = Assert<Equal<ReturnType<Handle["observe"]>, Observe<readonly Entity[]>>>;
 }
 
+function archetypeScopeValidatesName() {
+    createPlugin({
+        components: { parent: { type: "number" }, priority: { type: "number" } },
+        archetypes: { Task: ["parent", "priority"] },
+        indexes: {
+            // A declared archetype name is accepted.
+            ok: { key: "parent", archetype: "Task" },
+        },
+    });
+}
+
+function archetypeScopeRejectsUnknownName() {
+    createPlugin({
+        components: { parent: { type: "number" } },
+        archetypes: { Task: ["parent"] },
+        indexes: {
+            // @ts-expect-error - "Bogus" is not a declared archetype
+            bad: { key: "parent", archetype: "Bogus" },
+        },
+    });
+}
+
 function validIndexesEmptyByDefault() {
     const plugin = createPlugin({
         components: { a: { type: "number" } },

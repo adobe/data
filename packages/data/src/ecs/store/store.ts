@@ -89,7 +89,7 @@ export namespace Store {
         CS extends ComponentSchemas = any,
         RS extends ResourceSchemas = any,
         A extends ArchetypeComponents<StringKeyof<CS>> = any,
-        IX extends IndexDeclarations<FromSchemas<CS>> = {},
+        IX extends IndexDeclarations<FromSchemas<CS>, A> = {},
     > = {
         readonly components: CS;
         readonly resources: RS;
@@ -169,7 +169,7 @@ export namespace Store {
             const CS extends ComponentSchemas = {},
             const RS extends ResourceSchemas = {},
             const A extends ArchetypeComponents<StringKeyof<CS& Intersect<D>["components"]>> = {},
-            const IX extends IndexDeclarations<FromSchemas<CS & Intersect<D>["components"]>> = {},
+            const IX extends IndexDeclarations<FromSchemas<CS & Intersect<D>["components"]>, A> = {},
             const D extends readonly Store.Schema<any, any, any, any>[] = [],
         >(
             schema: Partial<{

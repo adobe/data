@@ -36,6 +36,14 @@ export interface IndexState {
      * string identity in `key` or `order.by`.
      */
     readonly components?: readonly string[];
+    /**
+     * When the index is scoped to an archetype, the archetype's full component
+     * set. An entity is included only if it has *every* one of these columns
+     * (superset match), and seeding walks only archetypes that carry them — so
+     * the index covers that archetype (and supersets), not every entity that
+     * merely shares the key column.
+     */
+    readonly scopeColumns?: readonly string[];
 }
 
 // ============================================================================
@@ -267,15 +275,19 @@ export interface RuntimeIndex {
 export const createIndex = (state: IndexState): RuntimeIndex => {
     const unique = state.unique ?? false;
     const extraComponents = state.components ?? [];
+    const scopeColumns = state.scopeColumns ?? [];
     const keyEx = normalizeKey(state.key, extraComponents);
     const orderEx = state.order ? normalizeOrder(state.order) : null;
     const sorted = orderEx !== null;
 
-    // All columns the index touches (key reads + sort reads). Used by
-    // the store to walk only relevant archetypes when seeding.
+    // All columns the index touches (key reads + sort reads + archetype-scope
+    // columns). Used by the store to walk only relevant archetypes when
+    // seeding — folding in scopeColumns restricts seeding to the scoped
+    // archetype (and supersets).
     const readColumns = (() => {
         const set = new Set<string>(keyEx.readColumns);
         if (orderEx) for (const c of orderEx.readColumns) set.add(c);
+        for (const c of scopeColumns) set.add(c);
         return [...set];
     })();
 
@@ -307,6 +319,10 @@ export const createIndex = (state: IndexState): RuntimeIndex => {
     const bucketEntriesFor = (
         values: Readonly<Record<string, unknown>>,
     ): { key: string; value: unknown }[] => {
+        // Archetype scope: an entity that lacks any of the scoped archetype's
+        // components is out of scope and indexed in no bucket — this is what
+        // excludes entities from other archetypes that merely share the key.
+        for (const c of scopeColumns) if (values[c] === undefined) return [];
         const raw = keyEx.extractFromEntity(values);
         if (raw === null) return [];
         const expanded = expandBucketKeys(raw);

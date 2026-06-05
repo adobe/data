@@ -72,6 +72,9 @@ export function createStore<
             const { id: _id, ...rest } = values as { id: Entity } & Record<string, unknown>;
             return rest;
         },
+        // Resolve an `archetype`-scoped index to that archetype's declared
+        // component set (archetypes are registered before indexes in `extend`).
+        (archetypeName) => (archetypeComponentNames as Record<string, readonly string[]>)[archetypeName],
     );
 
     /**

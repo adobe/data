@@ -183,11 +183,20 @@ export namespace Index {
  * silently passes the constraint. Inlining `key: IndexKey<C>` here makes
  * the typo a type error at the plugin descriptor.
  */
-export type IndexDeclarations<C extends Components = any> = {
+export type IndexDeclarations<C extends Components = any, A = any> = {
     readonly [name: string]: {
         readonly key: IndexKey<C>;
         readonly order?: IndexOrder<C>;
         readonly unique?: boolean;
         readonly components?: readonly StringKeyof<C>[];
+        /**
+         * Scope the index to a single archetype (by declared name). Only
+         * entities that are that archetype (a superset of its components) are
+         * indexed — entities in other archetypes that merely share the key
+         * column are excluded. `A` is the schema's archetype map, so the name
+         * is checked against the declared archetypes; when unthreaded it
+         * widens to `string`.
+         */
+        readonly archetype?: StringKeyof<A>;
     };
 };

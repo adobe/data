@@ -26,7 +26,16 @@ export type IndexDeclarationObject = {
     readonly order?: IndexOrderDecl;
     readonly unique?: boolean;
     readonly components?: readonly string[];
+    /** Scope the index to a single archetype (by name). */
+    readonly archetype?: string;
 };
+
+/**
+ * Resolves an archetype name to its declared component set, so an
+ * archetype-scoped index can restrict itself to entities carrying those
+ * components. Supplied by `createStore`, which owns the archetype map.
+ */
+export type ArchetypeColumnsResolver = (archetype: string) => readonly string[] | undefined;
 
 interface RegisteredEntry {
     readonly decl: IndexDeclarationObject;
@@ -107,7 +116,10 @@ const formatShape = (decl: IndexDeclarationObject): string => {
     return `key=${keyIdent(decl.key)}${unique}${order}`;
 };
 
-export const createIndexRegistry = (read: EntityReader): IndexRegistry => {
+export const createIndexRegistry = (
+    read: EntityReader,
+    archetypeColumns?: ArchetypeColumnsResolver,
+): IndexRegistry => {
     const indexes = new Map<string, RuntimeIndex>();
     const entries = new Map<string, RegisteredEntry>();
     const shapeToName = new Map<string, string>();
@@ -131,11 +143,22 @@ export const createIndexRegistry = (read: EntityReader): IndexRegistry => {
                 `duplicate — collapse them to a single declaration.`,
             );
         }
+        let scopeColumns: readonly string[] | undefined;
+        if (decl.archetype !== undefined) {
+            scopeColumns = archetypeColumns?.(decl.archetype);
+            if (scopeColumns === undefined) {
+                throw new Error(
+                    `Index "${name}" is scoped to unknown archetype "${decl.archetype}". ` +
+                    `Declare the archetype before the index that scopes to it.`,
+                );
+            }
+        }
         const state: IndexState = {
             key: decl.key,
             order: decl.order,
             unique: decl.unique ?? false,
             components: decl.components,
+            scopeColumns,
         };
         const idx = createIndex(state);
         indexes.set(name, idx);

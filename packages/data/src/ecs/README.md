@@ -147,6 +147,7 @@ Indexes give O(1) lookup by some derived or column-valued key. Declare them on t
 | `order` | no | `{ by: string[]; compare?: (a, b) => number }` |
 | `unique` | no | `boolean` — when `true`, exposes `get(arg) → Entity \| null` |
 | `components` | only when an extractor function reads a column not already implied by an identity string in `key`/`order` | `string[]` |
+| `archetype` | no | a declared archetype name — scopes the index to that archetype |
 
 **The lookup argument is always a named object.** `find` / `get` / `observe` take `{ field: value, … }` — never a bare scalar — so the shape is uniform across every index and reads self-documentingly (`find({ parent: 7 })`, not `find(7)`). The fields are:
 
@@ -159,6 +160,19 @@ Each **extractor receives a single named object** `c` of the component values, r
 `find(arg) → readonly Entity[]` returns every entity in the matching bucket (sorted if `order` is declared). `get(arg) → Entity | null` is exposed only on unique indexes; `null` means "we know this key has no entity," never `undefined`. Array values (a `T[]` column, or an extractor that returns `T[]`) auto-fan-out into one bucket entry per element, so the field takes the element type (`find({ assigned: "joe" })` against `assigned: string[]`).
 
 `observe(arg) → Observe<readonly Entity[]>` is the reactive form of `find`. It emits the current bucket synchronously on subscribe, then re-emits — on a microtask after a committed transaction — whenever that bucket's membership *or order* changes, and stays silent for transactions that touch only other buckets. Prefer it over pairing `db.observe.select(..., { where })` with `find`: a sort-key-only reorder changes the index's order but not the `where` result, so the `select` form silently swallows the reorder while `observe` reports it.
+
+**Scoping to an archetype.** By default an index covers *every* entity that has its key columns, across all archetypes. Set `archetype` to restrict it to one:
+
+```ts
+archetypes: { Task: ["parent", "priority"], Note: ["parent", "body"] },
+indexes: {
+    // only Tasks — a Note with the same `parent` is NOT indexed here
+    tasksByParent: { key: "parent", archetype: "Task" },
+},
+// db.indexes.tasksByParent.find({ parent: 7 }) → only Task entities
+```
+
+The name is checked against the schema's declared archetypes (a typo is a compile error). Scope is by **superset of that archetype's components**: an entity is indexed only if it has all of `Task`'s columns, so entities in other archetypes that merely share the key column are excluded, and seeding walks only the matching archetypes.
 
 ### Pattern catalogue
 
@@ -277,8 +291,9 @@ indexes: {
         components: ["item"],
         key: { team: (c) => c.item!.parent, role: (c) => c.item!.key },
         order: {
+            // code-point compare — never localeCompare (see Order semantics)
             by: ["item"],
-            compare: (a, b) => a.item.fractIndex.localeCompare(b.item.fractIndex),
+            compare: (a, b) => FractionalIndex.compare(a.item.fractIndex, b.item.fractIndex),
         },
         unique: true,
     },
@@ -304,6 +319,7 @@ indexes: {
 
 - `order` is always a single object: `{ by, compare? }`. `by` declares which columns are read into the per-entity sort cache; `compare` (if present) is the comparator over `Pick<C, by>`. When `compare` is omitted, the default is ascending across `by` left-to-right with positional tie-break.
 - All direction control happens through the comparator — there are no `asc: true | false` booleans. Descending, mixed direction, case-insensitive, semver, and natural-sort comparators are all written the same way.
+- **String ordering is by code point, never locale.** The default comparator uses `<` / `>` (code-point), and you should too in custom comparators — use `FractionalIndex.compare` for fractional-index keys rather than `String.prototype.localeCompare`. `localeCompare` is collation-dependent (varies by host locale) and so would make index order non-deterministic across machines.
 
 ### Auto-routing of `select`
 

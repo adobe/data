@@ -802,6 +802,96 @@ describe("Pattern 12 — custom comparator (tasksByPriority)", () => {
 // Cross-cutting concerns
 // ============================================================================
 
+describe("string ordering is by code point, never locale", () => {
+    const plugin = () => Database.Plugin.create({
+        components: { group: { type: "number" }, label: { type: "string" } },
+        archetypes: { Row: ["group", "label"] },
+        indexes: { byGroupSorted: { key: "group", order: { by: ["label"] } } },
+        transactions: {
+            add: (t, a: { group: number; label: string }) => t.archetypes.Row.insert(a),
+        },
+    });
+
+    it("default comparator sorts strings by ASCII code point (uppercase before lowercase)", () => {
+        const db = Database.create(plugin());
+        const a = db.transactions.add({ group: 1, label: "a" });    // 'a' = 97
+        const Z = db.transactions.add({ group: 1, label: "Z" });    // 'Z' = 90
+        const zero = db.transactions.add({ group: 1, label: "0" }); // '0' = 48
+        const A = db.transactions.add({ group: 1, label: "A" });    // 'A' = 65
+        // Code point: '0' < 'A' < 'Z' < 'a'. A locale-aware comparator would
+        // interleave case (lowercase 'a' before 'Z'), so this fails if the
+        // index ever sorts via localeCompare — the no-locale guard.
+        expect(db.indexes.byGroupSorted.find({ group: 1 })).toEqual([zero, A, Z, a]);
+    });
+});
+
+describe("archetype-scoped index", () => {
+    // Task and Note both have `parent`; the index is scoped to Task only.
+    const plugin = () => Database.Plugin.create({
+        components: {
+            parent: { type: "number" },
+            priority: { type: "number" },
+            body: { type: "string" },
+        },
+        archetypes: {
+            Task: ["parent", "priority"],
+            Note: ["parent", "body"],
+        },
+        indexes: {
+            tasksByParent: { key: "parent", archetype: "Task" },
+        },
+        transactions: {
+            addTask: (t, a: { parent: number; priority: number }) => t.archetypes.Task.insert(a),
+            addNote: (t, a: { parent: number; body: string }) => t.archetypes.Note.insert(a),
+            delete: (t, e: number) => t.delete(e),
+        },
+    });
+
+    it("indexes only the scoped archetype, excluding others that share the key column", () => {
+        const db = Database.create(plugin());
+        const t1 = db.transactions.addTask({ parent: 7, priority: 1 });
+        const t2 = db.transactions.addTask({ parent: 7, priority: 2 });
+        db.transactions.addNote({ parent: 7, body: "shares parent 7 but is a Note" });
+
+        // Without scoping the Note (parent === 7) would appear here too.
+        expect([...db.indexes.tasksByParent.find({ parent: 7 })].sort()).toEqual([t1, t2].sort());
+    });
+
+    it("seeds from only the scoped archetype when registered after data exists", () => {
+        const base = Database.Plugin.create({
+            components: {
+                parent: { type: "number" },
+                priority: { type: "number" },
+                body: { type: "string" },
+            },
+            archetypes: { Task: ["parent", "priority"], Note: ["parent", "body"] },
+            transactions: {
+                addTask: (t, a: { parent: number; priority: number }) => t.archetypes.Task.insert(a),
+                addNote: (t, a: { parent: number; body: string }) => t.archetypes.Note.insert(a),
+            },
+        });
+        const db = Database.create(base);
+        const t = db.transactions.addTask({ parent: 5, priority: 1 });
+        db.transactions.addNote({ parent: 5, body: "note" });
+
+        const ext = db.extend(Database.Plugin.create({
+            extends: base,
+            indexes: { tasksByParent: { key: "parent", archetype: "Task" } },
+        }));
+        expect(ext.indexes.tasksByParent.find({ parent: 5 })).toEqual([t]);
+    });
+
+    it("throws when scoped to an unknown archetype", () => {
+        const bad = Database.Plugin.create({
+            components: { parent: { type: "number" } },
+            archetypes: { Task: ["parent"] },
+            // `archetype` typed loosely here via `as any` to reach the runtime guard.
+            indexes: { x: { key: "parent", archetype: "Nonexistent" as any } },
+        });
+        expect(() => Database.create(bad)).toThrow(/unknown archetype/i);
+    });
+});
+
 describe("findRange — operator filters on the bucket key", () => {
     it("filters by range operators on a tuple-keyed index", () => {
         const plugin = Database.Plugin.create({

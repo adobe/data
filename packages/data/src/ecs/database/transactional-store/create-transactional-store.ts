@@ -39,7 +39,7 @@ export function createTransactionalStore<
     };
     const changed = {
         entities: new Map<Entity, EntityUpdateValues<C> | null>(),
-        components: new Set<keyof C>(),
+        components: new Set<string>(),
         archetypes: new Set<ArchetypeId>(),
     };
 
@@ -62,7 +62,7 @@ export function createTransactionalStore<
                 changed.entities.set(entity, values);
                 changed.archetypes.add(id);
                 for (const key in values) {
-                    changed.components.add(key as never);
+                    changed.components.add(key);
                 }
                 return entity;
             },
@@ -98,7 +98,7 @@ export function createTransactionalStore<
                     oldValue = DELETE;
                 }
                 replacedValues[name] = oldValue;
-                changed.components.add(name as keyof C);
+                changed.components.add(name);
             }
         }
 
@@ -136,7 +136,7 @@ export function createTransactionalStore<
 
         const { id: _ignore, ...oldValuesWithoutId } = oldValues as any;
         for (const key in oldValuesWithoutId) {
-            changed.components.add(key as keyof C);
+            changed.components.add(key);
         }
 
         store.delete(entity);

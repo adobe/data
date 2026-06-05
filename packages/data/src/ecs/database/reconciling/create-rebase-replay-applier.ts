@@ -32,7 +32,12 @@ export function createRebaseReplayApplier(
     replayAllTransients: () => TransactionResult<unknown> | undefined;
 } {
     const [execute, getTransaction] = args;
-    const reconcilingEntries: ReconcilingEntry[] = [];
+    // The applier is a type-erased layer: `getTransaction` hands back
+    // transactions typed over `TransactionContext<any, any, any>`, so the
+    // entries it stores are erased too. Pinning the generics to `any` keeps the
+    // stored `transaction` assignable from `getTransaction`'s result without a
+    // per-assignment cast.
+    const reconcilingEntries: ReconcilingEntry<any, any, any>[] = [];
 
     const rollbackEntryResult = (entry: ReconcilingEntry) => {
         if (entry.result) {
@@ -90,7 +95,7 @@ export function createRebaseReplayApplier(
             rollbackAllTransients();
             spliceTransientEntry(id, userId);
 
-            const entry: ReconcilingEntry = {
+            const entry: ReconcilingEntry<any, any, any> = {
                 id,
                 userId,
                 name: envelope.name,

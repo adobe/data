@@ -630,7 +630,7 @@ describe("createStore", () => {
                 const fresh = createStore({ components: { health: healthSchema }, resources: {}, archetypes: {} });
                 fresh.fromData(snapshot);
                 const restored = fresh.select(["health"]);
-                return fresh.read(restored[0])?.health.current;
+                return fresh.read(restored[0])?.health?.current;
             };
 
             // Detached: mutating after the snapshot must NOT change it.

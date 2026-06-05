@@ -44,15 +44,17 @@ lose track. Keep it honest about approximations and limitations.
   auto-collider on purpose; they deform); `boneColliders` spawns a kinematic
   capsule per bone and tracks the animated skeleton (`jointWorldMatrix · offset`).
   Demo: the `ragdoll` sample (CesiumMan walk). Flipping to dynamic is next.
-- [x] **Ragdoll controller + humanoid sample** — `triggerRagdoll` joints each
-  bone capsule to its nearest capsule-bearing ancestor, flips them
-  `kinematic→dynamic`, stops the animation; `reconcileRagdoll` writes the
-  physics pose back onto the skeleton (world↔local) so the skinned mesh flops.
-  Demo: the `ragdoll` sample (CesiumMan walks, then collapses onto the floor)
-  using **cone (swing-twist) joints** so the limbs hold anatomical angles instead
-  of folding freely, on **joltSolver** (with the Jolt kinematic→dynamic flip + a
-  no-self-collide ragdoll layer). *Per-joint limit tuning and velocity-seeding
-  from the last animated motion (so a strike throws it) are follow-ups.*
+- [x] **Ragdoll controller + humanoid sample** — two backends behind the shared
+  `ragdollTrigger`, shown side by side in the `ragdoll` sample (CesiumMan walks,
+  then collapses onto the floor):
+  - **`joltRagdoll`** (Jolt-native) — Jolt's `Skeleton`/`RagdollSettings`/`Ragdoll`
+    with swing-twist limits + `DisableParentChildCollisions`; `DriveToPoseUsing-
+    Kinematics` while alive, falls + `GetPose` readback when limp. Built into the
+    solver's world via `_joltContext`. *Active ragdoll (`DriveToPoseUsingMotors`)
+    + velocity-seeding from the last animated motion are easy follow-ups.*
+  - **`boneColliders`** (generic) — our per-bone capsules + cone (Jolt) / free-ball
+    (Rapier) joints; `kinematic→dynamic` flip + `reconcileRagdoll` (world↔local)
+    so the skin flops. Runs on any solver. *Per-joint limit tuning is a follow-up.*
 - [ ] **Collision events + groups/masks + sensors** — contact callbacks drained
   to ECS; per-body layer masks; overlap-only sensor colliders.
 - [ ] **Spatial queries** — raycast / shape-cast / overlap against the broadphase

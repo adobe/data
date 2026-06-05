@@ -129,6 +129,12 @@ export function createStore<
         } else {
             routableColumns = null;
         }
+        // Sort columns the auto-router can serve an *ascending* `order` clause
+        // from. Only a sorted index using the default comparator qualifies: a
+        // custom `compare` encodes an ordering the planner can't match against
+        // a plain `{ col: ascending }` select clause, so it opts out (null).
+        const routableOrder: readonly string[] | null =
+            idx.order && !idx.order.compare ? idx.order.by : null;
         const handle: Record<string, unknown> = {
             find: idx.find,
             findRange: idx.findRange,
@@ -139,6 +145,11 @@ export function createStore<
             // calls `handle.find` (so user-installed spies on the handle
             // intercept the routed call).
             routableColumns,
+            // Internal planner-only field. The ascending sort columns this
+            // index can serve, or null when it can't (unsorted, or custom
+            // comparator). The auto-router reads this to route an ordered
+            // `select` / `observe.select` through the (already-sorted) index.
+            routableOrder,
             // Internal field consumed by the Database layer to build the
             // reactive `handle.observe`: the columns (key + sort) whose change
             // can alter this bucket's contents or order. The handle's public

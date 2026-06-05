@@ -980,6 +980,148 @@ describe("auto-routing of db.observe.select", () => {
     });
 });
 
+describe("auto-routing of ordered select through a sorted index", () => {
+    // Two indexes on the same key, distinct shapes: one unsorted, one sorted
+    // ascending by `priority` (default comparator). An ordered query must route
+    // to the *sorted* one (never the unsorted one), and a query whose order the
+    // index can't serve must fall back to the scan.
+    const plugin = () => Database.Plugin.create({
+        components: {
+            owner: { type: "number" },
+            priority: { type: "number" },
+            due: { type: "number" },
+            title: { type: "string" },
+        },
+        archetypes: { Task: ["owner", "priority", "due", "title"] },
+        indexes: {
+            byOwner: { key: "owner" },
+            byOwnerSorted: { key: "owner", order: { by: ["priority"] } },
+        },
+        transactions: {
+            add: (t, a: { owner: number; priority: number; due: number; title: string }) =>
+                t.archetypes.Task.insert(a),
+        },
+    });
+
+    const spyFind = (handle: any) => {
+        const original = handle.find;
+        const state = { calls: 0 };
+        handle.find = (v: unknown) => { state.calls += 1; return original(v); };
+        return { state, restore: () => { handle.find = original; } };
+    };
+
+    const seed = (db: ReturnType<typeof Database.create>) => {
+        const mid = db.transactions.add({ owner: 1, priority: 2, due: 10, title: "mid" });
+        const low = db.transactions.add({ owner: 1, priority: 1, due: 20, title: "low" });
+        const high = db.transactions.add({ owner: 1, priority: 3, due: 30, title: "high" });
+        db.transactions.add({ owner: 2, priority: 1, due: 40, title: "other" });
+        return { low, mid, high };
+    };
+
+    it("routes an ascending ordered query to the sorted index (and returns it sorted)", () => {
+        const db = Database.create(plugin());
+        const { low, mid, high } = seed(db);
+
+        const sorted = spyFind((db.indexes as any).byOwnerSorted);
+        try {
+            const result = db.select(["title"], { where: { owner: 1 }, order: { priority: true } });
+            // GREEN: the ordered query was served by the sorted index...
+            expect(sorted.state.calls).toBe(1);
+            // ...and the result is in the index's ascending priority order.
+            expect([...result]).toEqual([low, mid, high]);
+        } finally {
+            sorted.restore();
+        }
+    });
+
+    it("routes the ordered query to the sorted index, never the unsorted one on the same key", () => {
+        const db = Database.create(plugin());
+        seed(db);
+
+        const unsorted = spyFind((db.indexes as any).byOwner);
+        const sorted = spyFind((db.indexes as any).byOwnerSorted);
+        try {
+            db.select(["title"], { where: { owner: 1 }, order: { priority: true } });
+            expect(sorted.state.calls).toBe(1);
+            expect(unsorted.state.calls).toBe(0);
+        } finally {
+            unsorted.restore();
+            sorted.restore();
+        }
+    });
+
+    it("falls back to scan for a descending order (sorted index only materializes ascending)", () => {
+        const db = Database.create(plugin());
+        const { low, mid, high } = seed(db);
+
+        const sorted = spyFind((db.indexes as any).byOwnerSorted);
+        try {
+            const result = db.select(["title"], { where: { owner: 1 }, order: { priority: false } });
+            // Not routed — the index can't serve descending without re-sorting.
+            expect(sorted.state.calls).toBe(0);
+            // The scan still produces a correct descending result.
+            expect([...result]).toEqual([high, mid, low]);
+        } finally {
+            sorted.restore();
+        }
+    });
+
+    it("falls back to scan when the requested order column is not the index's sort column", () => {
+        const db = Database.create(plugin());
+        seed(db);
+
+        const sorted = spyFind((db.indexes as any).byOwnerSorted);
+        try {
+            // Index sorts by `priority`; this asks for `due`.
+            const result = db.select(["title"], { where: { owner: 1 }, order: { due: true } });
+            expect(sorted.state.calls).toBe(0);
+            expect(result).toHaveLength(3);
+        } finally {
+            sorted.restore();
+        }
+    });
+
+    it("still routes a plain (no-order) equality query — unaffected by the order support", () => {
+        const db = Database.create(plugin());
+        seed(db);
+
+        // No order: the first matching key index (byOwner) serves it.
+        const unsorted = spyFind((db.indexes as any).byOwner);
+        try {
+            const result = db.select(["title"], { where: { owner: 1 } });
+            expect(unsorted.state.calls).toBe(1);
+            expect(result).toHaveLength(3);
+        } finally {
+            unsorted.restore();
+        }
+    });
+
+    it("routes the ordered query through db.observe.select too (initial snapshot + requery)", async () => {
+        const db = Database.create(plugin());
+        const { low, mid, high } = seed(db);
+
+        const sorted = spyFind((db.indexes as any).byOwnerSorted);
+        try {
+            const emissions: number[][] = [];
+            const unsub = db.observe.select(["title"], { where: { owner: 1 }, order: { priority: true } })(
+                (entities) => { emissions.push([...entities]); },
+            );
+            // Initial snapshot routed and sorted.
+            expect(sorted.state.calls).toBe(1);
+            expect(emissions[0]).toEqual([low, mid, high]);
+
+            // A new task for owner 1 with the lowest priority sorts to the front.
+            const lowest = db.transactions.add({ owner: 1, priority: 0, due: 5, title: "lowest" });
+            await Promise.resolve();
+            expect(sorted.state.calls).toBe(2);
+            expect(emissions[emissions.length - 1]).toEqual([lowest, low, mid, high]);
+            unsub();
+        } finally {
+            sorted.restore();
+        }
+    });
+});
+
 describe("t.indexes — eager maintenance inside transactions", () => {
     const plugin = () => Database.Plugin.create({
         components: {

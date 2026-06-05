@@ -297,7 +297,9 @@ indexes: {
 
 ### Auto-routing of `select`
 
-When `db.select(include, { where })` or `db.observe.select(...)` is called with a `where` clause that exactly matches the `key` of a declared raw index by equality, the query is served from the index instead of scanning archetypes. No code-site change required — declare the index and the planner picks it up. Other query shapes fall through to the archetype scan unchanged.
+When `db.select(include, { where })` or `db.observe.select(...)` is called with a `where` clause that exactly matches the `key` of a declared raw index by equality, the query is served from the index instead of scanning archetypes. No code-site change required — declare the index and the planner picks it up.
+
+An `order` clause is routed too: when the query also asks for `order` and the matched index is sorted (default comparator) on exactly those columns, in sequence, all ascending, the already-sorted bucket is returned without a second sort. A descending clause, a mismatched/partial column sequence, or an index with a custom comparator falls through to the archetype scan unchanged — as does any non-equality `where`, partial-key match, or function/slot-map-keyed index.
 
 ### Maintenance and atomicity
 

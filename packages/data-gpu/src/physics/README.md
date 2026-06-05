@@ -39,9 +39,11 @@ lose track. Keep it honest about approximations and limitations.
   *Today a single auto-`hull` is a **convex approximation** — it fills
   concavities (a chair's legs merge). Static concave geometry should use
   `mesh`; concave dynamic bodies need decomposition into multiple hulls.*
-- [ ] **Per-bone colliders for skinned meshes** — auto-fit capsules/boxes to a
-  skeleton's bones (skinned meshes are excluded from the rigid auto-collider on
-  purpose; they deform).
+- [x] **Per-bone colliders for skinned meshes** — `fitBoneCapsules` fits one
+  capsule per bone from the skin (skinned meshes are excluded from the rigid
+  auto-collider on purpose; they deform); `boneColliders` spawns a kinematic
+  capsule per bone and tracks the animated skeleton (`jointWorldMatrix · offset`).
+  Demo: the `ragdoll` sample (CesiumMan walk). Flipping to dynamic is next.
 - [ ] **Ragdoll controller + humanoid sample** — per-bone bodies + joints with
   anatomical limits; bones `kinematic` (animation-driven) while alive, flip to
   `dynamic` on death/strike (joints + gravity flop, seeded from last animated

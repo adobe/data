@@ -6,6 +6,7 @@ import { Vec3, Quat, Mat4x4 } from "@adobe/data/math";
 import { physicsData } from "../../physics/physics-data-plugin.js";
 import { jointData } from "../../physics/joint/joint-plugin.js";
 import { fitBoneCapsules } from "../../physics/ragdoll/fit-bone-capsules.js";
+import { ragdollTrigger } from "./ragdoll-trigger-plugin.js";
 import { pbrSkinning } from "./skinning/skinning-plugin.js";
 import { modelLoader } from "../scene/model/model-loader-plugin.js";
 import { transform } from "../scene/node/transform-plugin.js";
@@ -46,24 +47,17 @@ function rotationOf(m: Mat4x4): Quat {
 interface SkinGeometry { _cpuSkin?: { positions: Float32Array; joints: Uint32Array; weights: Float32Array } | null; _skinInverseBindMatrices?: Float32Array | null }
 
 export const boneColliders = Database.Plugin.create({
-    extends: Database.Plugin.combine(physicsData, jointData, pbrSkinning, modelLoader, transform),
+    extends: Database.Plugin.combine(physicsData, jointData, ragdollTrigger, pbrSkinning, modelLoader, transform),
     components: {
         _boneJoint: Entity.schema, // the skeleton joint this capsule tracks
         _boneOffsetPos: Vec3.schema,     // capsule offset in the bone's bind-local frame
         _boneOffsetRot: Quat.schema,
         _ragdollBuilt: True.schema,      // tag: this skeleton's bone capsules have been generated
     },
-    resources: {
-        _ragdollTrigger: { default: false as boolean, transient: true }, // set by triggerRagdoll; consumed once
-    },
     archetypes: {
         // a kinematic capsule body bound to a skeleton joint (collisionGroup 1 ⇒ the
         // ragdoll's bones never collide with each other, only the world)
         BoneCapsule: ["bodyType", "colliderShape", "halfExtents", "material", "collisionGroup", "position", "rotation", "linearVelocity", "angularVelocity", "_boneJoint", "_boneOffsetPos", "_boneOffsetRot"],
-    },
-    transactions: {
-        /** Go limp: flip the bone capsules to dynamic + joint them + stop animation. */
-        triggerRagdoll(t) { t.resources._ragdollTrigger = true; },
     },
     systems: {
         // Once a skeleton's skin has loaded, fit + spawn its bone capsules (one-time;

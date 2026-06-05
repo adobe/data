@@ -1,46 +1,40 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeometry, joltSolver, Model, Orbit } from "@adobe/data-gpu";
+import { pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeometry, ragdollTrigger, rapierSolver, joltSolver, Model, Orbit } from "@adobe/data-gpu";
 
 /**
- * ragdoll — a rigged humanoid plays its walk clip while one capsule per bone,
- * auto-fitted from the skin and driven by `boneColliders`, tracks the animated
- * skeleton. This is ragdoll step 1: the live, animation-driven collision proxy
- * (the capsules are kinematic; flipping them to dynamic + joints is the next
- * step). The capsules render over the character as a debug visualisation.
+ * ragdoll — a rigged humanoid walks, then goes limp and collapses onto the floor.
+ * The same scene runs **side by side on both solvers** through a shared base
+ * (`ragdollScene`): per-bone capsules are auto-fitted from the skin and track the
+ * walk, then `triggerRagdoll` flips them to dynamic so the skinned mesh flops.
+ *
+ * Jolt shows the cone (swing-twist) anatomical limits; Rapier (whose binding has
+ * no cone constraint) shows a free-ball ragdoll — an honest side-by-side. The
+ * base is backend-agnostic via `ragdollTrigger`, so a Jolt-native `Ragdoll`
+ * backend can later replace our generic one on the Jolt panel.
  */
-export const ragdollPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeometry, joltSolver, Orbit.plugin),
+const ragdollScene = Database.Plugin.create({
+    extends: Database.Plugin.combine(pbrRender, pbrSkinning, shapeGeometry, physicsRenderBridge, ragdollTrigger, Orbit.plugin),
     transactions: {
         initializeScene(t, args: { modelUrl: string; envUrl?: string }): number {
-            t.resources.light = {
-                ...t.resources.light,
-                environmentUrl: args.envUrl ?? t.resources.light.environmentUrl,
-                color: [0.55, 0.55, 0.55],
-            };
+            t.resources.light = { ...t.resources.light, environmentUrl: args.envUrl ?? t.resources.light.environmentUrl, color: [0.55, 0.55, 0.55] };
             const geoId = Model.plugin.transactions.insertGeometry(t, { modelUrl: args.modelUrl });
             Model.plugin.transactions.insertModel(t, { geometry: geoId, position: [0, 0.9, 0] }); // lifted, so the ragdoll drops onto the floor
-            // a ground slab for the ragdoll to land on (top face at y = 0)
             t.archetypes.StaticCollider.insert({
                 colliderShape: "box", halfExtents: [4, 0.25, 4], material: t.resources.materials.stone,
                 position: [0, -0.25, 0], rotation: [0, 0, 0, 1],
             });
-            t.resources.orbit = {
-                ...t.resources.orbit,
-                center: [0, 0.4, 0], radius: 3.2, height: 1.4, autoSpinSpeed: 0.15,
-            };
+            t.resources.orbit = { ...t.resources.orbit, center: [0, 0.4, 0], radius: 3.2, height: 1.4, autoSpinSpeed: 0.15 };
             return geoId;
         },
     },
     systems: {
-        // Once a skeleton + its animation clips have loaded, start the first clip
-        // looping (no sample plays animations by default). Targets = the skeleton's
-        // joints, in order (animation tracks index into them).
+        // Start the model's first clip looping once skeleton + clips have loaded.
         autoplayAnimation: {
             schedule: { during: ["update"] },
             create: db => {
-                const started = new Set<number>(); // skeletons whose clip we've launched
+                const started = new Set<number>();
                 return () => {
                     for (const arch of db.store.queryArchetypes(["_skeletonJoints", "_skeletonGeometry"])) {
                         const ids = arch.columns.id, jc = arch.columns._skeletonJoints, gc = arch.columns._skeletonGeometry;
@@ -48,8 +42,7 @@ export const ragdollPlugin = Database.Plugin.create({
                             const skeleton = ids.get(i);
                             if (started.has(skeleton)) continue;
                             const clips = (db.store.read(gc.get(i)) as { _animationClipRefs?: number[] } | null)?._animationClipRefs ?? [];
-                            if (clips.length === 0) continue; // model / animations not loaded yet
-                            // direct store insert (one row); the transaction form replays as transient+commit here
+                            if (clips.length === 0) continue;
                             db.store.archetypes.Animation.insert({
                                 animationClipRef: clips[0], animationTargets: [...jc.get(i)],
                                 animationTime: 0, animationSpeed: 1, animationLoop: true, animationPlaying: true,
@@ -60,7 +53,7 @@ export const ragdollPlugin = Database.Plugin.create({
                 };
             },
         },
-        // Let it walk for a few seconds, then go limp (drop onto the floor).
+        // Walk for a few seconds, then go limp (the active ragdoll backend handles it).
         autoRagdoll: {
             schedule: { during: ["update"] },
             create: db => {
@@ -75,4 +68,5 @@ export const ragdollPlugin = Database.Plugin.create({
     },
 });
 
-export type RagdollService = Database.Plugin.ToDatabase<typeof ragdollPlugin>;
+export const ragdollRapierPlugin = Database.Plugin.combine(ragdollScene, boneColliders, rapierSolver);
+export const ragdollJoltPlugin = Database.Plugin.combine(ragdollScene, boneColliders, joltSolver);

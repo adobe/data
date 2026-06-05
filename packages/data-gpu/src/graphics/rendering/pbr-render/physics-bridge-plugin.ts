@@ -5,6 +5,7 @@ import { physicsData } from "../../../physics/physics-data-plugin.js";
 import { model } from "../../scene/model/model-plugin.js";
 import { shapeGeometry } from "../../scene/model/shape/shape-geometry-plugin.js";
 import { capsuleMesh } from "../../scene/model/shape/shape-mesh.js";
+import { convexHullMesh } from "../../scene/model/shape/convex-hull.js";
 import { uploadShapeMesh } from "../../scene/model/shape/upload-shape-mesh.js";
 import { interpolation } from "../interpolation-plugin.js";
 
@@ -48,6 +49,18 @@ export const physicsRenderBridge = Database.Plugin.create({
                     }
                     return geo;
                 };
+                // Hull render mesh = triangulated convex hull of the point cloud, cached
+                // by the point-array reference (bodies sharing a cloud share one mesh + draw).
+                const hullGeometry = new Map<Float32Array, Entity>();
+                const ensureHull = (device: GPUDevice, points: Float32Array): Entity => {
+                    let geo = hullGeometry.get(points);
+                    if (geo === undefined) {
+                        const m = uploadShapeMesh(device, convexHullMesh(points));
+                        geo = db.transactions.insertShapePrimitive({ vertexBuffer: m.vb, indexBuffer: m.ib, indexCount: m.count });
+                        hullGeometry.set(points, geo);
+                    }
+                    return geo;
+                };
                 return () => {
                     const shapes = db.store.resources._shapeGeometry;
                     const device = db.store.resources.device;
@@ -56,15 +69,18 @@ export const physicsRenderBridge = Database.Plugin.create({
                         const ids = arch.columns.id, css = arch.columns.colliderShape, hes = arch.columns.halfExtents;
                         // Tail→head: every visited body migrates out (gains geometry).
                         for (let i = arch.rowCount - 1; i >= 0; i--) {
-                            const shape = css.get(i), he = hes.get(i);
-                            // capsule renders at unit scale (mesh is real-size); sphere/cube scale by half-extents.
-                            const geometry = shape === "box" ? shapes.cube
-                                : shape === "capsule" ? ensureCapsule(device, he[0], he[1])
-                                    : shapes.sphere;
-                            const scale: [number, number, number] = shape === "box" ? [he[0], he[1], he[2]]
-                                : shape === "capsule" ? [1, 1, 1]
-                                    : [he[0], he[0], he[0]];
-                            db.store.update(ids.get(i), { geometry, scale, visible: true });
+                            const id = ids.get(i), shape = css.get(i), he = hes.get(i);
+                            // capsule + hull render at unit scale (their meshes are real-size);
+                            // sphere/cube are unit meshes scaled by half-extents.
+                            let geometry: Entity, scale: [number, number, number];
+                            if (shape === "box") { geometry = shapes.cube; scale = [he[0], he[1], he[2]]; }
+                            else if (shape === "capsule") { geometry = ensureCapsule(device, he[0], he[1]); scale = [1, 1, 1]; }
+                            else if (shape === "hull") {
+                                const pts = (db.store.read(id) as { convexPoints?: Float32Array | null }).convexPoints;
+                                geometry = pts ? ensureHull(device, pts) : shapes.sphere;
+                                scale = [1, 1, 1];
+                            } else { geometry = shapes.sphere; scale = [he[0], he[0], he[0]]; }
+                            db.store.update(id, { geometry, scale, visible: true });
                         }
                     }
                 };

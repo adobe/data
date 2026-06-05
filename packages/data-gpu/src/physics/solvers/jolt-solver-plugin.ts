@@ -50,6 +50,8 @@ type JBodyInterface = InstanceType<JoltModule["BodyInterface"]>;
 type JJoltInterface = InstanceType<JoltModule["JoltInterface"]>;
 type JRVec3 = InstanceType<JoltModule["RVec3"]>;
 type JQuat = InstanceType<JoltModule["Quat"]>;
+type JVec3 = InstanceType<JoltModule["Vec3"]>;
+type JShape = InstanceType<JoltModule["Shape"]>;
 
 interface MatProps { restitution: number; friction: number }
 
@@ -98,12 +100,24 @@ export const joltSolver = Database.Plugin.create({
                 const ensureBody = (jolt: JoltModule, bi: JBodyInterface, id: Entity, motion: BodyType, shape: ColliderShape, hx: number, hy: number, hz: number, mat: Entity, px: number, py: number, pz: number, q: ArrayLike<number>): void => {
                     if (bodies.has(id)) return;
                     const m = matPropsOf(mat);
-                    // box needs a Vec3 half-extent temporary; sphere/capsule are scalar.
+                    // box needs a Vec3 half-extent temporary; sphere/capsule are scalar;
+                    // hull is built from the authored point cloud (read once here).
                     // capsule: Y-aligned, halfHeight = cylinder half (hy), radius = hx.
-                    const half = shape === "box" ? new jolt.Vec3(hx, hy, hz) : null;
-                    const shp = shape === "sphere" ? new jolt.SphereShape(hx)
-                        : shape === "capsule" ? new jolt.CapsuleShape(hy, hx)
-                            : new jolt.BoxShape(half!);
+                    let half: JVec3 | null = null;
+                    let shp: JShape;
+                    if (shape === "sphere") shp = new jolt.SphereShape(hx);
+                    else if (shape === "capsule") shp = new jolt.CapsuleShape(hy, hx);
+                    else if (shape === "hull") {
+                        const pts = (db.store.read(id) as { convexPoints?: Float32Array | null }).convexPoints;
+                        const hs = new jolt.ConvexHullShapeSettings();
+                        if (pts) for (let i = 0; i < pts.length; i += 3) {
+                            const v = new jolt.Vec3(pts[i], pts[i + 1], pts[i + 2]);
+                            hs.mPoints.push_back(v); jolt.destroy(v); // push_back copies the value
+                        }
+                        const res = hs.Create();
+                        shp = res.IsValid() ? res.Get() : new jolt.SphereShape(Math.max(hx, 0.1)); // degenerate fallback
+                        jolt.destroy(hs);
+                    } else { half = new jolt.Vec3(hx, hy, hz); shp = new jolt.BoxShape(half); }
                     const pos = new jolt.RVec3(px, py, pz), rot = new jolt.Quat(q[0], q[1], q[2], q[3]);
                     // dynamic = simulated; kinematic = position-driven (pushes dynamics, in the
                     // dynamic layer so it collides with them); static = immovable collider.

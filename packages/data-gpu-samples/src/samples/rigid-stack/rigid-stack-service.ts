@@ -23,7 +23,7 @@ const IDENTITY: [number, number, number, number] = [...Quat.identity];
  * two services running different solvers (Rapier vs Jolt) get the *identical*
  * scene — a fair side-by-side comparison.
  */
-interface Drop { shape: ColliderShape; he: [number, number, number]; pos: [number, number, number]; quat: [number, number, number, number]; }
+interface Drop { shape: ColliderShape; he: [number, number, number]; pos: [number, number, number]; quat: [number, number, number, number]; points?: Float32Array; }
 
 function seededRng(seed: number): () => number {
     let a = seed >>> 0;
@@ -34,12 +34,22 @@ function randomQuat(r: () => number): [number, number, number, number] {
     const a = Math.sqrt(1 - u1), b = Math.sqrt(u1);
     return [a * Math.sin(2 * Math.PI * u2), a * Math.cos(2 * Math.PI * u2), b * Math.sin(2 * Math.PI * u3), b * Math.cos(2 * Math.PI * u3)];
 }
+/** A small cloud of points scattered near a sphere's surface — the solver hulls
+ *  it into a random convex polyhedron (gem-like). */
+function randomHullPoints(r: () => number, count: number, radius: number): Float32Array {
+    const out = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+        const u = r() * 2 - 1, theta = r() * 2 * Math.PI, s = Math.sqrt(1 - u * u), rad = radius * (0.7 + 0.3 * r());
+        out[i * 3] = rad * s * Math.cos(theta); out[i * 3 + 1] = rad * u; out[i * 3 + 2] = rad * s * Math.sin(theta);
+    }
+    return out;
+}
 const DROPS: Drop[] = (() => {
     const r = seededRng(0x1234abcd), out: Drop[] = [];
     for (let i = 0; i < DYNAMIC_CAP; i++) {
         const k = r();
-        const shape: ColliderShape = k < 0.34 ? "box" : k < 0.67 ? "capsule" : "sphere";
-        // box: 3 half-extents; capsule: [radius, cylinder half-height]; sphere: [radius]
+        const shape: ColliderShape = k < 0.28 ? "box" : k < 0.5 ? "capsule" : k < 0.72 ? "hull" : "sphere";
+        // box: 3 half-extents; capsule: [radius, cyl half-height]; hull: halfExtents unused; sphere: [radius]
         const he: [number, number, number] = shape === "box" ? [0.3 + r() * 0.3, 0.3 + r() * 0.3, 0.3 + r() * 0.3]
             : shape === "capsule" ? [0.28 + r() * 0.15, 0.35 + r() * 0.35, 0]
                 : [0.3 + r() * 0.4, 0, 0];
@@ -47,6 +57,7 @@ const DROPS: Drop[] = (() => {
             shape, he,
             pos: [(r() * 2 - 1) * SPAWN_SPREAD, SPAWN_HEIGHT, (r() * 2 - 1) * SPAWN_SPREAD],
             quat: shape === "sphere" ? [0, 0, 0, 1] : randomQuat(r),
+            points: shape === "hull" ? randomHullPoints(r, 9, 0.45 + r() * 0.2) : undefined,
         });
     }
     return out;
@@ -121,17 +132,14 @@ const rigidStackScene = Database.Plugin.create({
         },
         spawnBody(t, args: { index: number }) {
             const d = DROPS[args.index];
-            const mats = Object.values(t.resources.materials);
-            t.archetypes.RigidBody.insert({
-                bodyType: "dynamic",
-                colliderShape: d.shape,
-                halfExtents: d.he,
-                material: mats[args.index % mats.length],
-                position: d.pos,
-                rotation: d.quat,
-                linearVelocity: [0, 0, 0],
-                angularVelocity: [0, 0, 0],
-            });
+            const material = Object.values(t.resources.materials)[args.index % Object.keys(t.resources.materials).length];
+            const common = {
+                bodyType: "dynamic" as const, colliderShape: d.shape, halfExtents: d.he, material,
+                position: d.pos, rotation: d.quat, linearVelocity: [0, 0, 0] as [number, number, number], angularVelocity: [0, 0, 0] as [number, number, number],
+            };
+            // hull bodies carry their authored point cloud (the ConvexBody archetype)
+            if (d.shape === "hull" && d.points) t.archetypes.ConvexBody.insert({ ...common, convexPoints: d.points });
+            else t.archetypes.RigidBody.insert(common);
         },
     },
     systems: {

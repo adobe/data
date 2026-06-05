@@ -48,9 +48,15 @@ export const physicsData = Database.Plugin.create({
         angularVelocity: Vec3.schema,
         _prevPosition:   Vec3.schema, // derived: pose before the last fixed step (render interpolation)
         _prevRotation:   Quat.schema,
+        // Authored collision geometry for shapes `halfExtents` can't describe.
+        // Runtime objects (variable length, no schema): the solver reads them once
+        // when it mirrors the body, the bridge once to build the render mesh.
+        convexPoints:    { default: null as Float32Array | null }, // colliderShape "hull": point cloud → convex hull
     },
     archetypes: {
         RigidBody: ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"],
         StaticCollider: ["colliderShape", "halfExtents", "material", "position", "rotation"],
+        // A convex-hull body (dynamic / kinematic): authored as a point cloud.
+        ConvexBody: ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity", "convexPoints"],
     },
 });

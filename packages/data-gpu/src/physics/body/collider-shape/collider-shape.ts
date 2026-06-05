@@ -9,7 +9,8 @@ import { schema } from "./schema.js";
  *   sphere  — `.x` is the radius.
  *   capsule — `.x` is the radius, `.y` the cylinder's half-height; Y-aligned
  *             (total height 2·(y + x)). `.z` unused.
- * (Convex hulls + meshes land later.)
+ *   hull    — convex hull of an authored `convexPoints` cloud; `halfExtents`
+ *             is unused (the geometry comes from the points). Static meshes land later.
  */
 export type ColliderShape = Schema.ToType<typeof schema>;
 

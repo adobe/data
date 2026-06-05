@@ -72,9 +72,15 @@ export const rapierSolver = Database.Plugin.create({
                     if (motion === "dynamic") desc.setLinvel(vx, vy, vz);
                     const body = world.createRigidBody(desc);
                     // capsule: Y-aligned, halfHeight = cylinder half (hy), radius = hx.
-                    const col = shape === "sphere" ? RAPIER.ColliderDesc.ball(hx)
-                        : shape === "capsule" ? RAPIER.ColliderDesc.capsule(hy, hx)
-                            : RAPIER.ColliderDesc.cuboid(hx, hy, hz);
+                    // hull: convex hull of the authored point cloud (read once here).
+                    let col: RAPIER.ColliderDesc | null;
+                    if (shape === "sphere") col = RAPIER.ColliderDesc.ball(hx);
+                    else if (shape === "capsule") col = RAPIER.ColliderDesc.capsule(hy, hx);
+                    else if (shape === "hull") {
+                        const pts = (db.store.read(id) as { convexPoints?: Float32Array | null }).convexPoints;
+                        col = pts ? RAPIER.ColliderDesc.convexHull(pts) : null;
+                        if (!col) col = RAPIER.ColliderDesc.ball(Math.max(hx, 0.1)); // degenerate cloud fallback
+                    } else col = RAPIER.ColliderDesc.cuboid(hx, hy, hz);
                     col.setRestitution(m.restitution).setFriction(m.friction).setDensity(m.density);
                     world.createCollider(col, body);
                     bodies.set(id, body);

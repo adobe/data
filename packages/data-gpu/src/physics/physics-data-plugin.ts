@@ -4,6 +4,7 @@ import { Database } from "@adobe/data/ecs";
 import { Vec3, Quat } from "@adobe/data/math";
 import { BodyType } from "./body/body-type/body-type.js";
 import { ColliderShape } from "./body/collider-shape/collider-shape.js";
+import type { ColliderMesh } from "./body/collider-mesh.js";
 import { Material } from "../material/material.js";
 
 /**
@@ -52,11 +53,14 @@ export const physicsData = Database.Plugin.create({
         // Runtime objects (variable length, no schema): the solver reads them once
         // when it mirrors the body, the bridge once to build the render mesh.
         convexPoints:    { default: null as Float32Array | null }, // colliderShape "hull": point cloud → convex hull
+        colliderMesh:    { default: null as ColliderMesh | null }, // colliderShape "mesh": static triangle soup
     },
     archetypes: {
         RigidBody: ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"],
         StaticCollider: ["colliderShape", "halfExtents", "material", "position", "rotation"],
         // A convex-hull body (dynamic / kinematic): authored as a point cloud.
         ConvexBody: ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity", "convexPoints"],
+        // A static triangle-mesh collider (terrain / level geometry).
+        MeshCollider: ["colliderShape", "halfExtents", "material", "position", "rotation", "colliderMesh"],
     },
 });

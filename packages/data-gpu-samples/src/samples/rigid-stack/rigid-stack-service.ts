@@ -105,6 +105,17 @@ const rigidStackScene = Database.Plugin.create({
             wall([-BIN, WH, 0], [0.5, WH, BIN + 1]);                 // −x
             wall([0, WH,  BIN], [BIN + 1, WH, 0.5]);                 // +z
             wall([0, WH, -BIN], [BIN + 1, WH, 0.5]);                 // −z
+            // A static triangle-mesh ramp (level geometry) leaning into one corner —
+            // dropped bodies land on it and slide down. World-space verts; up-facing
+            // winding so it renders (front faces) and collides (trimesh is two-sided).
+            t.archetypes.MeshCollider.insert({
+                colliderShape: "mesh", halfExtents: [0, 0, 0], material: t.resources.materials.steel,
+                position: [0, 0, 0], rotation: IDENTITY,
+                colliderMesh: {
+                    positions: new Float32Array([-BIN + 1.5, 4.5, BIN - 2, -BIN + 1.5, 4.5, -(BIN - 2), BIN - 5, 0.6, -(BIN - 2), BIN - 5, 0.6, BIN - 2]),
+                    indices: new Uint32Array([0, 2, 1, 0, 3, 2]),
+                },
+            });
             // Dynamic block stack: a grid of unit cubes resting on the floor.
             // A small gap on every axis avoids initial face-coincidence
             // (degenerate SAT normals); they settle into contact.

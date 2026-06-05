@@ -7,6 +7,7 @@ import { physicsClock } from "../physics-clock-plugin.js";
 import { physicsData } from "../physics-data-plugin.js";
 import { BodyType } from "../body/body-type/body-type.js";
 import { ColliderShape } from "../body/collider-shape/collider-shape.js";
+import type { ColliderMesh } from "../body/collider-mesh.js";
 
 /**
  * A third rigid-body solver behind the same `physicsData` seam — Jolt Physics
@@ -117,6 +118,23 @@ export const joltSolver = Database.Plugin.create({
                         const res = hs.Create();
                         shp = res.IsValid() ? res.Get() : new jolt.SphereShape(Math.max(hx, 0.1)); // degenerate fallback
                         jolt.destroy(hs);
+                    } else if (shape === "mesh") {
+                        const cm = (db.store.read(id) as { colliderMesh?: ColliderMesh | null }).colliderMesh;
+                        const verts = new jolt.VertexList(), tris = new jolt.IndexedTriangleList(), mats = new jolt.PhysicsMaterialList();
+                        if (cm) {
+                            for (let i = 0; i < cm.positions.length; i += 3) {
+                                const f = new jolt.Float3(cm.positions[i], cm.positions[i + 1], cm.positions[i + 2]);
+                                verts.push_back(f); jolt.destroy(f); // copied by value
+                            }
+                            for (let i = 0; i < cm.indices.length; i += 3) {
+                                const t = new jolt.IndexedTriangle(cm.indices[i], cm.indices[i + 1], cm.indices[i + 2], 0);
+                                tris.push_back(t); jolt.destroy(t);
+                            }
+                        }
+                        const ms = new jolt.MeshShapeSettings(verts, tris, mats);
+                        const res = ms.Create();
+                        shp = res.IsValid() ? res.Get() : new jolt.SphereShape(0.1);
+                        jolt.destroy(ms); jolt.destroy(verts); jolt.destroy(tris); jolt.destroy(mats);
                     } else { half = new jolt.Vec3(hx, hy, hz); shp = new jolt.BoxShape(half); }
                     const pos = new jolt.RVec3(px, py, pz), rot = new jolt.Quat(q[0], q[1], q[2], q[3]);
                     // dynamic = simulated; kinematic = position-driven (pushes dynamics, in the

@@ -58,6 +58,35 @@ const CUBE_FACES: Face[] = [
 ];
 
 /**
+ * Flat-shaded StandardVertex mesh from a triangle soup (positions + indices) —
+ * one face normal per triangle, three unique verts per triangle. Used to render
+ * an authored static-mesh collider. Indices are emitted as `uint16`, so this is
+ * for the modest authored meshes (ramps, props) of the current shape path, not
+ * dense terrain (which would need a `uint32`-indexed primitive).
+ */
+export function flatShadedMesh(positions: Float32Array, indices: ArrayLike<number>): ShapeMesh {
+    const verts: number[] = [], out: number[] = [];
+    for (let t = 0; t < indices.length; t += 3) {
+        const ia = indices[t] * 3, ib = indices[t + 1] * 3, ic = indices[t + 2] * 3;
+        const ax = positions[ia], ay = positions[ia + 1], az = positions[ia + 2];
+        const bx = positions[ib], by = positions[ib + 1], bz = positions[ib + 2];
+        const cx = positions[ic], cy = positions[ic + 1], cz = positions[ic + 2];
+        let nx = (by - ay) * (cz - az) - (bz - az) * (cy - ay);
+        let ny = (bz - az) * (cx - ax) - (bx - ax) * (cz - az);
+        let nz = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+        const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+        let tx = bx - ax, ty = by - ay, tz = bz - az;
+        const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+        const base = verts.length / 12;
+        push(verts, ax, ay, az, nx, ny, nz, tx, ty, tz, 1, 0, 0);
+        push(verts, bx, by, bz, nx, ny, nz, tx, ty, tz, 1, 1, 0);
+        push(verts, cx, cy, cz, nx, ny, nz, tx, ty, tz, 1, 0, 1);
+        out.push(base, base + 1, base + 2);
+    }
+    return { vertices: new Float32Array(verts), indices: new Uint16Array(out) };
+}
+
+/**
  * Y-aligned capsule: a cylinder (radius `r`, half-height `halfHeight`) capped by
  * two hemispheres of radius `r`, centred at the origin (total height
  * 2·(halfHeight + r)). Unlike the sphere/cube, a capsule has two independent

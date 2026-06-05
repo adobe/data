@@ -80,6 +80,9 @@ export const rapierSolver = Database.Plugin.create({
                         const pts = (db.store.read(id) as { convexPoints?: Float32Array | null }).convexPoints;
                         col = pts ? RAPIER.ColliderDesc.convexHull(pts) : null;
                         if (!col) col = RAPIER.ColliderDesc.ball(Math.max(hx, 0.1)); // degenerate cloud fallback
+                    } else if (shape === "mesh") {
+                        const cm = (db.store.read(id) as { colliderMesh?: { positions: Float32Array; indices: Uint32Array } | null }).colliderMesh;
+                        col = cm ? RAPIER.ColliderDesc.trimesh(cm.positions, cm.indices) : RAPIER.ColliderDesc.cuboid(0.1, 0.1, 0.1);
                     } else col = RAPIER.ColliderDesc.cuboid(hx, hy, hz);
                     col.setRestitution(m.restitution).setFriction(m.friction).setDensity(m.density);
                     world.createCollider(col, body);

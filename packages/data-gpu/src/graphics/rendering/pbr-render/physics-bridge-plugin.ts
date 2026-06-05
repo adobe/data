@@ -4,9 +4,10 @@ import { Database, type Entity } from "@adobe/data/ecs";
 import { physicsData } from "../../../physics/physics-data-plugin.js";
 import { model } from "../../scene/model/model-plugin.js";
 import { shapeGeometry } from "../../scene/model/shape/shape-geometry-plugin.js";
-import { capsuleMesh } from "../../scene/model/shape/shape-mesh.js";
+import { capsuleMesh, flatShadedMesh } from "../../scene/model/shape/shape-mesh.js";
 import { convexHullMesh } from "../../scene/model/shape/convex-hull.js";
 import { uploadShapeMesh } from "../../scene/model/shape/upload-shape-mesh.js";
+import type { ColliderMesh } from "../../../physics/body/collider-mesh.js";
 import { interpolation } from "../interpolation-plugin.js";
 
 /**
@@ -61,6 +62,17 @@ export const physicsRenderBridge = Database.Plugin.create({
                     }
                     return geo;
                 };
+                // Static-mesh render = flat-shaded triangle soup, cached by the colliderMesh ref.
+                const meshGeometry = new Map<ColliderMesh, Entity>();
+                const ensureMesh = (device: GPUDevice, cm: ColliderMesh): Entity => {
+                    let geo = meshGeometry.get(cm);
+                    if (geo === undefined) {
+                        const m = uploadShapeMesh(device, flatShadedMesh(cm.positions, cm.indices));
+                        geo = db.transactions.insertShapePrimitive({ vertexBuffer: m.vb, indexBuffer: m.ib, indexCount: m.count });
+                        meshGeometry.set(cm, geo);
+                    }
+                    return geo;
+                };
                 return () => {
                     const shapes = db.store.resources._shapeGeometry;
                     const device = db.store.resources.device;
@@ -78,6 +90,10 @@ export const physicsRenderBridge = Database.Plugin.create({
                             else if (shape === "hull") {
                                 const pts = (db.store.read(id) as { convexPoints?: Float32Array | null }).convexPoints;
                                 geometry = pts ? ensureHull(device, pts) : shapes.sphere;
+                                scale = [1, 1, 1];
+                            } else if (shape === "mesh") {
+                                const cm = (db.store.read(id) as { colliderMesh?: ColliderMesh | null }).colliderMesh;
+                                geometry = cm ? ensureMesh(device, cm) : shapes.cube;
                                 scale = [1, 1, 1];
                             } else { geometry = shapes.sphere; scale = [he[0], he[0], he[0]]; }
                             db.store.update(id, { geometry, scale, visible: true });

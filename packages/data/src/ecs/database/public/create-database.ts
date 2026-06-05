@@ -5,10 +5,12 @@ import { Database, FromServiceFactories } from "../database.js";
 import { calculateSystemOrder } from "../calculate-system-order.js";
 import { createTransactionDispatcher } from "./create-transaction-dispatcher.js";
 import { observeSelectEntities } from "../observe-select-entities.js";
+import { observeIndexEntities } from "../observe-index-entities.js";
 import { createObservedDatabase } from "../observed/create-observed-database.js";
 import { createImmediateConcurrency } from "../concurrency/immediate-concurrency.js";
 import type { ConcurrencyStrategy, ConcurrencyStrategyFactory } from "../concurrency/concurrency-strategy.js";
 import type { Entity } from "../../entity/entity.js";
+import type { Observe } from "../../../observe/index.js";
 
 /**
  * For each system in newDeclarations that is not yet in systemFunctions: call create(db),
@@ -202,6 +204,30 @@ function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined
         partialDatabase.observe.transactions,
     );
 
+    // Reactive index handles. Each index's `observe(arg)` is built from its
+    // handle's `find` + `readColumns` and fires on the same transaction-commit
+    // boundary as `observe.select` (see `observeIndexEntities`). Attached at
+    // the Database layer because the Store layer that creates the handles has
+    // no transaction observable. `db.indexes` and `t.indexes` share the same
+    // handle objects, so attaching here covers both.
+    const observeIndex = observeIndexEntities(partialDatabase.observe.transactions);
+    const attachIndexObservers = () => {
+        // Structural view of the handle map: the Store augments each handle
+        // with `find` + `readColumns` (the same internal contract the query
+        // planner relies on for `find` + `routableColumns`).
+        const handles = store.indexes as unknown as Record<string, {
+            find(arg: unknown): readonly Entity[];
+            readColumns: readonly string[];
+            observe?: (arg: unknown) => Observe<readonly Entity[]>;
+        }>;
+        for (const name in handles) {
+            const handle = handles[name];
+            if (handle.observe) continue;
+            handle.observe = observeIndex(handle.find, handle.readColumns);
+        }
+    };
+    attachIndexObservers();
+
     const extend = (plugin: Database.Plugin<any, any, any, any, any, any, any, any>) => {
         if (!extendedPlugins.has(plugin)) {
             extendedPlugins.add(plugin);
@@ -231,6 +257,7 @@ function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined
             // our local indexes reference in case the underlying map got a
             // new identity (it doesn't today, but stay defensive).
             partialDatabase.indexes = store.indexes;
+            attachIndexObservers();
             if (plugin.systems && Object.keys(plugin.systems).length > 0) {
                 Object.assign(allSystemDeclarations, plugin.systems);
                 systemOrder = calculateSystemOrder(allSystemDeclarations);
@@ -266,32 +293,38 @@ const equalityValue = (cond: unknown): unknown | typeof NOT_EQUALITY => {
  * Returns `null` when no index applies; the caller must fall back to the
  * archetype scan. Returns an `Entity[]` when an index can answer the query.
  *
- * Match conditions (intentionally conservative for V2):
+ * Match conditions (intentionally conservative):
  *   - `options.where` is non-empty.
- *   - `options.order` is absent (sort orders are routed in a follow-up).
  *   - Every `where` key is a pure equality (`v` or `{ "==": v }`).
- *   - The `where` keys, as a set, equal some index's `components`.
+ *   - The `where` keys, as a set, equal some index's key columns.
+ *   - When `options.order` is present, that same index must be sorted with
+ *     the default comparator on exactly the requested order columns (in
+ *     sequence), and every requested direction must be ascending. A
+ *     descending clause, a mismatched / partial column sequence, or a custom
+ *     comparator falls back to the scan. (A sorted index's `find` already
+ *     returns its bucket pre-sorted, so a matched ordered query is served
+ *     without a second sort.)
  *
  * The query planner accesses `store.indexes` (the user-visible handle map),
  * so test spies and any future user-installed instrumentation see the call.
- * Components for each index are recovered from the registry-internal handle
- * (the handle exposes `find`/`findRange`/`get`; the column set is held by
- * the underlying `RuntimeIndex`, which is the registry's source of truth).
- * For the planner we treat the handle map structurally as
- * `{ [name]: { findByValues, routableColumns } }` because Store internally
- * augments each handle with these fields — see `createStore`.
+ * The column / sort metadata for each index lives on the registry-internal
+ * `RuntimeIndex`; `createStore` copies the routable subset onto each handle
+ * as `routableColumns` / `routableOrder`, which is the structural shape the
+ * planner reads below.
  *
  * After the index lookup returns candidate entities, each candidate is
  * checked for archetype membership of every `include` component so the
- * returned set respects the same archetype filter as the scan path.
+ * returned set respects the same archetype filter as the scan path. Index
+ * order is preserved through that filter, so a matched ordered query stays
+ * sorted.
  */
 function trySelectViaIndex(
     store: Store<any, any, any>,
     include: readonly string[] | ReadonlySet<string>,
-    options: { where?: Record<string, unknown>; order?: Record<string, unknown> } | undefined,
+    options: { where?: Record<string, unknown>; order?: Record<string, boolean> } | undefined,
 ): readonly Entity[] | null {
     const where = options?.where;
-    if (!where || options?.order) return null;
+    if (!where) return null;
     const whereKeys = Object.keys(where);
     if (whereKeys.length === 0) return null;
 
@@ -304,11 +337,27 @@ function trySelectViaIndex(
         values[k] = eq;
     }
 
-    // Iterate the public handle map (store.indexes). Each handle carries a
-    // non-public `routableColumns` field placed by `createStore` for exactly
-    // this purpose. `routableColumns: null` opts an index out of raw-where
+    // Resolve the order constraint, if any. An empty order object is treated
+    // as no order. Any descending (falsy) direction opts the whole query out
+    // of routing — a sorted index only materializes its single ascending
+    // order, so it cannot serve a descending request without re-sorting.
+    let orderCols: readonly string[] | null = null;
+    if (options?.order) {
+        const cols = Object.keys(options.order);
+        if (cols.length > 0) {
+            for (const c of cols) {
+                if (!options.order[c]) return null;
+            }
+            orderCols = cols;
+        }
+    }
+
+    // Iterate the public handle map (store.indexes). Each handle carries the
+    // non-public `routableColumns` / `routableOrder` fields placed by
+    // `createStore`. `routableColumns: null` opts an index out of raw-where
     // auto-routing (function and slot-map keys live in a value space the
-    // planner cannot infer from a where clause).
+    // planner cannot infer from a where clause); `routableOrder: null` opts it
+    // out of serving an `order` clause (unsorted, or custom comparator).
     //
     // For a matched index the planner builds the appropriate `find`
     // argument: a scalar for a single-column key, the full values object
@@ -317,6 +366,7 @@ function trySelectViaIndex(
     // dispatch.
     const handles = store.indexes as unknown as Readonly<Record<string, {
         readonly routableColumns: readonly string[] | null;
+        readonly routableOrder: readonly string[] | null;
         find(v: unknown): readonly Entity[];
     }>>;
     let matchedHandle: typeof handles[string] | undefined;
@@ -326,11 +376,18 @@ function trySelectViaIndex(
         const cols = handle.routableColumns;
         if (cols === null) continue;
         if (cols.length !== whereKeys.length) continue;
-        if (cols.every(c => c in values)) {
-            matchedHandle = handle;
-            matchedCols = cols;
-            break;
+        if (!cols.every(c => c in values)) continue;
+        // Key matches. If an order was requested, the same index must be
+        // sorted on exactly those columns in the same sequence.
+        if (orderCols !== null) {
+            const sortCols = handle.routableOrder;
+            if (sortCols === null) continue;
+            if (sortCols.length !== orderCols.length) continue;
+            if (!sortCols.every((c, i) => c === orderCols![i])) continue;
         }
+        matchedHandle = handle;
+        matchedCols = cols;
+        break;
     }
     if (!matchedHandle || !matchedCols) return null;
 

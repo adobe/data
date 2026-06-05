@@ -150,6 +150,8 @@ Indexes give O(1) lookup by some derived or column-valued key. Declare them on t
 
 `find(key) → readonly Entity[]` returns every entity in the matching bucket (sorted if `order` is declared). `get(key) → Entity | null` is exposed only on unique indexes; `null` means "we know this key has no entity," never `undefined`. Array values (a `T[]` column, or a `compute` return that is `T[]`) auto-fan-out into one bucket entry per element.
 
+`observe(key) → Observe<readonly Entity[]>` is the reactive form of `find`. It emits the current bucket synchronously on subscribe, then re-emits — on a microtask after a committed transaction — whenever that bucket's membership *or order* changes, and stays silent for transactions that touch only other buckets. Prefer it over pairing `db.observe.select(..., { where })` with `find`: a sort-key-only reorder changes the index's order but not the `where` result, so the `select` form silently swallows the reorder while `observe` reports it.
+
 ### Pattern catalogue
 
 #### Raw indexes (identity reads from columns)
@@ -295,7 +297,9 @@ indexes: {
 
 ### Auto-routing of `select`
 
-When `db.select(include, { where })` or `db.observe.select(...)` is called with a `where` clause that exactly matches the `key` of a declared raw index by equality, the query is served from the index instead of scanning archetypes. No code-site change required — declare the index and the planner picks it up. Other query shapes fall through to the archetype scan unchanged.
+When `db.select(include, { where })` or `db.observe.select(...)` is called with a `where` clause that exactly matches the `key` of a declared raw index by equality, the query is served from the index instead of scanning archetypes. No code-site change required — declare the index and the planner picks it up.
+
+An `order` clause is routed too: when the query also asks for `order` and the matched index is sorted (default comparator) on exactly those columns, in sequence, all ascending, the already-sorted bucket is returned without a second sort. A descending clause, a mismatched/partial column sequence, or an index with a custom comparator falls through to the archetype scan unchanged — as does any non-equality `where`, partial-key match, or function/slot-map-keyed index.
 
 ### Maintenance and atomicity
 
@@ -329,6 +333,22 @@ Reads pay one catch-up sort the first time they touch a dirty bucket:
 | `get(key)` (unique) | `O(1)` Map lookup | same |
 
 `B` = total bucket count for the index. A `find` against a bucket that has not received any writes since the previous `find` is free (clean buckets aren't re-sorted).
+
+#### `observe(key)` reactivity cost
+
+`observe` re-emits on the transaction-commit boundary, coalescing every mutation in a tick into a single recompute per subscriber. With `b` = observed bucket size and `N` = live subscribers on the index:
+
+| Event | Cost per subscriber | Notes |
+|---|---|---|
+| Committed transaction, wakeup gate | `O(min(C, R))` | `C` = changed components, `R` = index read columns. Runs for all `N` subscribers → `O(N·min(C,R))` total. |
+| Flush, observed bucket **unchanged** | `O(b)` | Recompute `find` (clean, cached sort) + sequence compare; emission suppressed. |
+| Flush, observed bucket **changed** | `O(b log b)` + `O(b)` emit | Dirty bucket pays one catch-up sort, then emits the `b`-element array. |
+
+Emission is `O(b)` and optimal (the API hands back the full array). Two known sub-optimalities, both inherited from layers below `observe` rather than the reactive wiring itself:
+
+1. **Coarse, component-level wakeup.** The gate fires on *any* change to a column the index reads, not on a change to *this* bucket. A mutation to a sibling bucket therefore costs each subscriber an `O(b)` recompute whose emission is then suppressed — `O(N·b)` of suppressed work per transaction in a wide fan-out (many buckets, many observers, one shared column). The optimum is `O(1)`: a per-bucket version stamp the observer compares against a cached value, or an observer registry keyed by bucket so only affected subscribers wake. This would require `createIndex` to track per-bucket versions / hold the observer registry (today `observe` is built one layer up, over `find` + transaction notifications, and stays out of the index internals). It is a contained change but deliberately deferred — it matches the same coarseness `db.observe.select` already has, so the two stay consistent.
+
+2. **Lazy full re-sort.** A changed bucket re-sorts in `O(b log b)` (see the read table) rather than maintaining order incrementally at `O(log b)` per mutation. This is an index-wide design trade-off (full re-sort wins for batched writes that touch ≳ `b/log b` of a bucket); switching a bucket to a persistent ordered structure would help observe-heavy, sparsely-mutated buckets but is a broader change with its own trade-offs.
 
 **Unique-conflict timing:** the conflict check runs *before* the column store mutates. The throw originates from the insert/update call; the rollback path restores any state the transaction touched. Verified by `database.index.test.ts` ("unique conflict on insert is caught up-front — no partial store or index mutation") and `database.index.performance.test.ts`.
 

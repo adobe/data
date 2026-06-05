@@ -180,16 +180,31 @@ export const rapierSolver = Database.Plugin.create({
                     // position-based kinematic toward the target over the step, deriving
                     // the velocity that pushes dynamics. (Author the pose however you like —
                     // a system, animation, input — the solver just follows it.)
+                    const toFlip: Entity[] = []; // kinematic bodies whose bodyType became "dynamic" (ragdoll)
                     for (const arch of db.store.queryArchetypes(KINEMATIC, KINEMATIC_ONLY)) {
-                        const ids = arch.columns.id;
+                        const ids = arch.columns.id, bt = arch.columns.bodyType;
                         const pos = arch.columns.position.getTypedArray(), ori = arch.columns.rotation.getTypedArray();
                         for (let r = 0; r < arch.rowCount; r++) {
                             const body = bodies.get(ids.get(r));
                             if (!body) continue;
+                            if (bt.get(r) === "dynamic") { toFlip.push(ids.get(r)); continue; }
                             const r3 = r * 3, r4 = r * 4;
                             body.setNextKinematicTranslation({ x: pos[r3], y: pos[r3 + 1], z: pos[r3 + 2] });
                             body.setNextKinematicRotation({ x: ori[r4], y: ori[r4 + 1], z: ori[r4 + 2], w: ori[r4 + 3] });
                         }
+                    }
+                    // Flip kinematic→dynamic (after the loop, since migrating the row moves the
+                    // typed arrays): the engine body becomes dynamic and it gains the prev-pose
+                    // snapshot, so from now on it's simulated + written back like any dynamic body.
+                    for (const id of toFlip) {
+                        const body = bodies.get(id);
+                        if (!body) continue;
+                        body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+                        const rec = db.store.read(id) as { position: ArrayLike<number>; rotation: ArrayLike<number> };
+                        db.store.update(id, {
+                            _prevPosition: [rec.position[0], rec.position[1], rec.position[2]],
+                            _prevRotation: [rec.rotation[0], rec.rotation[1], rec.rotation[2], rec.rotation[3]],
+                        });
                     }
                     for (const arch of db.store.queryArchetypes(SNAPSHOT)) {
                         const bt = arch.columns.bodyType;

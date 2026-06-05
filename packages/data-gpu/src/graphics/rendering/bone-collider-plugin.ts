@@ -4,21 +4,32 @@ import { Database, Entity } from "@adobe/data/ecs";
 import { True } from "@adobe/data/schema";
 import { Vec3, Quat, Mat4x4 } from "@adobe/data/math";
 import { physicsData } from "../../physics/physics-data-plugin.js";
+import { jointData } from "../../physics/joint/joint-plugin.js";
 import { fitBoneCapsules } from "../../physics/ragdoll/fit-bone-capsules.js";
 import { pbrSkinning } from "./skinning/skinning-plugin.js";
 import { modelLoader } from "../scene/model/model-loader-plugin.js";
 import { transform } from "../scene/node/transform-plugin.js";
 
 /**
- * boneColliders — fits a capsule to each bone of a skinned model and makes the
- * capsules *track the animated skeleton* (ragdoll step 1). Once a skeleton's skin
- * has loaded, `fitBoneCapsules` produces a per-bone capsule (bone-local offset +
- * dims); we spawn one **kinematic** capsule body per bone and, each frame, drive
- * it to `jointWorldMatrix · offset` — so the capsules follow the walk/animation
- * and collide with the world. Flipping them to `dynamic` (+ joints) is the next
- * step (the ragdoll controller); for now they are the live, animation-driven
- * collision proxy. Rendered (debug) via the physics bridge's capsule mesh.
+ * boneColliders — fits a capsule to each bone of a skinned model and ragdolls it.
+ *
+ * **Alive:** once the skin loads, `fitBoneCapsules` gives a per-bone capsule
+ * (bone-local offset + dims); we spawn a **kinematic** capsule per bone and each
+ * frame drive it to `jointWorldMatrix · offset`, so the capsules track the
+ * animation and collide with the world.
+ *
+ * **Ragdoll** (`triggerRagdoll`): connect each capsule to its nearest
+ * capsule-bearing ancestor with a point joint (anchored at the shared joint), flip
+ * every capsule kinematic→dynamic, and stop the animation. Now physics drives the
+ * capsules; `reconcileRagdoll` writes each bone's pose *back* onto its skeleton
+ * joint (world → bone-local), so the skinned mesh goes limp and flops. (Anatomical
+ * cone limits + Jolt support are follow-ups; see physics/README.md.)
  */
+
+/** Column-major rigid transform from a position + unit quaternion. */
+function compose(p: ArrayLike<number>, q: ArrayLike<number>): Mat4x4 {
+    return Mat4x4.multiply(Mat4x4.translation(p[0], p[1], p[2]), Quat.toMat4([q[0], q[1], q[2], q[3]]));
+}
 
 /** Orthonormalised rotation of a column-major matrix, as a quaternion. */
 function rotationOf(m: Mat4x4): Quat {
@@ -35,17 +46,24 @@ function rotationOf(m: Mat4x4): Quat {
 interface SkinGeometry { _cpuSkin?: { positions: Float32Array; joints: Uint32Array; weights: Float32Array } | null; _skinInverseBindMatrices?: Float32Array | null }
 
 export const boneColliders = Database.Plugin.create({
-    extends: Database.Plugin.combine(physicsData, pbrSkinning, modelLoader, transform),
+    extends: Database.Plugin.combine(physicsData, jointData, pbrSkinning, modelLoader, transform),
     components: {
         _boneJoint: Entity.schema, // the skeleton joint this capsule tracks
         _boneOffsetPos: Vec3.schema,     // capsule offset in the bone's bind-local frame
         _boneOffsetRot: Quat.schema,
         _ragdollBuilt: True.schema,      // tag: this skeleton's bone capsules have been generated
     },
+    resources: {
+        _ragdollTrigger: { default: false as boolean, transient: true }, // set by triggerRagdoll; consumed once
+    },
     archetypes: {
         // a kinematic capsule body bound to a skeleton joint (collisionGroup 1 ⇒ the
         // ragdoll's bones never collide with each other, only the world)
         BoneCapsule: ["bodyType", "colliderShape", "halfExtents", "material", "collisionGroup", "position", "rotation", "linearVelocity", "angularVelocity", "_boneJoint", "_boneOffsetPos", "_boneOffsetRot"],
+    },
+    transactions: {
+        /** Go limp: flip the bone capsules to dynamic + joint them + stop animation. */
+        triggerRagdoll(t) { t.resources._ragdollTrigger = true; },
     },
     systems: {
         // Once a skeleton's skin has loaded, fit + spawn its bone capsules (one-time;
@@ -72,20 +90,91 @@ export const boneColliders = Database.Plugin.create({
                 }
             },
         },
-        // Each frame, place every bone capsule at jointWorldMatrix · offset (the
-        // kinematic solver then drives the engine body there).
+        // Alive: place every *kinematic* bone capsule at jointWorldMatrix · offset
+        // (the solver then kinematic-drives the engine body there). Dynamic capsules
+        // are ragdolling — physics owns them, so skip.
         trackBoneColliders: {
             schedule: { during: ["postUpdate"], after: ["generateBoneColliders", "transformSystem"] },
             create: db => () => {
-                for (const arch of db.store.queryArchetypes(["_boneJoint", "_boneOffsetPos", "_boneOffsetRot", "position", "rotation"])) {
-                    const bj = arch.columns._boneJoint, op = arch.columns._boneOffsetPos, orot = arch.columns._boneOffsetRot;
+                for (const arch of db.store.queryArchetypes(["_boneJoint", "_boneOffsetPos", "_boneOffsetRot", "bodyType", "position", "rotation"])) {
+                    const bj = arch.columns._boneJoint, op = arch.columns._boneOffsetPos, orot = arch.columns._boneOffsetRot, bt = arch.columns.bodyType;
                     const posCol = arch.columns.position, rotCol = arch.columns.rotation;
                     for (let i = 0; i < arch.rowCount; i++) {
+                        if (bt.get(i) === "dynamic") continue; // ragdolling — physics drives it
                         const jw = db.store.get(bj.get(i), "_worldMatrix") as Mat4x4 | undefined;
                         if (!jw) continue;
                         posCol.set(i, Mat4x4.multiplyVec3(jw, op.get(i)));
                         rotCol.set(i, Quat.multiply(rotationOf(jw), orot.get(i)));
                     }
+                }
+            },
+        },
+        // On trigger: joint each capsule to its nearest capsule-bearing ancestor (at
+        // the shared joint point, anchors from the current pose), flip every capsule
+        // to dynamic, and stop the animation. The solver flips the engine bodies and
+        // mirrors the joints; the root capsule (no ancestor) falls free, dragging the rest.
+        ragdollOnTrigger: {
+            schedule: { during: ["postUpdate"], after: ["trackBoneColliders"] },
+            create: db => () => {
+                if (!db.store.resources._ragdollTrigger) return;
+                db.store.resources._ragdollTrigger = false;
+                // joint entity → its capsule + current world pose
+                const byJoint = new Map<Entity, { capsule: Entity; world: Mat4x4 }>();
+                for (const arch of db.store.queryArchetypes(["_boneJoint", "position", "rotation"])) {
+                    const ids = arch.columns.id, bj = arch.columns._boneJoint, pc = arch.columns.position, rc = arch.columns.rotation;
+                    for (let i = 0; i < arch.rowCount; i++) byJoint.set(bj.get(i), { capsule: ids.get(i), world: compose(pc.get(i), rc.get(i)) });
+                }
+                for (const arch of db.store.queryArchetypes(["_boneJoint", "position", "rotation"])) {
+                    const ids = arch.columns.id, bj = arch.columns._boneJoint, pc = arch.columns.position, rc = arch.columns.rotation;
+                    for (let i = 0; i < arch.rowCount; i++) {
+                        const joint = bj.get(i);
+                        // nearest ancestor joint that has a capsule
+                        let pj = (db.store.get(joint, "parent") as Entity | undefined) ?? (0 as Entity);
+                        while (pj && !byJoint.has(pj)) pj = (db.store.get(pj, "parent") as Entity | undefined) ?? (0 as Entity);
+                        const parent = pj ? byJoint.get(pj) : undefined;
+                        if (!parent) continue; // root capsule: unconstrained
+                        const jw = db.store.get(joint, "_worldMatrix") as Mat4x4 | undefined;
+                        const origin: Vec3 = jw ? [jw[12], jw[13], jw[14]] : [pc.get(i)[0], pc.get(i)[1], pc.get(i)[2]];
+                        const childWorld = compose(pc.get(i), rc.get(i));
+                        db.store.archetypes.Joint.insert({
+                            jointType: "point", jointBodyA: parent.capsule, jointBodyB: ids.get(i),
+                            jointAnchorA: Mat4x4.multiplyVec3(Mat4x4.inverse(parent.world), origin),
+                            jointAnchorB: Mat4x4.multiplyVec3(Mat4x4.inverse(childWorld), origin),
+                            jointAxis: [0, 1, 0], jointMinLimit: 0, jointMaxLimit: 0, jointSwingLimit: 0,
+                        });
+                    }
+                }
+                for (const arch of db.store.queryArchetypes(["_boneJoint", "bodyType"])) {
+                    const ids = arch.columns.id;
+                    for (let i = 0; i < arch.rowCount; i++) db.store.update(ids.get(i), { bodyType: "dynamic" });
+                }
+                for (const arch of db.store.queryArchetypes(["animationPlaying"])) {
+                    const ids = arch.columns.id;
+                    for (let i = 0; i < arch.rowCount; i++) db.store.update(ids.get(i), { animationPlaying: false });
+                }
+            },
+        },
+        // Ragdolling: write each dynamic bone capsule's pose back onto its skeleton
+        // joint as a local TRS (jointWorld = capsuleWorld · offset⁻¹, then relative to
+        // the parent's world), so the skinned mesh follows the physics. Two passes so
+        // a child uses its parent's *capsule-derived* world, keeping the chain consistent.
+        reconcileRagdoll: {
+            schedule: { during: ["preRender"], after: ["transformSystem"] },
+            create: db => () => {
+                const jointWorld = new Map<Entity, Mat4x4>();
+                for (const arch of db.store.queryArchetypes(["_boneJoint", "_boneOffsetPos", "_boneOffsetRot", "bodyType", "position", "rotation"])) {
+                    const bj = arch.columns._boneJoint, op = arch.columns._boneOffsetPos, orot = arch.columns._boneOffsetRot, bt = arch.columns.bodyType, pc = arch.columns.position, rc = arch.columns.rotation;
+                    for (let i = 0; i < arch.rowCount; i++) {
+                        if (bt.get(i) !== "dynamic") continue;
+                        jointWorld.set(bj.get(i), Mat4x4.multiply(compose(pc.get(i), rc.get(i)), Mat4x4.inverse(compose(op.get(i), orot.get(i)))));
+                    }
+                }
+                if (jointWorld.size === 0) return;
+                for (const [joint, jw] of jointWorld) {
+                    const parent = (db.store.get(joint, "parent") as Entity | undefined) ?? (0 as Entity);
+                    const parentW = jointWorld.get(parent) ?? (parent ? db.store.get(parent, "_worldMatrix") as Mat4x4 | undefined : undefined) ?? Mat4x4.identity;
+                    const local = Mat4x4.multiply(Mat4x4.inverse(parentW), jw);
+                    db.store.update(joint, { position: [local[12], local[13], local[14]], rotation: rotationOf(local) });
                 }
             },
         },

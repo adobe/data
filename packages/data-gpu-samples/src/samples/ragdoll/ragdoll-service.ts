@@ -20,7 +20,7 @@ export const ragdollPlugin = Database.Plugin.create({
                 color: [0.55, 0.55, 0.55],
             };
             const geoId = Model.plugin.transactions.insertGeometry(t, { modelUrl: args.modelUrl });
-            Model.plugin.transactions.insertModel(t, { geometry: geoId, position: [0, 1.5, 0] }); // lifted, so the ragdoll drops onto the floor
+            Model.plugin.transactions.insertModel(t, { geometry: geoId, position: [0, 0.9, 0] }); // lifted, so the ragdoll drops onto the floor
             // a ground slab for the ragdoll to land on (top face at y = 0)
             t.archetypes.StaticCollider.insert({
                 colliderShape: "box", halfExtents: [4, 0.25, 4], material: t.resources.materials.stone,
@@ -28,7 +28,7 @@ export const ragdollPlugin = Database.Plugin.create({
             });
             t.resources.orbit = {
                 ...t.resources.orbit,
-                fitGeometry: geoId, fitRadiusFactor: 2.4, fitHeightFactor: 0.5, autoSpinSpeed: 0.2,
+                center: [0, 0.4, 0], radius: 3.2, height: 1.4, autoSpinSpeed: 0.15,
             };
             return geoId;
         },
@@ -57,6 +57,18 @@ export const ragdollPlugin = Database.Plugin.create({
                             started.add(skeleton);
                         }
                     }
+                };
+            },
+        },
+        // Let it walk for a few seconds, then go limp (drop onto the floor).
+        autoRagdoll: {
+            schedule: { during: ["update"] },
+            create: db => {
+                let fired = false;
+                return () => {
+                    if (fired || db.store.resources.frameTime.elapsed < 4) return;
+                    db.transactions.triggerRagdoll();
+                    fired = true;
                 };
             },
         },

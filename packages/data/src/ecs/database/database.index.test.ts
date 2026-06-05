@@ -25,19 +25,19 @@ describe("Pattern 1 — single-column unique lookup (byEmail)", () => {
     it("get returns the entity for a known scalar key", () => {
         const db = Database.create(plugin());
         const e = db.transactions.add("alice@a.com");
-        expect(db.indexes.byEmail.get("alice@a.com")).toBe(e);
+        expect(db.indexes.byEmail.get({ email: "alice@a.com" })).toBe(e);
     });
 
     it("get returns null for an unknown key (known absent)", () => {
         const db = Database.create(plugin());
-        expect(db.indexes.byEmail.get("missing@x.com")).toBeNull();
+        expect(db.indexes.byEmail.get({ email: "missing@x.com" })).toBeNull();
     });
 
     it("duplicate insert throws atomically — original row stays intact", () => {
         const db = Database.create(plugin());
         const first = db.transactions.add("shared@x.com");
         expect(() => db.transactions.add("shared@x.com")).toThrow(/Unique index conflict/);
-        expect(db.indexes.byEmail.get("shared@x.com")).toBe(first);
+        expect(db.indexes.byEmail.get({ email: "shared@x.com" })).toBe(first);
     });
 });
 
@@ -98,23 +98,23 @@ describe("Pattern 3 — non-unique by single column (childrenOf)", () => {
         const a = db.transactions.add({ parent: 7, label: "a" });
         const b = db.transactions.add({ parent: 7, label: "b" });
         db.transactions.add({ parent: 9, label: "c" });
-        expect([...db.indexes.childrenOf.find(7)].sort()).toEqual([a, b].sort());
+        expect([...db.indexes.childrenOf.find({ parent: 7 })].sort()).toEqual([a, b].sort());
     });
 
     it("delete removes the entity from the bucket", () => {
         const db = Database.create(plugin());
         const e = db.transactions.add({ parent: 7, label: "a" });
-        expect(db.indexes.childrenOf.find(7)).toEqual([e]);
+        expect(db.indexes.childrenOf.find({ parent: 7 })).toEqual([e]);
         db.transactions.delete(e);
-        expect(db.indexes.childrenOf.find(7)).toEqual([]);
+        expect(db.indexes.childrenOf.find({ parent: 7 })).toEqual([]);
     });
 
     it("update moves the entity between buckets", () => {
         const db = Database.create(plugin());
         const e = db.transactions.add({ parent: 7, label: "a" });
         db.transactions.move({ entity: e, newParent: 9 });
-        expect(db.indexes.childrenOf.find(7)).toEqual([]);
-        expect(db.indexes.childrenOf.find(9)).toEqual([e]);
+        expect(db.indexes.childrenOf.find({ parent: 7 })).toEqual([]);
+        expect(db.indexes.childrenOf.find({ parent: 9 })).toEqual([e]);
     });
 
     it("`get` is absent on non-unique handles at runtime and types", () => {
@@ -150,7 +150,7 @@ describe("Pattern 4 — sorted children (orderedChildrenOf)", () => {
         const c = db.transactions.add({ parent: 7, fractIndex: "c" });
         const a = db.transactions.add({ parent: 7, fractIndex: "a" });
         const b = db.transactions.add({ parent: 7, fractIndex: "b" });
-        expect(db.indexes.orderedChildrenOf.find(7)).toEqual([a, b, c]);
+        expect(db.indexes.orderedChildrenOf.find({ parent: 7 })).toEqual([a, b, c]);
     });
 
     it("update on the sort key repositions the entity in place", () => {
@@ -160,10 +160,10 @@ describe("Pattern 4 — sorted children (orderedChildrenOf)", () => {
         const c = db.transactions.add({ parent: 7, fractIndex: "c" });
 
         db.transactions.move({ entity: b, fractIndex: "z" });
-        expect(db.indexes.orderedChildrenOf.find(7)).toEqual([a, c, b]);
+        expect(db.indexes.orderedChildrenOf.find({ parent: 7 })).toEqual([a, c, b]);
 
         db.transactions.move({ entity: a, fractIndex: "d" });
-        expect(db.indexes.orderedChildrenOf.find(7)).toEqual([c, a, b]);
+        expect(db.indexes.orderedChildrenOf.find({ parent: 7 })).toEqual([c, a, b]);
     });
 
     it("delete preserves sort order of the remaining entities", () => {
@@ -172,7 +172,7 @@ describe("Pattern 4 — sorted children (orderedChildrenOf)", () => {
         const b = db.transactions.add({ parent: 7, fractIndex: "b" });
         const c = db.transactions.add({ parent: 7, fractIndex: "c" });
         db.transactions.delete(b);
-        expect(db.indexes.orderedChildrenOf.find(7)).toEqual([a, c]);
+        expect(db.indexes.orderedChildrenOf.find({ parent: 7 })).toEqual([a, c]);
     });
 
     it("populates and sorts when the index is registered after data exists", () => {
@@ -199,7 +199,7 @@ describe("Pattern 4 — sorted children (orderedChildrenOf)", () => {
             },
         });
         const ext = db.extend(indexed);
-        expect(ext.indexes.orderedChildrenOf.find(5)).toEqual([a, b, c]);
+        expect(ext.indexes.orderedChildrenOf.find({ parent: 5 })).toEqual([a, b, c]);
     });
 });
 
@@ -234,7 +234,7 @@ describe("Pattern 4 — observe(arg): reactive sorted bucket view", () => {
         const b = db.transactions.add({ parent: 7, fractIndex: "b" });
 
         const emissions: number[][] = [];
-        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+        const unsub = db.indexes.orderedChildrenOf.observe({ parent: 7 })(
             (entities) => { emissions.push([...entities]); },
         );
         expect(emissions).toEqual([[a, b, c]]);
@@ -247,7 +247,7 @@ describe("Pattern 4 — observe(arg): reactive sorted bucket view", () => {
         const c = db.transactions.add({ parent: 7, fractIndex: "c" });
 
         const emissions: number[][] = [];
-        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+        const unsub = db.indexes.orderedChildrenOf.observe({ parent: 7 })(
             (entities) => { emissions.push([...entities]); },
         );
         const b = db.transactions.add({ parent: 7, fractIndex: "b" });
@@ -265,7 +265,7 @@ describe("Pattern 4 — observe(arg): reactive sorted bucket view", () => {
         const c = db.transactions.add({ parent: 7, fractIndex: "c" });
 
         const emissions: number[][] = [];
-        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+        const unsub = db.indexes.orderedChildrenOf.observe({ parent: 7 })(
             (entities) => { emissions.push([...entities]); },
         );
         expect(emissions[0]).toEqual([a, b, c]);
@@ -284,7 +284,7 @@ describe("Pattern 4 — observe(arg): reactive sorted bucket view", () => {
         const b = db.transactions.add({ parent: 7, fractIndex: "b" });
 
         const emissions: number[][] = [];
-        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+        const unsub = db.indexes.orderedChildrenOf.observe({ parent: 7 })(
             (entities) => { emissions.push([...entities]); },
         );
         db.transactions.delete(b);
@@ -300,7 +300,7 @@ describe("Pattern 4 — observe(arg): reactive sorted bucket view", () => {
         const other = db.transactions.add({ parent: 9, fractIndex: "a" });
 
         const emissions: number[][] = [];
-        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+        const unsub = db.indexes.orderedChildrenOf.observe({ parent: 7 })(
             (entities) => { emissions.push([...entities]); },
         );
         expect(emissions).toHaveLength(1);
@@ -321,8 +321,8 @@ describe("Pattern 4 — observe(arg): reactive sorted bucket view", () => {
 
         const fromSeven: number[][] = [];
         const toNine: number[][] = [];
-        const unsub7 = db.indexes.orderedChildrenOf.observe(7)((e) => fromSeven.push([...e]));
-        const unsub9 = db.indexes.orderedChildrenOf.observe(9)((e) => toNine.push([...e]));
+        const unsub7 = db.indexes.orderedChildrenOf.observe({ parent: 7 })((e) => fromSeven.push([...e]));
+        const unsub9 = db.indexes.orderedChildrenOf.observe({ parent: 9 })((e) => toNine.push([...e]));
 
         db.transactions.reparent({ entity: m, parent: 9 });
         await Promise.resolve();
@@ -338,7 +338,7 @@ describe("Pattern 4 — observe(arg): reactive sorted bucket view", () => {
         db.transactions.add({ parent: 7, fractIndex: "a" });
 
         const emissions: number[][] = [];
-        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+        const unsub = db.indexes.orderedChildrenOf.observe({ parent: 7 })(
             (entities) => { emissions.push([...entities]); },
         );
         expect(emissions).toHaveLength(1);
@@ -373,7 +373,7 @@ describe("observe(arg) — additional edge cases", () => {
     it("emits [] for an initially-empty bucket, then the entity once populated", async () => {
         const db = Database.create(sortedPlugin());
         const emissions: number[][] = [];
-        const unsub = db.indexes.orderedChildrenOf.observe(42)(
+        const unsub = db.indexes.orderedChildrenOf.observe({ parent: 42 })(
             (e) => emissions.push([...e]),
         );
         expect(emissions).toEqual([[]]);
@@ -388,7 +388,7 @@ describe("observe(arg) — additional edge cases", () => {
         const db = Database.create(sortedPlugin());
         const only = db.transactions.add({ parent: 7, fractIndex: "a" });
         const emissions: number[][] = [];
-        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+        const unsub = db.indexes.orderedChildrenOf.observe({ parent: 7 })(
             (e) => emissions.push([...e]),
         );
         db.transactions.delete(only);
@@ -403,8 +403,8 @@ describe("observe(arg) — additional edge cases", () => {
 
         const first: number[][] = [];
         const second: number[][] = [];
-        const unsub1 = db.indexes.orderedChildrenOf.observe(7)((e) => first.push([...e]));
-        const unsub2 = db.indexes.orderedChildrenOf.observe(7)((e) => second.push([...e]));
+        const unsub1 = db.indexes.orderedChildrenOf.observe({ parent: 7 })((e) => first.push([...e]));
+        const unsub2 = db.indexes.orderedChildrenOf.observe({ parent: 7 })((e) => second.push([...e]));
 
         const b = db.transactions.add({ parent: 7, fractIndex: "b" });
         await Promise.resolve();
@@ -420,7 +420,7 @@ describe("observe(arg) — additional edge cases", () => {
         const a = db.transactions.add({ parent: 7, fractIndex: "a" });
 
         const emissions: number[][] = [];
-        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+        const unsub = db.indexes.orderedChildrenOf.observe({ parent: 7 })(
             (e) => emissions.push([...e]),
         );
         // Three synchronous transactions, no awaits in between.
@@ -440,7 +440,7 @@ describe("observe(arg) — additional edge cases", () => {
         const a = db.transactions.add({ parent: 7, fractIndex: "a" });
 
         const emissions: number[][] = [];
-        const unsub = db.indexes.orderedChildrenOf.observe(7)(
+        const unsub = db.indexes.orderedChildrenOf.observe({ parent: 7 })(
             (e) => emissions.push([...e]),
         );
         // Move the only child to a new sort key and back within the same
@@ -458,7 +458,7 @@ describe("observe(arg) — additional edge cases", () => {
         const a = db.transactions.add({ parent: 7, fractIndex: "a" });
 
         const emissions: number[][] = [];
-        const unsub = db.indexes.childrenOf.observe(7)(
+        const unsub = db.indexes.childrenOf.observe({ parent: 7 })(
             (e) => emissions.push([...e].sort()),
         );
         expect(emissions[0]).toEqual([a]);
@@ -504,7 +504,7 @@ describe("observe(arg) — additional edge cases", () => {
         const high = db.transactions.add({ owner: 1, priority: 3, due: 50 });
 
         const emissions: number[][] = [];
-        const unsub = db.indexes.tasksByPriority.observe(1)(
+        const unsub = db.indexes.tasksByPriority.observe({ owner: 1 })(
             (e) => emissions.push([...e]),
         );
         // priority desc → [high, low].
@@ -523,7 +523,7 @@ describe("observe(arg) — additional edge cases", () => {
         const late = db.transactions.add({ owner: 1, priority: 2, due: 20 });
 
         const emissions: number[][] = [];
-        const unsub = db.indexes.tasksByPriority.observe(1)(
+        const unsub = db.indexes.tasksByPriority.observe({ owner: 1 })(
             (e) => emissions.push([...e]),
         );
         expect(emissions[0]).toEqual([early, late]);
@@ -558,9 +558,9 @@ describe("Pattern 5 — multi-value (array column → fan-out): tasksByAssignee"
     it("each array element becomes its own bucket entry", () => {
         const db = Database.create(plugin());
         const e = db.transactions.add({ title: "ship", assigned: ["joe", "bob"] });
-        expect(db.indexes.tasksByAssignee.find("joe")).toEqual([e]);
-        expect(db.indexes.tasksByAssignee.find("bob")).toEqual([e]);
-        expect(db.indexes.tasksByAssignee.find("carol")).toEqual([]);
+        expect(db.indexes.tasksByAssignee.find({ assigned: "joe" })).toEqual([e]);
+        expect(db.indexes.tasksByAssignee.find({ assigned: "bob" })).toEqual([e]);
+        expect(db.indexes.tasksByAssignee.find({ assigned: "carol" })).toEqual([]);
     });
 
     it("multiple entities sharing an element are both returned", () => {
@@ -568,30 +568,30 @@ describe("Pattern 5 — multi-value (array column → fan-out): tasksByAssignee"
         const a = db.transactions.add({ title: "A", assigned: ["joe", "bob"] });
         const b = db.transactions.add({ title: "B", assigned: ["joe", "carol"] });
         db.transactions.add({ title: "C", assigned: ["diane"] });
-        expect([...db.indexes.tasksByAssignee.find("joe")].sort()).toEqual([a, b].sort());
+        expect([...db.indexes.tasksByAssignee.find({ assigned: "joe" })].sort()).toEqual([a, b].sort());
     });
 
     it("empty array contributes no bucket entries", () => {
         const db = Database.create(plugin());
         db.transactions.add({ title: "Unassigned", assigned: [] });
-        expect(db.indexes.tasksByAssignee.find("joe")).toEqual([]);
+        expect(db.indexes.tasksByAssignee.find({ assigned: "joe" })).toEqual([]);
     });
 
     it("update set-diffs the bucket membership", () => {
         const db = Database.create(plugin());
         const e = db.transactions.add({ title: "T", assigned: ["joe", "bob"] });
         db.transactions.reassign({ entity: e, assigned: ["joe", "carol"] });
-        expect(db.indexes.tasksByAssignee.find("joe")).toEqual([e]);
-        expect(db.indexes.tasksByAssignee.find("bob")).toEqual([]);
-        expect(db.indexes.tasksByAssignee.find("carol")).toEqual([e]);
+        expect(db.indexes.tasksByAssignee.find({ assigned: "joe" })).toEqual([e]);
+        expect(db.indexes.tasksByAssignee.find({ assigned: "bob" })).toEqual([]);
+        expect(db.indexes.tasksByAssignee.find({ assigned: "carol" })).toEqual([e]);
     });
 
     it("delete drops the entity from every bucket it was in", () => {
         const db = Database.create(plugin());
         const e = db.transactions.add({ title: "T", assigned: ["joe", "bob"] });
         db.transactions.delete(e);
-        expect(db.indexes.tasksByAssignee.find("joe")).toEqual([]);
-        expect(db.indexes.tasksByAssignee.find("bob")).toEqual([]);
+        expect(db.indexes.tasksByAssignee.find({ assigned: "joe" })).toEqual([]);
+        expect(db.indexes.tasksByAssignee.find({ assigned: "bob" })).toEqual([]);
     });
 });
 
@@ -600,7 +600,7 @@ describe("Pattern 6 — computed scalar (byEmailCi)", () => {
         components: { email: { type: "string" } },
         archetypes: { User: ["email"] },
         indexes: {
-            byEmailCi: { key: (email: string) => email.toLowerCase(), components: ["email"] },
+            byEmailCi: { key: { email: (c) => c.email!.toLowerCase() }, components: ["email"] },
         },
         transactions: {
             add: (t, email: string) => t.archetypes.User.insert({ email }),
@@ -613,25 +613,25 @@ describe("Pattern 6 — computed scalar (byEmailCi)", () => {
     it("looks up by the computed (lowercased) key", () => {
         const db = Database.create(plugin());
         const e = db.transactions.add("Alice@Example.com");
-        expect(db.indexes.byEmailCi.find("alice@example.com")).toEqual([e]);
+        expect(db.indexes.byEmailCi.find({ email: "alice@example.com" })).toEqual([e]);
         // The original-case input is not a key.
-        expect(db.indexes.byEmailCi.find("Alice@Example.com")).toEqual([]);
+        expect(db.indexes.byEmailCi.find({ email: "Alice@Example.com" })).toEqual([]);
     });
 
     it("update re-derives the key", () => {
         const db = Database.create(plugin());
         const e = db.transactions.add("alice@a.com");
-        expect(db.indexes.byEmailCi.find("alice@a.com")).toEqual([e]);
+        expect(db.indexes.byEmailCi.find({ email: "alice@a.com" })).toEqual([e]);
         db.transactions.rename({ entity: e, email: "alice@b.com" });
-        expect(db.indexes.byEmailCi.find("alice@a.com")).toEqual([]);
-        expect(db.indexes.byEmailCi.find("alice@b.com")).toEqual([e]);
+        expect(db.indexes.byEmailCi.find({ email: "alice@a.com" })).toEqual([]);
+        expect(db.indexes.byEmailCi.find({ email: "alice@b.com" })).toEqual([e]);
     });
 
     it("delete removes the computed bucket entry", () => {
         const db = Database.create(plugin());
         const e = db.transactions.add("alice@a.com");
         db.transactions.delete(e);
-        expect(db.indexes.byEmailCi.find("alice@a.com")).toEqual([]);
+        expect(db.indexes.byEmailCi.find({ email: "alice@a.com" })).toEqual([]);
     });
 });
 
@@ -641,8 +641,10 @@ describe("Pattern 7 — multi-value computed (docsByKeyword)", () => {
         archetypes: { Doc: ["body"] },
         indexes: {
             docsByKeyword: {
-                key: (body: string) =>
-                    body.toLowerCase().split(/\s+/).filter((s) => s.length > 0),
+                key: {
+                    keyword: (c) =>
+                        c.body!.toLowerCase().split(/\s+/).filter((s) => s.length > 0),
+                },
                 components: ["body"],
             },
         },
@@ -654,15 +656,15 @@ describe("Pattern 7 — multi-value computed (docsByKeyword)", () => {
     it("fans out each computed array element into its own bucket", () => {
         const db = Database.create(plugin());
         const d = db.transactions.add("the quick brown fox");
-        expect(db.indexes.docsByKeyword.find("quick")).toEqual([d]);
-        expect(db.indexes.docsByKeyword.find("brown")).toEqual([d]);
-        expect(db.indexes.docsByKeyword.find("missing")).toEqual([]);
+        expect(db.indexes.docsByKeyword.find({ keyword: "quick" })).toEqual([d]);
+        expect(db.indexes.docsByKeyword.find({ keyword: "brown" })).toEqual([d]);
+        expect(db.indexes.docsByKeyword.find({ keyword: "missing" })).toEqual([]);
     });
 
     it("findRange supports operator filters on the scalar element", () => {
         const db = Database.create(plugin());
         const d = db.transactions.add("alpha beta gamma");
-        const inRange = [...db.indexes.docsByKeyword.findRange({ ">=": "b", "<": "z" })].sort();
+        const inRange = [...db.indexes.docsByKeyword.findRange({ keyword: { ">=": "b", "<": "z" } })].sort();
         expect(inRange).toEqual([d]);
     });
 });
@@ -684,8 +686,8 @@ describe("Pattern 8 — compound from nested data (playerByRoster)", () => {
         indexes: {
             playerByRoster: {
                 key: {
-                    team: (r: { team: number; position: string }) => r.team,
-                    position: (r: { team: number; position: string }) => r.position,
+                    team: (c) => c.roster!.team,
+                    position: (c) => c.roster!.position,
                 },
                 unique: true,
                 components: ["roster"],
@@ -726,7 +728,7 @@ describe("Pattern 10 — mixed identity + derived slots (playerByTeamRole)", () 
             playerByTeamRole: {
                 key: {
                     team: "team",
-                    role: (r: { role: string }) => r.role,
+                    role: (c) => c.roster!.role,
                 },
                 unique: true,
                 components: ["roster"],
@@ -792,13 +794,148 @@ describe("Pattern 12 — custom comparator (tasksByPriority)", () => {
         const e2a = db.transactions.add({ owner: 1, priority: 2, due: 10 });
         const e2b = db.transactions.add({ owner: 1, priority: 2, due: 20 });
         // Priority desc, then due asc.
-        expect(db.indexes.tasksByPriority.find(1)).toEqual([e3, e2a, e2b, e1]);
+        expect(db.indexes.tasksByPriority.find({ owner: 1 })).toEqual([e3, e2a, e2b, e1]);
     });
 });
 
 // ============================================================================
 // Cross-cutting concerns
 // ============================================================================
+
+describe("string ordering is by code point, never locale", () => {
+    const plugin = () => Database.Plugin.create({
+        components: { group: { type: "number" }, label: { type: "string" } },
+        archetypes: { Row: ["group", "label"] },
+        indexes: { byGroupSorted: { key: "group", order: { by: ["label"] } } },
+        transactions: {
+            add: (t, a: { group: number; label: string }) => t.archetypes.Row.insert(a),
+        },
+    });
+
+    it("default comparator sorts strings by ASCII code point (uppercase before lowercase)", () => {
+        const db = Database.create(plugin());
+        const a = db.transactions.add({ group: 1, label: "a" });    // 'a' = 97
+        const Z = db.transactions.add({ group: 1, label: "Z" });    // 'Z' = 90
+        const zero = db.transactions.add({ group: 1, label: "0" }); // '0' = 48
+        const A = db.transactions.add({ group: 1, label: "A" });    // 'A' = 65
+        // Code point: '0' < 'A' < 'Z' < 'a'. A locale-aware comparator would
+        // interleave case (lowercase 'a' before 'Z'), so this fails if the
+        // index ever sorts via localeCompare — the no-locale guard.
+        expect(db.indexes.byGroupSorted.find({ group: 1 })).toEqual([zero, A, Z, a]);
+    });
+
+    it("ordered db.select sorts strings by code point (not numeric subtraction, not locale)", () => {
+        const db = Database.create(plugin());
+        const a = db.transactions.add({ group: 1, label: "a" });
+        const Z = db.transactions.add({ group: 1, label: "Z" });
+        const zero = db.transactions.add({ group: 1, label: "0" });
+        const A = db.transactions.add({ group: 1, label: "A" });
+        // No `where`, so this hits the archetype-scan sort in selectEntities —
+        // which previously used `a - b` (NaN for strings). Now code-point.
+        expect(db.select(["label"], { order: { label: true } })).toEqual([zero, A, Z, a]);
+    });
+});
+
+describe("archetype-scoped index", () => {
+    // Task and Note both have `parent`; the index is scoped to Task only.
+    const plugin = () => Database.Plugin.create({
+        components: {
+            parent: { type: "number" },
+            priority: { type: "number" },
+            body: { type: "string" },
+        },
+        archetypes: {
+            Task: ["parent", "priority"],
+            Note: ["parent", "body"],
+        },
+        indexes: {
+            tasksByParent: { key: "parent", archetype: "Task" },
+        },
+        transactions: {
+            addTask: (t, a: { parent: number; priority: number }) => t.archetypes.Task.insert(a),
+            addNote: (t, a: { parent: number; body: string }) => t.archetypes.Note.insert(a),
+            delete: (t, e: number) => t.delete(e),
+        },
+    });
+
+    it("indexes only the scoped archetype, excluding others that share the key column", () => {
+        const db = Database.create(plugin());
+        const t1 = db.transactions.addTask({ parent: 7, priority: 1 });
+        const t2 = db.transactions.addTask({ parent: 7, priority: 2 });
+        db.transactions.addNote({ parent: 7, body: "shares parent 7 but is a Note" });
+
+        // Without scoping the Note (parent === 7) would appear here too.
+        expect([...db.indexes.tasksByParent.find({ parent: 7 })].sort()).toEqual([t1, t2].sort());
+    });
+
+    it("seeds from only the scoped archetype when registered after data exists", () => {
+        const base = Database.Plugin.create({
+            components: {
+                parent: { type: "number" },
+                priority: { type: "number" },
+                body: { type: "string" },
+            },
+            archetypes: { Task: ["parent", "priority"], Note: ["parent", "body"] },
+            transactions: {
+                addTask: (t, a: { parent: number; priority: number }) => t.archetypes.Task.insert(a),
+                addNote: (t, a: { parent: number; body: string }) => t.archetypes.Note.insert(a),
+            },
+        });
+        const db = Database.create(base);
+        const t = db.transactions.addTask({ parent: 5, priority: 1 });
+        db.transactions.addNote({ parent: 5, body: "note" });
+
+        const ext = db.extend(Database.Plugin.create({
+            extends: base,
+            indexes: { tasksByParent: { key: "parent", archetype: "Task" } },
+        }));
+        expect(ext.indexes.tasksByParent.find({ parent: 5 })).toEqual([t]);
+    });
+
+    it("throws when scoped to an unknown archetype", () => {
+        const bad = Database.Plugin.create({
+            components: { parent: { type: "number" } },
+            archetypes: { Task: ["parent"] },
+            // `archetype` typed loosely here via `as any` to reach the runtime guard.
+            indexes: { x: { key: "parent", archetype: "Nonexistent" as any } },
+        });
+        expect(() => Database.create(bad)).toThrow(/unknown archetype/i);
+    });
+});
+
+describe("archetype-changing update keeps indexes correct (dispatch union)", () => {
+    // `byTag` only applies to archetypes that have `tag`. Adding/removing the
+    // `tag` component moves the entity between archetypes, so the entity must
+    // enter / leave the index accordingly — this exercises the registry's
+    // union(from, to) dispatch for updates that change archetype.
+    const plugin = () => Database.Plugin.create({
+        components: { tag: { type: "string" }, name: { type: "string" } },
+        archetypes: { Tagged: ["tag", "name"], Named: ["name"] },
+        indexes: { byTag: { key: "tag" } },
+        transactions: {
+            addTagged: (t, a: { tag: string; name: string }) => t.archetypes.Tagged.insert(a),
+            addNamed: (t, a: { name: string }) => t.archetypes.Named.insert(a),
+            setTag: (t, a: { entity: number; tag: string }) => t.update(a.entity, { tag: a.tag }),
+            removeTag: (t, e: number) => t.update(e, { tag: undefined }),
+        },
+    });
+
+    it("removes the entity from the index when an update drops the indexed component", () => {
+        const db = Database.create(plugin());
+        const e = db.transactions.addTagged({ tag: "x", name: "n" });
+        expect(db.indexes.byTag.find({ tag: "x" })).toEqual([e]);
+        db.transactions.removeTag(e);   // Tagged -> Named: byTag no longer applies
+        expect(db.indexes.byTag.find({ tag: "x" })).toEqual([]);
+    });
+
+    it("adds the entity to the index when an update introduces the indexed component", () => {
+        const db = Database.create(plugin());
+        const e = db.transactions.addNamed({ name: "n" });
+        expect(db.indexes.byTag.find({ tag: "y" })).toEqual([]);
+        db.transactions.setTag({ entity: e, tag: "y" });   // Named -> Tagged: enters byTag
+        expect(db.indexes.byTag.find({ tag: "y" })).toEqual([e]);
+    });
+});
 
 describe("findRange — operator filters on the bucket key", () => {
     it("filters by range operators on a tuple-keyed index", () => {
@@ -893,7 +1030,7 @@ describe("auto-routing of db.select", () => {
             archetypes: { U: ["name"] },
             indexes: {
                 byLowerName: {
-                    key: (name: string) => name.toLowerCase(),
+                    key: { name: (c) => c.name!.toLowerCase() },
                     components: ["name"],
                 },
             },
@@ -1137,20 +1274,20 @@ describe("t.indexes — eager maintenance inside transactions", () => {
             add: (t, args: { name: string; email: string }) =>
                 t.archetypes.User.insert(args),
             addIfNew: (t, args: { name: string; email: string }) => {
-                const existing = t.indexes.uniqueByEmail.get(args.email);
+                const existing = t.indexes.uniqueByEmail.get({ email: args.email });
                 if (existing !== null) return existing;
                 return t.archetypes.User.insert(args);
             },
             renameAndLookup: (t, args: { entity: number; newName: string }) => {
                 t.update(args.entity, { name: args.newName });
-                const found = t.indexes.byName.find(args.newName);
+                const found = t.indexes.byName.find({ name: args.newName });
                 if (!found.includes(args.entity)) {
                     throw new Error("name index stale after t.update");
                 }
             },
             deleteAndLookup: (t, args: { entity: number; name: string }) => {
                 t.delete(args.entity);
-                const stillThere = t.indexes.byName.find(args.name);
+                const stillThere = t.indexes.byName.find({ name: args.name });
                 if (stillThere.includes(args.entity)) {
                     throw new Error("index still references deleted entity");
                 }
@@ -1172,15 +1309,15 @@ describe("t.indexes — eager maintenance inside transactions", () => {
         const db = Database.create(plugin());
         const e = db.transactions.add({ name: "alice", email: "a@a.com" });
         expect(() => db.transactions.renameAndLookup({ entity: e, newName: "alex" })).not.toThrow();
-        expect(db.indexes.byName.find("alex")).toEqual([e]);
-        expect(db.indexes.byName.find("alice")).toEqual([]);
+        expect(db.indexes.byName.find({ name: "alex" })).toEqual([e]);
+        expect(db.indexes.byName.find({ name: "alice" })).toEqual([]);
     });
 
     it("find does not see a row deleted earlier in the same transaction body", () => {
         const db = Database.create(plugin());
         const e = db.transactions.add({ name: "alice", email: "a@a.com" });
         expect(() => db.transactions.deleteAndLookup({ entity: e, name: "alice" })).not.toThrow();
-        expect(db.indexes.byName.find("alice")).toEqual([]);
+        expect(db.indexes.byName.find({ name: "alice" })).toEqual([]);
     });
 
     it("unique conflict on insert is caught up-front — no partial store or index mutation", () => {
@@ -1193,11 +1330,11 @@ describe("t.indexes — eager maintenance inside transactions", () => {
         ).toThrow(/Unique index conflict/);
 
         // The unique-key bucket still points at the original entity.
-        expect(db.indexes.uniqueByEmail.get("shared@x.com")).toBe(first);
+        expect(db.indexes.uniqueByEmail.get({ email: "shared@x.com" })).toBe(first);
         // No phantom row landed in either index or store. byName.find("alex")
         // returning [] proves the secondary index never saw the row;
         // db.select asserts the store itself never grew.
-        expect(db.indexes.byName.find("alex")).toEqual([]);
+        expect(db.indexes.byName.find({ name: "alex" })).toEqual([]);
         const afterRows = db.select(["email"]);
         expect([...afterRows].sort()).toEqual([...beforeRows].sort());
     });
@@ -1215,8 +1352,8 @@ describe("t.indexes — eager maintenance inside transactions", () => {
         ).toThrow(/Unique index conflict/);
 
         // Index untouched on both keys.
-        expect(db.indexes.uniqueByEmail.get("a@a.com")).toBe(e1);
-        expect(db.indexes.uniqueByEmail.get("b@b.com")).toBe(e2);
+        expect(db.indexes.uniqueByEmail.get({ email: "a@a.com" })).toBe(e1);
+        expect(db.indexes.uniqueByEmail.get({ email: "b@b.com" })).toBe(e2);
         // Underlying store untouched — e1's email is still "a@a.com",
         // proving the pre-check fired before `core.update` ran.
         expect(db.read(e1)).toEqual(e1BeforeRead);
@@ -1332,6 +1469,6 @@ describe("registry maintenance", () => {
         const e2 = db.transactions.add("alice");
 
         const ext = db.extend(indexed);
-        expect([...ext.indexes.byName.find("alice")].sort()).toEqual([e1, e2].sort());
+        expect([...ext.indexes.byName.find({ name: "alice" })].sort()).toEqual([e1, e2].sort());
     });
 });

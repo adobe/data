@@ -359,11 +359,10 @@ function trySelectViaIndex(
     // planner cannot infer from a where clause); `routableOrder: null` opts it
     // out of serving an `order` clause (unsorted, or custom comparator).
     //
-    // For a matched index the planner builds the appropriate `find`
-    // argument: a scalar for a single-column key, the full values object
-    // for a multi-column key. The call goes through `handle.find` so any
-    // user-installed spy or instrumentation on the handle sees the
-    // dispatch.
+    // For a matched index the planner passes the `{ column: value }` object as
+    // the `find` argument — every index key is object-shaped, including a
+    // single-column key. The call goes through `handle.find` so any
+    // user-installed spy or instrumentation on the handle sees the dispatch.
     const handles = store.indexes as unknown as Readonly<Record<string, {
         readonly routableColumns: readonly string[] | null;
         readonly routableOrder: readonly string[] | null;
@@ -391,8 +390,7 @@ function trySelectViaIndex(
     }
     if (!matchedHandle || !matchedCols) return null;
 
-    const findArg = matchedCols.length === 1 ? values[matchedCols[0]] : values;
-    const candidates = matchedHandle.find(findArg);
+    const candidates = matchedHandle.find(values);
     if (candidates.length === 0) return [];
 
     const includeArr = Array.from(include);

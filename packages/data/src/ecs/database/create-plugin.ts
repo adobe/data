@@ -139,7 +139,7 @@ export function createPlugin<
     const CS extends ComponentSchemas,
     const RS extends ResourceSchemas,
     const A extends ArchetypeComponents<StringKeyof<RemoveIndex<CS> & XP['components']>>,
-    const IX extends IndexDeclarations<FromSchemas<RemoveIndex<CS> & XP['components']>>,
+    const IX extends IndexDeclarations<FromSchemas<RemoveIndex<CS> & XP['components']>, RemoveIndex<A> & XP['archetypes']>,
     const TD extends TransactionDeclarations<FromSchemas<RemoveIndex<CS> & XP['components']>, FromSchemas<RemoveIndex<RS> & XP['resources']>, RemoveIndex<A> & XP['archetypes'], RemoveIndex<IX> & XP['indexes']>,
     const AD,
     const S extends string = never,

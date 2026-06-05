@@ -9,8 +9,8 @@ import { Components } from "./components.js";
  * If `T` is an array type, the element type; otherwise `T` unchanged.
  *
  * Multi-value indexes auto-fan-out array values into per-element bucket
- * entries at insert time. The lookup methods therefore take the element
- * type, not the array — a query like `find("joe")` against a
+ * entries at insert time. The lookup field therefore takes the element
+ * type, not the array — a query like `find({ assigned: "joe" })` against a
  * `Task { assigned: string[] }` is exactly what users want, and an array
  * as a single opaque key is virtually never useful (order-dependent, not
  * a natural query shape).
@@ -20,30 +20,40 @@ type ElementOf<T> = T extends readonly (infer E)[] ? E : T;
 /**
  * Per-slot extractor in a compound `key` declaration. Either:
  * - a `StringKeyof<C>` — read the value of that column directly, or
- * - a function — derive the slot's value from the index's read components.
+ * - a function — derive the slot's value from a single **named object** of the
+ *   component values, read by name (e.g. `(c) => c.email!.toLowerCase()`), not
+ *   from positional arguments.
+ *
+ * The argument is typed `Partial<C>`: at runtime only the index's declared
+ * `components` are populated, and the type marks every field optional rather
+ * than unsafely implying all of `C` is present — so the extractor acknowledges
+ * possible absence (use `!` / `?.` on the components you declared).
  */
 export type IndexKeySlot<C extends Components> =
     | StringKeyof<C>
-    | ((...args: any[]) => unknown);
+    | ((components: Partial<C>) => unknown);
 
 /**
- * The four shapes a `key` declaration can take. Drives the `find` / `get`
- * argument type via {@link FindArg}.
+ * The three shapes a `key` declaration can take. Every shape resolves to a
+ * **named object** lookup argument via {@link FindArg} — there is no scalar
+ * form, so `find` / `get` / `observe` are uniform across all indexes.
  *
- *  - `string` — read this one column. `find` takes a scalar.
+ *  - `string` — read this one column. Sugar for the single-element tuple
+ *    `[col]`; `find` takes `{ col: value }` (not a bare scalar).
  *  - `readonly string[]` — read each of these columns. `find` takes
  *    `{ col1: ..., col2: ... }` keyed by the column names themselves.
- *  - `(...args) => Value` — derive the bucket key from the components.
- *    `find` takes whatever the function returns (or its element type
- *    when the return is an array — multi-value fan-out).
  *  - slot map — name each part of a compound key; values are either
- *    column-name strings (identity) or extractor functions. `find`
- *    takes an object keyed by the slot names.
+ *    column-name strings (identity) or extractor functions. `find` takes an
+ *    object keyed by the slot names. A computed key is a single-slot map,
+ *    e.g. `{ emailLower: (email) => email.toLowerCase() }`, so the derived
+ *    value is still addressed by name.
+ *
+ * (There is intentionally no bare `(...args) => Value` form: a computed value
+ * needs a name to appear in the lookup object, so wrap it in a slot map.)
  */
 export type IndexKey<C extends Components> =
     | StringKeyof<C>
     | readonly StringKeyof<C>[]
-    | ((...args: any[]) => unknown)
     | { readonly [slot: string]: IndexKeySlot<C> };
 
 /**
@@ -104,12 +114,16 @@ type SlotFindType<C extends Components, V> =
             ? ElementOf<R>
             : never;
 
-/** Argument type of `find` / `get` derived from the `key` shape. */
+/**
+ * Argument type of `find` / `get` / `observe`, derived from the `key` shape.
+ * Always a named object: a single-column key yields `{ col: value }`, a tuple
+ * yields one field per column, and a slot map yields one field per slot.
+ */
 type FindArg<C extends Components, K> =
-    K extends StringKeyof<C> ? ElementOf<C[K]>
+    K extends StringKeyof<C>
+        ? { readonly [P in K]: ElementOf<C[P]> }
     : K extends readonly StringKeyof<C>[]
         ? { readonly [P in K[number]]: ElementOf<C[P]> }
-    : K extends (...args: any[]) => infer R ? ElementOf<R>
     : K extends Record<string, IndexKeySlot<C>>
         ? { readonly [Slot in keyof K]: SlotFindType<C, K[Slot]> }
     : never;
@@ -169,11 +183,20 @@ export namespace Index {
  * silently passes the constraint. Inlining `key: IndexKey<C>` here makes
  * the typo a type error at the plugin descriptor.
  */
-export type IndexDeclarations<C extends Components = any> = {
+export type IndexDeclarations<C extends Components = any, A = any> = {
     readonly [name: string]: {
         readonly key: IndexKey<C>;
         readonly order?: IndexOrder<C>;
         readonly unique?: boolean;
         readonly components?: readonly StringKeyof<C>[];
+        /**
+         * Scope the index to a single archetype (by declared name). Only
+         * entities that are that archetype (a superset of its components) are
+         * indexed — entities in other archetypes that merely share the key
+         * column are excluded. `A` is the schema's archetype map, so the name
+         * is checked against the declared archetypes; when unthreaded it
+         * widens to `string`.
+         */
+        readonly archetype?: StringKeyof<A>;
     };
 };

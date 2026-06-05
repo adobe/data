@@ -45,6 +45,23 @@ export function convexHullMesh(points: Float32Array): ShapeMesh {
     return { vertices: new Float32Array(verts), indices: new Uint16Array(indices) };
 }
 
+/**
+ * The deduplicated hull vertices (the extreme points) of a cloud — a minimal
+ * point set whose convex hull equals the cloud's. Used to feed a physics engine's
+ * convex-hull builder a *simplified* collider from a detailed mesh (thousands of
+ * verts → a few dozen). Empty for degenerate input.
+ */
+export function hullVertices(points: Float32Array): Float32Array {
+    const faces = hullFaces(points);
+    if (!faces) return new Float32Array(0);
+    const used = new Set<number>();
+    for (const f of faces) { used.add(f.a); used.add(f.b); used.add(f.c); }
+    const out = new Float32Array(used.size * 3);
+    let i = 0;
+    for (const idx of used) { out[i * 3] = points[idx * 3]; out[i * 3 + 1] = points[idx * 3 + 1]; out[i * 3 + 2] = points[idx * 3 + 2]; i++; }
+    return out;
+}
+
 /** The hull's triangular faces, each normal oriented outward, or null if the
  *  point cloud is degenerate (fewer than 4 points, or all coplanar). Exported
  *  for tests; rendering goes through {@link convexHullMesh}. */

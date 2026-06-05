@@ -33,6 +33,11 @@ export interface LoadedGltfData {
     skin: LoadedSkin | null;
     /** Parsed `animations[]`; jointIndex on each track is into `skin.jointTemplate`. */
     animations: LoadedAnimation[];
+    /** Model-space collision geometry retained on the CPU for auto-generating
+     *  physics colliders (convex hull / trimesh) — the non-skinned primitives'
+     *  positions (each baked by its node matrix) + indices, aggregated. Null when
+     *  the model has no static geometry (e.g. skin-only). */
+    collision: { positions: Float32Array; indices: Uint32Array } | null;
 }
 
 function expandBounds(
@@ -94,6 +99,8 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
     const boundsMin: [number, number, number] = [Infinity, Infinity, Infinity];
     const boundsMax: [number, number, number] = [-Infinity, -Infinity, -Infinity];
     const primitives: GpuPrimitiveData[] = [];
+    // CPU-retained collision geometry (model space, non-skinned primitives only).
+    const collPositions: number[] = [], collIndices: number[] = [];
 
     for (let nodeIdx = 0; nodeIdx < (json.nodes ?? []).length; nodeIdx++) {
         const node = json.nodes![nodeIdx];
@@ -149,6 +156,25 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
             });
             device.queue.writeBuffer(indexBuffer, 0, indices);
 
+            // Retain collision geometry for non-skinned primitives: deinterleave the
+            // positions (stride = floats/vertex, position at offset 0), bake the node
+            // matrix into model space, and append with index offset. Skinned primitives
+            // deform at runtime, so a static collider from their bind pose is meaningless.
+            if (!skinned) {
+                const m = pbrNodeLocalMatrix, verts = packed.vertices;
+                const stride = packed.vertices.length / packed.vertexCount;
+                const vbase = collPositions.length / 3;
+                for (let v = 0; v < packed.vertexCount; v++) {
+                    const o = v * stride, x = verts[o], y = verts[o + 1], z = verts[o + 2];
+                    collPositions.push(
+                        m[0] * x + m[4] * y + m[8] * z + m[12],
+                        m[1] * x + m[5] * y + m[9] * z + m[13],
+                        m[2] * x + m[6] * y + m[10] * z + m[14],
+                    );
+                }
+                for (let k = 0; k < indices.length; k++) collIndices.push(indices[k] + vbase);
+            }
+
             const materialBindGroup = buildMaterialBindGroup(
                 device, json, sourceTextures, fallback, sampler, materialLayout, prim.material,
             );
@@ -170,5 +196,6 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
         bounds: { min: boundsMin as [number, number, number], max: boundsMax as [number, number, number] },
         skin,
         animations,
+        collision: collPositions.length ? { positions: new Float32Array(collPositions), indices: new Uint32Array(collIndices) } : null,
     };
 }

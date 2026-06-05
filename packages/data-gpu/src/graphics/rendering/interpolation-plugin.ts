@@ -1,8 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
+import { Mat4x4, Quat } from "@adobe/data/math";
 import { physicsData } from "../../physics/physics-data-plugin.js";
 import { physicsClock } from "../../physics/physics-clock-plugin.js";
+import { transform } from "../scene/node/transform-plugin.js";
 import { displayTransform } from "./display-transform-plugin.js";
 
 /**
@@ -27,9 +29,12 @@ const NEEDS_RENDER_POSE = ["position", "rotation", "_prevPosition"] as const;
 const WITHOUT_RENDER_POSE = { exclude: ["_renderPosition"] } as const;
 // Fully-equipped bodies: blend prev→current into the display pose every frame.
 const INTERPOLATED = ["position", "rotation", "_prevPosition", "_prevRotation", "_renderPosition", "_renderRotation"] as const;
+// Interpolated bodies that render through the world-matrix path (models, which have
+// a `parent`/`_worldMatrix`) rather than the flat instanced path.
+const INTERPOLATED_MODEL = ["_renderPosition", "_renderRotation", "scale", "parent", "_worldMatrix"] as const;
 
 export const interpolation = Database.Plugin.create({
-    extends: Database.Plugin.combine(physicsData, physicsClock, displayTransform),
+    extends: Database.Plugin.combine(physicsData, physicsClock, displayTransform, transform),
     systems: {
         interpolateDisplayPose: {
             schedule: { during: ["preRender"] },
@@ -63,6 +68,27 @@ export const interpolation = Database.Plugin.create({
                         const x = ax + (bx - ax) * alpha, y = ay + (by - ay) * alpha, z = az + (bz - az) * alpha, w = aw + (bw - aw) * alpha;
                         const inv = 1 / Math.hypot(x, y, z, w);
                         rr[r4] = x * inv; rr[r4 + 1] = y * inv; rr[r4 + 2] = z * inv; rr[r4 + 3] = w * inv;
+                    }
+                }
+            },
+        },
+        // Models render from `_worldMatrix` (the transform path), not the flat display
+        // pose — so recompose their world matrix from the interpolated pose, after the
+        // blend above and after `transformSystem` (which wrote the raw, juddering pose).
+        interpolateWorldMatrix: {
+            schedule: { during: ["preRender"], after: ["interpolateDisplayPose", "transformSystem"] },
+            create: db => () => {
+                for (const arch of db.store.queryArchetypes(INTERPOLATED_MODEL)) {
+                    const rp = arch.columns._renderPosition.getTypedArray(), rr = arch.columns._renderRotation.getTypedArray();
+                    const scl = arch.columns.scale, parents = arch.columns.parent, world = arch.columns._worldMatrix;
+                    for (let i = 0; i < arch.rowCount; i++) {
+                        const r3 = i * 3, r4 = i * 4, s = scl.get(i), parentId = parents.get(i);
+                        const local = Mat4x4.multiply(
+                            Mat4x4.translation(rp[r3], rp[r3 + 1], rp[r3 + 2]),
+                            Mat4x4.multiply(Quat.toMat4([rr[r4], rr[r4 + 1], rr[r4 + 2], rr[r4 + 3]]), Mat4x4.scaling(s[0], s[1], s[2])),
+                        );
+                        const parentWorld = parentId === 0 ? Mat4x4.identity : db.store.get(parentId, "_worldMatrix") ?? Mat4x4.identity;
+                        world.set(i, parentId === 0 ? local : Mat4x4.multiply(parentWorld, local));
                     }
                 }
             },

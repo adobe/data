@@ -17,6 +17,7 @@ export interface LoadedArgs {
     skinJointTemplate: JointTemplate[];
     skinInverseBindMatrices: Float32Array | null;
     animations: LoadedAnimation[];
+    collision: { positions: Float32Array; indices: Uint32Array } | null;
 }
 
 /**
@@ -40,6 +41,9 @@ export const modelLoader = Database.Plugin.create({
         _skinJointTemplate: { default: [] as JointTemplate[] },
         _skinInverseBindMatrices: { default: null as Float32Array | null },
         _animationClipRefs: { default: [] as number[] },
+        // CPU-retained model-space collision geometry (auto-collider source).
+        _cpuPositions: { default: null as Float32Array | null },
+        _cpuIndices: { default: null as Uint32Array | null },
     },
     transactions: {
         insertLoadedPrimitives(t, args: LoadedArgs) {
@@ -75,6 +79,8 @@ export const modelLoader = Database.Plugin.create({
                 _skinJointTemplate: args.skinJointTemplate,
                 _skinInverseBindMatrices: args.skinInverseBindMatrices,
                 _animationClipRefs: clipRefs,
+                _cpuPositions: args.collision?.positions ?? null,
+                _cpuIndices: args.collision?.indices ?? null,
             });
         },
     },
@@ -103,6 +109,7 @@ export const modelLoader = Database.Plugin.create({
                                         skinJointTemplate: loaded.skin?.jointTemplate ?? [],
                                         skinInverseBindMatrices: loaded.skin?.inverseBindMatrices ?? null,
                                         animations: loaded.animations,
+                                        collision: loaded.collision,
                                     });
                                 })
                                 .catch(err => {

@@ -45,6 +45,7 @@ export { pbrRender } from "./graphics/rendering/pbr-render/pbr-render-plugin.js"
 export { physicsRenderBridge } from "./graphics/rendering/pbr-render/physics-bridge-plugin.js";
 export { displayTransform } from "./graphics/rendering/display-transform-plugin.js";
 export { interpolation } from "./graphics/rendering/interpolation-plugin.js";
+export { modelCollider } from "./graphics/rendering/model-collider-plugin.js";
 export { shapeGeometry } from "./graphics/scene/model/shape/shape-geometry-plugin.js";
 
 // --- Types (type + namespace, access .plugin for the ECS plugin) -------------

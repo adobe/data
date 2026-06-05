@@ -97,6 +97,11 @@ export const rapierSolver = Database.Plugin.create({
                         col = cm ? RAPIER.ColliderDesc.trimesh(cm.positions, cm.indices) : RAPIER.ColliderDesc.cuboid(0.1, 0.1, 0.1);
                     } else col = RAPIER.ColliderDesc.cuboid(hx, hy, hz);
                     col.setRestitution(m.restitution).setFriction(m.friction).setDensity(m.density);
+                    // collisionGroup g (>0): membership bit g, collide with everything
+                    // except bit g — so same-group bodies (e.g. a ragdoll's bones) skip
+                    // each other but still hit the world (group 0).
+                    const g = (db.store.read(id) as { collisionGroup?: number } | null)?.collisionGroup ?? 0;
+                    if (g > 0) { const bit = 1 << (g & 15); col.setCollisionGroups(((bit << 16) | (0xffff & ~bit)) >>> 0); }
                     world.createCollider(col, body);
                     bodies.set(id, body);
                 };

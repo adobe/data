@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
+import { F32 } from "@adobe/data/schema";
 import { Vec3, Quat } from "@adobe/data/math";
 import { BodyType } from "./body/body-type/body-type.js";
 import { ColliderShape } from "./body/collider-shape/collider-shape.js";
@@ -49,6 +50,11 @@ export const physicsData = Database.Plugin.create({
         angularVelocity: Vec3.schema,
         _prevPosition:   Vec3.schema, // derived: pose before the last fixed step (render interpolation)
         _prevRotation:   Quat.schema,
+        // Bodies sharing the same non-zero collisionGroup do not collide with each
+        // other (they still collide with group 0 / the world) — e.g. a ragdoll's
+        // bones. 0 = default (collide with everything). Honored by rapierSolver;
+        // joltSolver support is a follow-up (see README).
+        collisionGroup:  F32.schema,
         // Authored collision geometry for shapes `halfExtents` can't describe.
         // Runtime objects (variable length, no schema): the solver reads them once
         // when it mirrors the body, the bridge once to build the render mesh.

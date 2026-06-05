@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeometry, Model, Orbit } from "@adobe/data-gpu";
+import { pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeometry, rapierSolver, Model, Orbit } from "@adobe/data-gpu";
 
 /**
  * ragdoll — a rigged humanoid plays its walk clip while one capsule per bone,
@@ -11,7 +11,7 @@ import { pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeomet
  * step). The capsules render over the character as a debug visualisation.
  */
 export const ragdollPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeometry, Orbit.plugin),
+    extends: Database.Plugin.combine(pbrRender, pbrSkinning, boneColliders, physicsRenderBridge, shapeGeometry, rapierSolver, Orbit.plugin),
     transactions: {
         initializeScene(t, args: { modelUrl: string; envUrl?: string }): number {
             t.resources.light = {
@@ -20,7 +20,12 @@ export const ragdollPlugin = Database.Plugin.create({
                 color: [0.55, 0.55, 0.55],
             };
             const geoId = Model.plugin.transactions.insertGeometry(t, { modelUrl: args.modelUrl });
-            Model.plugin.transactions.insertModel(t, { geometry: geoId });
+            Model.plugin.transactions.insertModel(t, { geometry: geoId, position: [0, 1.5, 0] }); // lifted, so the ragdoll drops onto the floor
+            // a ground slab for the ragdoll to land on (top face at y = 0)
+            t.archetypes.StaticCollider.insert({
+                colliderShape: "box", halfExtents: [4, 0.25, 4], material: t.resources.materials.stone,
+                position: [0, -0.25, 0], rotation: [0, 0, 0, 1],
+            });
             t.resources.orbit = {
                 ...t.resources.orbit,
                 fitGeometry: geoId, fitRadiusFactor: 2.4, fitHeightFactor: 0.5, autoSpinSpeed: 0.2,

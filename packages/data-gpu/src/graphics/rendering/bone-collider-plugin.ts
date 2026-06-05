@@ -43,8 +43,9 @@ export const boneColliders = Database.Plugin.create({
         _ragdollBuilt: True.schema,      // tag: this skeleton's bone capsules have been generated
     },
     archetypes: {
-        // a kinematic capsule body bound to a skeleton joint
-        BoneCapsule: ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity", "_boneJoint", "_boneOffsetPos", "_boneOffsetRot"],
+        // a kinematic capsule body bound to a skeleton joint (collisionGroup 1 ⇒ the
+        // ragdoll's bones never collide with each other, only the world)
+        BoneCapsule: ["bodyType", "colliderShape", "halfExtents", "material", "collisionGroup", "position", "rotation", "linearVelocity", "angularVelocity", "_boneJoint", "_boneOffsetPos", "_boneOffsetRot"],
     },
     systems: {
         // Once a skeleton's skin has loaded, fit + spawn its bone capsules (one-time;
@@ -61,7 +62,7 @@ export const boneColliders = Database.Plugin.create({
                         if (!g?._cpuSkin || !g._skinInverseBindMatrices) continue; // skin not loaded yet
                         for (const c of fitBoneCapsules({ jointCount: joints.length, inverseBindMatrices: g._skinInverseBindMatrices, skin: g._cpuSkin })) {
                             db.store.archetypes.BoneCapsule.insert({
-                                bodyType: "kinematic", colliderShape: "capsule", halfExtents: [c.radius, c.halfHeight, 0], material,
+                                bodyType: "kinematic", colliderShape: "capsule", halfExtents: [c.radius, c.halfHeight, 0], material, collisionGroup: 1,
                                 position: [0, 0, 0], rotation: [0, 0, 0, 1], linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0],
                                 _boneJoint: joints[c.jointIndex], _boneOffsetPos: c.offsetPosition, _boneOffsetRot: c.offsetRotation,
                             });

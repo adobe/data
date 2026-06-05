@@ -7,15 +7,23 @@ import { pbrRender, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge
 // Studio HDR for IBL © Poly Haven, CC0.
 const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr";
 
-// Scene config.
-const BIN = 7;                 // half-extent of the floor / containing walls
+// Scene config. The bin is split into two zones so the moving bar doesn't
+// demolish the stack: the **right** half holds the stable stack; the **left**
+// half is the dynamic playground (sweeping bar + ramp). Drops rain across the
+// whole bin, so some land on the stack while the bar — confined to the left —
+// never reaches it.
+const BIN = 12;                // half-extent of the floor / containing walls
 const STACK_W = 4, STACK_D = 4, STACK_H = 4;   // dynamic block stack (unit cubes)
+const STACK_CX = 6.5;          // stack sits in the right zone, clear of the bar
 const SPAWN_INTERVAL = 0.18;   // seconds between dynamic drops
 const SPAWN_DELAY = 2.5;       // let the bare stack settle first, to verify it holds
 const DYNAMIC_CAP = 120;       // stop spawning at this many dropped bodies
-const SPAWN_SPREAD = 2.5;      // ± x/z spawn area (roughly over the stack)
-const SPAWN_HEIGHT = 12;
-const SWEEP_AMP = 5.0, SWEEP_SPEED = 0.7, SWEEP_Y = 1.0; // kinematic bar sweep
+const SPAWN_CX = 1.0;          // drops rain across the whole bin — some top the stack
+const SPAWN_SPREAD = 8.0;      // (right), the rest feed the bar + ramp (left)
+const SPAWN_HEIGHT = 14;
+// Kinematic bar: sweeps only the left zone (centre −4.5 ± 4.5 ⇒ x ∈ [−9, 0]), so
+// it churns the dropped bodies and ramp without ever reaching the stack at +6.5.
+const SWEEP_CX = -4.5, SWEEP_AMP = 4.5, SWEEP_SPEED = 0.7, SWEEP_Y = 1.0;
 const IDENTITY: [number, number, number, number] = [...Quat.identity];
 
 /**
@@ -55,7 +63,7 @@ const DROPS: Drop[] = (() => {
                 : [0.3 + r() * 0.4, 0, 0];
         out.push({
             shape, he,
-            pos: [(r() * 2 - 1) * SPAWN_SPREAD, SPAWN_HEIGHT, (r() * 2 - 1) * SPAWN_SPREAD],
+            pos: [SPAWN_CX + (r() * 2 - 1) * SPAWN_SPREAD, SPAWN_HEIGHT, (r() * 2 - 1) * SPAWN_SPREAD],
             quat: shape === "sphere" ? [0, 0, 0, 1] : randomQuat(r),
             points: shape === "hull" ? randomHullPoints(r, 9, 0.45 + r() * 0.2) : undefined,
         });
@@ -86,7 +94,7 @@ const rigidStackScene = Database.Plugin.create({
         initializeScene(t) {
             t.resources.orbit = {
                 ...t.resources.orbit,
-                center: [0, 1, 0], radius: 22, height: 18, autoSpinSpeed: 0.12,
+                center: [0, 1, 0], radius: 30, height: 22, autoSpinSpeed: 0.12,
             };
             t.resources.light = {
                 ...t.resources.light,
@@ -112,7 +120,8 @@ const rigidStackScene = Database.Plugin.create({
                 colliderShape: "mesh", halfExtents: [0, 0, 0], material: t.resources.materials.steel,
                 position: [0, 0, 0], rotation: IDENTITY,
                 colliderMesh: {
-                    positions: new Float32Array([-BIN + 1.5, 4.5, BIN - 2, -BIN + 1.5, 4.5, -(BIN - 2), BIN - 5, 0.6, -(BIN - 2), BIN - 5, 0.6, BIN - 2]),
+                    // sloped quad in the left zone: high at the −x wall, low toward centre
+                    positions: new Float32Array([-BIN + 1.5, 4.5, 6, -BIN + 1.5, 4.5, -6, -1, 0.6, -6, -1, 0.6, 6]),
                     indices: new Uint32Array([0, 2, 1, 0, 3, 2]),
                 },
             });
@@ -127,7 +136,7 @@ const rigidStackScene = Database.Plugin.create({
                     for (let z = 0; z < STACK_D; z++) {
                         t.archetypes.RigidBody.insert({
                             bodyType: "dynamic", colliderShape: "box", halfExtents: [0.5, 0.5, 0.5], material: wood,
-                            position: [x0 + x * GAP, 0.55 + y * 1.04, z0 + z * GAP],
+                            position: [STACK_CX + x0 + x * GAP, 0.55 + y * 1.04, z0 + z * GAP],
                             rotation: IDENTITY, linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0],
                         });
                     }
@@ -138,7 +147,7 @@ const rigidStackScene = Database.Plugin.create({
             // it as a kinematic body that pushes the dynamics but is never pushed back.
             t.resources._sweeper = t.archetypes.RigidBody.insert({
                 bodyType: "kinematic", colliderShape: "box", halfExtents: [0.4, 1.0, BIN - 1], material: t.resources.materials.steel,
-                position: [-SWEEP_AMP, SWEEP_Y, 0], rotation: IDENTITY, linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0],
+                position: [SWEEP_CX - SWEEP_AMP, SWEEP_Y, 0], rotation: IDENTITY, linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0],
             });
         },
         spawnBody(t, args: { index: number }) {
@@ -179,7 +188,7 @@ const rigidStackScene = Database.Plugin.create({
             create: db => () => {
                 const id = db.store.resources._sweeper;
                 if (!id) return;
-                const x = Math.sin(db.store.resources.frameTime.elapsed * SWEEP_SPEED - Math.PI / 2) * SWEEP_AMP;
+                const x = SWEEP_CX + Math.sin(db.store.resources.frameTime.elapsed * SWEEP_SPEED - Math.PI / 2) * SWEEP_AMP;
                 db.store.update(id, { position: [x, SWEEP_Y, 0] });
             },
         },

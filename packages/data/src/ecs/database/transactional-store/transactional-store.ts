@@ -96,6 +96,11 @@ export interface TransactionResult<C = unknown> {
     readonly redo: TransactionWriteOperation<C>[];
     readonly undo: TransactionWriteOperation<C>[];
     readonly changedEntities: Map<Entity, EntityUpdateValues<C> | null>;
-    readonly changedComponents: Set<keyof C | string>;
+    // Component names are always strings. Keeping this `Set<string>` (rather
+    // than `Set<keyof C | string>`) avoids widening to `string | number |
+    // symbol` for a generic `C`, which otherwise makes `TransactionResult<C>`
+    // fail to satisfy the type-erased `TransactionResult<unknown>` boundary the
+    // concurrency strategy / reconciler is written against.
+    readonly changedComponents: Set<string>;
     readonly changedArchetypes: Set<ArchetypeId>;
 }

@@ -1305,15 +1305,15 @@ describe("createDatabase", () => {
                 });
 
                 // Wrong value type: token should be string, not number
-                // @ts-expect-error
+                // @ts-expect-error token must be a string
                 Database.create(plugin, { services: { auth: { token: 123, isAuthenticated: false } } });
 
                 // Unknown service key
-                // @ts-expect-error
+                // @ts-expect-error nonexistent is not a declared service
                 Database.create(plugin, { services: { nonexistent: { foo: 'bar' } } });
 
                 // Missing required property (isAuthenticated)
-                // @ts-expect-error
+                // @ts-expect-error auth override is missing isAuthenticated
                 Database.create(plugin, { services: { auth: { token: 'x' } } });
             });
         });

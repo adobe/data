@@ -14,7 +14,12 @@ export default defineWorkspace([
             name: 'node',
             environment: 'node',
             include: ['src/**/*.test.ts', 'src/**/*.node.test.ts'],
-            exclude: ['src/**/*.browser.test.ts', '**/node_modules/**', '**/dist/**', '**/references/**'],
+            exclude: [
+                'src/**/*.browser.test.ts', '**/node_modules/**', '**/dist/**', '**/references/**',
+                // See vite.config.js: the CI gate sets SKIP_PERF=1 to drop the
+                // non-deterministic timing-ratio perf tests.
+                ...(process.env.SKIP_PERF ? ['**/*.performance.test.ts'] : []),
+            ],
             setupFiles: ['./test/setup-node.ts'],
             silent: false,
             reporters: 'verbose',

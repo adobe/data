@@ -20,6 +20,7 @@
     "build": "pnpm build-assembly && run-p build:*",
     "build:code": "tsc -b",
     "build:apidocs": "typedoc",
+    "typecheck": "pnpm build-assembly && tsc -b",
     "build-assembly": "run-p asbuild:release",
     "clean": "rm -rf dist build node_modules",
     "clean-cache": "rm -rf node_modules/.cache",
@@ -38,6 +39,7 @@
     "publish-public": "pnpm build && pnpm publish --no-git-checks --access public",
     "perftest": "node dist/perftest/index.js",
     "test": "vitest --run",
+    "test:ci": "SKIP_PERF=1 vitest --run",
     "asbuild:debug": "asc assembly/index.ts -o dist/assembly/index.wasm --target debug --enable simd && echo built dist/assembly/index.wasm",
     "asbuild:release": "asc assembly/index.ts -o dist/assembly/index.wasm --target release --enable simd --optimize && echo built dist/assembly/index.wasm",
     "start": "npx serve ."

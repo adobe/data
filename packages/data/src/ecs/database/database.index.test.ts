@@ -1010,7 +1010,7 @@ describe("auto-routing of ordered select through a sorted index", () => {
         return { state, restore: () => { handle.find = original; } };
     };
 
-    const seed = (db: ReturnType<typeof Database.create>) => {
+    const seed = (db: Database.FromPlugin<ReturnType<typeof plugin>>) => {
         const mid = db.transactions.add({ owner: 1, priority: 2, due: 10, title: "mid" });
         const low = db.transactions.add({ owner: 1, priority: 1, due: 20, title: "low" });
         const high = db.transactions.add({ owner: 1, priority: 3, due: 30, title: "high" });
@@ -1024,7 +1024,7 @@ describe("auto-routing of ordered select through a sorted index", () => {
 
         const sorted = spyFind((db.indexes as any).byOwnerSorted);
         try {
-            const result = db.select(["title"], { where: { owner: 1 }, order: { priority: true } });
+            const result = db.select(["owner", "priority"], { where: { owner: 1 }, order: { priority: true } });
             // GREEN: the ordered query was served by the sorted index...
             expect(sorted.state.calls).toBe(1);
             // ...and the result is in the index's ascending priority order.
@@ -1041,7 +1041,7 @@ describe("auto-routing of ordered select through a sorted index", () => {
         const unsorted = spyFind((db.indexes as any).byOwner);
         const sorted = spyFind((db.indexes as any).byOwnerSorted);
         try {
-            db.select(["title"], { where: { owner: 1 }, order: { priority: true } });
+            db.select(["owner", "priority"], { where: { owner: 1 }, order: { priority: true } });
             expect(sorted.state.calls).toBe(1);
             expect(unsorted.state.calls).toBe(0);
         } finally {
@@ -1056,7 +1056,7 @@ describe("auto-routing of ordered select through a sorted index", () => {
 
         const sorted = spyFind((db.indexes as any).byOwnerSorted);
         try {
-            const result = db.select(["title"], { where: { owner: 1 }, order: { priority: false } });
+            const result = db.select(["owner", "priority"], { where: { owner: 1 }, order: { priority: false } });
             // Not routed — the index can't serve descending without re-sorting.
             expect(sorted.state.calls).toBe(0);
             // The scan still produces a correct descending result.
@@ -1073,7 +1073,7 @@ describe("auto-routing of ordered select through a sorted index", () => {
         const sorted = spyFind((db.indexes as any).byOwnerSorted);
         try {
             // Index sorts by `priority`; this asks for `due`.
-            const result = db.select(["title"], { where: { owner: 1 }, order: { due: true } });
+            const result = db.select(["owner", "due"], { where: { owner: 1 }, order: { due: true } });
             expect(sorted.state.calls).toBe(0);
             expect(result).toHaveLength(3);
         } finally {
@@ -1088,7 +1088,7 @@ describe("auto-routing of ordered select through a sorted index", () => {
         // No order: the first matching key index (byOwner) serves it.
         const unsorted = spyFind((db.indexes as any).byOwner);
         try {
-            const result = db.select(["title"], { where: { owner: 1 } });
+            const result = db.select(["owner"], { where: { owner: 1 } });
             expect(unsorted.state.calls).toBe(1);
             expect(result).toHaveLength(3);
         } finally {
@@ -1103,7 +1103,7 @@ describe("auto-routing of ordered select through a sorted index", () => {
         const sorted = spyFind((db.indexes as any).byOwnerSorted);
         try {
             const emissions: number[][] = [];
-            const unsub = db.observe.select(["title"], { where: { owner: 1 }, order: { priority: true } })(
+            const unsub = db.observe.select(["owner", "priority"], { where: { owner: 1 }, order: { priority: true } })(
                 (entities) => { emissions.push([...entities]); },
             );
             // Initial snapshot routed and sorted.

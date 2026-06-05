@@ -54,5 +54,10 @@ lose track. Keep it honest about approximations and limitations.
 - [ ] **`uint32`-indexed primitives** — flat-shaded collider/render meshes
   currently emit `uint16` indices (fine for authored ramps/props, not dense
   terrain).
+- [ ] **Deterministic headless joint tests** — the manual frame-stepping harness
+  (used by the solver benchmark) mis-times joint formation against async WASM
+  init, so joints are currently verified in-browser only. A proper harness
+  (await solver-ready before inserting bodies/joints) would let us assert e.g.
+  the cone clamp numerically.
 - [ ] **Active ragdoll** — motorised joints driving toward the animation pose
   while dynamic (struck-but-recovers).

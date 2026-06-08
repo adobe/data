@@ -126,7 +126,8 @@ function validatePropertyOrder(plugins: Record<string, unknown>): void {
  */
 type FullDBForPlugin<
     CS, RS, A, TD, S extends string, AD, XP extends Database.Plugin,
-    SVF extends ServiceFactories<Database.FromPlugin<XP>>
+    SVF extends ServiceFactories<Database.FromPlugin<XP>>,
+    IX = {}
 > = Database<
     FromSchemas<CS & XP['components']>,
     FromSchemas<RS & XP['resources']>,
@@ -134,7 +135,17 @@ type FullDBForPlugin<
     ToTransactionFunctions<TD & XP['transactions']>,
     S | StringKeyof<XP['systems']>,
     ToActionFunctions<AD & XP['actions']>,
-    FromServiceFactories<RemoveIndex<SVF> & XP['services']>
+    FromServiceFactories<RemoveIndex<SVF> & XP['services']>,
+    // 8: CV — placeholder. Kept `unknown` (Database's own default for this slot)
+    //    so a concrete computed-values type never constrains computed-factory
+    //    inference / breaks contravariance. Must be supplied explicitly because
+    //    slot 9 (IX) sits after it.
+    unknown,
+    // 9: IX — thread the index declarations so `db.indexes` is populated inside
+    //    computed factories, same as the actions/systems `db` already does.
+    //    XP is AmbientPlugin<XP, IP> at the call sites, so XP['indexes'] carries
+    //    both extends-base and imports-dep indexes; `IX` adds the plugin's own.
+    IX & XP['indexes']
 >;
 
 /**
@@ -177,7 +188,7 @@ export function createPlugin<
     const AD,
     const S extends string = never,
     const SVF extends ServiceFactories<Database.FromPlugin<AmbientPlugin<XP, IP>>> = {},
-    const CVF extends PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, RemoveIndex<TD>, S, RemoveIndex<AD> & XP['actions'] & IP['actions'], AmbientPlugin<XP, IP>, RemoveIndex<SVF>>> = {},
+    const CVF extends PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, RemoveIndex<TD>, S, RemoveIndex<AD> & XP['actions'] & IP['actions'], AmbientPlugin<XP, IP>, RemoveIndex<SVF>, RemoveIndex<IX>>> = {},
 >(
     plugins: {
         imports?: IP,
@@ -189,7 +200,7 @@ export function createPlugin<
         resources?: RS,
         archetypes?: A,
         indexes?: IX,
-        computed?: CVF & PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, {}, string, RemoveIndex<AD> & XP['actions'] & IP['actions'], AmbientPlugin<XP, IP>, RemoveIndex<SVF>>>,
+        computed?: CVF & PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, {}, string, RemoveIndex<AD> & XP['actions'] & IP['actions'], AmbientPlugin<XP, IP>, RemoveIndex<SVF>, RemoveIndex<IX>>>,
         transactions?: TD,
         actions?: AD & {
             readonly [K: string]: (db: Database<

@@ -2,6 +2,8 @@
 
 import { describe, it, expect } from "vitest";
 import { Database } from "./database.js";
+import { Entity } from "../entity/entity.js";
+import { FractionalIndex } from "../../schema/fractional-index/fractional-index.js";
 
 // ============================================================================
 // Catalogue pattern coverage — each describe corresponds to one of the 12
@@ -1484,8 +1486,8 @@ describe("complex sort index — orderedChildOf (nested parent + fractional-inde
             orderedChildOf: {
                 type: "object",
                 properties: {
-                    parent: { type: "number" },
-                    order: { type: "string" },
+                    parent: Entity.schema,
+                    order: FractionalIndex.schema,
                 },
                 required: ["parent", "order"],
             },

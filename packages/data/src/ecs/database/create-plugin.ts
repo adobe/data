@@ -51,7 +51,7 @@ type DatabaseWithServices<
 >;
 
 function validatePropertyOrder(plugins: Record<string, unknown>): void {
-    const expectedOrder = ['extends', 'imports', 'services', 'components', 'resources', 'archetypes', 'indexes', 'computed', 'transactions', 'actions', 'systems'];
+    const expectedOrder = ['imports', 'extends', 'services', 'components', 'resources', 'archetypes', 'indexes', 'computed', 'transactions', 'actions', 'systems'];
     const actualKeys = Object.keys(plugins);
     const definedKeys = actualKeys.filter(key => key in plugins);
 
@@ -81,32 +81,35 @@ function validatePropertyOrder(plugins: Record<string, unknown>): void {
  * **IMPORTANT: Property Order Requirement**
  * 
  * Properties MUST be defined in this exact order:
- * 1. extends (optional) - Base plugin to extend
- * 2. services (optional) - Service factory functions
- * 3. components (optional) - Component schema definitions
- * 4. resources (optional) - Resource schema definitions
- * 5. archetypes (optional) - Archetype definitions
- * 6. indexes (optional) - Index declarations over components
- * 7. computed (optional) - Computed observe factories (each returns Observe<unknown>)
- * 8. transactions (optional) - Transaction declarations
- * 9. actions (optional) - Action declarations
- * 10. systems (optional) - System declarations
+ * 1. imports (optional) - Dependency plugins whose types are visible to local
+ *    declarations but NOT re-exported into the result
+ * 2. extends (optional) - Base plugin to extend (types re-exported into result)
+ * 3. services (optional) - Service factory functions
+ * 4. components (optional) - Component schema definitions
+ * 5. resources (optional) - Resource schema definitions
+ * 6. archetypes (optional) - Archetype definitions
+ * 7. indexes (optional) - Index declarations over components
+ * 8. computed (optional) - Computed observe factories (each returns Observe<unknown>)
+ * 9. transactions (optional) - Transaction declarations
+ * 10. actions (optional) - Action declarations
+ * 11. systems (optional) - System declarations
  *
  * Example:
  * ```ts
  * Database.Plugin.create({
- *   extends: basePlugin,     // 1. extends first
- *   services: {              // 2. services last
+ *   imports: depPlugin,      // 1. imports first
+ *   extends: basePlugin,     // 2. extends
+ *   services: {              // 3. services
  *     myService: (db) => createMyService(db.resources.config),
  *   }
- *   components: { ... },     // 3. components
- *   resources: { ... },      // 4. resources
- *   archetypes: { ... },     // 5. archetypes
- *   indexes: { ... },        // 6. indexes
- *   computed: { ... },       // 7. computed
- *   transactions: { ... },   // 8. transactions
- *   actions: { ... },        // 9. actions
- *   systems: { ... },        // 10. systems
+ *   components: { ... },     // 4. components
+ *   resources: { ... },      // 5. resources
+ *   archetypes: { ... },     // 6. archetypes
+ *   indexes: { ... },        // 7. indexes
+ *   computed: { ... },       // 8. computed
+ *   transactions: { ... },   // 9. transactions
+ *   actions: { ... },        // 10. actions
+ *   systems: { ... },        // 11. systems
  * })
  * ```
  * 
@@ -177,8 +180,8 @@ export function createPlugin<
     const CVF extends PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, RemoveIndex<TD>, S, RemoveIndex<AD> & XP['actions'] & IP['actions'], AmbientPlugin<XP, IP>, RemoveIndex<SVF>>> = {},
 >(
     plugins: {
-        extends?: XP,
         imports?: IP,
+        extends?: XP,
         services?: SVF & {
             readonly [K: string]: (db: Database.FromPlugin<AmbientPlugin<XP, IP>>) => unknown
         },

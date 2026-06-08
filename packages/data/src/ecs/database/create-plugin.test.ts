@@ -17,6 +17,13 @@ describe("Database.Plugin.create", () => {
 
             expect(() => {
                 Database.Plugin.create({
+                    extends: undefined,
+                    imports: undefined, // imports should come before extends
+                });
+            }).toThrow('Property "imports" must come before "extends"');
+
+            expect(() => {
+                Database.Plugin.create({
                     components: {},
                     services: {}, // services should come before components
                 });

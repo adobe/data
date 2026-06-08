@@ -20,5 +20,5 @@ module.exports = {
     '@typescript-eslint/no-unused-vars': 'off', // Allow unused variables
     '@typescript-eslint/no-namespace': 'off', // Namespaces used for API organization (Database.Plugin, etc.)
   },
-  ignorePatterns: ['.eslintrc.cjs', 'docs', 'dist', 'tests', 'vite.config.js'],  // Updated ignore patterns
+  ignorePatterns: ['.eslintrc.cjs', 'docs', 'dist', 'tests', 'vite.config.js', 'scripts/typeperf/generated'],  // Updated ignore patterns
 };

@@ -2,6 +2,8 @@
 
 import { describe, it, expect } from "vitest";
 import { Database } from "./database.js";
+import { Entity } from "../entity/entity.js";
+import { FractionalIndex } from "../../schema/fractional-index/fractional-index.js";
 
 // ============================================================================
 // Catalogue pattern coverage — each describe corresponds to one of the 12
@@ -1470,5 +1472,80 @@ describe("registry maintenance", () => {
 
         const ext = db.extend(indexed);
         expect([...ext.indexes.byName.find({ name: "alice" })].sort()).toEqual([e1, e2].sort());
+    });
+});
+
+describe("complex sort index — orderedChildOf (nested parent + fractional-index order)", () => {
+    // orderedChildOf bundles the parent entity reference and the fractional-index
+    // sort key in a single object component. The index uses a computed slot map
+    // to extract the group key and a custom compare that drills into the nested
+    // object for the order field — matching the README pattern:
+    //   key: (f) => f.parent, order: { by: ["foo"], compare: (a, b) => a.foo.order < b.foo.order ? -1 : 1 }
+    const plugin = () => Database.Plugin.create({
+        components: {
+            orderedChildOf: {
+                type: "object",
+                properties: {
+                    parent: Entity.schema,
+                    order: FractionalIndex.schema,
+                },
+                required: ["parent", "order"],
+            },
+        },
+        archetypes: { Child: ["orderedChildOf"] },
+        indexes: {
+            orderedChildrenOf: {
+                key: { parent: (c) => c.orderedChildOf!.parent },
+                components: ["orderedChildOf"],
+                order: {
+                    by: ["orderedChildOf"],
+                    compare: (
+                        a: { orderedChildOf: { parent: number; order: string } },
+                        b: { orderedChildOf: { parent: number; order: string } },
+                    ) => a.orderedChildOf.order < b.orderedChildOf.order ? -1 : 1,
+                },
+            },
+        },
+        transactions: {
+            add: (t, args: { parent: number; order: string }) =>
+                t.archetypes.Child.insert({ orderedChildOf: args }),
+            reorder: (t, args: { entity: number; parent: number; order: string }) =>
+                t.update(args.entity, { orderedChildOf: { parent: args.parent, order: args.order } }),
+            delete: (t, e: number) => t.delete(e),
+        },
+    });
+
+    it("returns children sorted by fractional index within the same parent", () => {
+        const db = Database.create(plugin());
+        const c = db.transactions.add({ parent: 1, order: "a2" });
+        const a = db.transactions.add({ parent: 1, order: "a0" });
+        const b = db.transactions.add({ parent: 1, order: "a1" });
+        expect(db.indexes.orderedChildrenOf.find({ parent: 1 })).toEqual([a, b, c]);
+    });
+
+    it("children of different parents are in independent buckets", () => {
+        const db = Database.create(plugin());
+        const child1 = db.transactions.add({ parent: 1, order: "a0" });
+        const child2 = db.transactions.add({ parent: 2, order: "a0" });
+        expect(db.indexes.orderedChildrenOf.find({ parent: 1 })).toEqual([child1]);
+        expect(db.indexes.orderedChildrenOf.find({ parent: 2 })).toEqual([child2]);
+    });
+
+    it("reordering an entity repositions it in the sorted result", () => {
+        const db = Database.create(plugin());
+        const a = db.transactions.add({ parent: 1, order: "a0" });
+        const b = db.transactions.add({ parent: 1, order: "a1" });
+        const c = db.transactions.add({ parent: 1, order: "a2" });
+        db.transactions.reorder({ entity: a, parent: 1, order: "a3" });
+        expect(db.indexes.orderedChildrenOf.find({ parent: 1 })).toEqual([b, c, a]);
+    });
+
+    it("delete removes the entity from its sorted bucket", () => {
+        const db = Database.create(plugin());
+        const a = db.transactions.add({ parent: 1, order: "a0" });
+        const b = db.transactions.add({ parent: 1, order: "a1" });
+        const c = db.transactions.add({ parent: 1, order: "a2" });
+        db.transactions.delete(b);
+        expect(db.indexes.orderedChildrenOf.find({ parent: 1 })).toEqual([a, c]);
     });
 });

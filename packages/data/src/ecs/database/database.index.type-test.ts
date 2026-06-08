@@ -401,3 +401,53 @@ function invalidUniqueGetWrongType() {
         db.indexes.uniqueByEmail.get({ email: "x@y.z" });
     };
 }
+
+// ============================================================================
+// VALID — computed factories see db.indexes
+//
+// Regression guard: FullDBForPlugin used to forward only Database slots 1–7,
+// so the IX slot (9) fell back to its `{}` default and `db.indexes` was empty
+// inside computed factories. The declarations below would not compile if that
+// regressed — `db.indexes.<name>` would be an error.
+// ============================================================================
+
+function computedSeesOwnIndexes() {
+    createPlugin({
+        components: {
+            email: { type: "string" },
+            name: { type: "string" },
+        },
+        indexes: {
+            byName: { key: "name" },
+        },
+        computed: {
+            probe: (db) => {
+                type Handle = typeof db.indexes.byName;
+                type _FindArg = Assert<Equal<Parameters<Handle["find"]>[0], { readonly name: string }>>;
+                return Observe.fromConstant(db.indexes.byName.find({ name: "x" }).length);
+            },
+        },
+    });
+}
+
+function computedSeesImportedAndExtendedIndexes() {
+    const base = createPlugin({
+        components: { email: { type: "string" } },
+        indexes: { uniqueByEmail: { key: "email", unique: true } },
+    });
+    const dep = createPlugin({
+        components: { name: { type: "string" } },
+        indexes: { byName: { key: "name" } },
+    });
+
+    createPlugin({
+        extends: base,
+        imports: dep,
+        computed: {
+            // Index from `extends` base...
+            fromExtends: (db) => Observe.fromConstant(db.indexes.uniqueByEmail.get({ email: "x@y.z" })),
+            // ...and index from `imports` dependency.
+            fromImports: (db) => Observe.fromConstant(db.indexes.byName.find({ name: "x" }).length),
+        },
+    });
+}

@@ -13,18 +13,18 @@ import type { True, False } from "../../types/types.js";
  *   - `extends`  — base types are visible to local declarations AND
  *                  re-exported into the result plugin's type.
  *   - `imports`  — base types are visible to local declarations ONLY;
- *                  they do NOT flow into the result plugin's type.
+ *                  they do NOT flow into the result plugin's TYPE.
  *
- * The result-type asymmetry is what keeps deep dependency graphs cheap: an
- * `imports` link's result stays O(local members) instead of accumulating the
- * full chain (see scripts/typeperf — `imports` is linear where `extends` is
- * quadratic in chain depth). The consumer reconstitutes the union once, at the
- * top, via `Database.Plugin.combine(...)`.
- *
- * These tests verify BOTH halves of that contract:
+ * The two merge identically at RUNTIME (both pull the base's members into the
+ * assembled plugin); they differ only in the result TYPE. That result-type
+ * asymmetry is what keeps deep dependency graphs cheap: an `imports` link's
+ * result type stays O(local members) instead of accumulating the full chain
+ * (see scripts/typeperf — `imports` is linear where `extends` is quadratic in
+ * chain depth). Runtime-merge behavior is covered by create-plugin.test.ts
+ * ("imports runtime behavior"); this file covers the type contract:
  *   1. Visibility — a plugin that `imports` a base gets FULL type safety on the
  *      base's components/resources/transactions (no weakening vs `extends`).
- *   2. Non-export — the imported members are absent from the result type.
+ *   2. Non-export — the imported members are absent from the result TYPE.
  */
 
 // ============================================================================
@@ -106,7 +106,9 @@ type _ExtendsReExportsComponent = True<'baseColor' extends keyof ExtendedResult[
 type _ExtendsReExportsTx = True<'setBaseColor' extends keyof ExtendedResult['transactions'] ? true : false>;
 
 // ============================================================================
-// 3. Consumer reconstitutes the union via combine — full DB is type-safe
+// 3. To regain the imported members in the TYPE, combine the base back in
+//    explicitly (runtime already merged them — this is purely to surface the
+//    base's members on the database type for the consumer).
 // ============================================================================
 
 function testCombinedUsage() {

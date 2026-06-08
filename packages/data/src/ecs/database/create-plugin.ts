@@ -247,13 +247,19 @@ export function createPlugin<
         systems: plugins.systems ?? {},
     };
 
-    // `imports` is a type-only contract: it makes the imported plugins' types
-    // visible to this plugin's local declarations without re-exporting them into
-    // the result. At runtime it contributes nothing — the consumer is responsible
-    // for actually including the imported plugins in the final
-    // `Database.Plugin.combine(...)`. Only `extends` merges at runtime.
-    if (plugins.extends) {
-        return combinePlugins(plugins.extends, plugin) as any;
+    // `imports` differs from `extends` only at the TYPE level: the imported
+    // plugins' members are NOT declared in this plugin's result type, so they
+    // don't propagate through downstream result types (the source of the
+    // quadratic `extends` blowup). At RUNTIME, however, imports merge in exactly
+    // like extends — so the imported components/resources/transactions/etc. are
+    // present in the assembled database without the consumer having to re-list
+    // them in the top-level combine. Order: imports first, then extends, then
+    // this plugin's own declarations (preserves service initialization order).
+    const bases: Database.Plugin[] = [];
+    if (plugins.imports) bases.push(plugins.imports);
+    if (plugins.extends) bases.push(plugins.extends);
+    if (bases.length > 0) {
+        return combinePlugins(...bases, plugin) as any;
     }
     return plugin as any;
 }

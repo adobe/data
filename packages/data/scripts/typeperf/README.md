@@ -64,10 +64,10 @@ the knee.
 ## Result — `imports` vs `extends`
 
 `imports` makes ancestor types visible to local declarations **without**
-re-exporting them into the result type. Each link's result stays
-`O(local members)`, so the chain becomes **linear**; consumers compose the
-union once via `Database.Plugin.combine(...)`. Measured (TS 5.8.3,
-`node scripts/typeperf/measure.mjs extends imports`):
+re-exporting them into the result type (it still merges them at runtime, like
+`extends` — the difference is purely in the result type). Each link's result
+type stays `O(local members)`, so the chain becomes **linear**. Measured
+(TS 5.8.3, `node scripts/typeperf/measure.mjs extends imports`):
 
 | depth | extends (inst) | imports (inst) | speedup |
 |------:|---------------:|---------------:|--------:|
@@ -94,4 +94,3 @@ several ancestors imports a combined context
 per import site over local-only (O(1)) operands, so the total stays linear in
 total members as long as authors keep result types local — which `imports`
 enforces by construction.
-</content>

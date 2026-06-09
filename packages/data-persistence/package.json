@@ -1,6 +1,6 @@
 {
     "name": "@adobe/data-persistence",
-    "version": "0.9.67",
+    "version": "0.9.68",
     "description": "Worker-based incremental persistence layer for @adobe/data ECS over OPFS (browser) and node:fs (server).",
     "type": "module",
     "sideEffects": false,

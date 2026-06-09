@@ -1,15 +1,18 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Simplify, StringKeyof } from "../../types/types.js";
+import { StringKeyof, UnionToIntersection } from "../../types/types.js";
 import type { Database } from "./database.js";
 
-// Helper to intersect all elements (works with mapped types over tuples)
-type IntersectAll<T extends readonly unknown[]> = Simplify<
-  T extends readonly [infer H, ...infer R] ? H & IntersectAll<R> : unknown
->;
-type UnionAll<T extends readonly unknown[]> = Simplify<
-  T extends readonly [infer H, ...infer R] ? H | UnionAll<R> : never
->;
+// Intersect every element of a tuple. Non-recursive (`UnionToIntersection` over
+// the element union) so it neither trips the TS2589 recursion-depth ceiling —
+// which previously capped how many plugins could be combined in one call and
+// forced nested grouping — nor pays a per-level `Simplify` re-materialization
+// (the bulk of the old instantiation cost). The empty-tuple guard preserves the
+// old `unknown` so `{} & IntersectAll<[]>` stays `{}` rather than collapsing to
+// `never`. The per-field unions here are the plugins' object-map buckets, which
+// intersect soundly; the only union kept as a union is `systems` (below).
+type IntersectAll<T extends readonly unknown[]> =
+  [T[number]] extends [never] ? unknown : UnionToIntersection<T[number]>;
 
 // Array-based combination type - combines plugins from an array into a flat Database.Plugin.
 // Uses direct property access (P['components']) instead of conditional inference
@@ -21,20 +24,21 @@ export type CombinePlugins<Plugins extends readonly Database.Plugin[]> = Databas
   {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['archetypes'] }>,
   {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['transactions'] }>,
   Extract<
-    UnionAll<{ [K in keyof Plugins]: StringKeyof<Plugins[K]['systems']> }>,
+    { [K in keyof Plugins]: StringKeyof<Plugins[K]['systems']> }[number],
     string
   >,
   {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['actions'] }>,
   {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['services'] }>,
-  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['computed'] }>
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['computed'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['indexes'] }>
 >;
 
 
 /**
  * Combines multiple plugins into a single plugin.
- * All plugin properties (components, resources, archetypes, computed, transactions, systems, actions, services)
+ * All plugin properties (components, resources, archetypes, indexes, computed, transactions, systems, actions, services)
  * require identity (===) when the same key exists across plugins.
- * 
+ *
  * IMPORTANT: Services are merged in order, preserving the initialization order
  * so that extended plugin services are initialized before current plugin services.
  */
@@ -45,12 +49,13 @@ export function combinePlugins<
   {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['resources'] }>,
   {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['archetypes'] }>,
   {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['transactions'] }>,
-  Extract<UnionAll<{ [K in keyof Plugins]: StringKeyof<Plugins[K]['systems']> }>, string>,
+  Extract<{ [K in keyof Plugins]: StringKeyof<Plugins[K]['systems']> }[number], string>,
   {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['actions'] }>,
   {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['services'] }>,
-  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['computed'] }>
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['computed'] }>,
+  {} & IntersectAll<{ [K in keyof Plugins]: Plugins[K]['indexes'] }>
 > {
-  const keys = ['services', 'components', 'resources', 'archetypes', 'computed', 'transactions', 'actions', 'systems'] as const;
+  const keys = ['services', 'components', 'resources', 'archetypes', 'indexes', 'computed', 'transactions', 'actions', 'systems'] as const;
 
   const merge = (base: any, next: any) =>
     Object.fromEntries(keys.map(key => {
@@ -70,7 +75,7 @@ export function combinePlugins<
       return [key, merged];
     }));
 
-  const emptyPlugin = { components: {}, resources: {}, archetypes: {}, computed: {}, transactions: {}, actions: {}, systems: {}, services: {} };
+  const emptyPlugin = { components: {}, resources: {}, archetypes: {}, indexes: {}, computed: {}, transactions: {}, actions: {}, systems: {}, services: {} };
 
   // Merge all plugins together
   const result = plugins.reduce(merge, emptyPlugin);

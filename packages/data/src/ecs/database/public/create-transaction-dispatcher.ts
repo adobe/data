@@ -5,7 +5,6 @@ import { isAsyncGenerator } from "../../../internal/async-generator/is-async-gen
 import { Observe } from "../../../observe/index.js";
 import { TransactionEnvelope } from "../reconciling/reconciling-database.js";
 import { TransactionResult } from "../transactional-store/index.js";
-import type { DatabaseSyncOptions } from "./create-database.js";
 
 /**
  * Why an envelope intent matters: from the wire's perspective both a deferred
@@ -70,17 +69,11 @@ export interface TransactionDispatcher {
 
 export const createTransactionDispatcher = (
     apply: DispatcherTarget,
-    sync: DatabaseSyncOptions | undefined,
+    options: { deferredCommit: boolean; userId?: number | string },
 ): TransactionDispatcher => {
     const [envelopes, notifyEnvelope] = Observe.createEvent<TransactionEnvelopeEvent>();
 
-    // Sync mode is decided once at construction. Presence of `sync` means:
-    //   - userId is stamped on every envelope
-    //   - "commit" intents apply locally as transients (negative time) and
-    //     wait for the sync server's echoed `committed` envelope to promote
-    //     them via the reconciler's rebase-replay
-    const userId = sync?.userId;
-    const deferredCommit = sync !== undefined;
+    const { deferredCommit, userId } = options;
 
     let nextTransactionId = 1;
 

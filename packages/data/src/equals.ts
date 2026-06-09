@@ -1,7 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { isTypedBuffer } from "./typed-buffer/is-typed-buffer.js";
-import { typedBufferEquals } from "./typed-buffer/typed-buffer-equals.js";
+import type { ReadonlyTypedBuffer } from "./typed-buffer/typed-buffer.js";
+
+// Typed-buffer brand emitted by `TypedBuffer`'s `__brand` field. Duck-typed
+// here (instead of `instanceof TypedBuffer`) so this module has no runtime
+// dependency on `typed-buffer/` — `equals` is the mutual-recursion partner
+// of `typedBufferEquals`, and importing the class would close the cycle
+// `equals → is-typed-buffer → typed-buffer → typed-buffer-equals → equals`.
+const TYPED_BUFFER_BRAND = "TypedBuffer";
 
 /**
  * Very-fast deep equality for JSON-style values.
@@ -33,11 +39,21 @@ export function equals(a: unknown, b: unknown): boolean {
     return true;
   }
 
-  // 3  Typed-buffer fast path
-  const aBuf = isTypedBuffer(a);
-  const bBuf = isTypedBuffer(b);
+  // 3  Typed-buffer fast path. Inlined here (rather than dispatched to
+  // `typedBufferEquals`) so the recursion stays intra-module; see the
+  // brand comment above.
+  const aBuf = (a as { __brand?: string }).__brand === TYPED_BUFFER_BRAND;
+  const bBuf = (b as { __brand?: string }).__brand === TYPED_BUFFER_BRAND;
   if (aBuf || bBuf) {
-    return aBuf && bBuf ? typedBufferEquals(a as any, b as any) : false;
+    if (!aBuf || !bBuf) return false;
+    const ab = a as ReadonlyTypedBuffer<unknown>;
+    const bb = b as ReadonlyTypedBuffer<unknown>;
+    if (ab.type !== bb.type || ab.capacity !== bb.capacity) return false;
+    if (!equals(ab.schema, bb.schema)) return false;
+    for (let i = 0; i < ab.capacity; i++) {
+      if (!equals(ab.get(i), bb.get(i))) return false;
+    }
+    return true;
   }
 
   // 4  Plain objects

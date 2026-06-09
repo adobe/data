@@ -17,6 +17,13 @@ describe("Database.Plugin.create", () => {
 
             expect(() => {
                 Database.Plugin.create({
+                    extends: undefined,
+                    imports: undefined, // imports should come before extends
+                });
+            }).toThrow('Property "imports" must come before "extends"');
+
+            expect(() => {
+                Database.Plugin.create({
                     components: {},
                     services: {}, // services should come before components
                 });
@@ -666,6 +673,58 @@ describe("Database.Plugin.create", () => {
                     },
                 });
             }).not.toThrow();
+        });
+    });
+
+    describe("imports runtime behavior", () => {
+        // `imports` differs from `extends` ONLY in the result type (imported
+        // members are not declared there — see imports-chain.type-test.ts).
+        // At runtime, imports merge into the assembled plugin exactly like
+        // extends, so the consumer does NOT have to re-list the imported plugin
+        // in the top-level combine for its members to exist.
+        const basePlugin = createPlugin({
+            resources: { baseScale: { default: 7 as number } },
+            transactions: {
+                setBaseScale: (_t, _input: { scale: number }) => { },
+            },
+        });
+
+        it("merges imported plugin members into the runtime plugin object", () => {
+            const featurePlugin = createPlugin({
+                imports: basePlugin,
+                resources: { featureFlag: { default: true as boolean } },
+            });
+            // Imported members are present on the assembled plugin at runtime...
+            expect((featurePlugin.resources as any).baseScale).toBeDefined();
+            expect((featurePlugin.transactions as any).setBaseScale).toBeDefined();
+            // ...alongside the local ones.
+            expect((featurePlugin.resources as any).featureFlag).toBeDefined();
+        });
+
+        it("imported members are usable on a database built from the plugin alone", () => {
+            const featurePlugin = createPlugin({
+                imports: basePlugin,
+                resources: { featureFlag: { default: true as boolean } },
+            });
+            // No separate combine(basePlugin, ...) — imports already merged.
+            const db = Database.create(featurePlugin);
+            expect((db.resources as any).baseScale).toBe(7);
+            expect(() => (db.transactions as any).setBaseScale({ scale: 9 })).not.toThrow();
+        });
+
+        it("merges imports first, then extends, then local declarations", () => {
+            const extendedBase = createPlugin({
+                resources: { fromExtends: { default: 1 as number } },
+            });
+            const combined = createPlugin({
+                imports: basePlugin,
+                extends: extendedBase,
+                resources: { fromLocal: { default: 2 as number } },
+            });
+            const r = combined.resources as any;
+            expect(r.baseScale).toBeDefined();   // from imports
+            expect(r.fromExtends).toBeDefined();  // from extends
+            expect(r.fromLocal).toBeDefined();    // local
         });
     });
 });

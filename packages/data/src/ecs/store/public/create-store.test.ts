@@ -619,6 +619,34 @@ describe("createStore", () => {
             expect(newStore.resources.config).toEqual({ debug: true, volume: 0.5 });
         });
 
+        it("toData(true) detaches the snapshot from later store mutation; toData() references live buffers", () => {
+            const makePopulatedStore = () => {
+                const store = createStore({ components: { health: healthSchema }, resources: {}, archetypes: {} });
+                const archetype = store.ensureArchetype(["id", "health"]);
+                const entity = archetype.insert({ health: { current: 100, max: 100 } });
+                return { store, entity };
+            };
+            const restore = (snapshot: unknown) => {
+                const fresh = createStore({ components: { health: healthSchema }, resources: {}, archetypes: {} });
+                fresh.fromData(snapshot);
+                const restored = fresh.select(["health"]);
+                return fresh.read(restored[0])?.health?.current;
+            };
+
+            // Detached: mutating after the snapshot must NOT change it.
+            const detached = makePopulatedStore();
+            const detachedSnapshot = detached.store.toData(true);
+            detached.store.update(detached.entity, { health: { current: 1, max: 100 } });
+            expect(restore(detachedSnapshot)).toBe(100);
+
+            // Live (default): the snapshot references live buffers, so a later
+            // mutation is visible through it — the behavior the `copy` flag fixes.
+            const live = makePopulatedStore();
+            const liveSnapshot = live.store.toData();
+            live.store.update(live.entity, { health: { current: 1, max: 100 } });
+            expect(restore(liveSnapshot)).toBe(1);
+        });
+
         it("should create new resources when restoring to store with additional resources", () => {
             // Create original store with only one resource
             const originalStore = createStore({ components: {

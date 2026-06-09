@@ -15,7 +15,7 @@
 import { Observe } from "../../observe/index.js";
 import { Assert } from "../../types/assert.js";
 import { Service } from "../service.js";
-import { AsyncDataService } from "./index.js";
+import { AsyncDataService } from "./async-data-service.js";
 
 // ============================================================================
 // EXAMPLE SERVICE INTERFACE

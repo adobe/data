@@ -1,20 +1,23 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Archetype, ArchetypeId, ReadonlyArchetype } from "../archetype/index.js";
+import { Archetype, ArchetypeId, FromArchetype, ReadonlyArchetype } from "../archetype/index.js";
 import { ResourceComponents } from "../store/resource-components.js";
 import { ReadonlyStore, Store } from "../store/index.js";
 import { Entity } from "../entity/entity.js";
 import { EntityReadValues } from "../store/core/index.js";
 import { Observe } from "../../observe/index.js";
-import { TransactionResult } from "./transactional-store/index.js";
+import { TransactionContext, TransactionResult } from "./transactional-store/index.js";
 import { TransactionEnvelope } from "./reconciling/reconciling-database.js";
 import { StringKeyof, RemoveIndex } from "../../types/types.js";
 import { Components } from "../store/components.js";
 import { ArchetypeComponents } from "../store/archetype-components.js";
 import { RequiredComponents } from "../required-components.js";
 import { EntitySelectOptions } from "../store/entity-select-options.js";
+import { Filter } from "../../table/select-rows.js";
+import { Index as StoreIndex } from "../store/index-types.js";
 import type { Service } from "../../service/index.js";
-import { createDatabase, type DatabaseSyncOptions } from "./public/create-database.js";
+import { createDatabase } from "./public/create-database.js";
+import type { ConcurrencyStrategy } from "./concurrency/concurrency-strategy.js";
 import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
@@ -87,6 +90,16 @@ export type PluginComputedValue = Observe<unknown> | ((...args: any[]) => Observ
  */
 export type PluginComputedFactories<DB = any> = { readonly [K: string]: (db: DB) => PluginComputedValue };
 
+/**
+ * Plugin-level map of indexes. Re-exported from `store/index-types.ts`
+ * where the canonical definition lives — same module that defines the
+ * unified `Index` type (raw + computed) so a single source of truth is
+ * shared between the Store layer (`store.indexes` typed handle map) and
+ * the Database layer (`db.indexes`, plugin descriptor constraint).
+ */
+export type { IndexDeclarations } from "../store/index-types.js";
+import type { IndexDeclarations } from "../store/index-types.js";
+
 export interface Database<
   C extends Components = {},
   R extends ResourceComponents = {},
@@ -96,11 +109,23 @@ export interface Database<
   AF extends ActionFunctions = {},
   SV = {},
   CV = unknown,
-> extends ReadonlyStore<C, R, A>, Service {
+  IX extends IndexDeclarations<C> = {},
+> extends ReadonlyStore<C, R, A, IX>, Service {
   readonly transactions: F & Service;
   readonly actions: AF & Service;
   readonly services: SV;
   readonly computed: CV;
+  /**
+   * Lookup handles for the indexes declared by plugins on this database.
+   * Each key in `IX` becomes a `Database.Index.Handle` whose method shape
+   * is narrowed by the declared key tuple and unique flag.
+   *
+   * The handles are also the implementation path used by `db.select` /
+   * `db.observe.select` when a `where` / `order` matches a declared
+   * index — call sites do not need to be aware of which index served
+   * the query, but the same handle is what runs underneath.
+   */
+  readonly indexes: { readonly [K in keyof IX]: Database.Index.Handle<C, IX[K]> };
   readonly observe: {
     readonly components: { readonly [K in StringKeyof<C>]: Observe<void> };
     readonly resources: { readonly [K in StringKeyof<R>]: Observe<R[K]> };
@@ -157,19 +182,40 @@ export interface Database<
    */
   readonly cancel: (id: number, userId?: number | string) => void;
   /**
-   * The sync options the database was created with, or `undefined` for a
-   * local-only database. Sync services read this to (a) confirm the
-   * database was created in sync mode and (b) recover the `userId` for
-   * authentication / logging without having to thread it through
-   * separately.
+   * The concurrency strategy the database was created with. Sync services
+   * read `concurrency.userId` to recover the peer identifier and check
+   * `concurrency.deferredCommit` to confirm the database is in the
+   * appropriate mode for multi-peer operation.
    */
-  readonly sync: DatabaseSyncOptions | undefined;
+  readonly concurrency: ConcurrencyStrategy;
   readonly system: {
     /** System create() return value, or null when create() returns void. Key is always present. */
     readonly functions: { readonly [K in S]: SystemFunction | null };
     /** Tier order for execution. Looser type allows extended dbs to be assignable to base. */
     readonly order: ReadonlyArray<ReadonlyArray<string>>;
   }
+  /**
+   * Serialize the database to a plain data snapshot.
+   *
+   * For a concurrency strategy that replays transients after serialization
+   * (`onAfterToData` — i.e. `createRebaseReplayConcurrency` /
+   * `createRollForwardConcurrency` / the legacy `createReconcilingDatabase`),
+   * this returns a snapshot **detached** from the live store: it rolls the
+   * transients back, serializes a copy of the committed state (`store.toData`
+   * with `copy: true` — columns and the entity table are cloned), then replays.
+   * So a database persisted with optimistic edits in flight contains only
+   * committed state, and the snapshot survives the subsequent replay.
+   *
+   * For strategies with no replay hook (the default `createImmediateConcurrency`),
+   * the faster live-reference snapshot is returned — it shares the store's
+   * buffers and is only valid until the next mutation, so callers must serialize
+   * it before mutating the database again.
+   *
+   * Historical note: the detach above fixes a bug where the live-reference
+   * snapshot was corrupted by the post-serialization replay, silently leaking
+   * in-flight transients into persisted state. The old reconciler tests missed
+   * it because they only asserted the snapshot was truthy, never round-tripped it.
+   */
   toData(): unknown
   fromData(data: unknown): void
   extend<P extends Database.Plugin>(plugin: P): Database<
@@ -180,7 +226,8 @@ export interface Database<
     S | StringKeyof<P['systems']>,
     AF & ToActionFunctions<RemoveIndex<P['actions']>>,
     SV & FromServiceFactories<RemoveIndex<P['services']>>,
-    CV & FromComputedFactories<RemoveIndex<P['computed']>>
+    CV & FromComputedFactories<RemoveIndex<P['computed']>>,
+    IX & RemoveIndex<P['indexes']>
   >;
 }
 
@@ -199,7 +246,8 @@ export namespace Database {
     StringKeyof<P['systems']>,
     ToActionFunctions<RemoveIndex<P['actions']>>,
     FromServiceFactories<RemoveIndex<P['services']>>,
-    FromComputedFactories<RemoveIndex<P['computed']>>
+    FromComputedFactories<RemoveIndex<P['computed']>>,
+    RemoveIndex<P['indexes']>
   >;
 
   export const create = createDatabase;
@@ -210,6 +258,39 @@ export namespace Database {
 
   export const observeSelectDeep = _observeSelectDeep;
 
+  // The user-facing `Database.Index` namespace re-exports the canonical
+  // declaration and handle types from `store/index-types.ts`. Defining
+  // them there keeps the `Store` interface able to type `store.indexes`
+  // (a lower-layer concern) without an import cycle into this module.
+  // See `Index` and `Index.Handle` in `store/index-types.ts`.
+  export type Index<
+    C extends Components = any,
+  > = StoreIndex<C, any, any, any>;
+
+  export namespace Index {
+    export type Handle<C extends Components, I extends StoreIndex<C, any, any, any>> =
+      StoreIndex.Handle<C, I>;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  export namespace Archetype {
+    /**
+     * The row (component) type of the archetype named `K` on a store /
+     * database / service type `S`. Lets callers *name* an archetype row
+     * without re-spelling its columns — derive instead of re-declare.
+     *
+     * ```ts
+     * type MainService = Database.Plugin.ToDatabase<typeof mainPlugin>;
+     * type Track = Database.Archetype.RowOf<MainService, "Track">;
+     * const t: ReadonlyArchetype<Track> = db.archetypes.Track; // no cast
+     * ```
+     */
+    export type RowOf<
+      S extends { readonly archetypes: Record<string, unknown> },
+      K extends StringKeyof<S["archetypes"]>,
+    > = FromArchetype<S["archetypes"][K]>;
+  }
+
   export type Plugin<
     CS extends ComponentSchemas = any,
     RS extends ResourceSchemas = any,
@@ -218,7 +299,8 @@ export namespace Database {
     S extends string = any,
     AD extends ActionDeclarations<FromSchemas<CS>, FromSchemas<RS>, A, ToTransactionFunctions<TD>, S> = any,
     SVF extends ServiceFactories = any,
-    CVF extends ComputedFactories = any
+    CVF extends ComputedFactories = any,
+    IX extends IndexDeclarations<FromSchemas<CS>> = any,
   > = {
     readonly components: CS;
     readonly resources: RS;
@@ -228,6 +310,7 @@ export namespace Database {
     readonly actions: AD;
     readonly services: SVF;
     readonly computed: CVF;
+    readonly indexes: IX;
   };
 
   export namespace Plugin {
@@ -235,6 +318,14 @@ export namespace Database {
     export const combine = combinePlugins;
     export type ToDatabase<P extends Database.Plugin> = Database.FromPlugin<P>;
     export type ToStore<P extends Database.Plugin> = Store<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>>;
+    /**
+     * The plugin's store as seen *inside a transaction body* — i.e. `ToStore<P>`
+     * plus the `userId` field added by the transaction dispatcher. Use this
+     * when typing helper functions that forward a transaction's store into
+     * another plugin's transaction declaration; `ToStore<P>` is the bare
+     * store type and does not include `userId`.
+     */
+    export type ToTransactionContext<P extends Database.Plugin> = TransactionContext<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>>;
     export type ToSystemDatabase<P extends Database.Plugin> = Database.FromPlugin<P> & {
       // Systems are allowed to access the database store directly.
       // This direct access will NOT trigger observable transactions.

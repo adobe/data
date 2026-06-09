@@ -1,0 +1,51 @@
+name: CI
+
+# Validates every pull request (and pushes to main) before merge. Prior to
+# this workflow the only GitHub Action was the post-merge docs deploy, so a PR
+# whose `tsc -b` / unit tests were red could still be merged green — exactly
+# what happened with #114. This gate makes those failures block the merge.
+#
+# Scope: the published core library `@adobe/data`, where the regression class
+# occurred. Type-checking uses the project-reference build (`tsc -b`, via the
+# package's `typecheck` script, which builds the wasm artifact the source
+# imports first). Tests run with SKIP_PERF=1 (`test:ci`) so the gate excludes
+# the non-deterministic timing-ratio perf tests and stays reliable.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  data:
+    name: "@adobe/data — typecheck, lint, test"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Type-check (tsc -b, project references)
+        run: pnpm --filter @adobe/data run typecheck
+
+      - name: Lint
+        run: pnpm --filter @adobe/data run lint
+
+      - name: Unit tests
+        run: pnpm --filter @adobe/data run test:ci

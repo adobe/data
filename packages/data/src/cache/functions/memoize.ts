@@ -4,7 +4,7 @@ import { preventParallelExecution } from "./prevent-parallel-execution.js";
 import { AsyncDataFunction } from "./async-data-function.js";
 
 import { type Data } from "../../data.js";
-import { getDataCache } from "../index.js";
+import { getDataCache } from "../data-cache.js";
 
 /**
  * Uses datacache to store results so we can avoid expensive recomputations of the same input.

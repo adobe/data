@@ -1,5 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
+import { webcrypto } from "node:crypto";
+
 // Polyfills for Node 18 test environment
 
 // window polyfill (minimal — only what the source files actually use)
@@ -58,7 +60,7 @@ if (typeof globalThis.caches === "undefined") {
 
 // Web Crypto API: Node 18 has globalThis.crypto but not the bare `crypto` name in all contexts
 if (typeof (globalThis as any).crypto === "undefined") {
-  (globalThis as any).crypto = require("node:crypto").webcrypto;
+  (globalThis as any).crypto = webcrypto;
 }
 
 // requestAnimationFrame polyfill for Node

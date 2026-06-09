@@ -5,20 +5,24 @@ import { Components } from "./components.js";
 import { ResourceComponents } from "./resource-components.js";
 import { ArchetypeComponents } from "./archetype-components.js";
 import { StringKeyof } from "../../types/types.js";
+import { IndexDeclarations } from "./index-types.js";
 import type { TransactionContext } from "../database/transactional-store/transactional-store.js";
 
 export type TransactionDeclaration<
     C extends Components,
     R extends ResourceComponents,
     A extends ArchetypeComponents<StringKeyof<C>>,
-    Input extends any | void = any> = (t: TransactionContext<C, R, A>, input: Input) => void | Entity;
+    IX extends IndexDeclarations<C> = {},
+    Input extends any | void = any> = (t: TransactionContext<C, R, A, IX>, input: Input) => void | Entity;
 
 export type AsyncArgsProvider<T> = () => Promise<T> | AsyncGenerator<T>;
 
 export type TransactionDeclarations<
     C extends Components,
     R extends ResourceComponents,
-    A extends ArchetypeComponents<StringKeyof<C>>> = { readonly [Q: string]: TransactionDeclaration<C, R, A> };
+    A extends ArchetypeComponents<StringKeyof<C>>,
+    IX extends IndexDeclarations<C> = {},
+> = { readonly [Q: string]: TransactionDeclaration<C, R, A, IX> };
 
 /**
  * Converts from TransactionDeclarations to TransactionFunctions by removing
@@ -52,3 +56,30 @@ export type ToTransactionFunctions<T> = {
 
 export type TransactionFunction = (args?: any) => void | Entity;
 export type TransactionFunctions = { readonly [AF: string]: TransactionFunction };
+
+/**
+ * Extracts the `AsyncArgsProvider`-arg overload from a `ToTransactionFunctions`
+ * entry as a single-signature function. TypeScript's structural assignment and
+ * `Parameters` / `ReturnType` see only the *last* overload of an overloaded
+ * function type, which hides the async-provider overload when a transaction is
+ * passed by value (e.g. as a prop). This helper recovers the async-provider
+ * signature without forcing consumers to copy/paste the Input shape.
+ */
+export type ToAsyncTransactionFn<T> = T extends {
+    (arg: AsyncArgsProvider<infer Input>): Promise<infer R>;
+    (arg: any): any;
+}
+    ? (arg: AsyncArgsProvider<Input>) => Promise<R>
+    : never;
+
+/**
+ * Extracts the plain-arg (synchronous) overload from a `ToTransactionFunctions`
+ * entry as a single-signature function. Pairs with `ToAsyncTransactionFn`
+ * for consumers that need to type each call path independently.
+ */
+export type ToSyncTransactionFn<T> = T extends {
+    (arg: AsyncArgsProvider<any>): any;
+    (arg: infer Input): infer R;
+}
+    ? (arg: Input) => R
+    : never;

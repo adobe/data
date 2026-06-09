@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Database, SystemFunction, ServiceFactories, FromServiceFactories, FromComputedFactories, type PluginComputedFactories } from "./database.js";
+import { Database, SystemFunction, ServiceFactories, FromServiceFactories, FromComputedFactories, type PluginComputedFactories, type IndexDeclarations } from "./database.js";
 import type { ComponentSchemas } from "../component-schemas.js";
 import type { ResourceSchemas } from "../resource-schemas.js";
 import type { ArchetypeComponents } from "../store/archetype-components.js";
@@ -11,6 +11,7 @@ import type { StringKeyof, NoInfer, RemoveIndex } from "../../types/types.js";
 import { combinePlugins } from "./combine-plugins.js";
 import { Store } from "../store/store.js";
 
+
 /**
  * Direct-intersection return type for createPlugin.
  *
@@ -20,7 +21,7 @@ import { Store } from "../store/store.js";
  */
 type CreatePluginResult<
     XP extends Database.Plugin,
-    CS, RS, A, TD, S extends string, AD, SVF, CVF
+    CS, RS, A, TD, S extends string, AD, SVF, CVF, IX
 > = Database.Plugin<
     XP['components'] & CS,
     XP['resources'] & RS,
@@ -29,7 +30,8 @@ type CreatePluginResult<
     S | StringKeyof<XP['systems']>,
     XP['actions'] & AD,
     XP['services'] & SVF,
-    XP['computed'] & CVF
+    XP['computed'] & CVF,
+    XP['indexes'] & IX
 >;
 
 /**
@@ -49,7 +51,7 @@ type DatabaseWithServices<
 >;
 
 function validatePropertyOrder(plugins: Record<string, unknown>): void {
-    const expectedOrder = ['extends', 'services', 'components', 'resources', 'archetypes', 'computed', 'transactions', 'actions', 'systems'];
+    const expectedOrder = ['imports', 'extends', 'services', 'components', 'resources', 'archetypes', 'indexes', 'computed', 'transactions', 'actions', 'systems'];
     const actualKeys = Object.keys(plugins);
     const definedKeys = actualKeys.filter(key => key in plugins);
 
@@ -79,30 +81,35 @@ function validatePropertyOrder(plugins: Record<string, unknown>): void {
  * **IMPORTANT: Property Order Requirement**
  * 
  * Properties MUST be defined in this exact order:
- * 1. extends (optional) - Base plugin to extend
- * 2. services (optional) - Service factory functions
- * 3. components (optional) - Component schema definitions
- * 4. resources (optional) - Resource schema definitions
- * 5. archetypes (optional) - Archetype definitions
- * 6. computed (optional) - Computed observe factories (each returns Observe<unknown>)
- * 7. transactions (optional) - Transaction declarations
- * 8. actions (optional) - Action declarations
- * 9. systems (optional) - System declarations
- * 
+ * 1. imports (optional) - Dependency plugins whose types are visible to local
+ *    declarations but NOT re-exported into the result
+ * 2. extends (optional) - Base plugin to extend (types re-exported into result)
+ * 3. services (optional) - Service factory functions
+ * 4. components (optional) - Component schema definitions
+ * 5. resources (optional) - Resource schema definitions
+ * 6. archetypes (optional) - Archetype definitions
+ * 7. indexes (optional) - Index declarations over components
+ * 8. computed (optional) - Computed observe factories (each returns Observe<unknown>)
+ * 9. transactions (optional) - Transaction declarations
+ * 10. actions (optional) - Action declarations
+ * 11. systems (optional) - System declarations
+ *
  * Example:
  * ```ts
  * Database.Plugin.create({
- *   extends: basePlugin,     // 1. extends first
- *   services: {              // 2. services last
+ *   imports: depPlugin,      // 1. imports first
+ *   extends: basePlugin,     // 2. extends
+ *   services: {              // 3. services
  *     myService: (db) => createMyService(db.resources.config),
  *   }
- *   components: { ... },     // 3. components
- *   resources: { ... },      // 4. resources
- *   archetypes: { ... },     // 5. archetypes
- *   computed: { ... },       // 6. computed
- *   transactions: { ... },   // 7. transactions
- *   actions: { ... },        // 8. actions
- *   systems: { ... },        // 9. systems
+ *   components: { ... },     // 4. components
+ *   resources: { ... },      // 5. resources
+ *   archetypes: { ... },     // 6. archetypes
+ *   indexes: { ... },        // 7. indexes
+ *   computed: { ... },       // 8. computed
+ *   transactions: { ... },   // 9. transactions
+ *   actions: { ... },        // 10. actions
+ *   systems: { ... },        // 11. systems
  * })
  * ```
  * 
@@ -119,7 +126,8 @@ function validatePropertyOrder(plugins: Record<string, unknown>): void {
  */
 type FullDBForPlugin<
     CS, RS, A, TD, S extends string, AD, XP extends Database.Plugin,
-    SVF extends ServiceFactories<Database.FromPlugin<XP>>
+    SVF extends ServiceFactories<Database.FromPlugin<XP>>,
+    IX = {}
 > = Database<
     FromSchemas<CS & XP['components']>,
     FromSchemas<RS & XP['resources']>,
@@ -127,69 +135,114 @@ type FullDBForPlugin<
     ToTransactionFunctions<TD & XP['transactions']>,
     S | StringKeyof<XP['systems']>,
     ToActionFunctions<AD & XP['actions']>,
-    FromServiceFactories<RemoveIndex<SVF> & XP['services']>
+    FromServiceFactories<RemoveIndex<SVF> & XP['services']>,
+    // 8: CV — placeholder. Kept `unknown` (Database's own default for this slot)
+    //    so a concrete computed-values type never constrains computed-factory
+    //    inference / breaks contravariance. Must be supplied explicitly because
+    //    slot 9 (IX) sits after it.
+    unknown,
+    // 9: IX — thread the index declarations so `db.indexes` is populated inside
+    //    computed factories, same as the actions/systems `db` already does.
+    //    XP is AmbientPlugin<XP, IP> at the call sites, so XP['indexes'] carries
+    //    both extends-base and imports-dep indexes; `IX` adds the plugin's own.
+    IX & XP['indexes']
+>;
+
+/**
+ * Ambient plugin context used for *parameter typing only*: the union of the
+ * `extends` base (XP) and the `imports` dependencies (IP).
+ *
+ * Local declarations (action/system `db`, the component/archetype/transaction
+ * constraints) are typed against this ambient so they see BOTH bases with full
+ * type safety. Crucially, this alias does NOT appear in createPlugin's return
+ * type — only XP (the `extends` base) flows into the result via
+ * CreatePluginResult. That asymmetry is the whole point of `imports`: a plugin
+ * can depend on another's types without re-exporting them, so the result type
+ * stays O(local members) instead of O(accumulated chain).
+ *
+ * Direct property access (not CombinePlugins<[XP, IP]>) to avoid the 8-way
+ * conditional expansion that amplifies TS7056. For the common `extends`-only
+ * case IP is the empty-plugin constraint, so every `& IP['x']` reduces to
+ * `& {}` (identity on the object-typed buckets) — no cost or behavior change.
+ */
+type AmbientPlugin<XP extends Database.Plugin, IP extends Database.Plugin> = Database.Plugin<
+    XP['components'] & IP['components'],
+    XP['resources'] & IP['resources'],
+    XP['archetypes'] & IP['archetypes'],
+    XP['transactions'] & IP['transactions'],
+    StringKeyof<XP['systems']> | StringKeyof<IP['systems']>,
+    XP['actions'] & IP['actions'],
+    XP['services'] & IP['services'],
+    XP['computed'] & IP['computed'],
+    XP['indexes'] & IP['indexes']
 >;
 
 export function createPlugin<
-    const XP extends Database.Plugin<{}, {}, {}, {}, never, {}, {}, {}>,
+    const XP extends Database.Plugin<{}, {}, {}, {}, never, {}, {}, {}, {}>,
+    const IP extends Database.Plugin<{}, {}, {}, {}, never, {}, {}, {}, {}>,
     const CS extends ComponentSchemas,
     const RS extends ResourceSchemas,
-    const A extends ArchetypeComponents<StringKeyof<RemoveIndex<CS> & XP['components']>>,
-    const TD extends TransactionDeclarations<FromSchemas<RemoveIndex<CS> & XP['components']>, FromSchemas<RemoveIndex<RS> & XP['resources']>, RemoveIndex<A> & XP['archetypes']>,
+    const A extends ArchetypeComponents<StringKeyof<RemoveIndex<CS> & XP['components'] & IP['components']>>,
+    const IX extends IndexDeclarations<FromSchemas<RemoveIndex<CS> & XP['components'] & IP['components']>, RemoveIndex<A> & XP['archetypes'] & IP['archetypes']>,
+    const TD extends TransactionDeclarations<FromSchemas<RemoveIndex<CS> & XP['components'] & IP['components']>, FromSchemas<RemoveIndex<RS> & XP['resources'] & IP['resources']>, RemoveIndex<A> & XP['archetypes'] & IP['archetypes'], RemoveIndex<IX> & XP['indexes'] & IP['indexes']>,
     const AD,
     const S extends string = never,
-    const SVF extends ServiceFactories<Database.FromPlugin<XP>> = {},
-    const CVF extends PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, RemoveIndex<TD>, S, RemoveIndex<AD> & XP['actions'], XP, RemoveIndex<SVF>>> = {},
+    const SVF extends ServiceFactories<Database.FromPlugin<AmbientPlugin<XP, IP>>> = {},
+    const CVF extends PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, RemoveIndex<TD>, S, RemoveIndex<AD> & XP['actions'] & IP['actions'], AmbientPlugin<XP, IP>, RemoveIndex<SVF>, RemoveIndex<IX>>> = {},
 >(
     plugins: {
+        imports?: IP,
         extends?: XP,
         services?: SVF & {
-            readonly [K: string]: (db: Database.FromPlugin<XP>) => unknown
+            readonly [K: string]: (db: Database.FromPlugin<AmbientPlugin<XP, IP>>) => unknown
         },
         components?: CS,
         resources?: RS,
         archetypes?: A,
-        computed?: CVF & PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, {}, string, RemoveIndex<AD> & XP['actions'], XP, RemoveIndex<SVF>>>,
+        indexes?: IX,
+        computed?: CVF & PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, {}, string, RemoveIndex<AD> & XP['actions'] & IP['actions'], AmbientPlugin<XP, IP>, RemoveIndex<SVF>, RemoveIndex<IX>>>,
         transactions?: TD,
         actions?: AD & {
             readonly [K: string]: (db: Database<
-                FromSchemas<RemoveIndex<CS> & XP['components']>,
-                FromSchemas<RemoveIndex<RS> & XP['resources']>,
-                RemoveIndex<A> & XP['archetypes'],
-                ToTransactionFunctions<RemoveIndex<TD> & XP['transactions']>,
-                S | StringKeyof<XP['systems']>,
-                ToActionFunctions<XP['actions']>,
-                FromServiceFactories<RemoveIndex<SVF> & XP['services']>,
-                FromComputedFactories<RemoveIndex<CVF> & XP['computed']>
+                FromSchemas<RemoveIndex<CS> & XP['components'] & IP['components']>,
+                FromSchemas<RemoveIndex<RS> & XP['resources'] & IP['resources']>,
+                RemoveIndex<A> & XP['archetypes'] & IP['archetypes'],
+                ToTransactionFunctions<RemoveIndex<TD> & XP['transactions'] & IP['transactions']>,
+                S | StringKeyof<XP['systems']> | StringKeyof<IP['systems']>,
+                ToActionFunctions<XP['actions'] & IP['actions']>,
+                FromServiceFactories<RemoveIndex<SVF> & XP['services'] & IP['services']>,
+                FromComputedFactories<RemoveIndex<CVF> & XP['computed'] & IP['computed']>,
+                RemoveIndex<IX> & XP['indexes'] & IP['indexes']
             >, input?: any) => any
         }
         systems?: { readonly [K in S]: {
             readonly create: (db: Database<
-                FromSchemas<RemoveIndex<CS> & XP['components']>,
-                FromSchemas<RemoveIndex<RS> & XP['resources']>,
-                RemoveIndex<A> & XP['archetypes'],
-                ToTransactionFunctions<RemoveIndex<TD> & XP['transactions']>,
-                S | StringKeyof<XP['systems']>,
-                ToActionFunctions<RemoveIndex<AD> & XP['actions']>,
-                FromServiceFactories<RemoveIndex<SVF> & XP['services']>,
-                FromComputedFactories<RemoveIndex<CVF> & XP['computed']>
+                FromSchemas<RemoveIndex<CS> & XP['components'] & IP['components']>,
+                FromSchemas<RemoveIndex<RS> & XP['resources'] & IP['resources']>,
+                RemoveIndex<A> & XP['archetypes'] & IP['archetypes'],
+                ToTransactionFunctions<RemoveIndex<TD> & XP['transactions'] & IP['transactions']>,
+                S | StringKeyof<XP['systems']> | StringKeyof<IP['systems']>,
+                ToActionFunctions<RemoveIndex<AD> & XP['actions'] & IP['actions']>,
+                FromServiceFactories<RemoveIndex<SVF> & XP['services'] & IP['services']>,
+                FromComputedFactories<RemoveIndex<CVF> & XP['computed'] & IP['computed']>,
+                RemoveIndex<IX> & XP['indexes'] & IP['indexes']
             > & {
                 readonly store: Store<
-                    FromSchemas<RemoveIndex<CS> & XP['components']>,
-                    FromSchemas<RemoveIndex<RS> & XP['resources']>,
-                    RemoveIndex<A> & XP['archetypes']
+                    FromSchemas<RemoveIndex<CS> & XP['components'] & IP['components']>,
+                    FromSchemas<RemoveIndex<RS> & XP['resources'] & IP['resources']>,
+                    RemoveIndex<A> & XP['archetypes'] & IP['archetypes']
                 >
-                services: { -readonly [K in keyof FromServiceFactories<RemoveIndex<SVF> & XP['services']>]: FromServiceFactories<RemoveIndex<SVF> & XP['services']>[K] }
+                services: { -readonly [K in keyof FromServiceFactories<RemoveIndex<SVF> & XP['services'] & IP['services']>]: FromServiceFactories<RemoveIndex<SVF> & XP['services'] & IP['services']>[K] }
             }) => SystemFunction | void;
             readonly schedule?: {
-                readonly before?: readonly NoInfer<Exclude<S | StringKeyof<XP['systems']>, K>>[];
-                readonly after?: readonly NoInfer<Exclude<S | StringKeyof<XP['systems']>, K>>[];
-                readonly during?: readonly NoInfer<Exclude<S | StringKeyof<XP['systems']>, K>>[];
+                readonly before?: readonly NoInfer<Exclude<S | StringKeyof<XP['systems']> | StringKeyof<IP['systems']>, K>>[];
+                readonly after?: readonly NoInfer<Exclude<S | StringKeyof<XP['systems']> | StringKeyof<IP['systems']>, K>>[];
+                readonly during?: readonly NoInfer<Exclude<S | StringKeyof<XP['systems']> | StringKeyof<IP['systems']>, K>>[];
             }
         }
         },
     },
-): CreatePluginResult<XP, RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, RemoveIndex<TD>, S, AD, RemoveIndex<SVF>, RemoveIndex<CVF>> {
+): CreatePluginResult<XP, RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, RemoveIndex<TD>, S, AD, RemoveIndex<SVF>, RemoveIndex<CVF>, RemoveIndex<IX>> {
     validatePropertyOrder(plugins);
 
     // Normalize plugins descriptor to a plugin object in correct order
@@ -198,14 +251,26 @@ export function createPlugin<
         components: plugins.components ?? {},
         resources: plugins.resources ?? {},
         archetypes: plugins.archetypes ?? {},
+        indexes: plugins.indexes ?? {},
         computed: plugins.computed ?? {},
         transactions: plugins.transactions ?? {},
         actions: plugins.actions ?? {},
         systems: plugins.systems ?? {},
     };
 
-    if (plugins.extends) {
-        return combinePlugins(plugins.extends, plugin) as any;
+    // `imports` differs from `extends` only at the TYPE level: the imported
+    // plugins' members are NOT declared in this plugin's result type, so they
+    // don't propagate through downstream result types (the source of the
+    // quadratic `extends` blowup). At RUNTIME, however, imports merge in exactly
+    // like extends — so the imported components/resources/transactions/etc. are
+    // present in the assembled database without the consumer having to re-list
+    // them in the top-level combine. Order: imports first, then extends, then
+    // this plugin's own declarations (preserves service initialization order).
+    const bases: Database.Plugin[] = [];
+    if (plugins.imports) bases.push(plugins.imports);
+    if (plugins.extends) bases.push(plugins.extends);
+    if (bases.length > 0) {
+        return combinePlugins(...bases, plugin) as any;
     }
     return plugin as any;
 }

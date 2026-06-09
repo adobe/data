@@ -192,8 +192,13 @@ export const createArchetype = <C extends { id: typeof Entity.schema }>(
         ...table,
         components: componentSet as Set<StringKeyof<C>>,
         insert: createEntity,
-        toData: () => ({
-            columns: archetype.columns,
+        toData: (copy = false) => ({
+            columns: copy
+                ? Object.fromEntries(
+                    Object.entries(archetype.columns as Record<string, { copy: () => unknown }>)
+                        .map(([name, column]) => [name, column.copy()]),
+                )
+                : archetype.columns,
             rowCount: archetype.rowCount,
             rowCapacity: archetype.rowCapacity,
         }),

@@ -8,6 +8,7 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { Database } from "./database.js";
+import { createRebaseReplayConcurrency } from "./concurrency/index.js";
 
 // ---------------------------------------------------------------------------
 // Shared plugin
@@ -194,7 +195,7 @@ describe("Database.reset() — observer notification", () => {
 
 describe("Database.reset() — reconciler queue", () => {
     it("in-flight transients are discarded on reset", () => {
-        const db = Database.create(plugin, { sync: { userId: "u1" } });
+        const db = Database.create(plugin, { concurrency: createRebaseReplayConcurrency("u1") });
 
         // In sync mode, transactions apply as transients locally.
         db.transactions.addPoint({ x: 1, label: "transient" });

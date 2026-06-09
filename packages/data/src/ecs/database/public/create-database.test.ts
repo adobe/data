@@ -3,6 +3,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { Database } from "../database.js";
 import { createReconcilingDatabase } from "../reconciling/create-reconciling-database.js";
+import { createRebaseReplayConcurrency } from "../concurrency/index.js";
 import { Store } from "../../store/index.js";
 import { Schema } from "../../../schema/index.js";
 import { Entity } from "../../entity/entity.js";
@@ -1304,15 +1305,15 @@ describe("createDatabase", () => {
                 });
 
                 // Wrong value type: token should be string, not number
-                // @ts-expect-error
+                // @ts-expect-error token must be a string
                 Database.create(plugin, { services: { auth: { token: 123, isAuthenticated: false } } });
 
                 // Unknown service key
-                // @ts-expect-error
+                // @ts-expect-error nonexistent is not a declared service
                 Database.create(plugin, { services: { nonexistent: { foo: 'bar' } } });
 
                 // Missing required property (isAuthenticated)
-                // @ts-expect-error
+                // @ts-expect-error auth override is missing isAuthenticated
                 Database.create(plugin, { services: { auth: { token: 'x' } } });
             });
         });
@@ -1697,14 +1698,14 @@ describe("userId in transaction context", () => {
     });
 
     it("t.userId matches sync.userId for locally-initiated transactions", () => {
-        const db = Database.create(makePlugin(), { sync: { userId: "alice" } });
+        const db = Database.create(makePlugin(), { concurrency: createRebaseReplayConcurrency("alice") });
         db.transactions.capture();
         expect(db.resources.seen).toBe("alice");
     });
 
     it("t.userId matches the envelope userId for inbound db.apply(envelope) calls", () => {
         const plugin = makePlugin();
-        const db = Database.create(plugin, { sync: { userId: "alice" } });
+        const db = Database.create(plugin, { concurrency: createRebaseReplayConcurrency("alice") });
 
         // Build a committed envelope that looks like it came from "bob"
         const envelope = { id: 1, userId: "bob", name: "capture", args: undefined, time: 1 };
@@ -1734,7 +1735,7 @@ describe("no-op envelope suppression", () => {
     });
 
     it("a no-op commit (wrong userId) does not fire observe.envelopes", () => {
-        const db = Database.create(makeGatedPlugin(), { sync: { userId: "O" } });
+        const db = Database.create(makeGatedPlugin(), { concurrency: createRebaseReplayConcurrency("O") });
 
         const listener = vi.fn();
         db.observe.envelopes(listener);
@@ -1746,7 +1747,7 @@ describe("no-op envelope suppression", () => {
     });
 
     it("an effective commit (correct userId) does fire observe.envelopes", () => {
-        const db = Database.create(makeGatedPlugin(), { sync: { userId: "X" } });
+        const db = Database.create(makeGatedPlugin(), { concurrency: createRebaseReplayConcurrency("X") });
 
         const listener = vi.fn();
         db.observe.envelopes(listener);

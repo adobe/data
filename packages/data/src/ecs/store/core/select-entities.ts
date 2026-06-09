@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { selectRows } from "../../../table/select-rows.js";
+import { compare } from "../../../functions/compare.js";
 import { StringKeyof } from "../../../types/types.js";
 import { RequiredComponents } from "../../required-components.js";
 import { Entity } from "../../entity/entity.js";
@@ -61,10 +62,12 @@ export const selectEntities = <
     // now that we have the entity values with the order values, we can sort the entity values
     entityValues.sort((a, b) => {
         for (const order in options.order!) {
-            if (a[order] !== b[order]) {
-                const comparison = a[order] - b[order];
+            // `compare` (code-point for strings, numeric for numbers) — not
+            // `a - b`, which is NaN for string order keys, and never locale.
+            const cmp = compare(a[order], b[order]);
+            if (cmp !== 0) {
                 const ascending = options.order[order];
-                return ascending ? comparison : -comparison;
+                return ascending ? cmp : -cmp;
             }
         }
         return 0;

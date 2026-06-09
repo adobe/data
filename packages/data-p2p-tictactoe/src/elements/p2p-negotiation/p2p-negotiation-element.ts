@@ -65,19 +65,25 @@ export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlu
     }
 
     render() {
+        // `this.service` is the live Database at runtime — DatabaseElement assigns
+        // the real database and only narrows its *type* to the UI-restricted view
+        // for pure widgets. This bootstrap container owns the negotiation
+        // controller (business logic), which needs the full database surface.
+        const service = this.service as unknown as NegotiationDatabase;
+
         const values = useObservableValues(() => ({
-            phase: this.service.observe.resources.phase,
-            connection: this.service.observe.resources.connection,
-            offerCode: this.service.observe.resources.offerCode,
-            answerCode: this.service.observe.resources.answerCode,
-            bannerText: this.service.observe.resources.bannerText,
-            bannerError: this.service.observe.resources.bannerError,
-            hostAnswerInput: this.service.observe.resources.hostAnswerInput,
-            joinerOfferInput: this.service.observe.resources.joinerOfferInput,
-            gameDb: this.service.observe.resources.gameDb,
+            phase: service.observe.resources.phase,
+            connection: service.observe.resources.connection,
+            offerCode: service.observe.resources.offerCode,
+            answerCode: service.observe.resources.answerCode,
+            bannerText: service.observe.resources.bannerText,
+            bannerError: service.observe.resources.bannerError,
+            hostAnswerInput: service.observe.resources.hostAnswerInput,
+            joinerOfferInput: service.observe.resources.joinerOfferInput,
+            gameDb: service.observe.resources.gameDb,
         }), []);
 
-        const controller = useNegotiationController(this.service, this.gamePlugin, this.assignUserId);
+        const controller = useNegotiationController(service, this.gamePlugin, this.assignUserId);
 
         if (!values) return undefined;
 
@@ -89,8 +95,8 @@ export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlu
             startJoin: () => controller.startJoin(),
             submitAnswer: () => controller.submitAnswer(),
             generateAnswer: () => controller.generateAnswer(),
-            setHostAnswerInput: (value) => this.service.transactions.setHostAnswerInput({ value }),
-            setJoinerOfferInput: (value) => this.service.transactions.setJoinerOfferInput({ value }),
+            setHostAnswerInput: (value) => service.transactions.setHostAnswerInput({ value }),
+            setJoinerOfferInput: (value) => service.transactions.setJoinerOfferInput({ value }),
             copyText: (text) => controller.copyText(text),
             reconnect: () => controller.reconnect(),
         });

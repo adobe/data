@@ -1,10 +1,13 @@
 {
   "name": "data-monorepo",
-  "version": "0.9.67",
+  "version": "0.9.68",
   "private": true,
   "scripts": {
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint",
+    "lint-fix": "pnpm -r run lint-fix",
+    "typecheck": "pnpm -r run typecheck",
     "dev": "pnpm -r --parallel run dev",
     "dev:data": "pnpm --filter @adobe/data run dev",
     "link": "pnpm -r --filter @adobe/data* run link",

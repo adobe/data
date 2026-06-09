@@ -135,6 +135,27 @@ const worldPlugin = Database.Plugin.create({
 });
 ```
 
+### Naming an archetype's row type
+
+Each `db.archetypes.<Name>` is a `ReadonlyArchetype<Row>` whose `Row` is
+derived from the declared columns. To name that row elsewhere — a function
+parameter, a public field — **derive it; don't re-declare it.** Derive the
+service type from the plugin, then pull the row out with
+`Database.Archetype.RowOf`:
+
+```ts
+type WorldService = Database.Plugin.ToDatabase<typeof worldPlugin>;
+type PlayerRow = Database.Archetype.RowOf<WorldService, "Player">;
+
+const a: ReadonlyArchetype<PlayerRow> = db.archetypes.Player; // no cast
+```
+
+Because the service type is derived from the same plugin, `db.archetypes`
+assigns to `WorldService["archetypes"]` directly. Do **not** hand-author a
+narrower archetype row and `as`-cast `db.archetypes` to fit it — a hand-written
+type drifts from the real columns, and the cast hides that drift. Let the row
+follow from the declaration.
+
 ## Indexes
 
 Indexes give O(1) lookup by some derived or column-valued key. Declare them on the plugin alongside components and archetypes; the runtime maintains them automatically on every insert/update/delete and exposes typed lookup handles at `db.indexes.<name>` and `t.indexes.<name>` (inside transactions).

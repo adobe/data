@@ -319,6 +319,33 @@ export namespace Database {
     export type ToDatabase<P extends Database.Plugin> = Database.FromPlugin<P>;
     export type ToStore<P extends Database.Plugin> = Store<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>>;
     /**
+     * The database type seen *inside a computed factory* — same shape as
+     * `ToDatabase<P>` but with `computed: unknown`.
+     *
+     * Use this when aliasing the database for a module that doesn't consume
+     * `db.computed`, or anywhere `ToDatabase<P>` would force a dependency on
+     * the fully-resolved computed-values type and break inference:
+     *
+     * ```ts
+     * // ❌ hand-reconstructs the framework's contract
+     * type CoreStateDatabase = Omit<Database.Plugin.ToDatabase<typeof coreStatePlugin>, 'computed'>;
+     *
+     * // ✅ first-class contract
+     * type CoreStateDatabase = Database.Plugin.ToComputedDb<typeof coreStatePlugin>;
+     * ```
+     */
+    export type ToComputedDb<P extends Database.Plugin> = Database<
+      FromSchemas<RemoveIndex<P['components']>>,
+      FromSchemas<RemoveIndex<P['resources']>>,
+      RemoveIndex<P['archetypes']>,
+      ToTransactionFunctions<RemoveIndex<P['transactions']>>,
+      StringKeyof<P['systems']>,
+      ToActionFunctions<RemoveIndex<P['actions']>>,
+      FromServiceFactories<RemoveIndex<P['services']>>,
+      unknown,
+      RemoveIndex<P['indexes']>
+    >;
+    /**
      * The plugin's store as seen *inside a transaction body* — i.e. `ToStore<P>`
      * plus the `userId` field added by the transaction dispatcher. Use this
      * when typing helper functions that forward a transaction's store into

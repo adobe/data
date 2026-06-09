@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { Archetype, ArchetypeId, ReadonlyArchetype } from "../archetype/index.js";
+import { Archetype, ArchetypeId, FromArchetype, ReadonlyArchetype } from "../archetype/index.js";
 import { ResourceComponents } from "../store/resource-components.js";
 import { ReadonlyStore, Store } from "../store/index.js";
 import { Entity } from "../entity/entity.js";
@@ -270,6 +270,25 @@ export namespace Database {
   export namespace Index {
     export type Handle<C extends Components, I extends StoreIndex<C, any, any, any>> =
       StoreIndex.Handle<C, I>;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  export namespace Archetype {
+    /**
+     * The row (component) type of the archetype named `K` on a store /
+     * database / service type `S`. Lets callers *name* an archetype row
+     * without re-spelling its columns — derive instead of re-declare.
+     *
+     * ```ts
+     * type MainService = Database.Plugin.ToDatabase<typeof mainPlugin>;
+     * type Track = Database.Archetype.RowOf<MainService, "Track">;
+     * const t: ReadonlyArchetype<Track> = db.archetypes.Track; // no cast
+     * ```
+     */
+    export type RowOf<
+      S extends { readonly archetypes: Record<string, unknown> },
+      K extends StringKeyof<S["archetypes"]>,
+    > = FromArchetype<S["archetypes"][K]>;
   }
 
   export type Plugin<

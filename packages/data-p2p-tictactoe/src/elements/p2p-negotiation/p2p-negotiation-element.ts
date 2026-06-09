@@ -65,11 +65,10 @@ export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlu
     }
 
     render() {
-        // `this.service` is the live Database at runtime — DatabaseElement assigns
-        // the real database and only narrows its *type* to the UI-restricted view
-        // for pure widgets. This bootstrap container owns the negotiation
-        // controller (business logic), which needs the full database surface.
-        const service = this.service as unknown as NegotiationDatabase;
+        // This bootstrap container owns the negotiation controller (business
+        // logic), which needs the full database surface rather than the
+        // restricted `service` view.
+        const service = this.database;
 
         const values = useObservableValues(() => ({
             phase: service.observe.resources.phase,

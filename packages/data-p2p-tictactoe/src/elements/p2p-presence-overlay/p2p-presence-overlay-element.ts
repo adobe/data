@@ -8,7 +8,6 @@
 
 import { customElement } from "lit/decorators.js";
 import { DatabaseElement, useObservableValues, usePointerObserve, useEffect, useElement } from "@adobe/data-lit";
-import { Database } from "@adobe/data/ecs";
 import { Observe } from "@adobe/data/observe";
 import { presencePlugin } from "../../state/presence-plugin.js";
 import { styles } from "./p2p-presence-overlay.css.js";
@@ -38,12 +37,10 @@ export class P2pPresenceOverlayElement extends DatabaseElement<typeof presencePl
 
         const pointerPos = usePointerObserve([]);
         const element = useElement();
-        // `this.service` is the live Database at runtime — DatabaseElement assigns
-        // the real database and only narrows its *type* to the UI-restricted view
-        // for pure widgets. This presence container drives a streaming
-        // (async-generator) transaction and reads the local peer id, so it works
-        // against the full database surface.
-        const service = this.service as unknown as Database.Plugin.ToDatabase<typeof presencePlugin>;
+        // This container drives a streaming (async-generator) transaction and
+        // reads the local peer id, so it works against the full database
+        // surface rather than the restricted `service` view.
+        const database = this.database;
 
         useEffect(() => {
             const positions = Observe.toAsyncGenerator(pointerPos, () => false);
@@ -56,16 +53,16 @@ export class P2pPresenceOverlayElement extends DatabaseElement<typeof presencePl
                 }
             }
 
-            service.transactions.movePresence(presenceArgs).catch(() => undefined);
+            database.transactions.movePresence(presenceArgs).catch(() => undefined);
 
             return () => {
                 void positions.throw(new Error("disposed")).catch(() => undefined);
             };
-        }, [pointerPos, element, service]);
+        }, [pointerPos, element, database]);
 
         // The peer identity is the rebase-replay concurrency userId (set to the
         // player's mark by the negotiation controller); there is no `.sync` view.
-        const localMark = service.concurrency.userId;
+        const localMark = database.concurrency.userId;
 
         return presentation.render({ cursors: values?.cursors, localMark });
     }

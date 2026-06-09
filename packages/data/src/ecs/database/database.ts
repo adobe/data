@@ -319,38 +319,6 @@ export namespace Database {
     export type ToDatabase<P extends Database.Plugin> = Database.FromPlugin<P>;
     export type ToStore<P extends Database.Plugin> = Store<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>>;
     /**
-     * `ToDatabase<P>` with the computed surface erased (`computed: unknown`).
-     *
-     * Use this to alias a plugin's database in a context that must not depend
-     * on the fully-resolved computed-values type — e.g. to break a type cycle,
-     * or in a module that never reads `db.computed`. It replaces the hand-rolled
-     * `Omit` that reconstructs the same shape:
-     *
-     * ```ts
-     * // ❌ hand-reconstructs the framework's contract
-     * type CoreStateDatabase = Omit<Database.Plugin.ToDatabase<typeof coreStatePlugin>, 'computed'>;
-     *
-     * // ✅ first-class contract
-     * type CoreStateDatabase = Database.Plugin.ToComputedDb<typeof coreStatePlugin>;
-     * ```
-     *
-     * Note: this is *not* the db a computed factory receives. A factory of a
-     * plugin that `extends` a base sees that base's already-resolved computeds
-     * (so it can compose on them); the factory's own in-progress siblings stay
-     * hidden. When you want that fully-resolved surface, use `ToDatabase<P>`.
-     */
-    export type ToComputedDb<P extends Database.Plugin> = Database<
-      FromSchemas<RemoveIndex<P['components']>>,
-      FromSchemas<RemoveIndex<P['resources']>>,
-      RemoveIndex<P['archetypes']>,
-      ToTransactionFunctions<RemoveIndex<P['transactions']>>,
-      StringKeyof<P['systems']>,
-      ToActionFunctions<RemoveIndex<P['actions']>>,
-      FromServiceFactories<RemoveIndex<P['services']>>,
-      unknown,
-      RemoveIndex<P['indexes']>
-    >;
-    /**
      * The plugin's store as seen *inside a transaction body* — i.e. `ToStore<P>`
      * plus the `userId` field added by the transaction dispatcher. Use this
      * when typing helper functions that forward a transaction's store into

@@ -156,6 +156,61 @@ narrower archetype row and `as`-cast `db.archetypes` to fit it — a hand-writte
 type drifts from the real columns, and the cast hides that drift. Let the row
 follow from the declaration.
 
+### Naming archetype rows under `stripInternal` (hand-written service interfaces)
+
+`Database.Archetype.RowOf` derives from the plugin **database** type. That is
+the right tool when your public service type *is*
+`Database.Plugin.ToDatabase<typeof plugin>`. It does **not** work when you keep
+a hand-written public service interface and mark the plugin database type
+`@internal` (common to keep `.d.ts` emit small and to hide internals):
+
+- Referencing the plugin database type from a public type forces the emitter to
+  serialize `typeof plugin` into your `.d.ts` → **TS7056**.
+- Marking it `@internal` and deriving from it leaves a **dangling reference** to
+  the stripped symbol in your emitted `.d.ts` → downstream **TS2305**.
+  TypeScript never resolves an archetype row *through* an `@internal` symbol; it
+  preserves the reference.
+
+Instead, expose a small **public schema** (just `components` + `archetypes`) and
+derive rows from it with `ArchetypeRowOf` / `ArchetypeHandleOf`. The emitted
+type then references only public symbols — no plugin type, no `@internal`
+symbol:
+
+```ts
+import type { ArchetypeHandleOf } from "@adobe/data/ecs";
+
+// public — small, emits cleanly
+export const trackComponents = { trackKind: { type: "string" }, muted: { type: "boolean" } } as const;
+export const trackSchema = {
+    components: trackComponents,
+    archetypes: { Track: ["trackKind", "muted"] },
+} as const;
+
+// the plugin built from `trackSchema` may stay @internal
+export interface TrackService {
+    readonly archetypes: {
+        // reference the handle INLINE (see emit notes below)
+        readonly Track: ArchetypeHandleOf<typeof trackSchema, "Track">;
+    };
+}
+```
+
+`db.archetypes.Track` (from the `@internal` db) is assignable to
+`TrackService["archetypes"]["Track"]` with no cast, and downstream consumers
+resolve `Track` to its concrete columns.
+
+**Declaration-emit footguns** (TypeScript quirks; the
+`scripts/emit-stripinternal` gate guards them):
+
+- Reference `ArchetypeHandleOf<…>` **inline** in the interface, or import it as
+  `import { type ArchetypeHandleOf }`. A pure `import type` alias reached
+  through the package barrel and used *only* as a nested type argument can be
+  silently elided from emit.
+- Don't put fenced ` ```ts ` code blocks containing `import`/`export`/`interface`
+  in JSDoc directly above an exported type.
+- Don't let the schema be the **lone** export of a `stripInternal`-emitted
+  module — pair it with another export (e.g. the `components` object above).
+
 ## Indexes
 
 Indexes give O(1) lookup by some derived or column-valued key. Declare them on the plugin alongside components and archetypes; the runtime maintains them automatically on every insert/update/delete and exposes typed lookup handles at `db.indexes.<name>` and `t.indexes.<name>` (inside transactions).

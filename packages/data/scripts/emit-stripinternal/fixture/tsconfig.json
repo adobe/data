@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "declaration": true, "emitDeclarationOnly": true, "stripInternal": true, "outDir": "dist",
+    "strict": true, "skipLibCheck": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"], "types": ["@webgpu/types"],
+    "module": "NodeNext", "moduleResolution": "NodeNext", "target": "ESNext",
+    "paths": { "@adobe/data/ecs": ["../../../dist/ecs/index.d.ts"] }
+  },
+  "include": ["schema.ts", "plugin.ts", "service.ts"]
+}

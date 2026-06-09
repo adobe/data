@@ -17,6 +17,7 @@ import { ResourceSchemas } from "../resource-schemas.js";
 import { createStore } from "./public/create-store.js";
 import { OptionalComponents } from "../optional-components.js";
 import { Index, IndexDeclarations } from "./index-types.js";
+import type { ArchetypeRowOf } from "./archetype-row.js";
 
 interface BaseStore<C extends object = never> {
     select<
@@ -228,3 +229,17 @@ type CheckDynamicParticle = Assert<Equal<typeof testStore.archetypes.DynamicPart
 type CheckParticle = Assert<Equal<typeof testStore.archetypes.Particle, Archetype<RequiredComponents & {
     particle: boolean;
 }>>>;
+
+// ArchetypeRowOf resolves an archetype's row from a plain public schema
+// (components + archetype name-lists), matching the store's archetype row.
+const checkRowSchema = {
+    components: { particle: { type: "boolean" }, velocity: { type: "number" } },
+    archetypes: { Particle: ["particle"], DynamicParticle: ["particle", "velocity"] },
+} as const;
+type CheckSchemaRowDynamic = Assert<Equal<ArchetypeRowOf<typeof checkRowSchema, "DynamicParticle">, RequiredComponents & {
+    readonly particle: boolean;
+    readonly velocity: number;
+}>>;
+type CheckSchemaRowParticle = Assert<Equal<ArchetypeRowOf<typeof checkRowSchema, "Particle">, RequiredComponents & {
+    readonly particle: boolean;
+}>>;

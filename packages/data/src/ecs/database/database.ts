@@ -319,12 +319,12 @@ export namespace Database {
     export type ToDatabase<P extends Database.Plugin> = Database.FromPlugin<P>;
     export type ToStore<P extends Database.Plugin> = Store<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>>;
     /**
-     * The database type seen *inside a computed factory* — same shape as
-     * `ToDatabase<P>` but with `computed: unknown`.
+     * `ToDatabase<P>` with the computed surface erased (`computed: unknown`).
      *
-     * Use this when aliasing the database for a module that doesn't consume
-     * `db.computed`, or anywhere `ToDatabase<P>` would force a dependency on
-     * the fully-resolved computed-values type and break inference:
+     * Use this to alias a plugin's database in a context that must not depend
+     * on the fully-resolved computed-values type — e.g. to break a type cycle,
+     * or in a module that never reads `db.computed`. It replaces the hand-rolled
+     * `Omit` that reconstructs the same shape:
      *
      * ```ts
      * // ❌ hand-reconstructs the framework's contract
@@ -333,6 +333,11 @@ export namespace Database {
      * // ✅ first-class contract
      * type CoreStateDatabase = Database.Plugin.ToComputedDb<typeof coreStatePlugin>;
      * ```
+     *
+     * Note: this is *not* the db a computed factory receives. A factory of a
+     * plugin that `extends` a base sees that base's already-resolved computeds
+     * (so it can compose on them); the factory's own in-progress siblings stay
+     * hidden. When you want that fully-resolved surface, use `ToDatabase<P>`.
      */
     export type ToComputedDb<P extends Database.Plugin> = Database<
       FromSchemas<RemoveIndex<P['components']>>,

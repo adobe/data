@@ -134,6 +134,30 @@ function validTypeInferenceTests() {
         },
     });
 
+    // Test: a derived plugin's computed factory can read a BASE plugin's
+    // already-resolved computed (composition across `extends`). This is the
+    // payoff of FullDBForPlugin surfacing FromComputedFactories<XP['computed']>
+    // rather than `unknown` in the computed-factory db.
+    const baseComputedPlugin = createPlugin({
+        resources: {
+            n: { default: 10 as number },
+        },
+        computed: {
+            doubled: (db) => Observe.withMap(db.observe.resources.n, (v) => v * 2),
+        },
+    });
+
+    const derivedComputedPlugin = createPlugin({
+        extends: baseComputedPlugin,
+        computed: {
+            quadrupled: (db) => {
+                // Valid - the base plugin's computed is fully typed here.
+                const base: Observe<number> = db.computed.doubled;
+                return Observe.withMap(base, (v) => v * 2);
+            },
+        },
+    });
+
     // Test: Computed + transactions co-inference
     // When both computed and transactions are defined in the same plugin,
     // TypeScript must infer TD from the transactions property independently
@@ -504,6 +528,23 @@ function invalidComputedReturnsObject() {
         transactions: {},
         actions: {},
         systems: {},
+    });
+}
+
+// Test: Invalid sibling computed access — an in-progress computed in the SAME
+// plugin is not visible to a sibling factory (would be circular). Only a
+// base plugin's already-resolved computeds are surfaced.
+function invalidSiblingComputedAccess() {
+    createPlugin({
+        resources: { n: { default: 1 as number } },
+        computed: {
+            first: (db) => Observe.fromConstant(db.resources.n),
+            second: (db) => {
+                // @ts-expect-error - sibling computed 'first' is in-progress, not visible
+                const _f = db.computed.first;
+                return Observe.fromConstant(0);
+            },
+        },
     });
 }
 

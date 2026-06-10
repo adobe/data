@@ -136,11 +136,16 @@ type FullDBForPlugin<
     S | StringKeyof<XP['systems']>,
     ToActionFunctions<AD & XP['actions']>,
     FromServiceFactories<RemoveIndex<SVF> & XP['services']>,
-    // 8: CV — placeholder. Kept `unknown` (Database's own default for this slot)
-    //    so a concrete computed-values type never constrains computed-factory
-    //    inference / breaks contravariance. Must be supplied explicitly because
-    //    slot 9 (IX) sits after it.
-    unknown,
+    // 8: CV — the base plugin's already-resolved computeds. XP is
+    //    AmbientPlugin<XP, IP> at the call sites, so XP['computed'] carries the
+    //    `extends` base + `imports` deps' computeds — all fully constructed, so
+    //    surfacing them here is sound (nothing in-progress, no circularity).
+    //    The current plugin's OWN computeds (CVF) are deliberately NOT a
+    //    parameter to this type, so they never flow into their own factory db:
+    //    a computed cannot reference an in-progress sibling, but it CAN compose
+    //    on a base plugin's computed with full types — same rule actions/systems
+    //    already follow. Resolves to `{}` for the common no-base-computeds case.
+    FromComputedFactories<XP['computed']>,
     // 9: IX — thread the index declarations so `db.indexes` is populated inside
     //    computed factories, same as the actions/systems `db` already does.
     //    XP is AmbientPlugin<XP, IP> at the call sites, so XP['indexes'] carries

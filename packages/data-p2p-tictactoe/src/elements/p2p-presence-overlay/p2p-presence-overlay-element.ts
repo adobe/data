@@ -37,7 +37,10 @@ export class P2pPresenceOverlayElement extends DatabaseElement<typeof presencePl
 
         const pointerPos = usePointerObserve([]);
         const element = useElement();
-        const service = this.service;
+        // This container drives a streaming (async-generator) transaction and
+        // reads the local peer id, so it works against the full database
+        // surface rather than the restricted `service` view.
+        const database = this.database;
 
         useEffect(() => {
             const positions = Observe.toAsyncGenerator(pointerPos, () => false);
@@ -50,14 +53,16 @@ export class P2pPresenceOverlayElement extends DatabaseElement<typeof presencePl
                 }
             }
 
-            service.transactions.movePresence(presenceArgs).catch(() => undefined);
+            database.transactions.movePresence(presenceArgs).catch(() => undefined);
 
             return () => {
                 void positions.throw(new Error("disposed")).catch(() => undefined);
             };
-        }, [pointerPos, element, service]);
+        }, [pointerPos, element, database]);
 
-        const localMark = this.service.sync?.userId;
+        // The peer identity is the rebase-replay concurrency userId (set to the
+        // player's mark by the negotiation controller); there is no `.sync` view.
+        const localMark = database.concurrency.userId;
 
         return presentation.render({ cursors: values?.cursors, localMark });
     }

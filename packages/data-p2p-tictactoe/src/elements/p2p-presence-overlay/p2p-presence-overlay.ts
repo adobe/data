@@ -18,5 +18,5 @@ export const PresenceOverlay = <S extends PresenceService>(args: {
     children: TemplateResult;
 }): TemplateResult => {
     void import("./p2p-presence-overlay-element.js");
-    return html`<p2p-presence-overlay .service=${args.service as any}>${args.children}</p2p-presence-overlay>`;
+    return html`<p2p-presence-overlay .database=${args.service}>${args.children}</p2p-presence-overlay>`;
 };

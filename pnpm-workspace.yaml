@@ -11,3 +11,5 @@ packages:
   - 'packages/data-p2p-tictactoe'
   - 'packages/data-solid'
   - 'packages/data-solid-dashboard'
+  - 'packages/data-gpu'
+  - 'packages/data-gpu-samples'

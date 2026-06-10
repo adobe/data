@@ -48,3 +48,6 @@ source.txt
 docs/api
 packages/data/docs/api
 packages/data/references
+
+# Playwright MCP capture artifacts
+.playwright-mcp/

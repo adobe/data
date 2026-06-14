@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database, type Entity } from "@adobe/data/ecs";
-import { physicsData } from "../../../physics/physics-data-plugin.js";
+import { COLLIDER_PRIMITIVE_RENDER_ARCHETYPES, physicsData } from "../../../physics/physics-data-plugin.js";
 import { mesh } from "../../scene/model/mesh-plugin.js";
 import { shapeGeometry } from "../../scene/model/shape/shape-geometry-plugin.js";
 import { capsuleMesh, flatShadedMesh } from "../../scene/model/shape/shape-mesh.js";
@@ -12,9 +12,10 @@ import type { ColliderMesh } from "../../../physics/body/collider-mesh.js";
 import { interpolation } from "../interpolation-plugin.js";
 
 /**
- * physicsRenderBridge — makes colliders renderable by `pbrFactorRender`. Once
- * shared shape meshes exist, every body with a collider shape gains a `mesh`
- * ref, a `scale`, and `visible`. Dynamic bodies also get render interpolation.
+ * physicsRenderBridge — assigns default primitive render meshes for standard
+ * physics archetypes (`COLLIDER_PRIMITIVE_RENDER_ARCHETYPES`). Collider shape
+ * drives the mesh; bodies on other archetypes (e.g. `VoxelRigidBody`) are not
+ * touched — their visual path owns `mesh` assignment separately.
  */
 export const physicsRenderBridge = Database.Plugin.create({
     extends: Database.Plugin.combine(physicsData, mesh, shapeGeometry, interpolation),
@@ -69,20 +70,27 @@ export const physicsRenderBridge = Database.Plugin.create({
                     const shapes = db.store.resources._shapeMeshes;
                     const device = db.store.resources.device;
                     if (!shapes || !device) return;
-                    for (const arch of db.store.queryArchetypes(["colliderShape", "halfExtents"], { exclude: ["mesh"] })) {
-                        const ids = arch.columns.id, css = arch.columns.colliderShape, hes = arch.columns.halfExtents;
+                    for (const name of COLLIDER_PRIMITIVE_RENDER_ARCHETYPES) {
+                        const arch = db.store.archetypes[name];
+                        if (arch == null) continue;
+                        const ids = arch.columns.id;
+                        const css = arch.columns.colliderShape;
+                        const hes = arch.columns.halfExtents;
                         for (let i = arch.rowCount - 1; i >= 0; i--) {
-                            const id = ids.get(i), shape = css.get(i), he = hes.get(i);
-                            if ((db.store.read(id) as { voxelShape?: Entity }).voxelShape != null) continue;
-                            let meshId: Entity, scale: [number, number, number];
+                            const id = ids.get(i);
+                            if (db.store.get(id, "mesh") != null) continue;
+                            const shape = css.get(i);
+                            const he = hes.get(i);
+                            let meshId: Entity;
+                            let scale: [number, number, number];
                             if (shape === "box") { meshId = shapes.cube; scale = [he[0], he[1], he[2]]; }
                             else if (shape === "capsule") { meshId = ensureCapsule(device, he[0], he[1]); scale = [1, 1, 1]; }
                             else if (shape === "hull") {
-                                const pts = (db.store.read(id) as { convexPoints?: Float32Array | null }).convexPoints;
+                                const pts = db.store.get(id, "convexPoints");
                                 meshId = pts ? ensureHull(device, pts) : shapes.sphere;
                                 scale = [1, 1, 1];
                             } else if (shape === "mesh") {
-                                const cm = (db.store.read(id) as { colliderMesh?: ColliderMesh | null }).colliderMesh;
+                                const cm = db.store.get(id, "colliderMesh");
                                 meshId = cm ? ensureTriMesh(device, cm) : shapes.cube;
                                 scale = [1, 1, 1];
                             } else { meshId = shapes.sphere; scale = [he[0], he[0], he[0]]; }

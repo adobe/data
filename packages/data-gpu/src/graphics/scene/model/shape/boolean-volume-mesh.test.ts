@@ -9,8 +9,15 @@ import { volumeContentKey } from "../../../../voxel-shape/volume-content-key.js"
 
 describe("booleanVolumeMesh", () => {
     it("should emit no geometry for an empty volume", () => {
-        const volume = definitions.hollowFrame();
+        const data = createTypedBuffer(Boolean.schema, 8);
+        const volume = DenseVolume.create({ size: [2, 2, 2], data });
         const mesh = booleanVolumeMesh(volume);
+        expect(mesh.vertices.length).toBe(0);
+        expect(mesh.indices.length).toBe(0);
+    });
+
+    it("should emit shell geometry for hollowFrame", () => {
+        const mesh = booleanVolumeMesh(definitions.hollowFrame());
         expect(mesh.vertices.length).toBeGreaterThan(0);
         expect(mesh.indices.length).toBeGreaterThan(0);
     });

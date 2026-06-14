@@ -14,7 +14,13 @@ export { FrameTime } from "./core/frame-time/frame-time.js";
 export { graphics } from "./graphics/graphics-plugin.js";
 
 // --- Physics: shared rigid-body data model + pluggable solver seam -----------
-export { physicsData } from "./physics/physics-data-plugin.js";
+export {
+    physicsData,
+    RIGID_BODY_COMPONENTS,
+    STATIC_COLLIDER_COMPONENTS,
+    COLLIDER_PRIMITIVE_RENDER_ARCHETYPES,
+} from "./physics/physics-data-plugin.js";
+export type { ColliderPrimitiveRenderArchetype } from "./physics/physics-data-plugin.js";
 export { physicsClock } from "./physics/physics-clock-plugin.js";
 export type { PhysicsClock } from "./physics/physics-clock-plugin.js";
 export { jointData } from "./physics/joint/joint-plugin.js";

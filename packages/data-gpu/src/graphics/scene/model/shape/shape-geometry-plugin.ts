@@ -145,6 +145,9 @@ export const shapeGeometry = Database.Plugin.create({
                                     ? { voxelVolumeSize: [...baked.voxelVolumeSize] as [number, number, number] }
                                     : {}),
                             });
+                            if (baked.voxelVolumeSize != null) {
+                                db.store.resources._voxelVolumeByMesh?.delete(meshId);
+                            }
                         }
                     }
                 };

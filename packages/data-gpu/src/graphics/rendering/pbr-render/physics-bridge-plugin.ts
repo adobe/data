@@ -18,7 +18,8 @@ import { interpolation } from "../interpolation-plugin.js";
  * touched — their visual path owns `mesh` assignment separately.
  */
 export const physicsRenderBridge = Database.Plugin.create({
-    extends: Database.Plugin.combine(physicsData, mesh, shapeGeometry, interpolation),
+    imports: Database.Plugin.combine(mesh, shapeGeometry, interpolation),
+    extends: physicsData,
     systems: {
         physicsBridge: {
             schedule: { during: ["postUpdate"] },

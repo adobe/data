@@ -11,19 +11,18 @@ import { uploadShapeMesh } from "./upload-shape-mesh.js";
 import { boundsFromShapeMesh } from "./bounds-from-shape-mesh.js";
 import { capsuleMesh, flatShadedMesh } from "./shape-mesh.js";
 import { convexHullMesh } from "./convex-hull.js";
-import { booleanVolumeMesh } from "./boolean-volume-mesh.js";
 import type { ShapeSpec } from "./shape-spec.js";
 
 /**
- * shapeGeometry — bakes procedural meshes into `StaticMesh` + `_PbrPrimitive`
+ * shapeGeometry — bakes built-in procedural meshes into `StaticMesh` + `_PbrPrimitive`
  * (StandardVertex layout). Registers shared unit sphere/cube at init; provides
- * `insertStaticMeshPrimitive` for direct bakes (capsule/hull caches, etc.).
+ * `insertStaticMeshPrimitive` for direct bakes (capsule/hull caches, extensions, etc.).
  */
 export const shapeGeometry = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrCore, mesh, core),
+    imports: Database.Plugin.combine(pbrCore, mesh),
+    extends: core,
     resources: {
         _shapeMeshes: { default: null as { sphere: Entity; cube: Entity } | null, transient: true },
-        _voxelVolumeByMesh: { default: null as Map<Entity, import("@adobe/data/volume").DenseVolume<boolean>> | null, transient: true },
     },
     transactions: {
         insertStaticMeshPrimitive(t, args: {
@@ -79,12 +78,11 @@ export const shapeGeometry = Database.Plugin.create({
         shapeMeshBake: {
             schedule: { during: ["preUpdate"], after: ["shapeGeometryInit"] },
             create: db => {
-                const bake = (spec: ShapeSpec, meshId: number): {
+                const bake = (spec: ShapeSpec): {
                     vb: GPUBuffer;
                     ib: GPUBuffer;
                     count: number;
                     localBounds: Aabb;
-                    voxelVolumeSize?: readonly [number, number, number];
                 } | null => {
                     const { device } = db.store.resources;
                     if (!device) return null;
@@ -113,13 +111,6 @@ export const shapeGeometry = Database.Plugin.create({
                         const gpu = uploadShapeMesh(device, data);
                         return { ...gpu, localBounds: boundsFromShapeMesh(data) };
                     }
-                    if (spec.kind === "voxelShape") {
-                        const volume = db.store.resources._voxelVolumeByMesh?.get(meshId) ?? null;
-                        if (!volume) return null;
-                        const data = booleanVolumeMesh(volume);
-                        const gpu = uploadShapeMesh(device, data);
-                        return { ...gpu, localBounds: boundsFromShapeMesh(data), voxelVolumeSize: volume.size };
-                    }
                     return null;
                 };
                 return () => {
@@ -130,7 +121,7 @@ export const shapeGeometry = Database.Plugin.create({
                             const spec = specs.get(i);
                             if (!spec) continue;
                             const meshId = ids.get(i);
-                            const baked = bake(spec, meshId);
+                            const baked = bake(spec);
                             if (!baked) continue;
                             db.transactions.insertStaticMeshPrimitive({
                                 mesh: meshId,
@@ -139,15 +130,7 @@ export const shapeGeometry = Database.Plugin.create({
                                 indexCount: baked.count,
                                 localBounds: baked.localBounds,
                             });
-                            db.store.update(meshId, {
-                                shapeSpec: null,
-                                ...(baked.voxelVolumeSize != null
-                                    ? { voxelVolumeSize: [...baked.voxelVolumeSize] as [number, number, number] }
-                                    : {}),
-                            });
-                            if (baked.voxelVolumeSize != null) {
-                                db.store.resources._voxelVolumeByMesh?.delete(meshId);
-                            }
+                            db.store.update(meshId, { shapeSpec: null });
                         }
                     }
                 };

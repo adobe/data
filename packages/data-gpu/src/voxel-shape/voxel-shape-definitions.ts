@@ -57,5 +57,3 @@ export const definitions = {
         return false;
     }),
 } as const;
-
-export type VoxelShapeName = keyof typeof definitions;

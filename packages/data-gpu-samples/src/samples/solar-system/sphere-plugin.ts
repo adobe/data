@@ -20,7 +20,8 @@ const unitSphereBounds = {
  * `StaticMesh` + `_PbrPrimitive` for the IBL renderer.
  */
 export const sphere = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrCore, core, mesh),
+    imports: Database.Plugin.combine(pbrCore, mesh),
+    extends: core,
     components: {
         sphereSpec: { default: null as unknown as SphereSpec },
     },

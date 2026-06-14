@@ -6,5 +6,4 @@ export type ShapeSpec =
     | { kind: "unitBox" }
     | { kind: "capsule"; radius: number; halfHeight: number }
     | { kind: "convexHull"; points: Float32Array }
-    | { kind: "triMesh"; positions: Float32Array; indices: Uint32Array }
-    | { kind: "voxelShape" };
+    | { kind: "triMesh"; positions: Float32Array; indices: Uint32Array };

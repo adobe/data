@@ -26,7 +26,7 @@ export const mesh = Database.Plugin.create({
         gltfUrl: { type: "string" },
         /** Pending procedural import — cleared when baked to StaticMesh. */
         shapeSpec: { default: null as ShapeSpec | null },
-        /** Voxel grid dimensions for baked voxelShape meshes (visual scale). */
+        /** Optional grid dimensions on baked mesh assets (used by extensions for scale). */
         voxelVolumeSize: { default: null as Vec3 | null },
         /** Asset-space axis-aligned bounds (all baked meshes). */
         localBounds: { default: null as Aabb | null },
@@ -45,7 +45,7 @@ export const mesh = Database.Plugin.create({
     },
     archetypes: {
         GltfMeshPending:  ["gltfUrl"],
-        ShapeMeshPending: ["shapeSpec", "voxelVolumeSize"],
+        ShapeMeshPending: ["shapeSpec"],
         StaticMesh:       ["localBounds"],
         SkinnedMesh:      ["localBounds", "skinJointTemplate", "skinInverseBindMatrices", "animationClipRefs"],
         MeshInstance:     ["mesh", "position", "rotation", "scale", "visible", "material"],
@@ -61,7 +61,7 @@ export const mesh = Database.Plugin.create({
             return id;
         },
         insertShapeMesh(t, args: { shapeSpec: ShapeSpec }): Entity {
-            return t.archetypes.ShapeMeshPending.insert({ shapeSpec: args.shapeSpec, voxelVolumeSize: null });
+            return t.archetypes.ShapeMeshPending.insert({ shapeSpec: args.shapeSpec });
         },
         insertMeshInstance(t, args: {
             mesh: Entity;

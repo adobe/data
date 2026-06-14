@@ -4,71 +4,76 @@ import { Database, Entity } from "@adobe/data/ecs";
 import type { DenseVolume } from "@adobe/data/volume";
 import type { Vec3 } from "@adobe/data/math";
 import { physicsData, RIGID_BODY_COMPONENTS, STATIC_COLLIDER_COMPONENTS } from "../physics/physics-data-plugin.js";
+import { core } from "../core/core-plugin.js";
 import { mesh } from "../graphics/scene/model/mesh-plugin.js";
 import { shapeGeometry } from "../graphics/scene/model/shape/shape-geometry-plugin.js";
-import { physicsRenderBridge } from "../graphics/rendering/pbr-render/physics-bridge-plugin.js";
-import type { ShapeSpec } from "../graphics/scene/model/shape/shape-spec.js";
-import { definitions, type VoxelShapeName } from "./voxel-shape-definitions.js";
-import { volumeContentKey } from "./volume-content-key.js";
-
-const insertVoxelShapeMesh = (
-    t: {
-        resources: {
-            _voxelMeshByKey: Map<string, Entity> | null;
-            _voxelVolumeByMesh: Map<Entity, DenseVolume<boolean>> | null;
-        };
-        archetypes: {
-            ShapeMeshPending: {
-                insert: (row: { shapeSpec: ShapeSpec; voxelVolumeSize: Vec3 }) => Entity;
-            };
-        };
-    },
-    args: { volume: DenseVolume<boolean> },
-): Entity => {
-    const key = volumeContentKey(args.volume);
-    const byKey = t.resources._voxelMeshByKey ??= new Map();
-    const existing = byKey.get(key);
-    if (existing != null) return existing;
-
-    const id = t.archetypes.ShapeMeshPending.insert({
-        shapeSpec: { kind: "voxelShape" },
-        voxelVolumeSize: [...args.volume.size] as Vec3,
-    });
-    (t.resources._voxelVolumeByMesh ??= new Map()).set(id, args.volume);
-    byKey.set(key, id);
-    return id;
-};
+import { booleanVolumeMesh } from "../graphics/scene/model/shape/boolean-volume-mesh.js";
+import { uploadShapeMesh } from "../graphics/scene/model/shape/upload-shape-mesh.js";
+import { boundsFromShapeMesh } from "../graphics/scene/model/shape/bounds-from-shape-mesh.js";
+import { insertVoxelShapeMesh } from "./voxel-shape-insert.js";
+import { voxelMeshScaleForGridSize, voxelMeshScaleToHalfExtents } from "./voxel-mesh-scale.js";
 
 /**
- * voxelShape — registers authored boolean volumes, deduplicates mesh baking by
- * volume content, and attaches baked mesh refs to bodies that reference them.
- * Physics colliders stay unchanged; only the visual mesh is overridden.
+ * voxelShape — boolean volume visuals referenced by name, loaded async via
+ * `voxelShapeLoader`, baked to mesh entities, attached on `voxelShape`.
  */
 export const voxelShape = Database.Plugin.create({
-    extends: Database.Plugin.combine(mesh, shapeGeometry, physicsData),
+    imports: shapeGeometry,
+    extends: Database.Plugin.combine(mesh, physicsData, core),
     components: {
-        /** Body → baked (or pending) voxel mesh entity. Visual only. */
+        /** On-disk shape id (`<filename>.json` without extension). */
+        voxelShapeName: { type: "string" },
+        /** Body → baked (or pending) voxel mesh entity. Set after load. */
         voxelShape: Entity.schema,
     },
     resources: {
         _voxelMeshByKey: { default: null as Map<string, Entity> | null, transient: true },
-        _voxelShapeByName: { default: null as Map<VoxelShapeName, Entity> | null, transient: true },
+        _voxelShapeByName: { default: null as Map<string, Entity> | null, transient: true },
+        _voxelSizeByName: { default: null as Map<string, Vec3> | null, transient: true },
+        _voxelVolumeByMesh: { default: null as Map<Entity, DenseVolume<boolean>> | null, transient: true },
     },
     archetypes: {
-        /** Same as RigidBody but visual mesh comes from `voxelShape`, not the collider primitive. */
-        VoxelRigidBody: [...RIGID_BODY_COMPONENTS, "voxelShape"],
-        /** Same as StaticCollider but visual mesh comes from `voxelShape`, not the collider primitive. */
-        VoxelStaticCollider: [...STATIC_COLLIDER_COMPONENTS, "voxelShape"],
+        VoxelRigidBody: [...RIGID_BODY_COMPONENTS, "voxelShapeName"],
+        VoxelStaticCollider: [...STATIC_COLLIDER_COMPONENTS, "voxelShapeName"],
+        /** Pending boolean volume → GPU mesh bake queue (owned by this plugin). */
+        VoxelMeshPending: ["voxelVolumeSize"],
     },
     transactions: {
         insertVoxelShapeMesh(t, args: { volume: DenseVolume<boolean> }): Entity {
             return insertVoxelShapeMesh(t, args);
         },
-        seedVoxelShapeDefinitions(t) {
-            const byName = t.resources._voxelShapeByName ??= new Map();
-            for (const name of Object.keys(definitions) as VoxelShapeName[]) {
-                byName.set(name, insertVoxelShapeMesh(t, { volume: definitions[name]() }));
-            }
+    },
+    systems: {
+        voxelShapeBake: {
+            schedule: { during: ["preUpdate"], after: ["shapeGeometryInit"] },
+            create: db => () => {
+                const { device } = db.store.resources;
+                if (!device) return;
+
+                for (const arch of db.store.queryArchetypes(["voxelVolumeSize"], { exclude: ["localBounds"] })) {
+                    const ids = arch.columns.id;
+                    const sizes = arch.columns.voxelVolumeSize;
+                    for (let i = arch.rowCount - 1; i >= 0; i--) {
+                        const meshId = ids.get(i);
+                        const volume = db.store.resources._voxelVolumeByMesh?.get(meshId) ?? null;
+                        if (volume == null) continue;
+
+                        const data = booleanVolumeMesh(volume);
+                        const gpu = uploadShapeMesh(device, data);
+                        db.transactions.insertStaticMeshPrimitive({
+                            mesh: meshId,
+                            vertexBuffer: gpu.vb,
+                            indexBuffer: gpu.ib,
+                            indexCount: gpu.count,
+                            localBounds: boundsFromShapeMesh(data),
+                        });
+                        db.store.update(meshId, {
+                            voxelVolumeSize: [...sizes.get(i)!] as Vec3,
+                        });
+                        db.store.resources._voxelVolumeByMesh?.delete(meshId);
+                    }
+                }
+            },
         },
     },
 });
@@ -90,17 +95,13 @@ export const voxelShapeVisualBridge = Database.Plugin.create({
                     for (let i = arch.rowCount - 1; i >= 0; i--) {
                         const id = ids.get(i);
                         const meshId = voxelShapes.get(i);
-                        const he = halfExtents.get(i);
-                        const localBounds = db.store.get(meshId, "localBounds");
                         const volumeSize = db.store.get(meshId, "voxelVolumeSize");
-                        // Wait until shapeMeshBake has produced a StaticMesh + _PbrPrimitive.
-                        if (volumeSize == null || localBounds == null) continue;
+                        if (volumeSize == null) continue;
 
-                        const scale: Vec3 = [
-                            (2 * he[0]) / volumeSize[0],
-                            (2 * he[1]) / volumeSize[1],
-                            (2 * he[2]) / volumeSize[2],
-                        ];
+                        const he = halfExtents.get(i);
+                        const scale = db.store.get(id, "bodyType") != null
+                            ? voxelMeshScaleForGridSize(volumeSize)
+                            : voxelMeshScaleToHalfExtents(volumeSize, he);
                         db.store.update(id, { mesh: meshId, scale, visible: true });
                     }
                 }
@@ -108,10 +109,3 @@ export const voxelShapeVisualBridge = Database.Plugin.create({
         },
     },
 });
-
-/** Convenience bundle: voxel visuals + default collider primitive bridge for other physics archetypes. */
-export const voxelShapeRender = Database.Plugin.combine(
-    voxelShape,
-    voxelShapeVisualBridge,
-    physicsRenderBridge,
-);

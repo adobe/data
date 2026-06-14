@@ -2,6 +2,7 @@
 
 import initJolt from "jolt-physics";
 import { Database, type Entity } from "@adobe/data/ecs";
+import { isVoxelShapePhysicsPending } from "../../voxel-shape/voxel-shape-resolve.js";
 import { True } from "@adobe/data/schema";
 import { physicsClock } from "../physics-clock-plugin.js";
 import { physicsData } from "../physics-data-plugin.js";
@@ -244,6 +245,7 @@ export const joltSolver = Database.Plugin.create({
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
                             const id = ids.get(r), bodyType = bt.get(r), shape = cs.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r), v = lv.get(r), w = av.get(r);
                             if (!colliderReady(id, shape)) continue; // auto-collider not generated yet
+                            if (isVoxelShapePhysicsPending(db.store, id)) continue;
                             ensureBody(jolt, bi, id, bodyType, shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o, v[0], v[1], v[2], w[0], w[1], w[2]);
                             // Tag as mirrored. Dynamics also migrate onto the derived prev-pose
                             // snapshot (the interpolator reads it); kinematic bodies are authored
@@ -258,6 +260,7 @@ export const joltSolver = Database.Plugin.create({
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
                             const id = ids.get(r), shape = cs.get(r), h = he.get(r), p = pos.get(r);
                             if (!colliderReady(id, shape)) continue; // auto-collider not generated yet
+                            if (isVoxelShapePhysicsPending(db.store, id)) continue;
                             ensureBody(jolt, bi, id, "static", shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r), 0, 0, 0, 0, 0, 0);
                             db.store.update(id, { _joltBody: true });
                         }

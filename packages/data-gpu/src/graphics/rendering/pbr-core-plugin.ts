@@ -5,11 +5,8 @@ import { Mat4x4 } from "@adobe/data/math";
 import { U32 } from "@adobe/data/math";
 
 /**
- * Shape declarations shared between asset producers (model loader, shape
- * generators) and consumers (renderers). Every component and archetype is
- * ephemeral — not part of the user's data model. Pair with an asset
- * producer plus a renderer aggregator (`pbrIblRender`)
- * to get drawable scenes.
+ * Ephemeral GPU mesh payloads shared between asset producers (glTF loader,
+ * shape baker) and renderers. Not part of the authored asset model.
  */
 export const pbrCore = Database.Plugin.create({
     components: {
@@ -22,8 +19,8 @@ export const pbrCore = Database.Plugin.create({
         _indexFormat:                   { default: "uint16" as GPUIndexFormat },
         _materialBindGroup:             { default: null as GPUBindGroup | null },
         /** Back-reference from a _PbrPrimitive / _VisibleMaterial to the
-         *  authored Geometry that owns it. */
-        _geometry:                      Entity.schema,
+         *  baked mesh asset that owns it. */
+        _mesh:                          Entity.schema,
         _material:                      Entity.schema,
         /** Node-local-to-model-root matrix baked at load time. The renderer
          *  pre-multiplies it with the per-instance model-root world matrix. */
@@ -34,7 +31,7 @@ export const pbrCore = Database.Plugin.create({
         _skeletonJointMatrixBindGroup:  { default: null as GPUBindGroup | null },
     },
     archetypes: {
-        _VisibleMaterial: ["ephemeral", "_materialBindGroup", "_geometry"],
-        _PbrPrimitive: ["ephemeral", "_vertexBuffer", "_skinVertexBuffer", "_indexBuffer", "_indexCount", "_indexFormat", "_material", "_geometry", "_nodeLocalMatrix"],
+        _VisibleMaterial: ["ephemeral", "_materialBindGroup", "_mesh"],
+        _PbrPrimitive: ["ephemeral", "_vertexBuffer", "_skinVertexBuffer", "_indexBuffer", "_indexCount", "_indexFormat", "_material", "_mesh", "_nodeLocalMatrix"],
     },
 });

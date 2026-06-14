@@ -264,18 +264,18 @@ export const pbrIblRender = Database.Plugin.create({
                     // from each Model's `_worldMatrix` component (written by _transform).
                     interface ModelEntry { id: number; matrix: Mat4x4 }
                     const modelsByGeo = new Map<number, ModelEntry[]>();
-                    for (const arch of db.store.queryArchetypes(["geometry", "visible", "_worldMatrix"])) {
+                    for (const arch of db.store.queryArchetypes(["mesh", "visible", "_worldMatrix"])) {
                         const ids = arch.columns.id;
-                        const geoRefs = arch.columns.geometry;
+                        const meshRefs = arch.columns.mesh;
                         const vis = arch.columns.visible;
                         const worldMats = arch.columns._worldMatrix;
                         for (let i = 0; i < arch.rowCount; i++) {
                             if (!vis.get(i)) continue;
                             const id = ids.get(i);
                             const m = worldMats.get(i);
-                            const geoId = geoRefs.get(i);
-                            let arr = modelsByGeo.get(geoId);
-                            if (!arr) { arr = []; modelsByGeo.set(geoId, arr); }
+                            const meshId = meshRefs.get(i);
+                            let arr = modelsByGeo.get(meshId);
+                            if (!arr) { arr = []; modelsByGeo.set(meshId, arr); }
                             arr.push({ id, matrix: m });
                         }
                     }
@@ -315,7 +315,7 @@ export const pbrIblRender = Database.Plugin.create({
                         "_indexCount",
                         "_indexFormat",
                         "_material",
-                        "_geometry",
+                        "_mesh",
                         "_nodeLocalMatrix",
                     ])) {
                         const vbs = archetype.columns._vertexBuffer;
@@ -324,12 +324,12 @@ export const pbrIblRender = Database.Plugin.create({
                         const counts = archetype.columns._indexCount;
                         const formats = archetype.columns._indexFormat;
                         const matRefs = archetype.columns._material;
-                        const geoRefs = archetype.columns._geometry;
+                        const meshRefs = archetype.columns._mesh;
                         const nodeMats = archetype.columns._nodeLocalMatrix;
                         const primIds = archetype.columns.id;
                         for (let i = 0; i < archetype.rowCount; i++) {
-                            const geoId = geoRefs.get(i);
-                            const models = modelsByGeo.get(geoId);
+                            const meshId = meshRefs.get(i);
+                            const models = modelsByGeo.get(meshId);
                             if (!models) continue;
 
                             const skinBuf = skinVbs.get(i);

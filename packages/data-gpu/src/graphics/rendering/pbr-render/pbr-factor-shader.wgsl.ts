@@ -5,13 +5,10 @@ import { schema as sceneUniformsSchema } from "../../scene/scene-uniforms/schema
 import brdf from "../ibl-render/brdf.wgsl.js";
 
 /**
- * Unified PBR shader for instanced primitives (and, after convergence, glTF).
- * Materials come from the shared `materialGpu` set — five `texture_2d_array`s +
- * a palette of per-layer factors (group 1) — selected by a per-instance layer
- * index (group 3, binding 1). Shading is identical Cook-Torrance + split-sum
- * IBL to the per-material `ibl-shader`; only the material *source* differs.
+ * Factor-only PBR for instanced primitives — palette factors + vertex normals,
+ * no material map sampling. Used by `pbrFactorRender`.
  */
-export function buildPbrArrayShader(options: { prefilteredMipCount: number }): string {
+export function buildPbrFactorShader(options: { prefilteredMipCount: number }): string {
     return /* wgsl */ `
 struct SceneUniforms {
 ${wgslStructFields(sceneUniformsSchema)}
@@ -20,18 +17,13 @@ ${wgslStructFields(sceneUniformsSchema)}
 struct MaterialFactors {
     baseColorFactor: vec4f,
     emissiveMetallic: vec4f,   // emissive.rgb, metallicFactor
-    roughNormalOcc: vec4f,     // roughnessFactor, normalScale, occlusionStrength, _
+    roughNormalIr: vec4f,      // roughnessFactor, normalScale, occlusionStrength, irEmission
+    emissionMeta: vec4f,       // emissionMode, _, _, _
 }
 
 @group(0) @binding(0) var<uniform> scene: SceneUniforms;
 
 @group(1) @binding(0) var<storage, read> palette: array<MaterialFactors>;
-@group(1) @binding(1) var baseColorArray: texture_2d_array<f32>;
-@group(1) @binding(2) var metallicRoughnessArray: texture_2d_array<f32>;
-@group(1) @binding(3) var normalArray: texture_2d_array<f32>;
-@group(1) @binding(4) var occlusionArray: texture_2d_array<f32>;
-@group(1) @binding(5) var emissiveArray: texture_2d_array<f32>;
-@group(1) @binding(6) var matSampler: sampler;
 
 @group(2) @binding(0) var iblIrradiance: texture_cube<f32>;
 @group(2) @binding(1) var iblPrefiltered: texture_cube<f32>;
@@ -39,7 +31,7 @@ struct MaterialFactors {
 @group(2) @binding(3) var iblSampler: sampler;
 
 @group(3) @binding(0) var<storage, read> instances: array<mat4x4<f32>>;
-@group(3) @binding(1) var<storage, read> layers: array<u32>;
+@group(3) @binding(1) var<storage, read> paletteIndices: array<u32>;
 
 const PREFILTERED_MIP_COUNT: f32 = ${options.prefilteredMipCount.toFixed(1)};
 
@@ -54,10 +46,7 @@ struct VertexOutput {
     @builtin(position) clipPosition: vec4f,
     @location(0) worldPosition: vec3f,
     @location(1) normal: vec3f,
-    @location(2) tangent: vec3f,
-    @location(3) bitangent: vec3f,
-    @location(4) uv: vec2f,
-    @location(5) @interpolate(flat) layer: u32,
+    @location(5) @interpolate(flat) paletteIndex: u32,
 }
 
 @vertex
@@ -74,10 +63,7 @@ fn vs_main(@builtin(instance_index) instanceIndex: u32, in: VertexInput) -> Vert
     out.clipPosition = scene.viewProjectionMatrix * worldPos;
     out.worldPosition = worldPos.xyz;
     out.normal = normalize(normalMat * in.normal);
-    out.tangent = normalize(m3 * in.tangent.xyz);
-    out.bitangent = normalize(cross(out.normal, out.tangent) * in.tangent.w);
-    out.uv = in.uv;
-    out.layer = layers[instanceIndex];
+    out.paletteIndex = paletteIndices[instanceIndex];
     return out;
 }
 
@@ -85,32 +71,26 @@ ${brdf}
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    let f = palette[in.layer];
-    let li = i32(in.layer);
+    let f = palette[in.paletteIndex];
 
-    let baseColor = textureSample(baseColorArray, matSampler, in.uv, li) * f.baseColorFactor;
-
-    let mr = textureSample(metallicRoughnessArray, matSampler, in.uv, li);
-    let metallic = mr.b * f.emissiveMetallic.w;
-    var roughness = mr.g * f.roughNormalOcc.x;
+    let baseColor = f.baseColorFactor;
+    let metallic = f.emissiveMetallic.w;
+    var roughness = f.roughNormalIr.x;
     roughness = max(roughness, MIN_ROUGHNESS);
     let alpha = roughness * roughness;
+    let occlusion = f.roughNormalIr.z;
+    let emissionMode = f.emissionMeta.x;
+    let irEmission = f.roughNormalIr.w;
+    // 0 = UV fluorescence (no visible add); 1 = visible luminescence (emissive + IR glow).
+    let emissive = select(vec3f(0.0), f.emissiveMetallic.xyz + vec3f(irEmission), emissionMode >= 0.5);
 
-    let occlusion = textureSample(occlusionArray, matSampler, in.uv, li).r;
-    let emissive = textureSample(emissiveArray, matSampler, in.uv, li).rgb * f.emissiveMetallic.xyz;
-
-    let nSampled = textureSample(normalArray, matSampler, in.uv, li).rgb * 2.0 - vec3f(1.0);
-    let nScaled = vec3f(nSampled.xy * f.roughNormalOcc.y, nSampled.z);
-    let tbn = mat3x3<f32>(in.tangent, in.bitangent, in.normal);
-    let N = normalize(tbn * nScaled);
-
+    let N = normalize(in.normal);
     let V = normalize(scene.cameraPosition - in.worldPosition);
     let nDotV = max(dot(N, V), 0.001);
     let R = reflect(-V, N);
 
     let f0 = mix(vec3f(0.04), baseColor.rgb, metallic);
 
-    // --- IBL contribution (split-sum) ---
     let F_ibl = f_schlick_roughness(nDotV, f0, roughness);
     let kD_ibl = (vec3f(1.0) - F_ibl) * (1.0 - metallic);
 
@@ -122,9 +102,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let envBrdf = textureSampleLevel(iblBrdfLut, iblSampler, vec2f(nDotV, roughness), 0.0).rg;
     let specularIbl = prefiltered * (F_ibl * envBrdf.x + envBrdf.y);
 
-    let ambient = (diffuseIbl + specularIbl) * mix(1.0, occlusion, f.roughNormalOcc.z);
+    let ambient = (diffuseIbl + specularIbl) * occlusion;
 
-    // --- Direct light (parity with the single scene light) ---
     let L = normalize(-scene.lightDirection);
     let H = normalize(V + L);
     let nDotL = max(dot(N, L), 0.0);

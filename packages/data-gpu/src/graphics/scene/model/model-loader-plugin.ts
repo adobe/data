@@ -5,13 +5,13 @@ import type { Aabb } from "@adobe/data/math";
 import { pbrCore } from "../../rendering/pbr-core-plugin.js";
 import { animation } from "../../animation/animation-plugin.js";
 import { core } from "../../../core/core-plugin.js";
-import { Model } from "./model.js";
+import { mesh } from "./mesh-plugin.js";
 import { loadGltfPrimitives, type GpuPrimitiveData } from "./gltf/load-gltf-model.js";
 import type { LoadedAnimation } from "./gltf/parse-animations.js";
 import type { JointTemplate } from "./gltf/parse-skin.js";
 
 export interface LoadedArgs {
-    geometry: number;
+    mesh: number;
     bounds: Aabb;
     primitives: GpuPrimitiveData[];
     skinJointTemplate: JointTemplate[];
@@ -22,44 +22,23 @@ export interface LoadedArgs {
 }
 
 /**
- * modelLoader
- *   query: Geometry-_bounds
- *   read:
- *     modelUrl
- *   write:
- *     _bounds: Aabb
- *     _skinJointTemplate: JointTemplate[]
- *     _skinInverseBindMatrices: Float32Array | null
- *     _animationClipRefs: EntityId[]
- *     _VisibleMaterial
- *     _PbrPrimitive
- *     AnimationClip                       // when the glTF carries animations
+ * modelLoader — queries `GltfMeshPending`, fetches each `gltfUrl`, inserts
+ * `_PbrPrimitive` rows, and migrates the mesh entity to `StaticMesh` or
+ * `SkinnedMesh` with capability components.
  */
 export const modelLoader = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrCore, Model.plugin, core, animation),
-    components: {
-        _bounds: { default: null as Aabb | null },
-        _skinJointTemplate: { default: [] as JointTemplate[] },
-        _skinInverseBindMatrices: { default: null as Float32Array | null },
-        _animationClipRefs: { default: [] as number[] },
-        // CPU-retained model-space collision geometry (auto-collider source).
-        _cpuPositions: { default: null as Float32Array | null },
-        _cpuIndices: { default: null as Uint32Array | null },
-        // CPU-retained skin (mesh-bind positions + 4 joints + 4 weights per vertex),
-        // for fitting per-bone ragdoll capsules.
-        _cpuSkin: { default: null as { positions: Float32Array; joints: Uint32Array; weights: Float32Array } | null },
-    },
+    extends: Database.Plugin.combine(pbrCore, mesh, core, animation),
     transactions: {
         insertLoadedPrimitives(t, args: LoadedArgs) {
             for (const p of args.primitives) {
                 const materialId = t.archetypes._VisibleMaterial.insert({
                     ephemeral: true,
                     _materialBindGroup: p.pbrMaterialBindGroup,
-                    _geometry: args.geometry,
+                    _mesh: args.mesh,
                 });
                 t.archetypes._PbrPrimitive.insert({
                     ephemeral: true,
-                    _geometry: args.geometry,
+                    _mesh: args.mesh,
                     _material: materialId,
                     _vertexBuffer: p.pbrVertexBuffer,
                     _skinVertexBuffer: p.pbrSkinVertexBuffer,
@@ -78,14 +57,17 @@ export const modelLoader = Database.Plugin.create({
                 });
                 clipRefs.push(clipId);
             }
-            t.update(args.geometry, {
-                _bounds: args.bounds,
-                _skinJointTemplate: args.skinJointTemplate,
-                _skinInverseBindMatrices: args.skinInverseBindMatrices,
-                _animationClipRefs: clipRefs,
-                _cpuPositions: args.collision?.positions ?? null,
-                _cpuIndices: args.collision?.indices ?? null,
-                _cpuSkin: args.skinVertices,
+            const skinned = args.skinJointTemplate.length > 0;
+            t.update(args.mesh, {
+                localBounds: args.bounds,
+                cpuCollisionPositions: args.collision?.positions ?? null,
+                cpuCollisionIndices: args.collision?.indices ?? null,
+                cpuSkin: args.skinVertices,
+                ...(skinned ? {
+                    skinJointTemplate: args.skinJointTemplate,
+                    skinInverseBindMatrices: args.skinInverseBindMatrices,
+                    animationClipRefs: clipRefs,
+                } : {}),
             });
         },
     },
@@ -96,19 +78,19 @@ export const modelLoader = Database.Plugin.create({
                 return () => {
                     const { device } = db.store.resources;
                     if (!device) return;
-                    for (const arch of db.store.queryArchetypes(["modelUrl"])) {
+                    for (const arch of db.store.queryArchetypes(["gltfUrl"])) {
                         const ids = arch.columns.id;
-                        const urls = arch.columns.modelUrl;
+                        const urls = arch.columns.gltfUrl;
                         for (let i = 0; i < arch.rowCount; i++) {
                             const id = ids.get(i);
                             if (inFlight.has(id)) continue;
                             const url = urls.get(i);
-                            if (!url) continue;   // procedural geometries (shapes) carry no URL
+                            if (!url) continue;
                             inFlight.add(id);
                             loadGltfPrimitives(device, url)
                                 .then(loaded => {
                                     db.transactions.insertLoadedPrimitives({
-                                        geometry: id,
+                                        mesh: id,
                                         bounds: loaded.bounds,
                                         primitives: loaded.primitives,
                                         skinJointTemplate: loaded.skin?.jointTemplate ?? [],

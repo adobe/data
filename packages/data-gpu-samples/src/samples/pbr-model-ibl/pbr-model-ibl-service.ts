@@ -1,16 +1,15 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { Vec3 } from "@adobe/data/math";
-import { pbrRender, Model, Orbit } from "@adobe/data-gpu";
+import { pbrIblRender, Model, Orbit } from "@adobe/data-gpu";
 
 export const pbrModelIblPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrRender, Orbit.plugin),
+    extends: Database.Plugin.combine(pbrIblRender, Orbit.plugin),
     transactions: {
         initializeScene(t, args: {
             modelUrl: string;
             envUrl?: string;
-            lightColor?: Vec3;
+            lightColor?: readonly [number, number, number];
             orbitFit?: { radiusFactor: number; heightFactor: number };
         }): number {
             t.resources.light = {
@@ -18,15 +17,15 @@ export const pbrModelIblPlugin = Database.Plugin.create({
                 environmentUrl: args.envUrl ?? t.resources.light.environmentUrl,
                 color:          args.lightColor ?? t.resources.light.color,
             };
-            const geoId = Model.plugin.transactions.insertGeometry(t, { modelUrl: args.modelUrl });
-            Model.plugin.transactions.insertModel(t, { geometry: geoId });
+            const meshId = Model.plugin.transactions.insertGltfMesh(t, { url: args.modelUrl });
+            Model.plugin.transactions.insertModel(t, { mesh: meshId });
             t.resources.orbit = {
                 ...t.resources.orbit,
-                fitGeometry:     geoId,
+                fitMesh:         meshId,
                 fitRadiusFactor: args.orbitFit?.radiusFactor ?? t.resources.orbit.fitRadiusFactor,
                 fitHeightFactor: args.orbitFit?.heightFactor ?? t.resources.orbit.fitHeightFactor,
             };
-            return geoId;
+            return meshId;
         },
     },
 });

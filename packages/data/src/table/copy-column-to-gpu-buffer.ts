@@ -1,6 +1,15 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
+import { booleanStorageByteLength } from "../typed-buffer/create-boolean-buffer.js";
 import { Table } from "./table.js";
+
+const columnByteLength = <T extends Table<any>>(table: T, columnName: keyof T["columns"]): number => {
+    const column = table.columns[columnName];
+    if (column.type === "boolean") {
+        return booleanStorageByteLength(table.rowCount);
+    }
+    return table.rowCount * column.typedArrayElementSizeInBytes;
+};
 
 /**
  * Copies a column from an array of tables to a GPU buffer.
@@ -14,7 +23,7 @@ export const copyColumnToGPUBuffer = <T extends Table<any>, K extends keyof T["c
     // get total byte length
     let totalByteLength = 0;
     for (const table of tables) {
-        totalByteLength += table.rowCount * table.columns[columnName].typedArrayElementSizeInBytes;
+        totalByteLength += columnByteLength(table, columnName);
     }
     // ensure the gpu buffer is large enough
     if (gpuBuffer.size < totalByteLength) {
@@ -25,7 +34,7 @@ export const copyColumnToGPUBuffer = <T extends Table<any>, K extends keyof T["c
     let offset = 0;
     for (const table of tables) {
         const column = table.columns[columnName];
-        const writeByteLength = table.rowCount * column.typedArrayElementSizeInBytes;
+        const writeByteLength = columnByteLength(table, columnName);
         const array = column.getTypedArray();
         device.queue.writeBuffer(gpuBuffer, offset, array.buffer, 0, writeByteLength);
         offset += writeByteLength;

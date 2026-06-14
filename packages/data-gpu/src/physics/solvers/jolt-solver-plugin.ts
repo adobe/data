@@ -9,6 +9,7 @@ import { jointData } from "../joint/joint-plugin.js";
 import { BodyType } from "../body/body-type/body-type.js";
 import { ColliderShape } from "../body/collider-shape/collider-shape.js";
 import type { ColliderMesh } from "../body/collider-mesh.js";
+import { massFromVolume } from "../body/collider-shape/mass-from-volume.js";
 
 /**
  * A third rigid-body solver behind the same `physicsData` seam — Jolt Physics
@@ -60,7 +61,7 @@ type JVec3 = InstanceType<JoltModule["Vec3"]>;
 type JShape = InstanceType<JoltModule["Shape"]>;
 type JPhysicsSystem = InstanceType<JoltModule["PhysicsSystem"]>;
 
-interface MatProps { restitution: number; friction: number }
+interface MatProps { density: number; restitution: number; friction: number }
 
 /** The live Jolt world, published once WASM init completes, so Jolt-native
  *  extensions (e.g. `joltRagdoll`) can add their own bodies/constraints into the
@@ -95,8 +96,8 @@ export const joltSolver = Database.Plugin.create({
                 const bodies = new Map<Entity, JBody>(); // entity → Jolt body
 
                 const matPropsOf = (id: Entity): MatProps => {
-                    const m = db.store.read(id) as { restitution?: number; friction?: number } | null;
-                    return { restitution: m?.restitution ?? 0.2, friction: m?.friction ?? 0.5 };
+                    const m = db.store.read(id) as { density?: number; restitution?: number; friction?: number } | null;
+                    return { density: m?.density ?? 1, restitution: m?.restitution ?? 0.2, friction: m?.friction ?? 0.5 };
                 };
 
                 // hull/mesh colliders may be auto-generated from a model that's still
@@ -197,6 +198,16 @@ export const joltSolver = Database.Plugin.create({
                     const settings = new jolt.BodyCreationSettings(shp, pos, rot, motionType, layer);
                     settings.mRestitution = m.restitution;
                     settings.mFriction = m.friction;
+                    if (motion === "dynamic") {
+                        const volume = shp.GetVolume();
+                        if (volume > 0) {
+                            const mp = shp.GetMassProperties();
+                            mp.ScaleToMass(massFromVolume(volume, m.density));
+                            settings.mOverrideMassProperties = jolt.EOverrideMassProperties_MassAndInertiaProvided;
+                            settings.mMassPropertiesOverride = mp;
+                            jolt.destroy(mp);
+                        }
+                    }
                     const body = bi.CreateBody(settings);
                     bi.AddBody(body.GetID(), motion === "static" ? jolt.EActivation_DontActivate : jolt.EActivation_Activate);
                     if (motion === "dynamic" && (vx || vy || vz || wx || wy || wz)) {

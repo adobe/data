@@ -236,4 +236,17 @@ describe('serialize/deserialize', () => {
     expect(roundTrip.buf.get(1)).toBe("c");
     expect(roundTrip.buf.get(2)).toBe("a");
   });
+
+  it('round-trips boolean typed buffers', () => {
+    const buf = createTypedBuffer({ type: "boolean" }, 65);
+    buf.set(0, true);
+    buf.set(32, true);
+    buf.set(64, true);
+
+    const payload = serialize({ buf });
+    const roundTrip = deserialize<{ buf: TypedBuffer<boolean> }>(payload);
+
+    expect(roundTrip.buf.type).toBe("boolean");
+    expect(equals(roundTrip.buf, buf)).toBe(true);
+  });
 }); 

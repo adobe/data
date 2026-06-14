@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Mat4x4 } from "@adobe/data/math";
-import { pbrCore, core, VisibleMaterial } from "@adobe/data-gpu";
+import { pbrCore, core, mesh, VisibleMaterial } from "@adobe/data-gpu";
 import { createSphereBuffers } from "./create-sphere.js";
 
 interface SphereSpec extends VisibleMaterial.ColorMaterialOptions {
@@ -10,14 +10,17 @@ interface SphereSpec extends VisibleMaterial.ColorMaterialOptions {
     segments: number;
 }
 
+const unitSphereBounds = {
+    min: [-1, -1, -1] as const,
+    max: [1, 1, 1] as const,
+};
+
 /**
- * Sample-local plugin: lets the solar-system author `Sphere` entities with a
- * color/material spec. A system materializes each into the GPU primitives the
- * PBR renderer consumes, so the resulting entity id can be referenced as a
- * Model's `geometry`.
+ * Sample-local plugin: `Sphere` entities with a color/material spec bake into
+ * `StaticMesh` + `_PbrPrimitive` for the IBL renderer.
  */
 export const sphere = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrCore, core),
+    extends: Database.Plugin.combine(pbrCore, core, mesh),
     components: {
         sphereSpec: { default: null as unknown as SphereSpec },
     },
@@ -36,22 +39,23 @@ export const sphere = Database.Plugin.create({
             };
             return t.archetypes.Sphere.insert({ sphereSpec: spec });
         },
-        _insertSphereGeometry(t, args: {
-            geometry: number;
+        _insertSphereMesh(t, args: {
+            mesh: number;
             materialBindGroup: GPUBindGroup;
             vertexBuffer: GPUBuffer;
             indexBuffer: GPUBuffer;
             indexCount: number;
             indexFormat: GPUIndexFormat;
         }) {
+            t.update(args.mesh, { localBounds: unitSphereBounds });
             const materialId = t.archetypes._VisibleMaterial.insert({
                 ephemeral: true,
                 _materialBindGroup: args.materialBindGroup,
-                _geometry: args.geometry,
+                _mesh: args.mesh,
             });
             t.archetypes._PbrPrimitive.insert({
                 ephemeral: true,
-                _geometry: args.geometry,
+                _mesh: args.mesh,
                 _material: materialId,
                 _vertexBuffer: args.vertexBuffer,
                 _skinVertexBuffer: null,
@@ -80,8 +84,8 @@ export const sphere = Database.Plugin.create({
                             const spec = specs.get(i) as SphereSpec;
                             const geo = createSphereBuffers(device, spec.rings, spec.segments);
                             const materialBindGroup = VisibleMaterial.createColorBindGroup(device, spec);
-                            db.transactions._insertSphereGeometry({
-                                geometry: id,
+                            db.transactions._insertSphereMesh({
+                                mesh: id,
                                 materialBindGroup,
                                 vertexBuffer: geo.vertexBuffer,
                                 indexBuffer: geo.indexBuffer,

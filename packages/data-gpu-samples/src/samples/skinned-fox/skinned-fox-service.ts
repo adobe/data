@@ -2,10 +2,10 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Vec3 } from "@adobe/data/math";
-import { pbrRender, pbrSkinning, Model, Orbit } from "@adobe/data-gpu";
+import { pbrIblRender, pbrSkinning, Model, Orbit } from "@adobe/data-gpu";
 
 export const skinnedFoxPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrRender, pbrSkinning, Orbit.plugin),
+    extends: Database.Plugin.combine(pbrIblRender, pbrSkinning, Orbit.plugin),
     transactions: {
         initializeScene(t, args: {
             modelUrl: string;
@@ -18,15 +18,15 @@ export const skinnedFoxPlugin = Database.Plugin.create({
                 environmentUrl: args.envUrl ?? t.resources.light.environmentUrl,
                 color:          args.lightColor ?? t.resources.light.color,
             };
-            const geoId = Model.plugin.transactions.insertGeometry(t, { modelUrl: args.modelUrl });
-            Model.plugin.transactions.insertModel(t, { geometry: geoId });
+            const meshId = Model.plugin.transactions.insertGltfMesh(t, { url: args.modelUrl });
+            Model.plugin.transactions.insertModel(t, { mesh: meshId });
             t.resources.orbit = {
                 ...t.resources.orbit,
-                fitGeometry:     geoId,
+                fitMesh:         meshId,
                 fitRadiusFactor: args.orbitFit?.radiusFactor ?? t.resources.orbit.fitRadiusFactor,
                 fitHeightFactor: args.orbitFit?.heightFactor ?? t.resources.orbit.fitHeightFactor,
             };
-            return geoId;
+            return meshId;
         },
     },
 });

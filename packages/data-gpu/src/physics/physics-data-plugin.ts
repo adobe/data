@@ -8,6 +8,37 @@ import { ColliderShape } from "./body/collider-shape/collider-shape.js";
 import type { ColliderMesh } from "./body/collider-mesh.js";
 import { Material } from "../material/material.js";
 
+/** Column set shared by `RigidBody`, `ConvexBody`, and `VoxelRigidBody`. */
+export const RIGID_BODY_COMPONENTS = [
+    "bodyType",
+    "colliderShape",
+    "halfExtents",
+    "material",
+    "position",
+    "rotation",
+    "linearVelocity",
+    "angularVelocity",
+] as const;
+
+/** Column set shared by `StaticCollider`, `MeshCollider`, and `VoxelStaticCollider`. */
+export const STATIC_COLLIDER_COMPONENTS = [
+    "colliderShape",
+    "halfExtents",
+    "material",
+    "position",
+    "rotation",
+] as const;
+
+/** Physics archetypes whose visual mesh is the collider primitive (not an external override). */
+export const COLLIDER_PRIMITIVE_RENDER_ARCHETYPES = [
+    "RigidBody",
+    "StaticCollider",
+    "ConvexBody",
+    "MeshCollider",
+] as const;
+
+export type ColliderPrimitiveRenderArchetype = (typeof COLLIDER_PRIMITIVE_RENDER_ARCHETYPES)[number];
+
 /**
  * The shared, solver-agnostic rigid-body data model — the seam every physics
  * solver plugs into. It declares *only* authored/canonical state (no systems):
@@ -63,11 +94,11 @@ export const physicsData = Database.Plugin.create({
         colliderMesh:    { default: null as ColliderMesh | null }, // colliderShape "mesh": static triangle soup
     },
     archetypes: {
-        RigidBody: ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity"],
-        StaticCollider: ["colliderShape", "halfExtents", "material", "position", "rotation"],
+        RigidBody: [...RIGID_BODY_COMPONENTS],
+        StaticCollider: [...STATIC_COLLIDER_COMPONENTS],
         // A convex-hull body (dynamic / kinematic): authored as a point cloud.
-        ConvexBody: ["bodyType", "colliderShape", "halfExtents", "material", "position", "rotation", "linearVelocity", "angularVelocity", "convexPoints"],
+        ConvexBody: [...RIGID_BODY_COMPONENTS, "convexPoints"],
         // A static triangle-mesh collider (terrain / level geometry).
-        MeshCollider: ["colliderShape", "halfExtents", "material", "position", "rotation", "colliderMesh"],
+        MeshCollider: [...STATIC_COLLIDER_COMPONENTS, "colliderMesh"],
     },
 });

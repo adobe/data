@@ -9,8 +9,8 @@ import { orbitData } from "./orbit-data-plugin.js";
  *
  * - **_orbitCameraSystem**: updates camera position/target/near/far from the
  *   orbit polar coords; auto-spins when `orbit.autoSpin` is true.
- * - **_orbitAutoFitSystem**: when `orbit.fitGeometry` is non-zero, reads that
- *   Geometry's `_bounds`, sizes the orbit to fit, and zeroes the field.
+ * - **_orbitAutoFitSystem**: when `orbit.fitMesh` is non-zero, reads that
+ *   mesh's `localBounds`, sizes the orbit to fit, and zeroes the field.
  */
 export const orbitSystem = Database.Plugin.create({
     extends: orbitData,
@@ -43,12 +43,9 @@ export const orbitSystem = Database.Plugin.create({
         _orbitAutoFitSystem: {
             create: db => () => {
                 const orbit = db.store.resources.orbit;
-                if (!orbit.fitGeometry) return;
-                // orbit.fitGeometry holds a Geometry entity id. `_bounds` lives
-                // on modelLoader's schema, which orbit doesn't extend — read as
-                // unknown and narrow manually.
-                const entity = db.store.read(orbit.fitGeometry) as { _bounds?: Aabb } | null;
-                const bounds = entity?._bounds;
+                if (!orbit.fitMesh) return;
+                const entity = db.store.read(orbit.fitMesh) as { localBounds?: Aabb } | null;
+                const bounds = entity?.localBounds;
                 if (!bounds) return;
                 const size = Math.max(
                     bounds.max[0] - bounds.min[0],
@@ -65,7 +62,7 @@ export const orbitSystem = Database.Plugin.create({
                     center,
                     radius: size * orbit.fitRadiusFactor + orbit.fitRadiusOffset,
                     height: size * orbit.fitHeightFactor,
-                    fitGeometry: 0,
+                    fitMesh: 0,
                 };
             },
             schedule: { during: ["preUpdate"] },

@@ -21,7 +21,7 @@ export const orbitData = Database.Plugin.create({
                 autoSpinSpeed:   0.5,
                 nearFactor:      0.01,
                 farFactor:       4,
-                fitGeometry:     0,
+                fitMesh:         0,
                 fitRadiusFactor: 1.5,
                 fitHeightFactor: 0.25,
                 fitRadiusOffset: 0,

@@ -2,7 +2,7 @@
 
 import { Database, type Entity } from "@adobe/data/ecs";
 import { Quat } from "@adobe/data/math";
-import { pbrRender, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, modelCollider, jointData, ColliderShape, Orbit } from "@adobe/data-gpu";
+import { pbrFactorRender, requireMaterial, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, modelCollider, jointData, ColliderShape, Orbit, standardMaterialNames, Model } from "@adobe/data-gpu";
 
 // Studio HDR for IBL © Poly Haven, CC0.
 const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr";
@@ -86,7 +86,7 @@ const DROPS: Drop[] = (() => {
  * side. The drop sequence is deterministic (seeded), so both see it identically.
  */
 const rigidStackScene = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrRender, shapeGeometry, physicsRenderBridge, modelCollider, jointData, Orbit.plugin),
+    extends: Database.Plugin.combine(pbrFactorRender, shapeGeometry, physicsRenderBridge, modelCollider, jointData, Orbit.plugin),
     resources: {
         _spawnAccum: { default: 0 as number, transient: true },
         _spawnElapsed: { default: 0 as number, transient: true },
@@ -107,7 +107,7 @@ const rigidStackScene = Database.Plugin.create({
             // Stone bin: a floor slab (top face at y = 0) and four walls, all
             // immovable StaticCollider boxes. The render bridge gives them
             // geometry once the shape meshes load — no separate render-only prop.
-            const stone = t.resources.materials.stone;
+            const stone = requireMaterial(t, "stone");
             const wall = (position: [number, number, number], halfExtents: [number, number, number]) =>
                 t.archetypes.StaticCollider.insert({ colliderShape: "box", halfExtents, material: stone, position, rotation: IDENTITY });
             wall([0, -0.5, 0], [BIN + 1, 0.5, BIN + 1]);             // floor slab (top at y = 0)
@@ -120,7 +120,7 @@ const rigidStackScene = Database.Plugin.create({
             // dropped bodies land on it and slide down. World-space verts; up-facing
             // winding so it renders (front faces) and collides (trimesh is two-sided).
             t.archetypes.MeshCollider.insert({
-                colliderShape: "mesh", halfExtents: [0, 0, 0], material: t.resources.materials.steel,
+                colliderShape: "mesh", halfExtents: [0, 0, 0], material: requireMaterial(t, "steel"),
                 position: [0, 0, 0], rotation: IDENTITY,
                 colliderMesh: {
                     // sloped quad in the left zone: high at the −x wall, low toward centre
@@ -131,7 +131,7 @@ const rigidStackScene = Database.Plugin.create({
             // Dynamic block stack: a grid of unit cubes resting on the floor.
             // A small gap on every axis avoids initial face-coincidence
             // (degenerate SAT normals); they settle into contact.
-            const wood = t.resources.materials.wood;
+            const wood = requireMaterial(t, "wood");
             const GAP = 1.04;
             const x0 = -(STACK_W - 1) / 2 * GAP, z0 = -(STACK_D - 1) / 2 * GAP;
             for (let y = 0; y < STACK_H; y++) {
@@ -149,7 +149,7 @@ const rigidStackScene = Database.Plugin.create({
             // its pose is authored each frame by the `sweep` system; the solver moves
             // it as a kinematic body that pushes the dynamics but is never pushed back.
             t.resources._sweeper = t.archetypes.RigidBody.insert({
-                bodyType: "kinematic", colliderShape: "box", halfExtents: [0.4, 1.0, BIN - 1], material: t.resources.materials.steel,
+                bodyType: "kinematic", colliderShape: "box", halfExtents: [0.4, 1.0, BIN - 1], material: requireMaterial(t, "steel"),
                 position: [SWEEP_CX - SWEEP_AMP, SWEEP_Y, 0], rotation: IDENTITY, linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0],
             });
             // A downloaded glTF model dropped as dynamic bodies: it renders in full
@@ -157,11 +157,11 @@ const rigidStackScene = Database.Plugin.create({
             // (colliderShape "hull" + no collision data ⇒ modelCollider fills it). One
             // shared Geometry, three staggered instances. (To hand-author the collider
             // instead, pass `convexPoints`/`colliderMesh` here and generation is skipped.)
-            const helmet = t.archetypes.Geometry.insert({ modelUrl: HELMET_URL });
+            const helmet = Model.plugin.transactions.insertGltfMesh(t, { url: HELMET_URL });
             for (let i = 0; i < 3; i++) {
                 t.archetypes.ModelBody.insert({
-                    geometry: helmet, scale: [1.5, 1.5, 1.5], visible: true, parent: 0,
-                    bodyType: "dynamic", colliderShape: "hull", halfExtents: [0, 0, 0], material: t.resources.materials.steel,
+                    mesh: helmet, scale: [1.5, 1.5, 1.5], visible: true, parent: 0,
+                    bodyType: "dynamic", colliderShape: "hull", halfExtents: [0, 0, 0], material: requireMaterial(t, "steel"),
                     position: [SPAWN_CX - 2 + i * 2, 15 + i * 5, -1 + i],
                     rotation: randomQuat(seededRng(0x5eed + i)), linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0],
                 });
@@ -172,7 +172,7 @@ const rigidStackScene = Database.Plugin.create({
             // anchors coincide in world space, so the chain forms taut.
             const LINK_HY = 0.4, LINK_R = 0.22, LINK_END = LINK_HY + LINK_R, LINK_LEN = 2 * LINK_END;
             const CX = SWEEP_CX, CZ = BIN - 3, ANCHOR_Y = 9, ANCHOR_HH = 0.25;
-            const steel = t.resources.materials.steel;
+            const steel = requireMaterial(t, "steel");
             const anchor = t.archetypes.StaticCollider.insert({
                 colliderShape: "box", halfExtents: [0.3, ANCHOR_HH, 0.3], material: steel,
                 position: [CX, ANCHOR_Y, CZ], rotation: IDENTITY,
@@ -213,7 +213,7 @@ const rigidStackScene = Database.Plugin.create({
         },
         spawnBody(t, args: { index: number }) {
             const d = DROPS[args.index];
-            const material = Object.values(t.resources.materials)[args.index % Object.keys(t.resources.materials).length];
+            const material = requireMaterial(t, standardMaterialNames[args.index % standardMaterialNames.length]);
             const common = {
                 bodyType: "dynamic" as const, colliderShape: d.shape, halfExtents: d.he, material,
                 position: d.pos, rotation: d.quat, linearVelocity: [0, 0, 0] as [number, number, number], angularVelocity: [0, 0, 0] as [number, number, number],

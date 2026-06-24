@@ -11,10 +11,12 @@ export function withDeduplicateData<T extends Data>(
   observable: Observe<T>
 ): Observe<T> {
   return (observer) => {
-    let lastValue: T | undefined = undefined;
+    let notified = false;
+    let lastValue: T;
     return observable((value) => {
-      const notify = lastValue === undefined || !equals(lastValue, value);
+      const notify = !notified || !equals(lastValue, value);
       if (notify) {
+        notified = true;
         lastValue = value;
         observer(value);
       }

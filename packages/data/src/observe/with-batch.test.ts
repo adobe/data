@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { withBatch } from './with-batch.js';
 import { createState } from './create-state.js';
 
@@ -117,5 +117,23 @@ describe('withBatch', () => {
 
         unsubscribe1();
         unsubscribe2();
+    });
+
+    it('should not drop a batched undefined value', async () => {
+        const [source, setSource] = createState<number | undefined>(1);
+        const batched = withBatch(source);
+
+        const values: (number | undefined)[] = [];
+        const unsubscribe = batched((value) => values.push(value));
+
+        expect(values).toEqual([1]);
+
+        setSource(undefined);
+
+        await new Promise(resolve => setTimeout(resolve, 0));
+
+        expect(values).toEqual([1, undefined]);
+
+        unsubscribe();
     });
 }); 

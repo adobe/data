@@ -161,7 +161,7 @@ export function createObservedDatabase<
                     updateValues
                 ];
             })),
-            transient: false,
+            intermediate: false,
             persistent: true,
             value: undefined,
             undo: [],

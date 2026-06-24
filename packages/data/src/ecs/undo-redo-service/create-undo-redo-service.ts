@@ -12,7 +12,7 @@ export const createUndoRedoService = (database: Database<any, any, any, { applyO
     const [observeUndoStack, setObserveUndoStack] = Observe.createState<TransactionResult<unknown>[]>([]);
     const [observeStackIndex, setObserveStackIndex] = Observe.createState<number>(0);
     database.observe.transactions(t => {
-        if (t.undoable && !t.transient) {
+        if (t.undoable && !t.intermediate) {
             // Check if we should coalesce with the previous transaction
             const shouldCoalesce = stackIndex > 0 && shouldCoalesceTransactions(undoStack[stackIndex - 1], t);
 

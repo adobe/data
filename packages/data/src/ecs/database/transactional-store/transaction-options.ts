@@ -4,10 +4,10 @@ import { Undoable } from "../undoable.js";
 
 export type TransactionOptions = {
     /**
-     * If this is a transient operation then it should not be persisted.
-     * When an async sequence of operations is executed, they are all transient except the last one.
+     * If this is an intermediate operation then it should not be persisted.
+     * When an async sequence of operations is executed, they are all intermediate except the last one.
      */
-    readonly transient?: boolean;
+    readonly intermediate?: boolean;
     /**
      * This value must be set fo undoable operations.
      */

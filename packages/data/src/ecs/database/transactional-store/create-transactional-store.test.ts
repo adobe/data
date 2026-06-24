@@ -215,15 +215,15 @@ describe("createTransactionalStore", () => {
             archetype.insert({ position: { x: 1, y: 2, z: 3 } });
         });
 
-        expect(regularResult.transient).toBe(false);
+        expect(regularResult.intermediate).toBe(false);
 
-        // Execute a transient transaction
+        // Execute an intermediate transaction
         const transientResult = store.execute((t) => {
             const archetype = t.ensureArchetype(["id", "position"]);
             archetype.insert({ position: { x: 10, y: 20, z: 30 } });
-        }, { transient: true });
+        }, { intermediate: true });
 
-        expect(transientResult.transient).toBe(true);
+        expect(transientResult.intermediate).toBe(true);
     });
 
     it("should track specific components and archetypes when creating entities", () => {

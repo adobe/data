@@ -68,7 +68,7 @@ export const createRollForwardConcurrency = (userId: number | string): Concurren
 
         const rollbackAll = () => {
             for (let i = pending.length - 1; i >= 0; i--) {
-                execute(t => applyOperations(t, pending[i].undo), { transient: true, userId: undefined });
+                execute(t => applyOperations(t, pending[i].undo), { intermediate: true, userId: undefined });
             }
         };
 
@@ -78,7 +78,7 @@ export const createRollForwardConcurrency = (userId: number | string): Concurren
             for (const entry of pending) {
                 const result = execute(
                     t => applyOperations(t, entry.redo),
-                    { transient: true, userId: entry.userId },
+                    { intermediate: true, userId: entry.userId },
                 );
                 entry.undo = result.undo;
             }
@@ -92,7 +92,7 @@ export const createRollForwardConcurrency = (userId: number | string): Concurren
             if (!fn) throw new Error(`Unknown transaction: ${envelope.name}`);
             return execute(
                 t => fn(t, envelope.args),
-                { transient: envelope.time < 0, userId: envelope.userId },
+                { intermediate: envelope.time < 0, userId: envelope.userId },
             );
         };
 

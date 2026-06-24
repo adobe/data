@@ -188,7 +188,7 @@ export function createTransactionalStore<
     const execute = (
         transactionFunction: (t: TransactionContext<C, R, A>) => Entity | void,
         options?: {
-            transient?: boolean;
+            intermediate?: boolean;
             userId?: number | string;
         }
     ): TransactionResult<C> => {
@@ -211,7 +211,7 @@ export function createTransactionalStore<
 
             const result: TransactionResult<C> = {
                 value: value ?? undefined,
-                transient: options?.transient ?? false,
+                intermediate: options?.intermediate ?? false,
                 persistent: hasPersistentChange,
                 undoable: transactionStore.undoable ?? null,
                 redo: coalescedRedo,

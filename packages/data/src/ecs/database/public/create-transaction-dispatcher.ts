@@ -11,9 +11,9 @@ import { TransactionResult } from "../transactional-store/index.js";
  * commit and an async-generator yield apply locally with `time < 0`. The
  * intent records the wrapper's reason for emitting the envelope so a sync
  * service can route each one correctly without re-deriving it from the time
- * sign.
+ * sign. `"intermediate"` means a non-final step in an async sequence.
  */
-export type TransactionIntent = "commit" | "transient" | "cancel";
+export type TransactionIntent = "commit" | "intermediate" | "cancel";
 
 export type TransactionEnvelopeEvent = {
     readonly envelope: TransactionEnvelope;
@@ -39,10 +39,10 @@ export type DispatcherTarget = (
  *
  *   - The per-database transaction id counter.
  *   - Resolving the `args` argument shape (plain value, promise, or
- *     async-generator factory) into a sequence of `applyTransient` /
+ *     async-generator factory) into a sequence of `applyIntermediate` /
  *     `applyCommit` / `cancelPending` calls.
  *   - Whether a "commit" intent should be applied as a positive-time commit
- *     (local-only mode) or a negative-time transient pending server echo
+ *     (local-only mode) or a negative-time intermediate step pending server echo
  *     (sync mode). Decided once at construction by the presence of
  *     `sync` — never mutated at runtime.
  *   - Stamping `userId` onto every envelope (sync mode only).
@@ -94,18 +94,18 @@ export const createTransactionDispatcher = (
 
     const wrap: TransactionDispatcher["wrap"] = (name) => (args) => {
         const transactionId = nextTransactionId++;
-        let hasTransient = false;
+        let hasIntermediate = false;
 
-        const applyTransient = (payload: unknown) => {
-            hasTransient = true;
+        const applyIntermediate = (payload: unknown) => {
+            hasIntermediate = true;
             dispatchEnvelope(
                 { id: transactionId, userId, name, args: payload, time: -Date.now() },
-                "transient",
+                "intermediate",
             );
         };
 
         const applyCommit = (payload: unknown) => {
-            // In sync mode the commit is applied locally as a transient
+            // In sync mode the commit is applied locally as an intermediate step
             // and the server's echoed `committed` envelope will promote it.
             // In local-only mode it commits immediately with positive time.
             const time = deferredCommit ? -Date.now() : Date.now();
@@ -113,25 +113,25 @@ export const createTransactionDispatcher = (
                 { id: transactionId, userId, name, args: payload, time },
                 "commit",
             );
-            // Only mark a pending transient if the envelope was effective (not
+            // Only mark a pending intermediate if the envelope was effective (not
             // a no-op). A no-op envelope is suppressed by dispatchEnvelope and
             // will never receive a server promotion, so we must not set
-            // hasTransient — doing so would cause a spurious cancel later.
+            // hasIntermediate — doing so would cause a spurious cancel later.
             const effective = result === undefined || result.redo.length > 0 || result.undo.length > 0;
-            hasTransient = deferredCommit && effective;
+            hasIntermediate = deferredCommit && effective;
             return result?.value;
         };
 
         const cancelPending = () => {
-            if (!hasTransient) return;
+            if (!hasIntermediate) return;
             dispatchEnvelope(
                 { id: transactionId, userId, name, args: undefined, time: 0 },
                 "cancel",
             );
-            hasTransient = false;
+            hasIntermediate = false;
         };
 
-        return runTransaction(args, applyTransient, applyCommit, cancelPending);
+        return runTransaction(args, applyIntermediate, applyCommit, cancelPending);
     };
 
     return { wrap, envelopes };
@@ -139,7 +139,7 @@ export const createTransactionDispatcher = (
 
 /**
  * Resolves the `args` shape passed to `db.transactions.X(args)` into the
- * appropriate `applyTransient` / `applyCommit` / `cancelPending` sequence.
+ * appropriate `applyIntermediate` / `applyCommit` / `cancelPending` sequence.
  *
  * Three argument shapes are supported:
  *
@@ -147,7 +147,7 @@ export const createTransactionDispatcher = (
  *   - Function returning a `Promise`: `applyCommit(await promise)`, with
  *     `cancelPending` on rejection.
  *   - Function returning an `AsyncGenerator`: each yielded value becomes an
- *     `applyTransient`; on `done`, the final yielded value (or the explicit
+ *     `applyIntermediate`; on `done`, the final yielded value (or the explicit
  *     return value if defined) becomes `applyCommit`. If no value was ever
  *     yielded and none returned, `cancelPending` runs instead. A thrown
  *     iterator results in `cancelPending` plus a rejected promise — this is
@@ -156,7 +156,7 @@ export const createTransactionDispatcher = (
  */
 const runTransaction = (
     args: unknown,
-    applyTransient: (payload: unknown) => void,
+    applyIntermediate: (payload: unknown) => void,
     applyCommit: (payload: unknown) => unknown,
     cancelPending: () => void,
 ): unknown => {
@@ -174,7 +174,7 @@ const runTransaction = (
                     let iteration = await providerResult.next();
                     while (!iteration.done) {
                         lastArgs = iteration.value;
-                        applyTransient(iteration.value);
+                        applyIntermediate(iteration.value);
                         iteration = await providerResult.next();
                     }
                     const finalArgs = iteration.value !== undefined ? iteration.value : lastArgs;

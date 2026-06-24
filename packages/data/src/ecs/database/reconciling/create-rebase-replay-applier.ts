@@ -41,7 +41,7 @@ export function createRebaseReplayApplier(
 
     const rollbackEntryResult = (entry: ReconcilingEntry) => {
         if (entry.result) {
-            execute(t => applyOperations(t, entry.result!.undo), { transient: true, userId: undefined });
+            execute(t => applyOperations(t, entry.result!.undo), { intermediate: true, userId: undefined });
             entry.result = undefined;
         }
     };
@@ -55,7 +55,7 @@ export function createRebaseReplayApplier(
     const executeEntry = (entry: ReconcilingEntry) => {
         const fn = getTransaction(entry.name);
         if (!fn) throw new Error(`Unknown transaction during replay: ${entry.name}`);
-        const result = execute(t => fn(t, entry.args), { transient: true, userId: entry.userId });
+        const result = execute(t => fn(t, entry.args), { intermediate: true, userId: entry.userId });
         const isNoOp = result.redo.length === 0 && result.undo.length === 0;
         entry.result = isNoOp ? undefined : result;
         return result;
@@ -123,7 +123,7 @@ export function createRebaseReplayApplier(
         if (!fn) throw new Error(`Unknown transaction: ${envelope.name}`);
         rollbackAllTransients();
         spliceTransientEntry(id, userId);
-        const result = execute(t => fn(t, args), { transient: false, userId });
+        const result = execute(t => fn(t, args), { intermediate: false, userId });
         replayAllTransients();
         return result;
     };

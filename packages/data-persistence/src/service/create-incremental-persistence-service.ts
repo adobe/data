@@ -497,7 +497,7 @@ export const createIncrementalPersistenceService = async (
     let unsubscribe: (() => void) | null = null;
     if (autoPersist) {
         unsubscribe = database.observe.transactions((result) => {
-            if (result.transient || !result.persistent) return;
+            if (result.intermediate || !result.persistent) return;
             // One txId per observer firing — every entity-level entry
             // we emit for this user transaction shares it, and the
             // trailing commit entry uses the same id. Replay groups by

@@ -18,12 +18,12 @@ import type { TransactionEnvelope } from "../reconciling/reconciling-database.js
  *     (e.g. a collaborative-editing layer that manages its own replay buffer).
  *
  *   - `createRebaseReplayConcurrency(userId)` — commits apply locally as
- *     transients and wait for the sync server's echoed committed envelope to
+ *     intermediate steps and wait for the sync server's echoed committed envelope to
  *     promote them. Full rollback-and-replay queue, cross-peer id-determinism.
  */
 export interface ConcurrencyStrategy {
     /**
-     * When true, the dispatcher applies "commit" intents as transients
+     * When true, the dispatcher applies "commit" intents as intermediate steps
      * (negative time) and waits for a server echo to promote them.
      * When false, commits apply immediately with positive time.
      */
@@ -43,20 +43,20 @@ export interface ConcurrencyStrategy {
     readonly apply: (envelope: TransactionEnvelope) => TransactionResult<unknown> | undefined;
 
     /**
-     * Cancel a pending transient by compound (userId, id) key.
-     * No-op for strategies that have no transient queue.
+     * Cancel a pending intermediate step by compound (userId, id) key.
+     * No-op for strategies that have no intermediate queue.
      */
     readonly cancel: (id: number, userId?: number | string) => void;
 
     /**
      * Called by `db.reset()` before the store is cleared.
-     * Strategies with a transient queue should clear it here.
+     * Strategies with an intermediate queue should clear it here.
      */
     readonly onReset: () => void;
 
     /**
      * Called immediately before `db.toData()` serializes the store.
-     * Strategies with a transient queue should roll back transients here so
+     * Strategies with an intermediate queue should roll back intermediate steps here so
      * the snapshot contains only committed state.
      *
      * When this hook (together with `onAfterToData`) is present, `db.toData()`
@@ -69,14 +69,14 @@ export interface ConcurrencyStrategy {
     /**
      * Called immediately after `db.toData()` serializes the store.
      * Strategies that roll back in `onBeforeToData` should replay here to
-     * restore the in-progress transient state.
+     * restore the in-progress intermediate state.
      */
     readonly onAfterToData?: () => void;
 
     /**
      * Called immediately after `db.fromData()` loads a snapshot into the
-     * store. Strategies with a transient queue should replay pending
-     * transients here so in-progress work is visible after a data load.
+     * store. Strategies with an intermediate queue should replay pending
+     * intermediate steps here so in-progress work is visible after a data load.
      */
     readonly onAfterFromData?: () => void;
 }
@@ -94,7 +94,7 @@ export interface ConcurrencyStrategy {
 export type ConcurrencyStrategyFactory = (
     execute: (
         fn: (ctx: TransactionContext<any, any, any>) => void | Entity,
-        options?: { transient?: boolean; userId?: number | string },
+        options?: { intermediate?: boolean; userId?: number | string },
     ) => TransactionResult<unknown>,
     getTransaction: (
         name: string,

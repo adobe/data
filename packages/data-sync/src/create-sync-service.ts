@@ -19,13 +19,13 @@ export interface SyncServiceOptions {
     /** Transport connecting this peer to the sync server. */
     readonly transport: ClientTransport;
     /**
-     * Maximum `"transient"` messages forwarded per second. Intermediate
+     * Maximum `"intermediate"` messages forwarded per second. Intermediate
      * samples beyond this rate are silently dropped. Commits and cancels
      * are always forwarded immediately.
      *
      * Defaults to 20 (one per ~50 ms).
      */
-    readonly maxTransientsPerSecond?: number;
+    readonly maxIntermediatesPerSecond?: number;
     /**
      * Session id received from a previous connection's `welcome` message.
      * Omit (or pass `undefined`) for a fresh client. If the server echoes back
@@ -100,11 +100,11 @@ export interface SyncService {
  *   wrapper notifies it after `applyEnvelope` returns). Replays inside the
  *   reconciler and inbound `db.apply()` calls do NOT fire it, so there is
  *   no bounce-back to filter.
- * - Envelopes whose `TransactionResult.ephemeral === true` (i.e. they only
- *   touched ephemeral resources/entities) are skipped. UI-only state lives
+ * - Envelopes whose `TransactionResult.persistent === false` (i.e. they only
+ *   touched non-persistent resources/entities) are skipped. UI-only state lives
  *   inside the same database without ever reaching the wire.
  * - `time > 0` → `kind: "propose"` (reliable).
- * - `time < 0` → `kind: "transient"` (rate-limited, lossy).
+ * - `time < 0` → `kind: "intermediate"` (rate-limited, lossy).
  * - `time === 0` → `kind: "cancel"` (reliable).
  *
  * @example
@@ -123,7 +123,7 @@ export const createSyncService = (options: SyncServiceOptions): SyncService => {
     const {
         database,
         transport,
-        maxTransientsPerSecond = 20,
+        maxIntermediatesPerSecond = 20,
         priorSessionId,
         initialWatermark = 0,
         onWelcome,
@@ -139,8 +139,8 @@ export const createSyncService = (options: SyncServiceOptions): SyncService => {
         );
     }
 
-    const minIntervalMs = 1000 / maxTransientsPerSecond;
-    let lastTransientSentAt = 0;
+    const minIntervalMs = 1000 / maxIntermediatesPerSecond;
+    let lastIntermediateSentAt = 0;
     let lastAppliedTime = initialWatermark;
     let serverSessionId: string | undefined;
     let lastInboundAt = Date.now();
@@ -204,18 +204,18 @@ export const createSyncService = (options: SyncServiceOptions): SyncService => {
     });
 
     const unsubscribeOutbound = database.observe.envelopes(({ envelope, result, intent }) => {
-        // Skip envelopes whose only effect was on ephemeral entities/
+        // Skip envelopes whose only effect was on non-persistent entities/
         // resources — those stay local-only by design.
-        if (result?.ephemeral) return;
+        if (result !== undefined && !result.persistent) return;
 
         if (intent === "commit") {
             log(`propose out (id=${envelope.id}, name=${envelope.name})`);
             transport.send({ kind: "propose", envelope });
-        } else if (intent === "transient") {
+        } else if (intent === "intermediate") {
             const now = Date.now();
-            if (now - lastTransientSentAt < minIntervalMs) return;
-            lastTransientSentAt = now;
-            transport.send({ kind: "transient", envelope });
+            if (now - lastIntermediateSentAt < minIntervalMs) return;
+            lastIntermediateSentAt = now;
+            transport.send({ kind: "intermediate", envelope });
         } else {
             log(`cancel out (id=${envelope.id})`);
             transport.send({ kind: "cancel", id: envelope.id });

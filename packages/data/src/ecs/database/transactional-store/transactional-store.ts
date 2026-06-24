@@ -90,8 +90,8 @@ export interface TransactionResult<C = unknown> {
     readonly value: Entity | void;
     /** True when the transaction is a non-final intermediate operation within a sequence. */
     readonly transient: boolean;
-    /** True when all changed entities are ephemeral (entity id < 0). */
-    readonly ephemeral: boolean;
+    /** True when at least one changed entity is persistent (entity id >= 0). */
+    readonly persistent: boolean;
     readonly undoable: null | Undoable;
     readonly redo: TransactionWriteOperation<C>[];
     readonly undo: TransactionWriteOperation<C>[];

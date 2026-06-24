@@ -100,7 +100,7 @@ export function coalesceTransactions(
     return {
         value: current.value,
         transient: current.transient,
-        ephemeral: previous.ephemeral && current.ephemeral,
+        persistent: previous.persistent || current.persistent,
         undoable: current.undoable,
         redo: combinedRedo,
         undo: combinedUndo,

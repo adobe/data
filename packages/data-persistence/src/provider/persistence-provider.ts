@@ -8,7 +8,7 @@ import type { IncrementalPersistenceService } from "../service/incremental-persi
  */
 export interface ProviderMountOptions {
     /**
-     * Automatically persist every non-transient, non-ephemeral transaction.
+     * Automatically persist every non-transient, persistent transaction.
      * Defaults to `true`.
      */
     readonly autoPersist?: boolean;

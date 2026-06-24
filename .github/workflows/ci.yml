@@ -5,11 +5,11 @@ name: CI
 # whose `tsc -b` / unit tests were red could still be merged green — exactly
 # what happened with #114. This gate makes those failures block the merge.
 #
-# Scope: the published core library `@adobe/data`, where the regression class
-# occurred. Type-checking uses the project-reference build (`tsc -b`, via the
-# package's `typecheck` script, which builds the wasm artifact the source
-# imports first). Tests run with SKIP_PERF=1 (`test:ci`) so the gate excludes
-# the non-deterministic timing-ratio perf tests and stays reliable.
+# Two jobs:
+#   data     — @adobe/data core: typecheck (tsc -b + WASM), lint, unit tests.
+#   packages — downstream published packages: build (tsc -b) + tests for each.
+#              Runs after `data` so a core failure surfaces once, not twice.
+#              @adobe/data is rebuilt here to provide dist/ for downstream tsc.
 
 on:
   pull_request:
@@ -49,3 +49,37 @@ jobs:
 
       - name: Unit tests
         run: pnpm --filter @adobe/data run test:ci
+
+  packages:
+    name: "downstream packages — build, test"
+    runs-on: ubuntu-latest
+    needs: [data]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build @adobe/data (provides dist/ for downstream tsc)
+        run: pnpm --filter @adobe/data run typecheck
+
+      - name: Build downstream packages (type-check via tsc -b)
+        run: pnpm --filter '@adobe/data-*' run build
+
+      - name: Test downstream packages
+        run: |
+          pnpm --filter @adobe/data-lit \
+               --filter @adobe/data-gpu \
+               --filter @adobe/data-react \
+               --filter @adobe/data-solid \
+               --filter @adobe/data-sync \
+               run test
+          pnpm --filter @adobe/data-persistence run test:node

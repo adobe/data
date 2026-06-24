@@ -2,15 +2,35 @@
 import { describe, it, expect } from "vitest";
 import { Entity } from "./entity.js";
 
-describe("Entity.isEphemeral", () => {
+describe("Entity.isNonPersistent", () => {
     it("should return true for negative entity IDs", () => {
-        expect(Entity.isEphemeral(-1)).toBe(true);
-        expect(Entity.isEphemeral(-100)).toBe(true);
+        expect(Entity.isNonPersistent(-1)).toBe(true);
+        expect(Entity.isNonPersistent(-100)).toBe(true);
     });
 
     it("should return false for non-negative entity IDs", () => {
-        expect(Entity.isEphemeral(0)).toBe(false);
+        expect(Entity.isNonPersistent(0)).toBe(false);
+        expect(Entity.isNonPersistent(1)).toBe(false);
+        expect(Entity.isNonPersistent(100)).toBe(false);
+    });
+});
+
+describe("Entity.isPersistent", () => {
+    it("should return true for non-negative entity IDs", () => {
+        expect(Entity.isPersistent(0)).toBe(true);
+        expect(Entity.isPersistent(1)).toBe(true);
+        expect(Entity.isPersistent(100)).toBe(true);
+    });
+
+    it("should return false for negative entity IDs", () => {
+        expect(Entity.isPersistent(-1)).toBe(false);
+        expect(Entity.isPersistent(-100)).toBe(false);
+    });
+});
+
+describe("Entity.isEphemeral (deprecated)", () => {
+    it("should behave identically to isNonPersistent", () => {
+        expect(Entity.isEphemeral(-1)).toBe(true);
         expect(Entity.isEphemeral(1)).toBe(false);
-        expect(Entity.isEphemeral(100)).toBe(false);
     });
 });

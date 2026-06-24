@@ -497,7 +497,7 @@ export const createIncrementalPersistenceService = async (
     let unsubscribe: (() => void) | null = null;
     if (autoPersist) {
         unsubscribe = database.observe.transactions((result) => {
-            if (result.transient || result.ephemeral) return;
+            if (result.intermediate || !result.persistent) return;
             // One txId per observer firing — every entity-level entry
             // we emit for this user transaction shares it, and the
             // trailing commit entry uses the same id. Replay groups by
@@ -858,7 +858,7 @@ export const createIncrementalPersistenceService = async (
 
     const applyJournalEntry = (manifest: Manifest, eltState: EltState, entry: JournalEntry): void => {
         if (entry.kind === "commit") return; // tx-end markers carry no state to apply
-        if (entry.entity < 0) return; // ephemeral / sentinel — should not appear
+        if (entry.entity < 0) return; // non-persistent / sentinel — should not appear
 
         if (entry.kind === "delete") {
             ensureEntityCapacity(eltState, entry.entity);

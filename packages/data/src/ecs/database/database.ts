@@ -135,18 +135,18 @@ export interface Database<
      * transaction wrappers (`db.transactions.X(args)`). Replays inside the
      * reconciler and inbound `db.apply()` calls do NOT fire it. The
      * `intent` reflects the wrapper's decision regardless of whether the
-     * envelope was applied locally as a transient (deferred-commit / sync
+     * envelope was applied locally as an intermediate step (deferred-commit / sync
      * mode) or as a commit (local-only mode).
      *
      * Sync services route forwarding by `intent`:
-     *   - `"commit"`    → propose to the server (reliable)
-     *   - `"transient"` → relay to peers (lossy)
-     *   - `"cancel"`    → cancel a pending transient (reliable)
+     *   - `"commit"`       → propose to the server (reliable)
+     *   - `"intermediate"` → relay to peers (lossy)
+     *   - `"cancel"`       → cancel a pending intermediate step (reliable)
      */
     readonly envelopes: Observe<{
         envelope: TransactionEnvelope;
         result: TransactionResult<C> | undefined;
-        intent: "commit" | "transient" | "cancel";
+        intent: "commit" | "intermediate" | "cancel";
     }>;
     entity<T extends RequiredComponents>(id: Entity, minArchetype?: ReadonlyArchetype<T> | Archetype<T>): Observe<Readonly<T> & EntityReadValues<C> | null>;
     entity(id: Entity): Observe<EntityReadValues<C> | null>;

@@ -19,7 +19,7 @@ export function registerTypedBufferCodecs() {
         serialize: (data: TypedBuffer<any>) => {
             const { type, schema, capacity } = data;
             try {
-                if (type === "const" || schema.ephemeral) {
+                if (type === "const" || (schema.nonPersistent ?? schema.ephemeral)) {
                     return { json: { type, schema, capacity } };
                 }
                 else if (type === "array") {
@@ -50,7 +50,7 @@ export function registerTypedBufferCodecs() {
                 const buffer = isEnum
                     ? createEnumBuffer(schema, capacity)
                     : createArrayBuffer(schema, capacity);
-                if (schema.ephemeral) {
+                if ((schema.nonPersistent ?? schema.ephemeral)) {
                     if (schema.default !== undefined && schema.default !== 0) {
                         for (let i = 0; i < capacity; i++) {
                             buffer.set(i, schema.default);
@@ -66,7 +66,7 @@ export function registerTypedBufferCodecs() {
             }
             else if (type === "enum") {
                 const buffer = createEnumBuffer(schema, capacity);
-                if (!schema.ephemeral) {
+                if (!(schema.nonPersistent ?? schema.ephemeral)) {
                     if (binary[0]) {
                         copyViewBytes(binary[0], buffer.getTypedArray());
                     } else if (array) {
@@ -79,7 +79,7 @@ export function registerTypedBufferCodecs() {
             }
             else if (type === "number" || type === "struct") {
                 const buffer = type === "number" ? createNumberBuffer(schema, capacity) : createStructBuffer(schema, capacity);
-                if (schema.ephemeral) {
+                if ((schema.nonPersistent ?? schema.ephemeral)) {
                     if (schema.default !== undefined && schema.default !== 0) {
                         for (let i = 0; i < capacity; i++) {
                             buffer.set(i, schema.default);

@@ -1,0 +1,84 @@
+ignore:
+- '**/CHANGELOG.md'
+- '**/CHANGELOG*'
+- '**/CHANGES.md'
+- '**/HISTORY.md'
+- pnpm-lock.yaml
+- '*.png'
+- '*.jpg'
+- aidd-custom/
+- c/
+dampen:
+- factor: 0.3
+  patterns:
+  - '**/package.json'
+- factor: 0.5
+  patterns:
+  - '**/*.test.ts'
+  - '**/*.spec.ts'
+- factor: 0.5
+  patterns:
+  - packages/data-lit-tictactoe/
+  - packages/data-lit-todo/
+  - packages/data-p2p-tictactoe/
+  - packages/data-react-hello/
+  - packages/data-react-pixie/
+  - packages/data-solid-dashboard/
+  - packages/data-gpu-samples/
+- factor: 0.5
+  patterns:
+  - packages/data/src/old-ecs/
+- factor: 0.4
+  patterns:
+  - packages/data/src/assembly-test/
+  - packages/data/src/perftest/
+- factor: 0.6
+  patterns:
+  - packages/data/references/
+boost:
+- factor: 1.3
+  patterns:
+  - packages/data/src/ecs/
+- factor: 1.2
+  patterns:
+  - packages/data/src/observe/
+  - packages/data/src/typed-buffer/
+  - packages/data/src/schema/
+  - packages/data/src/math/
+  - packages/data-gpu/src/
+  - packages/data-persistence/src/
+tune:
+  rerank_scale: 0.0
+  rerank_weight_nl: 0.4
+  rerank_weight_ident: 0.35
+  rerank_weight_filtered: 0.4
+  rerank_candidates_nl: 20
+  rerank_candidates_ident: 10
+  rerank_confidence_threshold: 0.6
+  rerank_floor: 0.3
+  rerank_evidence_budget_nl: 600
+  rerank_evidence_budget_ident: 800
+  rrf_semantic_weight_nl: 1.5
+  rrf_bm25_weight_nl: 0.5
+  rrf_semantic_weight_ident: 0.7
+  rrf_bm25_weight_ident: 1.3
+  prf_top_k: 10
+  prf_confidence_threshold: 0.75
+  bm25_legacy_mode: false
+  recency_weight_nl: 0.1
+  recency_weight_ident: 0.05
+  recency_midpoint_days: 30.0
+  coderank_weight_nl: 0.2
+  coderank_weight_ident: 0.1
+  coderank_midpoint: 0.3
+  symbol_popularity_weight_nl: 0.15
+  symbol_popularity_weight_ident: 0.15
+  symbol_popularity_midpoint: 0.3
+  learned_ranker_model_path: bundled:v16
+  learned_ranker_blend: 0.5
+  learned_ranker_calibrated_blend: false
+  learned_ranker_entry_blend: 0.0
+  capsule_lane_weight: 1.0
+  capsule_identifier_dampen: 0.85
+  search_plan_router: true
+  search_plan_router_mode: deterministic_prf_only

@@ -12,7 +12,7 @@ import { Database } from "@adobe/data/ecs";
  */
 export const ragdollTrigger = Database.Plugin.create({
     resources: {
-        _ragdollTrigger: { default: false as boolean, transient: true },
+        _ragdollTrigger: { default: false as boolean, nonPersistent: true },
     },
     transactions: {
         /** Go limp: the active ragdoll backend flips its bones to dynamic. */

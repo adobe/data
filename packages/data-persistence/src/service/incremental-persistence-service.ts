@@ -46,7 +46,7 @@ export interface IncrementalPersistenceServiceOptions {
      */
     readonly transport?: Transport;
     /**
-     * Automatically persist every non-transient, non-ephemeral
+     * Automatically persist every non-transient, persistent
      * transaction. Defaults to `true`.
      */
     readonly autoPersist?: boolean;

@@ -36,7 +36,7 @@ const DEFAULT: PhysicsClock = { fixedDt: 1 / 60, accumulator: 0, alpha: 0, steps
 export const physicsClock = Database.Plugin.create({
     extends: core,
     resources: {
-        physicsClock: { default: DEFAULT as PhysicsClock, transient: true },
+        physicsClock: { default: DEFAULT as PhysicsClock, nonPersistent: true },
     },
     transactions: {
         /** Set the simulation rate (Hz). Call once at init; default is 60. */

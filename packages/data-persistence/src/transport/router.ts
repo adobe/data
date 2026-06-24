@@ -61,7 +61,7 @@ export const createPersistRouter = (backend: PersistenceBackend): PersistRouter 
             }
             case "writeEntityLocation": {
                 if (op.entity < 0) {
-                    throw new Error(`writeEntityLocation: ephemeral entity not persistable (entity=${op.entity})`);
+                    throw new Error(`writeEntityLocation: non-persistent entity not persistable (entity=${op.entity})`);
                 }
                 const file = await openCached(ENTITY_LOCATION_FILE);
                 const entry = new ArrayBuffer(ELT_STRIDE);
@@ -74,7 +74,7 @@ export const createPersistRouter = (backend: PersistenceBackend): PersistRouter 
             }
             case "deleteEntityLocation": {
                 if (op.entity < 0) {
-                    throw new Error(`deleteEntityLocation: ephemeral entity not persistable (entity=${op.entity})`);
+                    throw new Error(`deleteEntityLocation: non-persistent entity not persistable (entity=${op.entity})`);
                 }
                 const file = await openCached(ENTITY_LOCATION_FILE);
                 const tombstone = new Uint8Array(ELT_STRIDE).fill(0xff);

@@ -25,7 +25,7 @@ const sceneUniformsStructLayout = getStructLayout(sceneUniformsSchema);
 export const plugin = Database.Plugin.create({
     extends: Database.Plugin.combine(Camera.plugin, Light.plugin),
     resources: {
-        _sceneUniformsBuffer: { default: null as GPUBuffer | null, transient: true },
+        _sceneUniformsBuffer: { default: null as GPUBuffer | null, nonPersistent: true },
     },
     systems: {
         sceneUniformsSystem: {

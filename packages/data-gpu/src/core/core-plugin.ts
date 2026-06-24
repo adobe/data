@@ -33,8 +33,8 @@ async function getWebGPUDevice() {
 export const core = Database.Plugin.create({
     extends: Database.Plugin.combine(scheduler, FrameTime.plugin),
     resources: {
-        device: { default: null as GPUDevice | null, transient: true },
-        commandEncoder: { default: null as GPUCommandEncoder | null, transient: true },
+        device: { default: null as GPUDevice | null, nonPersistent: true },
+        commandEncoder: { default: null as GPUCommandEncoder | null, nonPersistent: true },
     },
     systems: {
         input: {

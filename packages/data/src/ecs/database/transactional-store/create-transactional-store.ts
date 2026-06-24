@@ -33,9 +33,9 @@ export function createTransactionalStore<
     // Transaction state (mutable during transaction execution)
     let undoOperationsInReverseOrder: TransactionWriteOperation<C>[] = [];
     let redoOperations: TransactionWriteOperation<C>[] = [];
-    let nonEphemeral = false;
+    let hasPersistentChange = false;
     const trackEntity = (entity: Entity) => {
-        if (!Entity.isEphemeral(entity)) nonEphemeral = true;
+        if (Entity.isPersistent(entity)) hasPersistentChange = true;
     };
     const changed = {
         entities: new Map<Entity, EntityUpdateValues<C> | null>(),
@@ -147,9 +147,9 @@ export function createTransactionalStore<
     const resources = {} as { [K in keyof R]: R[K] };
     for (const name of Object.keys(store.resources)) {
         const resourceId = name as keyof C;
-        const isEphemeral = (store.componentSchemas as any)[name]?.ephemeral;
-        const componentNames = isEphemeral
-            ? ["id", resourceId, "ephemeral"] as StringKeyof<C>[]
+        const isNonPersistent = (store.componentSchemas as any)[name]?.nonPersistent ?? (store.componentSchemas as any)[name]?.ephemeral;
+        const componentNames = isNonPersistent
+            ? ["id", resourceId, "nonPersistent"] as StringKeyof<C>[]
             : ["id", resourceId] as StringKeyof<C>[];
         const archetype = store.ensureArchetype(componentNames);
         const entityId = archetype.columns.id.get(0);
@@ -188,7 +188,7 @@ export function createTransactionalStore<
     const execute = (
         transactionFunction: (t: TransactionContext<C, R, A>) => Entity | void,
         options?: {
-            transient?: boolean;
+            intermediate?: boolean;
             userId?: number | string;
         }
     ): TransactionResult<C> => {
@@ -196,7 +196,7 @@ export function createTransactionalStore<
         transactionStore.userId = options?.userId;
         undoOperationsInReverseOrder = [];
         redoOperations = [];
-        nonEphemeral = false;
+        hasPersistentChange = false;
         changed.entities.clear();
         changed.components.clear();
         changed.archetypes.clear();
@@ -211,8 +211,8 @@ export function createTransactionalStore<
 
             const result: TransactionResult<C> = {
                 value: value ?? undefined,
-                transient: options?.transient ?? false,
-                ephemeral: !nonEphemeral && changed.entities.size > 0,
+                intermediate: options?.intermediate ?? false,
+                persistent: hasPersistentChange,
                 undoable: transactionStore.undoable ?? null,
                 redo: coalescedRedo,
                 undo: coalescedUndo,
@@ -230,7 +230,7 @@ export function createTransactionalStore<
             transactionStore.userId = undefined;
             undoOperationsInReverseOrder = [];
             redoOperations = [];
-            nonEphemeral = false;
+            hasPersistentChange = false;
             changed.entities.clear();
             changed.components.clear();
             changed.archetypes.clear();
@@ -255,9 +255,9 @@ export function createTransactionalStore<
             for (const name of Object.keys(store.resources)) {
                 if (!Object.hasOwn(resources, name)) {
                     const resourceId = name as keyof C;
-                    const isEphemeral = (store.componentSchemas as any)[name]?.ephemeral;
-                    const componentNames = isEphemeral
-                        ? ["id", resourceId, "ephemeral"] as StringKeyof<C>[]
+                    const isNonPersistent = (store.componentSchemas as any)[name]?.nonPersistent ?? (store.componentSchemas as any)[name]?.ephemeral;
+                    const componentNames = isNonPersistent
+                        ? ["id", resourceId, "nonPersistent"] as StringKeyof<C>[]
                         : ["id", resourceId] as StringKeyof<C>[];
                     const archetype = store.ensureArchetype(componentNames);
                     const entityId = archetype.columns.id.get(0);

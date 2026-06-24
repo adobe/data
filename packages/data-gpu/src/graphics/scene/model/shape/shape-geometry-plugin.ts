@@ -19,7 +19,7 @@ import { uploadShapeMesh } from "./upload-shape-mesh.js";
 export const shapeGeometry = Database.Plugin.create({
     extends: Database.Plugin.combine(pbrCore, model, core),
     resources: {
-        _shapeGeometry: { default: null as { sphere: Entity; cube: Entity } | null, transient: true },
+        _shapeGeometry: { default: null as { sphere: Entity; cube: Entity } | null, nonPersistent: true },
     },
     transactions: {
         insertShapePrimitive(t, args: { vertexBuffer: GPUBuffer; indexBuffer: GPUBuffer; indexCount: number }): Entity {

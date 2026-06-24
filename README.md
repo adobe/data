@@ -13,6 +13,71 @@ Adobe Data Oriented Programming Library
 
 Until we reach 1.0.0, minor version changes may be API breaking.
 
+### 0.9.70
+
+**`TransactionResult.ephemeral` → `TransactionResult.persistent` (inverted)**
+
+The boolean is now `true` when at least one changed entity is persistent (id ≥ 0), rather than `true` when all changed entities are non-persistent.
+
+```ts
+// before
+if (!result.ephemeral) save(result);
+// after
+if (result.persistent) save(result);
+```
+
+**`TransactionResult.transient` → `TransactionResult.intermediate`**
+
+Renamed to remove the false antonym relationship with `persistent`. Both are orthogonal: `intermediate` = preview step (will be rolled back), `persistent` = touches saved entities.
+
+```ts
+// before
+if (!result.transient && !result.ephemeral) save(result);
+// after
+if (!result.intermediate && result.persistent) save(result);
+```
+
+**`TransactionOptions.transient` → `TransactionOptions.intermediate`**
+
+```ts
+// before
+db.execute(fn, { transient: true });
+// after
+db.execute(fn, { intermediate: true });
+```
+
+**`TransactionIntent "transient"` → `"intermediate"` (sync wire protocol)**
+
+Affects `observe.envelopes` intent values and `ClientMessage` kind strings in `@adobe/data-sync`.
+
+```ts
+// before
+db.observe.envelopes(({ intent }) => {
+    if (intent === "transient") { ... }
+});
+transport.send({ kind: "transient", envelope });
+// after
+db.observe.envelopes(({ intent }) => {
+    if (intent === "intermediate") { ... }
+});
+transport.send({ kind: "intermediate", envelope });
+```
+
+**`SyncServiceOptions.maxTransientsPerSecond` → `maxIntermediatesPerSecond`**
+
+**`Schema.ephemeral` deprecated → use `Schema.nonPersistent`**
+
+The `"ephemeral"` component string still works at runtime with a `console.warn`; update to `"nonPersistent"`.
+
+```ts
+// before
+{ ..., ephemeral: true }
+ensureArchetype(["id", "cursor", "ephemeral"])
+// after
+{ ..., nonPersistent: true }
+ensureArchetype(["id", "cursor", "nonPersistent"])
+```
+
 ## Data Oriented Programming
 
 This library is built using a data oriented and functional programming paradigm.

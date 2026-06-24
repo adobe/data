@@ -115,9 +115,9 @@ export function createObservedDatabase<
     const observeComponent = mapEntries(store.componentSchemas, ([component]) => addToMapSet(component, componentObservers));
 
     const resourceArchetypeComponents = (resource: string): StringKeyof<C>[] => {
-        const isEphemeral = (store.componentSchemas as any)[resource]?.ephemeral;
-        return isEphemeral
-            ? ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>, "ephemeral" as StringKeyof<C>]
+        const isNonPersistent = (store.componentSchemas as any)[resource]?.nonPersistent ?? (store.componentSchemas as any)[resource]?.ephemeral;
+        return isNonPersistent
+            ? ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>, "nonPersistent" as StringKeyof<C>]
             : ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>];
     };
 
@@ -161,8 +161,8 @@ export function createObservedDatabase<
                     updateValues
                 ];
             })),
-            transient: false,
-            ephemeral: false,
+            intermediate: false,
+            persistent: true,
             value: undefined,
             undo: [],
             redo: [],

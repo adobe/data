@@ -168,14 +168,14 @@ export function createStore<
     // The resource component we added above will contain the resource value
     const ensureResourceInitialized = (name: string, resourceSchema: Schema & { default: unknown }) => {
         const resourceId = name as StringKeyof<C>;
-        const isEphemeral = resourceSchema.ephemeral;
-        const componentNames: StringKeyof<C>[] = isEphemeral
-            ? ["id" as StringKeyof<C>, resourceId, "ephemeral" as StringKeyof<C>]
+        const isNonPersistent = resourceSchema.nonPersistent ?? resourceSchema.ephemeral;
+        const componentNames: StringKeyof<C>[] = isNonPersistent
+            ? ["id" as StringKeyof<C>, resourceId, "nonPersistent" as StringKeyof<C>]
             : ["id" as StringKeyof<C>, resourceId];
         const archetype = core.ensureArchetype(componentNames);
         if (archetype.rowCount === 0) {
-            const insertValues = isEphemeral
-                ? { [resourceId]: resourceSchema.default, ephemeral: true }
+            const insertValues = isNonPersistent
+                ? { [resourceId]: resourceSchema.default, nonPersistent: true }
                 : { [resourceId]: resourceSchema.default };
             // Resource singleton inserts bypass index pre-check because
             // resources are not typically indexed by their schema name and

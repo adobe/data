@@ -140,17 +140,17 @@ interface BoidGpu {
 export const boidsPlugin = Database.Plugin.create({
     extends: Database.Plugin.combine(graphics, SceneUniforms.plugin, Orbit.plugin),
     resources: {
-        boidsCount: { default: DEFAULT_BOIDS as number, transient: true },
-        boidsGpu: { default: null as BoidGpu | null, transient: true },
-        boidsPingFrame: { default: 0 as number, transient: true },
-        boidsSceneBG: { default: null as GPUBindGroup | null, transient: true },
-        boidsSceneBuffer: { default: null as GPUBuffer | null, transient: true },
+        boidsCount: { default: DEFAULT_BOIDS as number, nonPersistent: true },
+        boidsGpu: { default: null as BoidGpu | null, nonPersistent: true },
+        boidsPingFrame: { default: 0 as number, nonPersistent: true },
+        boidsSceneBG: { default: null as GPUBindGroup | null, nonPersistent: true },
+        boidsSceneBuffer: { default: null as GPUBuffer | null, nonPersistent: true },
         // Cursor scare ray. Origin is the camera eye; dir is the unit vector
         // from the eye through the cursor toward the far plane. Boids near
         // this line are pushed perpendicular to it.
-        boidsScareOrigin: { default: [0, 0, 0] as Vec3, transient: true },
-        boidsScareDir: { default: [0, 0, 1] as Vec3, transient: true },
-        boidsScareActive: { default: 0 as F32, transient: true },
+        boidsScareOrigin: { default: [0, 0, 0] as Vec3, nonPersistent: true },
+        boidsScareDir: { default: [0, 0, 1] as Vec3, nonPersistent: true },
+        boidsScareActive: { default: 0 as F32, nonPersistent: true },
     },
     transactions: {
         setBoidsCount(t, count: number) {

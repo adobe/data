@@ -20,11 +20,11 @@ import { core } from "../core/core-plugin.js";
 export const graphics = Database.Plugin.create({
     extends: core,
     resources: {
-        renderPassEncoder: { default: null as GPURenderPassEncoder | null, transient: true },
-        depthTexture: { default: null as GPUTexture | null, transient: true },
-        clearColor: { default: [0, 0, 0, 1] as Vec4, transient: true },
-        canvas: { default: null as HTMLCanvasElement | null, transient: true },
-        canvasContext: { default: null as GPUCanvasContext | null, transient: true },
+        renderPassEncoder: { default: null as GPURenderPassEncoder | null, nonPersistent: true },
+        depthTexture: { default: null as GPUTexture | null, nonPersistent: true },
+        clearColor: { default: [0, 0, 0, 1] as Vec4, nonPersistent: true },
+        canvas: { default: null as HTMLCanvasElement | null, nonPersistent: true },
+        canvasContext: { default: null as GPUCanvasContext | null, nonPersistent: true },
         // Guarded for headless hosts (Node): this default is evaluated at module
         // load, and `navigator` is browser-only. Rendering re-derives the real
         // preferred format when a canvas is configured; the placeholder is unused.
@@ -32,9 +32,9 @@ export const graphics = Database.Plugin.create({
             default: (typeof navigator !== "undefined" && navigator.gpu
                 ? navigator.gpu.getPreferredCanvasFormat()
                 : "bgra8unorm") as GPUTextureFormat,
-            transient: true,
+            nonPersistent: true,
         },
-        depthFormat: { default: "depth24plus" as GPUTextureFormat, transient: true },
+        depthFormat: { default: "depth24plus" as GPUTextureFormat, nonPersistent: true },
     },
     transactions: {
         setCanvas(t, canvas: HTMLCanvasElement | null) {

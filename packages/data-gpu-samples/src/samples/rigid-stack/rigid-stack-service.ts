@@ -88,10 +88,10 @@ const DROPS: Drop[] = (() => {
 const rigidStackScene = Database.Plugin.create({
     extends: Database.Plugin.combine(pbrRender, shapeGeometry, physicsRenderBridge, modelCollider, jointData, Orbit.plugin),
     resources: {
-        _spawnAccum: { default: 0 as number, transient: true },
-        _spawnElapsed: { default: 0 as number, transient: true },
-        _spawnedDynamic: { default: 0 as number, transient: true },
-        _sweeper: { default: 0 as Entity, transient: true }, // the kinematic bar
+        _spawnAccum: { default: 0 as number, nonPersistent: true },
+        _spawnElapsed: { default: 0 as number, nonPersistent: true },
+        _spawnedDynamic: { default: 0 as number, nonPersistent: true },
+        _sweeper: { default: 0 as Entity, nonPersistent: true }, // the kinematic bar
     },
     transactions: {
         initializeScene(t) {

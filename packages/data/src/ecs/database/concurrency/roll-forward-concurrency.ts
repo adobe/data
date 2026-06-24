@@ -116,7 +116,7 @@ export const createRollForwardConcurrency = (userId: number | string): Concurren
                     return undefined;
                 }
 
-                // Optimistic local transient: roll back, drop any prior version
+                // Optimistic local intermediate: roll back, drop any prior version
                 // of this transaction, replay the survivors, then run the fn on
                 // top and capture its post-image tuples.
                 if (time < 0) {

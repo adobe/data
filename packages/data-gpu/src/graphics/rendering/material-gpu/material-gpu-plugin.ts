@@ -34,9 +34,9 @@ export const materialGpu = Database.Plugin.create({
         _layerIndex: U32.schema,
     },
     resources: {
-        _materialArrays:    { default: null as MaterialArrays | null, transient: true },
-        _materialPalette:   { default: null as GPUBuffer | null, transient: true },
-        _materialBindGroup: { default: null as GPUBindGroup | null, transient: true },
+        _materialArrays:    { default: null as MaterialArrays | null, nonPersistent: true },
+        _materialPalette:   { default: null as GPUBuffer | null, nonPersistent: true },
+        _materialBindGroup: { default: null as GPUBindGroup | null, nonPersistent: true },
     },
     systems: {
         materialGpuBuilder: {

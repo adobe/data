@@ -80,7 +80,7 @@ export const joltSolver = Database.Plugin.create({
         _joltJoint: True.schema, // tag: this joint has been mirrored into the Jolt world
     },
     resources: {
-        _joltContext: { default: null as JoltContext | null, transient: true },
+        _joltContext: { default: null as JoltContext | null, nonPersistent: true },
     },
     systems: {
         joltStep: {

@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "strict": true, "skipLibCheck": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable"], "types": ["@webgpu/types"],
+    "module": "NodeNext", "moduleResolution": "NodeNext", "target": "ESNext",
+    "paths": { "@adobe/data/ecs": ["../../../dist/ecs/index.d.ts"] }
+  },
+  "include": ["use.ts"]
+}

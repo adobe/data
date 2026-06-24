@@ -8,7 +8,8 @@ import { Observe } from "./index.js";
  */
 export function withBatch<T>(observable: Observe<T>): Observe<T> {
     return (observer) => {
-        let pendingValue: T | undefined;
+        let pendingValue: T;
+        let hasPendingValue = false;
         let isScheduled = false;
         let hasInitialValue = false;
 
@@ -16,9 +17,10 @@ export function withBatch<T>(observable: Observe<T>): Observe<T> {
             if (!isScheduled) {
                 isScheduled = true;
                 queueMicrotask(() => {
-                    if (pendingValue !== undefined) {
-                        observer(pendingValue);
-                        pendingValue = undefined;
+                    if (hasPendingValue) {
+                        const value = pendingValue;
+                        hasPendingValue = false;
+                        observer(value);
                     }
                     isScheduled = false;
                 });
@@ -27,19 +29,18 @@ export function withBatch<T>(observable: Observe<T>): Observe<T> {
 
         const unobserve = observable((value) => {
             if (!hasInitialValue) {
-                // Emit initial value immediately
                 observer(value);
                 hasInitialValue = true;
             } else {
-                // Batch subsequent values
                 pendingValue = value;
+                hasPendingValue = true;
                 scheduleNotification();
             }
         });
 
         return () => {
             unobserve();
-            pendingValue = undefined;
+            hasPendingValue = false;
             isScheduled = false;
             hasInitialValue = false;
         };

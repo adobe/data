@@ -3,6 +3,43 @@ import { blobToHash } from "./blob-to-hash.js";
 import { jsonToHash } from "./json-to-hash.js";
 import { describe, expect, it } from "vitest";
 
+const bytes = (s: string): Uint8Array => new TextEncoder().encode(s);
+
+// Lets all pending microtasks (and the WASM-instantiation promise) settle, so
+// each in-flight blobToHash call advances to its next `await reader.read()`.
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+// A stand-in Blob whose stream yields `chunks` one `read()` at a time, but only
+// when the test releases each gate. This hands the test control of the exact
+// interleaving across concurrent calls — impossible with a real in-memory Blob,
+// whose reads resolve on their own schedule.
+function gatedBlob(type: string, chunks: Uint8Array[]) {
+  const gates: Array<() => void> = [];
+  let i = 0;
+  const reader = {
+    read: () =>
+      new Promise<ReadableStreamReadResult<Uint8Array>>((resolve) => {
+        gates.push(() =>
+          resolve(
+            i < chunks.length
+              ? { done: false, value: chunks[i++] }
+              : { done: true, value: undefined },
+          ),
+        );
+      }),
+  };
+  return {
+    // Case 1 cast: this implements the only members blobToHash reads off a
+    // Blob — `type` and `stream().getReader().read()`.
+    blob: { type, stream: () => ({ getReader: () => reader }) } as unknown as Blob,
+    releaseNext: (): boolean => {
+      const gate = gates.shift();
+      gate?.();
+      return gate !== undefined;
+    },
+  };
+}
+
 describe("test hashing", () => {
   describe("blobToHash", () => {
     it("should avoid collisions based on content and type", async () => {
@@ -107,6 +144,40 @@ describe("test hashing", () => {
         const hash = await blobToHash(blob);
         expect(hash).toMatch(/^[a-f0-9]{64}$/);
       }
+    });
+
+    it("interleaved concurrent reads match serial hashes", async () => {
+      const inputs = [
+        { type: "text/plain", chunks: ["alpha-", "one-", "end"] },
+        { type: "application/octet-stream", chunks: ["BETA-", "two-", "END"] },
+        { type: "", chunks: ["g", "amma", "!!!"] },
+      ];
+
+      // Oracle: hash each input serially. SHA-256 is over the byte stream, so a
+      // real Blob of the concatenated chunks yields the same digest the gated
+      // blob must produce regardless of chunk boundaries.
+      const oracle: string[] = [];
+      for (const { type, chunks } of inputs) {
+        oracle.push(await blobToHash(new Blob(chunks, { type })));
+      }
+
+      // Concurrent: start every call, then drive the gates round-robin so the
+      // calls interleave between chunks — the exact pattern that corrupts a
+      // naively shared hasher.
+      const gated = inputs.map(({ type, chunks }) => gatedBlob(type, chunks.map(bytes)));
+      const results = gated.map((g) => blobToHash(g.blob));
+
+      let progressed = true;
+      while (progressed) {
+        await flush();
+        progressed = false;
+        for (const g of gated) {
+          if (g.releaseNext()) progressed = true;
+        }
+      }
+      await flush();
+
+      expect(await Promise.all(results)).toEqual(oracle);
     });
   });
 

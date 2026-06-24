@@ -5,12 +5,12 @@ import { useEffect } from "./use-effect.js";
 import type { AsyncArgsProvider } from '@adobe/data/ecs';
 import { Observe } from '@adobe/data/observe';
 
-export type DragTransactionProps<T> = DragObserveProps & {
+export type DragTransactionProps<T extends {} | null> = DragObserveProps & {
     transaction: (asyncArgs: AsyncArgsProvider<T>) => void;
     update: (drag: DragMove | DragEnd) => T | void;
 };
 
-export function useDragTransaction<T>(props: DragTransactionProps<T>, dependencies: unknown[]) {
+export function useDragTransaction<T extends {} | null>(props: DragTransactionProps<T>, dependencies: unknown[]) {
     const { transaction, update } = props;
     const dragObserve = useDragObserve(props, dependencies);
     const startDragTransaction = () => {

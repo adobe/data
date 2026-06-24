@@ -133,6 +133,56 @@ importers:
         specifier: ^9.0.9
         version: 9.0.9
 
+  packages/data-gpu:
+    dependencies:
+      '@adobe/data':
+        specifier: workspace:*
+        version: link:../data
+      '@dimforge/rapier3d-compat':
+        specifier: ^0.19.3
+        version: 0.19.3
+      jolt-physics:
+        specifier: ^1.0.0
+        version: 1.0.0
+    devDependencies:
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vitest:
+        specifier: ^1.6.0
+        version: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)
+
+  packages/data-gpu-samples:
+    dependencies:
+      '@adobe/data':
+        specifier: workspace:*
+        version: link:../data
+      '@adobe/data-gpu':
+        specifier: workspace:*
+        version: link:../data-gpu
+      '@adobe/data-lit':
+        specifier: workspace:*
+        version: link:../data-lit
+      lit:
+        specifier: ^3.3.1
+        version: 3.3.1
+    devDependencies:
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
+      typescript:
+        specifier: ^5.8.3
+        version: 5.8.3
+      vite:
+        specifier: ^5.1.1
+        version: 5.1.1(@types/node@25.6.0)
+      vite-plugin-checker:
+        specifier: ^0.12.0
+        version: 0.12.0(typescript@5.8.3)(vite@5.1.1)
+
   packages/data-lit:
     dependencies:
       '@adobe/data':
@@ -241,6 +291,9 @@ importers:
       vite:
         specifier: ^5.1.1
         version: 5.1.1(@types/node@25.6.0)
+      vite-plugin-checker:
+        specifier: ^0.12.0
+        version: 0.12.0(typescript@5.8.3)(vite@5.1.1)
 
   packages/data-persistence:
     dependencies:
@@ -313,6 +366,9 @@ importers:
       vite:
         specifier: ^5.1.1
         version: 5.1.1(@types/node@25.6.0)
+      vite-plugin-checker:
+        specifier: ^0.12.0
+        version: 0.12.0(typescript@5.8.3)(vite@5.1.1)
 
   packages/data-react-pixie:
     dependencies:
@@ -388,6 +444,9 @@ importers:
       vite:
         specifier: ^5.1.1
         version: 5.1.1(@types/node@25.6.0)
+      vite-plugin-checker:
+        specifier: ^0.12.0
+        version: 0.12.0(typescript@5.8.3)(vite@5.1.1)
       vite-plugin-solid:
         specifier: ^2.11.0
         version: 2.11.0(solid-js@1.9.12)(vite@5.1.1)
@@ -758,6 +817,10 @@ packages:
     dependencies:
       postcss-selector-parser: 6.1.2
     dev: true
+
+  /@dimforge/rapier3d-compat@0.19.3:
+    resolution: {integrity: sha512-mMVdSj1PRTT108s9Swbu2GQOmHbn8kbJANRV5xfczL3s0T4vkgZAuoMRgvBzQcHanpKusbC0ZJj6z3mC3aj3vg==}
+    dev: false
 
   /@esbuild/aix-ppc64@0.19.12:
     resolution: {integrity: sha512-bmoCYyWdEL3wDQIVbcyzRyeKLgk2WtWLTWz1ZIAZF/EGbNOwSA6ew3PftJ1PqMiOOGu0OyFMzG53L0zqIpPeNA==}
@@ -5057,6 +5120,10 @@ packages:
   /javascript-natural-sort@0.7.1:
     resolution: {integrity: sha512-nO6jcEfZWQXDhOiBtG2KvKyEptz7RVbpGP4vTD2hLBdmNQSsCiicO2Ioinv6UI4y9ukqnBpy+XZ9H6uLNgJTlw==}
     dev: true
+
+  /jolt-physics@1.0.0:
+    resolution: {integrity: sha512-rA7Mcb3CDqsDzr0J15P2DDftMR4d15/B6hfvvVh88Se3KFCYXGbPKGK2sJFGOpzUksRpyQhgbfLHgHL4SA5UzQ==}
+    dev: false
 
   /js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}

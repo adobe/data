@@ -1,6 +1,6 @@
 {
     "name": "@adobe/data-persistence",
-    "version": "0.9.67",
+    "version": "0.9.70",
     "description": "Worker-based incremental persistence layer for @adobe/data ECS over OPFS (browser) and node:fs (server).",
     "type": "module",
     "sideEffects": false,
@@ -18,7 +18,6 @@
         "build": "cp ../../LICENSE . 2>/dev/null || true; tsc -b",
         "clean": "rm -rf dist node_modules",
         "dev": "tsc -b -w --preserveWatchOutput",
-        "lint": "pnpm eslint .",
         "test": "pnpm exec playwright install chromium && vitest --run",
         "test:node": "vitest --run --project=node",
         "test:browser": "vitest --run --project=browser",

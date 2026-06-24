@@ -1,0 +1,24 @@
+{
+  "name": "data-gpu-samples",
+  "version": "0.9.70",
+  "description": "WebGPU samples built on @adobe/data-gpu",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "dev:all": "pnpm --parallel --filter @adobe/data --filter @adobe/data-gpu --filter data-gpu-samples run dev",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@adobe/data": "workspace:*",
+    "@adobe/data-gpu": "workspace:*",
+    "@adobe/data-lit": "workspace:*",
+    "lit": "^3.3.1"
+  },
+  "devDependencies": {
+    "@webgpu/types": "^0.1.61",
+    "typescript": "^5.8.3",
+    "vite": "^5.1.1",
+    "vite-plugin-checker": "^0.12.0"
+  }
+}

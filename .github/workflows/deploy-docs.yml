@@ -40,11 +40,19 @@ jobs:
 
       - run: pnpm --filter @adobe/data-lit build
 
+      - run: pnpm --filter @adobe/data-gpu build
+
       - run: pnpm --filter data-p2p-tictactoe build
         env:
           CI: true
 
       - run: cp -r packages/data-p2p-tictactoe/dist packages/data/docs/p2p-tictactoe
+
+      - run: pnpm --filter data-gpu-samples build
+        env:
+          CI: true
+
+      - run: cp -r packages/data-gpu-samples/dist packages/data/docs/gpu-samples
 
       - uses: actions/configure-pages@v5
         with:

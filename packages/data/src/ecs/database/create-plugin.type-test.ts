@@ -134,6 +134,30 @@ function validTypeInferenceTests() {
         },
     });
 
+    // Test: a derived plugin's computed factory can read a BASE plugin's
+    // already-resolved computed (composition across `extends`). This is the
+    // payoff of FullDBForPlugin surfacing FromComputedFactories<XP['computed']>
+    // rather than `unknown` in the computed-factory db.
+    const baseComputedPlugin = createPlugin({
+        resources: {
+            n: { default: 10 as number },
+        },
+        computed: {
+            doubled: (db) => Observe.withMap(db.observe.resources.n, (v) => v * 2),
+        },
+    });
+
+    const derivedComputedPlugin = createPlugin({
+        extends: baseComputedPlugin,
+        computed: {
+            quadrupled: (db) => {
+                // Valid - the base plugin's computed is fully typed here.
+                const base: Observe<number> = db.computed.doubled;
+                return Observe.withMap(base, (v) => v * 2);
+            },
+        },
+    });
+
     // Test: Computed + transactions co-inference
     // When both computed and transactions are defined in the same plugin,
     // TypeScript must infer TD from the transactions property independently
@@ -303,6 +327,72 @@ function validTypeInferenceTests() {
             }
         },
     });
+}
+
+// ============================================================================
+// Standalone computed factories aggregated in a create call
+// ============================================================================
+//
+// A common app pattern: computed factories are authored as standalone
+// functions in their own files, then aggregated into one `computed: {}` block
+// in a single createPlugin call. Each standalone factory must annotate its
+// `db` parameter with a NAMED, exported type (it lives in a different module
+// from the plugin).
+//
+// Before the FullDBForPlugin fix the factory db's `computed` slot was
+// `unknown`, so the annotation had to strip it:
+//     type CoreStateDatabase = Omit<Database.Plugin.ToDatabase<typeof core>, 'computed'>;
+// Now the factory sees the base plugin's already-resolved computeds, so the
+// plain exported `Database.Plugin.ToDatabase<typeof core>` is the correct,
+// cast-free annotation — AND it lets a standalone factory compose on a base
+// computed. This test proves the round trip type-checks cleanly: no `as`, no
+// `Omit`, no `@ts-expect-error`.
+function standaloneComputedFactoryAggregation() {
+    // The base "state" plugin owns the resources and one base computed.
+    const coreStatePlugin = createPlugin({
+        resources: {
+            count: { default: 0 as number },
+        },
+        computed: {
+            count: (db) => db.observe.resources.count,
+        },
+    });
+
+    // The single exported alias every standalone factory annotates against.
+    type CoreStateDatabase = Database.Plugin.ToDatabase<typeof coreStatePlugin>;
+
+    // Standalone factory (own file): reads a base resource.
+    const doubled = (db: CoreStateDatabase) =>
+        Observe.withMap(db.observe.resources.count, (v) => v * 2);
+
+    // Standalone factory (own file): composes on the base plugin's computed.
+    // This is the case the fix unlocks — `db.computed.count` is fully typed.
+    const isPositive = (db: CoreStateDatabase) =>
+        Observe.withMap(db.computed.count, (v) => v > 0);
+
+    // Standalone factory (own file): a parameterized computed that also reads
+    // a base computed.
+    const atLeast = (db: CoreStateDatabase) => (min: number) =>
+        Observe.withMap(db.computed.count, (v) => v >= min);
+
+    // Aggregate the independently-authored factories into the derived plugin's
+    // computed block — clean assignment, no cast.
+    const derived = createPlugin({
+        extends: coreStatePlugin,
+        computed: {
+            doubled,
+            isPositive,
+            atLeast,
+        },
+    });
+
+    // The resulting plugin exposes the aggregated computeds with exact types,
+    // alongside the inherited base computed.
+    type DerivedComputed = Database.FromPlugin<typeof derived>['computed'];
+    type _CheckDoubled = Assert<Equal<DerivedComputed['doubled'], Observe<number>>>;
+    type _CheckIsPositive = Assert<Equal<DerivedComputed['isPositive'], Observe<boolean>>>;
+    type _CheckAtLeast = Assert<Equal<DerivedComputed['atLeast'], (min: number) => Observe<boolean>>>;
+    type _CheckInheritedCount = Assert<Equal<DerivedComputed['count'], Observe<number>>>;
 }
 
 // ============================================================================
@@ -504,6 +594,23 @@ function invalidComputedReturnsObject() {
         transactions: {},
         actions: {},
         systems: {},
+    });
+}
+
+// Test: Invalid sibling computed access — an in-progress computed in the SAME
+// plugin is not visible to a sibling factory (would be circular). Only a
+// base plugin's already-resolved computeds are surfaced.
+function invalidSiblingComputedAccess() {
+    createPlugin({
+        resources: { n: { default: 1 as number } },
+        computed: {
+            first: (db) => Observe.fromConstant(db.resources.n),
+            second: (db) => {
+                // @ts-expect-error - sibling computed 'first' is in-progress, not visible
+                const _f = db.computed.first;
+                return Observe.fromConstant(0);
+            },
+        },
     });
 }
 

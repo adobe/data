@@ -9,8 +9,23 @@ import { attachDecorator, withHooks } from '../index.js';
 
 export abstract class DatabaseElement<P extends Database.Plugin> extends LitElement {
 
+  /**
+   * The live database, fully typed. Set by an ancestor via DI (`.database=…`)
+   * or created from `plugin` on connect. Bootstrap containers — those that own
+   * a controller or drive a streaming (async-generator) transaction — read
+   * this directly; pure widgets use the restricted `service` view below.
+   */
   @property({ type: Object, reflect: false })
-  service!: UIService.FromService<Database.Plugin.ToDatabase<P>>;
+  database!: Database.Plugin.ToDatabase<P>;
+
+  /**
+   * UI-restricted view of {@link database} for pure-widget rendering: every
+   * transaction / mutator is rewritten to fire-and-forget `void` so a widget
+   * can never await on or read back a mutation; reads go through `observe`.
+   */
+  get service(): UIService.FromService<Database.Plugin.ToDatabase<P>> {
+    return UIService.restrict(this.database);
+  }
 
   constructor() {
     super();
@@ -20,18 +35,18 @@ export abstract class DatabaseElement<P extends Database.Plugin> extends LitElem
   abstract get plugin(): P;
 
   connectedCallback(): void {
-    if (!this.service) {
-      const service = this.findAncestorDatabase();
-      this.service = (service?.extend(this.plugin) ?? Database.create(this.plugin)) as unknown as UIService.FromService<Database.Plugin.ToDatabase<P>>;
+    if (!this.database) {
+      const ancestor = this.findAncestorDatabase();
+      this.database = ancestor?.extend(this.plugin) ?? Database.create(this.plugin);
     }
     super.connectedCallback();
   }
 
   protected findAncestorDatabase(): Database | void {
     for (const element of iterateSelfAndAncestors(this)) {
-      const { service } = element as Partial<DatabaseElement<any>>;
-      if (Database.is(service)) {
-        return service;
+      const { database } = element as Partial<DatabaseElement<any>>;
+      if (Database.is(database)) {
+        return database;
       }
     }
   }

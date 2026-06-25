@@ -17,8 +17,8 @@ import { useMemo } from "./use-memo.js";
  * ### Driving a never-ending presence transaction
  *
  * Pair with `Observe.toAsyncGenerator` to feed a never-ending async-generator
- * transaction. Each `yield` becomes a transient envelope that the sync
- * service forwards as `kind: "transient"`. The reconciler's `(userId, id)`
+ * transaction. Each `yield` becomes an intermediate envelope that the sync
+ * service forwards as `kind: "intermediate"`. The reconciler's `(userId, id)`
  * compound key replaces the previous sample, so each peer has at most one
  * outstanding cursor sample at any time.
  *

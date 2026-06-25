@@ -5,7 +5,7 @@ import type { TransactionResult } from "../transactional-store/index.js";
 import type { ConcurrencyStrategy, ConcurrencyStrategyFactory } from "./concurrency-strategy.js";
 
 /**
- * Lighter-weight concurrency strategy that applies commits and transients
+ * Lighter-weight concurrency strategy that applies commits and intermediate steps
  * immediately with no global rollback-and-replay cycle.
  *
  * Key differences from {@link createRebaseReplayConcurrency}:
@@ -18,17 +18,17 @@ import type { ConcurrencyStrategy, ConcurrencyStrategyFactory } from "./concurre
  *     concurrent edits — use this only when there is a single writer or
  *     when an external layer manages replay (e.g. a collaborative-editing
  *     wrapper).
- *   - Async generator transients are still supported: each yield applies
+ *   - Async generator intermediate steps are still supported: each yield applies
  *     the intermediate state immediately and rolls it back when the next
  *     yield or the final commit arrives. Cancel rolls back the last
- *     applied transient for that transaction. Transients from different
+ *     applied intermediate step for that transaction. Intermediate steps from different
  *     concurrent transactions do NOT interact (no cross-transaction rebase).
  */
 export const createImmediateConcurrency = (): ConcurrencyStrategyFactory =>
     (execute, getTransaction): ConcurrencyStrategy => {
-        // Per-transaction store of the last-applied transient result, keyed
-        // by compound `"userId:id"`. Used to roll back a transient when a
-        // newer transient, commit, or cancel arrives for the same transaction.
+        // Per-transaction store of the last-applied intermediate result, keyed
+        // by compound `"userId:id"`. Used to roll back an intermediate step when a
+        // newer intermediate step, commit, or cancel arrives for the same transaction.
         const pending = new Map<string, TransactionResult<unknown>>();
 
         const key = (id: number, userId?: number | string) => `${userId}:${id}`;
@@ -37,7 +37,7 @@ export const createImmediateConcurrency = (): ConcurrencyStrategyFactory =>
             const k = key(id, userId);
             const prior = pending.get(k);
             if (prior) {
-                execute(t => applyOperations(t, prior.undo), { transient: true, userId: undefined });
+                execute(t => applyOperations(t, prior.undo), { intermediate: true, userId: undefined });
                 pending.delete(k);
             }
         };
@@ -58,7 +58,7 @@ export const createImmediateConcurrency = (): ConcurrencyStrategyFactory =>
                     rollbackPending(id, userId);
                     const fn = getTransaction(envelope.name);
                     if (!fn) throw new Error(`Unknown transaction: ${envelope.name}`);
-                    const result = execute(t => fn(t, args), { transient: true, userId });
+                    const result = execute(t => fn(t, args), { intermediate: true, userId });
                     const isNoOp = result.redo.length === 0 && result.undo.length === 0;
                     if (!isNoOp) pending.set(key(id, userId), result);
                     return result;
@@ -69,7 +69,7 @@ export const createImmediateConcurrency = (): ConcurrencyStrategyFactory =>
                 rollbackPending(id, userId);
                 const fn = getTransaction(envelope.name);
                 if (!fn) throw new Error(`Unknown transaction: ${envelope.name}`);
-                return execute(t => fn(t, args), { transient: false, userId });
+                return execute(t => fn(t, args), { intermediate: false, userId });
             },
             cancel(id, userId) {
                 rollbackPending(id, userId);

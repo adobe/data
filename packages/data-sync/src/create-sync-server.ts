@@ -123,8 +123,8 @@ export const createSyncServer = (options: SyncServerOptions = {}): SyncServer =>
             for (const c of clients) {
                 c.send({ kind: "cancelled", id: msg.id });
             }
-        } else if (msg.kind === "transient") {
-            // Speculative — relay to peers, never logged.
+        } else if (msg.kind === "intermediate") {
+            // Speculative intermediate — relay to peers, never logged.
             for (const c of clients) {
                 if (c !== origin) c.send({ kind: "committed", envelope: { ...msg.envelope } });
             }

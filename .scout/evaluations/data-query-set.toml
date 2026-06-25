@@ -1,0 +1,192 @@
+description = "adobe/data search quality evaluation"
+
+# ── Identifier queries ────────────────────────────────────────────────────────
+
+[[queries]]
+id = "ident-1"
+query = "createPlugin"
+class = "identifier"
+
+[judgments.ident-1]
+"packages/data/src/ecs/database/create-plugin.ts" = 3
+"packages/data/src/ecs/database/create-plugin.type-test.ts" = 2
+"packages/data/src/ecs/database/imports-chain.type-test.ts" = 1
+"packages/data/src/ecs/database/combine-plugins.type-test.ts" = 1
+
+[[queries]]
+id = "ident-2"
+query = "createStructBuffer"
+class = "identifier"
+
+[judgments.ident-2]
+"packages/data/src/typed-buffer/create-struct-buffer.ts" = 3
+"packages/data/src/typed-buffer/typed-buffer.ts" = 2
+"packages/data-gpu/src/graphics/scene/scene-uniforms/scene-uniforms-plugin.ts" = 1
+
+[[queries]]
+id = "ident-3"
+query = "getStructLayout"
+class = "identifier"
+
+[judgments.ident-3]
+"packages/data/src/typed-buffer/structs/get-struct-layout.ts" = 3
+"packages/data/src/typed-buffer/create-struct-buffer.ts" = 2
+"packages/data/src/schema/to-vertex-buffer-layout.ts" = 1
+
+[[queries]]
+id = "ident-4"
+query = "ColliderShape"
+class = "identifier"
+
+[judgments.ident-4]
+"packages/data-gpu/src/physics/body/collider-shape/collider-shape.ts" = 3
+"packages/data-gpu/src/physics/body/collider-shape/mass-properties.ts" = 2
+"packages/data-gpu/src/physics/solvers/rapier-solver-plugin.ts" = 2
+"packages/data-gpu/src/physics/body/collider-shape/list.ts" = 1
+
+[[queries]]
+id = "ident-5"
+query = "AnimationTrack"
+class = "identifier"
+
+[judgments.ident-5]
+"packages/data-gpu/src/graphics/animation/animation-track/animation-track.ts" = 3
+"packages/data-gpu/src/graphics/animation/animation-data-plugin.ts" = 2
+"packages/data-gpu/src/graphics/scene/model/gltf/parse-animations.ts" = 2
+"packages/data-gpu/src/graphics/animation/animation-track/sample.ts" = 1
+
+[[queries]]
+id = "ident-6"
+query = "BlobStore"
+class = "identifier"
+
+[judgments.ident-6]
+"packages/data/src/cache/blob-store.ts" = 3
+"packages/data/src/cache/data-cache.ts" = 2
+
+[[queries]]
+id = "ident-7"
+query = "Database"
+class = "identifier"
+
+[judgments.ident-7]
+"packages/data/src/ecs/database/database.ts" = 3
+"packages/data/src/ecs/database/public/create-database.ts" = 2
+"packages/data/src/ecs/database/create-plugin.ts" = 2
+
+# ── Natural language queries ──────────────────────────────────────────────────
+
+[[queries]]
+id = "nl-1"
+query = "ECS plugin system composition and database creation"
+class = "natural_language"
+
+[judgments.nl-1]
+"packages/data/src/ecs/database/create-plugin.ts" = 3
+"packages/data/src/ecs/database/database.ts" = 3
+"packages/data/src/ecs/database/public/create-database.ts" = 2
+
+[[queries]]
+id = "nl-2"
+query = "observe reactive stream subscription and notification"
+class = "natural_language"
+
+[judgments.nl-2]
+"packages/data/src/observe/index.ts" = 3
+"packages/data/src/observe/create-event.ts" = 2
+"packages/data/src/ecs/database/public/observe-select-deep.ts" = 2
+"packages/data/src/observe/with-filter.ts" = 1
+"packages/data/src/ecs/database/observed/create-observed-database.ts" = 1
+
+[[queries]]
+id = "nl-3"
+query = "archetype entity storage row migration dense packing"
+class = "natural_language"
+
+[judgments.nl-3]
+"packages/data/src/ecs/archetype/archetype.ts" = 3
+"packages/data/src/ecs/archetype/create-archetype.ts" = 3
+"packages/data/src/ecs/archetype/delete-row.ts" = 2
+"packages/data/src/ecs/entity-location-table/create-entity-location-table.ts" = 1
+
+[[queries]]
+id = "nl-4"
+query = "physics rigid body collider simulation rapier"
+class = "natural_language"
+
+[judgments.nl-4]
+"packages/data-gpu/src/physics/body/rigid-body.ts" = 3
+"packages/data-gpu/src/physics/solvers/rapier-solver-plugin.ts" = 3
+"packages/data-gpu/src/physics/body/collider-shape/collider-shape.ts" = 2
+"packages/data-gpu/src/physics/body/collider-mesh.ts" = 2
+"packages/data-gpu/src/physics/physics-data-plugin.ts" = 1
+
+[[queries]]
+id = "nl-5"
+query = "persistence incremental checkpoint journal write backend"
+class = "natural_language"
+
+[judgments.nl-5]
+"packages/data-persistence/src/backend/persistence-backend.ts" = 3
+"packages/data-persistence/src/journal/journal-codec.ts" = 3
+"packages/data-persistence/src/encoder/journal-snapshot-codec.ts" = 2
+"packages/data-persistence/src/backend/memory-backend.ts" = 2
+"packages/data-persistence/src/browser/opfs-backend.ts" = 1
+
+[[queries]]
+id = "nl-6"
+query = "GLTF model loading parsing scene mesh"
+class = "natural_language"
+
+[judgments.nl-6]
+"packages/data-gpu/src/graphics/scene/model/gltf/gltf-schema.ts" = 3
+"packages/data-gpu/src/graphics/scene/model/gltf/load-gltf-model.ts" = 3
+"packages/data-gpu/src/graphics/scene/model/gltf/parse-animations.ts" = 2
+"packages/data-gpu/src/graphics/scene/model/gltf/compute-world-matrices.ts" = 2
+"packages/data-gpu/src/graphics/scene/model/gltf/decode-images.ts" = 1
+"packages/data-gpu/src/graphics/scene/model/gltf/build-material-bind-group.ts" = 1
+
+# ── Filtered queries ──────────────────────────────────────────────────────────
+
+[[queries]]
+id = "filt-1"
+query = "createPlugin"
+class = "filtered"
+paths = ["packages/data/src/ecs"]
+
+[judgments.filt-1]
+"packages/data/src/ecs/database/create-plugin.ts" = 3
+"packages/data/src/ecs/database/combine-plugins.ts" = 2
+
+[[queries]]
+id = "filt-2"
+query = "BlobStore"
+class = "filtered"
+paths = ["packages/data/src/cache"]
+
+[judgments.filt-2]
+"packages/data/src/cache/blob-store.ts" = 3
+"packages/data/src/cache/data-cache.ts" = 2
+
+[[queries]]
+id = "filt-3"
+query = "AnimationTrack"
+class = "filtered"
+paths = ["packages/data-gpu/src/graphics/animation"]
+
+[judgments.filt-3]
+"packages/data-gpu/src/graphics/animation/animation-track/animation-track.ts" = 3
+"packages/data-gpu/src/graphics/animation/animation-data-plugin.ts" = 2
+"packages/data-gpu/src/graphics/animation/animation-track/sample.ts" = 1
+
+[[queries]]
+id = "filt-4"
+query = "PersistOp"
+class = "filtered"
+extensions = ["ts"]
+paths = ["packages/data-persistence/src/transport"]
+
+[judgments.filt-4]
+"packages/data-persistence/src/transport/transport.ts" = 3
+"packages/data-persistence/src/transport/router.ts" = 2
+"packages/data-persistence/src/transport/inprocess-transport.ts" = 1

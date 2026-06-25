@@ -41,7 +41,7 @@ export const mesh = Database.Plugin.create({
         cpuSkin: { default: null as { positions: Float32Array; joints: Uint32Array; weights: Float32Array } | null },
     },
     resources: {
-        _gltfMeshByUrl: { default: null as Map<string, Entity> | null, transient: true },
+        _gltfMeshByUrl: { default: null as Map<string, Entity> | null, nonPersistent: true },
     },
     archetypes: {
         GltfMeshPending:  ["gltfUrl"],

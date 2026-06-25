@@ -31,7 +31,7 @@ export const pbrCore = Database.Plugin.create({
         _skeletonJointMatrixBindGroup:  { default: null as GPUBindGroup | null },
     },
     archetypes: {
-        _VisibleMaterial: ["ephemeral", "_materialBindGroup", "_mesh"],
-        _PbrPrimitive: ["ephemeral", "_vertexBuffer", "_skinVertexBuffer", "_indexBuffer", "_indexCount", "_indexFormat", "_material", "_mesh", "_nodeLocalMatrix"],
+        _VisibleMaterial: ["nonPersistent", "_materialBindGroup", "_mesh"],
+        _PbrPrimitive: ["nonPersistent", "_vertexBuffer", "_skinVertexBuffer", "_indexBuffer", "_indexCount", "_indexFormat", "_material", "_mesh", "_nodeLocalMatrix"],
     },
 });

@@ -22,7 +22,7 @@ export const shapeGeometry = Database.Plugin.create({
     imports: Database.Plugin.combine(pbrCore, mesh),
     extends: core,
     resources: {
-        _shapeMeshes: { default: null as { sphere: Entity; cube: Entity } | null, transient: true },
+        _shapeMeshes: { default: null as { sphere: Entity; cube: Entity } | null, nonPersistent: true },
     },
     transactions: {
         insertStaticMeshPrimitive(t, args: {
@@ -37,7 +37,7 @@ export const shapeGeometry = Database.Plugin.create({
                 t.update(args.mesh, { localBounds: args.localBounds });
             }
             t.archetypes._PbrPrimitive.insert({
-                ephemeral: true,
+                nonPersistent: true,
                 _mesh: meshId,
                 _material: 0,
                 _vertexBuffer: args.vertexBuffer,

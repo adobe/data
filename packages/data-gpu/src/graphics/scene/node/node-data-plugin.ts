@@ -11,6 +11,10 @@ import { True } from "@adobe/data/schema";
  * `_worldMatrix` and `_worldBounds` are declared as components but NOT listed
  * on the authored Node archetype — systems write them via `db.store.update`,
  * migrating each entity once into a wider archetype.
+ *
+ * `indexes.nodeChildrenOf` lists direct children by parent entity id. Scoped
+ * to the Node archetype (and supersets such as Model) — not every column that
+ * happens to carry `parent`.
  */
 export const nodeData = Database.Plugin.create({
     components: {
@@ -24,5 +28,8 @@ export const nodeData = Database.Plugin.create({
     },
     archetypes: {
         Node: ["position", "rotation", "scale", "parent", "visible"],
+    },
+    indexes: {
+        nodeChildrenOf: { key: "parent", archetype: "Node" },
     },
 });

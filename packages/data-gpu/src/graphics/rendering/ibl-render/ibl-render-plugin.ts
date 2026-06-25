@@ -60,10 +60,10 @@ function createSkyboxBindGroupLayout(device: GPUDevice): GPUBindGroupLayout {
 export const pbrIblRender = Database.Plugin.create({
     extends: Database.Plugin.combine(pbrCore, modelLoader, SceneUniforms.plugin, transform),
     resources: {
-        _iblEnvironment:  { default: null as GPUTexture | null, transient: true },
-        _iblIrradiance:   { default: null as GPUTexture | null, transient: true },
-        _iblPrefiltered:  { default: null as GPUTexture | null, transient: true },
-        _iblBrdfLut:      { default: null as GPUTexture | null, transient: true },
+        _iblEnvironment:  { default: null as GPUTexture | null, nonPersistent: true },
+        _iblIrradiance:   { default: null as GPUTexture | null, nonPersistent: true },
+        _iblPrefiltered:  { default: null as GPUTexture | null, nonPersistent: true },
+        _iblBrdfLut:      { default: null as GPUTexture | null, nonPersistent: true },
     },
     systems: {
         iblInitSystem: {

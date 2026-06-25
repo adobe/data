@@ -67,29 +67,8 @@ export type { BoneCapsule } from "./physics/ragdoll/fit-bone-capsules.js";
 export { mesh } from "./graphics/scene/model/mesh-plugin.js";
 export { shapeGeometry } from "./graphics/scene/model/shape/shape-geometry-plugin.js";
 export type { ShapeSpec } from "./graphics/scene/model/shape/shape-spec.js";
-export { VoxelShape } from "./voxel-shape/voxel-shape.js";
-export {
-    voxelShape,
-    voxelShapeVisualBridge,
-} from "./voxel-shape/voxel-shape-plugin.js";
-export { voxelShapeRender } from "./voxel-shape/voxel-shape-render-plugin.js";
-export { voxelShapeLoader } from "./voxel-shape/voxel-shape-loader-plugin.js";
-export {
-    parseVoxelShapeFile,
-    serializeVoxelShapeFile,
-    VOXEL_CELL_EXTENT,
-    authoredSpan,
-} from "./voxel-shape/voxel-shape-file.js";
-export {
-    VOXEL_BODY_HALF_EXTENTS,
-    voxelHalfExtentsFromSize,
-    voxelMeshScaleForGridSize,
-    voxelMeshScaleToHalfExtents,
-} from "./voxel-shape/voxel-mesh-scale.js";
-export { isVoxelShapePhysicsPending } from "./voxel-shape/voxel-shape-resolve.js";
-export type { VoxelShapeFile } from "./voxel-shape/voxel-shape-file.js";
-export { requireVoxelShape } from "./voxel-shape/require-voxel-shape.js";
-export type { VoxelShapeByNameLookup } from "./voxel-shape/require-voxel-shape.js";
+export { uploadShapeMesh } from "./graphics/scene/model/shape/upload-shape-mesh.js";
+export { boundsFromShapeMesh } from "./graphics/scene/model/shape/bounds-from-shape-mesh.js";
 
 // --- Types (type + namespace, access .plugin for the ECS plugin) -------------
 export { Camera } from "./graphics/camera/camera.js";

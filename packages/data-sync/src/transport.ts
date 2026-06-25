@@ -30,7 +30,7 @@ export type ServerMessage =
  *
  * - `propose`    — client wants to commit an operation. The envelope's `time`
  *   must be negative (transient) when sent; the server assigns the final time.
- * - `transient`  — speculative state the client wants other clients to see
+ * - `intermediate` — speculative state the client wants other clients to see
  *   (e.g. cursor position, dragging). Servers may broadcast these as-is or
  *   drop/throttle them; they are never persisted.
  * - `cancel`     — client withdraws a previously proposed envelope.
@@ -44,7 +44,7 @@ export type ServerMessage =
  */
 export type ClientMessage =
     | { readonly kind: "propose"; readonly envelope: TransactionEnvelope }
-    | { readonly kind: "transient"; readonly envelope: TransactionEnvelope }
+    | { readonly kind: "intermediate"; readonly envelope: TransactionEnvelope }
     | { readonly kind: "cancel"; readonly id: number }
     | { readonly kind: "hello"; readonly sessionId?: string; readonly lastAppliedTime: number }
     | { readonly kind: "ping" };

@@ -50,12 +50,12 @@ export const sphere = Database.Plugin.create({
         }) {
             t.update(args.mesh, { localBounds: unitSphereBounds });
             const materialId = t.archetypes._VisibleMaterial.insert({
-                ephemeral: true,
+                nonPersistent: true,
                 _materialBindGroup: args.materialBindGroup,
                 _mesh: args.mesh,
             });
             t.archetypes._PbrPrimitive.insert({
-                ephemeral: true,
+                nonPersistent: true,
                 _mesh: args.mesh,
                 _material: materialId,
                 _vertexBuffer: args.vertexBuffer,

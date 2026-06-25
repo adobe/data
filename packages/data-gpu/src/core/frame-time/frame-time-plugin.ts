@@ -22,7 +22,7 @@ export const plugin = Database.Plugin.create({
     resources: {
         frameTime: {
             default: { now: 0, dt: 0, elapsed: 0 } satisfies FrameTime as FrameTime,
-            transient: true,
+            nonPersistent: true,
         },
     },
     systems: {

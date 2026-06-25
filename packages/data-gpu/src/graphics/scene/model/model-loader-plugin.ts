@@ -32,12 +32,12 @@ export const modelLoader = Database.Plugin.create({
         insertLoadedPrimitives(t, args: LoadedArgs) {
             for (const p of args.primitives) {
                 const materialId = t.archetypes._VisibleMaterial.insert({
-                    ephemeral: true,
+                    nonPersistent: true,
                     _materialBindGroup: p.pbrMaterialBindGroup,
                     _mesh: args.mesh,
                 });
                 t.archetypes._PbrPrimitive.insert({
-                    ephemeral: true,
+                    nonPersistent: true,
                     _mesh: args.mesh,
                     _material: materialId,
                     _vertexBuffer: p.pbrVertexBuffer,

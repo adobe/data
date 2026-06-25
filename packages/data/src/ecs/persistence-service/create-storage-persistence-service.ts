@@ -31,7 +31,7 @@ export const createStoragePersistenceService = async (options: {
     if (autoSave) {
         const debouncedSave = debounce(() => service.save(), 300);
         database.observe.transactions(t => {
-            if (!t.transient && !t.ephemeral) debouncedSave();
+            if (!t.intermediate && t.persistent) debouncedSave();
         });
     }
     return service;

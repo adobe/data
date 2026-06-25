@@ -30,8 +30,8 @@ export const materialPaletteGpu = Database.Plugin.create({
         _paletteIndex: U32.schema,
     },
     resources: {
-        _factorPalette: { default: null as GPUBuffer | null, transient: true },
-        _factorPaletteBindGroup: { default: null as GPUBindGroup | null, transient: true },
+        _factorPalette: { default: null as GPUBuffer | null, nonPersistent: true },
+        _factorPaletteBindGroup: { default: null as GPUBindGroup | null, nonPersistent: true },
     },
     systems: {
         materialPaletteGpuBuilder: {

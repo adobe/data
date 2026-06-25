@@ -2,7 +2,7 @@
 
 import initJolt from "jolt-physics";
 import { Database, type Entity } from "@adobe/data/ecs";
-import { isVoxelShapePhysicsPending } from "../../voxel-shape/voxel-shape-resolve.js";
+import { isVoxelShapePhysicsPending } from "../is-voxel-shape-physics-pending.js";
 import { True } from "@adobe/data/schema";
 import { physicsClock } from "../physics-clock-plugin.js";
 import { physicsData } from "../physics-data-plugin.js";
@@ -82,7 +82,7 @@ export const joltSolver = Database.Plugin.create({
         _joltJoint: True.schema, // tag: this joint has been mirrored into the Jolt world
     },
     resources: {
-        _joltContext: { default: null as JoltContext | null, transient: true },
+        _joltContext: { default: null as JoltContext | null, nonPersistent: true },
     },
     systems: {
         joltStep: {

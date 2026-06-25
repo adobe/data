@@ -2,7 +2,7 @@
 
 import RAPIER from "@dimforge/rapier3d-compat";
 import { Database, type Entity } from "@adobe/data/ecs";
-import { isVoxelShapePhysicsPending } from "../../voxel-shape/voxel-shape-resolve.js";
+import { isVoxelShapePhysicsPending } from "../is-voxel-shape-physics-pending.js";
 import { True } from "@adobe/data/schema";
 import { physicsClock } from "../physics-clock-plugin.js";
 import { physicsData } from "../physics-data-plugin.js";

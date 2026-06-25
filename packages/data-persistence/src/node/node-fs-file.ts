@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { promises as fs } from "node:fs";
+import { promises as fs, constants as fsConstants } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { RandomAccessFile } from "../backend/random-access-file.js";
 
@@ -9,8 +9,10 @@ import { RandomAccessFile } from "../backend/random-access-file.js";
  * already be validated by the surrounding {@link NodeFsBackend}.
  */
 export const createNodeFsFile = async (absPath: string): Promise<RandomAccessFile> => {
-    // Open with read+write, create-if-missing, never truncate.
-    const handle: FileHandle = await fs.open(absPath, "a+");
+    // O_RDWR | O_CREAT: read+write, create-if-missing, never truncate.
+    // "a+" is wrong here — append mode ignores the position argument on writes,
+    // which breaks writeAt semantics (every write would land at EOF instead).
+    const handle: FileHandle = await fs.open(absPath, fsConstants.O_RDWR | fsConstants.O_CREAT, 0o666);
     let closed = false;
 
     const ensureOpen = (): void => {

@@ -1,15 +1,15 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 //
-// Bootstrap container for serverless P2P play. Builds the negotiation database
-// for the injected game (the imperative signaling machine lives in that
-// database's `negotiation` service), then renders purely from observable
-// state and forwards user intent through `service.actions.*`. No business
-// logic, no full-database access.
+// Container for serverless P2P play. The negotiation database's `negotiation`
+// service is the imperative signaling machine; this element renders purely
+// from observable state and forwards user intent through `service.actions.*`.
+// It supplies the game-specific config once after mount and tears the service
+// down on unmount. No business logic, no full-database access.
 
 import { customElement, property } from "lit/decorators.js";
 import { Database } from "@adobe/data/ecs";
 import { DatabaseElement, useObservableValues, useEffect } from "@adobe/data-lit";
-import { createNegotiationPlugin, type NegotiationPlugin } from "../../state/negotiation-plugin.js";
+import { negotiationPlugin } from "../../state/negotiation-plugin.js";
 import { copyText } from "../../copy-text.js";
 import { styles } from "./p2p-negotiation.css.js";
 import * as presentation from "./p2p-negotiation-presentation.js";
@@ -27,12 +27,12 @@ type GamePlugin = Database.Plugin<any, any, any, any, any, any, any, any>;
 type AssignUserId = (role: "host" | "joiner") => string;
 
 @customElement(tagName)
-export class P2pNegotiationElement extends DatabaseElement<NegotiationPlugin> {
+export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlugin> {
     static styles = styles;
 
-    // Bootstrap config: which game to negotiate and how to assign peer ids.
-    // Game-specific, so the composition root injects it; it feeds plugin
-    // construction below and is never read inside render branching.
+    // Game-specific config: which game to negotiate and how to assign peer ids.
+    // Supplied to the service via `configure` after mount (props do not exist
+    // when the database is created during connectedCallback).
     @property({ attribute: false })
     gamePlugin!: GamePlugin;
 
@@ -45,12 +45,8 @@ export class P2pNegotiationElement extends DatabaseElement<NegotiationPlugin> {
     @property({ attribute: false })
     renderPresence?: RenderPresence;
 
-    #plugin?: NegotiationPlugin;
-    get plugin(): NegotiationPlugin {
-        return (this.#plugin ??= createNegotiationPlugin({
-            gamePlugin: this.gamePlugin,
-            assignUserId: this.assignUserId,
-        }));
+    get plugin() {
+        return negotiationPlugin;
     }
 
     render() {
@@ -68,8 +64,12 @@ export class P2pNegotiationElement extends DatabaseElement<NegotiationPlugin> {
             gameDb: observe.resources.gameDb,
         }), []);
 
-        // Tear down the WebRTC / sync machinery when this container unmounts.
-        useEffect(() => () => actions.dispose(), []);
+        // Configure the service for this game on mount; tear down its WebRTC /
+        // sync machinery on unmount.
+        useEffect(() => {
+            actions.configure({ gamePlugin: this.gamePlugin, assignUserId: this.assignUserId });
+            return () => actions.dispose();
+        }, []);
 
         if (!values) return undefined;
 

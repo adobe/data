@@ -21,10 +21,10 @@ import type { NegotiationDatabase } from "./negotiation-plugin.js";
 type GameDb = Database<any, any, any, any, any, any, any, any>;
 
 /**
- * Per-instance configuration the negotiation plugin closes over when it
- * builds its service. The game plugin / userId mapping live here because
- * they are necessarily game-specific and cannot be encoded into the
- * negotiation plugin itself.
+ * Per-instance configuration handed to the service via `configure()` after
+ * mount. The game plugin / userId mapping live here because they are
+ * necessarily game-specific and cannot be encoded into the negotiation
+ * plugin itself.
  */
 export interface NegotiationConfig {
     readonly gamePlugin: Database.Plugin<any, any, any, any, any, any, any, any>;
@@ -32,6 +32,13 @@ export interface NegotiationConfig {
 }
 
 export interface NegotiationService {
+    /**
+     * Supply the game-specific configuration. Called once after mount, when
+     * the container's props are available — the plugin (and therefore this
+     * service) is constructed during `connectedCallback`, before bound props
+     * exist, so config cannot be closed over at construction.
+     */
+    configure(config: NegotiationConfig): void;
     startHost(): void;
     startJoin(): void;
     /** Submit the value currently in `hostAnswerInput` to the host signaling flow. */
@@ -55,8 +62,13 @@ const renegLog = (msg: string) => console.log(`[reneg] ${msg}`);
  */
 export const createNegotiationService = (
     db: NegotiationDatabase,
-    config: NegotiationConfig,
 ): NegotiationService => {
+    let config: NegotiationConfig | undefined;
+    const requireConfig = (): NegotiationConfig => {
+        if (!config) throw new Error("negotiation service used before configure()");
+        return config;
+    };
+
     let submitHostAnswer: ((code: string) => void) | undefined;
     let joinStarted = false;
     let syncService: SyncService | undefined;
@@ -162,7 +174,7 @@ export const createNegotiationService = (
     ) => {
         if (!gameDb) {
             log(`creating game DB for userId=${userId}`);
-            gameDb = Database.create(config.gamePlugin, { concurrency: createRebaseReplayConcurrency(userId) });
+            gameDb = Database.create(requireConfig().gamePlugin, { concurrency: createRebaseReplayConcurrency(userId) });
         }
         wireSync();
         db.transactions.setGameDb({ gameDb });
@@ -186,7 +198,7 @@ export const createNegotiationService = (
             .then(({ transport, pc: newPc, signalChannel }) => {
                 log(`host data channels open`);
                 wirePeerConnection(newPc, signalChannel, "host");
-                wireGameDb(config.assignUserId("host"), () => wireHostSync(transport));
+                wireGameDb(requireConfig().assignUserId("host"), () => wireHostSync(transport));
             })
             .catch((err: unknown) => reportError("Connection failed", err));
     };
@@ -224,7 +236,7 @@ export const createNegotiationService = (
             .then(({ transport, pc: newPc, signalChannel }) => {
                 log(`joiner data channels open`);
                 wirePeerConnection(newPc, signalChannel, "joiner");
-                wireGameDb(config.assignUserId("joiner"), () => wireJoinerSync(transport));
+                wireGameDb(requireConfig().assignUserId("joiner"), () => wireJoinerSync(transport));
             })
             .catch((err: unknown) => reportError("Connection failed", err));
     };
@@ -272,5 +284,7 @@ export const createNegotiationService = (
         syncServer?.dispose();
     };
 
-    return { startHost, startJoin, submitAnswer, generateAnswer, reconnect, dispose };
+    const configure = (c: NegotiationConfig) => { config = c; };
+
+    return { configure, startHost, startJoin, submitAnswer, generateAnswer, reconnect, dispose };
 };

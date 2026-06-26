@@ -93,28 +93,30 @@ export const negotiationStatePlugin = Database.Plugin.create({
 export type NegotiationDatabase = Database.Plugin.ToDatabase<typeof negotiationStatePlugin>;
 
 /**
- * Builds the full negotiation plugin for a given game: the state surface plus
- * the imperative `negotiation` service and the UI-facing actions that drive
- * it. Each action is a one-line delegation, so a container element calls
+ * The full negotiation plugin: the state surface plus the imperative
+ * `negotiation` service and the UI-facing actions that drive it. Each action
+ * is a one-line delegation, so a container element calls
  * `service.actions.startHost()` and never touches the full database.
  *
- * `config` (the game plugin + role→userId mapping) is closed over by the
- * service factory; it is game-specific and supplied by the composition root.
+ * Static (not parameterised by game): the plugin — and so the service — is
+ * built during `connectedCallback`, before a container's bound props exist,
+ * so a container must instead supply the game-specific {@link NegotiationConfig}
+ * after mount via `actions.configure(...)`.
  */
-export const createNegotiationPlugin = (config: NegotiationConfig) =>
-    Database.Plugin.create({
-        extends: negotiationStatePlugin,
-        services: {
-            negotiation: (db) => createNegotiationService(db, config),
-        },
-        actions: {
-            startHost:      (db) => db.services.negotiation.startHost(),
-            startJoin:      (db) => db.services.negotiation.startJoin(),
-            submitAnswer:   (db) => db.services.negotiation.submitAnswer(),
-            generateAnswer: (db) => db.services.negotiation.generateAnswer(),
-            reconnect:      (db) => db.services.negotiation.reconnect(),
-            dispose:        (db) => db.services.negotiation.dispose(),
-        },
-    });
+export const negotiationPlugin = Database.Plugin.create({
+    extends: negotiationStatePlugin,
+    services: {
+        negotiation: (db) => createNegotiationService(db),
+    },
+    actions: {
+        configure:      (db, config: NegotiationConfig) => db.services.negotiation.configure(config),
+        startHost:      (db) => db.services.negotiation.startHost(),
+        startJoin:      (db) => db.services.negotiation.startJoin(),
+        submitAnswer:   (db) => db.services.negotiation.submitAnswer(),
+        generateAnswer: (db) => db.services.negotiation.generateAnswer(),
+        reconnect:      (db) => db.services.negotiation.reconnect(),
+        dispose:        (db) => db.services.negotiation.dispose(),
+    },
+});
 
-export type NegotiationPlugin = ReturnType<typeof createNegotiationPlugin>;
+export type NegotiationPlugin = typeof negotiationPlugin;

@@ -10,7 +10,7 @@ import type { RenderGame, RenderPresence } from "./p2p-negotiation-presentation.
  * matching the plugin they passed in. The element internally stores the
  * game database as `unknown` (the negotiation plugin is monomorphic), so
  * we adapt the typed callbacks at this boundary. The cast is justified:
- * the negotiation controller constructs the game database from `args.gamePlugin`,
+ * the negotiation service constructs the game database from `args.gamePlugin`,
  * so by construction the value stored in the `gameDb` resource is a
  * `Database.Plugin.ToDatabase<P>`.
  */

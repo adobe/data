@@ -10,21 +10,24 @@ import { attachDecorator, withHooks } from '../index.js';
 export abstract class DatabaseElement<P extends Database.Plugin> extends LitElement {
 
   /**
-   * The live database, fully typed. Set by an ancestor via DI (`.database=…`)
-   * or created from `plugin` on connect. Bootstrap containers — those that own
-   * a controller or drive a streaming (async-generator) transaction — read
-   * this directly; pure widgets use the restricted `service` view below.
+   * @internal DI seam. Set by an ancestor via injection or created from `plugin`
+   * on connect. Bootstrap containers (those that own a controller or drive a
+   * streaming async-generator transaction) and ancestor injection use this;
+   * ordinary consumers inject and read through `service` instead.
    */
   @property({ type: Object, reflect: false })
   database!: Database.Plugin.ToDatabase<P>;
 
   /**
-   * UI-restricted view of {@link database} for pure-widget rendering: every
-   * transaction / mutator is rewritten to fire-and-forget `void` so a widget
-   * can never await on or read back a mutation; reads go through `observe`.
+   * UI-restricted view of the database for rendering. Inject the full database by
+   * assigning here (`element.service = db`); reads return the restricted view where
+   * every mutator is fire-and-forget `void`.
    */
   get service(): UIService.FromService<Database.Plugin.ToDatabase<P>> {
     return UIService.restrict(this.database);
+  }
+  set service(db: Database.Plugin.ToDatabase<P>) {
+    this.database = db;
   }
 
   constructor() {

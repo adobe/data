@@ -71,8 +71,13 @@ jobs:
       - name: Build @adobe/data (provides dist/ for downstream tsc)
         run: pnpm --filter @adobe/data run typecheck
 
-      - name: Build downstream packages (type-check via tsc -b)
-        run: pnpm --filter '@adobe/data-*' run build
+      - name: Build every downstream package (type-check via tsc -b / vite)
+        # Builds ALL workspace packages except the core (already built above),
+        # including the private, unscoped sample apps (data-p2p-tictactoe,
+        # data-lit-todo, …). A previous `--filter '@adobe/data-*'` only matched
+        # scoped published packages, so a type/build error that surfaced only in
+        # a private sample (e.g. a stripped `.d.ts` member) merged green.
+        run: pnpm --filter '!@adobe/data' run build
 
       - name: Test downstream packages
         run: |

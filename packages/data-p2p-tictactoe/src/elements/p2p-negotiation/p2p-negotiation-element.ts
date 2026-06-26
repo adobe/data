@@ -1,16 +1,16 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 //
-// Bootstrap container for serverless P2P play. Owns the negotiation
-// database, builds the synced game database via a sibling controller, and
-// hands everything to a pure presentation. All imperative state lives in
-// the controller; the element body stays a thin wire.
+// Bootstrap container for serverless P2P play. Builds the negotiation database
+// for the injected game (the imperative signaling machine lives in that
+// database's `negotiation` service), then renders purely from observable
+// state and forwards user intent through `service.actions.*`. No business
+// logic, no full-database access.
 
 import { customElement, property } from "lit/decorators.js";
 import { Database } from "@adobe/data/ecs";
-import { UIService } from "@adobe/data/service";
-import { DatabaseElement, useObservableValues, useMemo, useEffect } from "@adobe/data-lit";
-import { negotiationPlugin } from "../../state/negotiation-plugin.js";
-import { createNegotiationController } from "../../state/negotiation-controller.js";
+import { DatabaseElement, useObservableValues, useEffect } from "@adobe/data-lit";
+import { createNegotiationPlugin, type NegotiationPlugin } from "../../state/negotiation-plugin.js";
+import { copyText } from "../../copy-text.js";
 import { styles } from "./p2p-negotiation.css.js";
 import * as presentation from "./p2p-negotiation-presentation.js";
 import type { RenderGame, RenderPresence } from "./p2p-negotiation-presentation.js";
@@ -23,32 +23,16 @@ declare global {
     }
 }
 
-type NegotiationDatabase = Database.Plugin.ToDatabase<typeof negotiationPlugin>;
 type GamePlugin = Database.Plugin<any, any, any, any, any, any, any, any>;
 type AssignUserId = (role: "host" | "joiner") => string;
 
-/**
- * Owns the negotiation controller for the lifetime of its caller: builds
- * it whenever its inputs change, and disposes it on teardown. The
- * `useMemo` + `useEffect` pair is one concept — give it one name.
- */
-function useNegotiationController(
-    service: NegotiationDatabase,
-    gamePlugin: GamePlugin,
-    assignUserId: AssignUserId,
-) {
-    const controller = useMemo(
-        () => createNegotiationController(service, { gamePlugin, assignUserId }),
-        [service, gamePlugin, assignUserId],
-    );
-    useEffect(() => () => controller.dispose(), [controller]);
-    return controller;
-}
-
 @customElement(tagName)
-export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlugin> {
+export class P2pNegotiationElement extends DatabaseElement<NegotiationPlugin> {
     static styles = styles;
 
+    // Bootstrap config: which game to negotiate and how to assign peer ids.
+    // Game-specific, so the composition root injects it; it feeds plugin
+    // construction below and is never read inside render branching.
     @property({ attribute: false })
     gamePlugin!: GamePlugin;
 
@@ -61,41 +45,31 @@ export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlu
     @property({ attribute: false })
     renderPresence?: RenderPresence;
 
-    // This bootstrap container owns the negotiation controller (business logic),
-    // which drives awaitable transactions the restricted `service` view voids
-    // out. It captures the full database as it flows through the injection
-    // setter (the base creates-or-injects via `this.service = …`) and keeps it
-    // private to this element — the database stays unreachable through the API.
-    #fullDatabase!: NegotiationDatabase;
-
-    override get service(): UIService.FromService<NegotiationDatabase> {
-        return super.service;
-    }
-    override set service(db: NegotiationDatabase) {
-        this.#fullDatabase = db;
-        super.service = db;
-    }
-
-    get plugin() {
-        return negotiationPlugin;
+    #plugin?: NegotiationPlugin;
+    get plugin(): NegotiationPlugin {
+        return (this.#plugin ??= createNegotiationPlugin({
+            gamePlugin: this.gamePlugin,
+            assignUserId: this.assignUserId,
+        }));
     }
 
     render() {
-        const service = this.#fullDatabase;
+        const { observe, actions, transactions } = this.service;
 
         const values = useObservableValues(() => ({
-            phase: service.observe.resources.phase,
-            connection: service.observe.resources.connection,
-            offerCode: service.observe.resources.offerCode,
-            answerCode: service.observe.resources.answerCode,
-            bannerText: service.observe.resources.bannerText,
-            bannerError: service.observe.resources.bannerError,
-            hostAnswerInput: service.observe.resources.hostAnswerInput,
-            joinerOfferInput: service.observe.resources.joinerOfferInput,
-            gameDb: service.observe.resources.gameDb,
+            phase: observe.resources.phase,
+            connection: observe.resources.connection,
+            offerCode: observe.resources.offerCode,
+            answerCode: observe.resources.answerCode,
+            bannerText: observe.resources.bannerText,
+            bannerError: observe.resources.bannerError,
+            hostAnswerInput: observe.resources.hostAnswerInput,
+            joinerOfferInput: observe.resources.joinerOfferInput,
+            gameDb: observe.resources.gameDb,
         }), []);
 
-        const controller = useNegotiationController(service, this.gamePlugin, this.assignUserId);
+        // Tear down the WebRTC / sync machinery when this container unmounts.
+        useEffect(() => () => actions.dispose(), []);
 
         if (!values) return undefined;
 
@@ -103,14 +77,14 @@ export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlu
             ...values,
             renderGame: this.renderGame,
             renderPresence: this.renderPresence,
-            startHost: () => controller.startHost(),
-            startJoin: () => controller.startJoin(),
-            submitAnswer: () => controller.submitAnswer(),
-            generateAnswer: () => controller.generateAnswer(),
-            setHostAnswerInput: (value) => service.transactions.setHostAnswerInput({ value }),
-            setJoinerOfferInput: (value) => service.transactions.setJoinerOfferInput({ value }),
-            copyText: (text) => controller.copyText(text),
-            reconnect: () => controller.reconnect(),
+            startHost: () => actions.startHost(),
+            startJoin: () => actions.startJoin(),
+            submitAnswer: () => actions.submitAnswer(),
+            generateAnswer: () => actions.generateAnswer(),
+            reconnect: () => actions.reconnect(),
+            setHostAnswerInput: (value) => transactions.setHostAnswerInput({ value }),
+            setJoinerOfferInput: (value) => transactions.setJoinerOfferInput({ value }),
+            copyText,
         });
     }
 }

@@ -1,37 +1,43 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 //
 // Imperative state machine wrapping signaling + sync wiring + game DB
-// construction. Pumps results into a negotiation database via transactions
-// so the UI can render purely from observable state.
+// construction. Registered as the `negotiation` service on the negotiation
+// database (see `negotiation-plugin.ts`) and driven through the plugin's
+// actions, so the UI never touches this surface directly — it calls
+// `service.actions.startHost()` and renders purely from observable state.
+//
+// The service intentionally retains its own closure-scoped procedural state
+// (signaling promises, sync server / service handles, peer-connection +
+// renegotiator handles). That state is not appropriate for ECS resources
+// because it is non-serialisable and tied to per-instance browser objects —
+// which is exactly what a service is for.
 
 import { Database, createRebaseReplayConcurrency } from "@adobe/data/ecs";
 import { createSyncServer, createSyncService, createLoopbackTransport, type SyncService } from "@adobe/data-sync";
 import { startHostSignaling, startJoinerSignaling, type HostConnection, type JoinerConnection } from "../signaling.js";
 import { createRenegotiator, type Renegotiator } from "../renegotiator.js";
-import { negotiationPlugin } from "./negotiation-plugin.js";
+import type { NegotiationDatabase } from "./negotiation-plugin.js";
 
-type NegotiationDatabase = Database.Plugin.ToDatabase<typeof negotiationPlugin>;
 type GameDb = Database<any, any, any, any, any, any, any, any>;
 
 /**
- * Per-instance configuration the negotiation element injects when it
- * builds a controller. The plugin / userId mapping live here because they
- * are necessarily game-specific and cannot be encoded into the negotiation
- * plugin itself.
+ * Per-instance configuration the negotiation plugin closes over when it
+ * builds its service. The game plugin / userId mapping live here because
+ * they are necessarily game-specific and cannot be encoded into the
+ * negotiation plugin itself.
  */
 export interface NegotiationConfig {
     readonly gamePlugin: Database.Plugin<any, any, any, any, any, any, any, any>;
     readonly assignUserId: (role: "host" | "joiner") => string;
 }
 
-export interface NegotiationController {
+export interface NegotiationService {
     startHost(): void;
     startJoin(): void;
     /** Submit the value currently in `hostAnswerInput` to the host signaling flow. */
     submitAnswer(): void;
     /** Begin joiner signaling using the value currently in `joinerOfferInput`. */
     generateAnswer(): void;
-    copyText(text: string): void;
     /** Attempt to re-establish a dropped P2P connection via manual re-signaling. */
     reconnect(): void;
     dispose(): void;
@@ -43,19 +49,14 @@ const serverLog = (msg: string) => console.log(`[sync-server] ${msg}`);
 const renegLog = (msg: string) => console.log(`[reneg] ${msg}`);
 
 /**
- * Creates a controller bound to the supplied negotiation database. The
- * controller writes to the database via transactions, so consumers only
- * need to subscribe to that database to render reactive UI.
- *
- * The controller intentionally retains its own closure-scoped procedural
- * state (signaling promises, sync server / service handles, peer-connection
- * + renegotiator handles). That state is not appropriate for ECS resources
- * because it is non-serialisable and tied to per-instance browser objects.
+ * Creates the negotiation service bound to its database. The service writes
+ * to the database via transactions, so consumers only need to subscribe to
+ * that database to render reactive UI.
  */
-export const createNegotiationController = (
+export const createNegotiationService = (
     db: NegotiationDatabase,
     config: NegotiationConfig,
-): NegotiationController => {
+): NegotiationService => {
     let submitHostAnswer: ((code: string) => void) | undefined;
     let joinStarted = false;
     let syncService: SyncService | undefined;
@@ -261,10 +262,6 @@ export const createNegotiationController = (
         }
     };
 
-    const copyText = (text: string) => {
-        navigator.clipboard.writeText(text).catch(() => undefined);
-    };
-
     const dispose = () => {
         log(`dispose`);
         renegotiator?.dispose();
@@ -275,5 +272,5 @@ export const createNegotiationController = (
         syncServer?.dispose();
     };
 
-    return { startHost, startJoin, submitAnswer, generateAnswer, copyText, reconnect, dispose };
+    return { startHost, startJoin, submitAnswer, generateAnswer, reconnect, dispose };
 };

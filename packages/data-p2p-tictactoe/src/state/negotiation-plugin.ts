@@ -2,20 +2,24 @@
 
 import { Database } from "@adobe/data/ecs";
 import type { Phase } from "../types/phase/phase.js";
+import { createNegotiationService, type NegotiationConfig } from "./negotiation-service.js";
 
 export type ConnectionState = "idle" | "connecting" | "connected" | "disconnected" | "reconnecting";
 
 /**
- * Negotiation-only ECS plugin. All resources are `ephemeral: true` so they
- * are never replicated to peers (the negotiation DB itself is always
- * local-only, but the ephemeral flag is good documentation).
+ * Negotiation-only ECS state — resources + transactions. All resources are
+ * `ephemeral: true` so they are never replicated to peers (the negotiation DB
+ * itself is always local-only, but the ephemeral flag is good documentation).
  *
  * The game role (userId) lives in the synced game DB referenced by the
  * `gameDb` resource. Once the WebRTC handshake completes, the negotiation
- * controller constructs that DB, attaches sync transports, and stores the
- * handle here for the container element to render.
+ * service constructs that DB, attaches sync transports, and stores the handle
+ * here for the container element to render.
+ *
+ * This is the state surface only; the imperative signaling machine is layered
+ * on top by {@link createNegotiationPlugin} as a service + actions.
  */
-export const negotiationPlugin = Database.Plugin.create({
+export const negotiationStatePlugin = Database.Plugin.create({
     resources: {
         phase:       { default: "idle" as Phase,             ephemeral: true },
         connection:  { default: "idle" as ConnectionState,   ephemeral: true },
@@ -30,7 +34,7 @@ export const negotiationPlugin = Database.Plugin.create({
         // the DOM from action callbacks.
         hostAnswerInput:   { default: "" as string,  ephemeral: true },
         joinerOfferInput:  { default: "" as string,  ephemeral: true },
-        // The synced game database, populated by the negotiation controller
+        // The synced game database, populated by the negotiation service
         // after the WebRTC channel opens. `unknown` so the plugin stays
         // game-agnostic; consumers cast at the render boundary.
         gameDb:      { default: null as unknown, ephemeral: true },
@@ -74,8 +78,8 @@ export const negotiationPlugin = Database.Plugin.create({
         },
         /**
          * Stores the constructed game DB and transitions to the game phase.
-         * Called by the negotiation controller after sync transports are
-         * wired and the WebRTC channel is open.
+         * Called by the negotiation service after sync transports are wired
+         * and the WebRTC channel is open.
          */
         setGameDb(t, { gameDb }: { gameDb: unknown }) {
             t.resources.gameDb = gameDb;
@@ -84,3 +88,33 @@ export const negotiationPlugin = Database.Plugin.create({
         },
     },
 });
+
+/** The negotiation database surface the service writes to. */
+export type NegotiationDatabase = Database.Plugin.ToDatabase<typeof negotiationStatePlugin>;
+
+/**
+ * Builds the full negotiation plugin for a given game: the state surface plus
+ * the imperative `negotiation` service and the UI-facing actions that drive
+ * it. Each action is a one-line delegation, so a container element calls
+ * `service.actions.startHost()` and never touches the full database.
+ *
+ * `config` (the game plugin + role→userId mapping) is closed over by the
+ * service factory; it is game-specific and supplied by the composition root.
+ */
+export const createNegotiationPlugin = (config: NegotiationConfig) =>
+    Database.Plugin.create({
+        extends: negotiationStatePlugin,
+        services: {
+            negotiation: (db) => createNegotiationService(db, config),
+        },
+        actions: {
+            startHost:      (db) => db.services.negotiation.startHost(),
+            startJoin:      (db) => db.services.negotiation.startJoin(),
+            submitAnswer:   (db) => db.services.negotiation.submitAnswer(),
+            generateAnswer: (db) => db.services.negotiation.generateAnswer(),
+            reconnect:      (db) => db.services.negotiation.reconnect(),
+            dispose:        (db) => db.services.negotiation.dispose(),
+        },
+    });
+
+export type NegotiationPlugin = ReturnType<typeof createNegotiationPlugin>;

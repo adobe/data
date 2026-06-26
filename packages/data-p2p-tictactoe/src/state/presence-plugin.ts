@@ -28,13 +28,25 @@ export const presencePlugin = Database.Plugin.create({
     },
     transactions: {
         /**
-         * Update the calling peer's cursor position. Intended to be driven
-         * as a never-ending async-generator transaction (see
-         * `usePointerObserve` + `Observe.toAsyncGenerator` pattern).
+         * Update the calling peer's cursor position. Driven as a never-ending
+         * async-generator transaction by the `trackPresence` action — each
+         * yield applies as a transient (never committed) envelope.
          */
         movePresence(t, args: { x: number; y: number }) {
             if (!PlayerMark.is(t.userId)) return;
             t.resources.cursors = { ...t.resources.cursors, [t.userId]: [args.x, args.y] as Vec2 };
+        },
+    },
+    actions: {
+        /**
+         * Pump a stream of normalised cursor positions into the synced
+         * presence transient. The UI passes a positions generator factory
+         * (sourced from local pointer events) and the action owns the
+         * fire-and-forget streaming transaction, so the container never
+         * touches the full transactional surface.
+         */
+        trackPresence: (db, positions: () => AsyncGenerator<{ x: number; y: number }>) => {
+            db.transactions.movePresence(positions).catch(() => undefined);
         },
     },
 });

@@ -50,6 +50,14 @@ const _rejectRestrictedAssignment = (el: _CountElement): void => {
   el.service = el.service;
 };
 
+// 0a. The full database is fully encapsulated: there is no `database` member of
+//     any visibility on the instance type. `service` is the only surface.
+const _noPublicDatabaseProperty = (el: _CountElement): void => {
+  // @ts-expect-error `database` no longer exists; the full db is hard-private
+  void el.database;
+};
+type _CheckNoDatabaseKey = Assert<Equal<Extract<keyof _CountElement, "database">, never>>;
+
 // 1. The exposed service type is the UIService-restricted view of the database.
 type _CheckRestricted = Assert<Equal<ServiceType, UIService.FromService<RawDatabase>>>;
 

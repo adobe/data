@@ -1,15 +1,16 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 //
-// Bootstrap container for serverless P2P play. Owns the negotiation
-// database, builds the synced game database via a sibling controller, and
-// hands everything to a pure presentation. All imperative state lives in
-// the controller; the element body stays a thin wire.
+// Container for serverless P2P play. The negotiation database's `negotiation`
+// service is the imperative signaling machine; this element renders purely
+// from observable state and forwards user intent through `service.actions.*`.
+// It supplies the game-specific config once after mount and tears the service
+// down on unmount. No business logic, no full-database access.
 
 import { customElement, property } from "lit/decorators.js";
 import { Database } from "@adobe/data/ecs";
-import { DatabaseElement, useObservableValues, useMemo, useEffect } from "@adobe/data-lit";
+import { DatabaseElement, useObservableValues, useEffect } from "@adobe/data-lit";
 import { negotiationPlugin } from "../../state/negotiation-plugin.js";
-import { createNegotiationController } from "../../state/negotiation-controller.js";
+import { copyText } from "../../copy-text.js";
 import { styles } from "./p2p-negotiation.css.js";
 import * as presentation from "./p2p-negotiation-presentation.js";
 import type { RenderGame, RenderPresence } from "./p2p-negotiation-presentation.js";
@@ -22,32 +23,16 @@ declare global {
     }
 }
 
-type NegotiationDatabase = Database.Plugin.ToDatabase<typeof negotiationPlugin>;
 type GamePlugin = Database.Plugin<any, any, any, any, any, any, any, any>;
 type AssignUserId = (role: "host" | "joiner") => string;
-
-/**
- * Owns the negotiation controller for the lifetime of its caller: builds
- * it whenever its inputs change, and disposes it on teardown. The
- * `useMemo` + `useEffect` pair is one concept — give it one name.
- */
-function useNegotiationController(
-    service: NegotiationDatabase,
-    gamePlugin: GamePlugin,
-    assignUserId: AssignUserId,
-) {
-    const controller = useMemo(
-        () => createNegotiationController(service, { gamePlugin, assignUserId }),
-        [service, gamePlugin, assignUserId],
-    );
-    useEffect(() => () => controller.dispose(), [controller]);
-    return controller;
-}
 
 @customElement(tagName)
 export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlugin> {
     static styles = styles;
 
+    // Game-specific config: which game to negotiate and how to assign peer ids.
+    // Supplied to the service via `configure` after mount (props do not exist
+    // when the database is created during connectedCallback).
     @property({ attribute: false })
     gamePlugin!: GamePlugin;
 
@@ -65,24 +50,26 @@ export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlu
     }
 
     render() {
-        // This bootstrap container owns the negotiation controller (business
-        // logic), which needs the full database surface rather than the
-        // restricted `service` view.
-        const service = this.database;
+        const { observe, actions, transactions } = this.service;
 
         const values = useObservableValues(() => ({
-            phase: service.observe.resources.phase,
-            connection: service.observe.resources.connection,
-            offerCode: service.observe.resources.offerCode,
-            answerCode: service.observe.resources.answerCode,
-            bannerText: service.observe.resources.bannerText,
-            bannerError: service.observe.resources.bannerError,
-            hostAnswerInput: service.observe.resources.hostAnswerInput,
-            joinerOfferInput: service.observe.resources.joinerOfferInput,
-            gameDb: service.observe.resources.gameDb,
+            phase: observe.resources.phase,
+            connection: observe.resources.connection,
+            offerCode: observe.resources.offerCode,
+            answerCode: observe.resources.answerCode,
+            bannerText: observe.resources.bannerText,
+            bannerError: observe.resources.bannerError,
+            hostAnswerInput: observe.resources.hostAnswerInput,
+            joinerOfferInput: observe.resources.joinerOfferInput,
+            gameDb: observe.resources.gameDb,
         }), []);
 
-        const controller = useNegotiationController(service, this.gamePlugin, this.assignUserId);
+        // Configure the service for this game on mount; tear down its WebRTC /
+        // sync machinery on unmount.
+        useEffect(() => {
+            actions.configure({ gamePlugin: this.gamePlugin, assignUserId: this.assignUserId });
+            return () => actions.dispose();
+        }, []);
 
         if (!values) return undefined;
 
@@ -90,14 +77,14 @@ export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlu
             ...values,
             renderGame: this.renderGame,
             renderPresence: this.renderPresence,
-            startHost: () => controller.startHost(),
-            startJoin: () => controller.startJoin(),
-            submitAnswer: () => controller.submitAnswer(),
-            generateAnswer: () => controller.generateAnswer(),
-            setHostAnswerInput: (value) => service.transactions.setHostAnswerInput({ value }),
-            setJoinerOfferInput: (value) => service.transactions.setJoinerOfferInput({ value }),
-            copyText: (text) => controller.copyText(text),
-            reconnect: () => controller.reconnect(),
+            startHost: () => actions.startHost(),
+            startJoin: () => actions.startJoin(),
+            submitAnswer: () => actions.submitAnswer(),
+            generateAnswer: () => actions.generateAnswer(),
+            reconnect: () => actions.reconnect(),
+            setHostAnswerInput: (value) => transactions.setHostAnswerInput({ value }),
+            setJoinerOfferInput: (value) => transactions.setJoinerOfferInput({ value }),
+            copyText,
         });
     }
 }

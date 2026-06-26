@@ -7,6 +7,7 @@
 
 import { customElement, property } from "lit/decorators.js";
 import { Database } from "@adobe/data/ecs";
+import { UIService } from "@adobe/data/service";
 import { DatabaseElement, useObservableValues, useMemo, useEffect } from "@adobe/data-lit";
 import { negotiationPlugin } from "../../state/negotiation-plugin.js";
 import { createNegotiationController } from "../../state/negotiation-controller.js";
@@ -60,15 +61,27 @@ export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlu
     @property({ attribute: false })
     renderPresence?: RenderPresence;
 
+    // This bootstrap container owns the negotiation controller (business logic),
+    // which drives awaitable transactions the restricted `service` view voids
+    // out. It captures the full database as it flows through the injection
+    // setter (the base creates-or-injects via `this.service = …`) and keeps it
+    // private to this element — the database stays unreachable through the API.
+    #fullDatabase!: NegotiationDatabase;
+
+    override get service(): UIService.FromService<NegotiationDatabase> {
+        return super.service;
+    }
+    override set service(db: NegotiationDatabase) {
+        this.#fullDatabase = db;
+        super.service = db;
+    }
+
     get plugin() {
         return negotiationPlugin;
     }
 
     render() {
-        // This bootstrap container owns the negotiation controller (business
-        // logic), which needs the full database surface rather than the
-        // restricted `service` view.
-        const service = this.database;
+        const service = this.#fullDatabase;
 
         const values = useObservableValues(() => ({
             phase: service.observe.resources.phase,

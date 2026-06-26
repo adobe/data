@@ -9,6 +9,8 @@
 import { customElement } from "lit/decorators.js";
 import { DatabaseElement, useObservableValues, usePointerObserve, useEffect, useElement } from "@adobe/data-lit";
 import { Observe } from "@adobe/data/observe";
+import type { Database } from "@adobe/data/ecs";
+import { UIService } from "@adobe/data/service";
 import { presencePlugin } from "../../state/presence-plugin.js";
 import { styles } from "./p2p-presence-overlay.css.js";
 import * as presentation from "./p2p-presence-overlay-presentation.js";
@@ -21,9 +23,25 @@ declare global {
     }
 }
 
+type PresenceDatabase = Database.Plugin.ToDatabase<typeof presencePlugin>;
+
 @customElement(tagName)
 export class P2pPresenceOverlayElement extends DatabaseElement<typeof presencePlugin> {
     static styles = styles;
+
+    // This container drives a streaming (async-generator) transaction and reads
+    // the local peer id, so it needs the full database rather than the
+    // restricted `service` view. It captures the injected database as it flows
+    // through the setter and keeps it private to this element.
+    #fullDatabase!: PresenceDatabase;
+
+    override get service(): UIService.FromService<PresenceDatabase> {
+        return super.service;
+    }
+    override set service(db: PresenceDatabase) {
+        this.#fullDatabase = db;
+        super.service = db;
+    }
 
     get plugin() {
         return presencePlugin;
@@ -37,10 +55,7 @@ export class P2pPresenceOverlayElement extends DatabaseElement<typeof presencePl
 
         const pointerPos = usePointerObserve([]);
         const element = useElement();
-        // This container drives a streaming (async-generator) transaction and
-        // reads the local peer id, so it works against the full database
-        // surface rather than the restricted `service` view.
-        const database = this.database;
+        const database = this.#fullDatabase;
 
         useEffect(() => {
             const positions = Observe.toAsyncGenerator(pointerPos, () => false);

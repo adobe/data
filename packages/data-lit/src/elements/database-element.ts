@@ -44,14 +44,11 @@ export abstract class DatabaseElement<P extends Database.Plugin> extends LitElem
 
   protected findAncestorService(): Database | void {
     for (const element of iterateSelfAndAncestors(this)) {
-      // Same-class DatabaseElement ancestor: read its private full db directly.
-      // Undefined-safe, no getter call, no restrict round-trip, no cast.
-      if (#database in element) {
-        const db = element.#database;
-        if (Database.is(db)) return db;
-        continue;
-      }
-      // Foreign host (e.g. <div .service=${db}>): duck-type the bound value.
+      // Read each ancestor's `service`. A DatabaseElement returns its full
+      // database here (UIService.restrict is identity at runtime); a foreign
+      // host (`<div .service=${db}>`) returns whatever was bound. Database.is
+      // keeps only a real database, skipping unconnected elements (undefined)
+      // and unrelated services (e.g. an ApplicationElement's MainService).
       const { service } = element as { service?: unknown };
       if (Database.is(service)) return service;
     }

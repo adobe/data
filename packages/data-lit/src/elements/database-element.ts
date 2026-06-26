@@ -10,10 +10,17 @@ import { attachDecorator, withHooks } from '../index.js';
 export abstract class DatabaseElement<P extends Database.Plugin> extends LitElement {
 
   /**
-   * @internal DI seam. Set by an ancestor via injection or created from `plugin`
-   * on connect. Bootstrap containers (those that own a controller or drive a
-   * streaming async-generator transaction) and ancestor injection use this;
-   * ordinary consumers inject and read through `service` instead.
+   * Internal DI seam — prefer `service`. Set by an ancestor via injection or
+   * created from `plugin` on connect. Bootstrap containers (those that own a
+   * controller or drive a streaming async-generator transaction) and ancestor
+   * injection use this; ordinary consumers inject and read through `service`
+   * instead.
+   *
+   * Deliberately documented in prose rather than with the internal JSDoc tag:
+   * this package emits with `stripInternal`, so that tag would erase this
+   * declaration from the public `.d.ts`. It must survive because
+   * `findAncestorDatabase` duck-types `element.database` across instances and
+   * bootstrap subclasses read it directly.
    */
   @property({ type: Object, reflect: false })
   database!: Database.Plugin.ToDatabase<P>;

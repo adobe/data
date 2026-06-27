@@ -4,7 +4,7 @@ import type { Vec3 } from "@adobe/data/math";
 
 /**
  * Orbit camera state — a polar arrangement around a center point with an
- * auto-spin and a one-shot auto-fit to a Geometry's bounds.
+ * auto-spin and a one-shot auto-fit to a mesh asset's `localBounds`.
  *
  *   - `center` / `radius` / `height` / `angle` define the camera placement.
  *   - `nearFactor` / `farFactor` scale the near and far planes so they
@@ -12,9 +12,9 @@ import type { Vec3 } from "@adobe/data/math";
  *     clipping).
  *   - `autoSpin` / `autoSpinSpeed` rotate the camera each frame when the
  *     user isn't dragging.
- *   - `fitGeometry` is an entity id; when non-zero, the auto-fit system
- *     reads that Geometry's bounds on the first available frame, sizes the
- *     orbit, and zeros the field. `fitRadiusFactor` / `fitHeightFactor` /
+ *   - `fitMesh` is an entity id; when non-zero, the auto-fit system reads that
+ *     mesh's `localBounds` on the first available frame, sizes the orbit, and
+ *     zeroes the field. `fitRadiusFactor` / `fitHeightFactor` /
  *     `fitRadiusOffset` / `fitCenter` shape the fit.
  */
 export interface Orbit {
@@ -26,7 +26,7 @@ export interface Orbit {
     autoSpinSpeed: number;
     nearFactor: number;
     farFactor: number;
-    fitGeometry: number;
+    fitMesh: number;
     fitRadiusFactor: number;
     fitHeightFactor: number;
     fitRadiusOffset: number;

@@ -6,7 +6,7 @@ import {
     animation,
     Model,
     Orbit,
-    pbrRender,
+    pbrIblRender,
     picking,
     type AnimationTrack,
 } from "@adobe/data-gpu";
@@ -40,7 +40,7 @@ interface PlanetSpec {
 }
 
 export const solarSystemPlugin = Database.Plugin.create({
-    extends: Database.Plugin.combine(pbrRender, sphere, animation, Orbit.plugin, picking),
+    extends: Database.Plugin.combine(pbrIblRender, sphere, animation, Orbit.plugin, picking),
     transactions: {
         initializeScene(t) {
             t.resources.orbit = {
@@ -61,7 +61,7 @@ export const solarSystemPlugin = Database.Plugin.create({
                     segments: 64,
                 });
                 const planetId = Model.plugin.transactions.insertModel(t, {
-                    geometry: geo,
+                    mesh: geo,
                     position: spec.position,
                     scale: spec.scale,
                     parent: spec.parent ?? 0,
@@ -120,8 +120,8 @@ export const solarSystemPlugin = Database.Plugin.create({
         pickAndFit(db, args: { x: number; y: number }) {
             const hit = db.actions.pickFromScreen(args);
             if (!hit) return;
-            const geo = db.read(hit.entity)?.geometry;
-            if (geo) db.transactions.setOrbit({ fitGeometry: geo });
+            const mesh = db.read(hit.entity)?.mesh;
+            if (mesh) db.transactions.setOrbit({ fitMesh: mesh });
         },
     },
 });

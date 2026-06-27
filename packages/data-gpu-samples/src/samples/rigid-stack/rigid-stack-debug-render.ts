@@ -8,8 +8,8 @@ import { rigidStackShader } from "./rigid-stack-render.wgsl.js";
  * The original lightweight debug renderer for rigid-stack — flat Lambertian,
  * bodies tinted by their material's baseColorFactor and brightened by speed,
  * geometry vertex-pulled from packed instance buffers. Kept as a selectable
- * alternative to `pbrRender`: combine `rigidStackDebugRender` instead of
- * `pbrRender` (and drop shapeGeometry/physicsRenderBridge) to use it.
+ * alternative to `pbrFactorRender`: combine `rigidStackDebugRender` instead of
+ * `pbrFactorRender` (and drop shapeGeometry/physicsRenderBridge) to use it.
  */
 const POSITION_STRIDE = 12;
 const CUBE_STRIDE = 24;

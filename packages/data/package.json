@@ -132,6 +132,9 @@
       ],
       "math": [
         "./dist/math/index.d.ts"
+      ],
+      "volume": [
+        "./dist/volume/index.d.ts"
       ]
     }
   },
@@ -187,6 +190,10 @@
     "./math": {
       "import": "./dist/math/index.js",
       "types": "./dist/math/index.d.ts"
+    },
+    "./volume": {
+      "import": "./dist/volume/index.js",
+      "types": "./dist/volume/index.d.ts"
     },
     "./equals-shallow": {
       "import": "./dist/equals-shallow.js",

@@ -14,7 +14,13 @@ export { FrameTime } from "./core/frame-time/frame-time.js";
 export { graphics } from "./graphics/graphics-plugin.js";
 
 // --- Physics: shared rigid-body data model + pluggable solver seam -----------
-export { physicsData } from "./physics/physics-data-plugin.js";
+export {
+    physicsData,
+    RIGID_BODY_COMPONENTS,
+    STATIC_COLLIDER_COMPONENTS,
+    COLLIDER_PRIMITIVE_RENDER_ARCHETYPES,
+} from "./physics/physics-data-plugin.js";
+export type { ColliderPrimitiveRenderArchetype } from "./physics/physics-data-plugin.js";
 export { physicsClock } from "./physics/physics-clock-plugin.js";
 export type { PhysicsClock } from "./physics/physics-clock-plugin.js";
 export { jointData } from "./physics/joint/joint-plugin.js";
@@ -31,6 +37,10 @@ export type { SolverBenchmarkOptions, SolverBenchmarkResult } from "./physics/so
 
 // --- Material registry (authored entities: physical + visible PBR props) ------
 export { Material } from "./material/material.js";
+export { assembleMaterialRow } from "./material/assemble-material-row.js";
+export { requireMaterial } from "./material/require-material.js";
+export type { MaterialByNameLookup } from "./material/require-material.js";
+export { standardMaterialNames } from "./material/standard-materials.js";
 
 // --- System plugins (consumed via aggregators) -------------------------------
 export { transform } from "./graphics/scene/node/transform-plugin.js";
@@ -43,8 +53,8 @@ export type { PickHit } from "./graphics/picking/pick-hit.js";
 // --- Rendering ---------------------------------------------------------------
 export { rendering } from "./graphics/rendering/rendering-plugin.js";
 export { pbrIblRender } from "./graphics/rendering/ibl-render/ibl-render-plugin.js";
-export { materialGpu } from "./graphics/rendering/material-gpu/material-gpu-plugin.js";
-export { pbrRender } from "./graphics/rendering/pbr-render/pbr-render-plugin.js";
+export { materialPaletteGpu } from "./graphics/rendering/material-palette-gpu/material-palette-gpu-plugin.js";
+export { pbrFactorRender } from "./graphics/rendering/pbr-render/pbr-factor-render-plugin.js";
 export { physicsRenderBridge } from "./graphics/rendering/pbr-render/physics-bridge-plugin.js";
 export { displayTransform } from "./graphics/rendering/display-transform-plugin.js";
 export { interpolation } from "./graphics/rendering/interpolation-plugin.js";
@@ -54,7 +64,11 @@ export { ragdollTrigger } from "./graphics/rendering/ragdoll-trigger-plugin.js";
 export { joltRagdoll } from "./graphics/rendering/jolt-ragdoll-plugin.js";
 export { fitBoneCapsules } from "./physics/ragdoll/fit-bone-capsules.js";
 export type { BoneCapsule } from "./physics/ragdoll/fit-bone-capsules.js";
+export { mesh } from "./graphics/scene/model/mesh-plugin.js";
 export { shapeGeometry } from "./graphics/scene/model/shape/shape-geometry-plugin.js";
+export type { ShapeSpec } from "./graphics/scene/model/shape/shape-spec.js";
+export { uploadShapeMesh } from "./graphics/scene/model/shape/upload-shape-mesh.js";
+export { boundsFromShapeMesh } from "./graphics/scene/model/shape/bounds-from-shape-mesh.js";
 
 // --- Types (type + namespace, access .plugin for the ECS plugin) -------------
 export { Camera } from "./graphics/camera/camera.js";
@@ -62,7 +76,7 @@ export { Light } from "./graphics/scene/light/light.js";
 export { Orbit } from "./graphics/camera/orbit/orbit.js";
 export { Node } from "./graphics/scene/node/node.js";
 export { Model } from "./graphics/scene/model/model.js";
-export { Geometry } from "./graphics/scene/model/geometry/geometry.js";
+export { Mesh } from "./graphics/scene/model/mesh/mesh.js";
 export { SceneUniforms } from "./graphics/scene/scene-uniforms/scene-uniforms.js";
 export { StandardVertex } from "./graphics/rendering/standard-vertex/standard-vertex.js";
 export { VisibleMaterial } from "./graphics/rendering/visible-material/visible-material.js";

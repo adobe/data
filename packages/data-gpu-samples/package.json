@@ -5,8 +5,9 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "predev": "pnpm --filter @adobe/data-gpu build",
     "dev": "vite",
-    "dev:all": "pnpm --parallel --filter @adobe/data --filter @adobe/data-gpu --filter data-gpu-samples run dev",
+    "dev:all": "pnpm --filter @adobe/data-gpu build && pnpm --parallel --filter @adobe/data --filter @adobe/data-gpu --filter data-gpu-samples run dev",
     "build": "vite build"
   },
   "dependencies": {

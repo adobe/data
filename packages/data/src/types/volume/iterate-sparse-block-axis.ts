@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { TypedBuffer } from "../../typed-buffer/typed-buffer.js";
-import type { Callback, SegmentViewCallback } from "./callback.js";
+import type { BatchCallback, Callback, SegmentViewCallback } from "./callback.js";
 import type { IterateAxis } from "./iterate-axis.js";
 import { localBlockIndex } from "./volume-index.js";
 import { packPlaneKey } from "./create-sparse-block/pack-block-key.js";
@@ -296,6 +296,22 @@ export const runSparseBlockAxisPlanView = <T>(
             stepIndex === lastStep,
         );
     }
+};
+
+export const runSparseBlockAxisPlanBatch = <T>(
+    plan: SparseBlockAxisPlan,
+    _shift: number,
+    data: TypedBuffer<T>,
+    callback: BatchCallback<T>,
+): void => {
+    callback({
+        buffer: data,
+        step: plan.step,
+        precomputedSegments: plan.precomputedSegments,
+        stepSegmentStarts: plan.stepSegmentStarts,
+        origins: plan.origins,
+        lineCount: plan.callbackCount,
+    });
 };
 
 export const iterateSparseBlockAxis = <T>(

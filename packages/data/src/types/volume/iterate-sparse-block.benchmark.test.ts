@@ -84,11 +84,11 @@ describe("sparse block iterate benchmarks", () => {
         expect(lines.length).toBe(AXES.length * LAYOUTS.length);
     }, 60_000);
 
-    it("reports callback vs view API throughput", () => {
+    it("reports callback vs view vs batch API throughput", () => {
         const scenes = AXES.flatMap(axis =>
             LAYOUTS.map(layout => ({ layout, blocks: 64, axis })),
         );
-        const apis = ["callback", "view"] as const;
+        const apis = ["callback", "view", "batch"] as const;
         const lines: string[] = [];
         for (const scene of scenes) {
             const volume = buildSparseBlockIterateScene({ ...scene, blockSize: BLOCK_SIZE });

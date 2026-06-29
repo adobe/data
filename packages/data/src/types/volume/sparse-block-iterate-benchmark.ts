@@ -1,14 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Boolean } from "../../schema/boolean/index.js";
-import type { Callback, SegmentViewCallback } from "./callback.js";
+import type { BatchCallback, Callback, SegmentViewCallback } from "./callback.js";
 import type { IterateAxis } from "./iterate-axis.js";
 import type { Volume } from "./volume.js";
 import { createSparseBlock } from "./create-sparse-block/create-sparse-block.js";
 import { isSparseBlockVolume } from "./create-sparse-block/is-sparse-block-volume.js";
 import type { SparseBlockVolume } from "./create-sparse-block/sparse-block-volume.js";
 
-export type SparseBlockIterateApi = "callback" | "view";
+export type SparseBlockIterateApi = "callback" | "view" | "batch";
 
 export type SparseBlockIterateLayout = "adjacent" | "fragmented" | "scattered";
 
@@ -101,6 +101,11 @@ const bindIterate = (
     axis: IterateAxis,
     api: SparseBlockIterateApi,
 ) => {
+    if (api === "batch") {
+        return axis === "x" ? volume.iterateXBatch.bind(volume)
+            : axis === "y" ? volume.iterateYBatch.bind(volume)
+                : volume.iterateZBatch.bind(volume);
+    }
     if (api === "view") {
         return axis === "x" ? volume.iterateXView.bind(volume)
             : axis === "y" ? volume.iterateYView.bind(volume)
@@ -211,8 +216,31 @@ const originForBlock = (
 const withIterateWork = (
     recordLine: (pairCount: number, voxelsAlongAxis: number) => void,
     api: SparseBlockIterateApi,
-): Callback<boolean> | SegmentViewCallback<boolean> => {
+): Callback<boolean> | SegmentViewCallback<boolean> | BatchCallback<boolean> => {
     let sink = 0;
+    if (api === "batch") {
+        const batchCallback: BatchCallback<boolean> = (batch) => {
+            for (let stepIndex = 0; stepIndex < batch.lineCount; stepIndex++) {
+                const segmentStart = batch.stepSegmentStarts[stepIndex]!;
+                const segmentEnd = batch.stepSegmentStarts[stepIndex + 1]!;
+                const pairCount = (segmentEnd - segmentStart) >> 1;
+                let voxelsAlongAxis = 0;
+                for (let i = segmentStart; i < segmentEnd; i += 2) {
+                    const offset = batch.precomputedSegments[i]!;
+                    const length = batch.precomputedSegments[i + 1]!;
+                    voxelsAlongAxis += length;
+                    for (let j = 0; j < length; j++) {
+                        sink += batch.buffer.get(offset + j * batch.step) ? 1 : 0;
+                    }
+                }
+                recordLine(pairCount, voxelsAlongAxis);
+            }
+            if (sink === Number.MAX_SAFE_INTEGER) {
+                throw new Error("unreachable");
+            }
+        };
+        return batchCallback;
+    }
     if (api === "view") {
         const viewCallback: SegmentViewCallback<boolean> = (
             buffer,

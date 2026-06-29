@@ -29,3 +29,15 @@ export type SegmentViewCallback<T> = (
     z: number,
     done: boolean,
 ) => void;
+
+/** One-shot axis iteration with struct-of-arrays line data. */
+export interface AxisIterateBatch<T> {
+    readonly buffer: TypedBuffer<T>;
+    readonly step: number;
+    readonly precomputedSegments: readonly number[];
+    readonly stepSegmentStarts: readonly number[];
+    readonly origins: readonly number[];
+    readonly lineCount: number;
+}
+
+export type BatchCallback<T> = (batch: AxisIterateBatch<T>) => void;

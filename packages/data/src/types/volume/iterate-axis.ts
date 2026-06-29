@@ -9,6 +9,7 @@ export {
     buildSparseBlockAxisPlan,
     runSparseBlockAxisPlan,
     runSparseBlockAxisPlanView,
+    runSparseBlockAxisPlanBatch,
     type SparseBlockAxisPlan,
 } from "./iterate-sparse-block-axis.js";
 

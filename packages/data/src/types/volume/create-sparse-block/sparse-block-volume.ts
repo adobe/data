@@ -5,7 +5,7 @@ import type { Schema } from "../../../schema/index.js";
 import type { TypedBuffer } from "../../../typed-buffer/typed-buffer.js";
 import type { Volume } from "../volume.js";
 import type { Callback } from "../callback.js";
-import { iterateSparseBlockAxis } from "../iterate-axis.js";
+import { buildSparseBlockAxisPlan, runSparseBlockAxisPlan, type SparseBlockAxisPlan } from "../iterate-axis.js";
 import { localBlockIndex } from "../volume-index.js";
 import { packBlockKey } from "./pack-block-key.js";
 
@@ -40,6 +40,7 @@ export class SparseBlockVolume<T> implements Volume<T> {
     readonly #blocks = new Map<number, number>();
     readonly #defaultValue: T;
     #size: Vec3 = [0, 0, 0];
+    #axisPlans: Partial<Record<"x" | "y" | "z", SparseBlockAxisPlan>> | undefined;
 
     constructor(blockSize: number, data: TypedBuffer<T>) {
         this.blockSize = blockSize;
@@ -78,6 +79,7 @@ export class SparseBlockVolume<T> implements Volume<T> {
         for (const [key, offset] of blocks) {
             volume.#blocks.set(key, offset);
         }
+        volume.#axisPlans = undefined;
         return volume;
     }
 
@@ -108,15 +110,34 @@ export class SparseBlockVolume<T> implements Volume<T> {
     }
 
     iterateX(callback: Callback<T>): void {
-        iterateSparseBlockAxis(this.#blocks, this.blockSize, this.#shift, this.#data, callback, "x");
+        this.#iterateAxis("x", callback);
     }
 
     iterateY(callback: Callback<T>): void {
-        iterateSparseBlockAxis(this.#blocks, this.blockSize, this.#shift, this.#data, callback, "y");
+        this.#iterateAxis("y", callback);
     }
 
     iterateZ(callback: Callback<T>): void {
-        iterateSparseBlockAxis(this.#blocks, this.blockSize, this.#shift, this.#data, callback, "z");
+        this.#iterateAxis("z", callback);
+    }
+
+    #iterateAxis(axis: "x" | "y" | "z", callback: Callback<T>): void {
+        let plan = this.#axisPlans?.[axis];
+        if (plan === undefined) {
+            plan = buildSparseBlockAxisPlan(this.#blocks, this.blockSize, this.#shift, axis);
+            if (plan === undefined) {
+                return;
+            }
+            if (this.#axisPlans === undefined) {
+                this.#axisPlans = {};
+            }
+            this.#axisPlans[axis] = plan;
+        }
+        runSparseBlockAxisPlan(plan, this.#shift, this.#data, callback);
+    }
+
+    #invalidateAxisPlans(): void {
+        this.#axisPlans = undefined;
     }
 
     #blockOffset(x: number, y: number, z: number): number | undefined {
@@ -141,6 +162,7 @@ export class SparseBlockVolume<T> implements Volume<T> {
                 this.#data.set(offset + i, this.#defaultValue);
             }
             this.#blocks.set(key, offset);
+            this.#invalidateAxisPlans();
         }
         return offset;
     }

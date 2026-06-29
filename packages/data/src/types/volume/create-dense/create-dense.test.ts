@@ -58,10 +58,10 @@ describe("createDense", () => {
 
         expect(rows).toHaveLength(4);
         expect(rows.every(row => row.step === 1 && row.x === 0)).toBe(true);
-        expect(rows[0]).toEqual({ x: 0, y: 0, z: 0, values: [true, true, false], step: 1, done: false });
-        expect(rows[1]).toEqual({ x: 0, y: 1, z: 0, values: [false, false, false], step: 1, done: false });
-        expect(rows[2]).toEqual({ x: 0, y: 0, z: 1, values: [false, false, false], step: 1, done: false });
-        expect(rows[3]).toEqual({ x: 0, y: 1, z: 1, values: [false, false, true], step: 1, done: true });
+        expect(rows[0]).toEqual({ x: 0, y: 0, z: 0, values: [true, true, false], step: 1, pairCount: 1, done: false });
+        expect(rows[1]).toEqual({ x: 0, y: 1, z: 0, values: [false, false, false], step: 1, pairCount: 1, done: false });
+        expect(rows[2]).toEqual({ x: 0, y: 0, z: 1, values: [false, false, false], step: 1, pairCount: 1, done: false });
+        expect(rows[3]).toEqual({ x: 0, y: 1, z: 1, values: [false, false, true], step: 1, pairCount: 1, done: true });
     });
 
     it("iterateY walks each y column with width stride", () => {
@@ -74,10 +74,10 @@ describe("createDense", () => {
 
         expect(rows).toHaveLength(6);
         expect(rows.every(row => row.step === 3 && row.y === 0)).toBe(true);
-        expect(rows[0]).toEqual({ x: 0, y: 0, z: 0, values: [true, true], step: 3, done: false });
-        expect(rows[1]).toEqual({ x: 1, y: 0, z: 0, values: [false, false], step: 3, done: false });
+        expect(rows[0]).toEqual({ x: 0, y: 0, z: 0, values: [true, true], step: 3, pairCount: 1, done: false });
+        expect(rows[1]).toEqual({ x: 1, y: 0, z: 0, values: [false, false], step: 3, pairCount: 1, done: false });
         expect(rows.find(row => row.x === 2 && row.z === 1)).toEqual({
-            x: 2, y: 0, z: 1, values: [false, true], step: 3, done: true,
+            x: 2, y: 0, z: 1, values: [false, true], step: 3, pairCount: 1, done: true,
         });
     });
 
@@ -91,9 +91,9 @@ describe("createDense", () => {
 
         expect(rows).toHaveLength(6);
         expect(rows.every(row => row.step === 6 && row.z === 0)).toBe(true);
-        expect(rows[0]).toEqual({ x: 0, y: 0, z: 0, values: [true, true], step: 6, done: false });
+        expect(rows[0]).toEqual({ x: 0, y: 0, z: 0, values: [true, true], step: 6, pairCount: 1, done: false });
         expect(rows.find(row => row.x === 2 && row.y === 1)).toEqual({
-            x: 2, y: 1, z: 0, values: [false, true], step: 6, done: true,
+            x: 2, y: 1, z: 0, values: [false, true], step: 6, pairCount: 1, done: true,
         });
     });
 

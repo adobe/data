@@ -71,6 +71,72 @@ describe("createSparseBlock", () => {
         );
     });
 
+    it("iterateX merges adjacent blocks along x into one callback per row", () => {
+        const volume = createSparseBlock(Boolean.schema, 4);
+        volume.set(0, 0, 0, true);
+        volume.set(3, 0, 0, true);
+        volume.set(4, 0, 0, true);
+
+        const rows = collectAxisSegments(volume, "x");
+        const originRow = rows.find(row => row.y === 0 && row.z === 0);
+
+        expect(rows).toHaveLength(16);
+        expect(originRow?.pairCount).toBe(2);
+        expect(originRow?.values).toEqual([
+            true, false, false, true,
+            true, false, false, false,
+        ]);
+        expect(originRow?.x).toBe(0);
+        expect(rows.at(-1)?.done).toBe(true);
+    });
+
+    it("iterateX keeps non-adjacent blocks on separate callbacks", () => {
+        const volume = createSparseBlock(Boolean.schema, 4);
+        volume.set(0, 0, 0, true);
+        volume.set(8, 0, 0, true);
+
+        const atOrigin = collectAxisSegments(volume, "x").filter(row => row.y === 0 && row.z === 0);
+
+        expect(atOrigin).toHaveLength(2);
+        expect(atOrigin.every(row => row.pairCount === 1)).toBe(true);
+        expect(atOrigin[0]?.values[0]).toBe(true);
+        expect(atOrigin[1]?.values[0]).toBe(true);
+        expect(atOrigin[0]?.x).toBe(0);
+        expect(atOrigin[1]?.x).toBe(8);
+    });
+
+    it("iterateY merges adjacent blocks along y into one callback per column", () => {
+        const volume = createSparseBlock(Boolean.schema, 4);
+        volume.set(0, 0, 0, true);
+        volume.set(0, 3, 0, true);
+        volume.set(0, 4, 0, true);
+
+        const originRow = collectAxisSegments(volume, "y").find(row => row.x === 0 && row.z === 0);
+
+        expect(originRow?.pairCount).toBe(2);
+        expect(originRow?.values).toEqual([
+            true, false, false, true,
+            true, false, false, false,
+        ]);
+        expect(originRow?.y).toBe(0);
+    });
+
+    it("iterateZ merges adjacent blocks along z into one callback per column", () => {
+        const volume = createSparseBlock(Boolean.schema, 4);
+        volume.set(0, 0, 0, true);
+        volume.set(0, 0, 3, true);
+        volume.set(0, 0, 4, true);
+
+        const originRow = collectAxisSegments(volume, "z").find(row => row.x === 0 && row.y === 0);
+
+        expect(originRow?.pairCount).toBe(2);
+        expect(originRow?.values).toEqual([
+            true, false, false, true,
+            true, false, false, false,
+        ]);
+        expect(originRow?.z).toBe(0);
+    });
+
     it("iterateX walks each block as dense x rows", () => {
         const volume = createSparseBlock(Boolean.schema, 4);
         volume.set(0, 0, 0, true);
@@ -79,10 +145,9 @@ describe("createSparseBlock", () => {
 
         const rows = collectAxisSegments(volume, "x");
 
-        expect(rows).toHaveLength(32);
+        expect(rows).toHaveLength(16);
         expect(rows.every(row => row.step === 1)).toBe(true);
-        expect(rows[0]).toEqual({ x: 0, y: 0, z: 0, values: [true, false, false, true], step: 1, done: false });
-        expect(rows.find(row => row.x === 4 && row.y === 0 && row.z === 0)?.values[0]).toBe(true);
+        expect(rows.find(row => row.y === 0 && row.z === 0)?.values[4]).toBe(true);
         expect(rows.at(-1)?.done).toBe(true);
     });
 
@@ -95,7 +160,13 @@ describe("createSparseBlock", () => {
         const originRow = rows.find(row => row.x === 0 && row.z === 0);
 
         expect(rows).toHaveLength(16);
-        expect(originRow).toEqual({ x: 0, y: 0, z: 0, values: [true, false, false, true], step: 4, done: false });
+        expect(originRow).toEqual({
+            x: 0, y: 0, z: 0,
+            values: [true, false, false, true],
+            step: 4,
+            pairCount: 1,
+            done: false,
+        });
         expect(rows.every(row => row.step === 4 && row.y === 0)).toBe(true);
         expect(rows.at(-1)?.done).toBe(true);
     });
@@ -109,7 +180,13 @@ describe("createSparseBlock", () => {
         const originRow = rows.find(row => row.x === 0 && row.y === 0);
 
         expect(rows).toHaveLength(16);
-        expect(originRow).toEqual({ x: 0, y: 0, z: 0, values: [true, false, false, true], step: 16, done: false });
+        expect(originRow).toEqual({
+            x: 0, y: 0, z: 0,
+            values: [true, false, false, true],
+            step: 16,
+            pairCount: 1,
+            done: false,
+        });
         expect(rows.every(row => row.step === 16 && row.z === 0)).toBe(true);
         expect(rows.at(-1)?.done).toBe(true);
     });

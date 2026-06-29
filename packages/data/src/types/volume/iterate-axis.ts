@@ -3,8 +3,8 @@
 import type { Vec3 } from "../../math/index.js";
 import type { TypedBuffer } from "../../typed-buffer/typed-buffer.js";
 import type { Callback } from "./callback.js";
-import { getDenseIndex, localBlockIndex } from "./volume-index.js";
-import { unpackBlockKey } from "./create-sparse-block/unpack-block-key.js";
+import { getDenseIndex } from "./volume-index.js";
+export { iterateSparseBlockAxis } from "./iterate-sparse-block-axis.js";
 
 export type IterateAxis = "x" | "y" | "z";
 
@@ -85,114 +85,5 @@ export const iterateDenseAxis = <T>(
                 spec.isLast(inner, outer, lastInner, lastOuter),
             );
         }
-    }
-};
-
-interface SparseBlockAxisSpec {
-    readonly segmentStart: (blockOffset: number, a: number, b: number, blockSize: number, blockVolume: number) => number;
-    readonly origin: (originX: number, originY: number, originZ: number, a: number, b: number) => readonly [number, number, number];
-    readonly isLast: (
-        blockIndex: number,
-        lastBlockIndex: number,
-        a: number,
-        b: number,
-        lastA: number,
-        lastB: number,
-    ) => boolean;
-}
-
-const sparseBlockAxisSpecs: Record<IterateAxis, SparseBlockAxisSpec> = {
-    x: {
-        segmentStart: (blockOffset, ly, lz, blockSize, blockVolume) =>
-            blockOffset + ly * blockSize + lz * blockVolume,
-        origin: (originX, originY, originZ, ly, lz) =>
-            [originX, originY + ly, originZ + lz] as const,
-        isLast: (blockIndex, lastBlockIndex, ly, lz, lastLy, lastLz) =>
-            blockIndex === lastBlockIndex && ly === lastLy && lz === lastLz,
-    },
-    y: {
-        segmentStart: (blockOffset, lx, lz, _blockSize, blockVolume) =>
-            blockOffset + lx + lz * blockVolume,
-        origin: (originX, originY, originZ, lx, lz) =>
-            [originX + lx, originY, originZ + lz] as const,
-        isLast: (blockIndex, lastBlockIndex, lx, lz, lastLx, lastLz) =>
-            blockIndex === lastBlockIndex && lx === lastLx && lz === lastLz,
-    },
-    z: {
-        segmentStart: (blockOffset, lx, ly, blockSize) =>
-            blockOffset + localBlockIndex(lx, ly, 0, blockSize),
-        origin: (originX, originY, originZ, lx, ly) =>
-            [originX + lx, originY + ly, originZ] as const,
-        isLast: (blockIndex, lastBlockIndex, lx, ly, lastLx, lastLy) =>
-            blockIndex === lastBlockIndex && lx === lastLx && ly === lastLy,
-    },
-};
-
-export const iterateSparseBlockAxis = <T>(
-    blocks: ReadonlyMap<number, number>,
-    blockSize: number,
-    shift: number,
-    data: TypedBuffer<T>,
-    callback: Callback<T>,
-    axis: IterateAxis,
-): void => {
-    const entries = [...blocks.entries()];
-    if (entries.length === 0) {
-        return;
-    }
-
-    const blockVolume = blockSize * blockSize * blockSize;
-    const spec = sparseBlockAxisSpecs[axis];
-    const length = blockSize;
-    const blockPlane = blockSize * blockSize;
-    const step = axis === "x" ? 1 : axis === "y" ? blockSize : blockPlane;
-    const segments = [0, length];
-    const lastBlockIndex = entries.length - 1;
-    const lastCoord = blockSize - 1;
-
-    const outerLoop = axis === "z"
-        ? (fn: (a: number, b: number) => void) => {
-            for (let ly = 0; ly < blockSize; ly++) {
-                for (let lx = 0; lx < blockSize; lx++) {
-                    fn(lx, ly);
-                }
-            }
-        }
-        : axis === "y"
-            ? (fn: (a: number, b: number) => void) => {
-                for (let lz = 0; lz < blockSize; lz++) {
-                    for (let lx = 0; lx < blockSize; lx++) {
-                        fn(lx, lz);
-                    }
-                }
-            }
-            : (fn: (a: number, b: number) => void) => {
-                for (let lz = 0; lz < blockSize; lz++) {
-                    for (let ly = 0; ly < blockSize; ly++) {
-                        fn(ly, lz);
-                    }
-                }
-            };
-
-    for (let blockIndex = 0; blockIndex < entries.length; blockIndex++) {
-        const [key, blockOffset] = entries[blockIndex]!;
-        const { bx, by, bz } = unpackBlockKey(key);
-        const originX = bx << shift;
-        const originY = by << shift;
-        const originZ = bz << shift;
-
-        outerLoop((a, b) => {
-            segments[0] = spec.segmentStart(blockOffset, a, b, blockSize, blockVolume);
-            const [x, y, z] = spec.origin(originX, originY, originZ, a, b);
-            callback(
-                data,
-                segments,
-                step,
-                x,
-                y,
-                z,
-                spec.isLast(blockIndex, lastBlockIndex, a, b, lastCoord, lastCoord),
-            );
-        });
     }
 };

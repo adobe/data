@@ -12,8 +12,25 @@ export interface SegmentRow {
     readonly z: number;
     readonly values: boolean[];
     readonly step: number;
+    readonly pairCount: number;
     readonly done: boolean;
 }
+
+export const readAllSegmentValues = <T>(
+    buffer: TypedBuffer<T>,
+    segments: readonly number[],
+    step: number,
+): T[] => {
+    const values: T[] = [];
+    for (let i = 0; i < segments.length; i += 2) {
+        const offset = segments[i]!;
+        const length = segments[i + 1]!;
+        for (let j = 0; j < length; j++) {
+            values.push(buffer.get(offset + j * step));
+        }
+    }
+    return values;
+};
 
 export const collectAxisSegments = <T>(
     volume: Volume<T>,
@@ -32,26 +49,19 @@ export const collectAxisSegments = <T>(
         } else {
             expect(segments).toBe(segmentsRef);
         }
-        expect(segments).toHaveLength(2);
+        expect(segments.length % 2).toBe(0);
+        expect(segments.length).toBeGreaterThan(0);
 
-        const offset = segments[0];
-        const length = segments[1];
-        const values: boolean[] = [];
-        for (let i = 0; i < length; i++) {
-            values.push(buffer.get(offset + i * step) as boolean);
-        }
-        rows.push({ x, y, z, values, step, done });
+        rows.push({
+            x,
+            y,
+            z,
+            values: readAllSegmentValues(buffer, segments, step) as boolean[],
+            step,
+            pairCount: segments.length / 2,
+            done,
+        });
     });
 
     return rows;
-};
-
-export const readSegment = <T>(buffer: TypedBuffer<T>, segments: number[], step: number): T[] => {
-    const offset = segments[0];
-    const length = segments[1];
-    const values: T[] = [];
-    for (let i = 0; i < length; i++) {
-        values.push(buffer.get(offset + i * step));
-    }
-    return values;
 };

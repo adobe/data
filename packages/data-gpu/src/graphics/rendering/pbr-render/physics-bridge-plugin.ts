@@ -1,7 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database, type Entity } from "@adobe/data/ecs";
-import { physicsData, RIGID_BODY_COMPONENTS, STATIC_COLLIDER_COMPONENTS } from "../../../physics/physics-data-plugin.js";
+import { physicsData } from "../../../physics/physics-data-plugin.js";
+import { RIGID_BODY_COMPONENTS } from "../../../physics/rigid-body-components.js";
+import { STATIC_COLLIDER_COMPONENTS } from "../../../physics/static-collider-components.js";
 import { mesh } from "../../scene/model/mesh-plugin.js";
 import { shapeGeometry } from "../../scene/model/shape/shape-geometry-plugin.js";
 import { capsuleMesh, flatShadedMesh } from "../../scene/model/shape/shape-mesh.js";

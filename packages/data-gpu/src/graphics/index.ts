@@ -1,3 +1,3 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-export * from "./core/public.js";
+export * from "./public.js";

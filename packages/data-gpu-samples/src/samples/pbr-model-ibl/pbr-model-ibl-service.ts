@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { pbrIblRender, Model, Orbit } from "@adobe/data-gpu";
+import { Model, Orbit, pbrIblRender } from "@adobe/data-gpu/graphics";
 
 export const pbrModelIblPlugin = Database.Plugin.create({
     extends: Database.Plugin.combine(pbrIblRender, Orbit.plugin),

@@ -28,8 +28,6 @@ function factor(
 }
 
 /** Small factor library seeded by `seedStandardMaterials`. */
-export const standardMaterialNames = ["rubber", "wood", "stone", "steel", "ice"] as const;
-
 export const standardMaterials: readonly Material[] = [
     factor("rubber", [0.15, 0.15, 0.15, 1], 0.0, 0.90, 1.1,  0.80, 0.90, 1e-5, 2.0),
     factor("wood",   [0.55, 0.35, 0.20, 1], 0.0, 0.75, 0.6,  0.35, 0.70, 5e-7, 1.7),

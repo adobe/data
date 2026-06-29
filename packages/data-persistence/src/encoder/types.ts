@@ -1,5 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
+import type { TypedBufferType } from "@adobe/data/typed-buffer";
+
 /**
  * Manifest written to `meta.json` describing the on-disk layout for a
  * specific database snapshot. Versioned for forward-compatible schema
@@ -34,8 +36,8 @@ export interface ColumnManifest {
     readonly stride: number;
     /** "fixed" stores in column file; "journal" stores in journal entries only. */
     readonly storage: "fixed" | "journal" | "manifest";
-    /** TypedBufferType from @adobe/data, kept as a string to avoid importing classes. */
-    readonly bufferType: "number" | "struct" | "enum" | "const" | "array";
+    /** TypedBufferType from @adobe/data. */
+    readonly bufferType: TypedBufferType;
 }
 
 /**

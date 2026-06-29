@@ -2,7 +2,8 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Mat4x4 } from "@adobe/data/math";
-import { pbrCore, core, mesh, VisibleMaterial } from "@adobe/data-gpu";
+import { core } from "@adobe/data-gpu";
+import { mesh, pbrCore, VisibleMaterial } from "@adobe/data-gpu/graphics";
 import { createSphereBuffers } from "./create-sphere.js";
 
 interface SphereSpec extends VisibleMaterial.ColorMaterialOptions {

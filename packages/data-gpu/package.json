@@ -29,6 +29,18 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./graphics": {
+      "import": "./dist/graphics/index.js",
+      "types": "./dist/graphics/index.d.ts"
+    },
+    "./physics": {
+      "import": "./dist/physics/index.js",
+      "types": "./dist/physics/index.d.ts"
+    },
+    "./material": {
+      "import": "./dist/material/index.js",
+      "types": "./dist/material/index.d.ts"
     }
   }
 }

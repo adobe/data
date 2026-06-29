@@ -7,37 +7,8 @@ import { BodyType } from "./body/body-type/body-type.js";
 import { ColliderShape } from "./body/collider-shape/collider-shape.js";
 import type { ColliderMesh } from "./body/collider-mesh.js";
 import { Material } from "../material/material.js";
-
-/** Column set shared by `RigidBody`, `ConvexBody`, and `VoxelRigidBody`. */
-export const RIGID_BODY_COMPONENTS = [
-    "bodyType",
-    "colliderShape",
-    "halfExtents",
-    "material",
-    "position",
-    "rotation",
-    "linearVelocity",
-    "angularVelocity",
-] as const;
-
-/** Column set shared by `StaticCollider`, `MeshCollider`, and `VoxelStaticCollider`. */
-export const STATIC_COLLIDER_COMPONENTS = [
-    "colliderShape",
-    "halfExtents",
-    "material",
-    "position",
-    "rotation",
-] as const;
-
-/** Physics archetypes whose visual mesh is the collider primitive (not an external override). */
-export const COLLIDER_PRIMITIVE_RENDER_ARCHETYPES = [
-    "RigidBody",
-    "StaticCollider",
-    "ConvexBody",
-    "MeshCollider",
-] as const;
-
-export type ColliderPrimitiveRenderArchetype = (typeof COLLIDER_PRIMITIVE_RENDER_ARCHETYPES)[number];
+import { RIGID_BODY_COMPONENTS } from "./rigid-body-components.js";
+import { STATIC_COLLIDER_COMPONENTS } from "./static-collider-components.js";
 
 /**
  * The shared, solver-agnostic rigid-body data model — the seam every physics

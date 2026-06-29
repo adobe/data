@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Vec3 } from "@adobe/data/math";
-import { pbrIblRender, Model, Orbit } from "@adobe/data-gpu";
+import { Model, Orbit, pbrIblRender } from "@adobe/data-gpu/graphics";
 
 export const pbrIblInstancedPlugin = Database.Plugin.create({
     extends: Database.Plugin.combine(pbrIblRender, Orbit.plugin),

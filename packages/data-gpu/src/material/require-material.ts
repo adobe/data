@@ -1,13 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Entity } from "@adobe/data/ecs";
-
-/** Store or transaction surface that exposes the material name index. */
-export interface MaterialByNameLookup {
-    indexes: {
-        materialByName: { get(args: { name: string }): Entity | null };
-    };
-}
+import type { MaterialByNameLookup } from "./material-by-name-lookup.js";
 
 /** Returns the material entity for `name`, or throws if it was never seeded. */
 export const requireMaterial = (db: MaterialByNameLookup, name: string): Entity => {

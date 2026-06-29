@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { graphics } from "@adobe/data-gpu";
+import { graphics } from "@adobe/data-gpu/graphics";
 
 const triangleShader = `
 struct VertexOutput {

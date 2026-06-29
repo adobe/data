@@ -9,7 +9,7 @@ import {
     pbrIblRender,
     picking,
     type AnimationTrack,
-} from "@adobe/data-gpu";
+} from "@adobe/data-gpu/graphics";
 import { sphere } from "./sphere-plugin.js";
 
 const TWO_PI = Math.PI * 2;

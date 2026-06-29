@@ -2,7 +2,16 @@
 
 import { Database, type Entity } from "@adobe/data/ecs";
 import { Quat } from "@adobe/data/math";
-import { pbrFactorRender, requireMaterial, rapierSolver, joltSolver, shapeGeometry, physicsRenderBridge, modelCollider, jointData, ColliderShape, Orbit, standardMaterialNames, Model } from "@adobe/data-gpu";
+import { requireMaterial, standardMaterialNames } from "@adobe/data-gpu/material";
+import { ColliderShape, jointData, joltSolver, rapierSolver } from "@adobe/data-gpu/physics";
+import {
+    Model,
+    Orbit,
+    modelCollider,
+    pbrFactorRender,
+    physicsRenderBridge,
+    shapeGeometry,
+} from "@adobe/data-gpu/graphics";
 
 // Studio HDR for IBL © Poly Haven, CC0.
 const ENV_URL = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/studio_small_09_1k.hdr";

@@ -1,16 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-/**
- * Minimal service interface required by attachOrbitDrag — just the two
- * orbit transactions it calls. Any service that combines Orbit.plugin
- * satisfies this.
- */
-export interface OrbitDragService {
-    transactions: {
-        addOrbitAngle(delta: number): void;
-        resumeAutoSpin(): void;
-    };
-}
+import type { OrbitDragService } from "./orbit-drag-service.js";
 
 /**
  * Attaches pointer-drag listeners to `element` that drive orbit rotation.
@@ -18,16 +8,6 @@ export interface OrbitDragService {
  *
  * Framework-agnostic — pass the returned dispose to whatever cleanup
  * mechanism your framework provides (useEffect return, onUnmount, etc.).
- *
- * @example
- * // Vanilla JS
- * const dispose = attachOrbitDrag(canvas, service);
- * // later:
- * dispose();
- *
- * @example
- * // Lit (inside render())
- * useEffect(() => attachOrbitDrag(canvas, service), [canvas, service]);
  */
 export function attachOrbitDrag(
     element: HTMLElement,
@@ -48,15 +28,15 @@ export function attachOrbitDrag(
     };
     const onUp = () => service.transactions.resumeAutoSpin();
 
-    element.addEventListener("pointerdown",   onDown);
-    element.addEventListener("pointermove",   onMove);
-    element.addEventListener("pointerup",     onUp);
+    element.addEventListener("pointerdown", onDown);
+    element.addEventListener("pointermove", onMove);
+    element.addEventListener("pointerup", onUp);
     element.addEventListener("pointercancel", onUp);
 
     return () => {
-        element.removeEventListener("pointerdown",   onDown);
-        element.removeEventListener("pointermove",   onMove);
-        element.removeEventListener("pointerup",     onUp);
+        element.removeEventListener("pointerdown", onDown);
+        element.removeEventListener("pointermove", onMove);
+        element.removeEventListener("pointerup", onUp);
         element.removeEventListener("pointercancel", onUp);
     };
 }

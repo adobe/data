@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { useElement, useEffect } from "@adobe/data-lit";
-import { attachOrbitDrag, type OrbitDragService } from "@adobe/data-gpu";
+import { attachOrbitDrag, type OrbitDragService } from "@adobe/data-gpu/graphics";
 
 /**
  * Wires the host element's drag gesture to the `orbit` plugin via

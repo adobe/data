@@ -1,7 +1,19 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { pbrFactorRender, requireMaterial, pbrSkinning, boneColliders, joltRagdoll, physicsRenderBridge, shapeGeometry, ragdollTrigger, rapierSolver, Model, Orbit } from "@adobe/data-gpu";
+import { requireMaterial } from "@adobe/data-gpu/material";
+import { rapierSolver } from "@adobe/data-gpu/physics";
+import {
+    boneColliders,
+    joltRagdoll,
+    Model,
+    Orbit,
+    pbrFactorRender,
+    pbrSkinning,
+    physicsRenderBridge,
+    ragdollTrigger,
+    shapeGeometry,
+} from "@adobe/data-gpu/graphics";
 
 const ragdollScene = Database.Plugin.create({
     extends: Database.Plugin.combine(pbrFactorRender, pbrSkinning, shapeGeometry, physicsRenderBridge, ragdollTrigger, Orbit.plugin),

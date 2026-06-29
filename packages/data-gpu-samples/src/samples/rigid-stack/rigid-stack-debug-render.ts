@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
-import { graphics, physicsData, ColliderShape, SceneUniforms } from "@adobe/data-gpu";
+import { ColliderShape, physicsData } from "@adobe/data-gpu/physics";
+import { graphics, SceneUniforms } from "@adobe/data-gpu/graphics";
 import { rigidStackShader } from "./rigid-stack-render.wgsl.js";
 
 /**

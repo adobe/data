@@ -1,9 +1,17 @@
 # Physics — feature roadmap
 
-A general-purpose, solver-agnostic physics layer for `@adobe/data-gpu`, suitable
+A general-purpose, solver-agnostic physics layer for `@adobe/data-gpu/physics`, suitable
 for games, visualisation, and film/animation. Bodies are authored as ECS data
 against a shared seam (`physicsData`); a pluggable **solver** (Jolt or Rapier)
 advances them each frame. See `solvers/README.md` for choosing a solver.
+
+```ts
+import { physicsData, joltSolver, rapierSolver } from "@adobe/data-gpu/physics";
+import { core } from "@adobe/data-gpu";
+import { physicsRenderBridge } from "@adobe/data-gpu/graphics";
+
+const scene = Database.Plugin.combine(core, physicsData, joltSolver, physicsRenderBridge);
+```
 
 This file is the running plan — check the box when a feature lands so we don't
 lose track. Keep it honest about approximations and limitations.

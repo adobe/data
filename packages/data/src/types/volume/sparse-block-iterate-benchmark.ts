@@ -1,9 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
+import type { Vec3 } from "../../math/index.js";
 import { Boolean } from "../../schema/boolean/index.js";
 import type { Callback } from "./callback.js";
 import type { IterateAxis } from "./iterate-axis.js";
 import type { Volume } from "./volume.js";
+import { normalizeBlockSize } from "./create-sparse-block/block-dims.js";
 import { createSparseBlock } from "./create-sparse-block/create-sparse-block.js";
 import { isSparseBlockVolume } from "./create-sparse-block/is-sparse-block-volume.js";
 
@@ -13,7 +15,7 @@ export interface SparseBlockIterateSceneOptions {
     readonly layout: SparseBlockIterateLayout;
     /** Blocks to allocate (along the axis for adjacent/fragmented). */
     readonly blocks: number;
-    readonly blockSize?: number;
+    readonly blockSize?: number | Vec3;
     readonly axis?: IterateAxis;
 }
 
@@ -32,7 +34,7 @@ export interface SparseBlockIterateBenchmarkOptions {
 export interface SparseBlockIterateBenchmarkResult extends IterateInvocationStats {
     readonly axis: IterateAxis;
     readonly blockCount: number;
-    readonly blockSize: number;
+    readonly blockSize: string;
     readonly layout: SparseBlockIterateSceneOptions["layout"];
     readonly warmupIterations: number;
     readonly timedIterations: number;
@@ -58,10 +60,15 @@ export const createIterateStatsCollector = (): {
     return { stats, callback };
 };
 
+const formatBlockSize = (blockSize: Vec3): string =>
+    blockSize[0] === blockSize[1] && blockSize[1] === blockSize[2]
+        ? String(blockSize[0])
+        : `${blockSize[0]}×${blockSize[1]}×${blockSize[2]}`;
+
 export const buildSparseBlockIterateScene = (
     options: SparseBlockIterateSceneOptions,
 ): Volume<boolean> => {
-    const blockSize = options.blockSize ?? 16;
+    const blockSize = normalizeBlockSize(options.blockSize ?? 16);
     const axis = options.axis ?? "x";
     const volume = createSparseBlock(Boolean.schema, blockSize);
 
@@ -74,7 +81,7 @@ export const buildSparseBlockIterateScene = (
         for (let i = 0; i < options.blocks; i++) {
             const gx = i % side;
             const gy = (i / side) | 0;
-            touch(gx * blockSize, gy * blockSize, 0);
+            touch(gx * blockSize[0], gy * blockSize[1], 0);
         }
         return volume;
     }
@@ -116,7 +123,7 @@ export const runSparseBlockIterateBenchmark = (
     const axis = opts.axis ?? scene.axis ?? "x";
     const warmupIterations = opts.warmupIterations ?? 50;
     const timedIterations = opts.timedIterations ?? 500;
-    const blockSize = scene.blockSize ?? 16;
+    const blockSize = normalizeBlockSize(scene.blockSize ?? 16);
 
     const iterate = bindIterate(volume, axis);
 
@@ -142,7 +149,7 @@ export const runSparseBlockIterateBenchmark = (
     return {
         axis,
         blockCount: blockCountOf(volume),
-        blockSize,
+        blockSize: formatBlockSize(blockSize),
         layout: scene.layout,
         warmupIterations,
         timedIterations,
@@ -170,17 +177,17 @@ const originForBlock = (
     blockIndex: number,
     by: number,
     bz: number,
-    blockSize: number,
+    blockSize: Vec3,
     axis: IterateAxis,
 ): readonly [number, number, number] => {
-    const origin = blockIndex * blockSize;
+    const [sx, sy, sz] = blockSize;
     if (axis === "x") {
-        return [origin, by * blockSize, bz * blockSize] as const;
+        return [blockIndex * sx, by * sy, bz * sz] as const;
     }
     if (axis === "y") {
-        return [by * blockSize, origin, bz * blockSize] as const;
+        return [by * sx, blockIndex * sy, bz * sz] as const;
     }
-    return [by * blockSize, bz * blockSize, origin] as const;
+    return [by * sx, bz * sy, blockIndex * sz] as const;
 };
 
 /** Reads every voxel in each segment so iteration cost includes real buffer work. */

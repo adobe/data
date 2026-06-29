@@ -5,12 +5,13 @@ import type { Schema } from "../../../schema/index.js";
 import type { TypedBuffer } from "../../../typed-buffer/typed-buffer.js";
 import type { Volume } from "../volume.js";
 import type { Callback } from "../callback.js";
-import { buildSparseBlockAxisPlan, runSparseBlockAxisPlan, type SparseBlockAxisPlan } from "../iterate-axis.js";
-import { localBlockIndex } from "../volume-index.js";
-import { packBlockKey } from "./pack-block-key.js";
-
-const localIndex = (lx: number, ly: number, lz: number, blockSize: number): number =>
-    localBlockIndex(lx, ly, lz, blockSize);
+import { packBlockKeyInline } from "./block-key.js";
+import { createBlockDims, normalizeBlockSize, type BlockDims } from "./block-dims.js";
+import {
+    buildSparseBlockAxisPlan,
+    runSparseBlockAxisPlan,
+    type SparseBlockAxisPlan,
+} from "./iterate-sparse-block-axis.js";
 
 const defaultFromSchema = <T>(schema: Schema): T => {
     if (!("default" in schema)) {
@@ -19,35 +20,30 @@ const defaultFromSchema = <T>(schema: Schema): T => {
     return schema.default as T;
 };
 
-const blockShift = (blockSize: number): number => {
-    const shift = Math.log2(blockSize);
-    if (!Number.isInteger(shift) || shift < 0) {
-        throw new Error("SparseBlockVolume blockSize must be a power of two");
-    }
-    return shift;
-};
-
-const blockCoord = (coordinate: number, shift: number): number => coordinate >> shift;
-
-const localCoord = (coordinate: number, blockSize: number, shift: number): number =>
-    coordinate - (coordinate >> shift) * blockSize;
-
 export class SparseBlockVolume<T> implements Volume<T> {
-    readonly blockSize: number;
-    readonly #shift: number;
-    readonly #blockVolume: number;
+    readonly blockSize: Vec3;
+    readonly #dims: BlockDims;
     readonly #data: TypedBuffer<T>;
     readonly #blocks = new Map<number, number>();
     readonly #defaultValue: T;
+    readonly #keyFromWorld: (x: number, y: number, z: number) => number;
+    readonly #indexFromWorld: (x: number, y: number, z: number, blockOffset: number) => number;
+    readonly #volume: number;
     #size: Vec3 = [0, 0, 0];
     #axisPlans: Partial<Record<"x" | "y" | "z", SparseBlockAxisPlan>> | undefined;
 
-    constructor(blockSize: number, data: TypedBuffer<T>) {
-        this.blockSize = blockSize;
-        this.#shift = blockShift(blockSize);
-        this.#blockVolume = blockSize * blockSize * blockSize;
+    constructor(blockSize: number | Vec3, data: TypedBuffer<T>) {
+        this.#dims = createBlockDims(blockSize);
+        this.blockSize = this.#dims.size;
         this.#data = data;
         this.#defaultValue = defaultFromSchema<T>(data.schema);
+        this.#keyFromWorld = this.#dims.keyFromWorld;
+        this.#indexFromWorld = this.#dims.indexFromWorld;
+        this.#volume = this.#dims.volume;
+    }
+
+    get dims(): BlockDims {
+        return this.#dims;
     }
 
     get size(): Vec3 {
@@ -55,7 +51,7 @@ export class SparseBlockVolume<T> implements Volume<T> {
     }
 
     toSerialized(): {
-        readonly blockSize: number;
+        readonly blockSize: Vec3;
         readonly size: Vec3;
         readonly blocks: readonly (readonly [number, number])[];
         readonly data: TypedBuffer<T>;
@@ -69,12 +65,12 @@ export class SparseBlockVolume<T> implements Volume<T> {
     }
 
     static fromSerialized<S extends Schema>(
-        blockSize: number,
+        blockSize: number | Vec3,
         data: TypedBuffer<Schema.ToType<S>>,
         size: Vec3,
         blocks: readonly (readonly [number, number])[],
     ): SparseBlockVolume<Schema.ToType<S>> {
-        const volume = new SparseBlockVolume(blockSize, data);
+        const volume = new SparseBlockVolume(normalizeBlockSize(blockSize), data);
         volume.#size = size;
         for (const [key, offset] of blocks) {
             volume.#blocks.set(key, offset);
@@ -84,28 +80,16 @@ export class SparseBlockVolume<T> implements Volume<T> {
     }
 
     get(x: number, y: number, z: number): T {
-        const offset = this.#blockOffset(x, y, z);
+        const offset = this.#blocks.get(this.#keyFromWorld(x, y, z));
         if (offset === undefined) {
             return this.#defaultValue;
         }
-        const index = offset + localIndex(
-            localCoord(x, this.blockSize, this.#shift),
-            localCoord(y, this.blockSize, this.#shift),
-            localCoord(z, this.blockSize, this.#shift),
-            this.blockSize,
-        );
-        return this.#data.get(index);
+        return this.#data.get(this.#indexFromWorld(x, y, z, offset));
     }
 
     set(x: number, y: number, z: number, value: T): void {
         const offset = this.#ensureBlock(x, y, z);
-        const index = offset + localIndex(
-            localCoord(x, this.blockSize, this.#shift),
-            localCoord(y, this.blockSize, this.#shift),
-            localCoord(z, this.blockSize, this.#shift),
-            this.blockSize,
-        );
-        this.#data.set(index, value);
+        this.#data.set(this.#indexFromWorld(x, y, z, offset), value);
         this.#expandSize(x, y, z);
     }
 
@@ -124,7 +108,7 @@ export class SparseBlockVolume<T> implements Volume<T> {
     #iterateAxis(axis: "x" | "y" | "z", callback: Callback<T>): void {
         let plan = this.#axisPlans?.[axis];
         if (plan === undefined) {
-            plan = buildSparseBlockAxisPlan(this.#blocks, this.blockSize, this.#shift, axis);
+            plan = buildSparseBlockAxisPlan(this.#blocks, this.#dims, axis);
             if (plan === undefined) {
                 return;
             }
@@ -133,32 +117,20 @@ export class SparseBlockVolume<T> implements Volume<T> {
             }
             this.#axisPlans[axis] = plan;
         }
-        runSparseBlockAxisPlan(plan, this.#shift, this.#data, callback);
+        runSparseBlockAxisPlan(plan, this.#data, callback);
     }
 
     #invalidateAxisPlans(): void {
         this.#axisPlans = undefined;
     }
 
-    #blockOffset(x: number, y: number, z: number): number | undefined {
-        const key = packBlockKey(
-            blockCoord(x, this.#shift),
-            blockCoord(y, this.#shift),
-            blockCoord(z, this.#shift),
-        );
-        return this.#blocks.get(key);
-    }
-
     #ensureBlock(x: number, y: number, z: number): number {
-        const bx = blockCoord(x, this.#shift);
-        const by = blockCoord(y, this.#shift);
-        const bz = blockCoord(z, this.#shift);
-        const key = packBlockKey(bx, by, bz);
+        const key = this.#keyFromWorld(x, y, z);
         let offset = this.#blocks.get(key);
         if (offset === undefined) {
             offset = this.#data.capacity;
-            this.#data.capacity = offset + this.#blockVolume;
-            for (let i = 0; i < this.#blockVolume; i++) {
+            this.#data.capacity = offset + this.#volume;
+            for (let i = 0; i < this.#volume; i++) {
                 this.#data.set(offset + i, this.#defaultValue);
             }
             this.#blocks.set(key, offset);
@@ -179,3 +151,6 @@ export class SparseBlockVolume<T> implements Volume<T> {
         }
     }
 }
+
+/** Used when allocating blocks by unpacked coordinates (tests/serialization). */
+export const packBlockKey = packBlockKeyInline;

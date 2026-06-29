@@ -1,6 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
+import type { Vec3 } from "../../../math/index.js";
 import { getCodec, registerCodec } from "../../../functions/serialization/codec.js";
+import { normalizeBlockSize } from "./block-dims.js";
 import { SparseBlockVolume } from "./sparse-block-volume.js";
 import { isSparseBlockVolume } from "./is-sparse-block-volume.js";
 
@@ -32,7 +34,7 @@ export const registerSparseBlockVolumeCodecs = (): void => {
             }
             const data = bufferCodec.deserialize({ json: json.data, binary });
             return SparseBlockVolume.fromSerialized(
-                json.blockSize,
+                normalizeBlockSize(json.blockSize as number | Vec3),
                 data,
                 json.size,
                 json.blocks,

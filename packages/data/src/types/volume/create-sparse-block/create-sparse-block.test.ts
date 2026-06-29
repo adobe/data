@@ -7,6 +7,7 @@ import { equals } from "../../../equals.js";
 import { deserialize, serialize } from "../../../functions/serialization/serialize.js";
 import type { Volume } from "../volume.js";
 import { collectAxisSegments } from "../iterate-test-helpers.js";
+import { createBlockDims } from "./block-dims.js";
 import { createSparseBlock } from "./create-sparse-block.js";
 import { isSparseBlockVolume } from "./is-sparse-block-volume.js";
 import { packBlockKey } from "./pack-block-key.js";
@@ -21,11 +22,49 @@ describe("packBlockKey", () => {
     });
 });
 
+describe("createBlockDims", () => {
+    it("accepts independent power-of-two sizes", () => {
+        const dims = createBlockDims([32, 16, 8]);
+        expect(dims.size).toEqual([32, 16, 8]);
+        expect(dims.shiftX).toBe(5);
+        expect(dims.shiftY).toBe(4);
+        expect(dims.shiftZ).toBe(3);
+        expect(dims.volume).toBe(4096);
+        expect(dims.planeYZ).toBe(128);
+        expect(dims.strideZ).toBe(512);
+    });
+
+    it("normalizes cubic scalar block size", () => {
+        const dims = createBlockDims(16);
+        expect(dims.size).toEqual([16, 16, 16]);
+    });
+
+    it("keyFromWorld matches inline pack for block coordinates", () => {
+        const dims = createBlockDims([16, 8, 8]);
+        expect(dims.keyFromWorld(17, 9, 1)).toBe(dims.keyFromWorld(16, 8, 0));
+        expect(dims.indexFromWorld(17, 9, 1, 100)).toBe(100 + 1 + 16 * (1 + 8 * 1));
+    });
+
+    it("rejects non power-of-two sizes", () => {
+        expect(() => createBlockDims([16, 12, 8])).toThrow(
+            "SparseBlockVolume block size y must be a power of two",
+        );
+    });
+});
+
 describe("createSparseBlock", () => {
     it("starts empty with size 0,0,0", () => {
         const volume = createSparseBlock(Boolean.schema, 16);
         expect(volume.size).toEqual([0, 0, 0]);
         expect(volume.get(0, 0, 0)).toBe(false);
+    });
+
+    it("normalizes scalar block size to Vec3", () => {
+        const volume = createSparseBlock(Boolean.schema, 16);
+        if (!isSparseBlockVolume(volume)) {
+            throw new Error("expected sparse block volume");
+        }
+        expect(volume.blockSize).toEqual([16, 16, 16]);
     });
 
     it("allocates a block on first set and expands size", () => {
@@ -40,6 +79,17 @@ describe("createSparseBlock", () => {
             expect(volume.toSerialized().blocks).toHaveLength(1);
             expect(volume.toSerialized().data.capacity).toBe(16 ** 3);
         }
+    });
+
+    it("allocates non-cubic blocks with per-axis volume", () => {
+        const volume = createSparseBlock(Boolean.schema, [16, 8, 8]);
+        volume.set(1, 2, 3, true);
+
+        if (!isSparseBlockVolume(volume)) {
+            throw new Error("expected sparse block volume");
+        }
+        expect(volume.blockSize).toEqual([16, 8, 8]);
+        expect(volume.toSerialized().data.capacity).toBe(16 * 8 * 8);
     });
 
     it("uses separate blocks for distant coordinates", () => {
@@ -90,6 +140,22 @@ describe("createSparseBlock", () => {
         expect(rows.at(-1)?.done).toBe(true);
     });
 
+    it("iterateX merges adjacent blocks with non-cubic dims", () => {
+        const volume = createSparseBlock(Boolean.schema, [8, 4, 4]);
+        volume.set(0, 0, 0, true);
+        volume.set(7, 0, 0, true);
+        volume.set(8, 0, 0, true);
+
+        const originRow = collectAxisSegments(volume, "x").find(row => row.y === 0 && row.z === 0);
+
+        expect(originRow?.pairCount).toBe(2);
+        expect(originRow?.values).toEqual([
+            true, false, false, false, false, false, false, true,
+            true, false, false, false, false, false, false, false,
+        ]);
+        expect(originRow?.step).toBe(1);
+    });
+
     it("iterateX keeps non-adjacent blocks on separate callbacks", () => {
         const volume = createSparseBlock(Boolean.schema, 4);
         volume.set(0, 0, 0, true);
@@ -121,6 +187,17 @@ describe("createSparseBlock", () => {
         expect(originRow?.y).toBe(0);
     });
 
+    it("iterateY uses width stride for non-cubic blocks", () => {
+        const volume = createSparseBlock(Boolean.schema, [8, 4, 4]);
+        volume.set(0, 0, 0, true);
+        volume.set(0, 3, 0, true);
+
+        const originRow = collectAxisSegments(volume, "y").find(row => row.x === 0 && row.z === 0);
+
+        expect(originRow?.step).toBe(8);
+        expect(originRow?.values).toEqual([true, false, false, true]);
+    });
+
     it("iterateZ merges adjacent blocks along z into one callback per column", () => {
         const volume = createSparseBlock(Boolean.schema, 4);
         volume.set(0, 0, 0, true);
@@ -135,6 +212,17 @@ describe("createSparseBlock", () => {
             true, false, false, false,
         ]);
         expect(originRow?.z).toBe(0);
+    });
+
+    it("iterateZ uses xy plane stride for non-cubic blocks", () => {
+        const volume = createSparseBlock(Boolean.schema, [8, 4, 4]);
+        volume.set(0, 0, 0, true);
+        volume.set(0, 0, 3, true);
+
+        const originRow = collectAxisSegments(volume, "z").find(row => row.x === 0 && row.y === 0);
+
+        expect(originRow?.step).toBe(32);
+        expect(originRow?.values).toEqual([true, false, false, true]);
     });
 
     it("iterateX walks each block as dense x rows", () => {
@@ -213,13 +301,20 @@ describe("createSparseBlock", () => {
         expect(roundTrip.volume.get(1, 0, 0)).toBe(false);
         if (isSparseBlockVolume(original) && isSparseBlockVolume(roundTrip.volume)) {
             expect(equals(roundTrip.volume.toSerialized().data, original.toSerialized().data)).toBe(true);
+            expect(roundTrip.volume.blockSize).toEqual([16, 16, 16]);
         }
+    });
+
+    it("deserializes legacy scalar blockSize payloads", () => {
+        const data = createTypedBuffer(Boolean.schema, 16 ** 3);
+        const volume = SparseBlockVolume.fromSerialized(16, data, [1, 1, 1], []);
+        expect(volume.blockSize).toEqual([16, 16, 16]);
     });
 });
 
 describe("SparseBlockVolume", () => {
     it("rejects non-power-of-two block sizes", () => {
-        expect(() => new SparseBlockVolume(10, createTypedBuffer(Boolean.schema, 0)))
-            .toThrow("SparseBlockVolume blockSize must be a power of two");
+        expect(() => new SparseBlockVolume([10, 16, 16], createTypedBuffer(Boolean.schema, 0)))
+            .toThrow("SparseBlockVolume block size x must be a power of two");
     });
 });

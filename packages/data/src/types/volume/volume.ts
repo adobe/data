@@ -6,7 +6,9 @@ import { Callback } from "./callback.js";
 export interface Volume<T> {
     get(x: number, y: number, z: number): T;
     set(x: number, y: number, z: number, value: T): void;
-    iterate(callback: Callback<T>): void;
+    iterateX(callback: Callback<T>): void;
+    iterateY(callback: Callback<T>): void;
+    iterateZ(callback: Callback<T>): void;
     readonly size: Vec3;
 }
 

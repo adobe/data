@@ -5,8 +5,12 @@ import type { Schema } from "../../../schema/index.js";
 import type { TypedBuffer } from "../../../typed-buffer/typed-buffer.js";
 import type { Volume } from "../volume.js";
 import type { Callback } from "../callback.js";
+import { iterateSparseBlockAxis } from "../iterate-axis.js";
+import { localBlockIndex } from "../volume-index.js";
 import { packBlockKey } from "./pack-block-key.js";
-import { unpackBlockKey } from "./unpack-block-key.js";
+
+const localIndex = (lx: number, ly: number, lz: number, blockSize: number): number =>
+    localBlockIndex(lx, ly, lz, blockSize);
 
 const defaultFromSchema = <T>(schema: Schema): T => {
     if (!("default" in schema)) {
@@ -27,9 +31,6 @@ const blockCoord = (coordinate: number, shift: number): number => coordinate >> 
 
 const localCoord = (coordinate: number, blockSize: number, shift: number): number =>
     coordinate - (coordinate >> shift) * blockSize;
-
-const localIndex = (lx: number, ly: number, lz: number, blockSize: number): number =>
-    lx + blockSize * (ly + blockSize * lz);
 
 export class SparseBlockVolume<T> implements Volume<T> {
     readonly blockSize: number;
@@ -106,38 +107,16 @@ export class SparseBlockVolume<T> implements Volume<T> {
         this.#expandSize(x, y, z);
     }
 
-    iterate(callback: Callback<T>): void {
-        const entries = [...this.#blocks.entries()];
-        if (entries.length === 0) {
-            return;
-        }
+    iterateX(callback: Callback<T>): void {
+        iterateSparseBlockAxis(this.#blocks, this.blockSize, this.#shift, this.#data, callback, "x");
+    }
 
-        const segments = [0, this.blockSize];
-        const lastBlockIndex = entries.length - 1;
-        const lastRow = this.blockSize - 1;
+    iterateY(callback: Callback<T>): void {
+        iterateSparseBlockAxis(this.#blocks, this.blockSize, this.#shift, this.#data, callback, "y");
+    }
 
-        for (let blockIndex = 0; blockIndex < entries.length; blockIndex++) {
-            const [key, blockOffset] = entries[blockIndex]!;
-            const { bx, by, bz } = unpackBlockKey(key);
-            const originX = bx << this.#shift;
-            const originY = by << this.#shift;
-            const originZ = bz << this.#shift;
-
-            for (let lz = 0; lz < this.blockSize; lz++) {
-                for (let ly = 0; ly < this.blockSize; ly++) {
-                    segments[0] = blockOffset + ly * this.blockSize + lz * this.#blockVolume;
-                    callback(
-                        this.#data,
-                        segments,
-                        1,
-                        originX,
-                        originY + ly,
-                        originZ + lz,
-                        blockIndex === lastBlockIndex && ly === lastRow && lz === lastRow,
-                    );
-                }
-            }
-        }
+    iterateZ(callback: Callback<T>): void {
+        iterateSparseBlockAxis(this.#blocks, this.blockSize, this.#shift, this.#data, callback, "z");
     }
 
     #blockOffset(x: number, y: number, z: number): number | undefined {

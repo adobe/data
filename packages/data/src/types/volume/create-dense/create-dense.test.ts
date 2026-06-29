@@ -6,6 +6,7 @@ import { Boolean } from "../../../schema/boolean/index.js";
 import { equals } from "../../../equals.js";
 import { deserialize, serialize } from "../../../functions/serialization/serialize.js";
 import type { Volume } from "../volume.js";
+import { collectAxisSegments } from "../iterate-test-helpers.js";
 import { createDense } from "./create-dense.js";
 import { DenseVolume } from "./dense-volume.js";
 import { isDenseVolume } from "./is-dense-volume.js";
@@ -47,41 +48,60 @@ describe("createDense", () => {
         );
     });
 
-    it("iterates each x row with reused segments", () => {
+    it("iterateX walks each x row with reused segments", () => {
         const volume = createDense([3, 2, 2], Boolean.schema);
         volume.set(0, 0, 0, true);
         volume.set(1, 0, 0, true);
         volume.set(2, 1, 1, true);
 
-        const rows: { x: number; y: number; z: number; values: boolean[]; done: boolean }[] = [];
-        let segmentsRef: number[] | undefined;
-
-        volume.iterate((buffer, segments, step, x, y, z, done) => {
-            if (segmentsRef === undefined) {
-                segmentsRef = segments;
-            } else {
-                expect(segments).toBe(segmentsRef);
-            }
-            expect(segments).toHaveLength(2);
-            expect(step).toBe(1);
-            expect(x).toBe(0);
-
-            const offset = segments[0];
-            const length = segments[1];
-            expect(length).toBe(3);
-
-            const values: boolean[] = [];
-            for (let i = 0; i < length; i++) {
-                values.push(buffer.get(offset + i * step));
-            }
-            rows.push({ x, y, z, values, done });
-        });
+        const rows = collectAxisSegments(volume, "x");
 
         expect(rows).toHaveLength(4);
-        expect(rows[0]).toEqual({ x: 0, y: 0, z: 0, values: [true, true, false], done: false });
-        expect(rows[1]).toEqual({ x: 0, y: 1, z: 0, values: [false, false, false], done: false });
-        expect(rows[2]).toEqual({ x: 0, y: 0, z: 1, values: [false, false, false], done: false });
-        expect(rows[3]).toEqual({ x: 0, y: 1, z: 1, values: [false, false, true], done: true });
+        expect(rows.every(row => row.step === 1 && row.x === 0)).toBe(true);
+        expect(rows[0]).toEqual({ x: 0, y: 0, z: 0, values: [true, true, false], step: 1, done: false });
+        expect(rows[1]).toEqual({ x: 0, y: 1, z: 0, values: [false, false, false], step: 1, done: false });
+        expect(rows[2]).toEqual({ x: 0, y: 0, z: 1, values: [false, false, false], step: 1, done: false });
+        expect(rows[3]).toEqual({ x: 0, y: 1, z: 1, values: [false, false, true], step: 1, done: true });
+    });
+
+    it("iterateY walks each y column with width stride", () => {
+        const volume = createDense([3, 2, 2], Boolean.schema);
+        volume.set(0, 0, 0, true);
+        volume.set(0, 1, 0, true);
+        volume.set(2, 1, 1, true);
+
+        const rows = collectAxisSegments(volume, "y");
+
+        expect(rows).toHaveLength(6);
+        expect(rows.every(row => row.step === 3 && row.y === 0)).toBe(true);
+        expect(rows[0]).toEqual({ x: 0, y: 0, z: 0, values: [true, true], step: 3, done: false });
+        expect(rows[1]).toEqual({ x: 1, y: 0, z: 0, values: [false, false], step: 3, done: false });
+        expect(rows.find(row => row.x === 2 && row.z === 1)).toEqual({
+            x: 2, y: 0, z: 1, values: [false, true], step: 3, done: true,
+        });
+    });
+
+    it("iterateZ walks each z column with plane stride", () => {
+        const volume = createDense([3, 2, 2], Boolean.schema);
+        volume.set(0, 0, 0, true);
+        volume.set(0, 0, 1, true);
+        volume.set(2, 1, 1, true);
+
+        const rows = collectAxisSegments(volume, "z");
+
+        expect(rows).toHaveLength(6);
+        expect(rows.every(row => row.step === 6 && row.z === 0)).toBe(true);
+        expect(rows[0]).toEqual({ x: 0, y: 0, z: 0, values: [true, true], step: 6, done: false });
+        expect(rows.find(row => row.x === 2 && row.y === 1)).toEqual({
+            x: 2, y: 1, z: 0, values: [false, true], step: 6, done: true,
+        });
+    });
+
+    it("axis iterators no-op on empty dimensions", () => {
+        const volume = createDense([0, 2, 2], Boolean.schema);
+        expect(collectAxisSegments(volume, "x")).toEqual([]);
+        expect(collectAxisSegments(volume, "y")).toEqual([]);
+        expect(collectAxisSegments(volume, "z")).toEqual([]);
     });
 
     it("round-trips through ECS serialization", () => {

@@ -5,16 +5,8 @@ import type { Schema } from "../../../schema/index.js";
 import type { TypedBuffer } from "../../../typed-buffer/typed-buffer.js";
 import type { Volume } from "../volume.js";
 import type { Callback } from "../callback.js";
-
-const getIndex = (size: Vec3, x: number, y: number, z: number): number => {
-    const [width, height] = size;
-    return x + width * (y + z * height);
-};
-
-const isInBounds = (size: Vec3, x: number, y: number, z: number): boolean => {
-    const [width, height, depth] = size;
-    return x >= 0 && x < width && y >= 0 && y < height && z >= 0 && z < depth;
-};
+import { iterateDenseAxis } from "../iterate-axis.js";
+import { getDenseIndex, isInBounds } from "../volume-index.js";
 
 const defaultFromSchema = <T>(schema: Schema): T => {
     if (!("default" in schema)) {
@@ -38,39 +30,25 @@ export class DenseVolume<T> implements Volume<T> {
         if (!isInBounds(this.size, x, y, z)) {
             return this.#defaultValue;
         }
-        return this.data.get(getIndex(this.size, x, y, z));
+        return this.data.get(getDenseIndex(this.size, x, y, z));
     }
 
     set(x: number, y: number, z: number, value: T): void {
         if (!isInBounds(this.size, x, y, z)) {
             return;
         }
-        this.data.set(getIndex(this.size, x, y, z), value);
+        this.data.set(getDenseIndex(this.size, x, y, z), value);
     }
 
-    iterate(callback: Callback<T>): void {
-        const [width, height, depth] = this.size;
-        if (width === 0 || height === 0 || depth === 0) {
-            return;
-        }
+    iterateX(callback: Callback<T>): void {
+        iterateDenseAxis(this.size, this.data, callback, "x");
+    }
 
-        const segments = [0, width];
-        const lastY = height - 1;
-        const lastZ = depth - 1;
+    iterateY(callback: Callback<T>): void {
+        iterateDenseAxis(this.size, this.data, callback, "y");
+    }
 
-        for (let z = 0; z < depth; z++) {
-            for (let y = 0; y < height; y++) {
-                segments[0] = getIndex(this.size, 0, y, z);
-                callback(
-                    this.data,
-                    segments,
-                    1,
-                    0,
-                    y,
-                    z,
-                    y === lastY && z === lastZ,
-                );
-            }
-        }
+    iterateZ(callback: Callback<T>): void {
+        iterateDenseAxis(this.size, this.data, callback, "z");
     }
 }

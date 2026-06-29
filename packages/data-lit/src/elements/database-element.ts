@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { LitElement } from 'lit';
-import { property } from 'lit/decorators.js';
 import { iterateSelfAndAncestors } from '../functions/index.js';
 import { Database } from '@adobe/data/ecs';
 import { UIService } from '@adobe/data/service';
@@ -9,22 +8,23 @@ import { attachDecorator, withHooks } from '../index.js';
 
 export abstract class DatabaseElement<P extends Database.Plugin> extends LitElement {
 
-  /**
-   * The live database, fully typed. Set by an ancestor via DI (`.database=…`)
-   * or created from `plugin` on connect. Bootstrap containers — those that own
-   * a controller or drive a streaming (async-generator) transaction — read
-   * this directly; pure widgets use the restricted `service` view below.
-   */
-  @property({ type: Object, reflect: false })
-  database!: Database.Plugin.ToDatabase<P>;
+  /** Full database, hard-private — invisible to subclasses and external callers. */
+  #database!: Database.Plugin.ToDatabase<P>;
 
   /**
-   * UI-restricted view of {@link database} for pure-widget rendering: every
-   * transaction / mutator is rewritten to fire-and-forget `void` so a widget
-   * can never await on or read back a mutation; reads go through `observe`.
+   * The element's database surface.
+   *  - SET to inject the full database (DI).
+   *  - GET returns the UI-restricted view (every mutator rewritten to
+   *    fire-and-forget `void`).
+   * Divergent get/set types are intentional: inject full, consume restricted.
    */
+  set service(db: Database.Plugin.ToDatabase<P>) {
+    const old = this.#database;
+    this.#database = db;
+    this.requestUpdate('service', old);
+  }
   get service(): UIService.FromService<Database.Plugin.ToDatabase<P>> {
-    return UIService.restrict(this.database);
+    return UIService.restrict(this.#database);
   }
 
   constructor() {
@@ -35,19 +35,22 @@ export abstract class DatabaseElement<P extends Database.Plugin> extends LitElem
   abstract get plugin(): P;
 
   connectedCallback(): void {
-    if (!this.database) {
-      const ancestor = this.findAncestorDatabase();
-      this.database = ancestor?.extend(this.plugin) ?? Database.create(this.plugin);
+    if (!this.#database) {
+      const ancestor = this.findAncestorService();
+      this.service = ancestor?.extend(this.plugin) ?? Database.create(this.plugin);
     }
     super.connectedCallback();
   }
 
-  protected findAncestorDatabase(): Database | void {
+  protected findAncestorService(): Database | void {
     for (const element of iterateSelfAndAncestors(this)) {
-      const { database } = element as Partial<DatabaseElement<any>>;
-      if (Database.is(database)) {
-        return database;
-      }
+      // Read each ancestor's `service`. A DatabaseElement returns its full
+      // database here (UIService.restrict is identity at runtime); a foreign
+      // host (`<div .service=${db}>`) returns whatever was bound. Database.is
+      // keeps only a real database, skipping unconnected elements (undefined)
+      // and unrelated services (e.g. an ApplicationElement's MainService).
+      const { service } = element as { service?: unknown };
+      if (Database.is(service)) return service;
     }
   }
 

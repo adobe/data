@@ -37,6 +37,27 @@ class _CountElement extends DatabaseElement<typeof plugin> {
 type ServiceType = _CountElement["service"];
 type RawDatabase = Database.Plugin.ToDatabase<typeof plugin>;
 
+// 0. `service` is a read/write accessor: the getter returns the restricted view,
+//    while the setter accepts the full database (injection). The divergent
+//    get/set types are intentional (legal since TS 5.1).
+const _injectFullDatabase = (el: _CountElement, db: RawDatabase): void => {
+  el.service = db;
+};
+// A side effect of the divergence: `el.service = el.service` is a type error,
+// since the restricted getter type is not assignable to the full setter type.
+const _rejectRestrictedAssignment = (el: _CountElement): void => {
+  // @ts-expect-error restricted view is not assignable back to the full database
+  el.service = el.service;
+};
+
+// 0a. The full database is fully encapsulated: there is no `database` member of
+//     any visibility on the instance type. `service` is the only surface.
+const _noPublicDatabaseProperty = (el: _CountElement): void => {
+  // @ts-expect-error `database` no longer exists; the full db is hard-private
+  void el.database;
+};
+type _CheckNoDatabaseKey = Assert<Equal<Extract<keyof _CountElement, "database">, never>>;
+
 // 1. The exposed service type is the UIService-restricted view of the database.
 type _CheckRestricted = Assert<Equal<ServiceType, UIService.FromService<RawDatabase>>>;
 

@@ -10,6 +10,28 @@ through `db.transactions.X(args)`. A `SyncService` attached to the synced
 game database transparently forwards outbound envelopes and applies inbound
 envelopes from peers.
 
+## Container / service / action layering
+
+The UI elements are pure containers. They subscribe to observable state,
+observe genuine UI input (local pointer events), and forward user intent
+through `service.actions.X(args)` and `service.transactions.X(args)` — they
+never hold the full database or any business logic.
+
+All imperative work lives in the data layer:
+
+- **Services** (`db.services.*`) own non-serialisable per-instance state —
+  the WebRTC peer connection, sync server/service handles, the renegotiator.
+  The `negotiation` service is the signaling state machine.
+- **Actions** (`db.actions.*`) are the UI-callable surface: one-line
+  delegations into a service or transaction, always returning `void`
+  (fire-and-forget). `startHost`, `trackPresence`, … are actions.
+- **Transactions** (`db.transactions.*`) are the pure state mutations.
+
+Because actions and transactions return `void`, the restricted `service`
+view a container consumes (`DatabaseElement.service`) exposes them
+unchanged — the container drives the whole app without ever seeing the full
+transactional surface.
+
 ---
 
 ## Two-database model
@@ -111,7 +133,8 @@ sequenceDiagram
 
     Board->>Board: usePointerObserve → Observe<Vec2>
     Board->>Board: Observe.toAsyncGenerator(stream, ()=>false)
-    Board->>DB: db.transactions.movePresence(asyncGenerator)
+    Board->>DB: service.actions.trackPresence(positions)
+    Note over DB: action owns db.transactions.movePresence(positions)
     loop pointer moves
         Board->>DB: yield { x, y }
         DB->>DB: apply transient (time<0)

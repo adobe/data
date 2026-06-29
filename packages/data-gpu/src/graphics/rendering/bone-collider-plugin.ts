@@ -53,10 +53,10 @@ interface SkinMesh {
 export const boneColliders = Database.Plugin.create({
     extends: Database.Plugin.combine(physicsData, jointData, ragdollTrigger, pbrSkinning, modelLoader, transform),
     components: {
-        _boneJoint: Entity.schema, // the skeleton joint this capsule tracks
-        _boneOffsetPos: Vec3.schema,     // capsule offset in the bone's bind-local frame
-        _boneOffsetRot: Quat.schema,
-        _ragdollBuilt: True.schema,      // tag: this skeleton's bone capsules have been generated
+        _boneJoint: { ...Entity.schema, nonPersistent: true }, // the skeleton joint this capsule tracks
+        _boneOffsetPos: { ...Vec3.schema, nonPersistent: true },     // capsule offset in the bone's bind-local frame
+        _boneOffsetRot: { ...Quat.schema, nonPersistent: true },
+        _ragdollBuilt: { ...True.schema, nonPersistent: true },      // tag: this skeleton's bone capsules have been generated
     },
     archetypes: {
         // a kinematic capsule body bound to a skeleton joint (collisionGroup 1 ⇒ the

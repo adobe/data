@@ -15,10 +15,10 @@ import type { JointTemplate } from "../../scene/model/gltf/parse-skin.js";
 export const pbrSkinning = Database.Plugin.create({
     extends: Database.Plugin.combine(modelLoader, pbrCore, transform, animation),
     components: {
-        _skeletonJoints:                  { default: [] as number[] },
-        _skeletonMesh:                    Entity.schema,
-        _skeletonInstanceBuffer:          { default: null as GPUBuffer | null },
-        _skeletonJointMatrixBuffer:       { default: null as GPUBuffer | null },
+        _skeletonJoints:                  { default: [] as number[], nonPersistent: true },
+        _skeletonMesh:                    { ...Entity.schema, nonPersistent: true },
+        _skeletonInstanceBuffer:          { default: null as GPUBuffer | null, nonPersistent: true },
+        _skeletonJointMatrixBuffer:       { default: null as GPUBuffer | null, nonPersistent: true },
     },
     archetypes: {
         _Skeleton: [

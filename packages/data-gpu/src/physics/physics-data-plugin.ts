@@ -79,8 +79,8 @@ export const physicsData = Database.Plugin.create({
         rotation:        Quat.schema, // unified with Node.rotation so a body renders directly
         linearVelocity:  Vec3.schema,
         angularVelocity: Vec3.schema,
-        _prevPosition:   Vec3.schema, // derived: pose before the last fixed step (render interpolation)
-        _prevRotation:   Quat.schema,
+        _prevPosition:   { ...Vec3.schema, nonPersistent: true }, // derived: pose before the last fixed step (render interpolation)
+        _prevRotation:   { ...Quat.schema, nonPersistent: true },
         // Bodies sharing the same non-zero collisionGroup do not collide with each
         // other (they still collide with group 0 / the world) — e.g. a ragdoll's
         // bones. 0 = default (collide with everything). Honored by both solvers

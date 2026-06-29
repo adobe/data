@@ -78,8 +78,8 @@ export interface JoltContext {
 export const joltSolver = Database.Plugin.create({
     extends: Database.Plugin.combine(physicsData, jointData, physicsClock),
     components: {
-        _joltBody: True.schema, // tag: this body has been mirrored into the Jolt world
-        _joltJoint: True.schema, // tag: this joint has been mirrored into the Jolt world
+        _joltBody: { ...True.schema, nonPersistent: true }, // tag: this body has been mirrored into the Jolt world
+        _joltJoint: { ...True.schema, nonPersistent: true }, // tag: this joint has been mirrored into the Jolt world
     },
     resources: {
         _joltContext: { default: null as JoltContext | null, nonPersistent: true },

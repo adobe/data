@@ -27,7 +27,7 @@ const FACTOR_MATERIAL_COMPONENTS = [
 export const materialPaletteGpu = Database.Plugin.create({
     extends: Database.Plugin.combine(Material.plugin, core),
     components: {
-        _paletteIndex: U32.schema,
+        _paletteIndex: { ...U32.schema, nonPersistent: true },
     },
     resources: {
         _factorPalette: { default: null as GPUBuffer | null, nonPersistent: true },

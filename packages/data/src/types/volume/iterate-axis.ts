@@ -4,14 +4,7 @@ import type { Vec3 } from "../../math/index.js";
 import type { TypedBuffer } from "../../typed-buffer/typed-buffer.js";
 import type { Callback } from "./callback.js";
 import { getDenseIndex } from "./volume-index.js";
-export {
-    iterateSparseBlockAxis,
-    buildSparseBlockAxisPlan,
-    runSparseBlockAxisPlan,
-    runSparseBlockAxisPlanView,
-    runSparseBlockAxisPlanBatch,
-    type SparseBlockAxisPlan,
-} from "./iterate-sparse-block-axis.js";
+export { iterateSparseBlockAxis, buildSparseBlockAxisPlan, runSparseBlockAxisPlan, type SparseBlockAxisPlan } from "./iterate-sparse-block-axis.js";
 
 export type IterateAxis = "x" | "y" | "z";
 

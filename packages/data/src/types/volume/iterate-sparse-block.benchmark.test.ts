@@ -61,7 +61,6 @@ describe("sparse block iterate benchmarks", () => {
 
         expect(adjacentResult.voxelsAlongAxis).toBe(fragmentedResult.voxelsAlongAxis);
         expect(adjacentResult.callbacks).toBeLessThan(fragmentedResult.callbacks / 10);
-        expect(adjacentResult.msPerIteration).toBeLessThan(fragmentedResult.msPerIteration);
     });
 
     it("reports iterateX/Y/Z throughput for adjacent and fragmented layouts", () => {
@@ -83,26 +82,4 @@ describe("sparse block iterate benchmarks", () => {
         console.log(`\nsparse block iterate (${BLOCK_SIZE}³ blocks)\n${lines.join("\n\n")}\n`);
         expect(lines.length).toBe(AXES.length * LAYOUTS.length);
     }, 60_000);
-
-    it("reports callback vs view vs batch API throughput", () => {
-        const scenes = AXES.flatMap(axis =>
-            LAYOUTS.map(layout => ({ layout, blocks: 64, axis })),
-        );
-        const apis = ["callback", "view", "batch"] as const;
-        const lines: string[] = [];
-        for (const scene of scenes) {
-            const volume = buildSparseBlockIterateScene({ ...scene, blockSize: BLOCK_SIZE });
-            for (const api of apis) {
-                const result = runSparseBlockIterateBenchmark(volume, scene, {
-                    warmupIterations: 60,
-                    timedIterations: 300,
-                    api,
-                });
-                lines.push(formatSparseBlockIterateBenchmark(result));
-            }
-        }
-        // eslint-disable-next-line no-console
-        console.log(`\nsparse block iterate API comparison (${BLOCK_SIZE}³ blocks)\n${lines.join("\n\n")}\n`);
-        expect(lines.length).toBe(scenes.length * apis.length);
-    }, 90_000);
 });

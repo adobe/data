@@ -4,14 +4,8 @@ import type { Vec3 } from "../../../math/index.js";
 import type { Schema } from "../../../schema/index.js";
 import type { TypedBuffer } from "../../../typed-buffer/typed-buffer.js";
 import type { Volume } from "../volume.js";
-import type { BatchCallback, Callback, SegmentViewCallback } from "../callback.js";
-import {
-    buildSparseBlockAxisPlan,
-    runSparseBlockAxisPlan,
-    runSparseBlockAxisPlanBatch,
-    runSparseBlockAxisPlanView,
-    type SparseBlockAxisPlan,
-} from "../iterate-axis.js";
+import type { Callback } from "../callback.js";
+import { buildSparseBlockAxisPlan, runSparseBlockAxisPlan, type SparseBlockAxisPlan } from "../iterate-axis.js";
 import { localBlockIndex } from "../volume-index.js";
 import { packBlockKey } from "./pack-block-key.js";
 
@@ -127,67 +121,19 @@ export class SparseBlockVolume<T> implements Volume<T> {
         this.#iterateAxis("z", callback);
     }
 
-    iterateXView(callback: SegmentViewCallback<T>): void {
-        this.#iterateAxisView("x", callback);
-    }
-
-    iterateYView(callback: SegmentViewCallback<T>): void {
-        this.#iterateAxisView("y", callback);
-    }
-
-    iterateZView(callback: SegmentViewCallback<T>): void {
-        this.#iterateAxisView("z", callback);
-    }
-
-    iterateXBatch(callback: BatchCallback<T>): void {
-        this.#iterateAxisBatch("x", callback);
-    }
-
-    iterateYBatch(callback: BatchCallback<T>): void {
-        this.#iterateAxisBatch("y", callback);
-    }
-
-    iterateZBatch(callback: BatchCallback<T>): void {
-        this.#iterateAxisBatch("z", callback);
-    }
-
-    #planFor(axis: "x" | "y" | "z"): SparseBlockAxisPlan | undefined {
+    #iterateAxis(axis: "x" | "y" | "z", callback: Callback<T>): void {
         let plan = this.#axisPlans?.[axis];
         if (plan === undefined) {
             plan = buildSparseBlockAxisPlan(this.#blocks, this.blockSize, this.#shift, axis);
             if (plan === undefined) {
-                return undefined;
+                return;
             }
             if (this.#axisPlans === undefined) {
                 this.#axisPlans = {};
             }
             this.#axisPlans[axis] = plan;
         }
-        return plan;
-    }
-
-    #iterateAxis(axis: "x" | "y" | "z", callback: Callback<T>): void {
-        const plan = this.#planFor(axis);
-        if (plan === undefined) {
-            return;
-        }
         runSparseBlockAxisPlan(plan, this.#shift, this.#data, callback);
-    }
-
-    #iterateAxisView(axis: "x" | "y" | "z", callback: SegmentViewCallback<T>): void {
-        const plan = this.#planFor(axis);
-        if (plan === undefined) {
-            return;
-        }
-        runSparseBlockAxisPlanView(plan, this.#shift, this.#data, callback);
-    }
-
-    #iterateAxisBatch(axis: "x" | "y" | "z", callback: BatchCallback<T>): void {
-        const plan = this.#planFor(axis);
-        if (plan === undefined) {
-            return;
-        }
-        runSparseBlockAxisPlanBatch(plan, this.#shift, this.#data, callback);
     }
 
     #invalidateAxisPlans(): void {

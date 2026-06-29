@@ -1,14 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Boolean } from "../../schema/boolean/index.js";
-import type { BatchCallback, Callback, SegmentViewCallback } from "./callback.js";
+import type { Callback } from "./callback.js";
 import type { IterateAxis } from "./iterate-axis.js";
 import type { Volume } from "./volume.js";
 import { createSparseBlock } from "./create-sparse-block/create-sparse-block.js";
 import { isSparseBlockVolume } from "./create-sparse-block/is-sparse-block-volume.js";
-import type { SparseBlockVolume } from "./create-sparse-block/sparse-block-volume.js";
-
-export type SparseBlockIterateApi = "callback" | "view" | "batch";
 
 export type SparseBlockIterateLayout = "adjacent" | "fragmented" | "scattered";
 
@@ -30,7 +27,6 @@ export interface SparseBlockIterateBenchmarkOptions {
     readonly axis?: IterateAxis;
     readonly warmupIterations?: number;
     readonly timedIterations?: number;
-    readonly api?: SparseBlockIterateApi;
 }
 
 export interface SparseBlockIterateBenchmarkResult extends IterateInvocationStats {
@@ -44,20 +40,22 @@ export interface SparseBlockIterateBenchmarkResult extends IterateInvocationStat
     readonly msPerIteration: number;
     readonly iterationsPerSecond: number;
     readonly voxelsPerSecond: number;
-    readonly api: SparseBlockIterateApi;
 }
 
 export const createIterateStatsCollector = (): {
     readonly stats: IterateInvocationStats;
-    readonly recordLine: (pairCount: number, voxelsAlongAxis: number) => void;
+    readonly callback: Callback<boolean>;
 } => {
     const stats = { callbacks: 0, segmentPairs: 0, voxelsAlongAxis: 0 };
-    const recordLine = (pairCount: number, voxelsAlongAxis: number) => {
+    const callback: Callback<boolean> = (_buffer, segments) => {
         stats.callbacks++;
+        const pairCount = segments.length >> 1;
         stats.segmentPairs += pairCount;
-        stats.voxelsAlongAxis += voxelsAlongAxis;
+        for (let i = 0; i < segments.length; i += 2) {
+            stats.voxelsAlongAxis += segments[i + 1]!;
+        }
     };
-    return { stats, recordLine };
+    return { stats, callback };
 };
 
 export const buildSparseBlockIterateScene = (
@@ -96,41 +94,17 @@ export const blockCountOf = (volume: Volume<boolean>): number => {
     return volume.toSerialized().blocks.length;
 };
 
-const bindIterate = (
-    volume: SparseBlockVolume<boolean>,
-    axis: IterateAxis,
-    api: SparseBlockIterateApi,
-) => {
-    if (api === "batch") {
-        return axis === "x" ? volume.iterateXBatch.bind(volume)
-            : axis === "y" ? volume.iterateYBatch.bind(volume)
-                : volume.iterateZBatch.bind(volume);
-    }
-    if (api === "view") {
-        return axis === "x" ? volume.iterateXView.bind(volume)
-            : axis === "y" ? volume.iterateYView.bind(volume)
-                : volume.iterateZView.bind(volume);
-    }
-    return axis === "x" ? volume.iterateX.bind(volume)
+const bindIterate = (volume: Volume<boolean>, axis: IterateAxis) =>
+    axis === "x" ? volume.iterateX.bind(volume)
         : axis === "y" ? volume.iterateY.bind(volume)
             : volume.iterateZ.bind(volume);
-};
-
-const requireSparseVolume = (volume: Volume<boolean>): SparseBlockVolume<boolean> => {
-    if (!isSparseBlockVolume(volume)) {
-        throw new Error("sparse block iterate benchmark requires a sparse block volume");
-    }
-    return volume;
-};
 
 export const measureIterateOnce = (
     volume: Volume<boolean>,
     axis: IterateAxis,
-    api: SparseBlockIterateApi = "callback",
 ): IterateInvocationStats => {
-    const sparse = requireSparseVolume(volume);
-    const { stats, recordLine } = createIterateStatsCollector();
-    bindIterate(sparse, axis, api)(withIterateWork(recordLine, api));
+    const { stats, callback } = createIterateStatsCollector();
+    bindIterate(volume, axis)(withIterateWork(callback));
     return { ...stats };
 };
 
@@ -142,18 +116,16 @@ export const runSparseBlockIterateBenchmark = (
     const axis = opts.axis ?? scene.axis ?? "x";
     const warmupIterations = opts.warmupIterations ?? 50;
     const timedIterations = opts.timedIterations ?? 500;
-    const api = opts.api ?? "callback";
     const blockSize = scene.blockSize ?? 16;
-    const sparse = requireSparseVolume(volume);
 
-    const iterate = bindIterate(sparse, axis, api);
+    const iterate = bindIterate(volume, axis);
 
     for (let i = 0; i < warmupIterations; i++) {
-        iterate(withIterateWork(() => {}, api));
+        iterate(withIterateWork(createIterateStatsCollector().callback));
     }
 
     const measured = createIterateStatsCollector();
-    const measuredInvoke = withIterateWork(measured.recordLine, api);
+    const measuredInvoke = withIterateWork(measured.callback);
 
     const start = performance.now();
     for (let i = 0; i < timedIterations; i++) {
@@ -181,7 +153,6 @@ export const runSparseBlockIterateBenchmark = (
         callbacks: perIteration.callbacks,
         segmentPairs: perIteration.segmentPairs,
         voxelsAlongAxis: perIteration.voxelsAlongAxis,
-        api,
     };
 };
 
@@ -189,7 +160,7 @@ export const formatSparseBlockIterateBenchmark = (result: SparseBlockIterateBenc
     const layout = result.layout.padEnd(10);
     const axis = result.axis.toUpperCase();
     return [
-        `${layout} ${axis} · ${String(result.blockCount).padStart(4)} blocks · bs=${result.blockSize} · ${result.api}`,
+        `${layout} ${axis} · ${String(result.blockCount).padStart(4)} blocks · bs=${result.blockSize}`,
         `  ${result.msPerIteration.toFixed(3).padStart(8)} ms/iter · ${result.iterationsPerSecond.toFixed(0).padStart(7)} iter/s · ${(result.voxelsPerSecond / 1_000_000).toFixed(2).padStart(6)} Mvox/s`,
         `  ${result.callbacks.toFixed(0).padStart(8)} callbacks/iter · ${result.segmentPairs.toFixed(0).padStart(7)} pairs/iter · ${result.voxelsAlongAxis.toFixed(0).padStart(10)} voxels/iter`,
     ].join("\n");
@@ -213,72 +184,17 @@ const originForBlock = (
 };
 
 /** Reads every voxel in each segment so iteration cost includes real buffer work. */
-const withIterateWork = (
-    recordLine: (pairCount: number, voxelsAlongAxis: number) => void,
-    api: SparseBlockIterateApi,
-): Callback<boolean> | SegmentViewCallback<boolean> | BatchCallback<boolean> => {
+const withIterateWork = (callback: Callback<boolean>): Callback<boolean> => {
     let sink = 0;
-    if (api === "batch") {
-        const batchCallback: BatchCallback<boolean> = (batch) => {
-            for (let stepIndex = 0; stepIndex < batch.lineCount; stepIndex++) {
-                const segmentStart = batch.stepSegmentStarts[stepIndex]!;
-                const segmentEnd = batch.stepSegmentStarts[stepIndex + 1]!;
-                const pairCount = (segmentEnd - segmentStart) >> 1;
-                let voxelsAlongAxis = 0;
-                for (let i = segmentStart; i < segmentEnd; i += 2) {
-                    const offset = batch.precomputedSegments[i]!;
-                    const length = batch.precomputedSegments[i + 1]!;
-                    voxelsAlongAxis += length;
-                    for (let j = 0; j < length; j++) {
-                        sink += batch.buffer.get(offset + j * batch.step) ? 1 : 0;
-                    }
-                }
-                recordLine(pairCount, voxelsAlongAxis);
-            }
-            if (sink === Number.MAX_SAFE_INTEGER) {
-                throw new Error("unreachable");
-            }
-        };
-        return batchCallback;
-    }
-    if (api === "view") {
-        const viewCallback: SegmentViewCallback<boolean> = (
-            buffer,
-            precomputed,
-            segmentStart,
-            pairCount,
-            step,
-        ) => {
-            let voxelsAlongAxis = 0;
-            const segmentEnd = segmentStart + (pairCount << 1);
-            for (let i = segmentStart; i < segmentEnd; i += 2) {
-                const offset = precomputed[i]!;
-                const length = precomputed[i + 1]!;
-                voxelsAlongAxis += length;
-                for (let j = 0; j < length; j++) {
-                    sink += buffer.get(offset + j * step) ? 1 : 0;
-                }
-            }
-            recordLine(pairCount, voxelsAlongAxis);
-            if (sink === Number.MAX_SAFE_INTEGER) {
-                throw new Error("unreachable");
-            }
-        };
-        return viewCallback;
-    }
-
     return (buffer, segments, step) => {
-        let voxelsAlongAxis = 0;
-        const pairCount = segments.length >> 1;
+        callback(buffer, segments, step, 0, 0, 0, false);
         for (let i = 0; i < segments.length; i += 2) {
             const offset = segments[i]!;
             const length = segments[i + 1]!;
-            voxelsAlongAxis += length;
             for (let j = 0; j < length; j++) {
                 sink += buffer.get(offset + j * step) ? 1 : 0;
             }
         }
-        recordLine(pairCount, voxelsAlongAxis);
         if (sink === Number.MAX_SAFE_INTEGER) {
             throw new Error("unreachable");
         }

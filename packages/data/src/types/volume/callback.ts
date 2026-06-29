@@ -13,31 +13,3 @@ import { TypedBuffer } from "../../typed-buffer/index.js";
  * @param done True on the final line of this axis iteration.
  */
 export type Callback<T> = (buffer: TypedBuffer<T>, segments: number[], step: number, x: number, y: number, z: number, done: boolean) => void;
-
-/**
- * Zero-copy variant: segment pairs are read from `precomputed` at
- * `[segmentStart, segmentStart + pairCount * 2)`.
- */
-export type SegmentViewCallback<T> = (
-    buffer: TypedBuffer<T>,
-    precomputed: readonly number[],
-    segmentStart: number,
-    pairCount: number,
-    step: number,
-    x: number,
-    y: number,
-    z: number,
-    done: boolean,
-) => void;
-
-/** One-shot axis iteration with struct-of-arrays line data. */
-export interface AxisIterateBatch<T> {
-    readonly buffer: TypedBuffer<T>;
-    readonly step: number;
-    readonly precomputedSegments: readonly number[];
-    readonly stepSegmentStarts: readonly number[];
-    readonly origins: readonly number[];
-    readonly lineCount: number;
-}
-
-export type BatchCallback<T> = (batch: AxisIterateBatch<T>) => void;

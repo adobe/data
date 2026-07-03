@@ -53,7 +53,7 @@ function flowField(x: number, y: number, z: number): [number, number, number] {
     ];
 }
 
-function buildInitialState(count: number): Float32Array {
+function buildInitialState(count: number): Float32Array<ArrayBuffer> {
     const out = new Float32Array(count * 8);
     const halfRange = WORLD_EXTENT * 0.85;
     for (let i = 0; i < count; i++) {
@@ -86,7 +86,7 @@ function buildInitialState(count: number): Float32Array {
 
 // --- Mesh: 4-vertex tetrahedral arrowhead, +Z forward ----------------------
 
-function arrowheadMesh(): { vertices: Float32Array; indices: Uint16Array; indexCount: number } {
+function arrowheadMesh(): { vertices: Float32Array<ArrayBuffer>; indices: Uint16Array<ArrayBuffer>; indexCount: number } {
     // position (3f) + outward normal (3f). Vertex normals taken as normalize(position - centroid).
     const v: number[] = [];
     const push = (x: number, y: number, z: number) => {

@@ -1,0 +1,13 @@
+{
+  "name": "adobe-data-skills",
+  "owner": {
+    "name": "Adobe"
+  },
+  "plugins": [
+    {
+      "name": "adobe-data-ai",
+      "source": "./packages/data-ai",
+      "description": "Architecture skills for @adobe/data — data-oriented modelling, archetype iteration, hot-path performance, and related conventions."
+    }
+  ]
+}

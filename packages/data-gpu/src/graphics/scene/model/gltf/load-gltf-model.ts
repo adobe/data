@@ -64,8 +64,8 @@ function expandBounds(
     }
 }
 
-function pickIndexFormat(raw: Uint16Array | Uint32Array | Uint8Array | Float32Array): {
-    indices: Uint16Array | Uint32Array;
+function pickIndexFormat(raw: Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer> | Uint8Array<ArrayBuffer> | Float32Array<ArrayBuffer>): {
+    indices: Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer>;
     format: GPUIndexFormat;
 } {
     if (raw instanceof Uint32Array) return { indices: raw, format: "uint32" };
@@ -139,7 +139,7 @@ export async function loadGltfPrimitives(device: GPUDevice, url: string): Promis
             }
 
             // Non-indexed primitives are valid in glTF — synthesize sequential indices.
-            let indices: Uint16Array | Uint32Array;
+            let indices: Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer>;
             let format: GPUIndexFormat;
             if (prim.indices === undefined) {
                 if (packed.vertexCount <= 0xffff) {

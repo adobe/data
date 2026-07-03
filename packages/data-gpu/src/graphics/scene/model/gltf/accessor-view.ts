@@ -17,7 +17,7 @@ export function readAccessor(
     gltf: GltfAsset,
     bin: ArrayBuffer,
     accessorIndex: number,
-): Float32Array | Uint16Array | Uint32Array | Uint8Array {
+): Float32Array<ArrayBuffer> | Uint16Array<ArrayBuffer> | Uint32Array<ArrayBuffer> | Uint8Array<ArrayBuffer> {
     const accessor = gltf.accessors?.[accessorIndex];
     if (!accessor) throw new Error(`Accessor ${accessorIndex} not found`);
     const bv = gltf.bufferViews?.[accessor.bufferView ?? -1];
@@ -41,7 +41,7 @@ export function readAccessor(
     }
 }
 
-export function readImageBytes(gltf: GltfAsset, bin: ArrayBuffer, imageIndex: number): Uint8Array {
+export function readImageBytes(gltf: GltfAsset, bin: ArrayBuffer, imageIndex: number): Uint8Array<ArrayBuffer> {
     const image = gltf.images?.[imageIndex];
     if (!image) throw new Error(`Image ${imageIndex} not found`);
     if (image.bufferView === undefined) {

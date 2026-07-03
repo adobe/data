@@ -31,7 +31,7 @@ function categorizeImages(gltf: GltfAsset): ("color" | "data")[] {
 
 async function decodeOne(
     device: GPUDevice,
-    bytes: Uint8Array,
+    bytes: Uint8Array<ArrayBuffer>,
     mimeType: string | undefined,
     colorSpace: "color" | "data",
 ): Promise<GPUTexture> {
@@ -76,7 +76,7 @@ export function createFallbackTextures(device: GPUDevice): {
     black: GPUTextureView;
     flatNormal: GPUTextureView;
 } {
-    const make = (pixel: Uint8Array, format: GPUTextureFormat): GPUTextureView => {
+    const make = (pixel: Uint8Array<ArrayBuffer>, format: GPUTextureFormat): GPUTextureView => {
         const tex = device.createTexture({
             size: [1, 1, 1],
             format,

@@ -13,3 +13,7 @@ packages:
   - 'packages/data-solid-dashboard'
   - 'packages/data-gpu'
   - 'packages/data-gpu-samples'
+allowBuilds:
+  edgedriver: false
+  esbuild: false
+  geckodriver: false

@@ -4,9 +4,11 @@ import type { Vec3 } from "../../../math/index.js";
 import type { Schema } from "../../../schema/index.js";
 import type { TypedBuffer } from "../../../typed-buffer/typed-buffer.js";
 import type { Volume } from "../volume.js";
-import type { Callback } from "../callback.js";
+import type { AxisLineCallback } from "../axis-line-callback.js";
+import type { BlockCallback } from "../block-callback.js";
 import { iterateDenseAxis } from "../iterate-axis.js";
-import { getDenseIndex, isInBounds } from "../volume-index.js";
+import { getDenseIndex } from "../get-dense-index.js";
+import { isInBounds } from "../is-in-bounds.js";
 
 const defaultFromSchema = <T>(schema: Schema): T => {
     if (!("default" in schema)) {
@@ -40,15 +42,27 @@ export class DenseVolume<T> implements Volume<T> {
         this.data.set(getDenseIndex(this.size, x, y, z), value);
     }
 
-    iterateX(callback: Callback<T>): void {
+    iterateX(callback: AxisLineCallback<T>): void {
         iterateDenseAxis(this.size, this.data, callback, "x");
     }
 
-    iterateY(callback: Callback<T>): void {
+    iterateY(callback: AxisLineCallback<T>): void {
         iterateDenseAxis(this.size, this.data, callback, "y");
     }
 
-    iterateZ(callback: Callback<T>): void {
+    iterateZ(callback: AxisLineCallback<T>): void {
         iterateDenseAxis(this.size, this.data, callback, "z");
+    }
+
+    iterateBlocks(callback: BlockCallback<T>): void {
+        const [width, height, depth] = this.size;
+        if (width === 0 || height === 0 || depth === 0) {
+            return;
+        }
+        callback(this.data, {
+            origin: [0, 0, 0],
+            size: this.size,
+            offset: 0,
+        }, true);
     }
 }

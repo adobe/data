@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { TypedBuffer } from "../../../typed-buffer/typed-buffer.js";
-import type { Callback } from "../callback.js";
+import type { AxisLineCallback } from "../axis-line-callback.js";
 import type { IterateAxis } from "../iterate-axis.js";
 import type { BlockDims } from "./block-dims.js";
 
@@ -179,7 +179,7 @@ export const buildSparseBlockAxisPlan = (
 export const runSparseBlockAxisPlan = <T>(
     plan: SparseBlockAxisPlan,
     data: TypedBuffer<T>,
-    callback: Callback<T>,
+    callback: AxisLineCallback<T>,
 ): void => {
     const {
         step,
@@ -241,7 +241,7 @@ export const iterateSparseBlockAxis = <T>(
     blocks: ReadonlyMap<number, number>,
     dims: BlockDims,
     data: TypedBuffer<T>,
-    callback: Callback<T>,
+    callback: AxisLineCallback<T>,
     axis: IterateAxis,
 ): void => {
     const plan = buildSparseBlockAxisPlan(blocks, dims, axis);

@@ -1,4 +1,6 @@
-import { TypedBuffer } from "../../typed-buffer/index.js";
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+
+import type { TypedBuffer } from "../../typed-buffer/index.js";
 
 /**
  * Called once per world-space line along the iteration axis.
@@ -12,4 +14,12 @@ import { TypedBuffer } from "../../typed-buffer/index.js";
  * @param z World z of the first voxel in the line.
  * @param done True on the final line of this axis iteration.
  */
-export type Callback<T> = (buffer: TypedBuffer<T>, segments: number[], step: number, x: number, y: number, z: number, done: boolean) => void;
+export type AxisLineCallback<T> = (
+    buffer: TypedBuffer<T>,
+    segments: number[],
+    step: number,
+    x: number,
+    y: number,
+    z: number,
+    done: boolean,
+) => void;

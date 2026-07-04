@@ -7,6 +7,7 @@ import { equals } from "../../../equals.js";
 import { deserialize, serialize } from "../../../functions/serialization/serialize.js";
 import type { Volume } from "../volume.js";
 import { collectAxisSegments } from "../iterate-test-helpers.js";
+import { getDenseIndex } from "../get-dense-index.js";
 import { createDense } from "./create-dense.js";
 import { DenseVolume } from "./dense-volume.js";
 import { isDenseVolume } from "./is-dense-volume.js";
@@ -102,6 +103,31 @@ describe("createDense", () => {
         expect(collectAxisSegments(volume, "x")).toEqual([]);
         expect(collectAxisSegments(volume, "y")).toEqual([]);
         expect(collectAxisSegments(volume, "z")).toEqual([]);
+    });
+
+    it("iterateBlocks emits one block in standard dense layout", () => {
+        const volume = createDense([2, 3, 1], Boolean.schema);
+        volume.set(1, 2, 0, true);
+
+        const blocks: { origin: readonly number[]; size: readonly number[]; offset: number; done: boolean }[] = [];
+        volume.iterateBlocks((buffer, block, done) => {
+            blocks.push({ ...block, done });
+            expect(buffer.get(block.offset + getDenseIndex(block.size, 1, 2, 0))).toBe(true);
+        });
+
+        expect(blocks).toEqual([{
+            origin: [0, 0, 0],
+            size: [2, 3, 1],
+            offset: 0,
+            done: true,
+        }]);
+    });
+
+    it("iterateBlocks no-ops on empty dimensions", () => {
+        const volume = createDense([0, 2, 2], Boolean.schema);
+        let count = 0;
+        volume.iterateBlocks(() => { count++; });
+        expect(count).toBe(0);
     });
 
     it("round-trips through ECS serialization", () => {

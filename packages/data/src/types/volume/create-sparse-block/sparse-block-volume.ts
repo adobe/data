@@ -4,7 +4,8 @@ import type { Vec3 } from "../../../math/index.js";
 import type { Schema } from "../../../schema/index.js";
 import type { TypedBuffer } from "../../../typed-buffer/typed-buffer.js";
 import type { Volume } from "../volume.js";
-import type { Callback } from "../callback.js";
+import type { AxisLineCallback } from "../axis-line-callback.js";
+import type { BlockCallback } from "../block-callback.js";
 import { packBlockKeyInline } from "./block-key.js";
 import { createBlockDims, normalizeBlockSize, type BlockDims } from "./block-dims.js";
 import {
@@ -93,19 +94,34 @@ export class SparseBlockVolume<T> implements Volume<T> {
         this.#expandSize(x, y, z);
     }
 
-    iterateX(callback: Callback<T>): void {
+    iterateX(callback: AxisLineCallback<T>): void {
         this.#iterateAxis("x", callback);
     }
 
-    iterateY(callback: Callback<T>): void {
+    iterateY(callback: AxisLineCallback<T>): void {
         this.#iterateAxis("y", callback);
     }
 
-    iterateZ(callback: Callback<T>): void {
+    iterateZ(callback: AxisLineCallback<T>): void {
         this.#iterateAxis("z", callback);
     }
 
-    #iterateAxis(axis: "x" | "y" | "z", callback: Callback<T>): void {
+    iterateBlocks(callback: BlockCallback<T>): void {
+        const entries = [...this.#blocks.entries()].sort((a, b) => a[0] - b[0]);
+        const last = entries.length - 1;
+        const { shiftX, shiftY, shiftZ, decodeKey } = this.#dims;
+        for (let i = 0; i < entries.length; i++) {
+            const [key, offset] = entries[i]!;
+            const [bx, by, bz] = decodeKey(key);
+            callback(this.#data, {
+                origin: [bx << shiftX, by << shiftY, bz << shiftZ],
+                size: this.blockSize,
+                offset,
+            }, i === last);
+        }
+    }
+
+    #iterateAxis(axis: "x" | "y" | "z", callback: AxisLineCallback<T>): void {
         let plan = this.#axisPlans?.[axis];
         if (plan === undefined) {
             plan = buildSparseBlockAxisPlan(this.#blocks, this.#dims, axis);

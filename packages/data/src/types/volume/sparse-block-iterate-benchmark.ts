@@ -2,7 +2,7 @@
 
 import type { Vec3 } from "../../math/index.js";
 import { Boolean } from "../../schema/boolean/index.js";
-import type { Callback } from "./callback.js";
+import type { AxisLineCallback } from "./axis-line-callback.js";
 import type { IterateAxis } from "./iterate-axis.js";
 import type { Volume } from "./volume.js";
 import { normalizeBlockSize } from "./create-sparse-block/block-dims.js";
@@ -25,6 +25,12 @@ export interface IterateInvocationStats {
     readonly voxelsAlongAxis: number;
 }
 
+interface MutableIterateInvocationStats {
+    callbacks: number;
+    segmentPairs: number;
+    voxelsAlongAxis: number;
+}
+
 export interface SparseBlockIterateBenchmarkOptions {
     readonly axis?: IterateAxis;
     readonly warmupIterations?: number;
@@ -45,11 +51,11 @@ export interface SparseBlockIterateBenchmarkResult extends IterateInvocationStat
 }
 
 export const createIterateStatsCollector = (): {
-    readonly stats: IterateInvocationStats;
-    readonly callback: Callback<boolean>;
+    stats: MutableIterateInvocationStats;
+    readonly callback: AxisLineCallback<boolean>;
 } => {
     const stats = { callbacks: 0, segmentPairs: 0, voxelsAlongAxis: 0 };
-    const callback: Callback<boolean> = (_buffer, segments) => {
+    const callback: AxisLineCallback<boolean> = (_buffer, segments) => {
         stats.callbacks++;
         const pairCount = segments.length >> 1;
         stats.segmentPairs += pairCount;
@@ -191,7 +197,7 @@ const originForBlock = (
 };
 
 /** Reads every voxel in each segment so iteration cost includes real buffer work. */
-const withIterateWork = (callback: Callback<boolean>): Callback<boolean> => {
+const withIterateWork = (callback: AxisLineCallback<boolean>): AxisLineCallback<boolean> => {
     let sink = 0;
     return (buffer, segments, step) => {
         callback(buffer, segments, step, 0, 0, 0, false);

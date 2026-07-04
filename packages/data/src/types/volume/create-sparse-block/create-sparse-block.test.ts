@@ -7,6 +7,7 @@ import { equals } from "../../../equals.js";
 import { deserialize, serialize } from "../../../functions/serialization/serialize.js";
 import type { Volume } from "../volume.js";
 import { collectAxisSegments } from "../iterate-test-helpers.js";
+import { getDenseIndex } from "../get-dense-index.js";
 import { createBlockDims } from "./block-dims.js";
 import { createSparseBlock } from "./create-sparse-block.js";
 import { isSparseBlockVolume } from "./is-sparse-block-volume.js";
@@ -284,6 +285,38 @@ describe("createSparseBlock", () => {
         expect(collectAxisSegments(volume, "x")).toEqual([]);
         expect(collectAxisSegments(volume, "y")).toEqual([]);
         expect(collectAxisSegments(volume, "z")).toEqual([]);
+    });
+
+    it("iterateBlocks visits each allocated block in key order", () => {
+        const volume = createSparseBlock(Boolean.schema, 4);
+        volume.set(0, 0, 0, true);
+        volume.set(8, 0, 0, true);
+
+        const blocks: { origin: readonly number[]; size: readonly number[]; offset: number; done: boolean }[] = [];
+        volume.iterateBlocks((_buffer, block, done) => {
+            blocks.push({ ...block, done });
+        });
+
+        expect(blocks).toHaveLength(2);
+        expect(blocks[0]).toMatchObject({ origin: [0, 0, 0], size: [4, 4, 4], done: false });
+        expect(blocks[1]).toMatchObject({ origin: [8, 0, 0], size: [4, 4, 4], done: true });
+    });
+
+    it("iterateBlocks no-ops before any block is allocated", () => {
+        const volume = createSparseBlock(Boolean.schema, 4);
+        let count = 0;
+        volume.iterateBlocks(() => { count++; });
+        expect(count).toBe(0);
+    });
+
+    it("iterateBlocks uses standard dense layout within each block", () => {
+        const volume = createSparseBlock(Boolean.schema, [8, 4, 4]);
+        volume.set(1, 2, 3, true);
+
+        volume.iterateBlocks((buffer, block, done) => {
+            expect(done).toBe(true);
+            expect(buffer.get(block.offset + getDenseIndex(block.size, 1, 2, 3))).toBe(true);
+        });
     });
 
     it("round-trips through ECS serialization", () => {

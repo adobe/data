@@ -2,8 +2,8 @@
 
 import type { Vec3 } from "../../math/index.js";
 import type { TypedBuffer } from "../../typed-buffer/typed-buffer.js";
-import type { Callback } from "./callback.js";
-import { getDenseIndex } from "./volume-index.js";
+import type { AxisLineCallback } from "./axis-line-callback.js";
+import { getDenseIndex } from "./get-dense-index.js";
 export {
     iterateSparseBlockAxis,
     buildSparseBlockAxisPlan,
@@ -63,7 +63,7 @@ const denseAxisSpecs: Record<IterateAxis, (size: Vec3) => DenseAxisSpec> = {
 export const iterateDenseAxis = <T>(
     size: Vec3,
     data: TypedBuffer<T>,
-    callback: Callback<T>,
+    callback: AxisLineCallback<T>,
     axis: IterateAxis,
 ): void => {
     const [width, height, depth] = size;

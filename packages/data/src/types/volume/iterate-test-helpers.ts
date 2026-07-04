@@ -2,7 +2,6 @@
 
 import { expect } from "vitest";
 import type { TypedBuffer } from "../../typed-buffer/index.js";
-import type { Callback } from "./callback.js";
 import type { IterateAxis } from "./iterate-axis.js";
 import type { Volume } from "./volume.js";
 

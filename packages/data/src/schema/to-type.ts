@@ -28,6 +28,8 @@ type FromSchemaInternal<T, Depth extends number = 5> = T extends { const: infer 
   ? null
   : T extends { type: 'typed-buffer', items: infer Items }
   ? TypedBuffer<FromSchemaInternal<Items>>
+  : T extends { type: 'typed-buffer' }
+  ? TypedBuffer<unknown>
   : T extends { type: 'array' } | { items: any }
   ? FromSchemaArray<T, Decrement<Depth>>
   : T extends { type?: undefined, default: infer D } ? D
@@ -183,6 +185,9 @@ type CheckDefault = True<EquivalentTypes<TestDefault, 42>>;
 type TestTypedBuffer = ToType<{ type: 'typed-buffer', items: { type: 'number' } }>; // TypedBuffer<number>
 type CheckTypedBuffer = True<EquivalentTypes<TestTypedBuffer, TypedBuffer<number>>>;
 
+type TestTypedBufferNoItems = ToType<{ type: 'typed-buffer' }>; // TypedBuffer<unknown>
+type CheckTypedBufferNoItems = True<EquivalentTypes<TestTypedBufferNoItems, TypedBuffer<unknown>>>;
+
 type TestBlob = ToType<{ type: 'blob' }>; // Blob
 type CheckBlob = True<EquivalentTypes<TestBlob, Blob>>;
 
@@ -258,3 +263,4 @@ type TestAllOfSingle = ToType<{
   allOf: [{ type: 'object'; properties: { name: { type: 'string' } } }]
 }>; // { name?: string }
 type CheckAllOfSingle = True<EquivalentTypes<TestAllOfSingle, { name?: string }>>;
+

@@ -44,5 +44,7 @@ export abstract class TypedBuffer<T> implements ReadonlyTypedBuffer<T> {
      * @returns True if the buffers are deeply equal, false otherwise.
      */
     static equals = typedBufferEquals;
+
+    static schema = { type: 'typed-buffer' } as const satisfies Schema;
 }
 

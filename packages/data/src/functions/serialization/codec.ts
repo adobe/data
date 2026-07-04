@@ -2,6 +2,8 @@
 
 import { Data } from "../../data.js";
 import { registerTypedBufferCodecs } from "../../typed-buffer/register-typed-buffer-codecs.js";
+import { registerDenseVolumeCodecs } from "../../types/volume/create-dense/register-dense-volume-codecs.js";
+import { registerSparseBlockVolumeCodecs } from "../../types/volume/create-sparse-block/register-sparse-block-volume-codecs.js";
 import { registerTypedArrayCodecs } from "./register-typed-array-codecs.js";
 
 type Codec<T> = {
@@ -44,3 +46,5 @@ export function registerCodec<T>(codec: Codec<T>) {
 
 registerTypedArrayCodecs();
 registerTypedBufferCodecs();
+registerDenseVolumeCodecs();
+registerSparseBlockVolumeCodecs();

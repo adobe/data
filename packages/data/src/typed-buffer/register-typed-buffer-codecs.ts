@@ -8,6 +8,7 @@ import { createArrayBuffer } from "./create-array-buffer.js";
 import { createConstBuffer } from "./create-const-buffer.js";
 import { createNumberBuffer } from "./create-number-buffer.js";
 import { createEnumBuffer } from "./create-enum-buffer.js";
+import { createBooleanBuffer } from "./create-boolean-buffer.js";
 import { createStructBuffer } from "./create-struct-buffer.js";
 import { isTypedBuffer } from "./is-typed-buffer.js";
 import { TypedBuffer, TypedBufferType } from "./typed-buffer.js";
@@ -25,7 +26,7 @@ export function registerTypedBufferCodecs() {
                 else if (type === "array") {
                     return { json: { type, schema, capacity, array: data.slice() as unknown as any[] } };
                 }
-                else if (type === "enum" || type === "number" || type === "struct") {
+                else if (type === "boolean" || type === "enum" || type === "number" || type === "struct") {
                     const typedArray = data.getTypedArray();
                     const view = new Uint8Array(typedArray.buffer, typedArray.byteOffset, typedArray.byteLength);
                     return { json: { type, schema, capacity }, binary: [toArrayBufferBacked(view)] };
@@ -47,9 +48,12 @@ export function registerTypedBufferCodecs() {
             }
             else if (type === "array") {
                 const isEnum = schema.enum !== undefined && schema.enum.length > 0;
+                const isBoolean = schema.type === "boolean";
                 const buffer = isEnum
                     ? createEnumBuffer(schema, capacity)
-                    : createArrayBuffer(schema, capacity);
+                    : isBoolean
+                        ? createBooleanBuffer(schema, capacity)
+                        : createArrayBuffer(schema, capacity);
                 if ((schema.nonPersistent ?? schema.ephemeral)) {
                     if (schema.default !== undefined && schema.default !== 0) {
                         for (let i = 0; i < capacity; i++) {
@@ -60,6 +64,19 @@ export function registerTypedBufferCodecs() {
                 else {
                     for (let i = 0; i < capacity; i++) {
                         buffer.set(i, array![i]);
+                    }
+                }
+                return buffer;
+            }
+            else if (type === "boolean") {
+                const buffer = createBooleanBuffer(schema, capacity);
+                if (!(schema.nonPersistent ?? schema.ephemeral)) {
+                    if (binary[0]) {
+                        copyViewBytes(binary[0], buffer.getTypedArray());
+                    } else if (array) {
+                        for (let i = 0; i < capacity; i++) {
+                            buffer.set(i, array[i]);
+                        }
                     }
                 }
                 return buffer;

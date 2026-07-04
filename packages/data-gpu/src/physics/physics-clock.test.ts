@@ -2,7 +2,8 @@
 
 import { describe, it, expect } from "vitest";
 import { Database } from "@adobe/data/ecs";
-import { physicsClock, type PhysicsClock } from "./physics-clock-plugin.js";
+import { physicsClock } from "./physics-clock-plugin.js";
+import type { PhysicsClock } from "./physics-clock/physics-clock.js";
 
 /** The accumulator turns a variable render dt into a whole number of fixed steps
  *  plus a leftover interpolation `alpha`, capped against the spiral of death. */

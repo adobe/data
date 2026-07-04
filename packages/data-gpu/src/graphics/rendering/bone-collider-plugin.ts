@@ -10,6 +10,7 @@ import { ragdollTrigger } from "./ragdoll-trigger-plugin.js";
 import { pbrSkinning } from "./skinning/skinning-plugin.js";
 import { modelLoader } from "../scene/model/model-loader-plugin.js";
 import { transform } from "../scene/node/transform-plugin.js";
+import { requireMaterial } from "../../material/require-material.js";
 
 /**
  * boneColliders — fits a capsule to each bone of a skinned model and ragdolls it.
@@ -44,15 +45,18 @@ function rotationOf(m: Mat4x4): Quat {
     const s = Math.sqrt(1 + m22 - m00 - m11) * 2; return [(m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s];
 }
 
-interface SkinGeometry { _cpuSkin?: { positions: Float32Array; joints: Uint32Array; weights: Float32Array } | null; _skinInverseBindMatrices?: Float32Array | null }
+interface SkinMesh {
+    cpuSkin?: { positions: Float32Array; joints: Uint32Array; weights: Float32Array } | null;
+    skinInverseBindMatrices?: Float32Array | null;
+}
 
 export const boneColliders = Database.Plugin.create({
     extends: Database.Plugin.combine(physicsData, jointData, ragdollTrigger, pbrSkinning, modelLoader, transform),
     components: {
-        _boneJoint: Entity.schema, // the skeleton joint this capsule tracks
-        _boneOffsetPos: Vec3.schema,     // capsule offset in the bone's bind-local frame
-        _boneOffsetRot: Quat.schema,
-        _ragdollBuilt: True.schema,      // tag: this skeleton's bone capsules have been generated
+        _boneJoint: { ...Entity.schema, nonPersistent: true }, // the skeleton joint this capsule tracks
+        _boneOffsetPos: { ...Vec3.schema, nonPersistent: true },     // capsule offset in the bone's bind-local frame
+        _boneOffsetRot: { ...Quat.schema, nonPersistent: true },
+        _ragdollBuilt: { ...True.schema, nonPersistent: true },      // tag: this skeleton's bone capsules have been generated
     },
     archetypes: {
         // a kinematic capsule body bound to a skeleton joint (collisionGroup 1 ⇒ the
@@ -65,14 +69,14 @@ export const boneColliders = Database.Plugin.create({
         generateBoneColliders: {
             schedule: { during: ["postUpdate"] },
             create: db => () => {
-                const material = (Object.values(db.store.resources.materials)[0] as Entity | undefined) ?? (0 as Entity);
-                for (const arch of db.store.queryArchetypes(["_skeletonJoints", "_skeletonGeometry"], { exclude: ["_ragdollBuilt"] })) {
-                    const ids = arch.columns.id, jc = arch.columns._skeletonJoints, gc = arch.columns._skeletonGeometry;
+                const material = requireMaterial(db, "steel");
+                for (const arch of db.store.queryArchetypes(["_skeletonJoints", "_skeletonMesh"], { exclude: ["_ragdollBuilt"] })) {
+                    const ids = arch.columns.id, jc = arch.columns._skeletonJoints, mc = arch.columns._skeletonMesh;
                     for (let i = arch.rowCount - 1; i >= 0; i--) {
-                        const skeleton = ids.get(i), joints = jc.get(i), geo = gc.get(i);
-                        const g = db.store.read(geo) as SkinGeometry | null;
-                        if (!g?._cpuSkin || !g._skinInverseBindMatrices) continue; // skin not loaded yet
-                        for (const c of fitBoneCapsules({ jointCount: joints.length, inverseBindMatrices: g._skinInverseBindMatrices, skin: g._cpuSkin })) {
+                        const skeleton = ids.get(i), joints = jc.get(i), meshId = mc.get(i);
+                        const g = db.store.read(meshId) as SkinMesh | null;
+                        if (!g?.cpuSkin || !g.skinInverseBindMatrices) continue;
+                        for (const c of fitBoneCapsules({ jointCount: joints.length, inverseBindMatrices: g.skinInverseBindMatrices, skin: g.cpuSkin })) {
                             db.store.archetypes.BoneCapsule.insert({
                                 bodyType: "kinematic", colliderShape: "capsule", halfExtents: [c.radius, c.halfHeight, 0], material, collisionGroup: 1,
                                 position: [0, 0, 0], rotation: [0, 0, 0, 1], linearVelocity: [0, 0, 0], angularVelocity: [0, 0, 0],

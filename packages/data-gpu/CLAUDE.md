@@ -1,5 +1,14 @@
 # CLAUDE.md — data-gpu
 
+## Package layout
+
+- **`@adobe/data-gpu`** (root) — `core` plugin + `FrameTime` only
+- **`@adobe/data-gpu/graphics`** — scene, camera, render, mesh/shape plugins
+- **`@adobe/data-gpu/physics`** — `physicsData`, solvers, joints, ragdoll
+- **`@adobe/data-gpu/material`** — material palette and definitions
+
+Each domain follows the type-namespace pattern (one export per file, `public.ts` re-exports). See `README.md` for consumer import examples.
+
 ## Hot-loop performance: direct typed-array column access in systems
 
 Per-frame systems (the physics solver, the renderers, anything in `update`/

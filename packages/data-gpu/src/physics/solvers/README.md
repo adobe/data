@@ -7,6 +7,10 @@ scene runs unchanged on any solver** (`Database.Plugin.combine(scene, solver)`).
 
 Two production-grade solvers ship, both compiled to WASM and wired identically:
 
+```ts
+import { joltSolver, rapierSolver } from "@adobe/data-gpu/physics";
+```
+
 | solver | engine | license |
 | --- | --- | --- |
 | `joltSolver` | Jolt Physics (Jorrit Rouwe) | MIT |

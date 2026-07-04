@@ -2,6 +2,7 @@
 
 import initJolt from "jolt-physics";
 import { Database, type Entity } from "@adobe/data/ecs";
+import { isVoxelShapePhysicsPending } from "../is-voxel-shape-physics-pending.js";
 import { True } from "@adobe/data/schema";
 import { physicsClock } from "../physics-clock-plugin.js";
 import { physicsData } from "../physics-data-plugin.js";
@@ -9,6 +10,7 @@ import { jointData } from "../joint/joint-plugin.js";
 import { BodyType } from "../body/body-type/body-type.js";
 import { ColliderShape } from "../body/collider-shape/collider-shape.js";
 import type { ColliderMesh } from "../body/collider-mesh.js";
+import { massFromVolume } from "../body/collider-shape/mass-from-volume.js";
 
 /**
  * A third rigid-body solver behind the same `physicsData` seam — Jolt Physics
@@ -60,7 +62,7 @@ type JVec3 = InstanceType<JoltModule["Vec3"]>;
 type JShape = InstanceType<JoltModule["Shape"]>;
 type JPhysicsSystem = InstanceType<JoltModule["PhysicsSystem"]>;
 
-interface MatProps { restitution: number; friction: number }
+interface MatProps { density: number; restitution: number; friction: number }
 
 /** The live Jolt world, published once WASM init completes, so Jolt-native
  *  extensions (e.g. `joltRagdoll`) can add their own bodies/constraints into the
@@ -76,8 +78,8 @@ export interface JoltContext {
 export const joltSolver = Database.Plugin.create({
     extends: Database.Plugin.combine(physicsData, jointData, physicsClock),
     components: {
-        _joltBody: True.schema, // tag: this body has been mirrored into the Jolt world
-        _joltJoint: True.schema, // tag: this joint has been mirrored into the Jolt world
+        _joltBody: { ...True.schema, nonPersistent: true }, // tag: this body has been mirrored into the Jolt world
+        _joltJoint: { ...True.schema, nonPersistent: true }, // tag: this joint has been mirrored into the Jolt world
     },
     resources: {
         _joltContext: { default: null as JoltContext | null, nonPersistent: true },
@@ -95,8 +97,8 @@ export const joltSolver = Database.Plugin.create({
                 const bodies = new Map<Entity, JBody>(); // entity → Jolt body
 
                 const matPropsOf = (id: Entity): MatProps => {
-                    const m = db.store.read(id) as { restitution?: number; friction?: number } | null;
-                    return { restitution: m?.restitution ?? 0.2, friction: m?.friction ?? 0.5 };
+                    const m = db.store.read(id) as { density?: number; restitution?: number; friction?: number } | null;
+                    return { density: m?.density ?? 1, restitution: m?.restitution ?? 0.2, friction: m?.friction ?? 0.5 };
                 };
 
                 // hull/mesh colliders may be auto-generated from a model that's still
@@ -197,6 +199,16 @@ export const joltSolver = Database.Plugin.create({
                     const settings = new jolt.BodyCreationSettings(shp, pos, rot, motionType, layer);
                     settings.mRestitution = m.restitution;
                     settings.mFriction = m.friction;
+                    if (motion === "dynamic") {
+                        const volume = shp.GetVolume();
+                        if (volume > 0) {
+                            const mp = shp.GetMassProperties();
+                            mp.ScaleToMass(massFromVolume(volume, m.density));
+                            settings.mOverrideMassProperties = jolt.EOverrideMassProperties_MassAndInertiaProvided;
+                            settings.mMassPropertiesOverride = mp;
+                            jolt.destroy(mp);
+                        }
+                    }
                     const body = bi.CreateBody(settings);
                     bi.AddBody(body.GetID(), motion === "static" ? jolt.EActivation_DontActivate : jolt.EActivation_Activate);
                     if (motion === "dynamic" && (vx || vy || vz || wx || wy || wz)) {
@@ -233,6 +245,7 @@ export const joltSolver = Database.Plugin.create({
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
                             const id = ids.get(r), bodyType = bt.get(r), shape = cs.get(r), h = he.get(r), p = pos.get(r), o = ori.get(r), v = lv.get(r), w = av.get(r);
                             if (!colliderReady(id, shape)) continue; // auto-collider not generated yet
+                            if (isVoxelShapePhysicsPending(db.store, id)) continue;
                             ensureBody(jolt, bi, id, bodyType, shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], o, v[0], v[1], v[2], w[0], w[1], w[2]);
                             // Tag as mirrored. Dynamics also migrate onto the derived prev-pose
                             // snapshot (the interpolator reads it); kinematic bodies are authored
@@ -247,6 +260,7 @@ export const joltSolver = Database.Plugin.create({
                         for (let r = arch.rowCount - 1; r >= 0; r--) {
                             const id = ids.get(r), shape = cs.get(r), h = he.get(r), p = pos.get(r);
                             if (!colliderReady(id, shape)) continue; // auto-collider not generated yet
+                            if (isVoxelShapePhysicsPending(db.store, id)) continue;
                             ensureBody(jolt, bi, id, "static", shape, h[0], h[1], h[2], mat.get(r), p[0], p[1], p[2], ori.get(r), 0, 0, 0, 0, 0, 0);
                             db.store.update(id, { _joltBody: true });
                         }

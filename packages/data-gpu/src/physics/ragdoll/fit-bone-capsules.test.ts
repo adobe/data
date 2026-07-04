@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { describe, it, expect } from "vitest";
-import { fitBoneCapsules, type SkinVertices } from "./fit-bone-capsules.js";
+import { fitBoneCapsules } from "./fit-bone-capsules.js";
+import type { SkinVertices } from "./skin-vertices.js";
 
 const IDENTITY_IBM = (n: number) => {
     const m = new Float32Array(n * 16);

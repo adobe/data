@@ -20,7 +20,7 @@ import { Vec3, Quat } from "@adobe/data/math";
  */
 export const displayTransform = Database.Plugin.create({
     components: {
-        _renderPosition: Vec3.schema, // derived: interpolated pose to render at (else use `position`)
-        _renderRotation: Quat.schema,
+        _renderPosition: { ...Vec3.schema, nonPersistent: true }, // derived: interpolated pose to render at (else use `position`)
+        _renderRotation: { ...Quat.schema, nonPersistent: true },
     },
 });

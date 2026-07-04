@@ -3,7 +3,7 @@
 import { describe, it, expect } from "vitest";
 import { Database } from "@adobe/data/ecs";
 import { interpolation } from "./interpolation-plugin.js";
-import type { PhysicsClock } from "../../physics/physics-clock-plugin.js";
+import type { PhysicsClock } from "../../physics/physics-clock/physics-clock.js";
 
 /**
  * The interpolation pass turns the fixed-step sim state into a smooth render pose.

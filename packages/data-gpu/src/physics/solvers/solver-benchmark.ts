@@ -1,6 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Database } from "@adobe/data/ecs";
+import type { SolverBenchmarkOptions } from "./solver-benchmark-options.js";
+import type { SolverBenchmarkResult } from "./solver-benchmark-result.js";
 
 /**
  * Headless benchmark harness for a physics **solver plugin** (anything built on
@@ -13,41 +15,6 @@ import { Database } from "@adobe/data/ecs";
  * Async because some solvers (Rapier) initialise WASM lazily; the warm-up phase
  * yields to the event loop so that init + scene settling complete before timing.
  */
-
-export interface SolverBenchmarkOptions {
-    /** Dynamic bodies dropped into the scene (≈ workload size). Default 256. */
-    bodies?: number;
-    /** Timed frames. Default 300. */
-    frames?: number;
-    /** Warm-up frames before timing (lets async init finish + the pile settle). Default 90. */
-    warmupFrames?: number;
-    /** Fixed timestep per frame (seconds). Default 1/60. */
-    dt?: number;
-    /** Fraction of `bodies` that are spheres (rest are boxes). Default 0.5. */
-    sphereFraction?: number;
-    /** Extra *static* collider boxes laid out as resting scenery. They barely
-     *  cost the engine (nothing moves) but they ARE mirrored once and then scanned
-     *  by a naive per-frame sync — so this isolates the gather/sync overhead, which
-     *  is the realistic "many static, few dynamic" target workload. Default 0. */
-    staticBodies?: number;
-}
-
-export interface SolverBenchmarkResult {
-    bodies: number;
-    frames: number;
-    /** Total wall-clock time of the timed frames (ms). */
-    totalMs: number;
-    /** Mean cost of one frame (ms) — the headline number. */
-    msPerFrame: number;
-    /** Simulation frames per real second (1000 / msPerFrame). */
-    simFps: number;
-    /** Slowest single frame (ms) — surfaces hitches. */
-    maxFrameMs: number;
-    // --- coarse end-state, for cross-solver parity / sanity (not perf) ---
-    avgY: number;      // mean height of dynamic bodies (piled ≈ low, exploded ≈ wild)
-    maxSpeed: number;  // fastest dynamic body (a stable pile is near 0)
-    belowFloor: number; // dynamic bodies that sank below the floor top (should be 0)
-}
 
 interface LooseStore {
     archetypes: Record<string, { insert(v: unknown): number }>;

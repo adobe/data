@@ -2,5 +2,6 @@
 import { Schema } from "../schema.js";
 
 export const schema = {
-    type: 'boolean',
+    type: "boolean",
+    default: false as boolean,
 } as const satisfies Schema;

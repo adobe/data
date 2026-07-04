@@ -3,7 +3,7 @@ import { TypedArray } from "../internal/typed-array/index.js";
 import { Schema } from "../schema/index.js";
 import { typedBufferEquals } from "./typed-buffer-equals.js";
 
-export type TypedBufferType = "array" | "const" | "enum" | "number" | "struct";
+export type TypedBufferType = "array" | "boolean" | "const" | "enum" | "number" | "struct";
 
 export interface ReadonlyTypedBuffer<T> {
     readonly type: TypedBufferType;
@@ -44,5 +44,7 @@ export abstract class TypedBuffer<T> implements ReadonlyTypedBuffer<T> {
      * @returns True if the buffers are deeply equal, false otherwise.
      */
     static equals = typedBufferEquals;
+
+    static schema = { type: 'typed-buffer' } as const satisfies Schema;
 }
 

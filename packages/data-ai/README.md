@@ -4,36 +4,32 @@ Cross-agent architecture skills for [`@adobe/data`](https://www.npmjs.com/packag
 
 Skills version in lockstep with the library: `@adobe/data-ai@x.y.z` describes `@adobe/data@x.y.z`.
 
-## Install (any agent)
+There are two distribution paths, one per agent family — they do **not** overlap:
 
-The installer copies the flat skill folders into whichever skill roots your project's agents scan. It is idempotent and version-stamped — commit the result, and re-run to refresh.
+- **Claude Code → marketplace plugin** (see below). The installer never writes into `.claude/skills/`, so it can't collide with your own Claude skills.
+- **Cursor / Codex / other `.agents`-standard agents → `npx … install`** (below).
+
+## Install (Cursor, Codex, `.agents` agents)
+
+The installer copies the skill folders into a single namespaced bundle directory that agents which recurse `.agents/skills/` discover:
 
 ```sh
 npx @adobe/data-ai@latest install
 ```
 
-This writes:
-
-| Root | Agent | Notes |
-| --- | --- | --- |
-| `.claude/skills/<name>/` | Claude Code | No recursion — skills must be flat. |
-| `.agents/skills/<name>/` | Cursor, Codex | Tool-neutral; other Agent-Skills agents pick these up. |
+This writes `.agents/skills/adobe-data-ai/<name>/SKILL.md` for each skill. The whole `adobe-data-ai/` directory belongs to this package, so a re-run is a clean wipe-and-recopy that never touches skills you authored elsewhere. Commit the result to share it with your team.
 
 Options:
 
 ```sh
-npx @adobe/data-ai@latest install --claude     # only .claude/skills
-npx @adobe/data-ai@latest install --agents     # only .agents/skills (alias: --cursor)
-npx @adobe/data-ai@latest install --global      # into ~/.claude, ~/.agents
-npx @adobe/data-ai@latest install --dir=./sub   # into a specific base dir
-npx @adobe/data-ai@latest list                  # show bundled skills
+npx @adobe/data-ai@latest install --global      # into ~/.agents/skills/adobe-data-ai/
+npx @adobe/data-ai@latest install --dir=./sub    # into a specific base dir
+npx @adobe/data-ai@latest list                   # show bundled skills
 ```
-
-Each root gets a `.data-ai.json` manifest recording which skills this package owns, so a re-run prunes skills we no longer ship without touching skills you added yourself.
 
 ## Install (Claude Code plugin)
 
-Claude users can instead consume the skills as a native plugin from the `adobe/data` marketplace — no npm needed.
+Claude Code does not scan `.agents/`; it consumes the skills as a native plugin from the `adobe/data` marketplace — no npm needed.
 
 Interactive:
 

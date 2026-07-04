@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { F32 } from "../f32/index.js";
-import { Schema } from "../../schema/index.js";
+import { F32 } from "../../f32/index.js";
+import { Schema } from "../../../schema/index.js";
 
 export const schema = {
     type: 'array',

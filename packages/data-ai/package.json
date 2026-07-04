@@ -1,23 +1,39 @@
 {
   "name": "@adobe/data-ai",
-  "version": "0.9.54",
-  "description": "Claude and AI-assistant rules and guidance for Adobe data-oriented architecture",
+  "version": "0.9.75",
+  "description": "Cross-agent architecture skills for @adobe/data — installable as a Claude Code plugin or copied into any Agent-Skills-compatible agent (Cursor, Codex).",
+  "type": "module",
   "private": false,
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "access": "public"
   },
+  "bin": {
+    "data-ai": "bin/cli.mjs"
+  },
   "files": [
+    "skills",
+    "bin",
+    ".claude-plugin",
     "README.md",
-    "LICENSE",
-    ".claude"
+    "LICENSE"
   ],
   "scripts": {
     "build": "cp ../../LICENSE .",
     "test": "vitest --run --passWithNoTests",
     "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
   },
+  "keywords": [
+    "adobe",
+    "data",
+    "agent-skills",
+    "claude-code",
+    "cursor",
+    "codex",
+    "skills"
+  ],
   "devDependencies": {
     "vitest": "^1.6.0"
-  }
+  },
+  "license": "MIT"
 }

@@ -9,8 +9,8 @@
  * sphere scaled by its radius.
  */
 export interface ShapeMesh {
-    vertices: Float32Array;
-    indices: Uint16Array;
+    vertices: Float32Array<ArrayBuffer>;
+    indices: Uint16Array<ArrayBuffer>;
 }
 
 function push(out: number[], px: number, py: number, pz: number, nx: number, ny: number, nz: number, tx: number, ty: number, tz: number, tw: number, u: number, v: number): void {

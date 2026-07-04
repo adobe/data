@@ -1,5 +1,6 @@
 packages:
   - 'packages/data'
+  - 'packages/data-ai'
   - 'packages/data-persistence'
   - 'packages/data-sync'
   - 'packages/data-lit'
@@ -13,3 +14,7 @@ packages:
   - 'packages/data-solid-dashboard'
   - 'packages/data-gpu'
   - 'packages/data-gpu-samples'
+allowBuilds:
+  edgedriver: false
+  esbuild: false
+  geckodriver: false

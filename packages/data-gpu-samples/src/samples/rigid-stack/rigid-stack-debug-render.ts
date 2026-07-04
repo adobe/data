@@ -19,7 +19,7 @@ const PROPS_STRIDE = 64;
 const MAX_INSTANCES = 600;
 const BIN = 7;
 
-function unitSphere(rings: number, segments: number): { vertices: Float32Array; indices: Uint16Array } {
+function unitSphere(rings: number, segments: number): { vertices: Float32Array<ArrayBuffer>; indices: Uint16Array<ArrayBuffer> } {
     const verts: number[] = [];
     for (let ring = 0; ring <= rings; ring++) {
         const theta = (ring / rings) * Math.PI, y = Math.cos(theta), rs = Math.sin(theta);
@@ -37,7 +37,7 @@ function unitSphere(rings: number, segments: number): { vertices: Float32Array; 
     return { vertices: new Float32Array(verts), indices: new Uint16Array(indices) };
 }
 
-function unitCube(): Float32Array {
+function unitCube(): Float32Array<ArrayBuffer> {
     const faces: { n: number[]; v: number[][] }[] = [
         { n: [1, 0, 0], v: [[1, -1, -1], [1, 1, -1], [1, 1, 1], [1, -1, 1]] },
         { n: [-1, 0, 0], v: [[-1, -1, 1], [-1, 1, 1], [-1, 1, -1], [-1, -1, -1]] },
@@ -54,7 +54,7 @@ function unitCube(): Float32Array {
     return new Float32Array(out);
 }
 
-function groundQuad(half: number, y: number): Float32Array {
+function groundQuad(half: number, y: number): Float32Array<ArrayBuffer> {
     const e = half + 1;
     return new Float32Array([-e, y, -e, e, y, -e, e, y, e, -e, y, -e, e, y, e, -e, y, e]);
 }

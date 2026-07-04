@@ -1,3 +1,62 @@
+# @adobe/data-ai
+
+Cross-agent architecture skills for [`@adobe/data`](https://www.npmjs.com/package/@adobe/data). One skill bundle, authored once, distributed two ways.
+
+Skills version in lockstep with the library: `@adobe/data-ai@x.y.z` describes `@adobe/data@x.y.z`.
+
+There are two distribution paths, one per agent family — they do **not** overlap:
+
+- **Claude Code → marketplace plugin** (see below). The installer never writes into `.claude/skills/`, so it can't collide with your own Claude skills.
+- **Cursor / Codex / other `.agents`-standard agents → `npx … install`** (below).
+
+## Install (Cursor, Codex, `.agents` agents)
+
+The installer copies the skill folders into a single namespaced bundle directory that agents which recurse `.agents/skills/` discover:
+
+```sh
+npx @adobe/data-ai@latest install
+```
+
+This writes `.agents/skills/adobe-data-ai/<name>/SKILL.md` for each skill. The whole `adobe-data-ai/` directory belongs to this package, so a re-run is a clean wipe-and-recopy that never touches skills you authored elsewhere. Commit the result to share it with your team.
+
+Options:
+
+```sh
+npx @adobe/data-ai@latest install --global      # into ~/.agents/skills/adobe-data-ai/
+npx @adobe/data-ai@latest install --dir=./sub    # into a specific base dir
+npx @adobe/data-ai@latest list                   # show bundled skills
+```
+
+## Install (Claude Code plugin)
+
+Claude Code does not scan `.agents/`; it consumes the skills as a native plugin from the `adobe/data` marketplace — no npm needed.
+
+Interactive:
+
+```
+/plugin marketplace add adobe/data
+/plugin install adobe-data-ai@adobe-data-skills
+```
+
+Or declaratively, so collaborators are prompted to auto-install on next launch — commit to your repo's `.claude/settings.json`:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "adobe-data-skills": {
+      "source": { "source": "github", "repo": "adobe/data" }
+    }
+  },
+  "enabledPlugins": {
+    "adobe-data-ai@adobe-data-skills": true
+  }
+}
+```
+
+The plugin cache is version-hashed and garbage-collected, so it is not a stable path to symlink against — prefer the `npx … install` copy model when you need a durable, cross-agent artifact.
+
+---
+
 # Pragmatic Programming
 
 ## Target Audience

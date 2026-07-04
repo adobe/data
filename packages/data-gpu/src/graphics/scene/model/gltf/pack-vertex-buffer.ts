@@ -11,7 +11,7 @@ const FLOATS_PER_VERTEX = vertexStride / 4; // 48 / 4 = 12
 type MutVec3 = [number, number, number];
 
 export interface PackedPrimitive {
-    vertices: Float32Array;
+    vertices: Float32Array<ArrayBuffer>;
     /** Packed skinning attributes (uint32×4 joints, float32×4 weights). Null
      *  for non-skinned primitives. Size = vertexCount × {@link SKINNING_STRIDE}. */
     skinningAttributes: ArrayBuffer | null;

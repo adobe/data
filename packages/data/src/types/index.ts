@@ -6,5 +6,5 @@ export * from "./equal.js";
 export * from "./typed-array-constructer.js";
 export * from "./typed-array.js";
 export * from "./replace.js";
-export * from "./volume/volume.js";
 export type { IsTuple } from "./types.js";
+

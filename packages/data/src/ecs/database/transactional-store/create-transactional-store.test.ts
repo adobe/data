@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { createTransactionalStore } from "./create-transactional-store.js";
 import { coalesceTransactions } from "./coalesce-actions.js";
+import { applyOperations } from "./apply-operations.js";
 import { Store } from "../../store/index.js";
 import { Entity } from "../../entity/entity.js";
 import { F32 } from "../../../math/f32/index.js";
@@ -766,4 +767,51 @@ describe("createTransactionalStore", () => {
             expect(coalesced.persistent).toBe(true);
         });
     });
-}); 
+
+    describe("column removal via update-with-undefined", () => {
+        // Removing a component with `update(entity, { comp: undefined })` migrates the
+        // entity to an archetype lacking that column. This is the shape used by the
+        // orphan-delete model (sever parent link). The recorded redo op must still
+        // carry the column removal so delete -> undo -> redo re-removes the column.
+        it("records the removal in the redo op and round-trips through undo/redo", () => {
+            const baseStore = Store.create({
+                components: { position: positionSchema, health: healthSchema },
+                resources: {},
+                archetypes: {}
+            });
+            const store = createTransactionalStore(baseStore);
+
+            // Insert an entity that has the health column.
+            let entity: Entity = 0 as Entity;
+            store.execute(t => {
+                const archetype = t.ensureArchetype(["id", "position", "health"]);
+                entity = archetype.insert({
+                    position: { x: 1, y: 2, z: 3 },
+                    health: { current: 100, max: 100 },
+                });
+            });
+            expect(baseStore.read(entity)?.health).toEqual({ current: 100, max: 100 });
+
+            // Remove the health column.
+            const result = store.execute(t => {
+                t.update(entity, { health: undefined });
+            });
+            expect(baseStore.read(entity)?.health).toBeUndefined();
+
+            // The recorded redo op must still carry the column removal, not an empty {}.
+            const redoUpdate = result.redo.find(op => op.type === "update");
+            expect(redoUpdate?.type).toBe("update");
+            if (redoUpdate?.type === "update") {
+                expect("health" in redoUpdate.values).toBe(true);
+                expect(redoUpdate.values.health).toBeUndefined();
+            }
+
+            // Full round-trip: undo re-adds the column, redo must re-remove it.
+            applyOperations(baseStore, result.undo);
+            expect(baseStore.read(entity)?.health).toEqual({ current: 100, max: 100 });
+
+            applyOperations(baseStore, result.redo);
+            expect(baseStore.read(entity)?.health).toBeUndefined();
+        });
+    });
+});

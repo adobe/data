@@ -108,6 +108,13 @@ export function createTransactionalStore<
             changed.archetypes.add(location.archetype.id);
         }
 
+        // The core store mutates `values` in place: when a value is `undefined` it
+        // deletes that key so it can reuse the object as the new (smaller) archetype's
+        // row data. Snapshot the redo values first — otherwise a column-removal update
+        // (`{ comp: undefined }`) records an empty redo op and redo becomes a no-op,
+        // so delete -> undo -> redo would leave the column in place.
+        const redoValues = { ...values };
+
         // Perform the actual update
         store.update(entity, values as any);
 
@@ -118,7 +125,7 @@ export function createTransactionalStore<
         }
 
         // Add operations with potential combining
-        addUpdateOperationsMaybeCombineLast(undoOperationsInReverseOrder, redoOperations, entity, values, replacedValues);
+        addUpdateOperationsMaybeCombineLast(undoOperationsInReverseOrder, redoOperations, entity, redoValues, replacedValues);
     };
 
     const deleteEntity = (entity: Entity) => {

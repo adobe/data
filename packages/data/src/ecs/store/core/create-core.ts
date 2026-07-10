@@ -249,10 +249,14 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         }),
         fromData: (data: SerializedCore) => {
             if (data.version !== ECS_SNAPSHOT_VERSION) {
-                throw new Error(
-                    `Incompatible ECS snapshot: expected version ${ECS_SNAPSHOT_VERSION}, got ${String(data.version)}. ` +
-                    `The serialization format has changed; this snapshot cannot be loaded.`,
+                // Incompatible (or legacy, unversioned) snapshot. Skip the load
+                // rather than throw: callers treat this as "no saved data" and
+                // keep the freshly-constructed defaults.
+                console.warn(
+                    `Ignoring incompatible ECS snapshot: expected version ${ECS_SNAPSHOT_VERSION}, got ${String(data.version)}. ` +
+                    `The serialization format has changed; keeping current state.`,
                 );
+                return;
             }
             Object.assign(componentSchemas, data.componentSchemas);
             persistentLocationTable.fromData(data.entityLocationTableData);

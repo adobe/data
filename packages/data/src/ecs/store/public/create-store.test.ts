@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createStore } from "./create-store.js";
 import { serialize, deserialize } from "../../../functions/serialization/serialize.js";
 import { ECS_SNAPSHOT_VERSION } from "../core/create-core.js";
@@ -720,19 +720,34 @@ describe("createStore", () => {
             expect(newStore.read(positionEntity)).toEqual({ id: positionEntity, position: 42 });
         });
 
-        it("stamps a version and rejects snapshots of an incompatible (or legacy, unversioned) format", () => {
+        it("stamps a version and skips (warns, does not throw) snapshots of an incompatible or legacy format", () => {
             const store = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
+            const entity = store.ensureArchetype(["id", "position"]).insert({ position: { x: 1, y: 2, z: 3 } });
             const snapshot: any = store.toData(true);
             expect(snapshot.version).toBe(ECS_SNAPSHOT_VERSION);
 
-            const target = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
-            // A future/incompatible version is rejected.
-            expect(() => target.fromData({ ...snapshot, version: ECS_SNAPSHOT_VERSION + 1 })).toThrow(/version/i);
-            // A legacy snapshot predating the version field is rejected.
-            const { version: _omit, ...legacy } = snapshot;
-            expect(() => target.fromData(legacy)).toThrow(/version/i);
-            // The correctly-versioned snapshot still loads.
-            expect(() => target.fromData(snapshot)).not.toThrow();
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+            try {
+                // A future/incompatible version is skipped with a warning — no
+                // throw, and nothing from the snapshot is loaded.
+                const future = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
+                expect(() => future.fromData({ ...snapshot, version: ECS_SNAPSHOT_VERSION + 1 })).not.toThrow();
+                expect(future.select(["position"])).toHaveLength(0);
+                expect(warn).toHaveBeenCalledWith(expect.stringMatching(/version/i));
+
+                // A legacy snapshot predating the version field is likewise skipped.
+                const { version: _omit, ...legacy } = snapshot;
+                const stale = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
+                expect(() => stale.fromData(legacy)).not.toThrow();
+                expect(stale.select(["position"])).toHaveLength(0);
+
+                // The correctly-versioned snapshot loads normally.
+                const target = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
+                target.fromData(snapshot);
+                expect(target.read(entity)).toEqual({ id: entity, position: { x: 1, y: 2, z: 3 } });
+            } finally {
+                warn.mockRestore();
+            }
         });
 
         it("toData(true) detaches the snapshot from later store mutation; toData() references live buffers", () => {

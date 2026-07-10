@@ -30,10 +30,10 @@ ensureArchetype(["id", "cursor", "nonPersistent"])
 
 **Store snapshot format changed and is now versioned**
 
-`db.toData()` / `store.toData()` output is now stamped with `version: ECS_SNAPSHOT_VERSION` (currently `1`), and `fromData` throws on any snapshot whose version does not match. Two consequences:
+`db.toData()` / `store.toData()` output is now stamped with `version: ECS_SNAPSHOT_VERSION` (currently `1`), and `fromData` ignores any snapshot whose version does not match. Two consequences:
 
 - nonPersistent resources/entities are correctly excluded from snapshots (previously a nonPersistent resource could deserialize to `undefined`).
-- Snapshots produced by earlier versions (which carried no `version` field) can no longer be loaded — they are rejected with a clear error instead of reconstructing incorrectly. Discard and regenerate persisted snapshots.
+- Snapshots produced by earlier versions (which carried no `version` field) are no longer loaded — `fromData` logs a `console.warn` and silently keeps the current (freshly-constructed) state instead of reconstructing incorrectly. Discard and regenerate persisted snapshots.
 
 This only affects the `toData`/`fromData` snapshot path (e.g. `createStoragePersistenceService`). The `@adobe/data-persistence` incremental journal format is unaffected.
 

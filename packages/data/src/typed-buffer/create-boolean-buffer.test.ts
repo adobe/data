@@ -169,16 +169,16 @@ describe("createBooleanBuffer", () => {
         expect(roundTrip.buf.get(3)).toBe(true);
     });
 
-    it("should reset ephemeral boolean buffers on deserialize", () => {
-        const ephemeral = createTypedBuffer({ ...Boolean.schema, ephemeral: true }, 10);
-        ephemeral.set(0, true);
-        ephemeral.set(9, true);
+    it("should reset nonPersistent boolean buffers on deserialize", () => {
+        const nonPersistent = createTypedBuffer({ ...Boolean.schema, nonPersistent: true }, 10);
+        nonPersistent.set(0, true);
+        nonPersistent.set(9, true);
 
-        const payload = serialize({ ephemeral });
-        const roundTrip = deserialize<{ ephemeral: TypedBuffer<boolean> }>(payload);
+        const payload = serialize({ nonPersistent });
+        const roundTrip = deserialize<{ nonPersistent: TypedBuffer<boolean> }>(payload);
 
-        expect(roundTrip.ephemeral.capacity).toBe(10);
-        expect(roundTrip.ephemeral.get(0)).toBe(false);
-        expect(roundTrip.ephemeral.get(9)).toBe(false);
+        expect(roundTrip.nonPersistent.capacity).toBe(10);
+        expect(roundTrip.nonPersistent.get(0)).toBe(false);
+        expect(roundTrip.nonPersistent.get(9)).toBe(false);
     });
 });

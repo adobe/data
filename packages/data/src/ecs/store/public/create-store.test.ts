@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect } from "vitest";
 import { createStore } from "./create-store.js";
+import { serialize, deserialize } from "../../../functions/serialization/serialize.js";
 import { createCoreTestSuite, positionSchema, healthSchema, nameSchema } from "../core/create-core.test.js";
 import { Schema } from "../../../schema/index.js";
 import { F32 } from "../../../math/f32/index.js";
@@ -638,17 +639,17 @@ describe("createStore", () => {
             // The nonPersistent resource's value must never appear in the
             // snapshot: its entity lives in the negative-ID space, which
             // entityLocationTableData never covers either. Its archetype slot
-            // is still present (as a data-free stub, to keep archetype ids
-            // stable) but carries no `columns`.
+            // is still present (to keep archetype ids stable) but carries no
+            // `data` — only its component names.
             const scoreEntry = serializedData.archetypesData.find(
-                (a: any) => a.componentNames?.includes("score")
+                (a: any) => a.componentNames.includes("score")
             );
             expect(scoreEntry).toBeDefined();
-            expect(scoreEntry.columns).toBeUndefined();
-            const anyColumnsHoldScore = serializedData.archetypesData.some(
-                (a: any) => a.columns && "score" in a.columns
+            expect(scoreEntry.data).toBeUndefined();
+            const anyDataHoldsScore = serializedData.archetypesData.some(
+                (a: any) => a.data && "score" in a.data.columns
             );
-            expect(anyColumnsHoldScore).toBe(false);
+            expect(anyDataHoldsScore).toBe(false);
 
             const newStore = createStore(schema as any);
             newStore.fromData(serializedData);
@@ -656,6 +657,34 @@ describe("createStore", () => {
             // Persistent resource restored from the snapshot.
             expect((newStore.resources as any).persistentScore).toBe(123);
             // nonPersistent resource is never restored; the fresh store keeps its default.
+            expect((newStore.resources as any).score).toBe(0);
+        });
+
+        it("round-trips through the encoded (serialize/deserialize) form without leaking or corrupting a nonPersistent resource", () => {
+            const schema = {
+                components: {},
+                resources: {
+                    score: { default: 0 as number, nonPersistent: true },
+                    persistentScore: { default: 0 as number },
+                },
+                archetypes: {},
+            } as const;
+
+            const store = createStore(schema as any);
+            (store.resources as any).score = 999;
+            (store.resources as any).persistentScore = 123;
+
+            const encoded = serialize(store.toData(true));
+            // The nonPersistent value must not survive into the encoded bytes.
+            expect(encoded.json).not.toContain("999");
+            expect(encoded.json).toContain("123");
+
+            const newStore = createStore(schema as any);
+            newStore.fromData(deserialize(encoded));
+
+            // Persistent resource restored; nonPersistent resource back at its
+            // default (never undefined, never the leaked 999).
+            expect((newStore.resources as any).persistentScore).toBe(123);
             expect((newStore.resources as any).score).toBe(0);
         });
 

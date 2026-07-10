@@ -154,7 +154,7 @@ export function createTransactionalStore<
     const resources = {} as { [K in keyof R]: R[K] };
     for (const name of Object.keys(store.resources)) {
         const resourceId = name as keyof C;
-        const isNonPersistent = (store.componentSchemas as any)[name]?.nonPersistent ?? (store.componentSchemas as any)[name]?.ephemeral;
+        const isNonPersistent = (store.componentSchemas as any)[name]?.nonPersistent;
         const componentNames = isNonPersistent
             ? ["id", resourceId, "nonPersistent"] as StringKeyof<C>[]
             : ["id", resourceId] as StringKeyof<C>[];
@@ -262,7 +262,7 @@ export function createTransactionalStore<
             for (const name of Object.keys(store.resources)) {
                 if (!Object.hasOwn(resources, name)) {
                     const resourceId = name as keyof C;
-                    const isNonPersistent = (store.componentSchemas as any)[name]?.nonPersistent ?? (store.componentSchemas as any)[name]?.ephemeral;
+                    const isNonPersistent = (store.componentSchemas as any)[name]?.nonPersistent;
                     const componentNames = isNonPersistent
                         ? ["id", resourceId, "nonPersistent"] as StringKeyof<C>[]
                         : ["id", resourceId] as StringKeyof<C>[];

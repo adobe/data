@@ -8,8 +8,8 @@ export type ConnectionState = "idle" | "connecting" | "connected" | "disconnecte
 
 /**
  * Negotiation-only ECS state — resources + transactions. All resources are
- * `ephemeral: true` so they are never replicated to peers (the negotiation DB
- * itself is always local-only, but the ephemeral flag is good documentation).
+ * `nonPersistent: true` so they are never replicated to peers (the negotiation DB
+ * itself is always local-only, but the flag is good documentation).
  *
  * The game role (userId) lives in the synced game DB referenced by the
  * `gameDb` resource. Once the WebRTC handshake completes, the negotiation
@@ -21,23 +21,23 @@ export type ConnectionState = "idle" | "connecting" | "connected" | "disconnecte
  */
 export const negotiationStatePlugin = Database.Plugin.create({
     resources: {
-        phase:       { default: "idle" as Phase,             ephemeral: true },
-        connection:  { default: "idle" as ConnectionState,   ephemeral: true },
-        role:        { default: null as "host" | "joiner" | null, ephemeral: true },
-        sessionId:   { default: null as string | null,        ephemeral: true },
-        offerCode:   { default: "" as string,                 ephemeral: true },
-        answerCode:  { default: "" as string,                 ephemeral: true },
-        bannerText:  { default: "" as string,                 ephemeral: true },
-        bannerError: { default: false as boolean,             ephemeral: true },
+        phase:       { default: "idle" as Phase,             nonPersistent: true },
+        connection:  { default: "idle" as ConnectionState,   nonPersistent: true },
+        role:        { default: null as "host" | "joiner" | null, nonPersistent: true },
+        sessionId:   { default: null as string | null,        nonPersistent: true },
+        offerCode:   { default: "" as string,                 nonPersistent: true },
+        answerCode:  { default: "" as string,                 nonPersistent: true },
+        bannerText:  { default: "" as string,                 nonPersistent: true },
+        bannerError: { default: false as boolean,             nonPersistent: true },
         // Live values of the two paste textareas. Backing them with
         // resources keeps the textareas controlled and avoids touching
         // the DOM from action callbacks.
-        hostAnswerInput:   { default: "" as string,  ephemeral: true },
-        joinerOfferInput:  { default: "" as string,  ephemeral: true },
+        hostAnswerInput:   { default: "" as string,  nonPersistent: true },
+        joinerOfferInput:  { default: "" as string,  nonPersistent: true },
         // The synced game database, populated by the negotiation service
         // after the WebRTC channel opens. `unknown` so the plugin stays
         // game-agnostic; consumers cast at the render boundary.
-        gameDb:      { default: null as unknown, ephemeral: true },
+        gameDb:      { default: null as unknown, nonPersistent: true },
     },
     transactions: {
         startHostSignaling(t) {

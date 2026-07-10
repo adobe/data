@@ -25,7 +25,7 @@ describe('getDynamicSchema', () => {
 
         expect(dynamicSchema.properties?.email).toEqual({
             type: "string",
-            ephemeral: true,
+            nonPersistent: true,
         });
     });
 
@@ -37,7 +37,7 @@ describe('getDynamicSchema', () => {
 
         expect(dynamicSchema.properties?.email).toEqual({
             type: "string",
-            ephemeral: false,
+            nonPersistent: false,
         });
     });
 
@@ -62,7 +62,7 @@ describe('getDynamicSchema', () => {
 
         expect(dynamicSchema.properties?.email).toEqual({
             type: "string",
-            ephemeral: false,
+            nonPersistent: false,
         });
     });
 
@@ -74,7 +74,7 @@ describe('getDynamicSchema', () => {
 
         expect(dynamicSchema.properties?.email).toEqual({
             type: "string",
-            ephemeral: true,
+            nonPersistent: true,
         });
     });
 

@@ -13,14 +13,17 @@ import { ComponentSchemas } from "../../component-schemas.js";
 import { OptionalComponents } from "../../optional-components.js";
 import { True } from "../../../schema/true/index.js";
 
-// An archetype lives in the nonPersistent (negative-ID) space when its
-// component set carries the `nonPersistent` marker — or the deprecated
-// `ephemeral` one, which `ensureArchetype` still routes to that same space.
-const isNonPersistentComponentSet = (components: Iterable<string>): boolean => {
-    for (const c of components) {
-        if (c === "nonPersistent" || c === "ephemeral") return true;
-    }
-    return false;
+/**
+ * One archetype's entry in a serialized snapshot. Every archetype
+ * contributes an entry so its `id` (a dense index into `archetypes`, stored
+ * by value in the persistent location table) is reproduced exactly on load.
+ * Only persistent archetypes carry `data`: nonPersistent archetypes back the
+ * negative-ID entity space, whose location table is never serialized, so
+ * their rows are not persistent state.
+ */
+type SerializedArchetype = {
+    readonly componentNames: readonly string[];
+    readonly data?: unknown;
 };
 
 export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC): Core<Simplify<OptionalComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> }>> {
@@ -29,7 +32,6 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
     const componentSchemas: { readonly [K in StringKeyof<C & RequiredComponents & OptionalComponents>]: Schema } = {
         id: Entity.schema,
         nonPersistent: True.schema,
-        ephemeral: True.schema,
         ...newComponentSchemas
     };
     const persistentLocationTable = createEntityLocationTable(16, false);
@@ -73,9 +75,6 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
                 hasId = true;
             }
             if (comp === "nonPersistent") {
-                isNonPersistent = true;
-            } else if (comp === "ephemeral") {
-                console.warn('"ephemeral" component is deprecated, use "nonPersistent"');
                 isNonPersistent = true;
             }
             archetypeComponentSchemas[comp] = componentSchemas[comp];
@@ -126,7 +125,7 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         if (currentLocation === null) {
             throw new Error(`Entity not found ${entity}`);
         }
-        if ("nonPersistent" in components || "ephemeral" in components) {
+        if ("nonPersistent" in components) {
             throw new Error("Cannot update nonPersistent component");
         }
         const currentArchetype = archetypes[currentLocation.archetype];
@@ -217,40 +216,26 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         toData: (copy = false) => ({
             componentSchemas,
             entityLocationTableData: persistentLocationTable.toData(copy),
-            // Archetypes in the nonPersistent (negative-ID) space back
-            // session-only resources and entities. That space is never
-            // serialized — `entityLocationTableData` above only covers the
-            // persistent location table — so their row data must not leak
-            // into the snapshot.
-            //
-            // They cannot simply be dropped, though: an archetype's id is its
-            // index in this dense array and is stored (by index) in the
-            // persistent location table. Omitting a nonPersistent archetype
-            // that precedes a persistent one would shift every later id on
-            // reload, leaving persistent entities pointing at the wrong
-            // archetype. So we keep every archetype's slot to preserve ids,
-            // but serialize nonPersistent ones as a data-free stub carrying
-            // only their component names (enough for `fromData` to recreate
-            // the empty archetype at the same id).
-            archetypesData: archetypes.map(archetype =>
-                isNonPersistentComponentSet(archetype.components)
+            // Every archetype contributes an entry so its id (this array
+            // index, stored by value in the persistent location table) is
+            // reproduced on load. Only persistent archetypes carry `data`;
+            // nonPersistent ones back the negative-ID space, whose location
+            // table is never serialized, so their rows aren't persistent.
+            archetypesData: archetypes.map((archetype): SerializedArchetype =>
+                archetype.components.has("nonPersistent")
                     ? { componentNames: [...archetype.components] }
-                    : archetype.toData(copy)
+                    : { componentNames: [...archetype.components], data: archetype.toData(copy) }
             )
         }),
-        fromData: (data: any) => {
+        fromData: (data: { componentSchemas: object; entityLocationTableData: unknown; archetypesData: readonly SerializedArchetype[] }) => {
             Object.assign(componentSchemas, data.componentSchemas);
             persistentLocationTable.fromData(data.entityLocationTableData);
-            for (let i = 0; i < data.archetypesData.length; i++) {
-                const entry = data.archetypesData[i];
-                // Persistent entries carry `columns`; nonPersistent stubs carry
-                // only `componentNames` (see `toData`).
-                const componentNames: string[] = entry.componentNames ?? Object.keys(entry.columns);
-                const archetype = ensureArchetype(componentNames as any);
-                // Recreating the archetype above already reserves its id and
-                // leaves it empty; only persistent archetypes restore rows.
-                if (!isNonPersistentComponentSet(componentNames)) {
-                    archetype.fromData(entry);
+            for (const { componentNames, data: archetypeData } of data.archetypesData) {
+                // Recreating the archetype reserves its id and leaves it
+                // empty; only persistent entries carry data to restore.
+                const archetype = ensureArchetype(componentNames as StringKeyof<C & RequiredComponents & OptionalComponents>[]);
+                if (archetypeData !== undefined) {
+                    archetype.fromData(archetypeData);
                 }
             }
         }
@@ -261,7 +246,6 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
 type TestType = ReturnType<typeof createCore<{ position: { type: "number" }, health: { type: "string" } }>>
 type CheckTestType = Assert<Equal<TestType, Core<{
     nonPersistent: true;
-    ephemeral?: true;
     position: number;
     health: string;
 }>>>
@@ -269,7 +253,6 @@ type TestTypeComponents = TestType["componentSchemas"]
 type CheckComponents = Assert<Equal<TestTypeComponents, {
     readonly id: Schema;
     readonly nonPersistent: Schema;
-    readonly ephemeral: Schema;
     readonly position: Schema;
     readonly health: Schema;
 }>>;

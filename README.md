@@ -13,6 +13,30 @@ Adobe Data Oriented Programming Library
 
 Until we reach 1.0.0, minor version changes may be API breaking.
 
+### 0.9.77
+
+**`ephemeral` fully removed — use `nonPersistent`**
+
+The `ephemeral` name (deprecated in 0.9.70) is gone entirely: `Schema.ephemeral`, the `"ephemeral"` component alias, and `Entity.isEphemeral`. Use `nonPersistent` / `Entity.isNonPersistent`.
+
+```ts
+// before
+{ ..., ephemeral: true }
+ensureArchetype(["id", "cursor", "ephemeral"])
+// after
+{ ..., nonPersistent: true }
+ensureArchetype(["id", "cursor", "nonPersistent"])
+```
+
+**Store snapshot format changed and is now versioned**
+
+`db.toData()` / `store.toData()` output is now stamped with `version: ECS_SNAPSHOT_VERSION` (currently `1`), and `fromData` throws on any snapshot whose version does not match. Two consequences:
+
+- nonPersistent resources/entities are correctly excluded from snapshots (previously a nonPersistent resource could deserialize to `undefined`).
+- Snapshots produced by earlier versions (which carried no `version` field) can no longer be loaded — they are rejected with a clear error instead of reconstructing incorrectly. Discard and regenerate persisted snapshots.
+
+This only affects the `toData`/`fromData` snapshot path (e.g. `createStoragePersistenceService`). The `@adobe/data-persistence` incremental journal format is unaffected.
+
 ### 0.9.70
 
 **`TransactionResult.ephemeral` → `TransactionResult.persistent` (inverted)**

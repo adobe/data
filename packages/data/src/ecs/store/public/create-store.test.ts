@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { createStore } from "./create-store.js";
 import { serialize, deserialize } from "../../../functions/serialization/serialize.js";
+import { ECS_SNAPSHOT_VERSION } from "../core/create-core.js";
 import { createCoreTestSuite, positionSchema, healthSchema, nameSchema } from "../core/create-core.test.js";
 import { Schema } from "../../../schema/index.js";
 import { F32 } from "../../../math/f32/index.js";
@@ -717,6 +718,21 @@ describe("createStore", () => {
             // after reload — it would not if the nonPersistent archetype's slot
             // were dropped and later ids shifted down.
             expect(newStore.read(positionEntity)).toEqual({ id: positionEntity, position: 42 });
+        });
+
+        it("stamps a version and rejects snapshots of an incompatible (or legacy, unversioned) format", () => {
+            const store = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
+            const snapshot: any = store.toData(true);
+            expect(snapshot.version).toBe(ECS_SNAPSHOT_VERSION);
+
+            const target = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
+            // A future/incompatible version is rejected.
+            expect(() => target.fromData({ ...snapshot, version: ECS_SNAPSHOT_VERSION + 1 })).toThrow(/version/i);
+            // A legacy snapshot predating the version field is rejected.
+            const { version: _omit, ...legacy } = snapshot;
+            expect(() => target.fromData(legacy)).toThrow(/version/i);
+            // The correctly-versioned snapshot still loads.
+            expect(() => target.fromData(snapshot)).not.toThrow();
         });
 
         it("toData(true) detaches the snapshot from later store mutation; toData() references live buffers", () => {

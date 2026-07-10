@@ -14,6 +14,18 @@ import { OptionalComponents } from "../../optional-components.js";
 import { True } from "../../../schema/true/index.js";
 
 /**
+ * Serialization format version stamped into every `toData` snapshot and
+ * checked by `fromData`. A mismatch is thrown rather than silently
+ * mis-reconstructed, so an incompatible snapshot fails loudly at load.
+ *
+ * Version 1 is the first *versioned* format. Snapshots produced before this
+ * field existed carry no `version` and are therefore rejected — they used an
+ * incompatible archetype-entry shape. Bump this whenever the snapshot shape
+ * changes in a way older readers cannot load.
+ */
+export const ECS_SNAPSHOT_VERSION = 1;
+
+/**
  * One archetype's entry in a serialized snapshot. Every archetype
  * contributes an entry so its `id` (a dense index into `archetypes`, stored
  * by value in the persistent location table) is reproduced exactly on load.
@@ -24,6 +36,13 @@ import { True } from "../../../schema/true/index.js";
 type SerializedArchetype = {
     readonly componentNames: readonly string[];
     readonly data?: unknown;
+};
+
+type SerializedCore = {
+    readonly version: number;
+    readonly componentSchemas: object;
+    readonly entityLocationTableData: unknown;
+    readonly archetypesData: readonly SerializedArchetype[];
 };
 
 export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC): Core<Simplify<OptionalComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> }>> {
@@ -213,7 +232,8 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         update: updateEntity,
         compact,
         reset: resetCore,
-        toData: (copy = false) => ({
+        toData: (copy = false): SerializedCore => ({
+            version: ECS_SNAPSHOT_VERSION,
             componentSchemas,
             entityLocationTableData: persistentLocationTable.toData(copy),
             // Every archetype contributes an entry so its id (this array
@@ -227,7 +247,13 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
                     : { componentNames: [...archetype.components], data: archetype.toData(copy) }
             )
         }),
-        fromData: (data: { componentSchemas: object; entityLocationTableData: unknown; archetypesData: readonly SerializedArchetype[] }) => {
+        fromData: (data: SerializedCore) => {
+            if (data.version !== ECS_SNAPSHOT_VERSION) {
+                throw new Error(
+                    `Incompatible ECS snapshot: expected version ${ECS_SNAPSHOT_VERSION}, got ${String(data.version)}. ` +
+                    `The serialization format has changed; this snapshot cannot be loaded.`,
+                );
+            }
             Object.assign(componentSchemas, data.componentSchemas);
             persistentLocationTable.fromData(data.entityLocationTableData);
             for (const { componentNames, data: archetypeData } of data.archetypesData) {

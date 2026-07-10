@@ -619,7 +619,7 @@ describe("createStore", () => {
             expect(newStore.resources.config).toEqual({ debug: true, volume: 0.5 });
         });
 
-        it("should exclude nonPersistent resources from serialized data", () => {
+        it("should exclude nonPersistent resource row data from serialized data", () => {
             const schema = {
                 components: {},
                 resources: {
@@ -635,13 +635,20 @@ describe("createStore", () => {
 
             const serializedData: any = store.toData(true);
 
-            // The nonPersistent resource's archetype is never included in
-            // the snapshot: its entity lives in the negative-ID space, which
-            // entityLocationTableData never covers either.
-            const hasNonPersistentArchetype = serializedData.archetypesData.some(
-                (a: any) => "score" in a.columns
+            // The nonPersistent resource's value must never appear in the
+            // snapshot: its entity lives in the negative-ID space, which
+            // entityLocationTableData never covers either. Its archetype slot
+            // is still present (as a data-free stub, to keep archetype ids
+            // stable) but carries no `columns`.
+            const scoreEntry = serializedData.archetypesData.find(
+                (a: any) => a.componentNames?.includes("score")
             );
-            expect(hasNonPersistentArchetype).toBe(false);
+            expect(scoreEntry).toBeDefined();
+            expect(scoreEntry.columns).toBeUndefined();
+            const anyColumnsHoldScore = serializedData.archetypesData.some(
+                (a: any) => a.columns && "score" in a.columns
+            );
+            expect(anyColumnsHoldScore).toBe(false);
 
             const newStore = createStore(schema as any);
             newStore.fromData(serializedData);
@@ -650,6 +657,37 @@ describe("createStore", () => {
             expect((newStore.resources as any).persistentScore).toBe(123);
             // nonPersistent resource is never restored; the fresh store keeps its default.
             expect((newStore.resources as any).score).toBe(0);
+        });
+
+        it("preserves archetype ids across serialization when a nonPersistent archetype precedes a persistent one", () => {
+            const selectionSchema = { type: "boolean", default: false } as const satisfies Schema;
+            const positionScalarSchema = { type: "number", default: 0 } as const satisfies Schema;
+            const makeStore = () => createStore({
+                components: { selection: selectionSchema, position: positionScalarSchema },
+                resources: {},
+                archetypes: {},
+            });
+
+            const store = makeStore();
+
+            // Ad-hoc nonPersistent entity archetype created FIRST → lower id.
+            const selectionArchetype = store.ensureArchetype(["id", "selection", "nonPersistent"]);
+            selectionArchetype.insert({ selection: true, nonPersistent: true });
+
+            // Persistent entity archetype created AFTER → higher id, referenced
+            // by the persistent entity-location table by that id.
+            const positionArchetype = store.ensureArchetype(["id", "position"]);
+            const positionEntity = positionArchetype.insert({ position: 42 });
+
+            const serializedData = store.toData(true);
+
+            const newStore = makeStore();
+            newStore.fromData(serializedData);
+
+            // The persistent entity must still resolve to the right archetype
+            // after reload — it would not if the nonPersistent archetype's slot
+            // were dropped and later ids shifted down.
+            expect(newStore.read(positionEntity)).toEqual({ id: positionEntity, position: 42 });
         });
 
         it("toData(true) detaches the snapshot from later store mutation; toData() references live buffers", () => {

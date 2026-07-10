@@ -13,6 +13,16 @@ import { ComponentSchemas } from "../../component-schemas.js";
 import { OptionalComponents } from "../../optional-components.js";
 import { True } from "../../../schema/true/index.js";
 
+// An archetype lives in the nonPersistent (negative-ID) space when its
+// component set carries the `nonPersistent` marker — or the deprecated
+// `ephemeral` one, which `ensureArchetype` still routes to that same space.
+const isNonPersistentComponentSet = (components: Iterable<string>): boolean => {
+    for (const c of components) {
+        if (c === "nonPersistent" || c === "ephemeral") return true;
+    }
+    return false;
+};
+
 export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC): Core<Simplify<OptionalComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> }>> {
     type C = RequiredComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> };
 
@@ -207,22 +217,41 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         toData: (copy = false) => ({
             componentSchemas,
             entityLocationTableData: persistentLocationTable.toData(copy),
-            // nonPersistent archetypes hold rows for the negative-ID entity
-            // space (session-only resources and entities). That space is
-            // never serialized (entityLocationTableData above only covers
-            // persistentLocationTable), so including their row data here
-            // would silently leak "nonPersistent" state into the snapshot.
-            archetypesData: archetypes
-                .filter(archetype => !archetype.components.has("nonPersistent"))
-                .map(archetype => archetype.toData(copy))
+            // Archetypes in the nonPersistent (negative-ID) space back
+            // session-only resources and entities. That space is never
+            // serialized — `entityLocationTableData` above only covers the
+            // persistent location table — so their row data must not leak
+            // into the snapshot.
+            //
+            // They cannot simply be dropped, though: an archetype's id is its
+            // index in this dense array and is stored (by index) in the
+            // persistent location table. Omitting a nonPersistent archetype
+            // that precedes a persistent one would shift every later id on
+            // reload, leaving persistent entities pointing at the wrong
+            // archetype. So we keep every archetype's slot to preserve ids,
+            // but serialize nonPersistent ones as a data-free stub carrying
+            // only their component names (enough for `fromData` to recreate
+            // the empty archetype at the same id).
+            archetypesData: archetypes.map(archetype =>
+                isNonPersistentComponentSet(archetype.components)
+                    ? { componentNames: [...archetype.components] }
+                    : archetype.toData(copy)
+            )
         }),
         fromData: (data: any) => {
             Object.assign(componentSchemas, data.componentSchemas);
             persistentLocationTable.fromData(data.entityLocationTableData);
             for (let i = 0; i < data.archetypesData.length; i++) {
-                const componentNames = Object.keys(data.archetypesData[i].columns);
+                const entry = data.archetypesData[i];
+                // Persistent entries carry `columns`; nonPersistent stubs carry
+                // only `componentNames` (see `toData`).
+                const componentNames: string[] = entry.componentNames ?? Object.keys(entry.columns);
                 const archetype = ensureArchetype(componentNames as any);
-                archetype.fromData(data.archetypesData[i]);
+                // Recreating the archetype above already reserves its id and
+                // leaves it empty; only persistent archetypes restore rows.
+                if (!isNonPersistentComponentSet(componentNames)) {
+                    archetype.fromData(entry);
+                }
             }
         }
     };

@@ -619,6 +619,39 @@ describe("createStore", () => {
             expect(newStore.resources.config).toEqual({ debug: true, volume: 0.5 });
         });
 
+        it("should exclude nonPersistent resources from serialized data", () => {
+            const schema = {
+                components: {},
+                resources: {
+                    score: { default: 0 as number, nonPersistent: true },
+                    persistentScore: { default: 0 as number },
+                },
+                archetypes: {},
+            } as const;
+
+            const store = createStore(schema as any);
+            (store.resources as any).score = 999;
+            (store.resources as any).persistentScore = 123;
+
+            const serializedData: any = store.toData(true);
+
+            // The nonPersistent resource's archetype is never included in
+            // the snapshot: its entity lives in the negative-ID space, which
+            // entityLocationTableData never covers either.
+            const hasNonPersistentArchetype = serializedData.archetypesData.some(
+                (a: any) => "score" in a.columns
+            );
+            expect(hasNonPersistentArchetype).toBe(false);
+
+            const newStore = createStore(schema as any);
+            newStore.fromData(serializedData);
+
+            // Persistent resource restored from the snapshot.
+            expect((newStore.resources as any).persistentScore).toBe(123);
+            // nonPersistent resource is never restored; the fresh store keeps its default.
+            expect((newStore.resources as any).score).toBe(0);
+        });
+
         it("toData(true) detaches the snapshot from later store mutation; toData() references live buffers", () => {
             const makePopulatedStore = () => {
                 const store = createStore({ components: { health: healthSchema }, resources: {}, archetypes: {} });

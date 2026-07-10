@@ -207,7 +207,14 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         toData: (copy = false) => ({
             componentSchemas,
             entityLocationTableData: persistentLocationTable.toData(copy),
-            archetypesData: archetypes.map(archetype => archetype.toData(copy))
+            // nonPersistent archetypes hold rows for the negative-ID entity
+            // space (session-only resources and entities). That space is
+            // never serialized (entityLocationTableData above only covers
+            // persistentLocationTable), so including their row data here
+            // would silently leak "nonPersistent" state into the snapshot.
+            archetypesData: archetypes
+                .filter(archetype => !archetype.components.has("nonPersistent"))
+                .map(archetype => archetype.toData(copy))
         }),
         fromData: (data: any) => {
             Object.assign(componentSchemas, data.componentSchemas);

@@ -113,6 +113,33 @@ describe("createTransactionalStore", () => {
         expect(finalData?.position).toEqual({ x: 1, y: 2, z: 3 });
     });
 
+    it("should rollback a column-ADD by removing the column, not writing the delete sentinel", () => {
+        const baseStore = Store.create({
+            components: { position: positionSchema, health: healthSchema },
+            resources: { time: { default: { delta: 0.016, elapsed: 0 } } },
+            archetypes: {}
+        });
+        const store = createTransactionalStore(baseStore);
+
+        let entity: number = -1;
+        store.execute((t) => {
+            entity = t.ensureArchetype(["id", "position"]).insert({ position: { x: 1, y: 2, z: 3 } });
+        });
+
+        // A transaction that ADDs the `health` column then throws must roll back
+        // to the no-column state — never leave the internal delete sentinel.
+        expect(() => {
+            store.execute((t) => {
+                t.update(entity, { health: { current: 100, max: 100 } });
+                throw new Error("Transaction failed");
+            });
+        }).toThrow("Transaction failed");
+
+        const finalData = store.read(entity);
+        expect(finalData?.health).toBeUndefined();
+        expect(finalData).toEqual({ id: entity, position: { x: 1, y: 2, z: 3 } });
+    });
+
     it("should combine multiple updates to the same entity", () => {
         const baseStore = Store.create({
             components: { position: positionSchema, health: healthSchema },

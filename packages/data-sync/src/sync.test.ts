@@ -26,9 +26,9 @@ const plugin = Database.Plugin.create({
     resources: {
         // Synced resource — replicates to peers.
         score: { default: 0 as number },
-        // Local-only resource — never replicates because of `ephemeral: true`.
-        // (Verified by the "ephemeral resource never replicates" test below.)
-        bannerText: { default: "" as string, ephemeral: true },
+        // Local-only resource — never replicates because of `nonPersistent: true`.
+        // (Verified by the "nonPersistent resource never replicates" test below.)
+        bannerText: { default: "" as string, nonPersistent: true },
     },
     archetypes: {
         Point: ["x", "y", "label"],
@@ -188,13 +188,13 @@ describe("sync soundness", () => {
     });
 
     // -----------------------------------------------------------------------
-    // 5. Ephemeral resource never replicates.
-    //    Red-green: this is the semantic guarantee that ephemeral: true
+    // 5. NonPersistent resource never replicates.
+    //    Red-green: this is the semantic guarantee that nonPersistent: true
     //    resources stay local. Sync service skips envelopes whose
-    //    TransactionResult.ephemeral === true.
+    //    TransactionResult.nonPersistent === true.
     // -----------------------------------------------------------------------
 
-    it("ephemeral resource mutations are never replicated to peers", () => {
+    it("nonPersistent resource mutations are never replicated to peers", () => {
         const server = createSyncServer();
         const { client: c1t, server: s1t } = createLoopbackTransport();
         const { client: c2t, server: s2t } = createLoopbackTransport();
@@ -215,7 +215,7 @@ describe("sync soundness", () => {
         // Peer 2 must NOT see it.
         expect(db2.resources.bannerText).toBe("");
 
-        // Sanity check: a non-ephemeral mutation in the same session DOES replicate.
+        // Sanity check: a non-nonPersistent mutation in the same session DOES replicate.
         db1.transactions.bumpScore({ delta: 5 });
         expect(db1.resources.score).toBe(5);
         expect(db2.resources.score).toBe(5);

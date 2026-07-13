@@ -1,6 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createStore } from "./create-store.js";
+import { serialize, deserialize } from "../../../functions/serialization/serialize.js";
+import { ECS_SNAPSHOT_VERSION } from "../core/create-core.js";
 import { createCoreTestSuite, positionSchema, healthSchema, nameSchema } from "../core/create-core.test.js";
 import { Schema } from "../../../schema/index.js";
 import { F32 } from "../../../math/f32/index.js";
@@ -617,6 +619,135 @@ describe("createStore", () => {
             // Verify resources are restored
             expect(newStore.resources.time).toEqual({ delta: 0.033, elapsed: 1.5 });
             expect(newStore.resources.config).toEqual({ debug: true, volume: 0.5 });
+        });
+
+        it("should exclude nonPersistent resource row data from serialized data", () => {
+            const schema = {
+                components: {},
+                resources: {
+                    score: { default: 0 as number, nonPersistent: true },
+                    persistentScore: { default: 0 as number },
+                },
+                archetypes: {},
+            } as const;
+
+            const store = createStore(schema as any);
+            (store.resources as any).score = 999;
+            (store.resources as any).persistentScore = 123;
+
+            const serializedData: any = store.toData(true);
+
+            // The nonPersistent resource's value must never appear in the
+            // snapshot: its entity lives in the negative-ID space, which
+            // entityLocationTableData never covers either. Its archetype slot
+            // is still present (to keep archetype ids stable) but carries no
+            // `data` — only its component names.
+            const scoreEntry = serializedData.archetypesData.find(
+                (a: any) => a.componentNames.includes("score")
+            );
+            expect(scoreEntry).toBeDefined();
+            expect(scoreEntry.data).toBeUndefined();
+            const anyDataHoldsScore = serializedData.archetypesData.some(
+                (a: any) => a.data && "score" in a.data.columns
+            );
+            expect(anyDataHoldsScore).toBe(false);
+
+            const newStore = createStore(schema as any);
+            newStore.fromData(serializedData);
+
+            // Persistent resource restored from the snapshot.
+            expect((newStore.resources as any).persistentScore).toBe(123);
+            // nonPersistent resource is never restored; the fresh store keeps its default.
+            expect((newStore.resources as any).score).toBe(0);
+        });
+
+        it("round-trips through the encoded (serialize/deserialize) form without leaking or corrupting a nonPersistent resource", () => {
+            const schema = {
+                components: {},
+                resources: {
+                    score: { default: 0 as number, nonPersistent: true },
+                    persistentScore: { default: 0 as number },
+                },
+                archetypes: {},
+            } as const;
+
+            const store = createStore(schema as any);
+            (store.resources as any).score = 999;
+            (store.resources as any).persistentScore = 123;
+
+            const encoded = serialize(store.toData(true));
+            // The nonPersistent value must not survive into the encoded bytes.
+            expect(encoded.json).not.toContain("999");
+            expect(encoded.json).toContain("123");
+
+            const newStore = createStore(schema as any);
+            newStore.fromData(deserialize(encoded));
+
+            // Persistent resource restored; nonPersistent resource back at its
+            // default (never undefined, never the leaked 999).
+            expect((newStore.resources as any).persistentScore).toBe(123);
+            expect((newStore.resources as any).score).toBe(0);
+        });
+
+        it("preserves archetype ids across serialization when a nonPersistent archetype precedes a persistent one", () => {
+            const selectionSchema = { type: "boolean", default: false } as const satisfies Schema;
+            const positionScalarSchema = { type: "number", default: 0 } as const satisfies Schema;
+            const makeStore = () => createStore({
+                components: { selection: selectionSchema, position: positionScalarSchema },
+                resources: {},
+                archetypes: {},
+            });
+
+            const store = makeStore();
+
+            // Ad-hoc nonPersistent entity archetype created FIRST → lower id.
+            const selectionArchetype = store.ensureArchetype(["id", "selection", "nonPersistent"]);
+            selectionArchetype.insert({ selection: true, nonPersistent: true });
+
+            // Persistent entity archetype created AFTER → higher id, referenced
+            // by the persistent entity-location table by that id.
+            const positionArchetype = store.ensureArchetype(["id", "position"]);
+            const positionEntity = positionArchetype.insert({ position: 42 });
+
+            const serializedData = store.toData(true);
+
+            const newStore = makeStore();
+            newStore.fromData(serializedData);
+
+            // The persistent entity must still resolve to the right archetype
+            // after reload — it would not if the nonPersistent archetype's slot
+            // were dropped and later ids shifted down.
+            expect(newStore.read(positionEntity)).toEqual({ id: positionEntity, position: 42 });
+        });
+
+        it("stamps a version and skips (warns, does not throw) snapshots of an incompatible or legacy format", () => {
+            const store = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
+            const entity = store.ensureArchetype(["id", "position"]).insert({ position: { x: 1, y: 2, z: 3 } });
+            const snapshot: any = store.toData(true);
+            expect(snapshot.version).toBe(ECS_SNAPSHOT_VERSION);
+
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+            try {
+                // A future/incompatible version is skipped with a warning — no
+                // throw, and nothing from the snapshot is loaded.
+                const future = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
+                expect(() => future.fromData({ ...snapshot, version: ECS_SNAPSHOT_VERSION + 1 })).not.toThrow();
+                expect(future.select(["position"])).toHaveLength(0);
+                expect(warn).toHaveBeenCalledWith(expect.stringMatching(/version/i));
+
+                // A legacy snapshot predating the version field is likewise skipped.
+                const { version: _omit, ...legacy } = snapshot;
+                const stale = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
+                expect(() => stale.fromData(legacy)).not.toThrow();
+                expect(stale.select(["position"])).toHaveLength(0);
+
+                // The correctly-versioned snapshot loads normally.
+                const target = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
+                target.fromData(snapshot);
+                expect(target.read(entity)).toEqual({ id: entity, position: { x: 1, y: 2, z: 3 } });
+            } finally {
+                warn.mockRestore();
+            }
         });
 
         it("toData(true) detaches the snapshot from later store mutation; toData() references live buffers", () => {

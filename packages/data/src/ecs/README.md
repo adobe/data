@@ -26,7 +26,7 @@ db.transactions.addPoints(10);
 
 ## Core Concepts
 
-**Entity** — a unique integer ID. Persistent entities have positive IDs; ephemeral entities have negative IDs.
+**Entity** — a unique integer ID. Persistent entities have positive IDs; nonPersistent entities have negative IDs.
 
 **Component** — a named data column. Each component has a schema that describes its type. Numeric schemas (F32, Vec3, etc.) are stored in tightly packed typed arrays for cache-friendly performance.
 
@@ -634,7 +634,7 @@ const data = db.toData();
 db.fromData(data);
 ```
 
-Ephemeral entities and components marked `ephemeral: true` in their schema are excluded from serialization.
+nonPersistent entities, and components/resources whose schema is marked `nonPersistent: true`, are excluded from serialization.
 
 ## Type Utilities
 
@@ -648,70 +648,68 @@ type MyStore = Database.Plugin.ToStore<typeof myPlugin>;
 
 ---
 
-## Reference: Transient and Ephemeral Semantics
+## Reference: nonPersistent and Intermediate Semantics
 
-The ECS uses the terms "ephemeral" and "transient" with precise, distinct meanings. Ephemeral means **not persisted**. Transient means **intermediate value**.
+The ECS separates two orthogonal ideas. **nonPersistent** means *not persisted* (excluded from serialization). **Intermediate** means *not the final committed step* of a transaction sequence.
 
-### Ephemeral Component
+### nonPersistent Component
 
-A built-in optional component that can only be set at entity creation time. It cannot be added to or removed from an existing entity. Entities created with this component are allocated negative IDs and stored in a separate entity table.
+A built-in optional component that can only be set at entity creation time. It cannot be added to or removed from an existing entity. Entities created with this component are allocated negative IDs and stored in a separate entity table that is never serialized.
 
-### Ephemeral Entities
+### nonPersistent Entities
 
-Entities created with the `ephemeral` component. They always have negative IDs and are never persisted. Use ephemeral entities for session-only or UI-local state (selections, hover states, panel positions, etc.).
+Entities created with the `nonPersistent` component. They always have negative IDs and are never persisted. Use them for session-only or UI-local state (selections, hover states, panel positions, etc.).
 
-### Ephemeral Schema
+### nonPersistent Schema
 
-A component or resource schema with `ephemeral: true`. This marks the data as not persisted, but unlike the ephemeral component, it can live on a persistent entity. Ephemeral schemas are excluded from serialization but their entities still carry positive IDs.
+A component or resource schema with `nonPersistent: true`. This marks the *column's data* as not persisted; unlike the component, such a column can live on a persistent (positive-ID) entity. The column is excluded from serialization and reset to its default on load.
 
 ```ts
 resources: {
-  isHovering: { default: false as boolean, ephemeral: true },
+  isHovering: { default: false as boolean, nonPersistent: true },
 },
 ```
 
-### Transient Transaction
+Setting `nonPersistent: true` on a **resource** schema also places that resource's singleton entity in the negative-ID space (it gets the `nonPersistent` component), so the resource resets to its default on load.
 
-A transaction that is part of an async sequence and is not the final committed step. Each `yield` in an async generator transaction produces a transient transaction. Reconciling database replays also produce transient transactions. Transient transactions notify observers but are not pushed to the undo stack and should not trigger persistence.
+### Intermediate Transaction
 
-### Ephemeral Transaction
+A transaction that is part of an async sequence and is not the final committed step. Each `yield` in an async generator transaction produces an intermediate transaction, as do reconciling-database replays. Intermediate transactions notify observers but are not pushed to the undo stack and should not trigger persistence. Exposed as `TransactionResult.intermediate`.
 
-A transaction whose `TransactionResult.ephemeral` property is `true`. This happens when every entity touched by the transaction is an ephemeral entity (negative ID). If even one persistent entity was modified, the transaction is not ephemeral.
+### `TransactionResult` flags
 
-### How They Interact on `TransactionResult`
-
-Every `TransactionResult` carries two independent boolean flags:
+Every `TransactionResult` carries two independent booleans:
 
 | Flag | Source | Meaning |
 |---|---|---|
-| `transient` | Caller-provided via `execute` options | The transaction is an intermediate step, not the final commit |
-| `ephemeral` | Derived from what changed | The transaction only touched ephemeral entities |
+| `intermediate` | Caller-provided via `execute` options | The transaction is a non-final step, not the final commit |
+| `persistent` | Derived from what changed | At least one changed entity is persistent (id ≥ 0) |
 
-These flags are orthogonal. All four combinations are valid:
+These are orthogonal. All four combinations are valid:
 
-| `transient` | `ephemeral` | Example |
+| `intermediate` | `persistent` | Example |
 |---|---|---|
-| `false` | `false` | Normal committed change to persistent data |
-| `true` | `false` | Async generator yield that modifies persistent entities |
-| `false` | `true` | Committed change to UI-only state (e.g. selection) |
-| `true` | `true` | Intermediate step touching only ephemeral data |
+| `false` | `true` | Normal committed change to persistent data |
+| `true` | `true` | Async generator yield that modifies persistent entities |
+| `false` | `false` | Committed change to UI-only state (e.g. selection) |
+| `true` | `false` | Intermediate step touching only nonPersistent data |
 
 ### Consumer Guidelines
 
-**Persistence observers** should skip both transient and ephemeral transactions — transient results are not final, and ephemeral results have nothing to persist:
+**Persistence observers** should skip intermediate transactions and those with nothing persistent to save:
 
 ```ts
 db.observe.transactions((t) => {
-  if (t.transient || t.ephemeral) return;
+  if (t.intermediate || !t.persistent) return;
   save();
 });
 ```
 
-**Undo/redo** should skip transient transactions (intermediate steps shouldn't clutter the undo stack) but may still record ephemeral ones when marked undoable, since users may want to undo UI state changes like selection:
+**Undo/redo** should skip intermediate transactions (non-final steps shouldn't clutter the undo stack) but may still record nonPersistent-only ones when marked undoable, since users may want to undo UI state changes like selection:
 
 ```ts
 db.observe.transactions((t) => {
-  if (t.undoable && !t.transient) {
+  if (t.undoable && !t.intermediate) {
     pushToUndoStack(t);
   }
 });

@@ -21,7 +21,7 @@ const plugin = Database.Plugin.create({
     } as const,
     resources: {
         score: { default: 0 as number },
-        banner: { default: "" as string, ephemeral: true },
+        banner: { default: "" as string, nonPersistent: true },
     },
     archetypes: {
         Point: ["x", "label"],
@@ -148,7 +148,7 @@ describe("Database.reset() — observer notification", () => {
         unsub();
     });
 
-    it("ephemeral resource observer fires after reset", () => {
+    it("nonPersistent resource observer fires after reset", () => {
         const db = makeFresh();
         db.transactions.setBanner({ text: "hi" });
 

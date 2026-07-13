@@ -27,10 +27,3 @@ describe("Entity.isPersistent", () => {
         expect(Entity.isPersistent(-100)).toBe(false);
     });
 });
-
-describe("Entity.isEphemeral (deprecated)", () => {
-    it("should behave identically to isNonPersistent", () => {
-        expect(Entity.isEphemeral(-1)).toBe(true);
-        expect(Entity.isEphemeral(1)).toBe(false);
-    });
-});

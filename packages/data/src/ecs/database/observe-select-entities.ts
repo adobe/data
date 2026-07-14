@@ -25,6 +25,13 @@ export const observeSelectEntities = <C extends object>(store: ReadonlyStore<C, 
             let isMicrotaskQueued = false;
             let currentEntities: Set<Entity> | null = null;
             const rowPredicate = getRowPredicateFromFilter(options?.where);
+            // Callers only reach this after `qualifies` has confirmed the archetype's
+            // components are a superset of `include`, and `where` keys are a subset of
+            // `include`, so the archetype carries every column the predicate reads.
+            // `store.locate` only types the base `id` column, so assert the fuller table
+            // shape the predicate expects (narrower than `as any`).
+            const matchesFilter = (archetype: ReadonlyArchetype<RequiredComponents>, row: number) =>
+                rowPredicate(archetype as Parameters<typeof rowPredicate>[0], row);
 
             // Whether an archetype qualifies for this query — its components are a
             // superset of `include` and disjoint from `exclude` — is a pure function of
@@ -101,12 +108,12 @@ export const observeSelectEntities = <C extends object>(store: ReadonlyStore<C, 
                                 needsUpdate = true;
                                 break;
                             }
-                            if (!changedComponentSet.isDisjointFrom(whereSet) && !rowPredicate(location.archetype as any, location.row)) {
+                            if (!changedComponentSet.isDisjointFrom(whereSet) && !matchesFilter(location.archetype, location.row)) {
                                 // a filter value changed and the row no longer matches.
                                 needsUpdate = true;
                                 break;
                             }
-                        } else if (location !== null && qualifies(location.archetype) && rowPredicate(location.archetype as any, location.row)) {
+                        } else if (location !== null && qualifies(location.archetype) && matchesFilter(location.archetype, location.row)) {
                             // entity entered the result set.
                             needsUpdate = true;
                             break;

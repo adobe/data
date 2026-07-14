@@ -86,10 +86,21 @@ export const observeSelectEntities = <C extends object>(store: ReadonlyStore<C, 
                             continue;
                         }
                         const changedComponentSet = new Set(Object.keys(changedEntityValues) as StringKeyof<C>[]);
+                        if (inSet && !changedComponentSet.isDisjointFrom(orderSet)) {
+                            // An order-key changed for a member. Whether the row stays a
+                            // member (its sort value moved) or left the set, the result must
+                            // be requeried — so short-circuit before the otherwise-needless
+                            // locate. (`order` keys are a subset of `include`, so for a
+                            // non-member this same change is instead an entry candidate,
+                            // handled by the membership test below.)
+                            needsUpdate = true;
+                            break;
+                        }
                         if (includeSet.isDisjointFrom(changedComponentSet) && excludeSet.isDisjointFrom(changedComponentSet)) {
                             // No selected or excluded component changed for this entity, so
-                            // its membership, order key, and filter value are all unchanged
-                            // (`order`/`where` keys are a subset of `include`).
+                            // its membership is unchanged and — for an in-set row — its
+                            // filter value is unchanged too (`where` keys are a subset of
+                            // `include`).
                             continue;
                         }
                         // A selected or excluded component changed for this entity; re-derive
@@ -100,11 +111,6 @@ export const observeSelectEntities = <C extends object>(store: ReadonlyStore<C, 
                             if (location === null || !qualifies(location.archetype)) {
                                 // entity left the result set (deleted or migrated out —
                                 // e.g. a required component was removed).
-                                needsUpdate = true;
-                                break;
-                            }
-                            if (!changedComponentSet.isDisjointFrom(orderSet)) {
-                                // an order key changed => the result ordering may change.
                                 needsUpdate = true;
                                 break;
                             }

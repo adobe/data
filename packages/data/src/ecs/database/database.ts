@@ -158,6 +158,24 @@ export interface Database<
       include: readonly Include[] | ReadonlySet<string>,
       options?: EntitySelectOptions<C, Pick<C & RequiredComponents, T>>
     ): Observe<readonly Entity[]>;
+    /**
+     * Reactive derivation. `compute` is run against a read-only projection of
+     * this database ({@link Database.Read}); the derive records exactly the
+     * reads it performs, subscribes to their change signals, and re-emits the
+     * recomputed value whenever any of those reads could have changed. Emits
+     * the initial value on subscribe; coalesces a transaction's changes into a
+     * single recompute; deduplicates consecutive equal results (`options.equals`,
+     * defaulting to reference equality).
+     *
+     * The projection omits observers, writes, and direct table/column access,
+     * so a `compute` body cannot subscribe, mutate, or read raw rows — the
+     * dependency set is exactly what it read, which removes the whole class of
+     * "forgot to subscribe to a field I read" staleness bugs.
+     */
+    derive<T>(
+      compute: (db: Database.Read<Database<C, R, A, F, S, AF, SV, CV, IX>>) => T,
+      options?: { readonly equals?: (previous: T, next: T) => boolean }
+    ): Observe<T>;
   }
   /**
    * Wipes all entities and resets all resources to their plugin defaults,
@@ -250,6 +268,38 @@ export namespace Database {
     RemoveIndex<P['indexes']>
   >;
 
+  /**
+   * The read-only projection of a Database that a `db.observe.derive` callback
+   * receives. It exposes only the auto-trackable read surface —
+   *   - value reads: `get`, `read`, `select`
+   *   - resource reads: `resources`
+   *   - index lookups: `indexes.<name>.find` / `findRange` / `get`
+   *   - archetype identity: `archetypes.<name>.components` / `id`
+   * — and structurally OMITS everything a derived computation must not touch:
+   *   - `observe` (a derive subscribes to what it reads for you)
+   *   - transactions / actions / any write
+   *   - direct table access: `queryArchetypes`, `locate`, and per-archetype
+   *     `columns` / `rowCount` / `insert` / row reads
+   *   - `services` / `computed` / lifecycle (`extend`, `reset`, `toData`, …)
+   *
+   * Because the surface is narrowed structurally, misuse is a compile error
+   * rather than a value that must be guarded / thrown on at runtime.
+   */
+  export type Read<DB extends Database<any, any, any, any, any, any, any, any, any>> =
+    DB extends Database<infer C, infer R, infer A, any, any, any, any, any, infer IX>
+      ? Pick<ReadonlyStore<C, R, A, IX>, "get" | "read" | "select" | "resources"> & {
+          readonly indexes: {
+            readonly [K in keyof IX]: Database.Index.ReadHandle<C, IX[K]>;
+          };
+          readonly archetypes: {
+            readonly [K in keyof ReadonlyStore<C, R, A, IX>["archetypes"]]: Pick<
+              ReadonlyStore<C, R, A, IX>["archetypes"][K],
+              "components" | "id"
+            >;
+          };
+        }
+      : never;
+
   export const create = createDatabase;
 
   export const is = (value: unknown): value is Database => {
@@ -270,6 +320,14 @@ export namespace Database {
   export namespace Index {
     export type Handle<C extends Components, I extends StoreIndex<C, any, any, any>> =
       StoreIndex.Handle<C, I>;
+    /**
+     * The index handle as exposed to a `db.observe.derive` callback: the
+     * synchronous lookups (`find` / `findRange` / `get`) only. `observe` is
+     * removed — a derive subscribes to the reads it performs automatically, so
+     * calling `observe` from inside one is a category error.
+     */
+    export type ReadHandle<C extends Components, I extends StoreIndex<C, any, any, any>> =
+      Omit<Handle<C, I>, "observe">;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-namespace

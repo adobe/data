@@ -312,6 +312,56 @@ describe("observeSelectEntities", () => {
             unsubscribe();
         });
 
+        it("should notify when a required component is removed, dropping the entity from the result set", async () => {
+            const observer = vi.fn();
+            // Select on position+health but NOT filtered/ordered on either. This is the
+            // membership-contraction case: removing `health` migrates the row to the
+            // position-only archetype, so it leaves the result set even though the
+            // caller never filters or orders on health.
+            const unsubscribe = database.observe.select(["position", "health"])(observer);
+
+            expect(observer).toHaveBeenCalledTimes(1);
+            expect(observer.mock.calls[0][0]).toContain(entities.posHealth1);
+
+            // Remove the `health` component (undefined => column removal) so the entity
+            // migrates out of the position+health archetype.
+            database.transactions.updateEntity({
+                entity: entities.posHealth1,
+                values: { health: undefined }
+            });
+
+            await Promise.resolve();
+
+            // Must re-emit without the entity that left the result set.
+            expect(observer).toHaveBeenCalledTimes(2);
+            expect(observer.mock.calls[1][0]).not.toContain(entities.posHealth1);
+
+            unsubscribe();
+        });
+
+        it("should NOT notify when removing a component the query does not select", async () => {
+            const observer = vi.fn();
+            // Selecting only position: removing `health` from a position+health entity
+            // keeps it a member (its archetype is still a superset of {position}), so
+            // no re-emit should occur — the O(changes) early-exit must still fire.
+            const unsubscribe = database.observe.select(["position"])(observer);
+
+            expect(observer).toHaveBeenCalledTimes(1);
+            expect(observer.mock.calls[0][0]).toContain(entities.posHealth1);
+
+            database.transactions.updateEntity({
+                entity: entities.posHealth1,
+                values: { health: undefined }
+            });
+
+            await Promise.resolve();
+
+            // Still a member => no new notification.
+            expect(observer).toHaveBeenCalledTimes(1);
+
+            unsubscribe();
+        });
+
         it("should handle entity updates", async () => {
             const observer = vi.fn();
             const unsubscribe = database.observe.select(["position", "health"])(observer);

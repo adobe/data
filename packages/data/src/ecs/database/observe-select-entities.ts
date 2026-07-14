@@ -56,12 +56,23 @@ export const observeSelectEntities = <C extends object>(store: ReadonlyStore<C, 
                                 needsUpdate = true;
                                 break;
                             }
-                            if (!changedComponentSet.isDisjointFrom(whereSet)) {
-                                // some where components were changed, 
-                                // we will see if the entity is still in the result set
-                                const { archetype, row } = store.locate(entity)!;
-                                if (!rowPredicate(archetype as any, row)) {
-                                    // entity is no longer in the result set
+                            if (!includeSet.isDisjointFrom(changedComponentSet)) {
+                                // An include component changed for this entity (whereSet is a
+                                // subset of includeSet, so where changes are covered here too).
+                                // The change may have migrated the row out of the result set by
+                                // removing a required component, so re-derive membership from the
+                                // authoritative store rather than assuming the entity is still a
+                                // member. This is the symmetric counterpart to the entry check
+                                // below, and keeps us O(changes): at most one O(1) locate per
+                                // changed entity, no scan of the result set.
+                                const location = store.locate(entity);
+                                if (!location || !location.archetype.components.isSupersetOf(includeSet)) {
+                                    // entity has left the result set (membership contraction)
+                                    needsUpdate = true;
+                                    break;
+                                }
+                                if (!changedComponentSet.isDisjointFrom(whereSet) && !rowPredicate(location.archetype as any, location.row)) {
+                                    // a where component changed and the entity no longer matches the filter
                                     needsUpdate = true;
                                     break;
                                 }

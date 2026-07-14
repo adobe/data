@@ -1,6 +1,6 @@
 {
   "name": "@adobe/data-ai",
-  "version": "0.9.79",
+  "version": "0.9.80",
   "description": "Cross-agent architecture skills for @adobe/data — installable as a Claude Code plugin or copied into any Agent-Skills-compatible agent (Cursor, Codex).",
   "type": "module",
   "private": false,

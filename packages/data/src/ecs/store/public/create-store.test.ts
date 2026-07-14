@@ -689,6 +689,60 @@ describe("createStore", () => {
             expect((newStore.resources as any).score).toBe(0);
         });
 
+        it("reverts a nonPersistent resource to its default when loading into a populated (non-fresh) store", () => {
+            const schema = {
+                components: {},
+                resources: {
+                    score: { default: 0 as number, nonPersistent: true },
+                    persistentScore: { default: 0 as number },
+                },
+                archetypes: {},
+            } as const;
+
+            // Save a snapshot from a source store.
+            const source = createStore(schema as any);
+            (source.resources as any).persistentScore = 123;
+            const snapshot = source.toData(true);
+
+            // Load into a store that ALREADY holds non-default state — the
+            // same-instance Save-As -> Load path. The nonPersistent resource
+            // is never captured by toData, so the only correct post-load value
+            // is its default. Leaving the pre-load live value in place would
+            // leak it across the load (the stale-blob-URL bug). This must match
+            // reset()'s treatment of the nonPersistent space.
+            const target = createStore(schema as any);
+            (target.resources as any).score = 999;
+            (target.resources as any).persistentScore = 456;
+            target.fromData(snapshot);
+
+            expect((target.resources as any).score).toBe(0);
+            expect((target.resources as any).persistentScore).toBe(123);
+        });
+
+        it("clears a nonPersistent entity present before the load when loading into a populated store", () => {
+            const selectionSchema = { type: "boolean", default: false } as const satisfies Schema;
+            const makeStore = () => createStore({
+                components: { selection: selectionSchema },
+                resources: {},
+                archetypes: {},
+            });
+
+            const source = makeStore();
+            const snapshot = source.toData(true);
+
+            // Target holds a nonPersistent entity (negative-ID space) before the
+            // load. fromData must clear it — the nonPersistent space is never
+            // serialized, so a load resets it exactly as reset() would.
+            const target = makeStore();
+            const selectionArchetype = target.ensureArchetype(["id", "selection", "nonPersistent"]);
+            const selectionEntity = selectionArchetype.insert({ selection: true, nonPersistent: true });
+            expect(target.read(selectionEntity)).not.toBeNull();
+
+            target.fromData(snapshot);
+
+            expect(target.read(selectionEntity)).toBeNull();
+        });
+
         it("preserves archetype ids across serialization when a nonPersistent archetype precedes a persistent one", () => {
             const selectionSchema = { type: "boolean", default: false } as const satisfies Schema;
             const positionScalarSchema = { type: "number", default: 0 } as const satisfies Schema;

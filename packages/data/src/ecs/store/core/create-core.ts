@@ -259,6 +259,19 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
                 return;
             }
             Object.assign(componentSchemas, data.componentSchemas);
+            // The non-persistent (negative-ID) space is never captured by
+            // toData, so a load must revert it to defaults rather than leak the
+            // loading store's pre-load live values across the load. Clear it the
+            // same way reset() does; the persistent side below is fully
+            // overwritten by the restore, so only the nonPersistent rows need
+            // clearing here. The store layer re-seeds nonPersistent resource
+            // defaults afterward (its rowCount === 0 re-init guard).
+            nonPersistentLocationTable.reset();
+            for (const archetype of archetypes) {
+                if (archetype.components.has("nonPersistent")) {
+                    archetype.rowCount = 0;
+                }
+            }
             persistentLocationTable.fromData(data.entityLocationTableData);
             for (const { componentNames, data: archetypeData } of data.archetypesData) {
                 // Recreating the archetype reserves its id and leaves it

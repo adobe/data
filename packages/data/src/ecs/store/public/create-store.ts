@@ -19,6 +19,7 @@ import {
     IndexDeclarationObject,
     RuntimeIndex,
 } from "../../database/index-registry/index.js";
+import { PartitionKeysOf } from "../partition.js";
 
 export function createStore<
     CS extends ComponentSchemas = {},
@@ -26,7 +27,7 @@ export function createStore<
     A extends ArchetypeComponents<StringKeyof<CS>> = {}
 >(
     schema?: Store.Schema<CS, RS, A>,
-): Store<FromSchemas<CS>, FromSchemas<RS>, A> {
+): Store<FromSchemas<CS>, FromSchemas<RS>, A, {}, PartitionKeysOf<CS>> {
     const schemaArg = schema as any;
     const hasSchemaShape =
         schemaArg &&
@@ -52,7 +53,10 @@ export function createStore<
     const archetypeComponentNames = {} as A;
     const componentAndResourceSchemas: { [K in StringKeyof<C | R>]: Schema } = {} as any;
 
-    const core = createCore(componentAndResourceSchemas) as unknown as Core<C>;
+    const core = createCore(
+        componentAndResourceSchemas,
+        (archetype) => decorateArchetypeForIndexes(archetype),
+    ) as unknown as Core<C>;
 
     // Index registry. Owned at the Store layer because index state is
     // *derived* from store data, and every mutation that needs to keep
@@ -206,57 +210,25 @@ export function createStore<
 
     const archetypes = {} as any;
 
-    /**
-     * Wraps a raw Core archetype so `insert` maintains index state. Pre-checks
-     * unique constraints *before* the column mutation so a collision throws
-     * without partially mutating the store. Other archetype methods are
-     * passed through unchanged via the Proxy.
-     *
-     * Cached by raw archetype identity so repeated lookups
-     * (`store.archetypes.X`, `store.ensureArchetype([...])`) all return the
-     * same wrapper reference — code that uses `===` to compare archetypes
-     * keeps working.
-     */
-    const archetypeWrapCache = new WeakMap<object, any>();
-    const wrapArchetypeForIndexes = (archetype: any): any => {
-        const cached = archetypeWrapCache.get(archetype);
-        if (cached) return cached;
+    // Decorate an archetype's `insert` in place with index maintenance. The core
+    // calls this (via `onArchetypeCreated`) the moment any archetype is created —
+    // direct or a lazily-created partition value-child — so every write path
+    // (direct insert, router routing, migration target) shares one maintained
+    // insert. No Proxy and no forwarding wrapper: the archetype you hold *is* the
+    // index-maintaining one, and `===` identity is preserved for free.
+    const decorateArchetypeForIndexes = (archetype: any): void => {
         const rawInsert = archetype.insert.bind(archetype);
-        const wrappedInsert = (values: any) => {
-            // `archetype` is the raw core archetype — its id + component set
-            // let the registry dispatch to only the applicable indexes.
+        archetype.insert = (values: any): Entity => {
+            // Pre-check unique constraints before the column mutation so a
+            // collision throws without partially mutating the store. The
+            // archetype's id + component set let the registry dispatch to only
+            // the applicable indexes.
             indexRegistry.checkUniqueAvailableForInsert(archetype, values);
             const entity = rawInsert(values);
             indexRegistry.applyInsert(entity, archetype, values);
             return entity;
         };
-        const wrapped = new Proxy(archetype, {
-            get(target, prop, receiver) {
-                if (prop === "insert") return wrappedInsert;
-                return Reflect.get(target, prop, receiver);
-            },
-        });
-        archetypeWrapCache.set(archetype, wrapped);
-        return wrapped;
     };
-
-    const ensureArchetype = ((componentNames: any) => {
-        return wrapArchetypeForIndexes(core.ensureArchetype(componentNames));
-    }) as Core<C>["ensureArchetype"];
-
-    // `queryArchetypes` and `locate` also surface archetypes — wrap them
-    // so `===` comparisons against `store.archetypes.X` continue to hold.
-    // Cached wrappers guarantee identity stability per raw archetype.
-    const queryArchetypes = ((include: any, options?: any) => {
-        const raw = core.queryArchetypes(include, options);
-        return raw.map((a) => wrapArchetypeForIndexes(a));
-    }) as Core<C>["queryArchetypes"];
-
-    const locate = ((entity: Entity) => {
-        const loc = core.locate(entity);
-        if (loc === null) return null;
-        return { archetype: wrapArchetypeForIndexes(loc.archetype), row: loc.row };
-    }) as Core<C>["locate"];
 
     const updateEntity = (entity: Entity, values: any) => {
         indexRegistry.checkUniqueAvailableForUpdate(entity, values);
@@ -320,8 +292,9 @@ export function createStore<
                 continue;
             }
             archetypeComponentNames[name as keyof typeof archetypeComponentNames] = newComponents as any;
-            const archetype = core.ensureArchetype(["id", ...(newComponents as any)]);
-            (archetypes as any)[name] = wrapArchetypeForIndexes(archetype);
+            // Insert is already index-maintaining (decorated at creation), and a
+            // partitioned archetype resolves to a Router — both surfaced directly.
+            (archetypes as any)[name] = core.ensureArchetype(["id", ...(newComponents as any)]);
         }
 
         // indexes: registry enforces (===)-or-throw on same name and
@@ -342,10 +315,10 @@ export function createStore<
     }
 
     const store: Store<C, R> = {
+        // `ensureArchetype` / `queryArchetypes` / `locate` come straight from
+        // `core`: inserts are decorated at creation, so no Store-layer wrapping
+        // is needed and `===` identity holds (the raw archetype is the handle).
         ...core,
-        ensureArchetype,
-        queryArchetypes,
-        locate,
         update: updateEntity,
         delete: deleteEntity,
         resources,

@@ -21,6 +21,7 @@ import type { ConcurrencyStrategy } from "./concurrency/concurrency-strategy.js"
 import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
+import { PartitionKeysOf } from "../store/partition.js";
 import { FromSchemas } from "../../schema/index.js";
 import type {
   TransactionDeclarations,
@@ -110,7 +111,8 @@ export interface Database<
   SV = {},
   CV = unknown,
   IX extends IndexDeclarations<C> = {},
-> extends ReadonlyStore<C, R, A, IX>, Service {
+  PK extends string = never,
+> extends ReadonlyStore<C, R, A, IX, PK>, Service {
   readonly transactions: F & Service;
   readonly actions: AF & Service;
   readonly services: SV;
@@ -247,7 +249,8 @@ export namespace Database {
     ToActionFunctions<RemoveIndex<P['actions']>>,
     FromServiceFactories<RemoveIndex<P['services']>>,
     FromComputedFactories<RemoveIndex<P['computed']>>,
-    RemoveIndex<P['indexes']>
+    RemoveIndex<P['indexes']>,
+    PartitionKeysOf<RemoveIndex<P['components']>>
   >;
 
   export const create = createDatabase;
@@ -325,7 +328,7 @@ export namespace Database {
      * another plugin's transaction declaration; `ToStore<P>` is the bare
      * store type and does not include `userId`.
      */
-    export type ToTransactionContext<P extends Database.Plugin> = TransactionContext<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>>;
+    export type ToTransactionContext<P extends Database.Plugin> = TransactionContext<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>, RemoveIndex<P['indexes']>, PartitionKeysOf<RemoveIndex<P['components']>>>;
     export type ToSystemDatabase<P extends Database.Plugin> = Database.FromPlugin<P> & {
       // Systems are allowed to access the database store directly.
       // This direct access will NOT trigger observable transactions.

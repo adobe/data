@@ -17,7 +17,10 @@ export const selectEntities = <
     include: readonly Include[] | ReadonlySet<string>,
     options?: EntitySelectOptions<C & RequiredComponents, Pick<C & RequiredComponents & OptionalComponents, Include>>
 ): readonly Entity[] => {
-    const archetypes = core.queryArchetypes(include, options as any);
+    // Pass only archetype-level options (exclude) to queryArchetypes. `options.where`
+    // here is a row-level Filter and is applied per-row below via selectRows — it
+    // must NOT be forwarded as queryArchetypes' partition-equality `where`.
+    const archetypes = core.queryArchetypes(include, options?.exclude ? { exclude: options.exclude as any } : undefined);
     let length = 0;
     for (const archetype of archetypes) {
         length += archetype.rowCount;

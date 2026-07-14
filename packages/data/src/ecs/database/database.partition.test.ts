@@ -21,8 +21,8 @@ const plugin = () => Database.Plugin.create({
 describe("Database partition integration (transaction context)", () => {
     it("routes t.archetypes.<PartitionedName> inserts and maintains indexes", () => {
         const db = Database.create(plugin());
-        const a = db.transactions.add({ cell: 1, name: "alice" }) as number;
-        const b = db.transactions.add({ cell: 2, name: "bob" }) as number;
+        const a = db.transactions.add({ cell: 1, name: "alice" });
+        const b = db.transactions.add({ cell: 2, name: "bob" });
 
         expect(db.indexes.byName.get({ name: "alice" })).toBe(a);
         expect(db.indexes.byName.get({ name: "bob" })).toBe(b);
@@ -33,7 +33,7 @@ describe("Database partition integration (transaction context)", () => {
 
     it("migrates on a partition-value change inside a transaction; index follows", () => {
         const db = Database.create(plugin());
-        const e = db.transactions.add({ cell: 1, name: "mover" }) as number;
+        const e = db.transactions.add({ cell: 1, name: "mover" });
         db.transactions.move({ entity: e, cell: 2 });
         expect(db.get(e, "cell")).toBe(2);
         expect(db.indexes.byName.get({ name: "mover" })).toBe(e);
@@ -41,7 +41,7 @@ describe("Database partition integration (transaction context)", () => {
 
     it("enforces a unique index across value-children inside a transaction (atomic)", () => {
         const db = Database.create(plugin());
-        const first = db.transactions.add({ cell: 1, name: "dup" }) as number;
+        const first = db.transactions.add({ cell: 1, name: "dup" });
         expect(() => db.transactions.add({ cell: 2, name: "dup" })).toThrow(/[Uu]nique/);
         // Original intact — the failed transaction rolled back cleanly.
         expect(db.indexes.byName.get({ name: "dup" })).toBe(first);

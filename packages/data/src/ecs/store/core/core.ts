@@ -14,7 +14,7 @@ export type EntityReadValues<C> = RequiredComponents & { readonly [K in StringKe
 export type EntityUpdateValues<C> = Partial<Omit<C, "id">>;
 
 export type ArchetypeQueryOptions<C extends object, PK extends string = never> = {
-    exclude?: readonly StringKeyof<C & OptionalComponents>[];
+    exclude?: readonly StringKeyof<C & RequiredComponents & OptionalComponents>[];
     /**
      * Filter to archetypes whose partition component equals the given value.
      * A partition column is const per archetype, so this is decided at

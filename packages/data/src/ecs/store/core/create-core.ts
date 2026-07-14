@@ -195,7 +195,7 @@ export function createCore<NC extends ComponentSchemas>(
             return values;
         };
         return {
-            components: new Set(namesArr) as Set<string>,
+            components: new Set(namesArr),
             // Routes to the concrete child and calls its `insert`. When the Store
             // layer has decorated inserts with index maintenance (via
             // onArchetypeCreated), the child's `insert` is already the maintained

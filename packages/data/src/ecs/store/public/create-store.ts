@@ -20,14 +20,16 @@ import {
     RuntimeIndex,
 } from "../../database/index-registry/index.js";
 import { PartitionKeysOf } from "../partition.js";
+import { IndexDeclarations } from "../index-types.js";
 
 export function createStore<
     CS extends ComponentSchemas = {},
     RS extends ResourceSchemas = {},
-    A extends ArchetypeComponents<StringKeyof<CS>> = {}
+    A extends ArchetypeComponents<StringKeyof<CS>> = {},
+    IX extends IndexDeclarations<FromSchemas<CS>, A> = {},
 >(
-    schema?: Store.Schema<CS, RS, A>,
-): Store<FromSchemas<CS>, FromSchemas<RS>, A, {}, PartitionKeysOf<CS>> {
+    schema?: Store.Schema<CS, RS, A, IX>,
+): Store<FromSchemas<CS>, FromSchemas<RS>, A, IX, PartitionKeysOf<CS>> {
     const schemaArg = schema as any;
     const hasSchemaShape =
         schemaArg &&
@@ -36,7 +38,7 @@ export function createStore<
         "resources" in schemaArg &&
         "archetypes" in schemaArg;
 
-    const normalizedSchema: Store.Schema<CS, RS, A> = hasSchemaShape
+    const normalizedSchema: Store.Schema<CS, RS, A, IX> = hasSchemaShape
         ? schemaArg
         : {
             components: {} as CS,

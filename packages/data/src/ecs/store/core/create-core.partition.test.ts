@@ -20,9 +20,10 @@ describe("partition components", () => {
             const core = makeCore();
             const router = core.ensureArchetype(["id", "cell", "position"]);
             expect(typeof router.insert).toBe("function");
-            // A family has no single dense column view.
-            expect((router as any).columns).toBeUndefined();
-            expect((router as any).rowCount).toBeUndefined();
+            // A family has no single dense column view. `in` (not a cast) — the
+            // Router type has no such members, so probe presence structurally.
+            expect("columns" in router).toBe(false);
+            expect("rowCount" in router).toBe(false);
         });
 
         it("returns a concrete Archetype when the partition value is supplied", () => {
@@ -36,7 +37,7 @@ describe("partition components", () => {
             const core = makeCore();
             const arch = core.ensureArchetype(["id", "position"]);
             expect(arch.columns).toBeDefined();
-            expect((arch as any).insert).toBeDefined();
+            expect(typeof arch.insert).toBe("function");
         });
     });
 

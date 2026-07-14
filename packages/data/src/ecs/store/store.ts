@@ -84,7 +84,7 @@ export interface Store<
     /** Wipe all entities and reset resources to plugin defaults. O(num_archetypes + num_resources). */
     reset(): void;
     fromData(data: unknown): void
-    extend<S extends Store.Schema>(schema: S): S extends Store.Schema<infer XC, infer XR, infer XA, infer XIX> ? Store<C & XC, R & XR, A & XA, IX & XIX, PK | PartitionKeysOf<XC>> : never;
+    extend<S extends Store.Schema>(schema: S): S extends Store.Schema<infer XC, infer XR, infer XA, infer XIX> ? Store<C & FromSchemas<XC>, R & FromSchemas<XR>, A & XA, IX & XIX, PK | PartitionKeysOf<XC>> : never;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-namespace

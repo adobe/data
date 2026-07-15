@@ -3,7 +3,7 @@
 import { StringKeyof } from "../../types/types.js";
 import { ComponentSchemas } from "../component-schemas.js";
 import { RequiredComponents } from "../required-components.js";
-import { Archetype, Router } from "../archetype/archetype.js";
+import { Archetype } from "../archetype/archetype.js";
 
 /**
  * The component keys of a schema map that are declared `partition: true`.
@@ -25,7 +25,7 @@ export type PartitionKeysOf<CS extends ComponentSchemas> = {
  * to `false` *without* inspecting `Keys`. That matters because `Keys` is often a
  * generic indexed access (`A[K][number]` inside a `TransactionContext<C,R,A>`);
  * `Extract<GenericKeys, never>` would otherwise stay a *deferred* conditional,
- * leaving `store.archetypes.<K>` as the unresolved union `Router | Archetype`
+ * leaving `store.archetypes.<K>` as the unresolved union `Archetype.Router | Archetype`
  * and breaking assignability in every generic store context. Short-circuiting
  * on `PK` keeps non-partition stores paying nothing and resolving eagerly.
  */
@@ -37,13 +37,13 @@ export type HasPartitionKey<Keys extends string, PK extends string> =
  * Return type of `ensureArchetype(keys, values?)`:
  *  - a value is supplied → a concrete {@link Archetype} (the resolved member),
  *    regardless of partitioning — this is the same-value fast path;
- *  - else the key set includes a partition component → a {@link Router} that
+ *  - else the key set includes a partition component → a {@link Archetype.Router} that
  *    routes each `insert` by the row's partition value;
  *  - else → a concrete {@link Archetype} (today's behavior, unchanged).
  *
  * When `Keys` is not statically known to include or exclude a partition
  * component, `HasPartitionKey` stays a union and the result widens to
- * `Archetype<C> | Router<C>` — which still exposes `.insert` (both branches
+ * `Archetype<C> | Archetype.Router<C>` — which still exposes `.insert` (both branches
  * share it); only dense column access requires narrowing to `Archetype`.
  */
 export type EnsureArchetypeResult<
@@ -54,11 +54,11 @@ export type EnsureArchetypeResult<
 > = ValueProvided extends true
     ? Archetype<C>
     : HasPartitionKey<Keys, PK> extends true
-        ? Router<C>
+        ? Archetype.Router<C>
         : Archetype<C>;
 
 /**
- * Type of `store.archetypes.<Name>`: a {@link Router} when the declared archetype
+ * Type of `store.archetypes.<Name>`: a {@link Archetype.Router} when the declared archetype
  * includes a partition component, else a concrete {@link Archetype}. The keys are
  * statically known here (from the schema's `archetypes` map), so this never
  * widens to a union — the discrimination is exact per declared name.
@@ -67,4 +67,4 @@ export type StoreArchetypeHandle<
     C extends RequiredComponents,
     Keys extends string,
     PK extends string,
-> = HasPartitionKey<Keys, PK> extends true ? Router<C> : Archetype<C>;
+> = HasPartitionKey<Keys, PK> extends true ? Archetype.Router<C> : Archetype<C>;

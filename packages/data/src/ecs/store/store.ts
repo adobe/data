@@ -6,7 +6,7 @@ import { Entity } from "../entity/entity.js";
 import { IntersectTuple, Simplify, StringKeyof } from "../../types/types.js";
 import { Components } from "./components.js";
 import { ArchetypeComponents } from "./archetype-components.js";
-import { Archetype, ReadonlyArchetype, Router } from "../archetype/archetype.js";
+import { Archetype, ReadonlyArchetype } from "../archetype/archetype.js";
 import { HasPartitionKey, PartitionKeysOf } from "./partition.js";
 import { EntitySelectOptions } from "./entity-select-options.js";
 import { Undoable } from "../database/undoable.js";
@@ -47,7 +47,7 @@ export interface ReadonlyStore<
     readonly resources: { readonly [K in StringKeyof<R>]: R[K] };
     readonly archetypes: { readonly [K in StringKeyof<A>]:
         HasPartitionKey<A[K][number], PK> extends true
-            ? Router<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }>
+            ? Archetype.Router<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }>
             : ReadonlyArchetype<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }> }
     readonly indexes: { readonly [K in keyof IX]: Index.Handle<C, IX[K]> };
 }
@@ -72,7 +72,7 @@ export interface Store<
     readonly resources: { -readonly [K in StringKeyof<R>]: R[K] };
     readonly archetypes: { -readonly [K in StringKeyof<A>]:
         HasPartitionKey<A[K][number], PK> extends true
-            ? Router<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }>
+            ? Archetype.Router<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }>
             : Archetype<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }> }
     /**
      * Index handles keyed by user-chosen name. Returned handles are the

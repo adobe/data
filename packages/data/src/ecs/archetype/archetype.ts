@@ -43,26 +43,29 @@ export interface Archetype<C extends RequiredComponents = RequiredComponents> ex
     fromData: (data: unknown) => void
 }
 
-/**
- * Write-only handle over a *family* of archetypes that share a component set but
- * differ by the value of one or more `partition` components. `insert` reads the
- * partition value(s) from the row, resolves (creating on first use) the concrete
- * child archetype for that value, and inserts there.
- *
- * A family has no single dense column view, so — unlike {@link Archetype} — a
- * Router exposes no `columns`, `rowCount`, or iteration. Read a family through
- * `queryArchetypes` (optionally filtered by partition value), or narrow to one
- * concrete member by supplying the value to `ensureArchetype`.
- *
- * `insert` is deliberately signature-identical to {@link Archetype.insert}: a
- * discriminated `Archetype<C> | Router<C>` (produced when the requested keys are
- * not statically known to include/exclude a partition component) therefore still
- * permits `.insert` with no narrowing — only dense column access requires having
- * resolved to a concrete {@link Archetype}.
- */
-export interface Router<C extends RequiredComponents = RequiredComponents> {
-    readonly components: ComponentSet<StringKeyof<C>>;
-    insert: <T extends EntityInsertValues<C>>(rowData: Exact<EntityInsertValues<C>, T>) => Entity;
+// eslint-disable-next-line @typescript-eslint/no-namespace
+export namespace Archetype {
+    /**
+     * Write-only handle over a *family* of archetypes that share a component set
+     * but differ by the value of one or more `partition` components. `insert`
+     * reads the partition value(s) from the row, resolves (creating on first use)
+     * the concrete child archetype for that value, and inserts there.
+     *
+     * A family has no single dense column view, so — unlike {@link Archetype} — a
+     * Router exposes no `columns`, `rowCount`, or iteration. Read a family through
+     * `queryArchetypes` (optionally filtered by partition value), or narrow to one
+     * concrete member by supplying the value to `ensureArchetype`.
+     *
+     * `insert` is deliberately signature-identical to {@link Archetype.insert}: a
+     * discriminated `Archetype<C> | Archetype.Router<C>` (produced when the
+     * requested keys are not statically known to include/exclude a partition
+     * component) therefore still permits `.insert` with no narrowing — only dense
+     * column access requires having resolved to a concrete {@link Archetype}.
+     */
+    export interface Router<C extends RequiredComponents = RequiredComponents> {
+        readonly components: ComponentSet<StringKeyof<C>>;
+        insert: <T extends EntityInsertValues<C>>(rowData: Exact<EntityInsertValues<C>, T>) => Entity;
+    }
 }
 
 export type FromArchetype<T> =

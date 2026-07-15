@@ -3,7 +3,7 @@
 import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";
 import { RequiredComponents } from "../required-components.js";
-import { Archetype, Router } from "../archetype/archetype.js";
+import { Archetype } from "../archetype/archetype.js";
 import {
     PartitionKeysOf,
     HasPartitionKey,
@@ -62,7 +62,7 @@ type _hasNot = Assert<Equal<HasPartitionKey<"id" | "position", PK>, false>>;
 // ---------------------------------------------------------------------------
 
 // partition key present, no value → Router
-type _r1 = Assert<Equal<EnsureArchetypeResult<CellRow, "cell" | "position", PK, false>, Router<CellRow>>>;
+type _r1 = Assert<Equal<EnsureArchetypeResult<CellRow, "cell" | "position", PK, false>, Archetype.Router<CellRow>>>;
 // partition key present, value supplied → concrete Archetype (fast path)
 type _r2 = Assert<Equal<EnsureArchetypeResult<CellRow, "cell" | "position", PK, true>, Archetype<CellRow>>>;
 // no partition key → concrete Archetype (unchanged behavior)
@@ -77,14 +77,14 @@ type _rWrong = Assert<Equal<EnsureArchetypeResult<CellRow, "cell" | "position", 
 // StoreArchetypeHandle — positive
 // ---------------------------------------------------------------------------
 
-type _h1 = Assert<Equal<StoreArchetypeHandle<CellRow, "cell" | "position", PK>, Router<CellRow>>>;
+type _h1 = Assert<Equal<StoreArchetypeHandle<CellRow, "cell" | "position", PK>, Archetype.Router<CellRow>>>;
 type _h2 = Assert<Equal<StoreArchetypeHandle<PosRow, "position", PK>, Archetype<PosRow>>>;
 
 // ---------------------------------------------------------------------------
 // Runtime-surface guarantees (the load-bearing ergonomics)
 // ---------------------------------------------------------------------------
 
-declare const router: Router<CellRow>;
+declare const router: Archetype.Router<CellRow>;
 
 // A Router can insert (routing write) ...
 router.insert({ cell: 1, position: 2 });
@@ -96,7 +96,7 @@ router.rowCount;
 
 // The discriminated union (dynamic keys) still permits `.insert` without
 // narrowing — both branches share an identical signature ...
-declare const handle: Archetype<CellRow> | Router<CellRow>;
+declare const handle: Archetype<CellRow> | Archetype.Router<CellRow>;
 handle.insert({ cell: 1, position: 2 });
 // ... while dense access is correctly gated behind resolving to a concrete
 // archetype (supply a value, or narrow):

@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Entity } from "../../entity/entity.js";
-import { Archetype, ReadonlyArchetype, Router } from "../../archetype/archetype.js";
+import { Archetype, ReadonlyArchetype } from "../../archetype/archetype.js";
 import { Schema } from "../../../schema/index.js";
 import { RequiredComponents } from "../../required-components.js";
 import { StringKeyof } from "../../../types/index.js";
@@ -41,7 +41,7 @@ export interface ReadonlyCore<
     ensureArchetype<const CC extends StringKeyof<C & RequiredComponents & OptionalComponents>>(
         components: readonly CC[] | ReadonlySet<CC>,
     ): HasPartitionKey<CC, PK> extends true
-        ? Router<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>
+        ? Archetype.Router<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>
         : ReadonlyArchetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>;
     // Partition value(s) supplied → the concrete value-child, always.
     ensureArchetype<const CC extends StringKeyof<C & RequiredComponents & OptionalComponents>>(
@@ -78,7 +78,7 @@ export interface Core<
     ensureArchetype<const CC extends StringKeyof<C & RequiredComponents & OptionalComponents>>(
         components: readonly CC[] | ReadonlySet<CC>,
     ): HasPartitionKey<CC, PK> extends true
-        ? Router<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>
+        ? Archetype.Router<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>
         : Archetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>;
     ensureArchetype<const CC extends StringKeyof<C & RequiredComponents & OptionalComponents>>(
         components: readonly CC[] | ReadonlySet<CC>,

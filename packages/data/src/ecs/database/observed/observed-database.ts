@@ -33,6 +33,9 @@ export interface ObservedDatabase<
             include: readonly Include[] | ReadonlySet<string>,
             options?: any
         ): Observe<readonly Entity[]>;
+        // Internal (loose) type — the precise `Database.Read<…>` callback surface
+        // is enforced at the public `Database.observe.derive` boundary.
+        derive<T>(compute: (db: any) => T): Observe<T>;
     };
     readonly execute: (handler: (ctx: TransactionContext<C, R, A>) => Entity | void, options?: { transient?: boolean; userId?: number | string }) => TransactionResult<C>;
     readonly reset: () => void;

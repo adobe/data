@@ -171,10 +171,13 @@ export interface Database<
      * so a `compute` body cannot subscribe, mutate, or read raw rows — the
      * dependency set is exactly what it read, which removes the whole class of
      * "forgot to subscribe to a field I read" staleness bugs.
+     *
+     * Emits the initial value on subscribe, coalesces a transaction's changes
+     * into a single recompute, and structurally compares the result before
+     * emitting so an unchanged value never re-notifies.
      */
     derive<T>(
-      compute: (db: Database.Read<Database<C, R, A, F, S, AF, SV, CV, IX>>) => T,
-      options?: { readonly equals?: (previous: T, next: T) => boolean }
+      compute: (db: Database.Read<Database<C, R, A, F, S, AF, SV, CV, IX>>) => T
     ): Observe<T>;
   }
   /**

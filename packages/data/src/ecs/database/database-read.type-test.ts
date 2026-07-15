@@ -44,7 +44,34 @@ function derivePositive() {
     const selected = db.observe.derive((d) => d.select(["x"]));
     type _Selected = Assert<Equal<typeof selected, Observe<readonly Entity[]>>>;
 
+    // whole-entity read
     db.observe.derive((d) => d.read(0 as Entity));
+
+    // projection read: exactly the requested fields, optionality preserved,
+    // unrequested fields (incl. id) excluded
+    db.observe.derive((d) => {
+        const p = d.read(0 as Entity, ["x", "y"]);
+        if (p !== null) {
+            const _x: number | undefined = p.x;
+            const _y: string | undefined = p.y;
+            void _x;
+            void _y;
+            // @ts-expect-error `id` was not requested, so it is not on the projection
+            p.id;
+        }
+        return p;
+    });
+
+    // archetype read: narrowed to the archetype's own row (no extra fields)
+    db.observe.derive((d) => {
+        const foo = d.read(0 as Entity, db.archetypes.Foo);
+        if (foo !== null) {
+            const _x: number = foo.x;
+            // @ts-expect-error `y` is not part of the Foo archetype — narrowed read excludes it
+            foo.y;
+        }
+        return foo;
+    });
 
     // resource reads
     const frameRate = db.observe.derive((d) => d.resources.frameRate);
@@ -61,9 +88,6 @@ function derivePositive() {
     // a unique index also exposes `get`
     const head = db.observe.derive((d) => d.indexes.byXUnique.get({ x: 1 }));
     type _Head = Assert<Equal<typeof head, Observe<Entity | null>>>;
-
-    // options.equals
-    db.observe.derive((d) => d.get(0 as Entity, "x"), { equals: (a, b) => a === b });
 }
 
 // ============================================================================

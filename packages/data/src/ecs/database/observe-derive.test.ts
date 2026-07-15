@@ -125,6 +125,43 @@ describe("db.derive", () => {
         unsubscribe();
     });
 
+    // Documents the composition → derive migration for resource reads:
+    //   before: Observe.withMap(
+    //             Observe.fromProperties({ x: db.observe.resources.x, y: db.observe.resources.y }),
+    //             ({ x, y }) => x + y)
+    //   after:  db.derive(db => db.resources.x + db.resources.y)
+    // The derive records BOTH resource reads and recomputes when either changes,
+    // with no hand-listed inputs. The callback param is deliberately named `db`
+    // to shadow the outer db, so a read cannot bind the outer (full) db and
+    // escape dependency tracking.
+    it("derives a value from multiple resources, recomputing when either changes", () => {
+        const sumDb = Database.create(
+            Database.Plugin.create({
+                resources: {
+                    x: { type: "number", default: 1 },
+                    y: { type: "number", default: 2 },
+                },
+                transactions: {
+                    setX(store, args: { x: number }) {
+                        store.resources.x = args.x;
+                    },
+                    setY(store, args: { y: number }) {
+                        store.resources.y = args.y;
+                    },
+                },
+            }),
+        );
+        const observer = vi.fn();
+        const unsubscribe = sumDb.derive((db) => db.resources.x + db.resources.y)(observer);
+        expect(observer).toHaveBeenLastCalledWith(3); // initial: 1 + 2
+        sumDb.transactions.setX({ x: 10 });
+        expect(observer).toHaveBeenLastCalledWith(12); // 10 + 2
+        sumDb.transactions.setY({ y: 5 });
+        expect(observer).toHaveBeenLastCalledWith(15); // 10 + 5
+        expect(observer).toHaveBeenCalledTimes(3);
+        unsubscribe();
+    });
+
     it("re-emits on a change to an index bucket it read", async () => {
         const observer = vi.fn();
         const unsubscribe = db.derive((d) => d.indexes.byA.find({ a: 1 }).length)(observer);

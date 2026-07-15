@@ -212,7 +212,6 @@ export const createDerive = <C extends object>(
     return <T>(compute: (db: any) => T): Observe<T> => (notify) => {
         let last: T;
         let hasLast = false;
-        let scheduled = false;
         let deps: DepSet = emptyDeps();
 
         const run = (): T => {
@@ -235,18 +234,17 @@ export const createDerive = <C extends object>(
 
         emit(run());
 
+        // `observeTransactions` fires once per committed transaction, so a
+        // recompute happens at most once per commit. Emit synchronously at the
+        // commit boundary — the same cadence as `observe.entity` / the raw
+        // component observers a hand-written computed would use — rather than
+        // deferring to a microtask, which would coalesce several commits in one
+        // turn (e.g. a burst of ephemeral drag commits) into a single emission
+        // and starve consumers that route per commit.
         const unobserve = observeTransactions((result) => {
-            if (!affected(deps, result)) {
-                return;
-            }
-            if (scheduled) {
-                return;
-            }
-            scheduled = true;
-            queueMicrotask(() => {
-                scheduled = false;
+            if (affected(deps, result)) {
                 emit(run());
-            });
+            }
         });
 
         return () => {

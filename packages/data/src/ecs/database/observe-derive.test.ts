@@ -135,16 +135,16 @@ describe("db.observe.derive", () => {
         unsubscribe();
     });
 
-    it("coalesces multiple synchronous mutations into a single recompute", async () => {
+    it("recomputes synchronously, at most once per committed transaction", () => {
         const observer = vi.fn();
         const unsubscribe = db.observe.derive((d) => d.read(foo))(observer);
         observer.mockClear();
+        // Each transaction fires exactly one synchronous recompute at its commit
+        // boundary (no await needed) — the cadence a per-commit consumer relies on.
         db.transactions.setA({ e: foo, a: 8 });
+        expect(observer).toHaveBeenCalledTimes(1);
         db.transactions.setB({ e: foo, b: 9 });
-        await flush();
-        // two transactions, but they land before the microtask drains → we accept
-        // at most one recompute per microtask turn (not one per transaction).
-        expect(observer.mock.calls.length).toBeLessThanOrEqual(2);
+        expect(observer).toHaveBeenCalledTimes(2);
         unsubscribe();
     });
 

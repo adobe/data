@@ -172,9 +172,10 @@ export interface Database<
      * dependency set is exactly what it read, which removes the whole class of
      * "forgot to subscribe to a field I read" staleness bugs.
      *
-     * Emits the initial value on subscribe, coalesces a transaction's changes
-     * into a single recompute, and structurally compares the result before
-     * emitting so an unchanged value never re-notifies.
+     * Emits the initial value on subscribe, then recomputes at most once per
+     * committed transaction — synchronously at the commit boundary — and
+     * structurally compares the result before emitting so an unchanged value
+     * never re-notifies.
      */
     derive<T>(
       compute: (db: Database.Read<Database<C, R, A, F, S, AF, SV, CV, IX>>) => T

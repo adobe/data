@@ -124,14 +124,14 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         }
         const archetype = archetypes[location.archetype];
         // Component-list form: a pure projection — never gates on membership.
-        // Return only the requested components the entity actually has; an
+        // Reads ONLY the requested components' columns (never the whole row); an
         // absent component is simply omitted (the field is optional in the type).
         if (Array.isArray(archetypeOrComponents)) {
-            const full = getRowData(archetype, location.row) as Record<string, unknown>;
             const projected: Record<string, unknown> = {};
             for (const component of archetypeOrComponents as readonly string[]) {
-                if (component in full) {
-                    projected[component] = full[component];
+                const column = archetype.columns[component];
+                if (column !== undefined) {
+                    projected[component] = column.get(location.row);
                 }
             }
             return projected;

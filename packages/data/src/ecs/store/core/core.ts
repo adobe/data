@@ -47,7 +47,7 @@ export interface ReadonlyCore<
      * from the full `read(entity)`.
      *
      * Prefer this over `read(entity)` when only a few fields are needed: it
-     * names the exact components touched, so `db.observe.derive` can scope its
+     * names the exact components touched, so `db.derive` can scope its
      * recompute to just those fields instead of the whole entity. `id` is
      * always readable; the element type is inferred as a literal union.
      */

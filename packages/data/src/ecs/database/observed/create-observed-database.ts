@@ -144,7 +144,6 @@ export function createObservedDatabase<
         entity: observeEntity,
         archetype: observeArchetype,
         select: observeSelectEntities(transactionalStore, observeTransaction),
-        derive: createDerive(store, observeTransaction),
     };
 
     const notifyAllObserversStoreReloaded = () => {
@@ -177,6 +176,7 @@ export function createObservedDatabase<
         ...rest,
         resources,
         observe,
+        derive: createDerive(store, observeTransaction),
         execute,
         reset: () => {
             store.reset();

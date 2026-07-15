@@ -79,7 +79,7 @@ const affected = <C>(deps: DepSet, result: TransactionResult<C>): boolean => {
 };
 
 /**
- * Builds `db.observe.derive`. A single read-recording wrapper is constructed
+ * Builds `db.derive`. A single read-recording wrapper is constructed
  * once and shared across every derive on this database: because a `compute`
  * body is synchronous and performs no writes or nested derives, no two runs can
  * overlap, so the wrapper's "currently-recording" target is reset per run and
@@ -151,7 +151,7 @@ export const createDerive = <C extends object>(
     // The read-recording projection handed to `compute`. Delegates every read to
     // the real store and records the dependency it implies. Typed loosely here;
     // the precise `Database.Read<…>` surface is enforced at the public
-    // `db.observe.derive` boundary.
+    // `db.derive` boundary.
     const recorder = {
         get: (entity: Entity, component: StringKeyof<C>) => {
             if (recording) {

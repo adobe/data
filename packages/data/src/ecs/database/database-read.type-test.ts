@@ -7,7 +7,7 @@ import { Entity } from "../entity/entity.js";
 import { Observe } from "../../observe/index.js";
 
 /**
- * Compile-time tests for `Database.Read<DB>` and the `db.observe.derive`
+ * Compile-time tests for `Database.Read<DB>` and the `db.derive`
  * callback surface. Type-only — nothing here executes. `@ts-expect-error`
  * marks the accesses that MUST NOT compile (the footguns the read projection
  * removes structurally).
@@ -38,18 +38,18 @@ const db = Database.create(plugin);
 
 function derivePositive() {
     // value reads
-    const gotten = db.observe.derive((d) => d.get(0 as Entity, "x"));
+    const gotten = db.derive((d) => d.get(0 as Entity, "x"));
     type _Gotten = Assert<Equal<typeof gotten, Observe<number | undefined>>>;
 
-    const selected = db.observe.derive((d) => d.select(["x"]));
+    const selected = db.derive((d) => d.select(["x"]));
     type _Selected = Assert<Equal<typeof selected, Observe<readonly Entity[]>>>;
 
     // whole-entity read
-    db.observe.derive((d) => d.read(0 as Entity));
+    db.derive((d) => d.read(0 as Entity));
 
     // projection read: exactly the requested fields, optionality preserved,
     // unrequested fields (incl. id) excluded
-    db.observe.derive((d) => {
+    db.derive((d) => {
         const p = d.read(0 as Entity, ["x", "y"]);
         if (p !== null) {
             const _x: number | undefined = p.x;
@@ -63,7 +63,7 @@ function derivePositive() {
     });
 
     // archetype read: narrowed to the archetype's own row (no extra fields)
-    db.observe.derive((d) => {
+    db.derive((d) => {
         const foo = d.read(0 as Entity, db.archetypes.Foo);
         if (foo !== null) {
             const _x: number = foo.x;
@@ -74,19 +74,19 @@ function derivePositive() {
     });
 
     // resource reads
-    const frameRate = db.observe.derive((d) => d.resources.frameRate);
+    const frameRate = db.derive((d) => d.resources.frameRate);
     type _FrameRate = Assert<Equal<typeof frameRate, Observe<number>>>;
 
     // archetype identity — and the realistic composition select(archetype.components)
-    db.observe.derive((d) => d.archetypes.Foo.components);
-    db.observe.derive((d) => d.archetypes.Foo.id);
-    db.observe.derive((d) => d.select(d.archetypes.Foo.components));
+    db.derive((d) => d.archetypes.Foo.components);
+    db.derive((d) => d.archetypes.Foo.id);
+    db.derive((d) => d.select(d.archetypes.Foo.components));
 
     // index lookups
-    db.observe.derive((d) => d.indexes.byX.find({ x: 1 }));
-    db.observe.derive((d) => d.indexes.byX.findRange({ x: 1 }));
+    db.derive((d) => d.indexes.byX.find({ x: 1 }));
+    db.derive((d) => d.indexes.byX.findRange({ x: 1 }));
     // a unique index also exposes `get`
-    const head = db.observe.derive((d) => d.indexes.byXUnique.get({ x: 1 }));
+    const head = db.derive((d) => d.indexes.byXUnique.get({ x: 1 }));
     type _Head = Assert<Equal<typeof head, Observe<Entity | null>>>;
 }
 
@@ -95,35 +95,35 @@ function derivePositive() {
 // ============================================================================
 
 function deriveNegative() {
-    db.observe.derive((d) => {
+    db.derive((d) => {
         // @ts-expect-error observers are not exposed — a derive subscribes to its own reads
         return d.observe;
     });
-    db.observe.derive((d) => {
+    db.derive((d) => {
         // @ts-expect-error transactions / writes are not exposed to a read-only derive
         return d.transactions;
     });
-    db.observe.derive((d) => {
+    db.derive((d) => {
         // @ts-expect-error queryArchetypes (raw column access) is not exposed
         return d.queryArchetypes;
     });
-    db.observe.derive((d) => {
+    db.derive((d) => {
         // @ts-expect-error locate (row access) is not exposed
         return d.locate;
     });
-    db.observe.derive((d) => {
+    db.derive((d) => {
         // @ts-expect-error per-archetype column access is not exposed
         return d.archetypes.Foo.columns;
     });
-    db.observe.derive((d) => {
+    db.derive((d) => {
         // @ts-expect-error per-archetype rowCount (table access) is not exposed
         return d.archetypes.Foo.rowCount;
     });
-    db.observe.derive((d) => {
+    db.derive((d) => {
         // @ts-expect-error per-archetype insert (write) is not exposed
         return d.archetypes.Foo.insert;
     });
-    db.observe.derive((d) => {
+    db.derive((d) => {
         // @ts-expect-error index observe is not exposed — a derive subscribes for you
         return d.indexes.byX.observe;
     });
@@ -157,4 +157,62 @@ function readProjectionNegative() {
     rd.archetypes.Foo.columns;
     // @ts-expect-error transactions omitted from the read projection
     rd.transactions;
+}
+
+// ============================================================================
+// Read distributes over an INTERSECTION (Option A). The structural definition
+// means `Database.Read<A & B>` merges both members' read surfaces, and because
+// `derive` passes `Database.Read<this>`, a derive on an intersection receiver
+// sees indexes + resources + archetypes from BOTH members — so a consumer of a
+// composed `A & B` database (e.g. an indexed core intersected with a
+// resource-computed layer) never needs to cast.
+// ============================================================================
+
+const pluginA = Database.Plugin.create({
+    components: { a: { type: "number" } },
+    resources: { ra: { type: "number", default: 0 } },
+    archetypes: { AOnly: ["a"] },
+    indexes: { byA: { key: "a" } },
+});
+const pluginB = Database.Plugin.create({
+    components: { b: { type: "string" } },
+    resources: { rb: { type: "string", default: "" } },
+    archetypes: { BOnly: ["b"] },
+    indexes: { byB: { key: "b" } },
+});
+
+const dbA = Database.create(pluginA);
+const dbB = Database.create(pluginB);
+type Both = typeof dbA & typeof dbB;
+
+declare const rb2: Database.Read<Both>;
+declare const both: Both;
+
+function intersectionRead() {
+    // both members' resources
+    const _ra: number = rb2.resources.ra;
+    const _rb: string = rb2.resources.rb;
+    // both members' indexes (find-only)
+    const _fa: readonly Entity[] = rb2.indexes.byA.find({ a: 1 });
+    const _fb: readonly Entity[] = rb2.indexes.byB.find({ b: "x" });
+    // both members' archetype identities
+    rb2.archetypes.AOnly.components.has("a");
+    rb2.archetypes.BOnly.components.has("b");
+    void _ra;
+    void _rb;
+    void _fa;
+    void _fb;
+}
+
+function intersectionDerive() {
+    // `Database.Read<this>` on an intersection receiver → merged surface.
+    both.derive((d) => {
+        const _ra: number = d.resources.ra;
+        const _rb: string = d.resources.rb;
+        d.indexes.byA.find({ a: 1 });
+        d.indexes.byB.find({ b: "x" });
+        void _ra;
+        void _rb;
+        return 0;
+    });
 }

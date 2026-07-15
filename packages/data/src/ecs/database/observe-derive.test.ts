@@ -38,7 +38,7 @@ const createTestDatabase = () =>
 
 const flush = () => new Promise<void>((resolve) => queueMicrotask(() => resolve()));
 
-describe("db.observe.derive", () => {
+describe("db.derive", () => {
     let db: ReturnType<typeof createTestDatabase>;
     let foo: Entity;
 
@@ -49,7 +49,7 @@ describe("db.observe.derive", () => {
 
     it("emits the initial computed value synchronously on subscribe", () => {
         const observer = vi.fn();
-        const unsubscribe = db.observe.derive((d) => d.get(foo, "a"))(observer);
+        const unsubscribe = db.derive((d) => d.get(foo, "a"))(observer);
         expect(observer).toHaveBeenCalledTimes(1);
         expect(observer).toHaveBeenLastCalledWith(1);
         unsubscribe();
@@ -57,7 +57,7 @@ describe("db.observe.derive", () => {
 
     it("re-emits when a component it read changes", async () => {
         const observer = vi.fn();
-        const unsubscribe = db.observe.derive((d) => d.get(foo, "a"))(observer);
+        const unsubscribe = db.derive((d) => d.get(foo, "a"))(observer);
         db.transactions.setA({ e: foo, a: 2 });
         await flush();
         expect(observer).toHaveBeenCalledTimes(2);
@@ -68,7 +68,7 @@ describe("db.observe.derive", () => {
     it("does NOT re-emit when a component it did not read changes (projection read scopes the deps)", async () => {
         const observer = vi.fn();
         // reads only `a` via the projection read
-        const unsubscribe = db.observe.derive((d) => d.read(foo, ["a"])?.a ?? -1)(observer);
+        const unsubscribe = db.derive((d) => d.read(foo, ["a"])?.a ?? -1)(observer);
         expect(observer).toHaveBeenCalledTimes(1);
         db.transactions.setB({ e: foo, b: 99 }); // b is unread
         await flush();
@@ -82,7 +82,7 @@ describe("db.observe.derive", () => {
 
     it("a whole-entity read re-emits on any component change of that entity", async () => {
         const observer = vi.fn();
-        const unsubscribe = db.observe.derive((d) => d.read(foo)?.b ?? -1)(observer);
+        const unsubscribe = db.derive((d) => d.read(foo)?.b ?? -1)(observer);
         db.transactions.setB({ e: foo, b: 77 });
         await flush();
         expect(observer).toHaveBeenLastCalledWith(77);
@@ -92,7 +92,7 @@ describe("db.observe.derive", () => {
     it("structurally dedupes: an input change that yields an equal result does not re-emit", async () => {
         const observer = vi.fn();
         // sign of `a` — 1 and 5 both map to "pos"
-        const unsubscribe = db.observe.derive((d) => ((d.get(foo, "a") ?? 0) > 0 ? "pos" : "neg"))(observer);
+        const unsubscribe = db.derive((d) => ((d.get(foo, "a") ?? 0) > 0 ? "pos" : "neg"))(observer);
         expect(observer).toHaveBeenCalledTimes(1);
         expect(observer).toHaveBeenLastCalledWith("pos");
         db.transactions.setA({ e: foo, a: 5 }); // still positive
@@ -107,7 +107,7 @@ describe("db.observe.derive", () => {
 
     it("re-emits on membership change of a select it read", async () => {
         const observer = vi.fn();
-        const unsubscribe = db.observe.derive((d) => d.select(["a"]).length)(observer);
+        const unsubscribe = db.derive((d) => d.select(["a"]).length)(observer);
         expect(observer).toHaveBeenLastCalledWith(1);
         db.transactions.makeFoo({ a: 100, b: 0 });
         await flush();
@@ -117,7 +117,7 @@ describe("db.observe.derive", () => {
 
     it("re-emits on a change to a resource it read", async () => {
         const observer = vi.fn();
-        const unsubscribe = db.observe.derive((d) => d.resources.r)(observer);
+        const unsubscribe = db.derive((d) => d.resources.r)(observer);
         expect(observer).toHaveBeenLastCalledWith(0);
         db.transactions.setR({ r: 42 });
         await flush();
@@ -127,7 +127,7 @@ describe("db.observe.derive", () => {
 
     it("re-emits on a change to an index bucket it read", async () => {
         const observer = vi.fn();
-        const unsubscribe = db.observe.derive((d) => d.indexes.byA.find({ a: 1 }).length)(observer);
+        const unsubscribe = db.derive((d) => d.indexes.byA.find({ a: 1 }).length)(observer);
         expect(observer).toHaveBeenLastCalledWith(1);
         db.transactions.makeFoo({ a: 1, b: 0 }); // another entity in bucket a=1
         await flush();
@@ -137,7 +137,7 @@ describe("db.observe.derive", () => {
 
     it("recomputes synchronously, at most once per committed transaction", () => {
         const observer = vi.fn();
-        const unsubscribe = db.observe.derive((d) => d.read(foo))(observer);
+        const unsubscribe = db.derive((d) => d.read(foo))(observer);
         observer.mockClear();
         // Each transaction fires exactly one synchronous recompute at its commit
         // boundary (no await needed) — the cadence a per-commit consumer relies on.
@@ -150,7 +150,7 @@ describe("db.observe.derive", () => {
 
     it("stops emitting after unsubscribe", async () => {
         const observer = vi.fn();
-        const unsubscribe = db.observe.derive((d) => d.get(foo, "a"))(observer);
+        const unsubscribe = db.derive((d) => d.get(foo, "a"))(observer);
         unsubscribe();
         observer.mockClear();
         db.transactions.setA({ e: foo, a: 123 });

@@ -158,29 +158,21 @@ export interface Database<
       include: readonly Include[] | ReadonlySet<string>,
       options?: EntitySelectOptions<C, Pick<C & RequiredComponents, T>>
     ): Observe<readonly Entity[]>;
-    /**
-     * Reactive derivation. `compute` is run against a read-only projection of
-     * this database ({@link Database.Read}); the derive records exactly the
-     * reads it performs, subscribes to their change signals, and re-emits the
-     * recomputed value whenever any of those reads could have changed. Emits
-     * the initial value on subscribe; coalesces a transaction's changes into a
-     * single recompute; deduplicates consecutive equal results (`options.equals`,
-     * defaulting to reference equality).
-     *
-     * The projection omits observers, writes, and direct table/column access,
-     * so a `compute` body cannot subscribe, mutate, or read raw rows — the
-     * dependency set is exactly what it read, which removes the whole class of
-     * "forgot to subscribe to a field I read" staleness bugs.
-     *
-     * Emits the initial value on subscribe, then recomputes at most once per
-     * committed transaction — synchronously at the commit boundary — and
-     * structurally compares the result before emitting so an unchanged value
-     * never re-notifies.
-     */
-    derive<T>(
-      compute: (db: Database.Read<Database<C, R, A, F, S, AF, SV, CV, IX>>) => T
-    ): Observe<T>;
   }
+  /**
+   * Reactive derivation. `compute` runs against a read-only projection of this
+   * database ({@link Database.Read} — value / index / resource reads only; no
+   * observers, writes, or table access). The derive records exactly the reads
+   * it performs and re-emits when any could have changed: the initial value on
+   * subscribe, then at most once per committed transaction (synchronously at
+   * the commit boundary), structurally deduplicated so an unchanged result
+   * never re-notifies.
+   *
+   * The callback receives `Database.Read<this>`, so an *intersection* database
+   * (e.g. `IndexedCoreDatabase & ResourceComputedDatabase`) resolves to the
+   * merged read surface — consumers never need to cast.
+   */
+  derive<T>(compute: (db: Database.Read<this>) => T): Observe<T>;
   /**
    * Wipes all entities and resets all resources to their plugin defaults,
    * preserving database identity (observers, transaction wrappers, sync
@@ -273,7 +265,7 @@ export namespace Database {
   >;
 
   /**
-   * The read-only projection of a Database that a `db.observe.derive` callback
+   * The read-only projection of a Database that a `db.derive` callback
    * receives. It exposes only the auto-trackable read surface —
    *   - value reads: `get`, `read`, `select`
    *   - resource reads: `resources`
@@ -289,20 +281,23 @@ export namespace Database {
    * Because the surface is narrowed structurally, misuse is a compile error
    * rather than a value that must be guarded / thrown on at runtime.
    */
+  // Defined structurally (mapping over `DB`'s own members) rather than via
+  // `DB extends Database<infer C, …>`. The `infer` form collapses an
+  // *intersection* database `A & B` to whichever single member the conditional
+  // matches, losing the other's surface. Mapping over the members directly lets
+  // `Read<A & B>` distribute over the intersection and merge both read surfaces —
+  // so a `db.derive` on an intersection receiver (see the top-level `derive`
+  // signature, which passes `Database.Read<this>`) sees the combined
+  // indexes + resources + archetypes, and consumers never need to cast.
   export type Read<DB extends Database<any, any, any, any, any, any, any, any, any>> =
-    DB extends Database<infer C, infer R, infer A, any, any, any, any, any, infer IX>
-      ? Pick<ReadonlyStore<C, R, A, IX>, "get" | "read" | "select" | "resources"> & {
-          readonly indexes: {
-            readonly [K in keyof IX]: Database.Index.ReadHandle<C, IX[K]>;
-          };
-          readonly archetypes: {
-            readonly [K in keyof ReadonlyStore<C, R, A, IX>["archetypes"]]: Pick<
-              ReadonlyStore<C, R, A, IX>["archetypes"][K],
-              "components" | "id"
-            >;
-          };
-        }
-      : never;
+    Pick<DB, "get" | "read" | "select" | "resources"> & {
+      readonly indexes: {
+        readonly [K in keyof DB["indexes"]]: Omit<DB["indexes"][K], "observe">;
+      };
+      readonly archetypes: {
+        readonly [K in keyof DB["archetypes"]]: Pick<DB["archetypes"][K], "components" | "id">;
+      };
+    };
 
   export const create = createDatabase;
 
@@ -325,7 +320,7 @@ export namespace Database {
     export type Handle<C extends Components, I extends StoreIndex<C, any, any, any>> =
       StoreIndex.Handle<C, I>;
     /**
-     * The index handle as exposed to a `db.observe.derive` callback: the
+     * The index handle as exposed to a `db.derive` callback: the
      * synchronous lookups (`find` / `findRange` / `get`) only. `observe` is
      * removed — a derive subscribes to the reads it performs automatically, so
      * calling `observe` from inside one is a category error.

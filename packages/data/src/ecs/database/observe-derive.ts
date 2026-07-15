@@ -8,29 +8,57 @@ import { ReadonlyStore } from "../store/index.js";
 import { TransactionResult } from "./transactional-store/transactional-store.js";
 
 /**
- * The dependency set a single `compute` run touched. Reads reduce to two kinds
- * of dependency:
+ * A set-valued read (an index `find` / `findRange` / `get`, or a presence
+ * `select`) whose dependency is the *result sequence itself*, not the columns
+ * behind it. Rather than re-run the whole (potentially expensive) compute body
+ * whenever a backing column changes anywhere, we cheaply gate, then recompute
+ * *just this read* and compare its result to what it returned last time — the
+ * same bucket-precision technique {@link observeIndexEntities} uses. Only a
+ * genuinely different sequence marks the derive affected, so a change to an
+ * unrelated bucket (or an unrelated archetype's membership) costs one cheap
+ * recompute, never a full body re-run.
+ */
+type SetRead =
+    // Index lookup: gate on `changedComponents ∩ readColumns` — the bucket
+    // contents/order cannot move unless a key or sort column changed.
+    | { readonly kind: "index"; readonly readColumns: ReadonlySet<string>; recompute(): unknown; last: unknown }
+    // Presence `select(include, { exclude })`: membership is archetype-shaped, so
+    // it can only change when *some* archetype's membership changed this commit
+    // (`changedArchetypes`). A pure value write never moves it.
+    | { readonly kind: "select"; recompute(): readonly Entity[]; last: readonly Entity[] };
+
+/**
+ * The dependency set a single `compute` run touched. Three kinds:
  *   - entity deps — a specific entity, either whole (`read(entity)`) or scoped
  *     to a set of components (`get` / `read(entity, archetype | components[])`).
  *     Re-run when that entity changed (and, when scoped, when one of the watched
  *     components changed on it, or it was deleted).
- *   - column deps — component names whose *value or membership* a `select`, an
- *     index lookup, or a resource read depends on. Re-run when the transaction's
- *     `changedComponents` intersects them. (`select` include/exclude/where/order
- *     keys, an index's `readColumns`, and a resource's own component name all
- *     land here — a set of entities can only gain/lose a member, reorder, or
- *     change a read value by touching one of these columns.)
+ *   - `columns` — component names a *resource* read depends on. A resource is a
+ *     singleton entity carrying its own dedicated component, so `changedComponents`
+ *     intersecting these is precise-in-effect. (This is the only remaining use of
+ *     the coarse column gate — index and `select` reads are handled precisely
+ *     below.)
+ *   - `setReads` — index lookups and presence `select`s, tracked precisely by
+ *     recompute-and-compare (see {@link SetRead}).
+ *
+ * `select`'s value-dependent `where` / `order` options are intentionally NOT
+ * part of the derive read surface ({@link Database.Read}): they can only be
+ * tracked coarsely (any value write to a filtered/sorted column), so a
+ * value-keyed or ordered reactive read must go through a declared index, which
+ * is precise and O(bucket).
  */
 interface DepSet {
     readonly entityWhole: Set<Entity>;
     readonly entityComponents: Map<Entity, Set<string>>;
     readonly columns: Set<string>;
+    readonly setReads: SetRead[];
 }
 
 const emptyDeps = (): DepSet => ({
     entityWhole: new Set(),
     entityComponents: new Map(),
     columns: new Set(),
+    setReads: [],
 });
 
 const watchComponent = (deps: DepSet, entity: Entity, component: string) => {
@@ -42,39 +70,52 @@ const watchComponent = (deps: DepSet, entity: Entity, component: string) => {
 };
 
 const affected = <C>(deps: DepSet, result: TransactionResult<C>): boolean => {
-    const { changedEntities, changedComponents } = result;
-    for (const entity of deps.entityWhole) {
-        if (changedEntities.has(entity)) {
-            return true;
-        }
-    }
-    for (const [entity, components] of deps.entityComponents) {
-        if (!changedEntities.has(entity)) {
-            continue;
-        }
-        const values = changedEntities.get(entity);
-        if (values === undefined) {
-            // unreachable: `has(entity)` was true above — satisfies the map's
-            // `V | undefined` return type.
-            continue;
-        }
-        if (values === null) {
-            // entity deleted — any scoped read of it is now stale
-            return true;
-        }
-        for (const component of Object.keys(values)) {
-            if (components.has(component)) {
+    const { changedEntities, changedComponents, changedArchetypes } = result;
+    const { entityWhole, entityComponents, columns, setReads } = deps;
+
+    // Entity deps: iterate the (usually small) *changed* set and probe the
+    // watched sets — O(|changedEntities|), not O(|watched|). A commit touches a
+    // handful of entities regardless of how many a derive reads.
+    if (entityWhole.size > 0 || entityComponents.size > 0) {
+        for (const [entity, values] of changedEntities) {
+            if (entityWhole.has(entity)) {
                 return true;
+            }
+            const watched = entityComponents.get(entity);
+            if (watched === undefined) {
+                continue;
+            }
+            if (values === null) {
+                // entity deleted — any scoped read of it is now stale
+                return true;
+            }
+            for (const component of Object.keys(values)) {
+                if (watched.has(component)) {
+                    return true;
+                }
             }
         }
     }
-    if (deps.columns.size > 0) {
-        for (const component of changedComponents) {
-            if (deps.columns.has(component)) {
-                return true;
+
+    // Resource column deps.
+    if (columns.size > 0 && !changedComponents.isDisjointFrom(columns)) {
+        return true;
+    }
+
+    // Set-valued reads: cheap gate, then recompute-and-compare this one read.
+    for (const dep of setReads) {
+        if (dep.kind === "index") {
+            if (changedComponents.isDisjointFrom(dep.readColumns)) {
+                continue;
             }
+        } else if (changedArchetypes.size === 0) {
+            continue;
+        }
+        if (!equals(dep.last, dep.recompute())) {
+            return true;
         }
     }
+
     return false;
 };
 
@@ -119,28 +160,34 @@ export const createDerive = <C extends object>(
         const storeIndexes = (store.indexes ?? {}) as Record<string, any>;
         for (const name of Object.keys(storeIndexes)) {
             const handle = storeIndexes[name];
-            const readColumns: readonly string[] = handle.readColumns ?? [];
-            const trackIndex = () => {
+            const readColumns: ReadonlySet<string> = new Set(handle.readColumns ?? []);
+            // Record a per-bucket dependency: the exact result this lookup
+            // returned, plus a thunk to recompute it. `affected` gates on the
+            // read columns then recompute-compares, so an unrelated bucket's
+            // change recomputes this (cheap Map-get + slice) to an identical
+            // sequence and is suppressed — the derive body never re-runs.
+            const recordLookup = (result: unknown, recompute: () => unknown): void => {
                 if (recording) {
-                    for (const column of readColumns) {
-                        recording.columns.add(column);
-                    }
+                    recording.setReads.push({ kind: "index", readColumns, recompute, last: result });
                 }
             };
             const readHandle: Record<string, unknown> = {
                 find: (arg: unknown) => {
-                    trackIndex();
-                    return handle.find(arg);
+                    const result = handle.find(arg);
+                    recordLookup(result, () => handle.find(arg));
+                    return result;
                 },
                 findRange: (arg: unknown) => {
-                    trackIndex();
-                    return handle.findRange(arg);
+                    const result = handle.findRange(arg);
+                    recordLookup(result, () => handle.findRange(arg));
+                    return result;
                 },
             };
             if (typeof handle.get === "function") {
                 readHandle.get = (arg: unknown) => {
-                    trackIndex();
-                    return handle.get(arg);
+                    const result = handle.get(arg);
+                    recordLookup(result, () => handle.get(arg));
+                    return result;
                 };
             }
             out[name] = readHandle;
@@ -175,28 +222,21 @@ export const createDerive = <C extends object>(
             }
             return (store.read as (e: Entity, a?: unknown) => unknown)(entity, archetypeOrComponents);
         },
-        select: (include: readonly string[] | ReadonlySet<string>, options?: { exclude?: readonly string[]; where?: object; order?: object }) => {
+        // Presence select only — `include` + `exclude`, no `where` / `order`
+        // (value-dependent options are omitted from the derive surface; use a
+        // declared index for value-keyed or ordered reactive reads). Recorded as
+        // a set-valued read gated on `changedArchetypes`: the result is
+        // membership-shaped, so a pure value write can never move it, and an
+        // unrelated migration recompute-compares to the same sequence.
+        select: (include: readonly string[] | ReadonlySet<string>, options?: { exclude?: readonly string[] }) => {
+            const exclude = options?.exclude;
+            const args: [unknown, unknown] = [include, exclude === undefined ? undefined : { exclude }];
+            const run = (): readonly Entity[] => (store.select as (i: unknown, o?: unknown) => readonly Entity[])(...args);
+            const result = run();
             if (recording) {
-                for (const component of include) {
-                    recording.columns.add(component);
-                }
-                if (options?.exclude) {
-                    for (const component of options.exclude) {
-                        recording.columns.add(component);
-                    }
-                }
-                if (options?.where) {
-                    for (const component of Object.keys(options.where)) {
-                        recording.columns.add(component);
-                    }
-                }
-                if (options?.order) {
-                    for (const component of Object.keys(options.order)) {
-                        recording.columns.add(component);
-                    }
-                }
+                recording.setReads.push({ kind: "select", recompute: run, last: result });
             }
-            return (store.select as (i: unknown, o?: unknown) => readonly Entity[])(include, options);
+            return result;
         },
         get resources() {
             return (resourcesRecorder ??= buildResources());

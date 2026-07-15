@@ -135,6 +135,31 @@ describe("db.derive", () => {
         unsubscribe();
     });
 
+    it("index read is bucket-precise: a change to a different bucket does not re-run the body", () => {
+        // `compute` counts body runs; the per-dep recompute of `find` inside
+        // `affected` is separate, so this distinguishes "body re-ran, deduped"
+        // from "body never re-ran".
+        const compute = vi.fn((d: any) => d.indexes.byA.find({ a: 1 }).length);
+        const unsubscribe = db.derive(compute)(() => {});
+        expect(compute).toHaveBeenCalledTimes(1);
+        db.transactions.makeFoo({ a: 2, b: 0 }); // a DIFFERENT bucket (a=2)
+        expect(compute).toHaveBeenCalledTimes(1); // bucket a=1 unchanged → body not re-run
+        db.transactions.makeFoo({ a: 1, b: 0 }); // OUR bucket (a=1)
+        expect(compute).toHaveBeenCalledTimes(2); // body re-run
+        unsubscribe();
+    });
+
+    it("presence select is membership-precise: a value write to a selected column does not re-run the body", () => {
+        const compute = vi.fn((d: any) => d.select(["a"]).length);
+        const unsubscribe = db.derive(compute)(() => {});
+        expect(compute).toHaveBeenCalledTimes(1);
+        db.transactions.setA({ e: foo, a: 999 }); // value write, membership unchanged
+        expect(compute).toHaveBeenCalledTimes(1); // no archetype migration → body not re-run
+        db.transactions.makeFoo({ a: 5, b: 0 }); // new Foo → membership changes
+        expect(compute).toHaveBeenCalledTimes(2); // body re-run
+        unsubscribe();
+    });
+
     it("recomputes synchronously, at most once per committed transaction", () => {
         const observer = vi.fn();
         const unsubscribe = db.derive((d) => d.read(foo))(observer);

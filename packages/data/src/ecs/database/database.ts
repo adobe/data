@@ -290,7 +290,21 @@ export namespace Database {
   // signature, which passes `Database.Read<this>`) sees the combined
   // indexes + resources + archetypes, and consumers never need to cast.
   export type Read<DB extends Database<any, any, any, any, any, any, any, any, any>> =
-    Pick<DB, "get" | "read" | "select" | "resources"> & {
+    Pick<DB, "get" | "read" | "resources"> & {
+      // Presence `select` only — `include` (+ `exclude`), no `where` / `order`.
+      // Membership queries are reactively precise (they change only on archetype
+      // migration); the value-dependent `where` / `order` options can be tracked
+      // only coarsely (any write to a filtered/sorted column re-runs the whole
+      // derive), so they are deliberately absent — a value-keyed or ordered
+      // reactive read must go through a declared index (`indexes.<name>.find` /
+      // `findRange`), which is precise and O(bucket). Typed loosely over entity
+      // names because the structural `Read` (needed for the intersection merge
+      // above) does not recover `DB`'s component map; the result is entities, so
+      // no value typing is lost.
+      select(
+        include: readonly string[] | ReadonlySet<string>,
+        options?: { readonly exclude?: readonly string[] },
+      ): readonly Entity[];
       readonly indexes: {
         readonly [K in keyof DB["indexes"]]: Omit<DB["indexes"][K], "observe">;
       };

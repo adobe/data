@@ -44,6 +44,20 @@ function derivePositive() {
     const selected = db.derive((d) => d.select(["x"]));
     type _Selected = Assert<Equal<typeof selected, Observe<readonly Entity[]>>>;
 
+    // presence `select` — `exclude` is allowed (membership-based)
+    db.derive((d) => d.select(["x"], { exclude: ["y"] }));
+    // …but the value-dependent options are NOT on the derive surface: they can
+    // only be tracked coarsely, so a value-keyed / ordered reactive read must go
+    // through a declared index.
+    db.derive((d) =>
+        // @ts-expect-error `where` is not offered on a derive's select — use an index
+        d.select(["x"], { where: { x: 1 } }),
+    );
+    db.derive((d) =>
+        // @ts-expect-error `order` is not offered on a derive's select — use an index
+        d.select(["x"], { order: { x: true } }),
+    );
+
     // whole-entity read
     db.derive((d) => d.read(0 as Entity));
 
@@ -139,11 +153,13 @@ declare const rd: ReadDb;
 function readProjectionPositive() {
     const v: number | undefined = rd.get(0 as Entity, "x");
     const ids: readonly Entity[] = rd.select(["x"]);
+    const excluded: readonly Entity[] = rd.select(["x"], { exclude: ["y"] });
     const fr: number = rd.resources.frameRate;
     rd.archetypes.Foo.components.has("x");
     const found: readonly Entity[] = rd.indexes.byX.find({ x: 1 });
     void v;
     void ids;
+    void excluded;
     void fr;
     void found;
 }
@@ -157,6 +173,10 @@ function readProjectionNegative() {
     rd.archetypes.Foo.columns;
     // @ts-expect-error transactions omitted from the read projection
     rd.transactions;
+    // @ts-expect-error `where` (value-dependent) omitted from the read projection's select
+    rd.select(["x"], { where: { x: 1 } });
+    // @ts-expect-error `order` (value-dependent) omitted from the read projection's select
+    rd.select(["x"], { order: { x: true } });
 }
 
 // ============================================================================

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import type { Archetype } from "@adobe/data/ecs";
+import { ECS_SNAPSHOT_VERSION, type Archetype } from "@adobe/data/ecs";
 import { createColumnEncoder } from "../encoder/create-column-encoder.js";
 import {
     decodeJournalSnapshot,
@@ -980,6 +980,7 @@ export const createIncrementalPersistenceService = async (
         }
 
         store.fromData({
+            version: ECS_SNAPSHOT_VERSION,
             componentSchemas: {},
             entityLocationTableData: { entities, freeListHead, nextIndex, capacity },
             archetypesData: [],

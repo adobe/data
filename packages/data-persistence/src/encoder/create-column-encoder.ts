@@ -108,6 +108,7 @@ class JournalColumnEncoder implements ColumnEncoder {
  *
  *   number / struct / enum  - fixed-stride; encoded as a copy of the
  *                             relevant slice of the underlying TypedArray.
+ *   boolean                 - bit-packed in memory; per-row JSON in the journal.
  *   const                   - nothing per row; manifest carries the value.
  *   array                   - variable-length; per-row JSON into the journal.
  *
@@ -125,6 +126,7 @@ export const createColumnEncoder = (
             return new FixedColumnEncoder(buffer);
         case "const":
             return new ConstColumnEncoder();
+        case "boolean":
         case "array":
             return new JournalColumnEncoder(buffer);
         default: {

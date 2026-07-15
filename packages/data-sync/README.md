@@ -82,11 +82,11 @@ db.transactions.movePresence(async function* () {
 The transaction never commits; every yield is a transient envelope; sync
 forwards each to peers; peers see continuously-updated presence state.
 
-### Ephemeral resources stay local
+### nonPersistent resources stay local
 
-Resources marked `ephemeral: true` in their schema (or entities allocated
-with the built-in `ephemeral` component) produce transactions whose
-`TransactionResult.ephemeral === true`. The sync service skips those
+Resources marked `nonPersistent: true` in their schema (or entities allocated
+with the built-in `nonPersistent` component) produce transactions whose
+`TransactionResult.persistent === false`. The sync service skips those
 envelopes entirely — they never reach the wire. Use this for per-tab UI
 state (selection, panel positions, signaling intermediaries, etc.) without
 inventing a second database.
@@ -405,7 +405,7 @@ default.
 
 ### Pattern: per-user state archetypes
 
-Model user-specific ephemeral state (cursors, selections, presence) as its
+Model user-specific nonPersistent state (cursors, selections, presence) as its
 own archetype keyed by `userId`. This avoids all contention: each user only
 ever writes to their own row.
 
@@ -642,5 +642,5 @@ expect(db.select(["x"]).length).toBe(1);
 ```
 
 See `src/sync.test.ts` for the full soundness suite, including concurrent
-insert ordering, late-join convergence, ephemeral-no-replicate, and
+insert ordering, late-join convergence, nonPersistent-no-replicate, and
 compound `(userId, id)` isolation.

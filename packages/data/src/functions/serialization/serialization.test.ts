@@ -68,11 +68,11 @@ describe('serialize/deserialize', () => {
     expect(equals(roundTrip, table)).toBe(true);
   });
 
-  it('should NOT serialize data for ephemeral number buffers and reset to defaults on deserialize', () => {
+  it('should NOT serialize data for nonPersistent number buffers and reset to defaults on deserialize', () => {
     const numberBuffer = createTypedBuffer({
       type: "number",
       precision: 1,
-      ephemeral: true,
+      nonPersistent: true,
       default: 42
     }, 3);
 
@@ -99,11 +99,11 @@ describe('serialize/deserialize', () => {
     expect(roundTrip.numberBuffer.get(2)).not.toBe(300);
   });
 
-  it('should NOT serialize data for ephemeral array buffers and reset to defaults on deserialize', () => {
+  it('should NOT serialize data for nonPersistent array buffers and reset to defaults on deserialize', () => {
     const arrayBuffer = createTypedBuffer({
       type: "array",
       items: { type: "string" },
-      ephemeral: true,
+      nonPersistent: true,
       default: ["defaultValue1", "defaultValue2"]
     }, 2);
 
@@ -127,10 +127,10 @@ describe('serialize/deserialize', () => {
     expect(roundTrip.arrayBuffer.get(1)).not.toEqual(["customValue3", "customValue4"]);
   });
 
-  it('should NOT serialize data for ephemeral struct buffers and reset to defaults on deserialize', () => {
+  it('should NOT serialize data for nonPersistent struct buffers and reset to defaults on deserialize', () => {
     const structBuffer = createStructBuffer({
       type: "object",
-      ephemeral: true,
+      nonPersistent: true,
       default: { x: 10, y: 20 },
       properties: {
         x: { type: "number", precision: 1 },
@@ -235,5 +235,18 @@ describe('serialize/deserialize', () => {
     expect(roundTrip.buf.get(0)).toBe("b");
     expect(roundTrip.buf.get(1)).toBe("c");
     expect(roundTrip.buf.get(2)).toBe("a");
+  });
+
+  it('round-trips boolean typed buffers', () => {
+    const buf = createTypedBuffer({ type: "boolean" }, 65);
+    buf.set(0, true);
+    buf.set(32, true);
+    buf.set(64, true);
+
+    const payload = serialize({ buf });
+    const roundTrip = deserialize<{ buf: TypedBuffer<boolean> }>(payload);
+
+    expect(roundTrip.buf.type).toBe("boolean");
+    expect(equals(roundTrip.buf, buf)).toBe(true);
   });
 }); 

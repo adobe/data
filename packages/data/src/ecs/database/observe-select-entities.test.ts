@@ -312,6 +312,125 @@ describe("observeSelectEntities", () => {
             unsubscribe();
         });
 
+        it("should notify when a required component is removed, dropping the entity from the result set", async () => {
+            const observer = vi.fn();
+            // Select on position+health but NOT filtered/ordered on either. This is the
+            // membership-contraction case: removing `health` migrates the row to the
+            // position-only archetype, so it leaves the result set even though the
+            // caller never filters or orders on health.
+            const unsubscribe = database.observe.select(["position", "health"])(observer);
+
+            expect(observer).toHaveBeenCalledTimes(1);
+            expect(observer.mock.calls[0][0]).toContain(entities.posHealth1);
+
+            // Remove the `health` component (undefined => column removal) so the entity
+            // migrates out of the position+health archetype.
+            database.transactions.updateEntity({
+                entity: entities.posHealth1,
+                values: { health: undefined }
+            });
+
+            await Promise.resolve();
+
+            // Must re-emit without the entity that left the result set.
+            expect(observer).toHaveBeenCalledTimes(2);
+            expect(observer.mock.calls[1][0]).not.toContain(entities.posHealth1);
+
+            unsubscribe();
+        });
+
+        it("should NOT notify when removing a component the query does not select", async () => {
+            const observer = vi.fn();
+            // Selecting only position: removing `health` from a position+health entity
+            // keeps it a member (its archetype is still a superset of {position}), so
+            // no re-emit should occur — the O(changes) early-exit must still fire.
+            const unsubscribe = database.observe.select(["position"])(observer);
+
+            expect(observer).toHaveBeenCalledTimes(1);
+            expect(observer.mock.calls[0][0]).toContain(entities.posHealth1);
+
+            database.transactions.updateEntity({
+                entity: entities.posHealth1,
+                values: { health: undefined }
+            });
+
+            await Promise.resolve();
+
+            // Still a member => no new notification.
+            expect(observer).toHaveBeenCalledTimes(1);
+
+            unsubscribe();
+        });
+
+        it("should drop an entity that gains an excluded component", async () => {
+            const observer = vi.fn();
+            // Select position, excluding health. posName entities qualify; adding health
+            // to one must remove it from the result set even though `health` is neither
+            // an include nor a where/order key.
+            const unsubscribe = database.observe.select(["position"], { exclude: ["health"] })(observer);
+
+            expect(observer).toHaveBeenCalledTimes(1);
+            expect(observer.mock.calls[0][0]).toContain(entities.posName1);
+            expect(observer.mock.calls[0][0]).not.toContain(entities.posHealth1);
+
+            database.transactions.updateEntity({
+                entity: entities.posName1,
+                values: { health: 50 }
+            });
+
+            await Promise.resolve();
+
+            expect(observer).toHaveBeenCalledTimes(2);
+            expect(observer.mock.calls[1][0]).not.toContain(entities.posName1);
+
+            unsubscribe();
+        });
+
+        it("should add an entity that loses an excluded component", async () => {
+            const observer = vi.fn();
+            const unsubscribe = database.observe.select(["position"], { exclude: ["health"] })(observer);
+
+            expect(observer).toHaveBeenCalledTimes(1);
+            expect(observer.mock.calls[0][0]).not.toContain(entities.posHealth1);
+
+            // Remove health => posHealth1 becomes a position-only entity, now qualifying.
+            database.transactions.updateEntity({
+                entity: entities.posHealth1,
+                values: { health: undefined }
+            });
+
+            await Promise.resolve();
+
+            expect(observer).toHaveBeenCalledTimes(2);
+            expect(observer.mock.calls[1][0]).toContain(entities.posHealth1);
+
+            unsubscribe();
+        });
+
+        it("should add an entity that migrates into a not-yet-seen archetype", async () => {
+            const observer = vi.fn();
+            // Select position+score. Initially only Full entities qualify. Give a
+            // position-only entity a score, migrating it into a brand-new archetype
+            // (position+score) that did not exist when the subscription was created —
+            // the memoized classifier must recognise it on first sight.
+            const unsubscribe = database.observe.select(["position", "score"])(observer);
+
+            expect(observer).toHaveBeenCalledTimes(1);
+            expect(observer.mock.calls[0][0]).not.toContain(entities.pos1);
+
+            database.transactions.updateEntity({
+                entity: entities.pos1,
+                values: { score: 42 }
+            });
+
+            await Promise.resolve();
+
+            expect(observer).toHaveBeenCalledTimes(2);
+            expect(observer.mock.calls[1][0]).toContain(entities.pos1);
+
+            unsubscribe();
+        });
+
         it("should handle entity updates", async () => {
             const observer = vi.fn();
             const unsubscribe = database.observe.select(["position", "health"])(observer);

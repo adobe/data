@@ -354,4 +354,30 @@ describe("createUndoRedoService", () => {
 
         expect(await toPromise(undoRedo.undoStackIndex)).toBe(3);
     });
+
+    it("undo of a column-ADD removes the column, restoring undefined (not the delete sentinel)", () => {
+        // tx1: entity exists with `position` only — no `name` column.
+        const entity = database.transactions.createPositionEntity({ position: { x: 1, y: 2, z: 3 } });
+
+        // tx2: ADD the `name` column via update (pre-image is undefined).
+        database.transactions.updateEntity({ entity, values: { name: "hello" } });
+        expect(database.read(entity)?.name).toBe("hello");
+
+        // Undo tx2 must REMOVE the column (row migrates back to the position-only
+        // archetype), leaving name === undefined — never the internal
+        // delete-marker string. Mirror of the redo-of-column-removal fix (#140).
+        undoRedo.undo();
+
+        const after = database.read(entity);
+        expect(after?.name).toBeUndefined();
+        expect(after).toEqual({ id: entity, position: { x: 1, y: 2, z: 3 } });
+
+        // Redo re-adds the column, and a second undo must remove it again —
+        // the recorded op must not be consumed/emptied by the first replay.
+        undoRedo.redo();
+        expect(database.read(entity)?.name).toBe("hello");
+        undoRedo.undo();
+        expect(database.read(entity)?.name).toBeUndefined();
+        expect(database.read(entity)).toEqual({ id: entity, position: { x: 1, y: 2, z: 3 } });
+    });
 }); 

@@ -35,18 +35,18 @@ const pickingBase = Database.Plugin.create({
         pickable: True.schema,
     },
     archetypes: {
-        PickableModel: ["geometry", "position", "rotation", "scale", "visible", "parent", "pickable"],
+        PickableModel: ["mesh", "position", "rotation", "scale", "visible", "parent", "pickable"],
     },
     transactions: {
         insertPickableModel(t, args: {
-            geometry: number;
+            mesh: number;
             position?: readonly [number, number, number];
             rotation?: readonly [number, number, number, number];
             scale?: readonly [number, number, number];
             parent?: number;
         }): number {
             return t.archetypes.PickableModel.insert({
-                geometry:  args.geometry,
+                mesh:      args.mesh,
                 position:  args.position ?? [0, 0, 0],
                 rotation:  args.rotation ?? [0, 0, 0, 1],
                 scale:     args.scale    ?? [1, 1, 1],
@@ -66,7 +66,7 @@ type PickingDB = Database.Plugin.ToDatabase<typeof pickingBase>;
 const pickRayImpl = (db: PickingDB, ray: Line3): PickHit | null => {
     let best: PickHit | null = null;
     for (const arch of db.queryArchetypes([
-        "geometry", "visible", "pickable", "_worldBounds",
+        "mesh", "visible", "pickable", "_worldBounds",
     ])) {
         const ids    = arch.columns.id;
         const vis    = arch.columns.visible;

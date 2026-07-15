@@ -1,3 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-export * from "./schema.js";
+export { schema } from "./schema.js";
+export { shiftRight } from "./shift-right.js";

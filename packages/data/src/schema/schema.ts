@@ -26,8 +26,6 @@ export interface Schema {
   description?: string;
   conditionals?: readonly Conditional[];
   nonPersistent?: boolean;
-  /** @deprecated Use `nonPersistent` instead */
-  ephemeral?: boolean;
   mutable?: boolean; // defaults to false
   default?: any;
   precision?: 1 | 2;

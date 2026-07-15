@@ -7,3 +7,4 @@ export * from "./typed-array-constructer.js";
 export * from "./typed-array.js";
 export * from "./replace.js";
 export type { IsTuple } from "./types.js";
+

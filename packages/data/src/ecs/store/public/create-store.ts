@@ -168,7 +168,7 @@ export function createStore<
     // The resource component we added above will contain the resource value
     const ensureResourceInitialized = (name: string, resourceSchema: Schema & { default: unknown }) => {
         const resourceId = name as StringKeyof<C>;
-        const isNonPersistent = resourceSchema.nonPersistent ?? resourceSchema.ephemeral;
+        const isNonPersistent = resourceSchema.nonPersistent;
         const componentNames: StringKeyof<C>[] = isNonPersistent
             ? ["id" as StringKeyof<C>, resourceId, "nonPersistent" as StringKeyof<C>]
             : ["id" as StringKeyof<C>, resourceId];

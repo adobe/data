@@ -1,6 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Vec3, Quat } from "@adobe/data/math";
+import type { BoneCapsule } from "./bone-capsule.js";
+import type { FitBoneCapsulesInput } from "./fit-bone-capsules-input.js";
 
 /**
  * Fits one capsule collider to each significant bone of a skinned mesh — the
@@ -15,33 +17,6 @@ import type { Vec3, Quat } from "@adobe/data/math";
  * plus dimensions — so the capsule's world pose each frame is just
  * `jointWorldMatrix · offset`, tracking the animated skeleton.
  */
-
-/** Skinned vertices in mesh (bind) space: `positions` (xyz triples), `joints`
- *  (4 joint indices/vertex), `weights` (4 weights/vertex). */
-export interface SkinVertices {
-    positions: Float32Array;
-    joints: Uint32Array;
-    weights: Float32Array;
-}
-
-export interface FitBoneCapsulesInput {
-    jointCount: number;
-    /** glTF inverse-bind matrices, column-major, `jointCount × 16`. */
-    inverseBindMatrices: Float32Array;
-    skin: SkinVertices;
-    /** A vertex joins a bone only if its dominant weight ≥ this (default 0.5). */
-    minWeight?: number;
-    /** Bones with fewer assigned vertices than this get no capsule (default 6). */
-    minVertices?: number;
-}
-
-export interface BoneCapsule {
-    jointIndex: number;
-    offsetPosition: Vec3; // capsule centre, bone-bind-local
-    offsetRotation: Quat; // orients the Y-aligned capsule onto the fitted axis, bone-bind-local
-    radius: number;
-    halfHeight: number;   // half-length of the cylindrical section
-}
 
 /** Transform a point by a column-major 4×4 matrix (slice `o..o+16`), into `out`. */
 function transformPoint(m: Float32Array, o: number, x: number, y: number, z: number, out: [number, number, number]): void {

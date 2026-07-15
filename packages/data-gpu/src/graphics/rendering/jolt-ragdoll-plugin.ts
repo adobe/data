@@ -26,7 +26,11 @@ import type { JointTemplate } from "../scene/model/gltf/parse-skin.js";
  */
 
 type Jolt = JoltContext["jolt"];
-interface SkinGeo { _cpuSkin?: { positions: Float32Array; joints: Uint32Array; weights: Float32Array } | null; _skinInverseBindMatrices?: Float32Array | null; _skinJointTemplate?: JointTemplate[] }
+interface SkinGeo {
+    cpuSkin?: { positions: Float32Array; joints: Uint32Array; weights: Float32Array } | null;
+    skinInverseBindMatrices?: Float32Array | null;
+    skinJointTemplate?: JointTemplate[];
+}
 
 /** Column-major rigid transform from a position + unit quaternion. */
 const compose = (px: number, py: number, pz: number, q: ArrayLike<number>): Mat4x4 =>
@@ -63,9 +67,9 @@ export const joltRagdoll = Database.Plugin.create({
                 const jointWorld = (j: Entity): Mat4x4 => (db.store.get(j, "_worldMatrix") as Mat4x4 | undefined) ?? Mat4x4.identity;
 
                 const build = (ctx: JoltContext, jointIds: readonly Entity[], g: SkinGeo): void => {
-                    const jolt = ctx.jolt, template = g._skinJointTemplate!;
+                    const jolt = ctx.jolt, template = g.skinJointTemplate!;
                     const caps = new Map<number, { radius: number; halfHeight: number; offPos: readonly number[]; offRot: readonly number[] }>();
-                    for (const c of fitBoneCapsules({ jointCount: jointIds.length, inverseBindMatrices: g._skinInverseBindMatrices!, skin: g._cpuSkin! }))
+                    for (const c of fitBoneCapsules({ jointCount: jointIds.length, inverseBindMatrices: g.skinInverseBindMatrices!, skin: g.cpuSkin! }))
                         caps.set(c.jointIndex, { radius: c.radius, halfHeight: c.halfHeight, offPos: c.offsetPosition, offRot: c.offsetRotation });
 
                     const skel = new jolt.Skeleton();
@@ -123,11 +127,11 @@ export const joltRagdoll = Database.Plugin.create({
                     const ctx = db.store.resources._joltContext;
                     if (!ctx) return;
                     if (!built) {
-                        for (const arch of db.store.queryArchetypes(["_skeletonJoints", "_skeletonGeometry"])) {
-                            const jc = arch.columns._skeletonJoints, gc = arch.columns._skeletonGeometry;
+                        for (const arch of db.store.queryArchetypes(["_skeletonJoints", "_skeletonMesh"])) {
+                            const jc = arch.columns._skeletonJoints, mc = arch.columns._skeletonMesh;
                             for (let i = 0; i < arch.rowCount; i++) {
-                                const g = db.store.read(gc.get(i)) as SkinGeo | null;
-                                if (!g?._cpuSkin || !g._skinInverseBindMatrices || !g._skinJointTemplate?.length) continue;
+                                const g = db.store.read(mc.get(i)) as SkinGeo | null;
+                                if (!g?.cpuSkin || !g.skinInverseBindMatrices || !g.skinJointTemplate?.length) continue;
                                 build(ctx, jc.get(i), g); built = true; break;
                             }
                             if (built) break;

@@ -1,6 +1,6 @@
 {
   "name": "@adobe/data-gpu",
-  "version": "0.9.76",
+  "version": "0.9.80",
   "description": "Adobe data WebGPU plugins and types for graphics and compute",
   "type": "module",
   "private": false,
@@ -29,6 +29,18 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./graphics": {
+      "import": "./dist/graphics/index.js",
+      "types": "./dist/graphics/index.d.ts"
+    },
+    "./physics": {
+      "import": "./dist/physics/index.js",
+      "types": "./dist/physics/index.d.ts"
+    },
+    "./material": {
+      "import": "./dist/material/index.js",
+      "types": "./dist/material/index.d.ts"
     }
   }
 }

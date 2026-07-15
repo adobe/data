@@ -2,7 +2,7 @@
 
 import { Database } from "@adobe/data/ecs";
 import { Vec3, type F32 } from "@adobe/data/math";
-import { SceneUniforms, graphics, Orbit } from "@adobe/data-gpu";
+import { graphics, Orbit, SceneUniforms } from "@adobe/data-gpu/graphics";
 import { computeShader, renderShader } from "./boids-shaders.js";
 
 // --- Tunables --------------------------------------------------------------

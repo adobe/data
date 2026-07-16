@@ -169,10 +169,32 @@ export interface Database<
    * never re-notifies.
    *
    * The callback receives `Database.Read<this>`, so an *intersection* database
-   * (e.g. `IndexedCoreDatabase & ResourceComputedDatabase`) resolves to the
-   * merged read surface — consumers never need to cast.
+   * resolves to the merged read surface — consumers never need to cast.
    */
   derive<T>(compute: (db: Database.Read<this>) => T): Observe<T>;
+  /**
+   * `derive` with a fixed record of external `inputs` — arbitrary `Observe<T>`
+   * values that do NOT live in the ECS (e.g. observables exposed by services).
+   * Their CURRENT values are injected as the second callback argument, keyed the
+   * same as `inputs` and unwrapped (`Observe<U> → U`); the first argument stays
+   * the read projection, so a body can fold external values and ECS reads into
+   * one synchronous expression.
+   *
+   * The inputs are subscribed once, at the root (not read dynamically inside the
+   * body), so the set is fixed for the life of the derive. The derive recomputes
+   * when any input emits OR an ECS read it recorded could have changed; like
+   * {@link Observe.fromProperties}, the first value is withheld until every input
+   * has produced one. Anything dynamic — an input set that depends on data, or
+   * an input whose arguments come from an ECS read — composes with
+   * {@link Observe.withSwitch} / {@link Observe.fromKeys} around the derive.
+   */
+  derive<I extends Record<string, Observe<unknown>>, T>(
+    inputs: I,
+    compute: (
+      db: Database.Read<this>,
+      inputs: { readonly [K in keyof I]: I[K] extends Observe<infer U> ? U : never },
+    ) => T,
+  ): Observe<T>;
   /**
    * Wipes all entities and resets all resources to their plugin defaults,
    * preserving database identity (observers, transaction wrappers, sync

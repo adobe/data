@@ -162,6 +162,21 @@ describe("db.derive", () => {
         unsubscribe();
     });
 
+    it("re-execution rebuilds the dependency set: a read dropped last run no longer triggers", () => {
+        // Reads `b` only while `a > 0`. Once `a` flips non-positive, the next run
+        // records deps WITHOUT `b`, so a later `b` change must not re-run the body.
+        const compute = vi.fn((d: any) => (d.get(foo, "a") > 0 ? d.get(foo, "b") : -1));
+        const unsubscribe = db.derive(compute)(() => {});
+        expect(compute).toHaveBeenCalledTimes(1); // a=1>0 → reads a AND b
+        db.transactions.setB({ e: foo, b: 20 });
+        expect(compute).toHaveBeenCalledTimes(2); // b is a dep → re-runs
+        db.transactions.setA({ e: foo, a: -1 });
+        expect(compute).toHaveBeenCalledTimes(3); // a is a dep → re-runs; now reads a only
+        db.transactions.setB({ e: foo, b: 30 });
+        expect(compute).toHaveBeenCalledTimes(3); // b dropped from deps → NO re-run
+        unsubscribe();
+    });
+
     it("re-emits on a change to an index bucket it read", async () => {
         const observer = vi.fn();
         const unsubscribe = db.derive((d) => d.indexes.byA.find({ a: 1 }).length)(observer);

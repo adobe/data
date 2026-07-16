@@ -125,6 +125,58 @@ describe("db.derive", () => {
         unsubscribe();
     });
 
+    // Documents the composition → derive migration for resource reads:
+    //   before: Observe.withMap(
+    //             Observe.fromProperties({ x: db.observe.resources.x, y: db.observe.resources.y }),
+    //             ({ x, y }) => x + y)
+    //   after:  db.derive(db => db.resources.x + db.resources.y)
+    // The derive records BOTH resource reads and recomputes when either changes,
+    // with no hand-listed inputs. The callback param is deliberately named `db`
+    // to shadow the outer db, so a read cannot bind the outer (full) db and
+    // escape dependency tracking.
+    it("derives a value from multiple resources, recomputing when either changes", () => {
+        const sumDb = Database.create(
+            Database.Plugin.create({
+                resources: {
+                    x: { type: "number", default: 1 },
+                    y: { type: "number", default: 2 },
+                },
+                transactions: {
+                    setX(store, args: { x: number }) {
+                        store.resources.x = args.x;
+                    },
+                    setY(store, args: { y: number }) {
+                        store.resources.y = args.y;
+                    },
+                },
+            }),
+        );
+        const observer = vi.fn();
+        const unsubscribe = sumDb.derive((db) => db.resources.x + db.resources.y)(observer);
+        expect(observer).toHaveBeenLastCalledWith(3); // initial: 1 + 2
+        sumDb.transactions.setX({ x: 10 });
+        expect(observer).toHaveBeenLastCalledWith(12); // 10 + 2
+        sumDb.transactions.setY({ y: 5 });
+        expect(observer).toHaveBeenLastCalledWith(15); // 10 + 5
+        expect(observer).toHaveBeenCalledTimes(3);
+        unsubscribe();
+    });
+
+    it("re-execution rebuilds the dependency set: a read dropped last run no longer triggers", () => {
+        // Reads `b` only while `a > 0`. Once `a` flips non-positive, the next run
+        // records deps WITHOUT `b`, so a later `b` change must not re-run the body.
+        const compute = vi.fn((d: any) => (d.get(foo, "a") > 0 ? d.get(foo, "b") : -1));
+        const unsubscribe = db.derive(compute)(() => {});
+        expect(compute).toHaveBeenCalledTimes(1); // a=1>0 → reads a AND b
+        db.transactions.setB({ e: foo, b: 20 });
+        expect(compute).toHaveBeenCalledTimes(2); // b is a dep → re-runs
+        db.transactions.setA({ e: foo, a: -1 });
+        expect(compute).toHaveBeenCalledTimes(3); // a is a dep → re-runs; now reads a only
+        db.transactions.setB({ e: foo, b: 30 });
+        expect(compute).toHaveBeenCalledTimes(3); // b dropped from deps → NO re-run
+        unsubscribe();
+    });
+
     it("re-emits on a change to an index bucket it read", async () => {
         const observer = vi.fn();
         const unsubscribe = db.derive((d) => d.indexes.byA.find({ a: 1 }).length)(observer);

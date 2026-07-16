@@ -12,6 +12,7 @@ import { Assert, Equal, Simplify, StringKeyof } from "../../../types/index.js";
 import { ComponentSchemas } from "../../component-schemas.js";
 import { OptionalComponents } from "../../optional-components.js";
 import { True } from "../../../schema/true/index.js";
+import { PartitionKeysOf } from "../partition.js";
 
 /**
  * Serialization format version stamped into every `toData` snapshot and
@@ -35,6 +36,11 @@ export const ECS_SNAPSHOT_VERSION = 1;
  */
 type SerializedArchetype = {
     readonly componentNames: readonly string[];
+    // Per-partition-component const values, needed to reconstruct the exact
+    // value-child on restore (the value is part of archetype identity but is
+    // not derivable from `componentNames` alone). Absent for non-partition
+    // archetypes.
+    readonly partitionValues?: Record<string, unknown>;
     readonly data?: unknown;
 };
 
@@ -45,7 +51,17 @@ type SerializedCore = {
     readonly archetypesData: readonly SerializedArchetype[];
 };
 
-export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC): Core<Simplify<OptionalComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> }>> {
+export function createCore<NC extends ComponentSchemas>(
+    newComponentSchemas: NC,
+    /**
+     * Called once, right after each archetype is created (direct or lazily as a
+     * partition value-child). The Store layer uses it to decorate the
+     * archetype's `insert` in place with index maintenance — so every write
+     * path (direct insert, router routing, migration target) shares one
+     * maintained insert with no wrapper or Proxy indirection.
+     */
+    onArchetypeCreated?: (archetype: Archetype<any>) => void,
+): Core<Simplify<OptionalComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> }>, PartitionKeysOf<NC>> {
     type C = RequiredComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> };
 
     const componentSchemas: { readonly [K in StringKeyof<C & RequiredComponents & OptionalComponents>]: Schema } = {
@@ -58,6 +74,35 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
     const getLocationTable = (entity: Entity) => entity < 0 ? nonPersistentLocationTable : persistentLocationTable;
     const archetypes = [] as unknown as Archetype<C & RequiredComponents & OptionalComponents>[] & { readonly [x: string]: Archetype<C> };
 
+    // A component declared `partition: true`: every distinct runtime value gets
+    // its own archetype whose column for that component is a const buffer (zero
+    // per-row bytes). Read from the *live* component schema so components added
+    // after createCore (via the Store layer's `extend`) are detected too. Cost
+    // is only paid when *resolving* an archetype (an O(names) scan) — never on
+    // the per-row insert hot path, which goes straight to a concrete archetype.
+    const isPartition = (name: string): boolean =>
+        (componentSchemas[name as StringKeyof<typeof componentSchemas>] as Schema | undefined)?.partition === true;
+
+    // Identity → archetype. Replaces the former linear scan (O(archetypes) per
+    // resolve) with an O(1) lookup, and — for partition components — folds the
+    // per-archetype const value into the key so value-children are distinct.
+    const archetypeByIdentity = new Map<string, Archetype<any>>();
+    const partitionNamesIn = (sortedNames: readonly string[]): string[] =>
+        sortedNames.filter(isPartition);
+    const identityKey = (
+        sortedNames: readonly string[],
+        partitionValues: Record<string, unknown> | undefined,
+        partitionNames: readonly string[],
+    ): string => {
+        const base = sortedNames.join(",");
+        if (partitionNames.length === 0) return base;
+        // `typeof` tag guards "1"(number) vs "1"(string) collisions.
+        const vals = partitionNames
+            .map((n) => `${n}=${typeof partitionValues![n]}:${String(partitionValues![n])}`)
+            .join(",");
+        return `${base}|${vals}`;
+    };
+
     const queryArchetypes = <
         Include extends StringKeyof<C & RequiredComponents & OptionalComponents>,
     >(
@@ -65,38 +110,64 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
         options?: ArchetypeQueryOptions<C>
     ): readonly Archetype<RequiredComponents & Pick<C & OptionalComponents, Include>>[] => {
         const includeArray = Array.from(include);
+        const where = options?.where as Record<string, unknown> | undefined;
         const results: Archetype<RequiredComponents & Pick<C & OptionalComponents, Include>>[] = [];
         for (const archetype of archetypes) {
             const hasAllRequired = includeArray.every(comp => archetype.columns[comp] !== undefined);
             const hasNoExcluded = !options?.exclude || options.exclude.every(comp => archetype.columns[comp] === undefined);
-            if (hasAllRequired && hasNoExcluded) {
+            // Partition `where`: a partition column is const per archetype, so a
+            // value filter is decidable at archetype granularity (O(archetypes),
+            // no row scan). Read the const via get(0) — valid even at rowCount 0.
+            let matchesWhere = true;
+            if (where) {
+                for (const key in where) {
+                    const column = archetype.columns[key];
+                    if (column === undefined || column.get(0) !== where[key]) {
+                        matchesWhere = false;
+                        break;
+                    }
+                }
+            }
+            if (hasAllRequired && hasNoExcluded && matchesWhere) {
                 results.push(archetype as unknown as Archetype<RequiredComponents & Pick<C & OptionalComponents, Include>>);
             }
         }
         return results;
     }
 
-    const ensureArchetype = <CC extends StringKeyof<C & RequiredComponents & OptionalComponents>>(componentNames: readonly CC[] | ReadonlySet<CC>): Archetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }> => {
-        const componentCount = Array.isArray(componentNames)
-            ? (componentNames as readonly CC[]).length
-            : (componentNames as ReadonlySet<CC>).size;
-        for (const archetype of queryArchetypes(componentNames)) {
-            if (archetype.components.size === componentCount) {
-                return archetype as unknown as Archetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>;
+    // Concrete archetype for exactly `componentNames`, resolved by identity and
+    // created on first use. A partition component in the set requires its value
+    // in `partitionValues`; that value is baked into the column schema as
+    // `const`, so the column is a zero-per-row const buffer. This is the single
+    // internal primitive behind ensureArchetype, the router, migration, and
+    // restore — the *only* place archetypes are created.
+    const resolveArchetype = (
+        componentNames: readonly string[] | ReadonlySet<string>,
+        partitionValues?: Record<string, unknown>,
+    ): Archetype<any> => {
+        const namesArr = Array.from(componentNames);
+        const sorted = namesArr.slice().sort();
+        const partitionNames = partitionNamesIn(sorted);
+        for (const n of partitionNames) {
+            if (partitionValues?.[n] === undefined) {
+                throw new Error(`partition component '${n}' requires a value to resolve a concrete archetype`);
             }
         }
+        const key = identityKey(sorted, partitionValues, partitionNames);
+        const existing = archetypeByIdentity.get(key);
+        if (existing) return existing;
+
         const id = archetypes.length;
-        const archetypeComponentSchemas: { [K in CC]: Schema } = {} as { [K in CC]: Schema };
+        const archetypeComponentSchemas: Record<string, Schema> = {};
         let hasId = false;
         let isNonPersistent = false;
-        for (const comp of componentNames as Iterable<CC>) {
-            if (comp === "id") {
-                hasId = true;
-            }
-            if (comp === "nonPersistent") {
-                isNonPersistent = true;
-            }
-            archetypeComponentSchemas[comp] = componentSchemas[comp];
+        for (const comp of namesArr) {
+            if (comp === "id") hasId = true;
+            if (comp === "nonPersistent") isNonPersistent = true;
+            const base = componentSchemas[comp as StringKeyof<typeof componentSchemas>];
+            archetypeComponentSchemas[comp] = isPartition(comp)
+                ? { ...base, const: partitionValues![comp] }
+                : base;
         }
         if (!hasId) {
             throw new Error("id is required");
@@ -107,8 +178,44 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
             isNonPersistent ? nonPersistentLocationTable : persistentLocationTable
         );
         archetypes.push(archetype as unknown as Archetype<C & RequiredComponents & OptionalComponents>);
-        return archetype as unknown as Archetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>;
-    }
+        archetypeByIdentity.set(key, archetype);
+        onArchetypeCreated?.(archetype);
+        return archetype;
+    };
+
+    // Write-only handle over a partition family: reads the partition value(s)
+    // from each row, resolves (creating on first use) the concrete child, and
+    // inserts there. Its `insert` is the by-keys routing inserter.
+    const makeRouter = (componentNames: readonly string[] | ReadonlySet<string>) => {
+        const namesArr = Array.from(componentNames);
+        const partitionNames = partitionNamesIn(namesArr.slice().sort());
+        const partitionValuesOf = (rowData: any): Record<string, unknown> => {
+            const values: Record<string, unknown> = {};
+            for (const n of partitionNames) values[n] = rowData[n];
+            return values;
+        };
+        return {
+            components: new Set(namesArr),
+            // Routes to the concrete child and calls its `insert`. When the Store
+            // layer has decorated inserts with index maintenance (via
+            // onArchetypeCreated), the child's `insert` is already the maintained
+            // one — so routing needs no special-casing at the Store layer.
+            insert: (rowData: any): Entity => resolveArchetype(namesArr, partitionValuesOf(rowData)).insert(rowData),
+        };
+    };
+
+    const ensureArchetype = ((
+        componentNames: readonly string[] | ReadonlySet<string>,
+        partitionValues?: Record<string, unknown>,
+    ): any => {
+        if (partitionValues === undefined) {
+            const namesArr = Array.from(componentNames);
+            if (namesArr.some(isPartition)) {
+                return makeRouter(componentNames);
+            }
+        }
+        return resolveArchetype(componentNames, partitionValues);
+    }) as Core<C>["ensureArchetype"];
 
     const locateInternal = (entity: Entity) => {
         return (entity < 0 ? nonPersistentLocationTable : persistentLocationTable).locate(entity);
@@ -181,7 +288,18 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
                 (addComponents ??= []).push(key as StringKeyof<C>);
             }
         }
-        if (addComponents || removeComponents) {
+        // A partition value change migrates the entity to a different child
+        // archetype even when the component *set* is unchanged, because the
+        // partition value is part of archetype identity.
+        let partitionValueChanged = false;
+        for (const key in components) {
+            if (isPartition(key) && currentArchetype.components.has(key as StringKeyof<C>)) {
+                if ((components as any)[key] !== currentArchetype.columns[key]!.get(currentLocation.row)) {
+                    partitionValueChanged = true;
+                }
+            }
+        }
+        if (addComponents || removeComponents || partitionValueChanged) {
             // currently changing archetype requires a set, but later we should have an edge map for better performance
             // Alternatively we can have a faster path using addComponent and deleteComponent.
             const newComponents = new Set(currentArchetype.components);
@@ -195,7 +313,19 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
                     newComponents.delete(comp);
                 }
             }
-            newArchetype = ensureArchetype(newComponents as ReadonlySet<StringKeyof<C & RequiredComponents & OptionalComponents>>) as unknown as Archetype<C & RequiredComponents & OptionalComponents>;
+            // Target child's partition values: the updated value where provided,
+            // else the entity's current (const) value.
+            let newPartitionValues: Record<string, unknown> | undefined;
+            const targetPartitionNames = partitionNamesIn([...newComponents].sort());
+            if (targetPartitionNames.length > 0) {
+                newPartitionValues = {};
+                for (const n of targetPartitionNames) {
+                    newPartitionValues[n] = (n in components)
+                        ? (components as any)[n]
+                        : currentArchetype.columns[n]?.get(currentLocation.row);
+                }
+            }
+            newArchetype = resolveArchetype(newComponents, newPartitionValues) as unknown as Archetype<C & RequiredComponents & OptionalComponents>;
         }
         if (newArchetype !== currentArchetype) {
             // create a new row in the new archetype
@@ -261,11 +391,16 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
             // reproduced on load. Only persistent archetypes carry `data`;
             // nonPersistent ones back the negative-ID space, whose location
             // table is never serialized, so their rows aren't persistent.
-            archetypesData: archetypes.map((archetype): SerializedArchetype =>
-                archetype.components.has("nonPersistent")
-                    ? { componentNames: [...archetype.components] }
-                    : { componentNames: [...archetype.components], data: archetype.toData(copy) }
-            )
+            archetypesData: archetypes.map((archetype): SerializedArchetype => {
+                const componentNames = [...archetype.components];
+                const partitionNames = partitionNamesIn(componentNames.slice().sort());
+                const partitionValues = partitionNames.length > 0
+                    ? Object.fromEntries(partitionNames.map((n) => [n, archetype.columns[n]!.get(0)]))
+                    : undefined;
+                return archetype.components.has("nonPersistent")
+                    ? { componentNames, partitionValues }
+                    : { componentNames, partitionValues, data: archetype.toData(copy) };
+            })
         }),
         fromData: (data: SerializedCore) => {
             if (data.version !== ECS_SNAPSHOT_VERSION) {
@@ -293,10 +428,12 @@ export function createCore<NC extends ComponentSchemas>(newComponentSchemas: NC)
                 }
             }
             persistentLocationTable.fromData(data.entityLocationTableData);
-            for (const { componentNames, data: archetypeData } of data.archetypesData) {
+            for (const { componentNames, partitionValues, data: archetypeData } of data.archetypesData) {
                 // Recreating the archetype reserves its id and leaves it
                 // empty; only persistent entries carry data to restore.
-                const archetype = ensureArchetype(componentNames as StringKeyof<C & RequiredComponents & OptionalComponents>[]);
+                // resolveArchetype (not the public ensureArchetype) so a
+                // partition archetype restores as its concrete value-child.
+                const archetype = resolveArchetype(componentNames, partitionValues);
                 if (archetypeData !== undefined) {
                     archetype.fromData(archetypeData);
                 }

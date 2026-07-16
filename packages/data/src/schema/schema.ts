@@ -26,6 +26,13 @@ export interface Schema {
   description?: string;
   conditionals?: readonly Conditional[];
   nonPersistent?: boolean;
+  // When true (only valid on a primitive schema), every distinct runtime value
+  // of this component is stored in its own archetype: the value is lifted into
+  // archetype identity and held as a const column (zero per-row bytes). Entities
+  // sharing a value are therefore contiguous — the storage-level partition a
+  // coarse spatial broad-phase wants. See the archetype `Router` return of
+  // `ensureArchetype` and the partition `where` filter on `queryArchetypes`.
+  partition?: boolean;
   mutable?: boolean; // defaults to false
   default?: any;
   precision?: 1 | 2;

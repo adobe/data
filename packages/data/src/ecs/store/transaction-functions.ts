@@ -13,7 +13,8 @@ export type TransactionDeclaration<
     R extends ResourceComponents,
     A extends ArchetypeComponents<StringKeyof<C>>,
     IX extends IndexDeclarations<C> = {},
-    Input extends any | void = any> = (t: TransactionContext<C, R, A, IX>, input: Input) => void | Entity;
+    PK extends string = never,
+    Input extends any | void = any> = (t: TransactionContext<C, R, A, IX, PK>, input: Input) => void | Entity;
 
 export type AsyncArgsProvider<T> = () => Promise<T> | AsyncGenerator<T>;
 
@@ -22,7 +23,8 @@ export type TransactionDeclarations<
     R extends ResourceComponents,
     A extends ArchetypeComponents<StringKeyof<C>>,
     IX extends IndexDeclarations<C> = {},
-> = { readonly [Q: string]: TransactionDeclaration<C, R, A, IX> };
+    PK extends string = never,
+> = { readonly [Q: string]: TransactionDeclaration<C, R, A, IX, PK> };
 
 /**
  * Converts from TransactionDeclarations to TransactionFunctions by removing

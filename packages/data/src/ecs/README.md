@@ -211,6 +211,36 @@ resolve `Track` to its concrete columns.
 - Don't let the schema be the **lone** export of a `stripInternal`-emitted
   module — pair it with another export (e.g. the `components` object above).
 
+### Partition components (experimental)
+
+> **Experimental.** API and semantics may change in a future minor release.
+
+A **partition component** (a primitive component marked `partition: true`) stores every distinct runtime value in its *own* archetype — the "shared component" pattern. Within a partition archetype the value is constant, so its column is a zero-per-row const buffer, and entities sharing a value are contiguous in memory (a coarse, storage-level spatial/grouping index).
+
+```ts
+const worldPlugin = Database.Plugin.create({
+  components: {
+    cell: { type: "integer", partition: true }, // primitive only
+    position: Vec3.schema,
+  },
+  archetypes: { Occupant: ["cell", "position"] },
+  transactions: {
+    // A partitioned named archetype is a Router: `insert` routes each row to the
+    // concrete child archetype for its `cell` value (created on first use).
+    spawn: (t, cell: number, pos: [number, number, number]) =>
+      t.archetypes.Occupant.insert({ cell, position: pos }),
+  },
+});
+```
+
+- **`ensureArchetype(keys)`** returns a `Router` (write-only: `insert` only) when `keys` include a partition component without a value; supply the value — `ensureArchetype(keys, { cell: 7 })` — to get the concrete child archetype (dense columns) directly.
+- **Reads** go through `queryArchetypes(include, { where })`: `where` filters by partition value at *archetype* granularity (O(archetypes), no row scan), e.g. `queryArchetypes(["cell", "position"], { where: { cell: 7 } })`. Omit `where` to iterate every value-child.
+- **`select(..., { order })`** whose leading order key(s) are partition components sorts per-bucket and concatenates — O(N log(N/K)), and O(N) when a partition key is the sole order key.
+- **`update`** that changes a partition value migrates the entity to the child for the new value (like adding/removing a component).
+- **Multiple** partition components compose: archetypes are the *cross product* of the distinct value tuples.
+
+**Cost / when to use.** Changing a partition value is a structural move (archetype migration), and archetype count is the product of distinct values across all partition columns — so a fine or fast-changing key fragments badly. Partition on **coarse, low-cardinality, slowly-changing** keys (region, team, layer); use a normal component + an [index](#indexes) or an external structure for fine or per-frame keys. A store that declares no partition component pays nothing.
+
 ## Indexes
 
 Indexes give O(1) lookup by some derived or column-valued key. Declare them on the plugin alongside components and archetypes; the runtime maintains them automatically on every insert/update/delete and exposes typed lookup handles at `db.indexes.<name>` and `t.indexes.<name>` (inside transactions).

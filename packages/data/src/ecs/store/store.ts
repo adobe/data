@@ -7,7 +7,7 @@ import { IntersectTuple, Simplify, StringKeyof } from "../../types/types.js";
 import { Components } from "./components.js";
 import { ArchetypeComponents } from "./archetype-components.js";
 import { Archetype, ReadonlyArchetype } from "../archetype/archetype.js";
-import { HasPartitionKey, PartitionKeysOf } from "./partition.js";
+import { HasPartitionKey, PartitionKeysOf, ArchetypeOrRouter } from "./partition.js";
 import { EntitySelectOptions } from "./entity-select-options.js";
 import { Undoable } from "../database/undoable.js";
 import { Assert } from "../../types/assert.js";
@@ -45,10 +45,11 @@ export interface ReadonlyStore<
     PK extends string = never,
 > extends BaseStore<C>, ReadonlyCore<C, PK> {
     readonly resources: { readonly [K in StringKeyof<R>]: R[K] };
-    readonly archetypes: { readonly [K in StringKeyof<A>]:
-        HasPartitionKey<A[K][number], PK> extends true
-            ? Archetype.Router<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }>
-            : ReadonlyArchetype<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }> }
+    readonly archetypes: { readonly [K in StringKeyof<A>]: ArchetypeOrRouter<
+        HasPartitionKey<A[K][number], PK>,
+        RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] },
+        ReadonlyArchetype<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }>
+    > }
     readonly indexes: { readonly [K in keyof IX]: Index.Handle<C, IX[K]> };
 }
 
@@ -70,10 +71,11 @@ export interface Store<
      */
     undoable?: Undoable;
     readonly resources: { -readonly [K in StringKeyof<R>]: R[K] };
-    readonly archetypes: { -readonly [K in StringKeyof<A>]:
-        HasPartitionKey<A[K][number], PK> extends true
-            ? Archetype.Router<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }>
-            : Archetype<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }> }
+    readonly archetypes: { -readonly [K in StringKeyof<A>]: ArchetypeOrRouter<
+        HasPartitionKey<A[K][number], PK>,
+        RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] },
+        Archetype<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }>
+    > }
     /**
      * Index handles keyed by user-chosen name. Returned handles are the
      * same references at the Store layer and the Database layer; mutations

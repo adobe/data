@@ -50,7 +50,28 @@ export interface ReadonlyCore<
     ): ReadonlyArchetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>;
 
     locate: (entity: Entity) => { archetype: ReadonlyArchetype<RequiredComponents>, row: number } | null;
-    read<T extends RequiredComponents>(entity: Entity, minArchetype: ReadonlyArchetype<T> | Archetype<T>): Readonly<T> & EntityReadValues<C> | null;
+    /**
+     * Read exactly the components of `archetype`. A membership GATE: returns
+     * `null` unless the entity is a superset of `archetype`. The result is
+     * narrowed to the archetype's own row — reading a component outside
+     * `archetype` off the result is a compile error (use a wider archetype, the
+     * component-list overload, or `read(entity)`).
+     */
+    read<T extends RequiredComponents>(entity: Entity, archetype: ReadonlyArchetype<T> | Archetype<T>): Readonly<T> | null;
+    /**
+     * Read a chosen subset of an entity's components.
+     *
+     * A pure PROJECTION, not a membership gate: returns `null` only when the
+     * entity does not exist. A requested component the entity does not have
+     * comes back absent — the field stays optional in the result, exactly as
+     * from the full `read(entity)`.
+     *
+     * Prefer this over `read(entity)` when only a few fields are needed: it
+     * names the exact components touched, so `db.derive` can scope its
+     * recompute to just those fields instead of the whole entity. `id` is
+     * always readable; the element type is inferred as a literal union.
+     */
+    read<const K extends StringKeyof<EntityReadValues<C>>>(entity: Entity, components: readonly K[]): Readonly<Pick<EntityReadValues<C>, K>> | null;
     read(entity: Entity): EntityReadValues<C> | null;
     get<K extends StringKeyof<C>>(entity: Entity, component: K): C[K] | undefined;
     /**

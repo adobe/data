@@ -5,6 +5,7 @@ import { getRowPredicateFromFilter } from "../../table/select-rows.js";
 import { StringKeyof } from "../../types/types.js";
 import { RequiredComponents } from "../required-components.js";
 import { Entity } from "../entity/entity.js";
+import { ArchetypeId, ReadonlyArchetype } from "../archetype/index.js";
 import { OptionalComponents, ReadonlyStore } from "../index.js";
 import { EntitySelectOptions } from "../store/entity-select-options.js";
 import { TransactionResult } from "./transactional-store/transactional-store.js";
@@ -18,11 +19,37 @@ export const observeSelectEntities = <C extends object>(store: ReadonlyStore<C, 
     ): Observe<readonly Entity[]> => {
         return (observer: (entities: readonly Entity[]) => void) => {
             const includeSet = new Set<string>(include);
+            const excludeSet = new Set<string>(options?.exclude ?? []);
             const whereSet = new Set(Object.keys(options?.where ?? {}) as StringKeyof<C>[]);
             const orderSet = new Set(Object.keys(options?.order ?? {}) as StringKeyof<C>[]);
             let isMicrotaskQueued = false;
             let currentEntities: Set<Entity> | null = null;
             const rowPredicate = getRowPredicateFromFilter(options?.where);
+            // Callers only reach this after `qualifies` has confirmed the archetype's
+            // components are a superset of `include`, and `where` keys are a subset of
+            // `include`, so the archetype carries every column the predicate reads.
+            // `store.locate` only types the base `id` column, so assert the fuller table
+            // shape the predicate expects (narrower than `as any`).
+            const matchesFilter = (archetype: ReadonlyArchetype<RequiredComponents>, row: number) =>
+                rowPredicate(archetype as Parameters<typeof rowPredicate>[0], row);
+
+            // Whether an archetype qualifies for this query — its components are a
+            // superset of `include` and disjoint from `exclude` — is a pure function of
+            // the archetype's component set, which never changes once created, and
+            // archetype ids are stable and densely assigned. Memoize the verdict by id
+            // so the per-entity membership test is an O(1) map lookup rather than an
+            // O(|include|) superset scan: each archetype is classified at most once per
+            // subscription, and archetypes created later are classified on first sight.
+            const archetypeQualifies = new Map<ArchetypeId, boolean>();
+            const qualifies = (archetype: ReadonlyArchetype<RequiredComponents>): boolean => {
+                let verdict = archetypeQualifies.get(archetype.id);
+                if (verdict === undefined) {
+                    verdict = archetype.components.isSupersetOf(includeSet)
+                        && (excludeSet.size === 0 || archetype.components.isDisjointFrom(excludeSet));
+                    archetypeQualifies.set(archetype.id, verdict);
+                }
+                return verdict;
+            };
 
             const notifyObsever = () => {
                 // we just do a full select here.
@@ -34,52 +61,68 @@ export const observeSelectEntities = <C extends object>(store: ReadonlyStore<C, 
             }
 
             const unobserveTransactions = observeTransactions(t => {
-                if (t.changedComponents.isDisjointFrom(includeSet)) {
-                    // no components in the changed set are in the include set
-                    // so we don't need to notify the observer. there is no possible change.
+                if (t.changedComponents.isDisjointFrom(includeSet) && t.changedComponents.isDisjointFrom(excludeSet)) {
+                    // No changed component is selected or excluded. An entity can only
+                    // enter or leave the result set by gaining/losing an `include`
+                    // component or gaining/losing an `exclude` component, and `order`/
+                    // `where` keys are a subset of `include`, so neither the membership,
+                    // the ordering, nor the filter outcome can have changed. (When there
+                    // is no exclude clause `excludeSet` is empty and this extra test is a
+                    // free O(1) `isDisjointFrom(∅)`.)
                     return;
                 }
 
                 if (currentEntities) {
                     let needsUpdate = false;
                     for (const entity of t.changedEntities.keys()) {
-                        if (currentEntities.has(entity)) {
-                            const changedEntityValues = t.changedEntities.get(entity);
-                            if (!changedEntityValues) {
-                                // entity delete => update
+                        const inSet = currentEntities.has(entity);
+                        const changedEntityValues = t.changedEntities.get(entity);
+                        if (!changedEntityValues) {
+                            // hard delete: only matters if the entity was in the set.
+                            if (inSet) {
                                 needsUpdate = true;
                                 break;
                             }
-                            const changedComponentSet = new Set(Object.keys(changedEntityValues) as StringKeyof<C>[]);
-                            if (!changedComponentSet.isDisjointFrom(orderSet)) {
-                                // entity order components changed => update
-                                needsUpdate = true;
-                                break;
-                            }
-                            if (!changedComponentSet.isDisjointFrom(whereSet)) {
-                                // some where components were changed, 
-                                // we will see if the entity is still in the result set
-                                const { archetype, row } = store.locate(entity)!;
-                                if (!rowPredicate(archetype as any, row)) {
-                                    // entity is no longer in the result set
-                                    needsUpdate = true;
-                                    break;
-                                }
-                            }
+                            continue;
                         }
-                        else {
-                            // this entity is not in the set, we need to check it would be added to the result set.
-                            const location = store.locate(entity);
-                            if (location) {
-                                const { archetype, row } = location;
-                                if (archetype.components.isSupersetOf(includeSet)) {
-                                    if (rowPredicate(archetype as any, row)) {
-                                        // this entity would be in the result set.
-                                        needsUpdate = true;
-                                        break;
-                                    }
-                                }
+                        const changedComponentSet = new Set(Object.keys(changedEntityValues) as StringKeyof<C>[]);
+                        if (inSet && !changedComponentSet.isDisjointFrom(orderSet)) {
+                            // An order-key changed for a member. Whether the row stays a
+                            // member (its sort value moved) or left the set, the result must
+                            // be requeried — so short-circuit before the otherwise-needless
+                            // locate. (`order` keys are a subset of `include`, so for a
+                            // non-member this same change is instead an entry candidate,
+                            // handled by the membership test below.)
+                            needsUpdate = true;
+                            break;
+                        }
+                        if (includeSet.isDisjointFrom(changedComponentSet) && excludeSet.isDisjointFrom(changedComponentSet)) {
+                            // No selected or excluded component changed for this entity, so
+                            // its membership is unchanged and — for an in-set row — its
+                            // filter value is unchanged too (`where` keys are a subset of
+                            // `include`).
+                            continue;
+                        }
+                        // A selected or excluded component changed for this entity; re-derive
+                        // its membership from the authoritative store: one O(1) locate plus a
+                        // memoized O(1) qualification lookup, no scan of the result set.
+                        const location = store.locate(entity);
+                        if (inSet) {
+                            if (location === null || !qualifies(location.archetype)) {
+                                // entity left the result set (deleted or migrated out —
+                                // e.g. a required component was removed).
+                                needsUpdate = true;
+                                break;
                             }
+                            if (!changedComponentSet.isDisjointFrom(whereSet) && !matchesFilter(location.archetype, location.row)) {
+                                // a filter value changed and the row no longer matches.
+                                needsUpdate = true;
+                                break;
+                            }
+                        } else if (location !== null && qualifies(location.archetype) && matchesFilter(location.archetype, location.row)) {
+                            // entity entered the result set.
+                            needsUpdate = true;
+                            break;
                         }
                     }
                     if (!needsUpdate) {

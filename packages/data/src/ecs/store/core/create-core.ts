@@ -221,13 +221,33 @@ export function createCore<NC extends ComponentSchemas>(
         return (entity < 0 ? nonPersistentLocationTable : persistentLocationTable).locate(entity);
     }
 
-    const readEntity = (entity: Entity, minArchetype?: ReadonlyArchetype<C> | Archetype<C>): any => {
+    const readEntity = (
+        entity: Entity,
+        archetypeOrComponents?: ReadonlyArchetype<any> | Archetype<any> | readonly string[]
+    ): any => {
         const location = locateInternal(entity);
         if (location === null) {
             return null;
         }
         const archetype = archetypes[location.archetype];
-        if (minArchetype && location.archetype !== minArchetype.id && !archetype.components.isSupersetOf(minArchetype.components)) {
+        // Component-list form: a pure projection — never gates on membership.
+        // Reads ONLY the requested components' columns (never the whole row); an
+        // absent component is simply omitted (the field is optional in the type).
+        if (Array.isArray(archetypeOrComponents)) {
+            const projected: Record<string, unknown> = {};
+            for (const component of archetypeOrComponents as readonly string[]) {
+                const column = archetype.columns[component];
+                if (column !== undefined) {
+                    projected[component] = column.get(location.row);
+                }
+            }
+            return projected;
+        }
+        // Archetype form: a membership gate — null unless the entity is a
+        // superset of the archetype. The array case returned above, so a
+        // defined `archetypeOrComponents` here is an archetype.
+        const archetypeArg = archetypeOrComponents as ReadonlyArchetype<any> | undefined;
+        if (archetypeArg && location.archetype !== archetypeArg.id && !archetype.components.isSupersetOf(archetypeArg.components)) {
             return null;
         }
         return getRowData(archetype, location.row);

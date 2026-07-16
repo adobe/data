@@ -29,9 +29,30 @@ export type PartitionKeysOf<CS extends ComponentSchemas> = {
  * and breaking assignability in every generic store context. Short-circuiting
  * on `PK` keeps non-partition stores paying nothing and resolving eagerly.
  */
+// True when T is `any`. Uses the distribution behaviour of `any` (an `any`
+// checked type makes a conditional resolve to both branches → `boolean`), which
+// — unlike the `0 extends (1 & T)` idiom — still fires when T is a type
+// parameter constrained to `string` (as `PK` is here) instantiated with `any`.
+type IsAny<T> = boolean extends (T extends never ? true : false) ? true : false;
+
 export type HasPartitionKey<Keys extends string, PK extends string> =
     [PK] extends [never] ? false
+    // PK is `any` (e.g. a universal `Database<…, any>` constraint like
+    // `Database.Read`): the archetype could be either concrete or a Router, so
+    // yield `boolean` — {@link ArchetypeOrRouter} then distributes to the union
+    // `Archetype.Router | Concrete`, a supertype every real store satisfies.
+    : IsAny<PK> extends true ? boolean
     : [Extract<Keys, PK>] extends [never] ? false : true;
+
+/**
+ * The `store.archetypes.<Name>` handle for one declared archetype: a
+ * {@link Archetype.Router} when it includes a partition component, else the
+ * `Concrete` archetype type (`Archetype` or `ReadonlyArchetype`, supplied by the
+ * caller). `Has` is a *naked* type parameter so a `boolean` (from `PK = any`)
+ * distributes to `Archetype.Router<C> | Concrete`.
+ */
+export type ArchetypeOrRouter<Has extends boolean, C extends RequiredComponents, Concrete> =
+    Has extends true ? Archetype.Router<C> : Concrete;
 
 /**
  * Return type of `ensureArchetype(keys, values?)`:

@@ -175,6 +175,86 @@ describe("partition components", () => {
         });
     });
 
+    describe("multiple partition components together", () => {
+        // Two partition components → archetypes are the *cross product* of the
+        // distinct (cell, layer) value pairs actually used.
+        const makeGridCore = () => createCore({
+            cell: { type: "integer", partition: true },
+            layer: { type: "integer", partition: true },
+            value: { type: "number" },
+        });
+        const keys = ["id", "cell", "layer", "value"] as const;
+
+        it("creates one archetype per distinct (cell, layer) pair, each with both const columns", () => {
+            const core = makeGridCore();
+            const router = core.ensureArchetype(keys);
+            const cells = [0, 1];
+            const layers = [0, 1, 2];
+            for (const cell of cells) for (const layer of layers) {
+                router.insert({ cell, layer, value: cell * 10 + layer });
+            }
+
+            const archetypes = core.queryArchetypes(["cell", "layer", "value"]);
+            expect(archetypes.length).toBe(cells.length * layers.length); // 2 × 3 = 6
+
+            const combos = new Set<string>();
+            for (const arch of archetypes) {
+                expect(arch.rowCount).toBe(1);
+                // BOTH partition columns are zero-per-row const buffers.
+                expect(arch.columns.cell.type).toBe(constBufferType);
+                expect(arch.columns.layer.type).toBe(constBufferType);
+                combos.add(`${arch.columns.cell.get(0)},${arch.columns.layer.get(0)}`);
+            }
+            expect(combos.size).toBe(6);
+        });
+
+        it("routes on the full (cell, layer) tuple — same pair shares an archetype, either differing splits", () => {
+            const core = makeGridCore();
+            const router = core.ensureArchetype(keys);
+            const a = router.insert({ cell: 1, layer: 2, value: 0 });
+            const b = router.insert({ cell: 1, layer: 2, value: 1 }); // same pair
+            const c = router.insert({ cell: 1, layer: 3, value: 2 }); // layer differs
+            const d = router.insert({ cell: 9, layer: 2, value: 3 }); // cell differs
+
+            expect(core.locate(a)!.archetype).toBe(core.locate(b)!.archetype);
+            expect(core.locate(a)!.archetype).not.toBe(core.locate(c)!.archetype);
+            expect(core.locate(a)!.archetype).not.toBe(core.locate(d)!.archetype);
+
+            const arch12 = core.ensureArchetype(keys, { cell: 1, layer: 2 });
+            expect(core.locate(a)!.archetype).toBe(arch12);
+            expect(arch12.rowCount).toBe(2);
+            expect(core.read(a)).toMatchObject({ cell: 1, layer: 2, value: 0 });
+        });
+
+        it("queryArchetypes `where` filters on one or both partition components", () => {
+            const core = makeGridCore();
+            const router = core.ensureArchetype(keys);
+            for (const cell of [0, 1]) for (const layer of [0, 1, 2]) {
+                router.insert({ cell, layer, value: 0 });
+            }
+            // One component → all pairs sharing it (cell=1 across 3 layers).
+            expect(core.queryArchetypes(["cell", "layer", "value"], { where: { cell: 1 } }).length).toBe(3);
+            // Both components → exactly the one pair.
+            const one = core.queryArchetypes(["cell", "layer", "value"], { where: { cell: 1, layer: 2 } });
+            expect(one.length).toBe(1);
+            expect(one[0].columns.cell.get(0)).toBe(1);
+            expect(one[0].columns.layer.get(0)).toBe(2);
+        });
+
+        it("migrating one partition value keeps the other and lands in the correct combined archetype", () => {
+            const core = makeGridCore();
+            const router = core.ensureArchetype(keys);
+            const e = router.insert({ cell: 1, layer: 2, value: 5 });
+            core.update(e, { cell: 3 }); // change cell only
+
+            expect(core.get(e, "cell")).toBe(3);
+            expect(core.get(e, "layer")).toBe(2); // preserved
+            expect(core.locate(e)!.archetype).toBe(core.ensureArchetype(keys, { cell: 3, layer: 2 }));
+            // The old (1, 2) archetype is now empty.
+            expect(core.ensureArchetype(keys, { cell: 1, layer: 2 }).rowCount).toBe(0);
+        });
+    });
+
     describe("feature is inert without partition components", () => {
         it("a store with no partition component behaves exactly as before", () => {
             const core = createCore({ position: positionSchema });

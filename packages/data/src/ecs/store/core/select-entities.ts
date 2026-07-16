@@ -17,7 +17,10 @@ export const selectEntities = <
     include: readonly Include[] | ReadonlySet<string>,
     options?: EntitySelectOptions<C & RequiredComponents, Pick<C & RequiredComponents & OptionalComponents, Include>>
 ): readonly Entity[] => {
-    const archetypes = core.queryArchetypes(include, options as any);
+    // Pass only archetype-level options (exclude) to queryArchetypes. `options.where`
+    // here is a row-level Filter and is applied per-row below via selectRows — it
+    // must NOT be forwarded as queryArchetypes' partition-equality `where`.
+    const archetypes = core.queryArchetypes(include, options?.exclude ? { exclude: options.exclude } : undefined);
     let length = 0;
     for (const archetype of archetypes) {
         length += archetype.rowCount;
@@ -46,31 +49,100 @@ export const selectEntities = <
         return entities;
     }
 
-    // now we know there is an order, there might be a where
-    // ordering means we are going to want to extract the order values into an array that also contains id
-    const entityValues = new Array<RequiredComponents & { [K in Include]: any }>();
-    for (const archetype of archetypes) {
-        const idTypedArray = archetype.columns.id.getTypedArray();
-        for (const row of selectRows<Pick<C & RequiredComponents & OptionalComponents, Include>>(archetype as any, options.where)) {
-            const entityValue = { id: idTypedArray[row] } as any;
-            for (const order in options.order!) {
-                entityValue[order] = archetype.columns[order]!.get(row);
-            }
-            entityValues.push(entityValue);
-        }
+    // ── Ordered results ─────────────────────────────────────────────────────
+    // When the *leading run* of order keys are partition components, each
+    // archetype holds a constant value for them, so the archetypes already
+    // bucket the rows on that leading key. We can then sort the buckets by
+    // value, sort only the *remaining* keys within each bucket, and concatenate
+    // in bucket order — turning an O(N log N) sort into O(N log(N/K)), and O(N)
+    // when a partition key is the sole order key. When no leading order key is a
+    // partition component (leadCount === 0) this falls back to one full sort,
+    // matching the previous behaviour exactly.
+    const order = options.order!;
+    const schemas = core.componentSchemas;
+    // Keys of `order` are, by OrderClause<Pick<…, Include>>, exactly the picked
+    // component keys — safe to view as Include[].
+    const orderKeys = Object.keys(order) as Include[];
+    type Arch = (typeof archetypes)[number];
+    // Order/partition keys are sortable columns, so their values are comparable
+    // primitives — the contract `compare` accepts. Read them at that type.
+    type Comparable = Parameters<typeof compare>[0];
+
+    let leadCount = 0;
+    while (leadCount < orderKeys.length && schemas[orderKeys[leadCount]]?.partition === true) {
+        leadCount++;
     }
-    // now that we have the entity values with the order values, we can sort the entity values
-    entityValues.sort((a, b) => {
-        for (const order in options.order!) {
+
+    const compareByKeys = (
+        keys: readonly Include[],
+        a: { readonly [k: string]: Comparable },
+        b: { readonly [k: string]: Comparable },
+    ): number => {
+        for (const key of keys) {
             // `compare` (code-point for strings, numeric for numbers) — not
             // `a - b`, which is NaN for string order keys, and never locale.
-            const cmp = compare(a[order], b[order]);
-            if (cmp !== 0) {
-                const ascending = options.order[order];
-                return ascending ? cmp : -cmp;
+            const cmp = compare(a[key], b[key]);
+            if (cmp !== 0) return order[key] ? cmp : -cmp;
+        }
+        return 0;
+    };
+
+    // Gather ids for `archs`, sorted by `sortKeys` (empty → left in archetype +
+    // row order). `where` is applied per row. A stable sort over the same gather
+    // order keeps tie-ordering identical to the single full sort.
+    const collect = (archs: readonly Arch[], sortKeys: readonly Include[]): Entity[] => {
+        if (sortKeys.length === 0) {
+            const ids: Entity[] = [];
+            for (const archetype of archs) {
+                const idTypedArray = archetype.columns.id.getTypedArray();
+                for (const row of selectRows<Pick<C & RequiredComponents & OptionalComponents, Include>>(archetype as any, options.where)) {
+                    ids.push(idTypedArray[row]);
+                }
             }
+            return ids;
+        }
+        const rows: { id: Entity; [k: string]: Comparable }[] = [];
+        for (const archetype of archs) {
+            const idTypedArray = archetype.columns.id.getTypedArray();
+            for (const row of selectRows<Pick<C & RequiredComponents & OptionalComponents, Include>>(archetype as any, options.where)) {
+                const value: { id: Entity; [k: string]: Comparable } = { id: idTypedArray[row] };
+                for (const key of sortKeys) value[key] = archetype.columns[key]!.get(row) as Comparable;
+                rows.push(value);
+            }
+        }
+        rows.sort((a, b) => compareByKeys(sortKeys, a, b));
+        return rows.map((r) => r.id);
+    };
+
+    if (leadCount === 0) {
+        return collect(archetypes, orderKeys);
+    }
+
+    // Bucket archetypes by their leading partition-value tuple, preserving
+    // archetype iteration order within a bucket (so tie-ordering matches the
+    // full sort). A bucket can span multiple archetypes (shape fan-out).
+    const leadKeys = orderKeys.slice(0, leadCount);
+    const restKeys = orderKeys.slice(leadCount);
+    const buckets = new Map<string, { values: Comparable[]; archs: Arch[] }>();
+    for (const archetype of archetypes) {
+        const values = leadKeys.map((key) => archetype.columns[key]!.get(0) as Comparable);
+        // JSON is an unambiguous key for a primitive tuple: it distinguishes
+        // 1 from "1" and never collides across tuple boundaries.
+        const bucketKey = JSON.stringify(values);
+        let bucket = buckets.get(bucketKey);
+        if (!bucket) { bucket = { values, archs: [] }; buckets.set(bucketKey, bucket); }
+        bucket.archs.push(archetype);
+    }
+    const orderedBuckets = [...buckets.values()].sort((a, b) => {
+        for (let i = 0; i < leadKeys.length; i++) {
+            const cmp = compare(a.values[i], b.values[i]);
+            if (cmp !== 0) return order[leadKeys[i]] ? cmp : -cmp;
         }
         return 0;
     });
-    return entityValues.map(entityValue => entityValue.id);
+    const result: Entity[] = [];
+    for (const bucket of orderedBuckets) {
+        for (const id of collect(bucket.archs, restKeys)) result.push(id);
+    }
+    return result;
 }

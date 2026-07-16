@@ -2,7 +2,7 @@
 import { Database } from "@adobe/data/ecs";
 import * as resources from "../data/resources/index.js";
 
-// Negotiation state surface: resources only. All resources are `ephemeral`
+// Negotiation state surface: resources only. All resources are `nonPersistent`
 // so the negotiation database is never replicated (it is always local-only).
 const coreDatabasePlugin = Database.Plugin.create({
   resources,

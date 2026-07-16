@@ -9,6 +9,7 @@ export * from "./from-element-id.js";
 export * from "./from-element-properties-and-events.js";
 export * from "./from-element-property.js";
 export * from "./from-array.js";
+export * from "./from-keys.js";
 export * from "./from-properties.js";
 export * from "./from-promise-with-error.js";
 export * from "./from-promise.js";

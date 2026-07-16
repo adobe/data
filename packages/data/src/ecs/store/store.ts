@@ -7,6 +7,7 @@ import { IntersectTuple, Simplify, StringKeyof } from "../../types/types.js";
 import { Components } from "./components.js";
 import { ArchetypeComponents } from "./archetype-components.js";
 import { Archetype, ReadonlyArchetype } from "../archetype/archetype.js";
+import { HasPartitionKey, PartitionKeysOf, ArchetypeOrRouter } from "./partition.js";
 import { EntitySelectOptions } from "./entity-select-options.js";
 import { Undoable } from "../database/undoable.js";
 import { Assert } from "../../types/assert.js";
@@ -41,9 +42,14 @@ export interface ReadonlyStore<
     R extends ResourceComponents = never,
     A extends ArchetypeComponents<StringKeyof<C>> = never,
     IX extends IndexDeclarations<C> = {},
-> extends BaseStore<C>, ReadonlyCore<C> {
+    PK extends string = never,
+> extends BaseStore<C>, ReadonlyCore<C, PK> {
     readonly resources: { readonly [K in StringKeyof<R>]: R[K] };
-    readonly archetypes: { readonly [K in StringKeyof<A>]: ReadonlyArchetype<RequiredComponents & { [P in A[K][number]]: (C & RequiredComponents & OptionalComponents)[P] }> }
+    readonly archetypes: { readonly [K in StringKeyof<A>]: ArchetypeOrRouter<
+        HasPartitionKey<A[K][number], PK>,
+        RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] },
+        ReadonlyArchetype<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }>
+    > }
     readonly indexes: { readonly [K in keyof IX]: Index.Handle<C, IX[K]> };
 }
 
@@ -57,14 +63,19 @@ export interface Store<
     R extends ResourceComponents = {},
     A extends ArchetypeComponents<StringKeyof<C>> = {},
     IX extends IndexDeclarations<C> = {},
-> extends BaseStore<C>, Core<C> {
+    PK extends string = never,
+> extends BaseStore<C>, Core<C, PK> {
     /**
      * This is used when a store is used to represent a transaction.
      * For most stores, this is ignored if it is set.
      */
     undoable?: Undoable;
     readonly resources: { -readonly [K in StringKeyof<R>]: R[K] };
-    readonly archetypes: { -readonly [K in StringKeyof<A>]: Archetype<RequiredComponents & { [P in A[K][number]]: (C & RequiredComponents & OptionalComponents)[P] }> }
+    readonly archetypes: { -readonly [K in StringKeyof<A>]: ArchetypeOrRouter<
+        HasPartitionKey<A[K][number], PK>,
+        RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] },
+        Archetype<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }>
+    > }
     /**
      * Index handles keyed by user-chosen name. Returned handles are the
      * same references at the Store layer and the Database layer; mutations
@@ -75,7 +86,7 @@ export interface Store<
     /** Wipe all entities and reset resources to plugin defaults. O(num_archetypes + num_resources). */
     reset(): void;
     fromData(data: unknown): void
-    extend<S extends Store.Schema>(schema: S): S extends Store.Schema<infer XC, infer XR, infer XA, infer XIX> ? Store<C & XC, R & XR, A & XA, IX & XIX> : never;
+    extend<S extends Store.Schema>(schema: S): S extends Store.Schema<infer XC, infer XR, infer XA, infer XIX> ? Store<C & FromSchemas<XC>, R & FromSchemas<XR>, A & XA, IX & XIX, PK | PartitionKeysOf<XC>> : never;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -100,7 +111,7 @@ export namespace Store {
         readonly indexes?: IX;
     };
 
-    export type FromSchema<T> = T extends Store.Schema<infer CS, infer RS, infer A, infer IX> ? Store<FromSchemas<CS>, FromSchemas<RS>, A, IX> : never;
+    export type FromSchema<T> = T extends Store.Schema<infer CS, infer RS, infer A, infer IX> ? Store<FromSchemas<CS>, FromSchemas<RS>, A, IX, PartitionKeysOf<CS>> : never;
 
     export namespace Schema {
 

@@ -21,6 +21,7 @@ import type { ConcurrencyStrategy } from "./concurrency/concurrency-strategy.js"
 import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
+import { PartitionKeysOf } from "../store/partition.js";
 import { FromSchemas } from "../../schema/index.js";
 import type {
   TransactionDeclarations,
@@ -110,7 +111,8 @@ export interface Database<
   SV = {},
   CV = unknown,
   IX extends IndexDeclarations<C> = {},
-> extends ReadonlyStore<C, R, A, IX>, Service {
+  PK extends string = never,
+> extends ReadonlyStore<C, R, A, IX, PK>, Service {
   readonly transactions: F & Service;
   readonly actions: AF & Service;
   readonly services: SV;
@@ -159,6 +161,42 @@ export interface Database<
       options?: EntitySelectOptions<C, Pick<C & RequiredComponents, T>>
     ): Observe<readonly Entity[]>;
   }
+  /**
+   * Reactive derivation. `compute` runs against a read-only projection of this
+   * database ({@link Database.Read} — value / index / resource reads only; no
+   * observers, writes, or table access). The derive records exactly the reads
+   * it performs and re-emits when any could have changed: the initial value on
+   * subscribe, then at most once per committed transaction (synchronously at
+   * the commit boundary), structurally deduplicated so an unchanged result
+   * never re-notifies.
+   *
+   * The callback receives `Database.Read<this>`, so an *intersection* database
+   * resolves to the merged read surface — consumers never need to cast.
+   */
+  derive<T>(compute: (db: Database.Read<this>) => T): Observe<T>;
+  /**
+   * `derive` with a fixed record of external `inputs` — arbitrary `Observe<T>`
+   * values that do NOT live in the ECS (e.g. observables exposed by services).
+   * Their CURRENT values are injected as the second callback argument, keyed the
+   * same as `inputs` and unwrapped (`Observe<U> → U`); the first argument stays
+   * the read projection, so a body can fold external values and ECS reads into
+   * one synchronous expression.
+   *
+   * The inputs are subscribed once, at the root (not read dynamically inside the
+   * body), so the set is fixed for the life of the derive. The derive recomputes
+   * when any input emits OR an ECS read it recorded could have changed; like
+   * {@link Observe.fromProperties}, the first value is withheld until every input
+   * has produced one. Anything dynamic — an input set that depends on data, or
+   * an input whose arguments come from an ECS read — composes with
+   * {@link Observe.withSwitch} / {@link Observe.fromKeys} around the derive.
+   */
+  derive<I extends Record<string, Observe<unknown>>, T>(
+    inputs: I,
+    compute: (
+      db: Database.Read<this>,
+      inputs: { readonly [K in keyof I]: I[K] extends Observe<infer U> ? U : never },
+    ) => T,
+  ): Observe<T>;
   /**
    * Wipes all entities and resets all resources to their plugin defaults,
    * preserving database identity (observers, transaction wrappers, sync
@@ -247,8 +285,58 @@ export namespace Database {
     ToActionFunctions<RemoveIndex<P['actions']>>,
     FromServiceFactories<RemoveIndex<P['services']>>,
     FromComputedFactories<RemoveIndex<P['computed']>>,
-    RemoveIndex<P['indexes']>
+    RemoveIndex<P['indexes']>,
+    PartitionKeysOf<RemoveIndex<P['components']>>
   >;
+
+  /**
+   * The read-only projection of a Database that a `db.derive` callback
+   * receives. It exposes only the auto-trackable read surface —
+   *   - value reads: `get`, `read`, `select`
+   *   - resource reads: `resources`
+   *   - index lookups: `indexes.<name>.find` / `findRange` / `get`
+   *   - archetype identity: `archetypes.<name>.components` / `id`
+   * — and structurally OMITS everything a derived computation must not touch:
+   *   - `observe` (a derive subscribes to what it reads for you)
+   *   - transactions / actions / any write
+   *   - direct table access: `queryArchetypes`, `locate`, and per-archetype
+   *     `columns` / `rowCount` / `insert` / row reads
+   *   - `services` / `computed` / lifecycle (`extend`, `reset`, `toData`, …)
+   *
+   * Because the surface is narrowed structurally, misuse is a compile error
+   * rather than a value that must be guarded / thrown on at runtime.
+   */
+  // Defined structurally (mapping over `DB`'s own members) rather than via
+  // `DB extends Database<infer C, …>`. The `infer` form collapses an
+  // *intersection* database `A & B` to whichever single member the conditional
+  // matches, losing the other's surface. Mapping over the members directly lets
+  // `Read<A & B>` distribute over the intersection and merge both read surfaces —
+  // so a `db.derive` on an intersection receiver (see the top-level `derive`
+  // signature, which passes `Database.Read<this>`) sees the combined
+  // indexes + resources + archetypes, and consumers never need to cast.
+  export type Read<DB extends Database<any, any, any, any, any, any, any, any, any, any>> =
+    Pick<DB, "get" | "read" | "resources"> & {
+      // Presence `select` only — `include` (+ `exclude`), no `where` / `order`.
+      // Membership queries are reactively precise (they change only on archetype
+      // migration); the value-dependent `where` / `order` options can be tracked
+      // only coarsely (any write to a filtered/sorted column re-runs the whole
+      // derive), so they are deliberately absent — a value-keyed or ordered
+      // reactive read must go through a declared index (`indexes.<name>.find` /
+      // `findRange`), which is precise and O(bucket). Typed loosely over entity
+      // names because the structural `Read` (needed for the intersection merge
+      // above) does not recover `DB`'s component map; the result is entities, so
+      // no value typing is lost.
+      select(
+        include: readonly string[] | ReadonlySet<string>,
+        options?: { readonly exclude?: readonly string[] },
+      ): readonly Entity[];
+      readonly indexes: {
+        readonly [K in keyof DB["indexes"]]: Omit<DB["indexes"][K], "observe">;
+      };
+      readonly archetypes: {
+        readonly [K in keyof DB["archetypes"]]: Pick<DB["archetypes"][K], ("components" | "id") & keyof DB["archetypes"][K]>;
+      };
+    };
 
   export const create = createDatabase;
 
@@ -277,6 +365,14 @@ export namespace Database {
   export namespace Index {
     export type Handle<C extends Components, I extends StoreIndex<C, any, any, any>> =
       StoreIndex.Handle<C, I>;
+    /**
+     * The index handle as exposed to a `db.derive` callback: the
+     * synchronous lookups (`find` / `findRange` / `get`) only. `observe` is
+     * removed — a derive subscribes to the reads it performs automatically, so
+     * calling `observe` from inside one is a category error.
+     */
+    export type ReadHandle<C extends Components, I extends StoreIndex<C, any, any, any>> =
+      Omit<Handle<C, I>, "observe">;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -332,7 +428,7 @@ export namespace Database {
      * another plugin's transaction declaration; `ToStore<P>` is the bare
      * store type and does not include `userId`.
      */
-    export type ToTransactionContext<P extends Database.Plugin> = TransactionContext<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>>;
+    export type ToTransactionContext<P extends Database.Plugin> = TransactionContext<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>, RemoveIndex<P['indexes']>, PartitionKeysOf<RemoveIndex<P['components']>>>;
     export type ToSystemDatabase<P extends Database.Plugin> = Database.FromPlugin<P> & {
       // Systems are allowed to access the database store directly.
       // This direct access will NOT trigger observable transactions.

@@ -10,6 +10,7 @@ import { Archetype, ArchetypeId, ReadonlyArchetype } from "../../archetype/index
 import { Store } from "../../store/index.js";
 import { TransactionResult } from "../transactional-store/index.js";
 import { observeSelectEntities } from "../observe-select-entities.js";
+import { createDerive } from "../observe-derive.js";
 import { createTransactionalStore } from "../transactional-store/create-transactional-store.js";
 import { RequiredComponents } from "../../required-components.js";
 import { Entity } from "../../entity/entity.js";
@@ -115,7 +116,7 @@ export function createObservedDatabase<
     const observeComponent = mapEntries(store.componentSchemas, ([component]) => addToMapSet(component, componentObservers));
 
     const resourceArchetypeComponents = (resource: string): StringKeyof<C>[] => {
-        const isNonPersistent = (store.componentSchemas as any)[resource]?.nonPersistent ?? (store.componentSchemas as any)[resource]?.ephemeral;
+        const isNonPersistent = (store.componentSchemas as any)[resource]?.nonPersistent;
         return isNonPersistent
             ? ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>, "nonPersistent" as StringKeyof<C>]
             : ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>];
@@ -175,6 +176,7 @@ export function createObservedDatabase<
         ...rest,
         resources,
         observe,
+        derive: createDerive(store, observeTransaction),
         execute,
         reset: () => {
             store.reset();

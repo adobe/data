@@ -11,6 +11,7 @@ import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { FromSchemas } from "../../../schema/from-schemas.js";
 import { Undoable } from "../undoable.js";
 import { IndexDeclarations } from "../../store/index-types.js";
+import { PartitionKeysOf } from "../../store/partition.js";
 
 /**
  * The first argument passed to every transaction function. Extends the full
@@ -26,7 +27,8 @@ export type TransactionContext<
     R extends ResourceComponents,
     A extends ArchetypeComponents<StringKeyof<C>>,
     IX extends IndexDeclarations<C> = {},
-> = Store<C, R, A, IX> & {
+    PK extends string = never,
+> = Store<C, R, A, IX, PK> & {
     readonly userId: number | string | undefined;
 };
 
@@ -35,7 +37,8 @@ export interface TransactionalStore<
     R extends ResourceComponents = never,
     A extends ArchetypeComponents<StringKeyof<C>> = never,
     IX extends IndexDeclarations<C> = {},
-> extends ReadonlyStore<C, R, A, IX> {
+    PK extends string = never,
+> extends ReadonlyStore<C, R, A, IX, PK> {
     /**
      * Execute a transaction on the store.
      * The transactionFunction must NOT directly mutate archetype rows as those changes would not be captured.
@@ -44,7 +47,7 @@ export interface TransactionalStore<
      * @returns A promise that resolves when the transaction is complete.
      */
     execute(
-        transactionFunction: (t: TransactionContext<C, R, A>) => Entity | void,
+        transactionFunction: (t: TransactionContext<C, R, A, IX, PK>) => Entity | void,
         options?: {
             intermediate?: boolean;
             userId?: number | string;
@@ -56,10 +59,12 @@ export interface TransactionalStore<
     ): TransactionalStore<
         C & (S extends Store.Schema<infer XC, any, any> ? FromSchemas<XC> : never),
         R & (S extends Store.Schema<any, infer XR, any> ? FromSchemas<XR> : never),
-        A & (S extends Store.Schema<any, any, infer XA> ? XA : never)
+        A & (S extends Store.Schema<any, any, infer XA> ? XA : never),
+        IX,
+        PK | (S extends Store.Schema<infer XC, any, any> ? PartitionKeysOf<XC> : never)
     >;
 
-    transactionStore: Store<C, R, A>;
+    transactionStore: Store<C, R, A, IX, PK>;
 }
 
 export type TransactionInsertOperation<C> = {

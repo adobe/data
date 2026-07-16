@@ -446,14 +446,14 @@ export function createCoreTestSuite(
             }
         });
 
-        it("should create ephemeral entities with negative ids", () => {
+        it("should create nonPersistent entities with negative ids", () => {
             const core = factory({
                 position: positionSchema,
                 health: healthSchema,
             });
 
-            const ephemeralPositionTable = core.ensureArchetype(["id", "position", "ephemeral"]);
-            const writeId = ephemeralPositionTable.insert({ position: { x: 1, y: 2, z: 3 }, ephemeral: true });
+            const ephemeralPositionTable = core.ensureArchetype(["id", "position", "nonPersistent"]);
+            const writeId = ephemeralPositionTable.insert({ position: { x: 1, y: 2, z: 3 }, nonPersistent: true });
             expect(writeId).toBe(-1);
 
             const readId = ephemeralPositionTable.columns.id.get(0);
@@ -466,23 +466,23 @@ export function createCoreTestSuite(
             expect(readComponent).toEqual({ x: 1, y: 2, z: 3 });
         });
 
-        it("should throw when trying to update ephemeral component", () => {
+        it("should throw when trying to update nonPersistent component", () => {
             const core = factory({
                 position: positionSchema,
                 health: healthSchema,
             });
 
-            const ephemeralPositionTable = core.ensureArchetype(["id", "position", "ephemeral"]);
-            const writeId = ephemeralPositionTable.insert({ position: { x: 1, y: 2, z: 3 }, ephemeral: true });
+            const ephemeralPositionTable = core.ensureArchetype(["id", "position", "nonPersistent"]);
+            const writeId = ephemeralPositionTable.insert({ position: { x: 1, y: 2, z: 3 }, nonPersistent: true });
 
             expect(() => {
-                core.update(writeId, { ephemeral: false as true });
+                core.update(writeId, { nonPersistent: false as true });
             }).toThrow();
             expect(() => {
-                core.update(writeId, { ephemeral: true });
+                core.update(writeId, { nonPersistent: true });
             }).toThrow();
             expect(() => {
-                core.update(writeId, { ephemeral: undefined });
+                core.update(writeId, { nonPersistent: undefined });
             }).toThrow();
         });
 
@@ -757,44 +757,44 @@ export function createCoreTestSuite(
             });
         });
 
-        it("should delete ephemeral entities correctly", () => {
+        it("should delete nonPersistent entities correctly", () => {
             const core = factory({
                 position: positionSchema,
             });
 
-            const ephemeralArchetype = core.ensureArchetype(["id", "position", "ephemeral"]);
+            const ephemeralArchetype = core.ensureArchetype(["id", "position", "nonPersistent"]);
             const ephemeralEntity = ephemeralArchetype.insert({ 
                 position: { x: 1, y: 2, z: 3 }, 
-                ephemeral: true 
+                nonPersistent: true 
             });
 
-            // Verify ephemeral entity exists and has negative id
+            // Verify nonPersistent entity exists and has negative id
             expect(ephemeralEntity).toBeLessThan(0);
             expect(core.locate(ephemeralEntity)).not.toBeNull();
             expect(core.read(ephemeralEntity)).not.toBeNull();
 
-            // Delete ephemeral entity
+            // Delete nonPersistent entity
             core.delete(ephemeralEntity);
 
-            // Verify ephemeral entity is deleted
+            // Verify nonPersistent entity is deleted
             expect(core.locate(ephemeralEntity)).toBeNull();
             expect(core.read(ephemeralEntity)).toBeNull();
         });
 
-        it("should update ephemeral entities across archetypes correctly", () => {
+        it("should update nonPersistent entities across archetypes correctly", () => {
             const core = factory({
                 position: positionSchema,
                 health: healthSchema,
             });
 
-            // Create an ephemeral entity with just position
-            const ephemeralArchetype1 = core.ensureArchetype(["id", "position", "ephemeral"]);
+            // Create an nonPersistent entity with just position
+            const ephemeralArchetype1 = core.ensureArchetype(["id", "position", "nonPersistent"]);
             const ephemeralEntity = ephemeralArchetype1.insert({ 
                 position: { x: 1, y: 2, z: 3 }, 
-                ephemeral: true 
+                nonPersistent: true 
             });
 
-            // Verify ephemeral entity exists and has negative id
+            // Verify nonPersistent entity exists and has negative id
             expect(ephemeralEntity).toBeLessThan(0);
             expect(core.locate(ephemeralEntity)).not.toBeNull();
 
@@ -809,7 +809,7 @@ export function createCoreTestSuite(
             const data = core.read(ephemeralEntity);
             expect(data?.position).toEqual({ x: 1, y: 2, z: 3 });
             expect(data?.health).toEqual({ current: 100, max: 100 });
-            expect(data?.ephemeral).toBe(true);
+            expect(data?.nonPersistent).toBe(true);
         });
 
     });

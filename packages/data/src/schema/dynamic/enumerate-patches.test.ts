@@ -18,7 +18,7 @@ export const PersonSchema = {
                 {
                     path: "$.properties.email",
                     value: {
-                        ephemeral: true,
+                        nonPersistent: true,
                     },
                     match: {
                         exclusiveMaximum: 18,
@@ -48,7 +48,7 @@ export const PersonSchemaWithOneOf = {
                         {
                             path: "$.properties.email",
                             value: {
-                                ephemeral: false,
+                                nonPersistent: false,
                             }
                         }
                     ]
@@ -98,7 +98,7 @@ export const PersonSchemaRootConditions = {
         {
             path: "$.properties.email",
             value: {
-                ephemeral: true,
+                nonPersistent: true,
             },
             match: {
                 properties: {
@@ -111,7 +111,7 @@ export const PersonSchemaRootConditions = {
         {
             path: "$.properties.email",
             value: {
-                ephemeral: false,
+                nonPersistent: false,
             },
             match: {
                 properties: {
@@ -143,7 +143,7 @@ describe('enumeratePatches', () => {
             age: 10,
         })];
         expect(patches).toEqual([
-            { path: ["$", "properties", "email"], fragment: { ephemeral: true } },
+            { path: ["$", "properties", "email"], fragment: { nonPersistent: true } },
         ]);
     });
     it('should match on oneOf cases for human', () => {
@@ -152,7 +152,7 @@ describe('enumeratePatches', () => {
             species: "human",
         })];
         expect(patches).toEqual([
-            { path: ["$", "properties", "email"], fragment: { ephemeral: false } },
+            { path: ["$", "properties", "email"], fragment: { nonPersistent: false } },
         ]);
     });
     it('should match on oneOf cases for robot', () => {
@@ -170,7 +170,7 @@ describe('enumeratePatches', () => {
             species: "human",
         })];
         expect(patches).toEqual([
-            { path: ["$", "properties", "email"], fragment: { ephemeral: false } },
+            { path: ["$", "properties", "email"], fragment: { nonPersistent: false } },
         ]);
     });
     it('should match on simple root conditions', () => {
@@ -179,7 +179,7 @@ describe('enumeratePatches', () => {
             species: "human",
         })];
         expect(patches).toEqual([
-            { path: ["$", "properties", "email"], fragment: { ephemeral: true } },
+            { path: ["$", "properties", "email"], fragment: { nonPersistent: true } },
         ]);
     });
 });

@@ -10,9 +10,7 @@ import { Components } from "../../store/components.js";
 import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { patchEntityValues } from "./patch-entity-values.js";
 import { coalesceWriteOperations } from "./coalesce-actions.js";
-
-// Sentinel value used to indicate a component should be deleted
-const DELETE: unknown = "_$_DELETE_$_";
+import { applyOperations, DELETE } from "./apply-operations.js";
 
 interface Transaction<
     C extends Components = never,
@@ -88,10 +86,7 @@ export function createTransactionalStore<
 
         const replacedValues: any = {};
         for (const name in values) {
-            let newValue = (values as any)[name];
-            if (newValue === DELETE) {
-                newValue = undefined;
-            }
+            const newValue = (values as any)[name];
             let oldValue = (oldValues as any)[name];
             if (newValue !== oldValue) {
                 if (oldValue === undefined) {
@@ -108,6 +103,13 @@ export function createTransactionalStore<
             changed.archetypes.add(location.archetype.id);
         }
 
+        // The core store mutates `values` in place: when a value is `undefined` it
+        // deletes that key so it can reuse the object as the new (smaller) archetype's
+        // row data. Snapshot the redo values first — otherwise a column-removal update
+        // (`{ comp: undefined }`) records an empty redo op and redo becomes a no-op,
+        // so delete -> undo -> redo would leave the column in place.
+        const redoValues = { ...values };
+
         // Perform the actual update
         store.update(entity, values as any);
 
@@ -118,7 +120,7 @@ export function createTransactionalStore<
         }
 
         // Add operations with potential combining
-        addUpdateOperationsMaybeCombineLast(undoOperationsInReverseOrder, redoOperations, entity, values, replacedValues);
+        addUpdateOperationsMaybeCombineLast(undoOperationsInReverseOrder, redoOperations, entity, redoValues, replacedValues);
     };
 
     const deleteEntity = (entity: Entity) => {
@@ -147,7 +149,7 @@ export function createTransactionalStore<
     const resources = {} as { [K in keyof R]: R[K] };
     for (const name of Object.keys(store.resources)) {
         const resourceId = name as keyof C;
-        const isNonPersistent = (store.componentSchemas as any)[name]?.nonPersistent ?? (store.componentSchemas as any)[name]?.ephemeral;
+        const isNonPersistent = (store.componentSchemas as any)[name]?.nonPersistent;
         const componentNames = isNonPersistent
             ? ["id", resourceId, "nonPersistent"] as StringKeyof<C>[]
             : ["id", resourceId] as StringKeyof<C>[];
@@ -224,7 +226,7 @@ export function createTransactionalStore<
             return result;
         } catch (error) {
             // Rollback on error by applying undo operations in reverse
-            applyWriteOperations(store, undoOperationsInReverseOrder.reverse());
+            applyOperations(store, undoOperationsInReverseOrder.reverse());
             throw error;
         } finally {
             transactionStore.userId = undefined;
@@ -255,7 +257,7 @@ export function createTransactionalStore<
             for (const name of Object.keys(store.resources)) {
                 if (!Object.hasOwn(resources, name)) {
                     const resourceId = name as keyof C;
-                    const isNonPersistent = (store.componentSchemas as any)[name]?.nonPersistent ?? (store.componentSchemas as any)[name]?.ephemeral;
+                    const isNonPersistent = (store.componentSchemas as any)[name]?.nonPersistent;
                     const componentNames = isNonPersistent
                         ? ["id", resourceId, "nonPersistent"] as StringKeyof<C>[]
                         : ["id", resourceId] as StringKeyof<C>[];
@@ -311,26 +313,3 @@ function addUpdateOperationsMaybeCombineLast<C>(
         });
     }
 }
-
-// Helper function to apply write operations for rollback
-function applyWriteOperations<C extends Components, R extends ResourceComponents, A extends ArchetypeComponents<StringKeyof<C>>>(
-    store: Store<C, R, A>,
-    operations: TransactionWriteOperation<C>[]
-): void {
-    for (const operation of operations) {
-        switch (operation.type) {
-            case "insert": {
-                const componentNames = ["id", ...Object.keys(operation.values)] as StringKeyof<C>[];
-                const archetype = store.ensureArchetype(componentNames);
-                archetype.insert(operation.values as any);
-                break;
-            }
-            case "update":
-                store.update(operation.entity, operation.values);
-                break;
-            case "delete":
-                store.delete(operation.entity);
-                break;
-        }
-    }
-} 

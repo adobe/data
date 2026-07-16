@@ -105,6 +105,53 @@ function derivePositive() {
 }
 
 // ============================================================================
+// derive — INPUTS overload: a fixed record of external observables is injected
+// as CURRENT values (second callback arg), unwrapped `Observe<U> → U`; the first
+// callback arg stays the read projection. This is how a derive folds in values
+// that don't live in the ECS (e.g. service observables) alongside ECS reads.
+// ============================================================================
+
+declare const numberInput: Observe<number>;
+declare const stringInput: Observe<string>;
+
+function deriveInputsPositive() {
+    // inputs are injected as current values, strongly typed by unwrapping each Observe
+    const sum = db.derive(
+        { n: numberInput, s: stringInput },
+        (d, inputs) => {
+            type _Inputs = Assert<Equal<typeof inputs, { readonly n: number; readonly s: string }>>;
+            // the first arg is still the read projection
+            const r: number = d.resources.frameRate;
+            return `${inputs.s}:${inputs.n + r}`;
+        },
+    );
+    type _Sum = Assert<Equal<typeof sum, Observe<string>>>;
+
+    // a body that mixes an ECS read with an injected input value
+    const mixed = db.derive(
+        { n: numberInput },
+        (d, inputs) => (d.get(0 as Entity, "x") ?? 0) + inputs.n,
+    );
+    type _Mixed = Assert<Equal<typeof mixed, Observe<number>>>;
+}
+
+function deriveInputsNegative() {
+    db.derive({ n: numberInput }, (d, inputs) => {
+        void d;
+        // @ts-expect-error `n` unwraps to number, not string
+        const bad: string = inputs.n;
+        return bad;
+    });
+    db.derive({ n: numberInput }, (d, inputs) => {
+        void d;
+        // @ts-expect-error `m` is not an injected input
+        return inputs.m;
+    });
+    // @ts-expect-error an input value must be an Observe, not a bare value
+    db.derive({ n: 123 }, (d, inputs) => inputs.n);
+}
+
+// ============================================================================
 // derive — NEGATIVE: everything the read projection removes
 // ============================================================================
 

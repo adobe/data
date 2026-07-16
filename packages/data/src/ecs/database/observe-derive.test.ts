@@ -2,6 +2,7 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { Database } from "./database.js";
 import { Entity } from "../entity/entity.js";
+import { Observe } from "../../observe/index.js";
 
 const createTestDatabase = () =>
     Database.create(
@@ -37,6 +38,25 @@ const createTestDatabase = () =>
     );
 
 const flush = () => new Promise<void>((resolve) => queueMicrotask(() => resolve()));
+
+// A minimal external (non-ECS) observable, standing in for a value a service
+// might expose: emits the current value on subscribe, re-emits on `set`.
+const makeSource = <T>(initial: T) => {
+    let value = initial;
+    const observers = new Set<(v: T) => void>();
+    const observe: Observe<T> = (notify) => {
+        observers.add(notify);
+        notify(value);
+        return () => {
+            observers.delete(notify);
+        };
+    };
+    const set = (v: T) => {
+        value = v;
+        for (const o of observers) o(v);
+    };
+    return { observe, set };
+};
 
 describe("db.derive", () => {
     let db: ReturnType<typeof createTestDatabase>;
@@ -122,6 +142,74 @@ describe("db.derive", () => {
         db.transactions.setR({ r: 42 });
         await flush();
         expect(observer).toHaveBeenLastCalledWith(42);
+        unsubscribe();
+    });
+
+    // ── inputs overload: fold external (non-ECS) observables into a derive ──
+
+    it("injects external input values and recomputes when either an input or an ECS read changes", () => {
+        const scale = makeSource(2);
+        const observer = vi.fn();
+        // one body reads an ECS value (`a` on foo) AND the injected external input
+        const unsubscribe = db.derive(
+            { scale: scale.observe },
+            (d, inputs) => (d.get(foo, "a") ?? 0) * inputs.scale,
+        )(observer);
+        expect(observer).toHaveBeenLastCalledWith(2); // a=1 * scale=2
+        db.transactions.setA({ e: foo, a: 5 }); // ECS dep changed
+        expect(observer).toHaveBeenLastCalledWith(10); // 5 * 2 (latest input reused)
+        scale.set(3); // external input changed
+        expect(observer).toHaveBeenLastCalledWith(15); // 5 * 3 (latest ECS read reused)
+        unsubscribe();
+    });
+
+    it("combines two external inputs with an ECS index read", () => {
+        db.transactions.makeFoo({ a: 1, b: 0 }); // bucket a=1 now holds 2 entities
+        const weight = makeSource(10);
+        const label = makeSource("count");
+        const observer = vi.fn();
+        const unsubscribe = db.derive(
+            { weight: weight.observe, label: label.observe },
+            (d, inputs) => `${inputs.label}=${d.indexes.byA.find({ a: 1 }).length * inputs.weight}`,
+        )(observer);
+        expect(observer).toHaveBeenLastCalledWith("count=20"); // 2 entities * 10
+        weight.set(100);
+        expect(observer).toHaveBeenLastCalledWith("count=200");
+        label.set("total");
+        expect(observer).toHaveBeenLastCalledWith("total=200");
+        unsubscribe();
+    });
+
+    it("withholds the first value until every input has emitted", () => {
+        // an input that does not emit synchronously on subscribe
+        let emitInput: ((v: number) => void) | undefined;
+        const deferred: Observe<number> = (notify) => {
+            emitInput = notify;
+            return () => {
+                emitInput = undefined;
+            };
+        };
+        const observer = vi.fn();
+        const unsubscribe = db.derive({ d: deferred }, (_db, inputs) => inputs.d + 1)(observer);
+        expect(observer).not.toHaveBeenCalled(); // no input value yet → nothing computed
+        emitInput?.(10);
+        expect(observer).toHaveBeenCalledTimes(1);
+        expect(observer).toHaveBeenLastCalledWith(11);
+        unsubscribe();
+    });
+
+    it("structurally dedupes across input changes", () => {
+        const flag = makeSource(1);
+        const compute = vi.fn((_db: any, inputs: { flag: number }) => (inputs.flag > 0 ? "pos" : "neg"));
+        const observer = vi.fn();
+        const unsubscribe = db.derive({ flag: flag.observe }, compute)(observer);
+        expect(observer).toHaveBeenCalledTimes(1); // "pos"
+        flag.set(5); // still positive → recompute runs but result unchanged → no emit
+        expect(compute).toHaveBeenCalledTimes(2);
+        expect(observer).toHaveBeenCalledTimes(1);
+        flag.set(-1); // flips
+        expect(observer).toHaveBeenCalledTimes(2);
+        expect(observer).toHaveBeenLastCalledWith("neg");
         unsubscribe();
     });
 

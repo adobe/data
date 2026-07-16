@@ -249,46 +249,93 @@ export const createDerive = <C extends object>(
         archetypes: store.archetypes,
     };
 
-    return <T>(compute: (db: any) => T): Observe<T> => (notify) => {
-        let last: T;
-        let hasLast = false;
-        let deps: DepSet = emptyDeps();
+    // Two shapes. Without `inputs`, the callback receives only the read
+    // projection. With `inputs`, a fixed record of external observables (values
+    // that don't live in the ECS — e.g. service observables) is subscribed once
+    // at the root and their current values are injected as the callback's second
+    // argument; the derive recomputes when any input emits OR an ECS read it
+    // recorded could have changed, and — per `fromProperties` — withholds its
+    // first value until every input has produced one.
+    function derive<T>(compute: (db: any) => T): Observe<T>;
+    function derive<I extends Record<string, Observe<unknown>>, T>(
+        inputs: I,
+        compute: (db: any, inputs: { readonly [K in keyof I]: I[K] extends Observe<infer U> ? U : never }) => T,
+    ): Observe<T>;
+    // Implementation signature — hidden; callers only ever see the two typed
+    // overloads above. `inputs` is `any` here solely because an overloaded impl
+    // signature must remain callable for the typed overload (whose `inputs` param
+    // is checked contravariantly); the public surface stays fully typed.
+    function derive(
+        arg1: ((db: unknown, inputs?: any) => unknown) | Record<string, Observe<unknown>>,
+        arg2?: (db: unknown, inputs?: any) => unknown,
+    ): Observe<unknown> {
+        const inputObservables = typeof arg1 === "function" ? undefined : arg1;
+        const compute = typeof arg1 === "function" ? arg1 : arg2;
+        if (compute === undefined) {
+            throw new Error("db.derive requires a compute function");
+        }
 
-        const run = (): T => {
-            recording = emptyDeps();
-            try {
-                return compute(recorder);
-            } finally {
-                deps = recording;
-                recording = null;
-            }
-        };
+        return (notify) => {
+            let last: unknown;
+            let hasLast = false;
+            let deps: DepSet = emptyDeps();
+            // Latest injected input snapshot; `ready` gates the ECS commit path
+            // until the inputs exist (no inputs → ready immediately).
+            let latestInputs: Record<string, unknown> | undefined;
+            let ready = inputObservables === undefined;
 
-        const emit = (value: T) => {
-            if (!hasLast || !equals(last, value)) {
-                last = value;
-                hasLast = true;
-                notify(value);
-            }
-        };
+            const run = (): unknown => {
+                recording = emptyDeps();
+                try {
+                    return compute(recorder, latestInputs);
+                } finally {
+                    deps = recording;
+                    recording = null;
+                }
+            };
 
-        emit(run());
+            const emit = (value: unknown) => {
+                if (!hasLast || !equals(last, value)) {
+                    last = value;
+                    hasLast = true;
+                    notify(value);
+                }
+            };
 
-        // `observeTransactions` fires once per committed transaction, so a
-        // recompute happens at most once per commit. Emit synchronously at the
-        // commit boundary — the same cadence as `observe.entity` / the raw
-        // component observers a hand-written computed would use — rather than
-        // deferring to a microtask, which would coalesce several commits in one
-        // turn (e.g. a burst of ephemeral drag commits) into a single emission
-        // and starve consumers that route per commit.
-        const unobserve = observeTransactions((result) => {
-            if (affected(deps, result)) {
+            // ECS commit gate — recompute when a recorded read could have changed.
+            // `observeTransactions` fires once per committed transaction, so a
+            // recompute happens at most once per commit, synchronously at the
+            // commit boundary (the same cadence as `observe.entity` / the raw
+            // component observers a hand-written computed would use). Guarded by
+            // `ready` so it never runs before the first dep set is recorded.
+            const unobserveTransactions = observeTransactions((result) => {
+                if (ready && affected(deps, result)) {
+                    emit(run());
+                }
+            });
+
+            if (inputObservables === undefined) {
                 emit(run());
+                return () => {
+                    unobserveTransactions();
+                };
             }
-        });
 
-        return () => {
-            unobserve();
+            // Inputs are subscribed once here at the root — never read inside the
+            // recording run — so the set is fixed for the derive's lifetime. Each
+            // emission refreshes the injected snapshot and recomputes; the first
+            // (all inputs present) is also the derive's first value.
+            const unobserveInputs = Observe.fromProperties(inputObservables)((values) => {
+                latestInputs = values;
+                ready = true;
+                emit(run());
+            });
+
+            return () => {
+                unobserveInputs();
+                unobserveTransactions();
+            };
         };
-    };
+    }
+    return derive;
 };

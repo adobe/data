@@ -1,6 +1,6 @@
 {
   "name": "adobe-data-ai",
-  "version": "0.9.75",
+  "version": "0.9.83",
   "description": "Architecture skills for @adobe/data — data-oriented modelling, archetype iteration, hot-path performance, and related conventions.",
   "author": {
     "name": "Adobe"

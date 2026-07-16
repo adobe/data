@@ -1,6 +1,8 @@
 import { defineConfig } from "vite";
+import checker from "vite-plugin-checker";
 
 export default defineConfig({
+  plugins: [checker({ typescript: true })],
   optimizeDeps: {
     esbuildOptions: {
       tsconfigRaw: {
@@ -9,12 +11,6 @@ export default defineConfig({
     },
   },
   root: ".",
-  build: {
-    outDir: "dist",
-    target: "esnext",
-  },
-  server: {
-    port: 3000,
-    open: false,
-  },
+  build: { outDir: "dist" },
+  server: { port: 3004, open: false },
 });

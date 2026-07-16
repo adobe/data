@@ -1,30 +1,36 @@
 {
   "name": "data-lit-todo",
   "version": "0.9.75",
-  "description": "Todo sample app demonstrating @adobe/data with Lit",
+  "description": "Todo application - Lit web components with @adobe/data ECS",
   "type": "module",
   "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "test": "vitest --run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "publish-public": "true"
   },
   "dependencies": {
     "@adobe/data": "workspace:*",
     "@adobe/data-lit": "workspace:*",
-    "@spectrum-web-components/action-button": "^1.7.0",
-    "@spectrum-web-components/action-group": "^1.7.0",
-    "@spectrum-web-components/button": "^1.7.0",
-    "@spectrum-web-components/card": "^1.7.0",
-    "@spectrum-web-components/checkbox": "^1.7.0",
-    "@spectrum-web-components/icons-workflow": "^1.7.0",
-    "@spectrum-web-components/styles": "^1.7.0",
-    "@spectrum-web-components/theme": "^1.7.0",
+    "@spectrum-web-components/action-button": "1.12.2",
+    "@spectrum-web-components/button": "1.12.2",
+    "@spectrum-web-components/checkbox": "1.12.2",
+    "@spectrum-web-components/field-label": "1.12.2",
+    "@spectrum-web-components/icons-workflow": "1.12.2",
+    "@spectrum-web-components/switch": "1.12.2",
+    "@spectrum-web-components/textfield": "1.12.2",
+    "@spectrum-web-components/theme": "1.12.2",
     "lit": "^3.3.1"
   },
   "devDependencies": {
     "typescript": "^5.8.3",
-    "vite": "^6.4.0",
+    "vite": "^5.1.1",
+    "vite-plugin-checker": "^0.12.0",
     "vitest": "^1.6.0"
   }
 }

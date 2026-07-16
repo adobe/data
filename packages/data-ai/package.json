@@ -20,6 +20,7 @@
   ],
   "scripts": {
     "build": "cp ../../LICENSE .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest --run --passWithNoTests",
     "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
   },
@@ -32,7 +33,12 @@
     "codex",
     "skills"
   ],
+  "peerDependencies": {
+    "@adobe/data": "workspace:*"
+  },
   "devDependencies": {
+    "@adobe/data": "workspace:*",
+    "typescript": "^5.8.3",
     "vitest": "^1.6.0"
   },
   "license": "MIT"

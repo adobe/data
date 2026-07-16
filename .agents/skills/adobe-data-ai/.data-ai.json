@@ -1,0 +1,23 @@
+{
+  "package": "@adobe/data-ai",
+  "version": "0.9.75",
+  "skills": [
+    "archetype-to-type",
+    "archetypes",
+    "components",
+    "namespace",
+    "resources",
+    "services",
+    "structure",
+    "types",
+    "x-alpha",
+    "x-beta",
+    "x-double",
+    "x-execute",
+    "x-log",
+    "x-pow",
+    "x-subagent",
+    "x-trace",
+    "x-validate"
+  ]
+}

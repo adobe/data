@@ -451,3 +451,33 @@ function computedSeesImportedAndExtendedIndexes() {
         },
     });
 }
+
+// ============================================================================
+// `Database.Index<C>` as a `satisfies` target on a standalone declaration
+//
+// A common pattern is to declare an index literal in its own module and bind
+// it to a plugin's components via `satisfies Database.Index<C>` before it is
+// aggregated into `Database.Plugin.create({ indexes })`. `Database.Index<C>`
+// therefore must constrain `key` to real columns of `C` — the `K` generic is
+// defaulted to `IndexKey<C>` rather than erased to `any`.
+// ============================================================================
+
+function satisfiesIndexAcceptsRealKey() {
+    type C = { name: string; complete: boolean };
+    const byComplete = { key: "complete" } as const satisfies Database.Index<C>;
+    const byName = { key: "name", unique: true } as const satisfies Database.Index<C>;
+    const byBoth = { key: ["name", "complete"] } as const satisfies Database.Index<C>;
+    void byComplete;
+    void byName;
+    void byBoth;
+}
+
+function satisfiesIndexRejectsBogusKey() {
+    type C = { name: string; complete: boolean };
+    // @ts-expect-error - "bogus" is not a column of C, so the key is invalid.
+    const bad = { key: "bogus" } as const satisfies Database.Index<C>;
+    // @ts-expect-error - "bogus" is not a column of C in a tuple key either.
+    const badTuple = { key: ["name", "bogus"] } as const satisfies Database.Index<C>;
+    void bad;
+    void badTuple;
+}

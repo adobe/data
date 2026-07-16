@@ -12,5 +12,5 @@
  *   - May also contain Promise<Data> or AsyncGenerator<Data> functions.
  */
 export interface Service {
-  readonly serviceName: string;
+  readonly serviceName?: string;
 }

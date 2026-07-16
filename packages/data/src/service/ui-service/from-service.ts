@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Observe } from "../../observe/index.js";
+import type { AsyncArgsProvider } from "../../types/async-args-provider.js";
 import type { Service } from "../service.js";
 import type { IsValid } from "./is-valid.js";
 
@@ -8,17 +9,33 @@ import type { IsValid } from "./is-valid.js";
  * Restricts a single property to the UIService shape:
  * - `Observe<T>` properties pass through unchanged.
  * - Functions returning `Observe<T>` pass through unchanged.
+ * - Transaction-shaped overloads (an `AsyncArgsProvider` variant paired with a
+ *   plain-args variant) keep BOTH call signatures, with each return rewritten
+ *   to `void`. This is what lets a UI consumer drive a live, single-commit
+ *   gesture (drag / slider / stream) through the restricted `service` — e.g.
+ *   `use-drag-transaction`, which requires `(AsyncArgsProvider<T>) => void`.
  * - Any other function has its return type rewritten to `void`, turning it
  *   into a fire-and-forget action.
  * - Nested objects are recursively restricted.
  * - Other shapes (primitives such as `serviceName`) pass through unchanged.
  *
- * The function check must precede the object check because functions are
- * also `extends object` in TypeScript.
+ * The transaction-overload check must precede the generic function check:
+ * TypeScript's `infer` on a function type sees only the *last* overload
+ * signature, so a plain `(...args) => R` match would silently discard the
+ * `AsyncArgsProvider` overload. The generic function check must in turn
+ * precede the object check because functions are also `extends object`.
  */
 type RestrictProperty<P> =
   P extends Observe<any>
   ? P
+  : P extends {
+    (arg: AsyncArgsProvider<infer Input>): Promise<any>;
+    (arg: infer SyncInput): any;
+  }
+  ? {
+    (arg: AsyncArgsProvider<Input>): void;
+    (arg: SyncInput): void;
+  }
   : P extends (...args: infer Args) => infer R
   ? R extends Observe<any>
   ? P

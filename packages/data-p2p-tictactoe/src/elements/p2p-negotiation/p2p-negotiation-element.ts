@@ -9,7 +9,7 @@
 import { customElement, property } from "lit/decorators.js";
 import { Database } from "@adobe/data/ecs";
 import { DatabaseElement, useObservableValues, useEffect } from "@adobe/data-lit";
-import { negotiationPlugin } from "../../state/negotiation-plugin.js";
+import { NegotiationDatabase } from "../../negotiation/database/negotiation-database.js";
 import { copyText } from "../../copy-text.js";
 import { styles } from "./p2p-negotiation.css.js";
 import * as presentation from "./p2p-negotiation-presentation.js";
@@ -27,7 +27,7 @@ type GamePlugin = Database.Plugin<any, any, any, any, any, any, any, any>;
 type AssignUserId = (role: "host" | "joiner") => string;
 
 @customElement(tagName)
-export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlugin> {
+export class P2pNegotiationElement extends DatabaseElement<typeof NegotiationDatabase.plugin> {
     static styles = styles;
 
     // Game-specific config: which game to negotiate and how to assign peer ids.
@@ -46,7 +46,7 @@ export class P2pNegotiationElement extends DatabaseElement<typeof negotiationPlu
     renderPresence?: RenderPresence;
 
     get plugin() {
-        return negotiationPlugin;
+        return NegotiationDatabase.plugin;
     }
 
     render() {

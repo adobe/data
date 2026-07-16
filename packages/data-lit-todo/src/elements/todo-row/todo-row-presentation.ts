@@ -1,66 +1,71 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { html } from 'lit';
-
+import { html } from "lit";
+import type { AsyncArgsProvider, Entity } from "@adobe/data/ecs";
 import { useDragTransaction } from "@adobe/data-lit";
-import '@spectrum-web-components/action-button/sp-action-button.js';
-import '@spectrum-web-components/checkbox/sp-checkbox.js';
-import '@spectrum-web-components/icons-workflow/icons/sp-icon-delete.js';
-
-// Temporarily disable localization for the sample
-// import { Localized, Unlocalized } from '../../../../services/locale-service/locale-service.js';
-import { DragTodoFunction, Todo } from '../../services/state-service/todo-state-service.js';
-
-const TODO_ROW_HEIGHT = 56;
-
-// Simplified localization for sample - using static strings
-const localizedStrings = {
-  deleteTodo: 'Delete',
-  toggleComplete: 'Toggle complete',
-} as const;
+import "@spectrum-web-components/checkbox/sp-checkbox.js";
+import "@spectrum-web-components/action-button/sp-action-button.js";
+import "@spectrum-web-components/icons-workflow/icons/sp-icon-delete.js";
+import type { DragTodoInput } from "../../database/transactions/drag-todo.js";
+import { TODO_ROW_HEIGHT } from "./todo-row.constants.js";
 
 type RenderArgs = {
-  localized: typeof localizedStrings;
-  todo: Todo;
-  toggleComplete: () => void;
-  deleteTodo: () => void;
-  dragTodo: DragTodoFunction;
-  index: number;
+  readonly ready: boolean;
+  readonly name: string;
+  readonly complete: boolean;
+  readonly dragPosition: number | null;
+  readonly index: number;
+  readonly entity: Entity;
+  readonly dragTodo: (asyncArgs: AsyncArgsProvider<DragTodoInput>) => void;
+  readonly toggleComplete: () => void;
+  readonly deleteTodo: () => void;
 };
 
 export function render(args: RenderArgs) {
-  const { localized, todo, toggleComplete, deleteTodo, index, dragTodo } = args;
+  const { ready, name, complete, dragPosition, index, entity } = args;
 
-  useDragTransaction({
-    transaction: dragTodo,
-    update: (value) => {
-      if (value.type === 'move') {
-        return {
-          todo: todo.id,
-          dragPosition: value.delta[1],
-        };
-      } else if (value.type === 'end') {
-        const finalIndex = index + Math.round(value.position[1] / TODO_ROW_HEIGHT);
-        return {
-          todo: todo.id,
-          dragPosition: index,
-          finalIndex,
-        };
-      }
+  // Hooks must run on every render, so dragging is wired before the ready guard.
+  // A single coalesced transaction spans the whole gesture: `move` frames record
+  // the live pixel offset, and the `end` frame commits the reorder.
+  useDragTransaction<DragTodoInput>(
+    {
+      transaction: args.dragTodo,
+      update: (value) => {
+        if (value.type === "move") {
+          return { entity, dragPosition: value.delta[1] };
+        }
+        if (value.type === "end") {
+          return {
+            entity,
+            dragPosition: value.delta[1],
+            finalIndex: index + Math.round(value.delta[1] / TODO_ROW_HEIGHT),
+          };
+        }
+      },
     },
-  }, [dragTodo, todo.id, index]);
+    [args.dragTodo, entity, index],
+  );
 
-  const dragging = todo.dragPosition !== null;
-  const position = index * TODO_ROW_HEIGHT + (todo.dragPosition ?? 0);
+  if (!ready) return;
+
+  const dragging = dragPosition !== null;
+  const top = index * TODO_ROW_HEIGHT + (dragPosition ?? 0);
 
   return html`
     <div
-      class="todo-row ${dragging ? 'dragging' : ''}"
-      style="height: ${TODO_ROW_HEIGHT}px; position: absolute; top: ${position}px; left: 0; right: 0;">
-      <sp-checkbox @change=${toggleComplete} title=${localized.toggleComplete} ?checked=${todo.complete}> </sp-checkbox>
-
-      <span class="todo-name"> ${index}: ${todo.name} </span>
-
-      <sp-action-button @click=${deleteTodo} quiet title=${localized.deleteTodo}>
+      class="todo-row ${complete ? "complete" : ""} ${dragging ? "dragging" : ""}"
+      style="top: ${top}px;"
+    >
+      <sp-checkbox
+        ?checked=${complete}
+        @change=${args.toggleComplete}
+        aria-label="Toggle complete"
+      ></sp-checkbox>
+      <span class="todo-name">${name}</span>
+      <sp-action-button
+        quiet
+        @click=${args.deleteTodo}
+        aria-label="Delete todo"
+      >
         <sp-icon-delete slot="icon"></sp-icon-delete>
       </sp-action-button>
     </div>

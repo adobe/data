@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { css } from 'lit';
+import { css } from "lit";
+import { TODO_ROW_HEIGHT } from "./todo-row.constants.js";
 
 export const styles = css`
   :host {
@@ -7,43 +8,48 @@ export const styles = css`
   }
 
   .todo-row {
-    --todo-row-height: 56px;
     box-sizing: border-box;
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: ${TODO_ROW_HEIGHT}px;
     display: flex;
     align-items: center;
     gap: var(--spectrum-spacing-200);
-    padding: var(--spectrum-spacing-200) var(--spectrum-spacing-300);
+    padding: 0 var(--spectrum-spacing-300);
     border-bottom: 1px solid var(--spectrum-gray-200);
-    min-height: var(--todo-row-height);
-    height: var(--todo-row-height);
-    contain: layout paint style;            /* or at least paint/layout */
-    content-visibility: auto;               /* skip offscreen work: https://developer.mozilla.org/en-US/docs/Web/CSS/content-visibility */
-    contain-intrinsic-size: 500px var(--todo-row-height);     /* reserve space so auto can skip paint: https://developer.mozilla.org/en-US/docs/Web/CSS/contain-intrinsic-size */
-    transition: background-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-  }
-
-  .todo-row.dragging {
-    background-color: var(--spectrum-gray-100);
-    z-index: 100;
-    box-shadow: 0 0 10px var(--spectrum-gray-300);
+    background: var(--spectrum-background-layer-2-color, #fff);
+    touch-action: none;
+    transition: top 0.15s ease, background-color 0.15s ease, box-shadow 0.15s ease;
   }
 
   .todo-row:hover {
     background-color: var(--spectrum-gray-100);
   }
 
+  .todo-row.dragging {
+    z-index: 10;
+    background-color: var(--spectrum-gray-100);
+    box-shadow: var(--spectrum-drop-shadow-emphasized, 0 4px 12px rgba(0, 0, 0, 0.18));
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
   .todo-name {
     flex: 1;
     font-size: var(--spectrum-font-size-100);
-    line-height: var(--spectrum-line-height-100);
-    color: var(--spectrum-gray-800);
+    color: var(--spectrum-gray-900);
+    cursor: grab;
+    user-select: none;
+    word-break: break-word;
   }
 
-  sp-checkbox {
-    flex-shrink: 0;
+  .todo-row.complete .todo-name {
+    text-decoration: line-through;
+    color: var(--spectrum-gray-500);
   }
 
+  sp-checkbox,
   sp-action-button {
     flex-shrink: 0;
   }
-`; 
+`;

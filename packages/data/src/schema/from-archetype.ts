@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Schema } from "./schema.js";
-import { FromComponents } from "./from-components.js";
+import { fromObjectProperties } from "./from-object-properties.js";
 
 type PickComponents<
   C extends { readonly [K in string]: Schema },
@@ -17,14 +17,18 @@ function pickComponents<
   ) as PickComponents<C, A>;
 }
 
-export type FromArchetype<
+type FromArchetype<
   C extends { readonly [K in string]: Schema },
   A extends readonly (string & keyof C)[],
-> = FromComponents<PickComponents<C, A>, A>;
+> = {
+  readonly type: "object";
+  readonly properties: PickComponents<C, A>;
+  readonly required: A;
+};
 
-export function FromArchetype<
+export function fromArchetype<
   const C extends { readonly [K in string]: Schema },
   const A extends readonly (string & keyof C)[],
 >(components: C, archetype: A): FromArchetype<C, A> {
-  return FromComponents(pickComponents(components, archetype), archetype);
+  return fromObjectProperties(pickComponents(components, archetype), archetype);
 }

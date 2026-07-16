@@ -1,6 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { TodoMainService } from './services/main-service/todo-main-service.js';
+import { DatabaseElement } from "@adobe/data-lit";
+import { TodoDatabase } from "./database/todo-database.js";
 
-import { ApplicationElement } from "@adobe/data-lit";
-
-export class TodoElement extends ApplicationElement<TodoMainService> { }
+/**
+ * Base class for all todo elements. Typed on the combined `TodoDatabase`
+ * plugin surface so every child element can read computed values and
+ * dispatch transactions off the injected `.service`.
+ */
+export class TodoElement extends DatabaseElement<typeof TodoDatabase.plugin> {
+  get plugin() {
+    return TodoDatabase.plugin;
+  }
+}

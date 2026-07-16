@@ -32,4 +32,4 @@ export function getCached<A extends object, B>(
     }
 
     return value;
-} 
+}

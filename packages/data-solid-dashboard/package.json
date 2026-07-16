@@ -7,6 +7,7 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "publish-public": "true"
   },
   "dependencies": {

@@ -1,0 +1,7 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+import { cached } from "@adobe/data/cache";
+import type { IndexDatabase } from "../index-database.js";
+
+export const allTodos = cached((db: IndexDatabase) =>
+  db.observe.select(db.archetypes.Todo.components, { order: { order: true } }),
+);

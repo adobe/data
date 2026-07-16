@@ -12,7 +12,8 @@
     "build": "cp ../../LICENSE . && tsc -b",
     "dev": "tsc -b -w",
     "test": "vitest --run --passWithNoTests",
-    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
+    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public",
+    "typecheck": "tsc -b"
   },
   "sideEffects": false,
   "dependencies": {

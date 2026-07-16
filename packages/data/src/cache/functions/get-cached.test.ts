@@ -90,4 +90,4 @@ describe("getCached", () => {
         expect(result2).toBe(2);
         expect(factoryCallCount).toBe(1);
     });
-}); 
+});

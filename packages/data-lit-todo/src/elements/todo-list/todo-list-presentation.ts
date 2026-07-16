@@ -1,22 +1,29 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { html } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import type { Entity } from "@adobe/data/ecs";
-import { html } from 'lit';
-import { repeat } from 'lit/directives/repeat.js';
-import '@spectrum-web-components/action-button/sp-action-button.js';
-import '../todo-row/todo-row.js';
+import { TodoRow } from "../todo-row/todo-row.js";
+import { TODO_ROW_HEIGHT } from "../todo-row/todo-row.constants.js";
 
 type RenderArgs = {
-  todos: readonly Entity[];
+  readonly todos: readonly Entity[];
 };
 
 export function render(args: RenderArgs) {
+  if (args.todos.length === 0) {
+    return html`<div class="empty">No todos to show.</div>`;
+  }
+
   return html`
-    <div class="todo-list">
+    <div
+      class="todo-list"
+      style="height: ${args.todos.length * TODO_ROW_HEIGHT}px;"
+    >
       ${repeat(
-    args.todos,
-    todo => todo,
-    (todo, index) => html` <data-todo-row .entity=${todo} .index=${index}></data-todo-row> `
-  )}
+        args.todos,
+        (entity) => entity,
+        (entity, index) => TodoRow({ entity, index }),
+      )}
     </div>
   `;
 }

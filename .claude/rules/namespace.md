@@ -105,3 +105,24 @@ Dynamic access (`GPU[name]`) defeats this — avoid it.
 **When NOT to use a domain namespace**: if a utility is only useful as
 an internal implementation detail of a specific plugin (not callable by
 consumers), keep it private to that plugin's folder instead.
+
+## Single file pattern
+
+This pattern is ONLY allowed if there is only a single value export and every other export is just a type.
+As soon as there is more than one value type it MUST be promoted to the full namespace pattern.
+
+Example:
+
+    // core-plugin.ts
+
+    const coreDatabasePlugin = Database.Plugin.create({
+        components,
+        resources,
+        archetypes,
+    });
+
+    export type CoreDatabase = Database.FromPlugin<typeof coreDatabasePlugin>;
+
+    export namespace CoreDatabase {
+        export const plugin = coreDatabasePlugin;
+    }

@@ -1,9 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+//
+// Library entry point for data-lit-todo.
 
-export type { SampleMetadata, Sample } from "./sample-types.js";
-
-import type { Sample } from "./sample-types.js";
-import { todoSample } from "./todo-sample.js";
-import "./todo-host.js"; // Ensure todo-host is registered
-
-export const samples: readonly Sample[] = [todoSample];
+export { TodoDatabase } from "./database/todo-database.js";
+export { TodoElement } from "./todo-element.js";
+export { TodoApp } from "./elements/todo-app/todo-app.js";
+export { Todo } from "./types/todo/todo.js";

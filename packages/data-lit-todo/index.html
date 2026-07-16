@@ -1,21 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Adobe Data Library - Todo Sample</title>
-    <style>
-        body { margin: 0; font-family: adobe-clean, system-ui, sans-serif; background-color: var(--spectrum-global-color-gray-50); }
-        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>data-lit-todo – Todo</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: #f3f4f6;
+    }
+    #app { display: block; }
+  </style>
 </head>
 <body>
-    <sp-theme scale="medium" color="light" system="spectrum">
-        <div class="container">
-            <h1>Todo Sample</h1>
-            <div id="app"></div>
-        </div>
-    </sp-theme>
-    <script type="module" src="./src/main.ts"></script>
+  <h1>data-lit-todo</h1>
+  <p>A todo application built with Lit and @adobe/data ECS.</p>
+  <div id="app"></div>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

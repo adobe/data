@@ -14,7 +14,7 @@ import { ArchetypeComponents } from "../store/archetype-components.js";
 import { RequiredComponents } from "../required-components.js";
 import { EntitySelectOptions } from "../store/entity-select-options.js";
 import { Filter } from "../../table/select-rows.js";
-import { Index as StoreIndex } from "../store/index-types.js";
+import { Index as StoreIndex, IndexKey } from "../store/index-types.js";
 import type { Service } from "../../service/index.js";
 import { createDatabase } from "./public/create-database.js";
 import type { ConcurrencyStrategy } from "./concurrency/concurrency-strategy.js";
@@ -263,9 +263,16 @@ export namespace Database {
   // them there keeps the `Store` interface able to type `store.indexes`
   // (a lower-layer concern) without an import cycle into this module.
   // See `Index` and `Index.Handle` in `store/index-types.ts`.
+  //
+  // `K` is defaulted to `IndexKey<C>` (not erased to `any`) so that a bare
+  // `Database.Index<C>` still constrains `key` to real columns of `C`. This
+  // makes it usable as a `satisfies` target on a standalone index literal —
+  // `{ key: "bogus" } satisfies Database.Index<C>` is a compile error — while
+  // `O`/`U` stay wide since `order`/`unique` are optional and self-describing.
   export type Index<
     C extends Components = any,
-  > = StoreIndex<C, any, any, any>;
+    K extends IndexKey<C> = IndexKey<C>,
+  > = StoreIndex<C, K, any, any>;
 
   export namespace Index {
     export type Handle<C extends Components, I extends StoreIndex<C, any, any, any>> =

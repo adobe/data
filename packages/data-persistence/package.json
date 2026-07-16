@@ -21,7 +21,8 @@
         "test": "pnpm exec playwright install chromium && vitest --run",
         "test:node": "vitest --run --project=node",
         "test:browser": "vitest --run --project=browser",
-        "perf": "tsc -b && node --expose-gc dist/perftest/run.js"
+        "perf": "tsc -b && node --expose-gc dist/perftest/run.js",
+        "typecheck": "tsc -b"
     },
     "dependencies": {
         "@adobe/data": "workspace:*"

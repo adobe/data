@@ -11,7 +11,7 @@ import type { CoreDatabase } from "../core-database.js";
  * `userId`s are ignored.
  */
 export const movePresence = (
-  t: CoreDatabase.Transaction,
+  t: CoreDatabase.Store,
   args: { x: number; y: number },
 ) => {
   if (!PlayerMark.is(t.userId)) return;

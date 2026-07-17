@@ -33,7 +33,7 @@ export function createRebaseReplayApplier(
 } {
     const [execute, getTransaction] = args;
     // The applier is a type-erased layer: `getTransaction` hands back
-    // transactions typed over `TransactionContext<any, any, any>`, so the
+    // transactions typed over `Store<any, any, any>`, so the
     // entries it stores are erased too. Pinning the generics to `any` keeps the
     // stored `transaction` assignable from `getTransaction`'s result without a
     // per-assignment cast.

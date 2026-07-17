@@ -1,25 +1,14 @@
 ---
 name: types
-description: Use when authoring or editing code in a types/ folder — immutable data and synchronous pure functions.
-paths:
-  - '**/types/**'
+description: Build or edit a feature's types/ layer — immutable data and pure helpers.
 ---
 
-@see /namespace @see /structure @see /archetype-to-type
+Build the requested types under `types/`.
 
-The `types/` folder holds referentially transparent code: data descriptions and pure helpers.
+The `structure/types` rule holds the authoring guidance — namespace-folder
+layout, `type` over `interface`, purity, and testing. Follow it, along
+with `namespace.md`. Worked examples:
+@see ../structure/references/types/*
 
-constraints {
-  - use `type` declarations only — never `interface`
-  - immutable data; standard JSON shapes or @adobe/data/math primitives (Vec2, Vec3, Mat4x4, …)
-  - public functions are synchronous and pure
-  - each entry is a /namespace folder
-}
-
-Data falls into builtin (@adobe/data ECS/math — rarely authored), custom (schema-backed or hand-written), or archetype-derived.
-
-    export type Point = { readonly x: number; readonly y: number };
-
-    import { Schema } from "@adobe/data/schema";
-    import { schema } from "./schema.js";
-    export type Person = Schema.ToType<typeof schema>;
+One namespace folder per type. Deriving a type from an archetype is its
+own phase — see `archetype-to-type`.

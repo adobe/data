@@ -23,7 +23,7 @@ export type PartitionKeysOf<CS extends ComponentSchemas> = {
  * The `[PK] extends [never]` guard is load-bearing: when a store declares no
  * partition components (`PK = never` — the default everywhere), this collapses
  * to `false` *without* inspecting `Keys`. That matters because `Keys` is often a
- * generic indexed access (`A[K][number]` inside a `TransactionContext<C,R,A>`);
+ * generic indexed access (`A[K][number]` inside a `Store<C,R,A>`);
  * `Extract<GenericKeys, never>` would otherwise stay a *deferred* conditional,
  * leaving `store.archetypes.<K>` as the unresolved union `Archetype.Router | Archetype`
  * and breaking assignability in every generic store context. Short-circuiting

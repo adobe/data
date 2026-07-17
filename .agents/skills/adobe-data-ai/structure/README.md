@@ -21,5 +21,3 @@ flowchart TB
 | `elements/` | UI |
 
 `types/` and `services/` are peers at the same tier: both may import `data/`, and may import each other. `database/` may import either or both. `elements/` sits at the top and imports `database/`.
-
-Reference implementations live in `./references/` — including `workspace-persistence-service` (load/save/persist) and `character-name-service` (fake async generation) under `services/`.

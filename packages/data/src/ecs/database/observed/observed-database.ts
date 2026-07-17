@@ -7,7 +7,7 @@ import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { StringKeyof } from "../../../types/types.js";
 import { ReadonlyStore, Store } from "../../store/index.js";
 import { Observe } from "../../../observe/index.js";
-import { TransactionContext, TransactionResult } from "../transactional-store/index.js";
+import { TransactionResult } from "../transactional-store/index.js";
 import { RequiredComponents } from "../../required-components.js";
 import { Entity } from "../../entity/entity.js";
 import { EntityReadValues } from "../../store/core/index.js";
@@ -41,7 +41,7 @@ export interface ObservedDatabase<
         inputs: I,
         compute: (db: any, inputs: { readonly [K in keyof I]: I[K] extends Observe<infer U> ? U : never }) => T,
     ): Observe<T>;
-    readonly execute: (handler: (ctx: TransactionContext<C, R, A>) => Entity | void, options?: { transient?: boolean; userId?: number | string }) => TransactionResult<C>;
+    readonly execute: (handler: (ctx: Store<C, R, A>) => Entity | void, options?: { transient?: boolean; userId?: number | string }) => TransactionResult<C>;
     readonly reset: () => void;
     readonly toData: (copy?: boolean) => unknown;
     readonly fromData: (data: unknown) => void;

@@ -10,9 +10,10 @@ export type CoreDatabase = Database.Plugin.ToDatabase<typeof coreDatabasePlugin>
 
 export namespace CoreDatabase {
   export const plugin = coreDatabasePlugin;
+  /**
+   * The store this database's transactions operate on — resources, index
+   * handles, and the initiating `userId`. A store *is* the transaction
+   * context; there is no separate transaction type.
+   */
   export type Store = Database.Plugin.ToStore<typeof coreDatabasePlugin>;
-  /** Store as seen inside a transaction body — includes `userId`. */
-  export type Transaction = Database.Plugin.ToTransactionContext<
-    typeof coreDatabasePlugin
-  >;
 }

@@ -1,6 +1,6 @@
 {
   "package": "@adobe/data-ai",
-  "version": "0.9.75",
+  "version": "0.9.83",
   "skills": [
     "archetype-to-type",
     "archetypes",

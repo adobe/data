@@ -1,12 +1,14 @@
 ---
 name: archetypes
-description: Use when discussing or editing ECS archetypes
-paths:
-  - '**/archetypes/**'
+description: Build or edit the archetypes/ part of a feature's data layer.
 ---
 
+Build the requested archetypes under `data/archetypes/`.
+
+The `structure/data/archetypes` rule holds the authoring guidance — UpperCase
+naming, `satisfies Array<keyof typeof components>`, and extension by spreading.
+Follow it. Worked examples:
 @see ../structure/references/data/archetypes/*.ts
 
-Archetypes are ECS based declarations of named sets of predefined, type checked components.
-
-They are always UpperCase named. They can extend other Archetypes by importing and splatting them.
+One declaration per file, plus the `index.ts` barrel re-exporting each.
+Deriving types from archetypes is a separate phase — see `archetype-to-type`.

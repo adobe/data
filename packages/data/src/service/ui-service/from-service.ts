@@ -30,13 +30,25 @@ type RestrictProperty<P> =
   ? P
   : P extends {
     (arg: AsyncArgsProvider<infer Input>): Promise<any>;
-    (arg: infer SyncInput): any;
+    (arg: infer SyncInput): infer SyncR;
   }
-  ? {
+  // A genuine transaction overload always has a *synchronous* commit
+  // signature whose return is `void | Entity` — never a Promise. A plain
+  // async function (`(...args) => Promise<T>`) only matches this two-signature
+  // shape structurally, via parameter bivariance; its single signature is
+  // async, so `SyncR` comes back as a Promise. In that case fall through and
+  // treat it as an ordinary fire-and-forget function rather than fabricating a
+  // spurious `AsyncArgsProvider` overload (which would wrongly require an arg).
+  ? [SyncR] extends [Promise<any>]
+  ? RestrictPlainFunction<P>
+  : {
     (arg: AsyncArgsProvider<Input>): void;
     (arg: SyncInput): void;
   }
-  : P extends (...args: infer Args) => infer R
+  : RestrictPlainFunction<P>;
+
+type RestrictPlainFunction<P> =
+  P extends (...args: infer Args) => infer R
   ? R extends Observe<any>
   ? P
   : (...args: Args) => void

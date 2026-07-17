@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Entity } from "../../entity/entity.js";
-import type { TransactionContext, TransactionResult } from "../transactional-store/index.js";
+import type { Store } from "../../store/index.js";
+import type { TransactionResult } from "../transactional-store/index.js";
 import type { TransactionEnvelope } from "../reconciling/reconciling-database.js";
 
 /**
@@ -93,10 +94,10 @@ export interface ConcurrencyStrategy {
  */
 export type ConcurrencyStrategyFactory = (
     execute: (
-        fn: (ctx: TransactionContext<any, any, any>) => void | Entity,
+        fn: (ctx: Store<any, any, any>) => void | Entity,
         options?: { intermediate?: boolean; userId?: number | string },
     ) => TransactionResult<unknown>,
     getTransaction: (
         name: string,
-    ) => ((ctx: TransactionContext<any, any, any>, args: unknown) => void | Entity) | undefined,
+    ) => ((ctx: Store<any, any, any>, args: unknown) => void | Entity) | undefined,
 ) => ConcurrencyStrategy;

@@ -502,6 +502,10 @@ transactions: {
 },
 ```
 
+The transaction argument `t` is a `Store` — the same store type used everywhere else, carrying the entities, resources, index handles, and the initiating `userId` (set by the dispatcher, `undefined` in local-only databases). A store *is* the context a transaction operates on, so type transaction and helper parameters as `Store` (or a plugin's `Database.Plugin.ToStore<P>`).
+
+> **Obsolete:** the separate `TransactionContext` type (and `Database.Plugin.ToTransactionContext<P>`) has been removed. Use `Store` / `ToStore<P>` directly — `ToStore` now includes the index handles and `userId`.
+
 ### Async Transactions
 
 When a transaction is called with a function argument, it supports async workflows. An async generator yields intermediate (transient) values before returning the final committed value:

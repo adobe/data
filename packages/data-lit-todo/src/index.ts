@@ -2,7 +2,7 @@
 //
 // Library entry point for data-lit-todo.
 
-export { TodoDatabase } from "./database/todo-database.js";
-export { TodoElement } from "./todo-element.js";
-export { TodoApp } from "./elements/todo-app/todo-app.js";
-export { Todo } from "./types/todo/todo.js";
+export { ActionDatabase } from "./ecs/action-database.js";
+export { TodoElement } from "./ui/todo-element.js";
+export { TodoApp } from "./ui/todo-app/todo-app.js";
+export { Todo } from "./data/todo/todo.js";

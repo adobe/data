@@ -1,6 +1,6 @@
 {
     "name": "@adobe/data-sync",
-    "version": "0.9.83",
+    "version": "0.9.84",
     "description": "Multi-user real-time synchronisation for @adobe/data ECS — server, client, and in-process loopback.",
     "type": "module",
     "sideEffects": false,

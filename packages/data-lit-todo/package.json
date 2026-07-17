@@ -1,6 +1,6 @@
 {
   "name": "data-lit-todo",
-  "version": "0.9.83",
+  "version": "0.9.84",
   "description": "Todo application - Lit web components with @adobe/data ECS",
   "type": "module",
   "private": true,

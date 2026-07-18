@@ -37,6 +37,35 @@ creates only the layers it uses.
 | `ecs/` | The implementation: the ECS materialisation + reactive reads/writes over it. |
 | `ui/` | Presentation. |
 
+## One app, many features
+
+An application is a set of **features**, each its own `features/<name>/` folder
+with the same four layers. One base feature (`features/main/`) is the host; the
+rest are peers that load lazily.
+
+- **Dependencies point toward the base, never out of it.** A peer feature may
+  build on another feature's `data/` types and declarations (kept acyclic). The
+  base must not depend on its children — with one sanctioned exception below.
+- **The base `imports` every peer's *schema* plugin** — `Database.Plugin.create({
+  imports })`, not `extends`. `imports` merges the peer's components / resources /
+  archetypes into the shared store at runtime **without** pulling its types or
+  behavior into the base's type or bundle (`extends` would do both, and cost
+  quadratically). So one store knows every feature's schema — data coexists,
+  persists, and syncs — while the base stays decoupled. Split each feature so its
+  `core-database.ts` (schema only) is importable without dragging in its indexes /
+  transactions / services / UI. Shared columns (e.g. a `name` used by two
+  features) are re-exported by identity so `combinePlugins` dedupes them.
+- **Peers load lazily by being used.** `DatabaseElement`, on connect, walks up to
+  the nearest ancestor database and `extend`s it with its own plugin — so the
+  first time a feature element renders, its full plugin (indexes, transactions,
+  computed, services) is added to the shared live database and its code chunk is
+  fetched. Gate that first render behind a user action (a button, a tab) so the
+  load is genuinely on-demand.
+- **The base reaches a child only through a lazy element wrapper** — a tiny
+  `Foo()` that `void import()`s the child element. That dynamic import is the one
+  allowed core→child seam; the heavy element and its service database stay in the
+  child's own chunk.
+
 ## `data/` — the specification
 
 - **`State`** — the full persistent state as one immutable object (a Redux-style

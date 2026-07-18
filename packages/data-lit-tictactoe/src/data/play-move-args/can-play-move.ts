@@ -4,12 +4,15 @@ import { BoardState } from "../board-state/board-state.js";
 import { BoardCell } from "../board-cell/board-cell.js";
 import type { MoveRejectReason } from "../move-reject-reason/move-reject-reason.js";
 
-export type CanPlayMoveArgs = {
+// Declared, not exported (one public export per file — `canPlayMove`). A
+// consumer needing these infers them from the function:
+// `Parameters<typeof canPlayMove>[0]` / `ReturnType<typeof canPlayMove>`.
+type CanPlayMoveArgs = {
   readonly board: BoardState;
   readonly index: number;
 };
 
-export type CanPlayMoveResult =
+type CanPlayMoveResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly reason: MoveRejectReason };
 

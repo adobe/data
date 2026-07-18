@@ -4,6 +4,9 @@
   "description": "Adobe data Lit bindings - hooks, elements, decorators",
   "type": "module",
   "private": false,
+  "sideEffects": [
+    "**/application-host.js"
+  ],
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "access": "public"

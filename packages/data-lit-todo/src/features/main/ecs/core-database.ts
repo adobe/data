@@ -1,0 +1,41 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Database } from "@adobe/data/ecs";
+import type { Store } from "@adobe/data/ecs";
+import * as components from "./components/index.js";
+import * as resources from "./resources/index.js";
+import * as archetypes from "./archetypes/index.js";
+import { CoreDatabase as AssignSchema } from "../../assign/ecs/core-database.js";
+
+// `imports` (not `extends`) the assign feature's schema plugin: the store gains
+// the feature's `User` archetype at runtime so all schemas coexist and persist,
+// while main's *type* stays free of the feature — the one sanctioned core→child
+// link. The feature's behavior (indexes, transactions, UI) loads lazily.
+const coreDatabasePlugin = Database.Plugin.create({
+  imports: AssignSchema.plugin,
+  components,
+  resources,
+  archetypes,
+});
+
+export type CoreDatabase = Database.Plugin.ToDatabase<typeof coreDatabasePlugin>;
+
+// Resolved component map for this database. Declared at module scope so the
+// imported `Store` namespace isn't shadowed by `CoreDatabase.Store` below.
+type CoreComponents = Store.Components<
+  Database.Plugin.ToStore<typeof coreDatabasePlugin>
+>;
+
+export namespace CoreDatabase {
+  export const plugin = coreDatabasePlugin;
+  export type Store = Database.Plugin.ToStore<typeof coreDatabasePlugin>;
+  /**
+   * Index-declaration type bound to this database's components. Use it as a
+   * `satisfies` target on a standalone index literal to validate `key`
+   * against real columns without re-deriving the component map:
+   *
+   * ```ts
+   * export const byComplete = { key: "complete" } as const satisfies CoreDatabase.Index;
+   * ```
+   */
+  export type Index = Database.Index<CoreComponents>;
+}

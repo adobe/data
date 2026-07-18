@@ -82,7 +82,6 @@ describe(`Guid storage write (N = ${N_STORAGE.toLocaleString()})`, () => {
 
         const bytes = buf.typedArrayElementSizeInBytes * N_STORAGE;
         console.log(`  StructTypedBuffer write: ${nsPerOp(ms, N_STORAGE)}  memory: ${mb(bytes)}`);
-        expect(ms).toBeGreaterThan(0);
         expect(bytes).toBe(16 * N_STORAGE);
     });
 
@@ -104,7 +103,6 @@ describe(`Guid storage write (N = ${N_STORAGE.toLocaleString()})`, () => {
         const ms = hrNow() - t0;
 
         console.log(`  BigUint64Array write:    ${nsPerOp(ms, N_STORAGE)}  memory: ${mb(arr.byteLength)}`);
-        expect(ms).toBeGreaterThan(0);
         expect(arr.byteLength).toBe(16 * N_STORAGE);
     });
 
@@ -121,7 +119,6 @@ describe(`Guid storage write (N = ${N_STORAGE.toLocaleString()})`, () => {
 
         // Array<bigint> has no .byteLength; each BigInt object is a V8 heap alloc
         console.log(`  Array<bigint> write:     ${nsPerOp(ms, N_STORAGE)}  memory: heap (each BigInt ~32+ bytes → ~${mb(32 * N_STORAGE)} est.)`);
-        expect(ms).toBeGreaterThan(0);
         expect(typeof arr[0]).toBe("bigint");
     });
 

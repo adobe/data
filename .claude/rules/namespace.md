@@ -49,17 +49,41 @@ as both type and namespace (`LogLevel.is(x)`, `LogLevel.values`).
 - Add `is` / `values` / per-member descriptors only when an external
   consumer actually needs them — not preemptively.
 
-## Multi-declaration files (when lumping is OK)
+## Strict single public export per file
 
-Default stays one type / one helper per file. Two named exceptions:
+**One public export per file** — this is strict, not a preference. A file
+that *declares* exports exactly one public symbol (private declarations
+inside it are fine and are tested through the public export). The reason is
+cohesion: when several declarations share one file, each pulls its own
+external imports to the top and the file becomes a jumble that belongs to no
+single concept. One declaration → one file → imports that are about that one
+thing.
 
-- **`<type>-functions.ts`** — sibling functions operating on one owned
-  type. Lives in that type's folder. Use when functions are small enough
-  that adjacency in one editor pane beats one-file-per-function.
-- **`<format>-schema.ts`** — TypeScript projection of a borrowed data
-  format (file format, wire protocol, third-party API). Plain `export
-  interface` only — no namespace, no helpers. Lives next to the parser/
-  emitter, not in a type folder.
+More than one public export in a file is allowed **only when explicitly
+approved on a per-file or per-file-type basis** — the deliberate, named
+patterns below, nothing else. There is no "shared imports" or "cohesive set"
+escape hatch: a folder of sibling pure functions over one type (e.g. the
+`vec3`/`vec4`/`mat4x4` math) is one function per file, collected by the
+folder's `public.ts` barrel — dozens of one-line files is the intended shape,
+not a reason to lump.
+
+- **Barrels** — `index.ts` and a namespace's `public.ts` *only* re-export
+  (`export … from "./…"`); they never declare. Many re-exports is their job.
+- **The eponymous namespace file** (`<type>.ts`) — the type alias plus
+  `export * as <Type> from "./public.js"` (a type and its namespace value).
+- **The single-file pattern** (below) — one value export plus type-only
+  exports, for a trivial namespace not worth a folder.
+- **`<format>-schema.ts`** — a borrowed data-format projection (plain
+  `interface`s), next to its parser/emitter.
+- **Explicit authoring-cohesion files** — where two exports are genuinely one
+  unit to author, e.g. a presentation's `render` plus a co-located fixture
+  bundle (`unlocalized`). Rare; the pair must truly belong together.
+
+Everything else is one-per-file. In particular, **ECS facet folders
+(`components/`, `resources/`, `archetypes/`, `indexes/`, …) are not exempt**:
+one component / resource / archetype / index per file, collected by the
+folder's `index.ts` barrel. Collapsing several into one `index.ts` is exactly
+the anti-pattern this rule exists to prevent.
 
 Never `*-types.ts`. "Types" is a meta-word the `.ts` extension already
 implies; the name has to predict the contents. If you can't beat

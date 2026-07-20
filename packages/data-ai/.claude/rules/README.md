@@ -7,13 +7,13 @@ frontmatter glob, injects them only when a matching file is in context.
 
 ## Layout mirrors the feature-folder structure
 
-The `structure/` subtree mirrors the four feature layers one-to-one, so the
+The `features/` subtree mirrors the four feature layers one-to-one, so the
 guidance for a folder lives at the same path shape as the code it governs. A
 folder's own `index.md` holds just enough to understand that folder; each
 child gets its own file (recursing wherever the source tree does):
 
 ```
-structure/
+features/
   index.md            # the feature layering as a whole (ui → ecs → services → data)
   data/
     index.md          # data-type namespaces (foundation)
@@ -26,6 +26,9 @@ structure/
   ui/index.md         # UI (points to element / presentation / lazy-element file rules)
 ```
 
-Each rule's `paths:` glob scopes it to the matching source files, so editing
-`ecs/components/foo.ts` pulls in both `ecs/index.md` (the layer overview) and
-`ecs/components.md` (the specifics) — at creation and at every later edit.
+Each rule's `paths:` glob is scoped to `**/features/*/<layer>/…`, so these
+rules apply only once an application opts into the feature-folder pattern
+(source organized under `features/<name>/`). Editing
+`features/<name>/ecs/<layer>-database/components/foo.ts` pulls in both
+`ecs/index.md` (the layer overview) and `ecs/components.md` (the specifics) —
+at creation and at every later edit.

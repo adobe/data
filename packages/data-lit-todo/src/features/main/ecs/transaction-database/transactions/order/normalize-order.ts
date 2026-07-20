@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { CoreDatabase } from "../../core-database.js";
+import type { SessionDatabase } from "../../../session-database/session-database.js";
 import { selectOrderedTodos } from "./select-ordered-todos.js";
 
 /**
@@ -7,7 +7,7 @@ import { selectOrderedTodos } from "./select-ordered-todos.js";
  * based on its current sorted position. Call this after inserting a fractional
  * `order` value to collapse it back to clean integers.
  */
-export const normalizeOrder = (t: CoreDatabase.Store): void => {
+export const normalizeOrder = (t: SessionDatabase.Store): void => {
   const ordered = selectOrderedTodos(t);
   ordered.forEach((entity, index) => {
     if (t.read(entity)?.order !== index) {

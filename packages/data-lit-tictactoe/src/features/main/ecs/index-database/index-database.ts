@@ -1,10 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Database } from "@adobe/data/ecs";
-import { CoreDatabase } from "./core-database.js";
+import { SessionDatabase } from "../session-database/session-database.js";
 import * as indexes from "./indexes/index.js";
 
 const indexDatabasePlugin = Database.Plugin.create({
-  extends: CoreDatabase.plugin,
+  extends: SessionDatabase.plugin,
   indexes,
 });
 

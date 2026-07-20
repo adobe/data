@@ -137,16 +137,15 @@ As soon as there is more than one value type it MUST be promoted to the full nam
 
 Example:
 
-    // core-plugin.ts
+    // persistent-database.ts
 
-    const coreDatabasePlugin = Database.Plugin.create({
+    const persistentDatabasePlugin = Database.Plugin.create({
         components,
         resources,
-        archetypes,
     });
 
-    export type CoreDatabase = Database.FromPlugin<typeof coreDatabasePlugin>;
+    export type PersistentDatabase = Database.FromPlugin<typeof persistentDatabasePlugin>;
 
-    export namespace CoreDatabase {
-        export const plugin = coreDatabasePlugin;
+    export namespace PersistentDatabase {
+        export const plugin = persistentDatabasePlugin;
     }

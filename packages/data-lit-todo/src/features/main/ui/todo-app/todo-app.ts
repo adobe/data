@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { html, type TemplateResult } from "lit";
 import type { Database } from "@adobe/data/ecs";
-import type { ActionDatabase } from "../../ecs/action-database.js";
+import type { ActionDatabase } from "../../ecs/action-database/action-database.js";
 
 type TodoService = Database.Plugin.ToDatabase<typeof ActionDatabase.plugin>;
 

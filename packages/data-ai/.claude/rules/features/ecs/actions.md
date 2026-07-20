@@ -6,21 +6,16 @@ paths:
 # ecs/actions/ — async orchestration
 
 One action per file: a function taking the **whole database** as its first
-argument and pure `data/` args. Actions are the seam where the UI reaches
-anything *outside* a single transaction — awaiting a `services/` port,
-sequencing calls, deriving timing — and then committing the result.
+argument and pure `data/` args. Actions orchestrate anything *outside* a
+single transaction — awaiting a `services/` port, sequencing calls, deriving
+timing — and then commit the result through a transaction.
 
 ```ts
 import type { ServiceDatabase } from "../service-database.js";
 
 export const addRandomTodo = async (db: ServiceDatabase) => {
-    const start = performance.now();
-    db.services.todoAnalytics.record("addRandomTodo.start");
-    const name = await db.services.nameGenerator.generateName();
-    db.transactions.createTodo({ name });               // exactly one commit
-    db.services.todoAnalytics.record("addRandomTodo.end", {
-        durationMs: Math.round(performance.now() - start),
-    });
+    const name = await db.services.nameGenerator.generateName(); // await a services/ port
+    db.transactions.createTodo({ name });                        // then exactly one commit
 };
 ```
 
@@ -28,13 +23,10 @@ export const addRandomTodo = async (db: ServiceDatabase) => {
   action touches — usually `ServiceDatabase` (services **and**
   transactions). Never the action layer itself (that would be a cycle).
 - **Call at most one transaction** per action, so undo/redo stays one step
-  per user gesture.
-- **Fire-and-forget.** The UI never consumes an action's return value; state
-  flows back through observables. `db.services.*` calls are `void` /
+  per operation.
+- **Fire-and-forget.** An action's return value is not consumed; results flow
+  back through observables. `db.services.*` calls are `void` or
   awaited-internally, never surfaced to the caller.
-- Bracket a slow service call with analytics start/end (or similar) when you
-  need to measure it; the timing math lives here, not in the UI.
-- The UI calls `db.actions.*` for discrete user gestures rather than
-  `db.transactions.*` directly. A continuous manipulation (drag, slider) may
-  still bind the transaction directly — it is not a discrete event.
+- Do the outside-world work here: await/sequence `services/` calls, and if a
+  slow call needs timing, compute it here around the call.
 - An `index.ts` barrel feeds the `actions` plugin facet.

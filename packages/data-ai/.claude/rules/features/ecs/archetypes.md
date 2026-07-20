@@ -5,14 +5,32 @@ paths:
 
 # ecs/archetypes/ — a named set of components
 
+Archetypes live in **`session-database/archetypes/`**, not with the persistent
+schema: an archetype is a physical packing layout for efficient iteration, a
+convenience for the running app — not part of the serialized data model. The
+session database (which `extends` persistent) is therefore where they register.
+
 An archetype is an `UpperCase` `const`: an ordered list of component keys,
-`as const satisfies Array<keyof typeof components>`. Import the keys from
-the components barrel so they are checked against real components:
+`as const satisfies Array<keyof typeof components>`. Import the keys from the
+component barrels so they are checked against real components. A persistent-only
+archetype reads the persistent barrel; one that also packs a transient column
+(e.g. a live `dragPosition` slot) spans **both** sets, so merge them:
 
 ```ts
-import * as components from "../components/index.js";
+// persistent columns only
+import * as components from "../../persistent-database/components/index.js";
 
 export const Thing = ["alpha", "beta"]
+    as const satisfies Array<keyof typeof components>;
+```
+
+```ts
+// spans persistent + session columns
+import * as persistentComponents from "../../persistent-database/components/index.js";
+import * as sessionComponents from "../components/index.js";
+const components = { ...persistentComponents, ...sessionComponents };
+
+export const Todo = ["todo", "order", "dragPosition"]
     as const satisfies Array<keyof typeof components>;
 ```
 
@@ -49,4 +67,4 @@ type _Check = Assert<Equal<Schema.ToType<typeof _archetypeSchema>, Thing>>;
 first use — a `Database.Archetype.RowOf`-style helper may read cleaner.)
 
 An `index.ts` barrel re-exports every archetype; it feeds the `archetypes`
-facet on `core-database.ts`.
+facet on `session-database.ts`.

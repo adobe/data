@@ -2,7 +2,7 @@
 import { cached } from "@adobe/data/cache";
 import { compare } from "@adobe/data/functions";
 import { Observe } from "@adobe/data/observe";
-import type { IndexDatabase } from "../index-database.js";
+import type { IndexDatabase } from "../../index-database/index-database.js";
 
 // Each user with the names of the tasks assigned to them — the user→todos
 // direction, resolved through the `todosByAssignee` index. `db.derive` reads the

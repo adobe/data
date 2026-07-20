@@ -43,18 +43,25 @@ An application is a set of **features**, each its own `features/<name>/` folder
 with the same four layers. One base feature (`features/main/`) is the host; the
 rest are peers that load lazily.
 
+**Keep each feature small; grow by adding features, not by bloating one.** A
+feature is meant to fit in the head — a handful of files per layer. When a
+part of a feature keeps growing, that is usually the signal to split it into
+its own peer feature rather than let one feature's folders balloon.
+
 - **Dependencies point toward the base, never out of it.** A peer feature may
   build on another feature's `data/` types and declarations (kept acyclic). The
   base must not depend on its children — with one sanctioned exception below.
-- **The base `imports` every peer's *schema* plugin** — `Database.Plugin.create({
-  imports })`, not `extends`. `imports` merges the peer's components / resources /
-  archetypes into the shared store at runtime **without** pulling its types or
-  behavior into the base's type or bundle (`extends` would do both, and cost
-  quadratically). So one store knows every feature's schema — data coexists,
-  persists, and syncs — while the base stays decoupled. Split each feature so its
-  `core-database.ts` (schema only) is importable without dragging in its indexes /
-  transactions / services / UI. Shared columns (e.g. a `name` used by two
-  features) are re-exported by identity so `combinePlugins` dedupes them.
+- **The base `imports` every peer's *persistent schema* plugin** —
+  `Database.Plugin.create({ imports })`, not `extends`. `imports` merges the
+  peer's persistent components / resources into the shared store at runtime
+  **without** pulling its types or behavior into the base's type or bundle
+  (`extends` would do both, and cost quadratically). So one store knows every
+  feature's durable schema — data coexists, persists, and syncs — while the base
+  stays decoupled. Import the peer's `persistent-database.ts` (durable schema
+  only): its transient session state, archetypes, indexes, transactions,
+  services, and UI stay out until the feature loads. Shared columns (e.g. a
+  `name` used by two features) are re-exported by identity so `combinePlugins`
+  dedupes them.
 - **Peers load lazily by being used.** `DatabaseElement`, on connect, walks up to
   the nearest ancestor database and `extend`s it with its own plugin — so the
   first time a feature element renders, its full plugin (indexes, transactions,
@@ -66,37 +73,16 @@ rest are peers that load lazily.
   allowed core→child seam; the heavy element and its service database stay in the
   child's own chunk.
 
-## `data/` — the specification
+## Spec and implementation, kept honest
 
-- **`State`** — the full persistent state as one immutable object (a Redux-style
-  store). Shaped as collections of entity sub-types plus scalar fields, so the
-  ECS mapping below is mechanical.
-- **Transforms** — pure `(state, …args) => state`. Written on the narrowest
-  slice they need (a scalar, a sub-type, a collection) and liftable to
-  full-state-in / full-state-out; args may be narrowed or omitted.
-- **Derivations** — pure `(state) => value`.
-- **Entity sub-types** — logically distinct entities (`Todo`, …) as namespace
-  folders (see `namespace.md`).
-- Everything is pure and unit-tested — no I/O, no ECS, no framework.
-
-## `ecs/` — the verified implementation
-
-The ECS is a **materialised view** of `State`:
-
-- `State`'s collections → archetypes (one per entity sub-type); scalar fields →
-  resources. A transform's *diff on `State`* → the matching insert / delete /
-  component-update / resource-set.
-- **Computeds** wrap `data/` derivations over the current state.
-- **Transactions** apply `data/` transforms. The ideal is a thin wrapper —
-  project the touched slice, call the `data/` transform, write the diff. When
-  that projection is too costly, write the direct entity mutation instead and
-  **add a test asserting it matches the `data/` transform** on the same input.
-- A **projection** between the ECS and `State` (`ecs ↔ State`) underpins those
-  conformance tests; it is the small trusted core, so it earns its own tests.
-
-> In practice most non-trivial transactions are the *optimized-and-verified*
-> form rather than a literal pass-through — the `data/` transform serves as much
-> as a test oracle as a runtime call.
+`data/` and `ecs/` model the same feature twice: `data/` is the pure spec
+(one immutable `State`, pure transforms), `ecs/` its efficient mutable
+materialisation. The tie between them is **conformance** — a small `ecs ↔
+State` projection lets each ecs computed/transaction be tested against the
+`data/` transform it stands for. That is why the ecs layer can be largely
+mechanical (and agent-generated): the spec is the oracle. *How* to author
+each layer lives in the per-folder rules below; this section is only the
+relationship between them.
 
 ## Per-layer detail
 

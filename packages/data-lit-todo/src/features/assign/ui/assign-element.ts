@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { DatabaseElement } from "@adobe/data-lit";
-import { ComputedDatabase } from "../ecs/computed-database.js";
+import { ComputedDatabase } from "../ecs/computed-database/computed-database.js";
 
 /**
  * Base class for the assign feature's elements. Typed on the feature's own

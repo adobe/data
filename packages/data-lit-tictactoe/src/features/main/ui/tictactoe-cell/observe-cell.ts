@@ -3,7 +3,7 @@ import { Observe } from "@adobe/data/observe";
 import type { UIService } from "@adobe/data/service";
 import { BoardCell } from "../../data/board-cell/board-cell.js";
 import { GameStatus } from "../../data/game-status/game-status.js";
-import type { ComputedDatabase } from "../../ecs/computed-database.js";
+import type { ComputedDatabase } from "../../ecs/computed-database/computed-database.js";
 
 // Reactive per-cell view. The mark is looked up through the `byCell` index —
 // the cell binds to whichever entity occupies its board position — while

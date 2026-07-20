@@ -38,6 +38,12 @@ fine — they are implementation detail and are tested indirectly
 through the public export. Only the public export gets a sibling
 `*.test.ts`.
 
+**Exception: barrels.** An `index.ts` (and a namespace's `public.ts`)
+exists precisely to re-export a folder's public surface, so it carries
+many exports. That is the barrel's whole job — it declares nothing of its
+own, only `export … from "./…"`. The one-export rule governs files that
+*declare*, not files that *re-export*.
+
 When a public file wants *helper sibling files*, promote the cluster
 into a folder named after the concept. Helpers never sit at peer
 level with unrelated public files; the folder is the new boundary.

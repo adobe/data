@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Database } from "@adobe/data/ecs";
 import { AgenticService } from "@adobe/data/service";
-import { ComputedDatabase } from "./computed-database.js";
+import { ComputedDatabase } from "../computed-database/computed-database.js";
 import {
   createAgentService,
   createRootAgentService,

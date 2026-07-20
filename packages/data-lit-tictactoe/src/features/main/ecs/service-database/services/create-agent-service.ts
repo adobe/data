@@ -1,10 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Observe } from "@adobe/data/observe";
 import { AgenticService } from "@adobe/data/service";
-import { BoardState } from "../../data/board-state/board-state.js";
-import type { PlayerMark } from "../../data/player-mark/player-mark.js";
-import { board as boardComputed } from "../computed/board.js";
-import type { ComputedDatabase } from "../computed-database.js";
+import { BoardState } from "../../../data/board-state/board-state.js";
+import type { PlayerMark } from "../../../data/player-mark/player-mark.js";
+import { board as boardComputed } from "../../computed-database/computed/board.js";
+import type { ComputedDatabase } from "../../computed-database/computed-database.js";
 
 const roleDescription = (mark: PlayerMark): string =>
   `You are playing as ${mark} in tic-tac-toe. Play to the best of your ability.`;

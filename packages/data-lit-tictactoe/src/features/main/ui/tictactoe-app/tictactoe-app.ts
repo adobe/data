@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { html, type TemplateResult } from "lit";
-import type { ComputedDatabase } from "../../ecs/computed-database.js";
+import type { ComputedDatabase } from "../../ecs/computed-database/computed-database.js";
 
 type TictactoeService = ComputedDatabase;
 

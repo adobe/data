@@ -10,12 +10,16 @@ tells the store to maintain a lookup keyed on a component, so queries and
 computed values can find entities without scanning.
 
 ```ts
-import type { CoreDatabase } from "../../core-database/core-database.js";
+import type { PersistentDatabase } from "../../persistent-database/persistent-database.js";
 
 export const byComplete = {
     key: "complete",
-} as const satisfies CoreDatabase.Index;
+} as const satisfies PersistentDatabase.Index;
 ```
+
+Use the `Index` helper of the layer that owns the keyed columns —
+`PersistentDatabase.Index` for a persistent column, `SessionDatabase.Index` for
+a session column.
 
 Name the export for what it indexes (`byComplete`, `byOwner`). An
 `index.ts` barrel re-exports every index; it feeds the `indexes` facet on

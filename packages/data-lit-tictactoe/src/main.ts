@@ -2,8 +2,8 @@
 
 import { render } from "lit";
 import { Database } from "@adobe/data/ecs";
-import { Tictactoe } from "./ui/tictactoe-app/tictactoe-app.js";
-import { ServiceDatabase } from "./ecs/service-database.js";
+import { Tictactoe } from "./features/main/ui/tictactoe-app/tictactoe-app.js";
+import { ServiceDatabase } from "./features/main/ecs/service-database/service-database.js";
 
 const app = document.getElementById("app");
 if (app) {

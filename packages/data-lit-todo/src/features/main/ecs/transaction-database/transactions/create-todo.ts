@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { CoreDatabase } from "../core-database.js";
+import type { SessionDatabase } from "../../session-database/session-database.js";
 import { nextOrder } from "./order/index.js";
 
 export const createTodo = (
-  t: CoreDatabase.Store,
+  t: SessionDatabase.Store,
   input: { readonly name: string; readonly complete?: boolean },
 ) =>
   t.archetypes.Todo.insert({

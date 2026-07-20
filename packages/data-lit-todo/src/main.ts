@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { html, render } from "lit";
 import { Database } from "@adobe/data/ecs";
-import { ActionDatabase } from "./features/main/ecs/action-database.js";
+import { ActionDatabase } from "./features/main/ecs/action-database/action-database.js";
 import { TodoApp } from "./features/main/ui/todo-app/todo-app.js";
 
 // Spectrum 2 theme registration (side-effect imports).

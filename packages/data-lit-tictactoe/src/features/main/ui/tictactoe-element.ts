@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { DatabaseElement } from "@adobe/data-lit";
-import { ComputedDatabase } from "../ecs/computed-database.js";
+import { ComputedDatabase } from "../ecs/computed-database/computed-database.js";
 
 /**
  * Base class for all Tic-Tac-Toe elements. Typed on the minimal

@@ -6,9 +6,9 @@
 // differently by the two sides), i.e. by ordered {name, complete} + displayCompleted.
 import { describe, it, expect } from "vitest";
 import { Database } from "@adobe/data/ecs";
-import { State } from "../../data/state/state.js";
-import { state as stateComputed } from "../computed/state.js";
-import { ComputedDatabase } from "../computed-database.js";
+import { State } from "../../../data/state/state.js";
+import { state as stateComputed } from "../../computed-database/computed/state.js";
+import { ComputedDatabase } from "../../computed-database/computed-database.js";
 
 const read = (db: ComputedDatabase): State => {
   let value!: State;

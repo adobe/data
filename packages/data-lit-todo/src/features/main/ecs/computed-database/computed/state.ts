@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { cached } from "@adobe/data/cache";
 import { Observe } from "@adobe/data/observe";
-import type { State } from "../../data/state/state.js";
-import type { IndexDatabase } from "../index-database.js";
+import type { State } from "../../../data/state/state.js";
+import type { IndexDatabase } from "../../index-database/index-database.js";
 
 // The full logical `State` projected from the ECS — the conformance anchor
 // between the data-layer spec and this implementation. The `order` component

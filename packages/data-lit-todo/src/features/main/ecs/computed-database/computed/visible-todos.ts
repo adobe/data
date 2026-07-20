@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { cached } from "@adobe/data/cache";
 import { Observe } from "@adobe/data/observe";
-import type { IndexDatabase } from "../index-database.js";
+import type { IndexDatabase } from "../../index-database/index-database.js";
 import { allTodos } from "./all-todos.js";
 import { incompleteTodos } from "./incomplete-todos.js";
 

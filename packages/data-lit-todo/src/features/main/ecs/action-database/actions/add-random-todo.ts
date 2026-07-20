@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { ServiceDatabase } from "../service-database.js";
+import type { ServiceDatabase } from "../../service-database/service-database.js";
 
 /**
  * Showcase of an async service inside an action: bracket the slow

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { cached } from "@adobe/data/cache";
-import type { IndexDatabase } from "../index-database.js";
+import type { IndexDatabase } from "../../index-database/index-database.js";
 
 export const incompleteTodos = cached((db: IndexDatabase) =>
   db.observe.select(db.archetypes.Todo.components, {

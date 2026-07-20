@@ -5,7 +5,7 @@ import { useObservableValues, useState, useDragTransaction } from "@adobe/data-l
 import { TodoElement } from "../todo-element.js";
 import { styles } from "./todo-row.css.js";
 import { TODO_ROW_HEIGHT } from "./todo-row.constants.js";
-import type { dragTodo } from "../../ecs/transactions/drag-todo.js";
+import type { dragTodo } from "../../ecs/transaction-database/transactions/drag-todo.js";
 import * as presentation from "./todo-row-presentation.js";
 
 // The transaction owns this shape and doesn't export it; infer it from the

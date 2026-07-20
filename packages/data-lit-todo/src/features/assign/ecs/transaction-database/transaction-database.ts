@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Database } from "@adobe/data/ecs";
-import { IndexDatabase } from "./index-database.js";
+import { IndexDatabase } from "../index-database/index-database.js";
 import * as transactions from "./transactions/index.js";
 
 const transactionDatabasePlugin = Database.Plugin.create({

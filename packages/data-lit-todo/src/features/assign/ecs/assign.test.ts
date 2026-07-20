@@ -7,8 +7,8 @@
 import { describe, it, expect } from "vitest";
 import { Database } from "@adobe/data/ecs";
 import type { User } from "../data/user/user.js";
-import { ActionDatabase } from "../../main/ecs/action-database.js";
-import { ComputedDatabase } from "./computed-database.js";
+import { ActionDatabase } from "../../main/ecs/action-database/action-database.js";
+import { ComputedDatabase } from "./computed-database/computed-database.js";
 
 // main DB + lazy feature extend (the runtime shape a feature element produces).
 const createDb = () =>

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { DatabaseElement } from "@adobe/data-lit";
-import { ActionDatabase } from "../ecs/action-database.js";
+import { ActionDatabase } from "../ecs/action-database/action-database.js";
 
 /**
  * Base class for all todo elements. Typed on the top `ActionDatabase` plugin

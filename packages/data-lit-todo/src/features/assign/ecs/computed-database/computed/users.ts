@@ -2,8 +2,8 @@
 import { cached } from "@adobe/data/cache";
 import { compare } from "@adobe/data/functions";
 import { Observe } from "@adobe/data/observe";
-import type { User } from "../../data/user/user.js";
-import type { IndexDatabase } from "../index-database.js";
+import type { User } from "../../../data/user/user.js";
+import type { IndexDatabase } from "../../index-database/index-database.js";
 
 // All users, sorted by name. Feeds both the dropdown (pick a user) and the
 // users tab (list). Code-point sort — never localeCompare (order determinism).

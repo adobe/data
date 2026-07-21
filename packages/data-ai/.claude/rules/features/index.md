@@ -57,8 +57,8 @@ its own peer feature rather than let one feature's folders balloon.
   **without** pulling its types or behavior into the base's type or bundle
   (`extends` would do both, and cost quadratically). So one store knows every
   feature's durable schema — data coexists, persists, and syncs — while the base
-  stays decoupled. Import the peer's `persistent-database.ts` (durable schema
-  only): its transient session state, archetypes, indexes, transactions,
+  stays decoupled. Import the peer's `document-database.ts` (shared + durable
+  schema only): its local/transient scopes, archetypes, indexes, transactions,
   services, and UI stay out until the feature loads. Shared columns (e.g. a
   `name` used by two features) are re-exported by identity so `combinePlugins`
   dedupes them.

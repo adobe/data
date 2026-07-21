@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { SessionDatabase } from "../../session-database/session-database.js";
+import type { SettingsDatabase } from "../../settings-database/settings-database.js";
 
-export const toggleDisplayCompleted = (t: SessionDatabase.Store) => {
+export const toggleDisplayCompleted = (t: SettingsDatabase.Store) => {
   t.resources.displayCompleted = !t.resources.displayCompleted;
 };

@@ -67,6 +67,9 @@ export function createCore<NC extends ComponentSchemas>(
     const componentSchemas: { readonly [K in StringKeyof<C & RequiredComponents & OptionalComponents>]: Schema } = {
         id: Entity.schema,
         nonPersistent: True.schema,
+        // Declared built-in (no behavior wired yet) — mirrors nonPersistent so
+        // apps can model local vs. shared scope; the store does not act on it.
+        nonShared: True.schema,
         ...newComponentSchemas
     };
     const persistentLocationTable = createEntityLocationTable(16, false);
@@ -446,6 +449,7 @@ export function createCore<NC extends ComponentSchemas>(
 type TestType = ReturnType<typeof createCore<{ position: { type: "number" }, health: { type: "string" } }>>
 type CheckTestType = Assert<Equal<TestType, Core<{
     nonPersistent: true;
+    nonShared: true;
     position: number;
     health: string;
 }>>>
@@ -453,6 +457,7 @@ type TestTypeComponents = TestType["componentSchemas"]
 type CheckComponents = Assert<Equal<TestTypeComponents, {
     readonly id: Schema;
     readonly nonPersistent: Schema;
+    readonly nonShared: Schema;
     readonly position: Schema;
     readonly health: Schema;
 }>>;

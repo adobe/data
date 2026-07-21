@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import * as persistentComponents from "../../persistent-database/components/index.js";
-import * as sessionComponents from "../components/index.js";
+import * as persistentComponents from "../../document-database/components/index.js";
+import * as sessionComponents from "../../session-database/components/index.js";
 
 // The archetype packs a todo's persistent columns together with its transient
 // `dragPosition` slot for efficient iteration, so its keys span both the

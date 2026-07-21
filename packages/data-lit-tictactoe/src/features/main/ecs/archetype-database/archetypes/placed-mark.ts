@@ -2,7 +2,7 @@
 import { Schema } from "@adobe/data/schema";
 import type { Assert, Equal } from "@adobe/data/types";
 import type { PlacedMark as PlacedMarkRow } from "../../../data/placed-mark/placed-mark.js";
-import * as components from "../../persistent-database/components/index.js";
+import * as components from "../../document-database/components/index.js";
 
 export const PlacedMark = ["mark", "index"] as const satisfies Array<
   keyof typeof components

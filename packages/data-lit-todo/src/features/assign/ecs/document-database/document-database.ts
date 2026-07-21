@@ -8,21 +8,21 @@ import * as components from "./components/index.js";
 // feature's persistent columns up front (persistence, data coexistence) without
 // gaining its types or behavior. The feature's behavior (the `User` archetype,
 // indexes, transactions, UI) loads lazily and extends the live database on top.
-const persistentDatabasePlugin = Database.Plugin.create({
+const documentDatabasePlugin = Database.Plugin.create({
   components,
 });
 
-export type PersistentDatabase = Database.Plugin.ToDatabase<
-  typeof persistentDatabasePlugin
+export type DocumentDatabase = Database.Plugin.ToDatabase<
+  typeof documentDatabasePlugin
 >;
 
-type PersistentComponents = Store.Components<
-  Database.Plugin.ToStore<typeof persistentDatabasePlugin>
+type DocumentComponents = Store.Components<
+  Database.Plugin.ToStore<typeof documentDatabasePlugin>
 >;
 
-export namespace PersistentDatabase {
-  export const plugin = persistentDatabasePlugin;
-  export type Store = Database.Plugin.ToStore<typeof persistentDatabasePlugin>;
+export namespace DocumentDatabase {
+  export const plugin = documentDatabasePlugin;
+  export type Store = Database.Plugin.ToStore<typeof documentDatabasePlugin>;
   /** Index-declaration type bound to this feature's persistent components. */
-  export type Index = Database.Index<PersistentComponents>;
+  export type Index = Database.Index<DocumentComponents>;
 }

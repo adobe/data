@@ -20,26 +20,24 @@ export const firstPlayer = { ...PlayerMark.schema, default: "X" as string };
   it, so the shape stays single-sourced. A resource whose data-type
   schema already carries a sensible default can re-export it directly.
 
-## Persistent vs. session resources
+## Which scope a resource lives in
 
-Like components, a resource lives in the layer matching its lifecycle:
+Like components, a resource lives in the scope layer matching its state (see the
+scope table in `ecs/index.md`). A **document** singleton (shared + durable — a
+game counter, a synced setting) carries no flag. Other scopes spread the schema
+and add the scope's flag(s) **explicitly**. A common case is a **settings**
+resource — a per-device preference that persists but never syncs, so
+`nonShared: true` (and *not* `nonPersistent`, since it is durable):
 
-- **Durable singleton** (a saved setting, an accumulating counter) →
-  `persistent-database/resources/`, no persistence flag.
-- **Transient singleton** (a view toggle, a session-only selection) →
-  `session-database/resources/`, and it must **explicitly** carry
-  `nonPersistent: true` — excluded from serialization and never replicated to
-  peers:
+```ts
+// settings-database/resources/ — local + durable
+import { Boolean } from "@adobe/data/schema";
+export const displayCompleted = { ...Boolean.schema, nonShared: true };
+```
 
-  ```ts
-  import { Boolean } from "@adobe/data/schema";
-  export const displayCompleted = { ...Boolean.schema, nonPersistent: true };
-  ```
-
-State the flag on the declaration; the feature-root
-`persistence-partition.test.ts` (see `ecs/index.md`) verifies it.
+State the flag on the declaration; the feature-root `schema-scopes.test.ts`
+(see `ecs/index.md`) verifies it matches the layer's scope.
 
 Because there is only ever one instance, linear-memory packing buys
 nothing — never choose a struct schema for efficiency here. An `index.ts`
-barrel feeds the `resources` facet on `persistent-database.ts` /
-`session-database.ts`.
+barrel feeds the `resources` facet on the scope layer's `<scope>-database.ts`.

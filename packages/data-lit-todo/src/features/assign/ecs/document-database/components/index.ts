@@ -3,4 +3,4 @@
 // objects) so that when main imports this feature's schema plugin,
 // `combinePlugins` dedupes them — one shared column.
 export * from "./user.js";
-export { name, assignees } from "../../../../main/ecs/persistent-database/components/index.js";
+export { name, assignees } from "../../../../main/ecs/document-database/components/index.js";

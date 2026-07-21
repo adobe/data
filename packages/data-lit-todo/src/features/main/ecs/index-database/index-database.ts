@@ -1,10 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Database } from "@adobe/data/ecs";
-import { SessionDatabase } from "../session-database/session-database.js";
+import { ArchetypeDatabase } from "../archetype-database/archetype-database.js";
 import * as indexes from "./indexes/index.js";
 
 const indexDatabasePlugin = Database.Plugin.create({
-  extends: SessionDatabase.plugin,
+  extends: ArchetypeDatabase.plugin,
   indexes,
 });
 

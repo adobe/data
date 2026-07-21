@@ -4,7 +4,7 @@
 // archetype so it never collides with todos, which share the `name` column.
 // Powers the todo→users direction (resolve each assignee name to a user).
 //
-// Declared with `as const` (not `satisfies PersistentDatabase.Index`): that helper
+// Declared with `as const` (not `satisfies DocumentDatabase.Index`): that helper
 // carries the component map but not the archetype map, so it cannot express the
 // `archetype` scope. `index-database.ts` validates it on registration.
 export const usersByName = {

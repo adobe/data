@@ -1,14 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { BoardState } from "../../../data/board-state/board-state.js";
 import { PlayerMark } from "../../../data/player-mark/player-mark.js";
-import type { SessionDatabase } from "../../session-database/session-database.js";
+import type { ArchetypeDatabase } from "../../archetype-database/archetype-database.js";
 import { readBoard } from "./read-board.js";
 
 /**
  * Tally the finished game into the win/draw counters, hand the first move to
  * the opposite player, and clear the board by deleting every PlacedMark entity.
  */
-export const restartGame = (t: SessionDatabase.Store) => {
+export const restartGame = (t: ArchetypeDatabase.Store) => {
   const board = readBoard(t);
   const winner = BoardState.getWinner(board);
   const status = BoardState.deriveStatus(board);

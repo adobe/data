@@ -25,48 +25,64 @@ the facet folder(s) that feed it. **Name each layer for the facet it adds —
 never for the feature or app.** A feature creates only the layers it uses;
 the topmost one it defines is its composition root.
 
-The schema root is **split in two by persistence lifecycle**:
+### Schema scopes
 
-- **`persistent-database/`** — the durable, serializable data model: the
-  components and resources a human reasons about as the feature's logical
-  state, and the exact set a bare store could be rebuilt from for
-  reconciliation. Extends nothing. Nothing transient lives here.
-- **`session-database/`** — transient, session-only state layered on top:
-  session components/resources (each explicitly `nonPersistent: true`) **and
-  the archetypes**. Archetypes live here because they are a physical packing
-  convenience, not part of the serialized data model — so higher layers extend
-  `session`, not `persistent`.
+State divides on two orthogonal axes — **scope** (shared with peers vs. local
+to this client) and **lifetime** (durable across reloads vs. ephemeral) —
+giving four scopes, each its own schema layer holding components/resources with
+a fixed flag pair:
+
+| scope | shared? | durable? | `nonPersistent` | `nonShared` |
+|-------|:--:|:--:|:--:|:--:|
+| **document** | yes | yes | — | — |
+| **settings** | no | yes | — | ✅ |
+| **presence** | yes | no | ✅ | — |
+| **session** | no | no | ✅ | ✅ |
+
+- **`document-database/`** — the collaborative, serialized model: what peers
+  sync + save, and the set a bare store could be rebuilt from for
+  reconciliation. Extends nothing.
+- **`settings-database/`** — per-device preferences: durable but never synced
+  (`nonShared: true`).
+- **`presence-database/`** — live awareness (cursors, "typing"): synced but
+  never saved (`nonPersistent: true`).
+- **`session-database/`** — transient local UI state (drag offset, hover):
+  neither (`nonPersistent: true` **and** `nonShared: true`).
+
+Above the scope layers sits the packing layer:
+
+- **`archetype-database/`** — named entity shapes. Archetypes are an
+  iteration/packing convenience, **not** part of the serialized model, so they
+  live above the scopes (not in `document`). It extends the topmost scope layer
+  the feature defines, so one archetype may pack columns from several scopes
+  (e.g. a document entity with an ephemeral `dragPosition` slot).
 
 ```
 ecs/
-  persistent-database/
-    persistent-database.ts  # extends nothing; the durable schema root
-    components/
+  document-database/
+    document-database.ts    # extends nothing; the shared+durable schema root
+    components/  resources/
+  settings-database/        # optional — local+durable
+    settings-database.ts    # extends document; each facet nonShared: true
     resources/
-  session-database/
-    session-database.ts     # extends persistent; transient state + the archetypes
-    components/             # each explicitly nonPersistent: true
-    resources/              # each explicitly nonPersistent: true
+  session-database/         # optional — local+ephemeral
+    session-database.ts     # extends settings (or document); nonPersistent + nonShared
+    components/
+  archetype-database/
+    archetype-database.ts   # extends the topmost scope layer
     archetypes/
   index-database/
-    index-database.ts       # extends session
+    index-database.ts       # extends archetype
     indexes/
-  transaction-database/
-    transaction-database.ts # extends index
-    transactions/
-  computed-database/
-    computed-database.ts    # extends transaction
-    computed/
-  service-database/
-    service-database.ts     # extends computed
-  action-database/
-    action-database.ts      # extends service
-    actions/
+  transaction-database/ …   # extends index, then computed / service / action
 ```
 
-A feature with no transient state still has a `session-database/` — it is
-where the archetypes live. A feature may omit `persistent-database/` resources
-(or even components) if it has none; create only the facets it uses.
+**Most features are document-only** (plus `archetype-database`). Add
+`settings`, `presence`, or `session` **only** when the feature actually has
+state of that scope — many apps never need `presence`, and plenty never need
+`settings` or `session`. The scope layers chain in the order above (`document`
+→ `settings` → `presence` → `session`), each extending the previous one that
+*exists*; `archetype-database` extends whichever is topmost.
 
 Grouping each layer's facets under its folder keeps the layer cohesive: one
 folder holds everything that defines that layer, mirroring the `data/`
@@ -92,10 +108,12 @@ export namespace IndexDatabase {
   (`t: <Layer>.Store`). A store carries the index handles and the
   initiating `userId`, so a store *is* the transaction context; there is no
   separate transaction-context type. Pick the lowest layer that exposes what
-  the transaction touches: **`PersistentDatabase.Store`** when it reads/writes
-  only persistent entities and resources; **`SessionDatabase.Store`** the
-  moment it touches a session component/resource *or any archetype* (archetypes
-  live at the session layer); `IndexDatabase.Store` when it reads an index.
+  the transaction touches: **`DocumentDatabase.Store`** when it reads/writes
+  only document entities and resources; the matching scope store
+  (`SettingsDatabase.Store` / `SessionDatabase.Store`) when it touches that
+  scope's state; **`ArchetypeDatabase.Store`** the moment it uses any archetype
+  (`t.archetypes.*`, `t.select`/`queryArchetypes` over an archetype);
+  `IndexDatabase.Store` when it reads an index.
 - **the whole `Database`** — **computed**, **services**, and **actions**
   each take `db: <Layer>` (the lowest layer whose database exposes what they
   read/call): computed reads `db.observe.*`; services read observables and
@@ -104,29 +122,35 @@ export namespace IndexDatabase {
 Each subfolder has its own rule. Modelling a plugin's authored vs. derived
 surface is covered by `plugin-modelling.md`.
 
-## The persistent/session split is verified
+## The scope split is verified
 
-The split is not a naming convention you have to police by eye — assert it. Add
-a `persistence-partition.test.ts` at the **feature root** (`features/<name>/`)
-that calls `assertPersistencePartition` from `@adobe/data/ecs` with the
-feature's persistent and session plugins:
+The split is not a naming convention you police by eye — assert it. Add a
+`schema-scopes.test.ts` at the **feature root** (`features/<name>/`) that calls
+`assertSchemaScopes` from `@adobe/data/ecs` with whichever scope plugins the
+feature defines:
 
 ```ts
-import { assertPersistencePartition } from "@adobe/data/ecs";
-import { PersistentDatabase } from "./ecs/persistent-database/persistent-database.js";
+import { assertSchemaScopes } from "@adobe/data/ecs";
+import { DocumentDatabase } from "./ecs/document-database/document-database.js";
+import { SettingsDatabase } from "./ecs/settings-database/settings-database.js";
 import { SessionDatabase } from "./ecs/session-database/session-database.js";
 
-test("feature persistence partition is consistent", () => {
-  assertPersistencePartition(PersistentDatabase.plugin, SessionDatabase.plugin);
+test("feature schema scopes are consistent", () => {
+  assertSchemaScopes({
+    document: DocumentDatabase.plugin,
+    settings: SettingsDatabase.plugin, // omit scopes the feature doesn't have
+    session: SessionDatabase.plugin,
+  });
 });
 ```
 
-It throws if any persistent component/resource is marked `nonPersistent`, or if
-any component/resource the session plugin adds is missing `nonPersistent: true`
-— catching both a transient column that leaked into the durable model and a
-session column that forgot its flag. The flag is authored explicitly per file
-(see `components.md` / `resources.md`); this test is the safety net, not a
-substitute for stating it.
+It throws if any component/resource a scope layer *adds* carries the wrong flag
+pair (per the scope table above) — catching a durable-local `settings` value
+that forgot `nonShared`, a transient column that leaked into `document`, and so
+on. The flags are authored explicitly per file (see `components.md` /
+`resources.md`); this test is the safety net, not a substitute for stating
+them. A document-only feature still adds the test — it just passes
+`{ document }`.
 
 ## Facets are flat until they aren't
 

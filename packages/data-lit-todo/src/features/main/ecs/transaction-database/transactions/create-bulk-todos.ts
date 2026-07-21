@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { SessionDatabase } from "../../session-database/session-database.js";
+import type { ArchetypeDatabase } from "../../archetype-database/archetype-database.js";
 import { createTodo } from "./create-todo.js";
 
 export const createBulkTodos = (
-  t: SessionDatabase.Store,
+  t: ArchetypeDatabase.Store,
   input: { readonly count: number },
 ) => {
   const count = Math.max(0, Math.floor(input.count));

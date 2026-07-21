@@ -24,28 +24,22 @@ describes the role, the schema describes the shape.
 ## Which scope a component lives in
 
 A component lives in the scope layer matching its state (see the scope table in
-`ecs/index.md`). A **document** component (shared + durable) is the common case
-and re-exports its `data/` schema straight, with no flag. A component in any
-other scope spreads the `data/` schema and adds that scope's flag(s)
-**explicitly**, so the shape stays single-sourced while this layer states the
-scope:
+`ecs/index.md`). The component **file is scope-agnostic** — it just re-exports
+its `data/` schema, the same in every scope:
 
 ```ts
-// document-database/components/ — shared + durable (no flag)
+// document-database/components/mark.ts   (and session, settings, … — identical form)
 import { PlayerMark } from "../../../data/player-mark/player-mark.js";
 export const mark = PlayerMark.schema;
-
-// session-database/components/ — local + ephemeral (both flags)
-import { DragPosition } from "../../../data/drag-position/drag-position.js";
-export const dragPosition = { ...DragPosition.schema, nonPersistent: true, nonShared: true };
 ```
 
-(`nonShared` alone → `settings`; `nonPersistent` alone → `presence`.) State the
-flags on the declaration — never rely on an aggregator to inject them. The
-feature-root `schema-scopes.test.ts` (see `ecs/index.md`) fails if a component's
-flags don't match its layer's scope.
+The scope's flags (`nonShared` / `nonPersistent`) are **not** written here.
+They are applied once, where the layer is composed, by wrapping the whole
+component map in `Database.scope.<scope>` — see `ecs/index.md`. So a component's
+scope is determined by which layer registers it; the file stays a plain
+re-export, and there is no per-file flag to forget or get wrong.
 
 An `index.ts` barrel re-exports every component in its folder; the scope layer's
-`<scope>-database.ts` registers that barrel under the `components` facet. Struct
-vs. object storage and schema selection are properties of the `data/` type,
-decided there.
+`<scope>-database.ts` passes that barrel through `Database.scope.<scope>(...)`
+into the `components` facet. Struct vs. object storage and schema selection are
+properties of the `data/` type, decided there.

@@ -35,6 +35,7 @@ import type {
 } from "../store/action-functions.js";
 import { createPlugin } from "./create-plugin.js";
 import { combinePlugins } from "./combine-plugins.js";
+import { scope as scopeTransforms } from "./scope.js";
 
 export type SystemFunction = () => void | Promise<void>;
 export type SystemDeclaration = {
@@ -270,6 +271,12 @@ export interface Database<
 }
 
 export namespace Database {
+  /**
+   * Scope tags for a layer's component/resource map — see `scope.ts`. Applied
+   * where a layer is composed: `components: Database.scope.session(components)`.
+   */
+  export const scope = scopeTransforms;
+
   /**
    * Converts a Plugin type to its corresponding Database type.
    * Uses direct property access (P['components']) instead of conditional inference

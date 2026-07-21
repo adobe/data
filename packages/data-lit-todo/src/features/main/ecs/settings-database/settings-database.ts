@@ -9,7 +9,7 @@ import * as resources from "./resources/index.js";
 // here is explicitly marked `nonShared: true`.
 const settingsDatabasePlugin = Database.Plugin.create({
   extends: DocumentDatabase.plugin,
-  resources,
+  resources: Database.scope.settings(resources),
 });
 
 export type SettingsDatabase = Database.Plugin.ToDatabase<

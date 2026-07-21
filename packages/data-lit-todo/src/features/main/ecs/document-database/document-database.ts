@@ -16,7 +16,7 @@ import { DocumentDatabase as AssignSchema } from "../../../assign/ecs/document-d
 // lazily.
 const documentDatabasePlugin = Database.Plugin.create({
   imports: AssignSchema.plugin,
-  components,
+  components: Database.scope.document(components),
 });
 
 export type DocumentDatabase = Database.Plugin.ToDatabase<

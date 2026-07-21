@@ -23,21 +23,22 @@ export const firstPlayer = { ...PlayerMark.schema, default: "X" as string };
 ## Which scope a resource lives in
 
 Like components, a resource lives in the scope layer matching its state (see the
-scope table in `ecs/index.md`). A **document** singleton (shared + durable — a
-game counter, a synced setting) carries no flag. Other scopes spread the schema
-and add the scope's flag(s) **explicitly**. A common case is a **settings**
-resource — a per-device preference that persists but never syncs, so
-`nonShared: true` (and *not* `nonPersistent`, since it is durable):
+scope table in `ecs/index.md`), and the **file is scope-agnostic** — it declares
+the schema and its `default`, nothing about scope:
 
 ```ts
-// settings-database/resources/ — local + durable
+// settings-database/resources/display-completed.ts — a per-device preference
 import { Boolean } from "@adobe/data/schema";
-export const displayCompleted = { ...Boolean.schema, nonShared: true };
+export const displayCompleted = Boolean.schema;
 ```
 
-State the flag on the declaration; the feature-root `schema-scopes.test.ts`
-(see `ecs/index.md`) verifies it matches the layer's scope.
+The scope's flags are applied once by the layer via
+`Database.scope.<scope>(resources)` (see `ecs/index.md`) — here, `settings`
+(durable but local: `nonShared`, *not* `nonPersistent`). Don't write flags in
+the resource file; the feature-root `schema-scopes.test.ts` verifies the layer
+applied the right scope.
 
 Because there is only ever one instance, linear-memory packing buys
 nothing — never choose a struct schema for efficiency here. An `index.ts`
-barrel feeds the `resources` facet on the scope layer's `<scope>-database.ts`.
+barrel feeds the `resources` facet (through `Database.scope.<scope>`) on the
+scope layer's `<scope>-database.ts`.

@@ -9,8 +9,8 @@ import * as resources from "./resources/index.js";
 // logical state. No local or transient state here (see the settings / session
 // scopes), and no archetypes (a packing convenience — the archetype layer).
 const documentDatabasePlugin = Database.Plugin.create({
-  components,
-  resources,
+  components: Database.scope.document(components),
+  resources: Database.scope.document(resources),
 });
 
 export type DocumentDatabase = Database.Plugin.ToDatabase<

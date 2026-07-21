@@ -9,7 +9,7 @@ import * as components from "./components/index.js";
 // gaining its types or behavior. The feature's behavior (the `User` archetype,
 // indexes, transactions, UI) loads lazily and extends the live database on top.
 const documentDatabasePlugin = Database.Plugin.create({
-  components,
+  components: Database.scope.document(components),
 });
 
 export type DocumentDatabase = Database.Plugin.ToDatabase<

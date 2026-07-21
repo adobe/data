@@ -9,7 +9,7 @@ import * as components from "./components/index.js";
 // here is explicitly marked `nonPersistent: true` and `nonShared: true`.
 const sessionDatabasePlugin = Database.Plugin.create({
   extends: SettingsDatabase.plugin,
-  components,
+  components: Database.scope.session(components),
 });
 
 export type SessionDatabase = Database.Plugin.ToDatabase<

@@ -63,10 +63,10 @@ ecs/
     document-database.ts    # extends nothing; the shared+durable schema root
     components/  resources/
   settings-database/        # optional — local+durable
-    settings-database.ts    # extends document; each facet nonShared: true
+    settings-database.ts    # extends document; facets via Database.scope.settings
     resources/
   session-database/         # optional — local+ephemeral
-    session-database.ts     # extends settings (or document); nonPersistent + nonShared
+    session-database.ts     # extends settings (or document); via Database.scope.session
     components/
   archetype-database/
     archetype-database.ts   # extends the topmost scope layer
@@ -83,6 +83,26 @@ state of that scope — many apps never need `presence`, and plenty never need
 `settings` or `session`. The scope layers chain in the order above (`document`
 → `settings` → `presence` → `session`), each extending the previous one that
 *exists*; `archetype-database` extends whichever is topmost.
+
+### Applying scope
+
+The component/resource *files* are scope-agnostic (plain `data/` re-exports).
+The scope's flags are applied once, where the layer is composed, by passing the
+facet map through `Database.scope.<scope>`:
+
+```ts
+// session-database.ts — the layer states the scope, not the files
+const sessionDatabasePlugin = Database.Plugin.create({
+    extends: SettingsDatabase.plugin,
+    components: Database.scope.session(components), // stamps { nonPersistent, nonShared }
+});
+```
+
+`Database.scope` has one member per scope — `document` (identity, no flags),
+`settings` (`nonShared`), `presence` (`nonPersistent`), `session` (both). Wrap
+every scope layer's facets in the matching one (including `document`, for a
+uniform, self-describing composition root). This is the *only* place scope is
+set, so it can't be forgotten per-file or diverge within a layer.
 
 Grouping each layer's facets under its folder keeps the layer cohesive: one
 folder holds everything that defines that layer, mirroring the `data/`
@@ -147,10 +167,10 @@ test("feature schema scopes are consistent", () => {
 It throws if any component/resource a scope layer *adds* carries the wrong flag
 pair (per the scope table above) — catching a durable-local `settings` value
 that forgot `nonShared`, a transient column that leaked into `document`, and so
-on. The flags are authored explicitly per file (see `components.md` /
-`resources.md`); this test is the safety net, not a substitute for stating
-them. A document-only feature still adds the test — it just passes
-`{ document }`.
+on. The flags come from the layer's `Database.scope.<scope>` call (see the
+"Applying scope" section above); this test verifies each layer applied the one
+matching its declared scope. A document-only feature still adds the test — it
+just passes `{ document }`.
 
 ## Facets are flat until they aren't
 

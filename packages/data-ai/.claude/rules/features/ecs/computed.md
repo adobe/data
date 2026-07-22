@@ -22,5 +22,5 @@ export const status = cached((db: IndexDatabase) =>
 ```
 
 Type the parameter on the lowest database layer that exposes what it
-reads. An `index.ts` barrel re-exports every computed; it is added to the
-composition-root plugin via `computed`.
+reads. An `index.ts` barrel re-exports every computed; `computed-database.ts`
+registers it under the `computed` facet.

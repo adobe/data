@@ -11,7 +11,7 @@ single transaction — awaiting a `services/` port, sequencing calls, deriving
 timing — and then commit the result through a transaction.
 
 ```ts
-import type { ServiceDatabase } from "../service-database.js";
+import type { ServiceDatabase } from "../../service-database/service-database.js";
 
 export const addRandomTodo = async (db: ServiceDatabase) => {
     const name = await db.services.nameGenerator.generateName(); // await a services/ port

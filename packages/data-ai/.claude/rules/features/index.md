@@ -59,9 +59,8 @@ its own peer feature rather than let one feature's folders balloon.
   every feature's schema — data coexists, persists, and syncs — while the base
   stays decoupled. Import the peer's `core-database.ts` plugin (schema only): its
   indexes, transactions, computed, services, and UI stay out until the feature
-  loads. Shared columns (e.g. a
-  `name` used by two features) are re-exported by identity so `combinePlugins`
-  dedupes them.
+  loads. A column two features share (e.g. `name`) lives in `data/` and is
+  referenced by identity, so `combinePlugins` dedupes it.
 - **Peers load lazily by being used.** `DatabaseElement`, on connect, walks up to
   the nearest ancestor database and `extend`s it with its own plugin — so the
   first time a feature element renders, its full plugin (indexes, transactions,
@@ -75,14 +74,11 @@ its own peer feature rather than let one feature's folders balloon.
 
 ## Spec and implementation, kept honest
 
-`data/` and `ecs/` model the same feature twice: `data/` is the pure spec
-(one immutable `State`, pure transforms), `ecs/` its efficient mutable
-materialisation. The tie between them is **conformance** — a small `ecs ↔
-State` projection lets each ecs computed/transaction be tested against the
-`data/` transform it stands for. That is why the ecs layer can be largely
-mechanical (and agent-generated): the spec is the oracle. *How* to author
-each layer lives in the per-folder rules below; this section is only the
-relationship between them.
+The tie between `data/` (spec) and `ecs/` (implementation) is **conformance**:
+a small `ecs ↔ State` projection lets each ecs computed/transaction be tested
+against the `data/` transform it stands for — so the ecs layer can be largely
+mechanical and agent-generated, with the spec as oracle. *How* to author each
+layer lives in the per-folder rules below.
 
 ## Per-layer detail
 

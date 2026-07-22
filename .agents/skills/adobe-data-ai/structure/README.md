@@ -1,23 +1,10 @@
 # Feature structure
 
-Each feature folder contains layered subfolders. Higher layers may import from lower layers; never the reverse.
+The authoritative guidance is the **`features/` rule tree** — start at
+`features/index.md` (the `ui → ecs → services → data` layering and the
+spec/implementation relationship), then each folder's rule, which auto-loads by
+path as you author its files.
 
-```mermaid
-flowchart TB
-    elements --> database
-    database --> types
-    database --> services
-    types <--> services
-    types --> data
-    services --> data
-```
-
-| Folder | Role |
-|--------|------|
-| `data/` | Archetypes, components, resources — ECS shape definitions |
-| `types/` | Pure immutable data and synchronous helpers |
-| `services/` | Async capability contracts and implementations |
-| `database/` | ECS database wiring and persistence |
-| `elements/` | UI |
-
-`types/` and `services/` are peers at the same tier: both may import `data/`, and may import each other. `database/` may import either or both. `elements/` sits at the top and imports `database/`.
+`SKILL.md` here is only the bottom-up build sequence; the rules carry the
+per-layer detail. Worked examples: the `data-lit-todo` and `data-lit-tictactoe`
+sample features.

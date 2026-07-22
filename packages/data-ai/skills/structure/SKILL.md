@@ -1,24 +1,23 @@
 ---
 name: structure
-description: Use when deciding file/folder layout, dependencies, package boundaries, or scaffolding a feature.
+description: Use when scaffolding or laying out a feature — file/folder layout, layers, and build order.
 ---
 
-Lay out or scaffold feature code.
+Lay out feature code **bottom-up** so each layer imports the one below
+(`ui → ecs → services → data`). Every source file lives inside a
+`features/<name>/` folder (features may nest); build only the layer(s) asked for.
 
-The `structure` rule tree holds the guidance — the feature layers, their
-dependency direction, and each layer's authoring rules. Follow it. Worked
-examples of a full feature:
-@see ./references/**/*.ts
+1. `data/` — data-type namespaces (schema + type + pure helpers) and the
+   `data/state/` spec.
+2. `services/` — async capability contracts (optional).
+3. `ecs/` — the schema (`core-database/`), then the behavioural layers
+   (`index → transaction → computed → service → action`), created only as needed.
+4. `ui/` — presentation.
 
-Code is organised by feature; no source file lives outside a feature
-folder (folders may nest to group sub-features). Build a feature bottom-up
-so each layer can import the one below (`ui → ecs → services → data`):
+The **how** for each layer is not restated here — the `features/` rule tree is
+the source of truth and **auto-loads by path as you create each file** (editing
+`…/ecs/core-database/components.ts` pulls in the components rule, and so on).
+Start from `features/index.md` for the layering and the spec/implementation
+relationship, then follow each folder's rule as you author it.
 
-1. `data/` — data-type namespaces (schema + type + pure helpers).
-2. `services/` — async capability contracts.
-3. `ecs/` — components, resources, archetypes, computed, indexes,
-   transactions, and the layered `core → index → transaction → computed →
-   service` plugins.
-4. `ui/` — user interface.
-
-Do only the layer(s) asked for; leave the rest to their own phases.
+Worked examples: the `data-lit-todo` and `data-lit-tictactoe` sample features.

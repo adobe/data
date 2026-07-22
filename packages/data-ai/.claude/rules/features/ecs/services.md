@@ -11,9 +11,12 @@ its transactions. This is where the async `services/` contracts (or
 framework services like `AgenticService`) are wired to ECS state.
 
 ```ts
-export const createAgentService = (db: TictactoeDatabase, mark: PlayerMark): AgenticService =>
+export const createAgentService = (db: ComputedDatabase, mark: PlayerMark): AgenticService =>
     /* … reads db.observe.*, calls db.transactions.* … */;
 ```
+
+Type `db` on the lowest layer exposing what the factory reads/calls (never the
+`service-database` itself — that would be a cycle).
 
 An `index.ts` barrel re-exports the factories; `service-database.ts`
 registers them under the `services` facet, each keyed by the name

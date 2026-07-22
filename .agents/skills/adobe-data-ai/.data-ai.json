@@ -3,9 +3,12 @@
   "version": "0.9.84",
   "skills": [
     "build-actions",
+    "build-application",
     "build-computed",
     "build-core-database",
     "build-data",
+    "build-feature",
+    "build-game",
     "build-indexes",
     "build-service-database",
     "build-services",

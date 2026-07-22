@@ -90,6 +90,28 @@ implies; the name has to predict the contents. If you can't beat
 `-types`, the file isn't a real lump — split per type, or inline at use
 site.
 
+## Casing: `PascalCase` for types, `camelCase` for everything else
+
+Capitalize a name **only** when it is a type, or a value that *represents a
+type*. Everything else — functions, values, methods — is `camelCase`.
+
+A `Schema` is a runtime type, so this extends to schema helpers:
+
+- A **schema value that is a type** is `PascalCase`: the namespace schemas
+  `F32`, `Boolean`, `Guid`, `True` (each *is* a type's schema).
+- A **higher-order schema function that returns a new type-representing
+  schema** is a runtime **type constructor** — the value-level analogue of
+  `Readonly<T>` / `Partial<T>` — and is `PascalCase`: `Nullable(schema)`,
+  `Tuple(item, n)`, `SuccessResultSchema(v)`, `ProgressiveResultSchema(v, e)`.
+- Everything else stays `camelCase`, even when it touches schemas: functions
+  that **annotate the same type** (`withValidation`), **build from a spec**
+  (`fromArchetype`, `fromObjectProperties`, `fromStructProperties`),
+  **resolve/transform** (`getDynamicSchema`, `toVertexBufferLayout`), or hang
+  off a namespace (`Guid.create`, `FractionalIndex.between`).
+
+The test: *does calling it yield a new runtime type?* Yes → `PascalCase`
+constructor. No → `camelCase`.
+
 ## Domain namespaces (for types you don't own)
 
 When utility functions operate on a platform or third-party type (e.g.

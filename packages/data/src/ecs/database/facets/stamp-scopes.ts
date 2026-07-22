@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Schema } from "../../../schema/index.js";
+import type { Simplify } from "../../../types/index.js";
 
 type SchemaMap = { readonly [key: string]: Schema };
 
@@ -55,7 +56,7 @@ const stamp = <M extends SchemaMap>(map: M, flags: Partial<Schema>): M => {
  */
 export function stampScopes<
     D extends SchemaMap, S extends SchemaMap, P extends SchemaMap, Se extends SchemaMap,
->(groups: ScopeGroups<D, S, P, Se>): D & S & P & Se {
+>(groups: ScopeGroups<D, S, P, Se>): Simplify<D & S & P & Se> {
     const merged = {
         // document has no flags — pass schemas through by identity so a column
         // shared across features (same data/ schema) still dedupes in combinePlugins.
@@ -65,5 +66,5 @@ export function stampScopes<
         ...stamp(groups.session ?? {}, { nonPersistent: true, nonShared: true }),
     };
     // Invariant: `merged` has exactly the keys of the provided groups.
-    return merged as D & S & P & Se;
+    return merged as Simplify<D & S & P & Se>;
 }

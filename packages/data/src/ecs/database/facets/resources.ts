@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { ResourceSchemas } from "../../resource-schemas.js";
+import type { Simplify } from "../../../types/index.js";
 import { stampScopes, type ScopeGroups } from "./stamp-scopes.js";
 
 /**
@@ -18,6 +19,6 @@ import { stampScopes, type ScopeGroups } from "./stamp-scopes.js";
 export function resources<
     D extends ResourceSchemas = {}, S extends ResourceSchemas = {},
     P extends ResourceSchemas = {}, Se extends ResourceSchemas = {},
->(groups: ScopeGroups<D, S, P, Se>): D & S & P & Se {
+>(groups: ScopeGroups<D, S, P, Se>): Simplify<D & S & P & Se> {
     return stampScopes(groups);
 }

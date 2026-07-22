@@ -1,6 +1,8 @@
 ---
 name: build-service-database
 description: Build a feature's ecs service-database — db-bound service factories. If the feature exposes services.
+input: feature
+output: feature
 ---
 
 Create `ecs/service-database/`: `service-database.ts` (extends the previous layer, registers the

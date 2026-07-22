@@ -1,6 +1,8 @@
 ---
 name: build-core-database
 description: Build a feature's ecs schema — the core-database (components, resources, archetypes). The first ecs layer.
+input: feature
+output: feature
 ---
 
 Create `ecs/core-database/` — four single-export files:

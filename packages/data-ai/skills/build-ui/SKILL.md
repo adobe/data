@@ -1,6 +1,8 @@
 ---
 name: build-ui
 description: Build a feature's ui/ layer — presentation bound to the ecs database. The final, top layer.
+input: feature
+output: feature
 ---
 
 Create `ui/`: one folder per UI unit —

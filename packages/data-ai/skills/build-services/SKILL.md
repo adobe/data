@@ -1,6 +1,8 @@
 ---
 name: build-services
 description: Build a feature's services/ layer — async capability contracts (ports to the outside world). Optional.
+input: feature
+output: feature
 ---
 
 Create the feature's `services/` layer: one `<name>-service/` namespace folder per async

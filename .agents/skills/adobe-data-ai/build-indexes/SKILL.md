@@ -1,6 +1,8 @@
 ---
 name: build-indexes
 description: Build a feature's ecs index-database — component/archetype indexes for O(1) lookup. As needed.
+input: feature
+output: feature
 ---
 
 Create `ecs/index-database/`: `index-database.ts` (extends `CoreDatabase`, adds the `indexes`

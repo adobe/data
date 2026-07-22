@@ -1,6 +1,8 @@
 ---
 name: build-transactions
 description: Build a feature's ecs transaction-database — atomic mutations over the store.
+input: feature
+output: feature
 ---
 
 Create `ecs/transaction-database/`: `transaction-database.ts` (extends `IndexDatabase`, adds

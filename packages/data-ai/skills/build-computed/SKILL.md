@@ -1,6 +1,8 @@
 ---
 name: build-computed
 description: Build a feature's ecs computed-database — derived observable values.
+input: feature
+output: feature
 ---
 
 Create `ecs/computed-database/`: `computed-database.ts` (extends the previous layer, adds

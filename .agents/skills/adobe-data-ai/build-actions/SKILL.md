@@ -1,6 +1,8 @@
 ---
 name: build-actions
 description: Build a feature's ecs action-database — async orchestration over services and transactions. If the feature has async flows.
+input: feature
+output: feature
 ---
 
 Create `ecs/action-database/`: `action-database.ts` (extends `ServiceDatabase`, adds `actions`

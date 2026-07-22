@@ -1,15 +1,13 @@
 ---
 name: build-game
-description: Build a game — an application whose features model game state, rules, and rendering. Specializes build-application.
+description: Build a game — an application whose features model game state, rules, and rendering.
+input: game
+output: game
 ---
 
-A game is an application (`build-application`); build it as one or more features where
-the layers map to game concepts:
+/build-application — a game is an application.
 
-- `data/` — the game state (board, pieces, scores) and rules as pure transforms;
-- `ecs/` — materializes that state; **transactions** are the moves (validate turn /
-  legality, then apply the `data/` rule); **computed** derives status / winner / views;
-- `ui/` — renders the board and dispatches moves as transactions.
-
-Turn-based games use the reactive transaction → computed → ui loop (see the
-`data-lit-tictactoe` sample). A real-time game additionally drives a systems/tick loop.
+Map game concepts to feature layers: data/ = state + rules, transactions = moves,
+computed = status/winner, ui = board + input. Turn-based uses the reactive
+transaction → computed → ui loop (see data-lit-tictactoe); real-time adds a
+systems/tick loop.

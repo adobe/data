@@ -1,6 +1,8 @@
 ---
 name: build-data
 description: Build a feature's data/ layer — data-type namespaces and the State spec. The first, foundational feature phase.
+input: feature
+output: feature
 ---
 
 Create the feature's `data/` layer (pure spec; depends on nothing but `@adobe/data`

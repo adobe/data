@@ -3,6 +3,7 @@
   "version": "0.9.84",
   "skills": [
     "build-actions",
+    "build-app-entry",
     "build-application",
     "build-computed",
     "build-core-database",

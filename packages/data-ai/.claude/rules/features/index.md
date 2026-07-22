@@ -51,15 +51,15 @@ its own peer feature rather than let one feature's folders balloon.
 - **Dependencies point toward the base, never out of it.** A peer feature may
   build on another feature's `data/` types and declarations (kept acyclic). The
   base must not depend on its children — with one sanctioned exception below.
-- **The base `imports` every peer's *persistent schema* plugin** —
+- **The base `imports` every peer's *schema* plugin** —
   `Database.Plugin.create({ imports })`, not `extends`. `imports` merges the
-  peer's persistent components / resources into the shared store at runtime
-  **without** pulling its types or behavior into the base's type or bundle
-  (`extends` would do both, and cost quadratically). So one store knows every
-  feature's durable schema — data coexists, persists, and syncs — while the base
-  stays decoupled. Import the peer's `document-database.ts` (shared + durable
-  schema only): its local/transient scopes, archetypes, indexes, transactions,
-  services, and UI stay out until the feature loads. Shared columns (e.g. a
+  peer's `core-database` (components / resources / archetypes) into the shared
+  store at runtime **without** pulling its types or behavior into the base's type
+  or bundle (`extends` would do both, and cost quadratically). So one store knows
+  every feature's schema — data coexists, persists, and syncs — while the base
+  stays decoupled. Import the peer's `core-database.ts` plugin (schema only): its
+  indexes, transactions, computed, services, and UI stay out until the feature
+  loads. Shared columns (e.g. a
   `name` used by two features) are re-exported by identity so `combinePlugins`
   dedupes them.
 - **Peers load lazily by being used.** `DatabaseElement`, on connect, walks up to

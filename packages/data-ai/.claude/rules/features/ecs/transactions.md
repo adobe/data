@@ -12,22 +12,19 @@ together.
 
 ```ts
 import { PlayMoveArgs } from "../../../data/play-move-args/play-move-args.js";
-import type { ArchetypeDatabase } from "../../archetype-database/archetype-database.js";
+import type { CoreDatabase } from "../../core-database/core-database.js";
 
-export const playMove = (t: ArchetypeDatabase.Store, { index }: PlayMoveArgs) => {
+export const playMove = (t: CoreDatabase.Store, { index }: PlayMoveArgs) => {
     // guard, then mutate t.resources / entities / archetypes
 };
 ```
 
-- Type the store parameter as `<Layer>.Store` — the lowest layer whose store
-  exposes what the transaction touches: `DocumentDatabase.Store` when it
-  reads/writes only document entities and resources; the matching scope store
-  (`SettingsDatabase.Store` / `SessionDatabase.Store`) when it touches that
-  scope's state; `ArchetypeDatabase.Store` the moment it uses any archetype
-  (anything that inserts/queries via `t.archetypes.*`, `t.select` /
-  `queryArchetypes` over an archetype); `IndexDatabase.Store` when it reads an
-  index. A store *is* the transaction context: it carries the index handles and
-  the initiating `t.userId`. There is no separate transaction-context type.
+- Type the store parameter as `<Layer>.Store`: **`CoreDatabase.Store`** for a
+  transaction that reads/writes entities, resources, or archetypes (the common
+  case — all schema lives in `core-database`); **`IndexDatabase.Store`** the
+  moment it reads an index. A store *is* the transaction context: it carries the
+  index handles and the initiating `t.userId`. There is no separate
+  transaction-context type.
 - Keep transactions idempotent under replay where sync/P2P applies —
   validate and silently return on illegal or out-of-turn input rather
   than throwing.

@@ -35,7 +35,9 @@ import type {
 } from "../store/action-functions.js";
 import { createPlugin } from "./create-plugin.js";
 import { combinePlugins } from "./combine-plugins.js";
-import { scope as scopeTransforms } from "./scope.js";
+import { components as componentsFacet } from "./facets/components.js";
+import { resources as resourcesFacet } from "./facets/resources.js";
+import { archetypes as archetypesFacet } from "./facets/archetypes.js";
 
 export type SystemFunction = () => void | Promise<void>;
 export type SystemDeclaration = {
@@ -272,10 +274,14 @@ export interface Database<
 
 export namespace Database {
   /**
-   * Scope tags for a layer's component/resource map — see `scope.ts`. Applied
-   * where a layer is composed: `components: Database.scope.session(components)`.
+   * Facet builders for a feature's `core-database`. Each groups declarations by
+   * schema scope (`document`/`settings`/`presence`/`session`) and stamps the
+   * matching flags; archetypes validate keys against the component map. See the
+   * `facets/` folder.
    */
-  export const scope = scopeTransforms;
+  export const components = componentsFacet;
+  export const resources = resourcesFacet;
+  export const archetypes = archetypesFacet;
 
   /**
    * Converts a Plugin type to its corresponding Database type.

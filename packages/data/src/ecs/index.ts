@@ -9,7 +9,6 @@ export { type Components } from "./store/components.js";
 export { type ResourceComponents } from "./store/resource-components.js";
 export * from "./component-schemas.js";
 export * from "./resource-schemas.js";
-export { assertSchemaScopes } from "./assert-schema-scopes.js";
 export * from "./undo-redo-service/index.js";
 export * from "./persistence-service/index.js";
 export { applyOperations } from "./database/transactional-store/apply-operations.js";

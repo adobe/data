@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { BoardState } from "../../../data/board-state/board-state.js";
 import { PlayMoveArgs } from "../../../data/play-move-args/play-move-args.js";
-import type { ArchetypeDatabase } from "../../archetype-database/archetype-database.js";
+import type { CoreDatabase } from "../../core-database/core-database.js";
 import { readBoard } from "./read-board.js";
 
 /**
@@ -10,7 +10,7 @@ import { readBoard } from "./read-board.js";
  * illegal or out-of-turn moves are silently ignored so the transaction stays
  * idempotent under replay.
  */
-export const playMove = (t: ArchetypeDatabase.Store, { index }: PlayMoveArgs) => {
+export const playMove = (t: CoreDatabase.Store, { index }: PlayMoveArgs) => {
   const board = readBoard(t);
   const mark = BoardState.currentPlayer(board, t.resources.firstPlayer);
   if (t.userId !== undefined && t.userId !== mark) return;

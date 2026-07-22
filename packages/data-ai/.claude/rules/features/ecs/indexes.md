@@ -5,21 +5,22 @@ paths:
 
 # database/indexes/ — ECS indexes
 
-One index descriptor per file: an object `satisfies <Layer>.Index` that
+One index descriptor per file: an object `satisfies CoreDatabase.Index` that
 tells the store to maintain a lookup keyed on a component, so queries and
 computed values can find entities without scanning.
 
 ```ts
-import type { DocumentDatabase } from "../../document-database/document-database.js";
+import type { CoreDatabase } from "../../core-database/core-database.js";
 
 export const byComplete = {
     key: "complete",
-} as const satisfies DocumentDatabase.Index;
+} as const satisfies CoreDatabase.Index;
 ```
 
-Use the `Index` helper of the scope layer that owns the keyed columns —
-`DocumentDatabase.Index` for a document column, `SettingsDatabase.Index` /
-`SessionDatabase.Index` for those scopes.
+`CoreDatabase.Index` is bound to every component (all scopes live in the one
+`core-database`). Archetype-scoped indexes carry an extra `archetype` field the
+`Index` helper can't express, so declare those with a bare `as const` (no
+`satisfies`) and let `index-database.ts`'s `create()` validate them.
 
 Name the export for what it indexes (`byComplete`, `byOwner`). An
 `index.ts` barrel re-exports every index; it feeds the `indexes` facet on

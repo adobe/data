@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { ArchetypeDatabase } from "../../archetype-database/archetype-database.js";
+import type { CoreDatabase } from "../../core-database/core-database.js";
 import { nextOrder } from "./order/index.js";
 
 export const createTodo = (
-  t: ArchetypeDatabase.Store,
+  t: CoreDatabase.Store,
   input: { readonly name: string; readonly complete?: boolean },
 ) =>
   t.archetypes.Todo.insert({

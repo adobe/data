@@ -5,190 +5,149 @@ paths:
 
 # ecs/ — the Entity-Component-System layer
 
-Everything ECS-specific lives here: the bindings that store `data/` types
-as entity state (`components/`, `resources/`, `archetypes/`), the derived
-and mutating logic over them (`computed/`, `indexes/`, `transactions/`),
-the database-bound service factories (`services/`), the async orchestrators
-(`actions/`), and the layered plugins that compose it all.
+Everything ECS-specific lives here: the schema that stores `data/` types as
+entity state (`core-database/`), the derived and mutating logic over it
+(`indexes/`, `transactions/`, `computed/`), the database-bound service factories
+(`services/`), the async orchestrators (`actions/`), and the layered plugins
+that compose it all.
 
 The distinction from `data/`: a `data/` type is ECS-agnostic (a plain
-serializable value); an ECS construct is *how that type is stored and
-operated on* inside a database. `mark = PlayerMark.schema` is not a
-data-model fact — it is "the ECS keeps a PlayerMark here".
+serializable value); an ECS construct is *how that type is stored and operated
+on* inside a database. `mark: PlayerMark.schema` is not a data-model fact — it
+is "the ECS keeps a PlayerMark here".
 
-## Layered composition
+## The core schema — `core-database/`
 
-The database is a chain of `Database.Plugin`s. Each layer is its own
-**namespace folder** — `<layer>-database/` holding the eponymous
-`<layer>-database.ts` (the plugin, which `extends` the previous layer) plus
-the facet folder(s) that feed it. **Name each layer for the facet it adds —
-never for the feature or app.** A feature creates only the layers it uses;
-the topmost one it defines is its composition root.
+A feature's whole schema — every component, resource, and archetype — lives in
+one `core-database/` folder of four single-export files:
+
+```
+ecs/core-database/
+  core-database.ts   # Database.Plugin.create({ components, resources, archetypes }) → CoreDatabase
+  components.ts      # export const components = Database.components({ … })
+  resources.ts       # export const resources  = Database.resources({ … })
+  archetypes.ts      # export const archetypes = Database.archetypes(components, { … })
+```
+
+`core-database.ts` is a thin assembler; each facet file exports one typed object
+built by a `Database.*` helper. No per-item files, no barrels.
 
 ### Schema scopes
 
-State divides on two orthogonal axes — **scope** (shared with peers vs. local
-to this client) and **lifetime** (durable across reloads vs. ephemeral) —
-giving four scopes, each its own schema layer holding components/resources with
-a fixed flag pair:
+State divides on two orthogonal axes — **scope** (shared with peers vs. local to
+this client) and **lifetime** (durable across reloads vs. ephemeral) — giving
+four scopes, each stamping a flag pair:
 
-| scope | shared? | durable? | `nonPersistent` | `nonShared` |
-|-------|:--:|:--:|:--:|:--:|
-| **document** | yes | yes | — | — |
-| **settings** | no | yes | — | ✅ |
-| **presence** | yes | no | ✅ | — |
-| **session** | no | no | ✅ | ✅ |
+| scope | shared? | durable? | flags |
+|-------|:--:|:--:|-------|
+| **document** | yes | yes | — |
+| **settings** | no | yes | `nonShared` |
+| **presence** | yes | no | `nonPersistent` |
+| **session** | no | no | `nonPersistent` + `nonShared` |
 
-- **`document-database/`** — the collaborative, serialized model: what peers
-  sync + save, and the set a bare store could be rebuilt from for
-  reconciliation. Extends nothing.
-- **`settings-database/`** — per-device preferences: durable but never synced
-  (`nonShared: true`).
-- **`presence-database/`** — live awareness (cursors, "typing"): synced but
-  never saved (`nonPersistent: true`).
-- **`session-database/`** — transient local UI state (drag offset, hover):
-  neither (`nonPersistent: true` **and** `nonShared: true`).
-
-Above the scope layers sits the packing layer:
-
-- **`archetype-database/`** — named entity shapes. Archetypes are an
-  iteration/packing convenience, **not** part of the serialized model, so they
-  live above the scopes (not in `document`). It extends the topmost scope layer
-  the feature defines, so one archetype may pack columns from several scopes
-  (e.g. a document entity with an ephemeral `dragPosition` slot).
-
-```
-ecs/
-  document-database/
-    document-database.ts    # extends nothing; the shared+durable schema root
-    components/  resources/
-  settings-database/        # optional — local+durable
-    settings-database.ts    # extends document; facets via Database.scope.settings
-    resources/
-  session-database/         # optional — local+ephemeral
-    session-database.ts     # extends settings (or document); via Database.scope.session
-    components/
-  archetype-database/
-    archetype-database.ts   # extends the topmost scope layer
-    archetypes/
-  index-database/
-    index-database.ts       # extends archetype
-    indexes/
-  transaction-database/ …   # extends index, then computed / service / action
-```
-
-**Most features are document-only** (plus `archetype-database`). Add
-`settings`, `presence`, or `session` **only** when the feature actually has
-state of that scope — many apps never need `presence`, and plenty never need
-`settings` or `session`. The scope layers chain in the order above (`document`
-→ `settings` → `presence` → `session`), each extending the previous one that
-*exists*; `archetype-database` extends whichever is topmost.
-
-### Applying scope
-
-The component/resource *files* are scope-agnostic (plain `data/` re-exports).
-The scope's flags are applied once, where the layer is composed, by passing the
-facet map through `Database.scope.<scope>`:
+`Database.components` / `Database.resources` group declarations by scope and
+stamp the flags. Every scope key is optional — declare only the ones you use
+(most features are document-only):
 
 ```ts
-// session-database.ts — the layer states the scope, not the files
-const sessionDatabasePlugin = Database.Plugin.create({
-    extends: SettingsDatabase.plugin,
-    components: Database.scope.session(components), // stamps { nonPersistent, nonShared }
+// components.ts
+export const components = Database.components({
+  document: { todo: True.schema, name: Name.schema, complete: Boolean.schema },
+  session:  { dragPosition: DragPosition.schema },   // omit settings / presence
+});
+
+// resources.ts — entries must carry a `default` (enforced at the call)
+export const resources = Database.resources({
+  settings: { displayCompleted: Boolean.schema },
 });
 ```
 
-`Database.scope` has one member per scope — `document` (identity, no flags),
-`settings` (`nonShared`), `presence` (`nonPersistent`), `session` (both). Wrap
-every scope layer's facets in the matching one (including `document`, for a
-uniform, self-describing composition root). This is the *only* place scope is
-set, so it can't be forgotten per-file or diverge within a layer.
+A component/resource *value* is a plain `data/`-schema re-export (or a small
+inline literal); its scope — and therefore its flags — is stated only by which
+group it sits in. Hover a scope key for its meaning. The database does not yet
+act on these flags (see the `nonShared` schema note); they model
+shared/local × durable/ephemeral now, and the durable-shared subset
+(`document`) is the set a bare store could be rebuilt from for reconciliation.
 
-Grouping each layer's facets under its folder keeps the layer cohesive: one
-folder holds everything that defines that layer, mirroring the `data/`
-namespace-folder pattern (folder + eponymous file). Cross-layer imports are
-correspondingly `../../<layer>-database/<layer>-database.js`.
+**Shared columns live in `data/`.** A column two features share (e.g. a `name`
+on both todos and users) is a `data/` type both reference by identity
+(`Name.schema`), so `combinePlugins` dedupes it. Only the `document` scope
+preserves schema identity (it applies no flags) — never share a
+settings/presence/session column across features by identity.
 
-Each exports a namespace mirroring the plugin. The composed object is a
-`Database` — the `@adobe/data` term — even though the folder is `ecs/`:
+### Archetypes
+
+`archetypes.ts` declares the feature's entity shapes with
+`Database.archetypes(components, { … })`, which validates every key against the
+component map and preserves each archetype's literal tuple — no per-archetype
+`as const`. Archetypes are a packing convenience, not serialized data; one may
+span scopes (a document entity with an ephemeral `dragPosition` slot). An
+archetype mirroring a `data/` row type carries a private compile-time
+drift-guard (see `archetypes.md`).
+
+## Layered composition (behaviour)
+
+Above the schema, behaviour is a chain of `Database.Plugin`s, each its own
+**namespace folder** — `<layer>-database/` holding the eponymous
+`<layer>-database.ts` (the plugin, which `extends` the previous layer) plus the
+facet folder it adds. **Name each layer for the facet it adds — never for the
+feature or app.** A feature creates only the layers it uses:
+
+```
+ecs/
+  core-database/            # the schema (above)
+  index-database/           # extends core;        indexes/
+  transaction-database/     # extends index;       transactions/
+  computed-database/        # extends transaction; computed/
+  service-database/         # extends computed;     services/
+  action-database/          # extends service;      actions/
+```
+
+Each exports a namespace mirroring the plugin — the composed object is a
+`Database` (the `@adobe/data` term) even though the folder is `ecs/`:
 
 ```ts
 export type IndexDatabase = Database.Plugin.ToDatabase<typeof indexDatabasePlugin>;
 export namespace IndexDatabase {
-    export const plugin = indexDatabasePlugin;
-    export type Store = Database.Plugin.ToStore<typeof indexDatabasePlugin>;
+  export const plugin = indexDatabasePlugin;
+  export type Store = Database.Plugin.ToStore<typeof indexDatabasePlugin>;
 }
 ```
 
 ## What each layer takes as input
 
-- **`plugin`** — every layer `extends` the previous layer's `plugin`; that
-  is the one universal thread up the chain.
-- **`Store`** (via `ToStore`) — used *only* by **transactions**
-  (`t: <Layer>.Store`). A store carries the index handles and the
-  initiating `userId`, so a store *is* the transaction context; there is no
-  separate transaction-context type. Pick the lowest layer that exposes what
-  the transaction touches: **`DocumentDatabase.Store`** when it reads/writes
-  only document entities and resources; the matching scope store
-  (`SettingsDatabase.Store` / `SessionDatabase.Store`) when it touches that
-  scope's state; **`ArchetypeDatabase.Store`** the moment it uses any archetype
-  (`t.archetypes.*`, `t.select`/`queryArchetypes` over an archetype);
-  `IndexDatabase.Store` when it reads an index.
-- **the whole `Database`** — **computed**, **services**, and **actions**
-  each take `db: <Layer>` (the lowest layer whose database exposes what they
-  read/call): computed reads `db.observe.*`; services read observables and
-  call transactions; actions call `db.services.*` then `db.transactions.*`.
+- **`plugin`** — every layer `extends` the previous layer's `plugin`; that is
+  the one universal thread up the chain.
+- **`Store`** (via `ToStore`) — used *only* by **transactions** (`t:
+  <Layer>.Store`). A store carries the index handles and the initiating
+  `userId`, so a store *is* the transaction context; there is no separate
+  transaction-context type. Use **`CoreDatabase.Store`** for a transaction that
+  reads/writes entities, resources, or archetypes; **`IndexDatabase.Store`** the
+  moment it reads an index.
+- **the whole `Database`** — **computed**, **services**, and **actions** each
+  take `db: <Layer>` (the lowest layer whose database exposes what they
+  read/call): computed reads `db.observe.*`; services read observables and call
+  transactions; actions call `db.services.*` then `db.transactions.*`.
 
 Each subfolder has its own rule. Modelling a plugin's authored vs. derived
 surface is covered by `plugin-modelling.md`.
 
-## The scope split is verified
-
-The split is not a naming convention you police by eye — assert it. Add a
-`schema-scopes.test.ts` at the **feature root** (`features/<name>/`) that calls
-`assertSchemaScopes` from `@adobe/data/ecs` with whichever scope plugins the
-feature defines:
-
-```ts
-import { assertSchemaScopes } from "@adobe/data/ecs";
-import { DocumentDatabase } from "./ecs/document-database/document-database.js";
-import { SettingsDatabase } from "./ecs/settings-database/settings-database.js";
-import { SessionDatabase } from "./ecs/session-database/session-database.js";
-
-test("feature schema scopes are consistent", () => {
-  assertSchemaScopes({
-    document: DocumentDatabase.plugin,
-    settings: SettingsDatabase.plugin, // omit scopes the feature doesn't have
-    session: SessionDatabase.plugin,
-  });
-});
-```
-
-It throws if any component/resource a scope layer *adds* carries the wrong flag
-pair (per the scope table above) — catching a durable-local `settings` value
-that forgot `nonShared`, a transient column that leaked into `document`, and so
-on. The flags come from the layer's `Database.scope.<scope>` call (see the
-"Applying scope" section above); this test verifies each layer applied the one
-matching its declared scope. A document-only feature still adds the test — it
-just passes `{ document }`.
-
 ## Facets are flat until they aren't
 
-A facet folder holds one file per item (one component, one transaction, …)
-plus an `index.ts` barrel — flat while that reads well, roughly up to half a
-dozen items. When a **cohesive cluster** of related items grows past that,
-promoting it into a themed subfolder with its own `index.ts` (re-exported by
-the facet barrel) is a standard, accepted move — not preemptively, only once
-the folder actually feels crowded:
+A **behavioural** facet folder (`indexes/`, `transactions/`, `computed/`,
+`actions/`) holds one file per item plus an `index.ts` barrel — flat while that
+reads well, roughly up to half a dozen items. When a cohesive cluster grows past
+that, promoting it into a themed subfolder with its own `index.ts` (re-exported
+by the facet barrel) is a standard move — only once the folder actually feels
+crowded:
 
 ```
 transactions/
   order/                 # a cohesive cluster: fractional-ordering helpers
-    index.ts             # re-exports the cluster
-    next-order.ts  normalize-order.ts  select-ordered-todos.ts
+    index.ts  next-order.ts  normalize-order.ts  select-ordered-todos.ts
   create-todo.ts  drag-todo.ts  …
 ```
 
-That said, a whole feature should stay small enough that this rarely bites —
-see the overview's note on growing by adding features rather than bloating
-one.
+The **schema** facets (components / resources / archetypes) are *single files*
+in `core-database/`, not folders. A whole feature should stay small enough that
+subfoldering rarely bites — grow by adding features, not by bloating one.

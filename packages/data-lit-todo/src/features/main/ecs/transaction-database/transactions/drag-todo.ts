@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from "@adobe/data/ecs";
-import type { ArchetypeDatabase } from "../../archetype-database/archetype-database.js";
+import type { CoreDatabase } from "../../core-database/core-database.js";
 import { normalizeOrder, selectOrderedTodos } from "./order/index.js";
 
 // Declared, not exported (one public export per file — the transaction). A
@@ -27,7 +27,7 @@ type DragTodoInput = {
  * Intended to be driven by `useDragTransaction`, which invokes it with an
  * `AsyncArgsProvider` so all frames commit as one undoable step.
  */
-export const dragTodo = (t: ArchetypeDatabase.Store, input: DragTodoInput): void => {
+export const dragTodo = (t: CoreDatabase.Store, input: DragTodoInput): void => {
   t.undoable = { coalesce: false };
   const { entity, dragPosition, finalIndex } = input;
 

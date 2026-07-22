@@ -1,23 +1,24 @@
 ---
 name: structure
-description: Use when scaffolding a whole feature — the bottom-up build order and which build-* phase skill drives each layer.
+description: Use when laying out or reasoning about a feature's file/folder structure and layer dependencies.
 ---
 
-A feature is layered `ui → ecs → services → data` (higher imports lower, never the
-reverse). Build **bottom-up**, one phase at a time, doing only the layers the feature
-needs. Each phase has a `build-*` skill that scaffolds it; the `features/` rules
-auto-load by path and cover the *how*.
+A feature is a `features/<name>/` folder (features may nest) with four layers,
+higher importing lower, never the reverse:
 
-1. **`build-data`** — data-type namespaces + the `data/state/` spec. *(always)*
-2. **`build-services`** — async capability contracts. *(if it talks to the outside world)*
-3. **`build-core-database`** — the ecs schema: components / resources / archetypes. *(always, for stateful features)*
-4. **`build-indexes`** — indexed lookups. *(as needed)*
-5. **`build-transactions`** — atomic mutations.
-6. **`build-computed`** — derived observables.
-7. **`build-service-database`** — db-bound service factories. *(if any)*
-8. **`build-actions`** — async orchestration. *(if any)*
-9. **`build-ui`** — presentation.
+    ui → ecs → services → data
 
-Every source file lives in a `features/<name>/` folder (features may nest). Start from
-`features/index.md` for the layering and the spec/implementation relationship. Worked
-examples: the `data-lit-todo` and `data-lit-tictactoe` sample features.
+- `data/` — data-type namespaces (schema + type + pure helpers) and the
+  `data/state/` spec. Depends on nothing but `@adobe/data` and other `data/`.
+- `services/` — async capability contracts (ports to the outside world). Optional.
+- `ecs/` — the schema (`core-database/`) plus the behavioural layers
+  (`index → transaction → computed → service → action` databases), each a plugin
+  extending the previous.
+- `ui/` — presentation.
+
+A feature creates only the layers it uses. An application is many features; one
+base (`features/main/`) hosts peers that load lazily.
+
+`features/index.md` is the full overview (layering + the spec/implementation
+relationship), and each folder's rule covers how to author it. Worked examples:
+the `data-lit-todo` and `data-lit-tictactoe` samples.

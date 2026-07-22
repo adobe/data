@@ -13,6 +13,7 @@
   },
   "files": [
     "skills",
+    ".claude",
     "bin",
     ".claude-plugin",
     "README.md",

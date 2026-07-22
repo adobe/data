@@ -11,6 +11,7 @@
     "build-services",
     "build-transactions",
     "build-ui",
+    "structure",
     "x-alpha",
     "x-beta",
     "x-double",

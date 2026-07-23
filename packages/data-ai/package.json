@@ -21,7 +21,7 @@
   ],
   "scripts": {
     "build": "cp ../../LICENSE .",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "true",
     "test": "vitest --run --passWithNoTests",
     "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
   },

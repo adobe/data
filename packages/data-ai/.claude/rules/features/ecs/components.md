@@ -36,3 +36,6 @@ export const components = Database.components({
   preserves schema identity) so `combinePlugins` dedupes them.
 - Struct vs. object storage and schema selection are properties of the `data/`
   type, decided there.
+- Don't infer entity type based upon component membership.
+  Consider using a const: true "tag" component or a type/kind enumerated value if needed.
+  Note that *many* good ecs designs don't care the type of the entity and only act on components.

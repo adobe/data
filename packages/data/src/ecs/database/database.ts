@@ -19,6 +19,7 @@ import type { Service } from "../../service/index.js";
 import { createDatabase } from "./public/create-database.js";
 import type { ConcurrencyStrategy } from "./concurrency/concurrency-strategy.js";
 import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
+import { toSystemDatabase as _toSystemDatabase } from "./to-system-database.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
 import { PartitionKeysOf } from "../store/partition.js";
@@ -352,6 +353,8 @@ export namespace Database {
     };
 
   export const create = createDatabase;
+
+  export const toSystemDatabase = _toSystemDatabase;
 
   export const is = (value: unknown): value is Database => {
     return value !== null && typeof value === "object" && "transactions" in value && "actions" in value && "store" in value && "observe" in value && "system" in value && "extend" in value;

@@ -27,6 +27,8 @@ data/player-mark/
 - The **schema is the single source of truth** for the shape; the derived
   type and every consumer flow from it.
 - Helpers are synchronous and pure; each has a sibling `*.test.ts`.
+- Objects with only numeric 32 bit values/sub-structs should use Schema.fromStructProperties
+  It guarantees a valid struct schema which will be stored in linear memory.
 
 One folder is special: **`data/state/`** holds the feature's single `State`
 aggregate and its pure transforms/derivations (its own rule, `state.md`);

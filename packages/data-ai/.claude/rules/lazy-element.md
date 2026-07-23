@@ -50,6 +50,14 @@ Rules:
   symbol crosses the wrapper / element boundary.
 - The wrapper passes typed args via `.prop=${args.prop}` bindings, never
   attribute strings.
+- **Injecting a database:** a `DatabaseElement` receives its live database
+  through the `.service` setter — that is the one DI property it exposes
+  (`set service(db)`; there is no *public* `.database` binding target — the
+  `protected get database()` is a subclass's own read path, not a DI property).
+  A wrapper over a `DatabaseElement` binds `.service=${args.service}`. Binding
+  any other name (`.database=`) is silently inert: the setter never runs, so the element
+  falls back to `connectedCallback` self-creating from `this.plugin` and the
+  injected database is discarded.
 
 ## The element file (`foo-element.ts`)
 

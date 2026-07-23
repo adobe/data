@@ -46,8 +46,12 @@ as both type and namespace (`LogLevel.is(x)`, `LogLevel.values`).
   `import type` is unnecessary and produces a duplicate-identifier error.
 - Helper files use `import type` from the sibling `<type-name>.ts` to
   avoid cycling through `public.ts`.
-- Add `is` / `values` / per-member descriptors only when an external
-  consumer actually needs them — not preemptively.
+- Add `is` / `values` / per-member descriptors only when a consumer
+  actually needs them — not preemptively. A consumer in a not-yet-built
+  higher layer counts: a presentational descriptor the `ui/` will need
+  (per-member glyphs, a keypad `values` list) may be authored with the
+  data type, but give it a one-line doc naming the intended consumer (as
+  `player-mark/mark-color.ts` does) so the need is recorded, not guessed.
 
 ## Strict single public export per file
 
@@ -167,8 +171,9 @@ Example:
         archetypes,
     });
 
-    export type CoreDatabase = Database.FromPlugin<typeof coreDatabasePlugin>;
+    export type CoreDatabase = Database.Plugin.ToDatabase<typeof coreDatabasePlugin>;
 
     export namespace CoreDatabase {
         export const plugin = coreDatabasePlugin;
+        export type Store = Database.Plugin.ToStore<typeof coreDatabasePlugin>;
     }

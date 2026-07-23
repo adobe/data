@@ -1,0 +1,29 @@
+{
+  "name": "lit-calculator",
+  "version": "0.9.84",
+  "description": "Calculator sample - Lit web components with @adobe/data-lit",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "test": "vitest --run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "publish-public": "true"
+  },
+  "dependencies": {
+    "@adobe/data": "workspace:*",
+    "@adobe/data-lit": "workspace:*",
+    "lit": "^3.3.1"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.0",
+    "typescript": "^5.8.3",
+    "vite": "^5.1.1",
+    "vite-plugin-checker": "^0.12.0",
+    "vitest": "^1.6.0"
+  }
+}

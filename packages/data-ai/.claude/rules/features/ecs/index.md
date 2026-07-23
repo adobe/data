@@ -19,18 +19,21 @@ is "the ECS keeps a PlayerMark here".
 ## The core schema — `core-database/`
 
 A feature's whole schema — every component, resource, and archetype — lives in
-one `core-database/` folder of four single-export files:
+one `core-database/` folder: `core-database.ts` plus one file per facet the
+feature uses (all three facets are optional on `Database.Plugin.create`):
 
 ```
 ecs/core-database/
-  core-database.ts   # Database.Plugin.create({ components, resources, archetypes }) → CoreDatabase
+  core-database.ts   # Database.Plugin.create({ components?, resources?, archetypes? }) → CoreDatabase
   components.ts      # export const components = Database.components({ … })
   resources.ts       # export const resources  = Database.resources({ … })
   archetypes.ts      # export const archetypes = Database.archetypes(components, { … })
 ```
 
 `core-database.ts` is a thin assembler; each facet file exports one typed object
-built by a `Database.*` helper. No per-item files, no barrels.
+built by a `Database.*` helper. No per-item files, no barrels. Create only the
+facet files the feature needs — a singleton feature with no entities is just
+`resources.ts` + `core-database.ts` (no empty `components({})` boilerplate).
 
 ### Schema scopes
 

@@ -74,11 +74,16 @@ its own peer feature rather than let one feature's folders balloon.
 
 ## Spec and implementation, kept honest
 
-The tie between `data/` (spec) and `ecs/` (implementation) is **conformance**:
-a small `ecs ↔ State` projection lets each ecs computed/transaction be tested
-against the `data/` transform it stands for — so the ecs layer can be largely
-mechanical and agent-generated, with the spec as oracle. *How* to author each
-layer lives in the per-folder rules below.
+The tie between `data/` (spec) and `ecs/` (implementation) is **conformance**,
+one property — `toState(apply(fromState(before), args)) ≡ transform(before, args)`:
+each ecs mutation, seeded and read back through a test-only `ecs ↔ State`
+projection, equals the pure `data/` transform it stands for. The projection and
+its runner live in `ecs/conformance/` (see `ecs/conformance.md`); the shared
+`{ before, args, after }` cases are spec-owned (`data/state/<transform>.cases.ts`),
+so conforming the ecs path is "substitute the implementation, reuse the
+expectations." This lets the ecs layer be largely mechanical and agent-generated,
+with the spec as oracle. *How* to author each layer lives in the per-folder rules
+below.
 
 ## Per-layer detail
 

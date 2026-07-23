@@ -39,7 +39,13 @@ export * as State from "./public.js";
 - Guard and **return `state` unchanged** on a no-op / illegal input rather
   than throwing — this keeps transforms idempotent under repeated application.
 - Each transform has a sibling `*.test.ts`; performance is irrelevant here,
-  correctness is everything.
+  correctness is everything. Keep its cases in a sibling `<transform>.cases.ts`
+  typed `ConformanceCase<Args>[]` (the shared `conformance-case.ts` type) —
+  spec-owned truth the matching ecs conformance test imports unchanged (see
+  `ecs/conformance.md`). Author `before`/`after` as full `State`
+  (`{ ...State.create(), …overrides }`); the generic-slice signature lets them
+  flow through. Tolerant full-`State` equality is the shared
+  `expect-state-matches.ts`, alongside the cases here.
 
 ## Derivations — `(state) => value`
 

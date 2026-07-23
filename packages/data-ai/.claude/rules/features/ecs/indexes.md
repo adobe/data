@@ -26,6 +26,23 @@ Name the export for what it indexes (`byComplete`, `byOwner`). An
 `index.ts` barrel re-exports every index; it feeds the `indexes` facet on
 `index-database.ts`.
 
+## Discrete keys only — derive a bucket for spatial / range queries
+
+An index matches keys by **equality on a discrete value**, so a continuous or
+range-valued column (a `position`, a timestamp, a score) can't be indexed as-is
+— `{ key: "position" }` buckets by exact value and finds nothing near a point.
+Derive a discrete **bucket key** — but prefer a **computed-key extractor**
+(`key: { cell: (c) => cellKey(c.position!) }`, naming the read columns in
+`components`) over storing the derived key as its own component. The extractor
+recomputes the key from its source columns, so the index stays correct with no
+maintenance; a stored bucket column must instead be recomputed at every
+insertion/update site (or by a system) and silently drifts if one is missed. The
+derivation itself is a pure `data/` helper.
+
+Bucketed broad-phase only pays off at scale (hundreds+ candidates per query);
+below that a linear scan over an archetype wins. Index when the scan is a
+**proven** cost, not preemptively.
+
 ## Scoping, arrays, and many-to-many
 
 - **Coverage is by columns.** An index applies to every archetype whose

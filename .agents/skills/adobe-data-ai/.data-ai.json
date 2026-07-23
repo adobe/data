@@ -13,6 +13,7 @@
     "build-indexes",
     "build-service-database",
     "build-services",
+    "build-systems",
     "build-transactions",
     "build-ui",
     "meta-build",

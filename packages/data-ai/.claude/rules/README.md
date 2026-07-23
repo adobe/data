@@ -23,6 +23,7 @@ features/
     index.md          # the ECS layer + layered database plugins
     components.md  resources.md  archetypes.md
     computed.md  indexes.md  transactions.md  services.md  actions.md
+    systems.md  conformance.md
   ui/index.md         # UI (points to element / presentation / lazy-element file rules)
 ```
 

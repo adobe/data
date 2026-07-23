@@ -13,5 +13,5 @@ type TictactoeService = ComputedDatabase;
  */
 export const Tictactoe = <S extends TictactoeService>(args: { service: S }): TemplateResult => {
     void import("./tictactoe-app-element.js");
-    return html`<tictactoe-app .database=${args.service}></tictactoe-app>`;
+    return html`<tictactoe-app .service=${args.service}></tictactoe-app>`;
 };

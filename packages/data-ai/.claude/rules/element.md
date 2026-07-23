@@ -43,6 +43,26 @@ a child tag name, mapping functions). Those props feed a sibling
 controller invoked from a `useMemo` / `useEffect` hook; they never
 appear inside render branching. Use sparingly.
 
+### Imperative / canvas containers
+
+A container whose "presentation" is an imperative surface (a `<canvas>` /
+WebGL context) can't render reactively — a real-time feature mutates
+component columns in place each frame, which fires no observers. Such a
+container may:
+
+- run a `requestAnimationFrame` draw loop inside a `useEffect` (cancelled in
+  its cleanup) that reads the live store synchronously and calls a pure
+  `draw(ctx, scene)`;
+- read the **full** database for those reads via the base class's protected
+  accessor (`this.database` on a Lit `DatabaseElement`) — never cast the
+  restricted `service` back to the full surface;
+- hold ephemeral input-hardware state (a held-key `useRef`, pointer state)
+  gathered by `useWindowEvent` and forwarded to a transaction.
+
+The discipline still holds otherwise: no game/derivation logic (it lives in
+`data/` and systems), the draw function is pure, and the reactive HUD around
+the canvas is a normal subscribe-and-delegate presentation.
+
 ## Subscription reads must be raw
 
 Each value in the subscription block is a direct read of a service
@@ -55,6 +75,20 @@ by this element, define the computed in a sibling file and import it.
 Each callback assembles arguments and invokes one service action or
 transaction. No clamping, normalisation, branching, or shape-building.
 Logic belongs in the action / transaction layer.
+
+Transactions and actions are pure, already-bound functions — when a
+callback would just forward the same arguments to one of them, pass the
+function **by reference**, don't wrap it in an identity arrow:
+
+```ts
+// ❌ identity wrapper — adds nothing
+setOperation: (op) => this.service.transactions.setOperation(op),
+// ✅ same signature, pass it through
+setOperation: this.service.transactions.setOperation,
+```
+
+Only write an arrow when you genuinely adapt the call (drop an event
+arg, reorder, supply a captured locator).
 
 ## Lifecycle goes through hooks
 

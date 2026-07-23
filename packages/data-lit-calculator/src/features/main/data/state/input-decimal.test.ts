@@ -1,0 +1,11 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+import { describe, it } from "vitest";
+import { State } from "./state.js";
+import { cases } from "./input-decimal.cases.js";
+import { expectStateMatches } from "./expect-state-matches.js";
+
+describe("State.inputDecimal", () => {
+  for (const { name, before, after } of cases) {
+    it(name, () => expectStateMatches(State.inputDecimal(before), after));
+  }
+});

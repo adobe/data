@@ -1,5 +1,5 @@
 {
-  "name": "lit-calculator",
+  "name": "data-lit-calculator",
   "version": "0.9.84",
   "description": "Calculator sample - Lit web components with @adobe/data-lit",
   "type": "module",

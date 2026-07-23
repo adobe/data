@@ -14,8 +14,8 @@ packages:
   - 'packages/data-solid-dashboard'
   - 'packages/data-gpu'
   - 'packages/data-gpu-samples'
-  - 'packages/lit-calculator'
-  - 'packages/lit-asteroids'
+  - 'packages/data-lit-calculator'
+  - 'packages/data-lit-asteroids'
 allowBuilds:
   edgedriver: false
   esbuild: false

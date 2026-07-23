@@ -1,5 +1,5 @@
 {
-  "name": "lit-asteroids",
+  "name": "data-lit-asteroids",
   "version": "0.9.84",
   "description": "Asteroids sample - real-time ECS game with Lit and @adobe/data",
   "type": "module",

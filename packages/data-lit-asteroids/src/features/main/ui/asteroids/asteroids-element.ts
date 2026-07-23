@@ -11,7 +11,7 @@ import {
   useRef,
   useWindowEvent,
 } from "@adobe/data-lit";
-import { SystemDatabase } from "../../ecs/system-database/system-database.js";
+import { FeatureDatabase } from "../../ecs/feature-database.js";
 import type { Input } from "../../data/input/input.js";
 import type { Size } from "../../data/size/size.js";
 import { styles } from "./asteroids.css.js";
@@ -45,7 +45,7 @@ const toInput = (held: Held, fire: boolean): Input => ({
 // render bridge, not game logic: the scheduler advances the sim on its own rAF,
 // mostly via in-place column writes that never fire observers, so the canvas
 // must read the current columns synchronously each frame rather than subscribe.
-const buildScene = (game: SystemDatabase) => {
+const buildScene = (game: FeatureDatabase) => {
   const ships: { position: Vec2; rotation: number }[] = [];
   for (const arch of game.queryArchetypes(["position", "rotation"])) {
     const position = arch.columns.position;
@@ -73,11 +73,11 @@ const buildScene = (game: SystemDatabase) => {
 };
 
 @customElement(tagName)
-export class AsteroidsElement extends DatabaseElement<typeof SystemDatabase.plugin> {
+export class AsteroidsElement extends DatabaseElement<typeof FeatureDatabase.plugin> {
   static styles = styles;
 
   get plugin() {
-    return SystemDatabase.plugin;
+    return FeatureDatabase.plugin;
   }
 
   render() {

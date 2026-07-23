@@ -8,7 +8,7 @@ import * as actions from "./actions/index.js";
  * level:
  *
  * ```ts
- * const gamePlugin = Database.Plugin.combine(tictactoePlugin, PresenceDatabase.plugin);
+ * const gamePlugin = Database.Plugin.combine(TictactoeGameDatabase.plugin, PresenceDatabase.plugin);
  * ```
  *
  * Presence lives in `data-p2p-tictactoe`, not in `data-lit-tictactoe`, because

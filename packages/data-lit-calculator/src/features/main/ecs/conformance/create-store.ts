@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Store } from "@adobe/data/ecs";
 import type { CoreDatabase } from "../core-database/core-database.js";
-import { ComputedDatabase } from "../computed-database/computed-database.js";
+import { FeatureDatabase } from "../feature-database.js";
 
 // A fresh writable store carrying the feature's whole schema — every component,
 // resource, archetype, and index the assembled plugin declares — built cast-free
@@ -14,8 +14,8 @@ import { ComputedDatabase } from "../computed-database/computed-database.js";
 // projection conformance tests. Test-only.
 export const createStore = (): CoreDatabase.Store =>
   Store.create({
-    components: ComputedDatabase.plugin.components,
-    resources: ComputedDatabase.plugin.resources,
-    archetypes: ComputedDatabase.plugin.archetypes,
-    indexes: ComputedDatabase.plugin.indexes,
+    components: FeatureDatabase.plugin.components,
+    resources: FeatureDatabase.plugin.resources,
+    archetypes: FeatureDatabase.plugin.archetypes,
+    indexes: FeatureDatabase.plugin.indexes,
   });

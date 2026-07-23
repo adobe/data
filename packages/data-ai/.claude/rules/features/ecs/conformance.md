@@ -34,7 +34,8 @@ Conformance test-support splits by concern along the layer boundary:
 
 A **transaction is `(store, args) => void`**, so transaction conformance needs no
 `Database`: `Store.create({ components, resources, archetypes, indexes })` (the
-same facets the plugin carries) returns a cast-free writable `CoreDatabase.Store`.
+same facets `FeatureDatabase.plugin` carries) returns a cast-free writable
+`CoreDatabase.Store`.
 `fromState`/`toState`/`apply` all operate on it, and `apply` calls the **raw
 transaction function** directly:
 

@@ -2,7 +2,7 @@
 
 import { customElement } from "lit/decorators.js";
 import { DatabaseElement, useObservableValues } from "@adobe/data-lit";
-import { ComputedDatabase } from "../../ecs/computed-database/computed-database.js";
+import { FeatureDatabase } from "../../ecs/feature-database.js";
 import { styles } from "./calculator.css.js";
 import * as presentation from "./calculator-presentation.js";
 
@@ -15,11 +15,11 @@ declare global {
 }
 
 @customElement(tagName)
-export class CalculatorElement extends DatabaseElement<typeof ComputedDatabase.plugin> {
+export class CalculatorElement extends DatabaseElement<typeof FeatureDatabase.plugin> {
   static styles = styles;
 
   get plugin() {
-    return ComputedDatabase.plugin;
+    return FeatureDatabase.plugin;
   }
 
   render() {

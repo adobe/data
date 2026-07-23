@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Store } from "@adobe/data/ecs";
 import type { CoreDatabase } from "../core-database/core-database.js";
-import { ServiceDatabase } from "../service-database/service-database.js";
+import { FeatureDatabase } from "../feature-database.js";
 
 // A fresh writable store carrying the feature's whole schema — every component,
 // resource, archetype, and index the assembled plugin declares — built cast-free
@@ -13,8 +13,8 @@ import { ServiceDatabase } from "../service-database/service-database.js";
 // Backs the transaction and projection conformance tests. Test-only.
 export const createStore = (): CoreDatabase.Store =>
   Store.create({
-    components: ServiceDatabase.plugin.components,
-    resources: ServiceDatabase.plugin.resources,
-    archetypes: ServiceDatabase.plugin.archetypes,
-    indexes: ServiceDatabase.plugin.indexes,
+    components: FeatureDatabase.plugin.components,
+    resources: FeatureDatabase.plugin.resources,
+    archetypes: FeatureDatabase.plugin.archetypes,
+    indexes: FeatureDatabase.plugin.indexes,
   });

@@ -3,21 +3,16 @@
 // Library entry point for data-lit-tictactoe.
 // Consumers (e.g. data-p2p-tictactoe) import from this barrel.
 
-import { ComputedDatabase } from "./features/main/ecs/computed-database/computed-database.js";
-import { ServiceDatabase } from "./features/main/ecs/service-database/service-database.js";
+// The assembled feature database: the base game extended with AI agent
+// services. Feature-qualified per the cross-feature naming rule so a peer or
+// downstream package never collides with another feature's database. Carries
+// `.plugin` / `.Store` for consumers that build their own database.
+export { FeatureDatabase as TictactoeDatabase } from "./features/main/ecs/feature-database.js";
 
-export { ComputedDatabase } from "./features/main/ecs/computed-database/computed-database.js";
-export { ServiceDatabase } from "./features/main/ecs/service-database/service-database.js";
-
-/**
- * The base game plugin (resources + transactions + computed). Combine with
- * P2P-specific plugins, or extend with AI via {@link ServiceDatabase}. Kept as a
- * value export for consumers that build their own database.
- */
-export const tictactoePlugin = ComputedDatabase.plugin;
-
-/** The base game plugin extended with AI agent services. */
-export const agentPlugin = ServiceDatabase.plugin;
+// The base game database — all game logic (resources, transactions, computed),
+// no AI. Combine its `.plugin` with P2P-specific plugins, or reach for
+// `TictactoeDatabase` to get the agent-extended assembly.
+export { ComputedDatabase as TictactoeGameDatabase } from "./features/main/ecs/computed-database/computed-database.js";
 
 export { Tictactoe } from "./features/main/ui/tictactoe-app/tictactoe-app.js";
 export { TictactoeElement } from "./features/main/ui/tictactoe-element.js";

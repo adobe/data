@@ -9,6 +9,7 @@ output: app
   plugin, so all schemas coexist, persist, and sync while the base type stays decoupled.
 - The base reaches a peer only through a lazy element wrapper (dynamic import), so peers
   load on demand.
-- The entry point creates the live database from the base plugin and mounts the root UI.
+- The entry point creates the live database from `FeatureDatabase.plugin` (the base
+  feature's assembled database — see `features/ecs/index.md`) and mounts the root UI.
 
 See `features/index.md` (one-app-many-features) for the wiring rules.

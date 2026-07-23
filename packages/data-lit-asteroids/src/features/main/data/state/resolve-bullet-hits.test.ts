@@ -5,9 +5,9 @@ import { cases } from "./resolve-bullet-hits.cases.js";
 import { expectStateMatches } from "./expect-state-matches.js";
 
 describe("State.resolveBulletHits", () => {
-  for (const { name, before, after } of cases) {
+  for (const { name, before, args, after } of cases) {
     it(name, () => {
-      expectStateMatches(State.resolveBulletHits(before), after);
+      expectStateMatches(State.resolveBulletHits(before, args), after);
     });
   }
 });

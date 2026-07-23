@@ -107,6 +107,24 @@ describe("collision detection — bullet ↔ asteroid selection", () => {
     expect(after.bullets).toHaveLength(1);
     expect(after.asteroids).toHaveLength(1);
   });
+
+  it("does not let a second bullet hit a child the first spawned this same frame", () => {
+    // Two bullets on one large: one destroys it (→ 2 medium); the second must
+    // find no ORIGINAL target and survive — never chain onto a fresh medium.
+    const after = detect(
+      base({
+        bullets: [
+          { position: [100, 100], velocity: [0, 0], age: 0 },
+          { position: [100, 100], velocity: [0, 0], age: 0 },
+        ],
+        asteroids: [{ position: [100, 100], velocity: [0, 0], size: "large" }],
+      }),
+    );
+    expect(after.score).toBe(Size.score.large);
+    expect(after.asteroids.filter((a) => a.size === "medium")).toHaveLength(2);
+    expect(after.asteroids.filter((a) => a.size === "small")).toHaveLength(0);
+    expect(after.bullets).toHaveLength(1);
+  });
 });
 
 describe("collision detection — ship ↔ asteroid selection", () => {

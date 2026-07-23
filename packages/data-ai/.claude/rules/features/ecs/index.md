@@ -117,6 +117,29 @@ export namespace IndexDatabase {
 }
 ```
 
+### The assembled database — `FeatureDatabase`
+
+*Which* layer is topmost varies with the facets a feature uses (computed /
+service / action / system). Consumers — `ui/`, the app entry, `ecs/conformance/`
+— need the *whole* feature database but must not name that layer, or adding or
+dropping a layer rewrites them all. Alias it once:
+
+```ts
+// ecs/feature-database.ts
+export { SystemDatabase as FeatureDatabase } from "./system-database/system-database.js";
+```
+
+Every consumer references **`FeatureDatabase`** (`.plugin`, `.Store`) — never the
+topmost layer. Add or drop a layer → change only this one line.
+
+**Cross-feature naming.** Inside a feature the core and assembled databases are
+the bare `CoreDatabase` / `FeatureDatabase`. When *another* feature or package
+imports one — a peer built on it, the base `imports` a peer's `core-database`, a
+downstream package — reference it **feature-qualified**: `<Feature>CoreDatabase`
+/ `<Feature>Database`, re-exported so from the feature's barrel
+(`export { CoreDatabase as TodoCoreDatabase } from "…/core-database.js"`) — so
+two features' `CoreDatabase`s never collide.
+
 ## What each layer takes as input
 
 - **`plugin`** — every layer `extends` the previous layer's `plugin`; that is

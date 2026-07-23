@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Database, scheduler } from "@adobe/data/ecs";
 import type { Entity } from "@adobe/data/ecs";
-import type { Vec2 } from "@adobe/data/math";
+import { Vec2 } from "@adobe/data/math";
 import { ComputedDatabase } from "../computed-database/computed-database.js";
 import { Motion } from "../../data/motion/motion.js";
 import { Spatial } from "../../data/spatial/spatial.js";
@@ -132,25 +132,36 @@ const systemDatabasePlugin = Database.Plugin.create({
     },
 
     // Resolve collisions the way State.step does: bullet↔asteroid first (each
-    // bullet destroys the first asteroid it overlaps), then ship↔asteroid. Both
-    // discrete outcomes are dispatched as transactions — hitAsteroid (score +
-    // split) and loseLife (spend a life, respawn) — so the data/-verified logic is
-    // reused and the reactive HUD is notified. The broad phase reads the `byCell`
-    // index (this cell + its 8 neighbours) then narrow-phases with a circle test;
-    // set iteration order need not match the spec's array order (the conformance
-    // test compares as a multiset). Bullet ids are snapshotted first: a dispatch
-    // migrates archetype rows, so we must not hold a live cursor across one; a
-    // bullet is only removed by its own hit, so reading each surviving bullet's
-    // position by id stays valid. Frozen once the game is over.
+    // bullet destroys the first asteroid its path this frame sweeps through),
+    // then ship↔asteroid. Both discrete outcomes are dispatched as transactions —
+    // hitAsteroid (score + split) and loseLife (spend a life, respawn) — so the
+    // data/-verified logic is reused and the reactive HUD is notified.
+    //
+    // Two different broad phases: the SHIP is point-like and moves slowly, so it
+    // uses the `byCell` index (this cell + its 8 neighbours) then a circle test.
+    // A BULLET is swept — its per-frame travel can span many cells, which the
+    // 3×3 byCell window cannot bound — so bullet detection brute-force scans the
+    // whole Asteroid archetype (rock counts are small; the byCell index was
+    // already over-engineering) with a segment-vs-circle test. Set/scan order
+    // need not match the spec's array order (the conformance test compares as a
+    // multiset). Bullet ids are snapshotted first: a dispatch migrates archetype
+    // rows, so we must not hold a live cursor across one; a bullet is only removed
+    // by its own hit, so reading each surviving bullet's position/velocity by id
+    // stays valid. Frozen once the game is over.
     collision: {
       schedule: { after: ["movement", "lifetime"] },
       create: (db) => {
-        const findHitAsteroid = (center: Vec2, radius: number): Entity | undefined => {
+        const findHitAsteroid = (
+          center: Vec2,
+          radius: number,
+          exclude?: ReadonlySet<Entity>,
+        ): Entity | undefined => {
           const candidates = new Set<Entity>();
           for (const cell of Spatial.neighborKeys(center, Spatial.cellSize)) {
             for (const entity of db.indexes.byCell.find({ cell })) candidates.add(entity);
           }
           for (const candidate of candidates) {
+            if (exclude !== undefined && exclude.has(candidate)) continue;
             const asteroid = db.store.read(candidate, db.store.archetypes.Asteroid);
             if (asteroid === null) continue;
             if (Collision.circlesOverlap(center, radius, asteroid.position, Asteroid.radius(asteroid))) {
@@ -159,20 +170,67 @@ const systemDatabasePlugin = Database.Plugin.create({
           }
           return undefined;
         };
+        // Swept bullet detection: test the segment the bullet travelled this
+        // frame (prev → position) against every asteroid. A long sweep spans
+        // many cells, so the byCell 3×3 window can't bound it — scan the whole
+        // Asteroid archetype (counts are small).
+        const findSweptHitAsteroid = (
+          prev: Vec2,
+          position: Vec2,
+          radius: number,
+          exclude: ReadonlySet<Entity>,
+        ): Entity | undefined => {
+          for (const arch of db.store.queryArchetypes(["size"])) {
+            const id = arch.columns.id;
+            for (let i = 0; i < arch.rowCount; i++) {
+              const entity = id.get(i);
+              if (exclude.has(entity)) continue;
+              const asteroid = db.store.read(entity, db.store.archetypes.Asteroid);
+              if (asteroid === null) continue;
+              if (
+                Collision.segmentCircleOverlap(
+                  prev,
+                  position,
+                  asteroid.position,
+                  radius + Asteroid.radius(asteroid),
+                )
+              ) {
+                return entity;
+              }
+            }
+          }
+          return undefined;
+        };
         return () => {
           if (State.isGameOver({ lives: db.store.resources.lives })) return;
 
+          // Detect every (bullet, asteroid) pair FIRST, against the untouched
+          // store — so no child a split spawns this frame is ever a target (and
+          // no reused entity id can alias one). Each asteroid is claimed by at
+          // most one bullet, matching resolveBulletHits. Then apply.
+          const dt = db.store.resources.frameDelta;
           const bulletIds: Entity[] = [];
           for (const arch of db.store.queryArchetypes(["position", "age"])) {
             const id = arch.columns.id;
             for (let i = 0; i < arch.rowCount; i++) bulletIds.push(id.get(i));
           }
+          const claimed = new Set<Entity>();
+          const hits: { readonly bullet: Entity; readonly asteroid: Entity }[] = [];
           for (const bullet of bulletIds) {
             const position = db.store.get(bullet, "position");
-            if (position === undefined) continue;
-            const asteroid = findHitAsteroid(position, Bullet.radius);
-            if (asteroid !== undefined) db.transactions.hitAsteroid({ bullet, asteroid });
+            const velocity = db.store.get(bullet, "velocity");
+            if (position === undefined || velocity === undefined) continue;
+            // Reconstruct the bullet's path this frame. NOTE: this is off on a
+            // frame where the bullet screen-wrapped (position jumped across an
+            // edge), a rare edge case — acceptable for now.
+            const prev = Vec2.subtract(position, Vec2.scale(velocity, dt));
+            const asteroid = findSweptHitAsteroid(prev, position, Bullet.radius, claimed);
+            if (asteroid !== undefined) {
+              claimed.add(asteroid);
+              hits.push({ bullet, asteroid });
+            }
           }
+          for (const hit of hits) db.transactions.hitAsteroid(hit);
 
           // resolveShipHits spends at most one life regardless of how many
           // asteroids touch the ship, so stop at the first overlap.

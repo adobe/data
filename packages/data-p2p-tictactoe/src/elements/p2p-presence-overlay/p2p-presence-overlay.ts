@@ -8,7 +8,7 @@ type PresenceService = PresenceDatabase;
 /**
  * Generic over `S` so callers may pass a database built from any plugin
  * that extends the presence plugin (e.g. one that combines presence with a
- * game plugin like `tictactoePlugin`). The element class itself is typed
+ * game plugin like `TictactoeGameDatabase.plugin`). The element class itself is typed
  * on the minimal `PresenceDatabase` surface and ignores the extra
  * capabilities.
  */

@@ -36,6 +36,20 @@ const { name: PKG_NAME, version: VERSION } = pkg;
 // Namespaced bundle folder — the whole directory belongs to this package.
 const BUNDLE = "adobe-data-ai";
 
+// Written into the bundle root on every install. Claude Code loads nested
+// CLAUDE.md files when working in a subtree, so an agent that opens a skill
+// here sees the do-not-edit notice before touching it.
+const CLAUDE_MD = `# Externally managed — do not edit
+
+The skills in this folder are installed and managed by the \`@adobe/data-ai\`
+package. This entire directory is **deleted and rebuilt** on every
+\`npx @adobe/data-ai install\`, so any local edit here is silently discarded
+on the next reinstall or version upgrade.
+
+To change a skill, edit it upstream in the \`@adobe/data-ai\` package and
+publish a new version, then reinstall — do not modify these files in place.
+`;
+
 function discoverSkills() {
     if (!existsSync(skillsSrc)) return [];
     return readdirSync(skillsSrc, { withFileTypes: true })
@@ -51,6 +65,7 @@ function installTo(bundleDir, skills) {
     for (const name of skills) {
         cpSync(join(skillsSrc, name), join(bundleDir, name), { recursive: true });
     }
+    writeFileSync(join(bundleDir, "CLAUDE.md"), CLAUDE_MD);
     writeFileSync(
         join(bundleDir, ".data-ai.json"),
         JSON.stringify({ package: PKG_NAME, version: VERSION, skills }, null, 2) + "\n",

@@ -57,10 +57,12 @@ its own peer feature rather than let one feature's folders balloon.
   store at runtime **without** pulling its types or behavior into the base's type
   or bundle (`extends` would do both, and cost quadratically). So one store knows
   every feature's schema — data coexists, persists, and syncs — while the base
-  stays decoupled. Import the peer's `core-database.ts` plugin (schema only): its
-  indexes, transactions, computed, services, and UI stay out until the feature
-  loads. A column two features share (e.g. `name`) lives in `data/` and is
-  referenced by identity, so `combinePlugins` dedupes it.
+  stays decoupled. Import the peer's `core-database.ts` plugin (schema only) —
+  under its feature-qualified name `<Peer>CoreDatabase` (see the cross-feature
+  naming rule in `ecs/index.md`): its indexes, transactions, computed, services,
+  and UI stay out until the feature loads. A column two features share (e.g.
+  `name`) lives in `data/` and is referenced by identity, so `combinePlugins`
+  dedupes it.
 - **Peers load lazily by being used.** `DatabaseElement`, on connect, walks up to
   the nearest ancestor database and `extend`s it with its own plugin — so the
   first time a feature element renders, its full plugin (indexes, transactions,

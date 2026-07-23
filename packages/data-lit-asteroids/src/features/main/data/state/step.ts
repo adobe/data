@@ -24,7 +24,7 @@ export const step = (state: State, dt: number, input: Input): State => {
   }
   next = stepBullets(next, dt);
   next = stepAsteroids(next, dt);
-  next = resolveBulletHits(next);
+  next = resolveBulletHits(next, dt);
   next = resolveShipHits(next);
   next = spawnWave(next);
   return next;

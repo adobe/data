@@ -12,7 +12,7 @@ import { spawnWave } from "./spawn-wave.js";
 describe("spawnWave transaction conforms to State.spawnWave", () => {
   expectConforms({
     cases,
-    spec: (before) => State.spawnWave(before),
-    apply: (store) => spawnWave(store),
+    spec: State.spawnWave,
+    apply: spawnWave,
   });
 });

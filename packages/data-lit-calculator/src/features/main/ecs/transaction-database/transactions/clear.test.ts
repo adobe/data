@@ -11,7 +11,7 @@ import { clear } from "./clear.js";
 describe("clear transaction conforms to State.clear", () => {
   expectConforms({
     cases,
-    spec: () => State.clear(),
-    apply: (store) => clear(store),
+    spec: State.clear,
+    apply: clear,
   });
 });

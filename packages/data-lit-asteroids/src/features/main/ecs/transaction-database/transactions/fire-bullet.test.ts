@@ -12,7 +12,7 @@ import { fireBullet } from "./fire-bullet.js";
 describe("fireBullet transaction conforms to State.fireBullet", () => {
   expectConforms({
     cases,
-    spec: (before) => State.fireBullet(before),
-    apply: (store) => fireBullet(store),
+    spec: State.fireBullet,
+    apply: fireBullet,
   });
 });

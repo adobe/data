@@ -14,7 +14,7 @@ import { playMove } from "./play-move.js";
 describe("playMove transaction conforms to State.playMove", () => {
   expectConforms({
     cases,
-    spec: (before, args) => State.playMove(before, args),
-    apply: (store, args) => playMove(store, args),
+    spec: State.playMove,
+    apply: playMove,
   });
 });

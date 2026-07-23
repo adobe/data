@@ -11,7 +11,7 @@ import { deleteAllTodos } from "./delete-all-todos.js";
 describe("deleteAllTodos transaction conforms to State.deleteAllTodos", () => {
   expectConforms({
     cases,
-    spec: (before) => State.deleteAllTodos(before),
-    apply: (store) => deleteAllTodos(store),
+    spec: State.deleteAllTodos,
+    apply: deleteAllTodos,
   });
 });

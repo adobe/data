@@ -13,7 +13,7 @@ import { restartGame } from "./restart-game.js";
 describe("restartGame transaction conforms to State.restartGame", () => {
   expectConforms({
     cases,
-    spec: (before) => State.restartGame(before),
-    apply: (store) => restartGame(store),
+    spec: State.restartGame,
+    apply: restartGame,
   });
 });

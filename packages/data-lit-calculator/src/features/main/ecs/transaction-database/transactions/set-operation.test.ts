@@ -13,7 +13,7 @@ import { setOperation } from "./set-operation.js";
 describe("setOperation transaction conforms to State.setOperation", () => {
   expectConforms({
     cases,
-    spec: (before, operation) => State.setOperation(before, operation),
-    apply: (store, operation) => setOperation(store, operation),
+    spec: State.setOperation,
+    apply: setOperation,
   });
 });

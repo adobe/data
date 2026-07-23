@@ -11,7 +11,7 @@ import { toggleDisplayCompleted } from "./toggle-display-completed.js";
 describe("toggleDisplayCompleted transaction conforms to State.toggleDisplayCompleted", () => {
   expectConforms({
     cases,
-    spec: (before) => State.toggleDisplayCompleted(before),
-    apply: (store) => toggleDisplayCompleted(store),
+    spec: State.toggleDisplayCompleted,
+    apply: toggleDisplayCompleted,
   });
 });

@@ -22,7 +22,7 @@ import { hitAsteroid } from "./hit-asteroid.js";
 describe("hitAsteroid transaction conforms to State.resolveBulletHits", () => {
   expectConforms({
     cases,
-    spec: (before, dt) => State.resolveBulletHits(before, dt),
+    spec: State.resolveBulletHits,
     apply: (store, dt) => {
       // Detect every (bullet, asteroid) pair FIRST, against the untouched store —
       // so no child a split spawns this pass can be a target (and no reused entity

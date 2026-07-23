@@ -13,7 +13,7 @@ import { evaluate } from "./evaluate.js";
 describe("evaluate transaction conforms to State.evaluate", () => {
   expectConforms({
     cases,
-    spec: (before) => State.evaluate(before),
-    apply: (store) => evaluate(store),
+    spec: State.evaluate,
+    apply: evaluate,
   });
 });

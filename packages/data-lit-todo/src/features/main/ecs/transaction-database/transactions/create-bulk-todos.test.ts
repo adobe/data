@@ -11,7 +11,7 @@ import { createBulkTodos } from "./create-bulk-todos.js";
 describe("createBulkTodos transaction conforms to State.createBulkTodos", () => {
   expectConforms({
     cases,
-    spec: (before, args) => State.createBulkTodos(before, args),
-    apply: (store, args) => createBulkTodos(store, args),
+    spec: State.createBulkTodos,
+    apply: createBulkTodos,
   });
 });

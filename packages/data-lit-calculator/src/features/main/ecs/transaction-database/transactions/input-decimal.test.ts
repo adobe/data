@@ -12,7 +12,7 @@ import { inputDecimal } from "./input-decimal.js";
 describe("inputDecimal transaction conforms to State.inputDecimal", () => {
   expectConforms({
     cases,
-    spec: (before) => State.inputDecimal(before),
-    apply: (store) => inputDecimal(store),
+    spec: State.inputDecimal,
+    apply: inputDecimal,
   });
 });

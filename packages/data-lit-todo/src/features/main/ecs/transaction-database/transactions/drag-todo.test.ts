@@ -15,7 +15,7 @@ import { dragTodo } from "./drag-todo.js";
 describe("dragTodo transaction conforms to State.reorderTodo", () => {
   expectConforms({
     cases,
-    spec: (before, args) => State.reorderTodo(before, args),
+    spec: State.reorderTodo,
     apply: (store, args) =>
       dragTodo(store, { entity: args.id, dragPosition: 0, finalIndex: args.toIndex }),
   });

@@ -12,7 +12,7 @@ import { toggleComplete } from "./toggle-complete.js";
 describe("toggleComplete transaction conforms to State.toggleComplete", () => {
   expectConforms({
     cases,
-    spec: (before, args) => State.toggleComplete(before, args),
+    spec: State.toggleComplete,
     apply: (store, args) => toggleComplete(store, args.id),
   });
 });

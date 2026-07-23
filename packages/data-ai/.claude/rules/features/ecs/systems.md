@@ -128,6 +128,6 @@ an inline body grows too large — the schedule and registration still live inli
 `system-database.ts`. The headless conformance test drives one frame via
 `db.system.order` / `db.system.functions` and compares to the `data/` `step` oracle,
 **reusing the feature projection** (`ecs/conformance.md`); it lives at
-`system-database/conformance.test.ts`. Test **selection/detection** logic (which
+`system-database/tick-loop.test.ts`. Test **selection/detection** logic (which
 entities collide, which pair resolves) separately, with seeded edge-case geometries
 — it's a system concern, not a transaction, and where subtle bugs hide.

@@ -11,7 +11,7 @@ import { createTodo } from "./create-todo.js";
 describe("createTodo transaction conforms to State.createTodo", () => {
   expectConforms({
     cases,
-    spec: (before, args) => State.createTodo(before, args),
-    apply: (store, args) => createTodo(store, args),
+    spec: State.createTodo,
+    apply: createTodo,
   });
 });

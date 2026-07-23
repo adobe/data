@@ -19,7 +19,7 @@ import { loseLife } from "./lose-life.js";
 describe("loseLife transaction conforms to State.resolveShipHits", () => {
   expectConforms({
     cases,
-    spec: (before) => State.resolveShipHits(before),
+    spec: State.resolveShipHits,
     apply: (store) => {
       const [shipId] = store.select(store.archetypes.Ship.components);
       if (shipId === undefined) return;

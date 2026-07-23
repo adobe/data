@@ -29,9 +29,9 @@ features/
 
 Alongside `features/`, the rules-root `.md` files hold the **cross-cutting**
 patterns the feature rules reference — `namespace.md`, `data-modelling.md`,
-`type-casts.md`, `cohesion.md`, `archetypes.md` (row iteration),
-`plugin-modelling.md`, and the UI file rules (`element.md`, `lazy-element.md`,
-`presentation.md`). They live here so the bundle is self-contained; this repo
+`type-casts.md`, `function-references.md`, `cohesion.md`, `archetypes.md` (row
+iteration), `plugin-modelling.md`, and the UI file rules (`element.md`,
+`lazy-element.md`, `presentation.md`). They live here so the bundle is self-contained; this repo
 symlinks them into its own `.claude/rules/` (as it does `features/`).
 
 Each rule's `paths:` glob is scoped to `**/features/*/<layer>/…`, so these

@@ -1,21 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Store } from "@adobe/data/ecs";
-import type { CoreDatabase } from "../core-database/core-database.js";
-import { FeatureDatabase } from "../feature-database.js";
+import { CoreDatabase } from "../core-database/core-database.js";
 
-// A fresh writable store carrying the feature's whole schema — every component,
-// resource, archetype, and index the assembled plugin declares — built cast-free
-// from those facets with `Store.create` (no `Database` needed: a transaction is
-// `(store, args) => void`, and this feature runs no systems). The calculator has
-// no entities: its whole state is the singleton `calculator` resource, so the
-// `components` / `archetypes` / `indexes` facets are empty. Typed as
-// `CoreDatabase.Store` because the projection (`fromState` / `toState`) and the
-// raw transaction functions touch only that resource. Backs the transaction and
-// projection conformance tests. Test-only.
-export const createStore = (): CoreDatabase.Store =>
-  Store.create({
-    components: FeatureDatabase.plugin.components,
-    resources: FeatureDatabase.plugin.resources,
-    archetypes: FeatureDatabase.plugin.archetypes,
-    indexes: FeatureDatabase.plugin.indexes,
-  });
+// A fresh writable store carrying the feature's whole schema. `CoreDatabase` is
+// the lowest — and, with no index-database, only — schema layer; the behaviour
+// layers above add none, and `Store.create` reads a plugin's schema facets
+// directly. The calculator has no entities: its whole state is the singleton
+// `calculator` resource. Typed as `CoreDatabase.Store`: the surface the
+// projection (`fromState` / `toState`) and the raw transaction functions use.
+// Test-only.
+export const createStore = (): CoreDatabase.Store => Store.create(CoreDatabase.plugin);

@@ -12,7 +12,7 @@ import { deleteTodo } from "./delete-todo.js";
 describe("deleteTodo transaction conforms to State.deleteTodo", () => {
   expectConforms({
     cases,
-    spec: (before, args) => State.deleteTodo(before, args),
+    spec: State.deleteTodo,
     apply: (store, args) => deleteTodo(store, args.id),
   });
 });

@@ -12,7 +12,7 @@ import { inputDigit } from "./input-digit.js";
 describe("inputDigit transaction conforms to State.inputDigit", () => {
   expectConforms({
     cases,
-    spec: (before, digit) => State.inputDigit(before, digit),
-    apply: (store, digit) => inputDigit(store, digit),
+    spec: State.inputDigit,
+    apply: inputDigit,
   });
 });

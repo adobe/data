@@ -33,9 +33,12 @@ Conformance test-support splits by concern along the layer boundary:
 ## No cast — build on `Store.create`, not a `Database`
 
 A **transaction is `(store, args) => void`**, so transaction conformance needs no
-`Database`: `Store.create({ components, resources, archetypes, indexes })` (the
-same facets `FeatureDatabase.plugin` carries) returns a cast-free writable
-`CoreDatabase.Store`.
+`Database`: `Store.create(<schema-layer>.plugin)` returns a cast-free writable
+`CoreDatabase.Store` — pass the plugin directly, `Store.create` reads its schema
+facets. Source it from the **lowest layer that declares all the schema** —
+`IndexDatabase`, or `CoreDatabase` if the feature has no indexes — **not**
+`FeatureDatabase`: the store needs only schema, and the behaviour layers
+(transactions / computed / systems) add none.
 `fromState`/`toState`/`apply` all operate on it, and `apply` calls the **raw
 transaction function** directly:
 

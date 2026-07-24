@@ -1,102 +1,60 @@
 # @adobe/data-ai
 
-Cross-agent architecture skills for [`@adobe/data`](https://www.npmjs.com/package/@adobe/data). One skill bundle, authored once, distributed two ways.
+AI architecture skills + rules for building applications with
+[`@adobe/data`](https://www.npmjs.com/package/@adobe/data) — a layered,
+spec-first feature structure (`data → ecs → ui`) kept honest by conformance
+tests. Versioned in lockstep with the library: `@adobe/data-ai@x.y.z` targets
+`@adobe/data@x.y.z`.
 
-Skills version in lockstep with the library: `@adobe/data-ai@x.y.z` describes `@adobe/data@x.y.z`.
+It installs two things:
 
-There are two distribution paths, one per agent family — they do **not** overlap:
+- **skills** — `build-*` commands that scaffold features and applications.
+- **rules** — the path-scoped conventions those skills follow while building.
 
-- **Claude Code → marketplace plugin** (see below). The installer never writes into `.claude/skills/`, so it can't collide with your own Claude skills.
-- **Cursor / Codex / other `.agents`-standard agents → `npx … install`** (below).
+> **For the installing agent:** find the block below that matches your host
+> (Claude Code or Cursor/other), run its commands, and stop. Each install owns a
+> namespaced folder and is a clean wipe-and-recopy, so re-running is also how you
+> **update** — it never touches files you authored.
 
-## Install (Cursor, Codex, `.agents` agents)
+## Install — Claude Code
 
-The installer copies the skill folders into a single namespaced bundle directory that agents which recurse `.agents/skills/` discover:
-
-```sh
-npx @adobe/data-ai@latest install
-```
-
-This writes `.agents/skills/adobe-data-ai/<name>/SKILL.md` for each skill. The whole `adobe-data-ai/` directory belongs to this package, so a re-run is a clean wipe-and-recopy that never touches skills you authored elsewhere. Commit the result to share it with your team.
-
-Options:
-
-```sh
-npx @adobe/data-ai@latest install --global      # into ~/.agents/skills/adobe-data-ai/
-npx @adobe/data-ai@latest install --dir=./sub    # into a specific base dir
-npx @adobe/data-ai@latest list                   # show bundled skills
-```
-
-## Install (Claude Code plugin)
-
-Claude Code does not scan `.agents/`; it consumes the skills as a native plugin from the `adobe/data` marketplace — no npm needed.
-
-Interactive:
+Skills load as a marketplace plugin; rules install into the project.
 
 ```
 /plugin marketplace add adobe/data
 /plugin install adobe-data-ai@adobe-data-skills
+npx @adobe/data-ai@latest install
 ```
 
-Or declaratively, so collaborators are prompted to auto-install on next launch — commit to your repo's `.claude/settings.json`:
+- Skills → the `adobe-data-ai` plugin. **Update:** `/plugin` → update `adobe-data-ai`.
+- Rules → `.claude/rules/adobe-data-ai/`. **Update:** re-run `npx @adobe/data-ai@latest install`.
 
-```json
-{
-  "extraKnownMarketplaces": {
-    "adobe-data-skills": {
-      "source": { "source": "github", "repo": "adobe/data" }
-    }
-  },
-  "enabledPlugins": {
-    "adobe-data-ai@adobe-data-skills": true
-  }
-}
+## Install — Cursor (and Codex / other `.agents` agents)
+
+One command installs both:
+
+```
+npx @adobe/data-ai@latest install
 ```
 
-The plugin cache is version-hashed and garbage-collected, so it is not a stable path to symlink against — prefer the `npx … install` copy model when you need a durable, cross-agent artifact.
+- Skills → `.agents/skills/adobe-data-ai/`.
+- Rules → `.claude/rules/adobe-data-ai/`.
+- **Update:** re-run the same command.
 
----
+## Use
 
-# Pragmatic Programming
+Ask your agent to run a build command — skills are available by name:
 
-## Target Audience
+- **`build-application`** — build a whole app: a base feature that hosts
+  lazily-loaded peer features.
+- **`build-feature`** — build one feature end to end. Pipes the per-layer skills
+  (`data → core-database → transactions → … → ui`), then conformance-tests the
+  result against its pure `data/` spec.
 
-Software engineers who want to build high quality applications with a sustainable velocity.
-
-## Goals
-
-The goal of effective software engineers is to generate a high rate of value per unit time.
-
-    rate = value / time
-
-We can improve the rate by either increasing value or decreasing time.
-
-- Quality: Write better applications. ▲value
-- Velocity: Write applications faster. ▼time
-
-### Code Priorities
-
-1. Correct: Does the job. This one is non-negotiable.
-2. Clear: Easily understood by both humans and AI.
-3. Changeable: Quickly and safely modified or extended.
-
-There is occasionally some tension between clarity and changeability. More abstraction or generic parameters may make things more changeable at the cost of some clarity.
-
-### Code Challenges
-
-- Complexity: Undermines every single one of our code priorities.
-
-Complexity is the limiting factor which defines the upper limit on how sophisticated of an application we are able to create and maintain at a practical velocity.
-
-The difficulty of dealing with complexity tends to increase at a greater than linear rate, especially once the short term context window of a human or ai agent is exceeded.
-
-### General Principles
-
-- Separation of Concerns: If two concerns can be separated then do it.
-- Avoid mutation: Immutable values are easier to reason about.
-- Use Small files: Aim for less than 200 loc. Decompose if > 500 loc.
-- Single concern per file: Export only a single declaration per file.
-- Avoid object oriented classes: Combines data concerns with functions.
-- Distinguish services from data: Services do things, data stores things.
-- Use static typing: Finds errors earlier and guides both AI and humans.
-- Avoid side effects: Pure functions are easier to comprehend and test.
+Both compose finer-grained skills that are installed alongside and discoverable
+by name when you want a single phase or a specialized flow: `build-data`,
+`build-core-database`, `build-indexes`, `build-transactions`, `build-computed`,
+`build-services`, `build-service-database`, `build-actions`, `build-systems`,
+`build-ui`, `build-app-entry`; plus `build-game`, `meta-build` (phase-by-phase
+in subagents), `review` (audit output against the rules), and `structure`
+(reason about layout).

@@ -5,6 +5,8 @@ input: app
 output: app
 ---
 
-/build-feature (base — features/main)
-|> /build-feature (each peer feature)
-|> /build-app-entry
+/graph-execute
+    /build-feature (base — features/main)
+    for each sub feature
+        /build-feature
+    /build-app-entry

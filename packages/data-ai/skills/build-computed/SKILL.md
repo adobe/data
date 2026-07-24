@@ -5,6 +5,8 @@ input: feature
 output: feature
 ---
 
+Skip if this feature doesn't contain or require computed values.
+
 Create `ecs/computed-database/`: `computed-database.ts` (extends the previous layer, adds
 `computed` from `./computed/index.js`) plus a `computed/` folder — one `cached` derived value
 per file + barrel. Derivation logic lives in `data/`; a computed only wires a db observable to it.

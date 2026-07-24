@@ -10,6 +10,8 @@ pure, fully-tested source of truth for the feature. Modelling everything as
 a single value keeps each transform a small, trivially-testable function of
 state: collections of entity sub-types plus scalar fields.
 
+Every feature that has ECS resources or transactions owns a `State` — including
+a host whose aggregate is a single scalar (`{ playing: boolean }`) or even when there is no state in which case use `{}`. 
 ```ts
 // state.ts — the aggregate, plus the namespace of transforms/derivations.
 export type State = {

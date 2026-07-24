@@ -72,23 +72,9 @@ Paste one of these into a shell, replacing the quoted text with your own app
 description. It installs the bundle, then runs `build-application` headlessly on
 your prompt.
 
-**Cursor** (needs the `cursor-agent` CLI):
+This presumes you are already running the agent within the directory you want to use as your project root.
 
-```sh
-npx -y @adobe/data-ai@latest install && \
-cursor-agent --force -p "Use build-application to build: a todo app with tags, filtering, and undo"
 ```
-
-**Claude Code** (needs the `claude` CLI):
-
-```sh
-npx -y @adobe/data-ai@latest install && \
-claude plugin marketplace add adobe/data --scope project && \
-claude plugin install adobe-data-ai@adobe-data-skills --scope project && \
-claude --dangerously-skip-permissions -p "Use build-application to build: a todo app with tags, filtering, and undo"
+Find the @adobe/data-ai package on npmjs and then install it in the current directory.
+Next use it's /build-application skill to build <promt here>
 ```
-
-`--force` (Cursor) and `--dangerously-skip-permissions` (Claude) let the agent
-write files and run commands unattended — drop them to approve each step
-yourself, or swap the trailing `-p "…"` invocation for `build-feature`,
-`build-game`, or any other skill.

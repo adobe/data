@@ -18,15 +18,22 @@ It installs two things:
 
 ## Install — Claude Code
 
-Skills load as a marketplace plugin; rules install into the project.
+Skills load as a marketplace plugin; rules install into the project. Run these
+three from a shell (agent-runnable):
 
 ```
-/plugin marketplace add adobe/data
-/plugin install adobe-data-ai@adobe-data-skills
+claude plugin marketplace add adobe/data --scope project
+claude plugin install adobe-data-ai@adobe-data-skills --scope project
 npx @adobe/data-ai@latest install
 ```
 
-- Skills → the `adobe-data-ai` plugin. **Update:** `/plugin` → update `adobe-data-ai`.
+In an interactive Claude session you can instead use the slash-command form of
+the first two — `/plugin marketplace add adobe/data` then
+`/plugin install adobe-data-ai@adobe-data-skills` — but an agent driving a shell
+should use the `claude plugin …` commands above (slash commands aren't
+shell-runnable).
+
+- Skills → the `adobe-data-ai` plugin. **Update:** `claude plugin update adobe-data-ai`.
 - Rules → `.claude/rules/adobe-data-ai/`. **Update:** re-run `npx @adobe/data-ai@latest install`.
 
 ## Install — Cursor (and Codex / other `.agents` agents)
@@ -58,3 +65,30 @@ by name when you want a single phase or a specialized flow: `build-data`,
 `build-ui`, `build-app-entry`; plus `build-game`, `meta-build` (phase-by-phase
 in subagents), `review` (audit output against the rules), and `structure`
 (reason about layout).
+
+## One-liner: install + build an app
+
+Paste one of these into a shell, replacing the quoted text with your own app
+description. It installs the bundle, then runs `build-application` headlessly on
+your prompt.
+
+**Cursor** (needs the `cursor-agent` CLI):
+
+```sh
+npx -y @adobe/data-ai@latest install && \
+cursor-agent --force -p "Use build-application to build: a todo app with tags, filtering, and undo"
+```
+
+**Claude Code** (needs the `claude` CLI):
+
+```sh
+npx -y @adobe/data-ai@latest install && \
+claude plugin marketplace add adobe/data --scope project && \
+claude plugin install adobe-data-ai@adobe-data-skills --scope project && \
+claude --dangerously-skip-permissions -p "Use build-application to build: a todo app with tags, filtering, and undo"
+```
+
+`--force` (Cursor) and `--dangerously-skip-permissions` (Claude) let the agent
+write files and run commands unattended — drop them to approve each step
+yourself, or swap the trailing `-p "…"` invocation for `build-feature`,
+`build-game`, or any other skill.

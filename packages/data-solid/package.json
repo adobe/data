@@ -1,6 +1,6 @@
 {
   "name": "@adobe/data-solid",
-  "version": "0.9.83",
+  "version": "0.9.84",
   "description": "Adobe data SolidJS bindings — context and provider for ECS database",
   "type": "module",
   "private": false,
@@ -13,7 +13,8 @@
     "dev": "tsc -b -w",
     "link": "pnpm build && pnpm link --global",
     "test": "vitest --run --passWithNoTests",
-    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
+    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public",
+    "typecheck": "tsc -b"
   },
   "dependencies": {
     "@adobe/data": "workspace:*"

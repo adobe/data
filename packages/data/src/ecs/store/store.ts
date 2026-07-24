@@ -70,6 +70,13 @@ export interface Store<
      * For most stores, this is ignored if it is set.
      */
     undoable?: Undoable;
+    /**
+     * The user on whose behalf the current transaction is running, set by
+     * the dispatcher for the duration of a transaction body and `undefined`
+     * otherwise. A store *is* the context a transaction operates on; there is
+     * no separate transaction-context type.
+     */
+    readonly userId?: number | string | undefined;
     readonly resources: { -readonly [K in StringKeyof<R>]: R[K] };
     readonly archetypes: { -readonly [K in StringKeyof<A>]: ArchetypeOrRouter<
         HasPartitionKey<A[K][number], PK>,

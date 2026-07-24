@@ -6,4 +6,4 @@ export * as I32 from "./i32/public.js";
 
 // Backwards compatibility: Vec4 is synonymous with Vec4.F32
 export { schema, layout } from "./f32/public.js";
-export * from "./f32/functions.js";
+export * from "./f32/public.js";

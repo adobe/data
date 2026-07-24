@@ -40,8 +40,8 @@ The application uses **two separate ECS databases**:
 
 | Database | Plugin | Mode | Lifetime |
 |---|---|---|---|
-| Negotiation DB | `negotiationPlugin` | local-only | Entire page session |
-| Game DB | `tictactoePlugin + presencePlugin` | synced | Created on connection |
+| Negotiation DB | `NegotiationDatabase.plugin` | local-only | Entire page session |
+| Game DB | `tictactoePlugin + PresenceDatabase.plugin` | synced | Created on connection |
 
 The negotiation DB drives the signaling UI (phase, codes, banners). It is
 purely local — never synced. Once both peers connect over WebRTC, the game DB
@@ -56,7 +56,7 @@ transparently.
 flowchart TB
     subgraph p2pttt [data-p2p-tictactoe sample]
         app["<p2p-app> (thin shell — combines plugins, sets roles)"]
-        neg["<p2p-negotiation> (generic, negotiationDB local-only)"]
+        neg["<p2p-negotiation> (generic, NegotiationDatabase local-only)"]
         overlay["<p2p-presence-overlay> (optional, reads cursorX/O)"]
     end
     subgraph litttt [data-lit-tictactoe library]

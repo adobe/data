@@ -1,9 +1,12 @@
 {
   "name": "@adobe/data-lit",
-  "version": "0.9.83",
+  "version": "0.9.84",
   "description": "Adobe data Lit bindings - hooks, elements, decorators",
   "type": "module",
   "private": false,
+  "sideEffects": [
+    "**/application-host.js"
+  ],
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "access": "public"
@@ -13,7 +16,8 @@
     "dev": "tsc -b -w",
     "link": "pnpm build && pnpm link --global",
     "test": "vitest --run --passWithNoTests",
-    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
+    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public",
+    "typecheck": "tsc -b"
   },
   "dependencies": {
     "@adobe/data": "workspace:*"

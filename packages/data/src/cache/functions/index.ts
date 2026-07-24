@@ -5,3 +5,4 @@ export * from "./memoize.js";
 export * from "./prevent-parallel-execution.js";
 export * from "./async-data-function.js";
 export * from "./get-cached.js";
+export * from "./cached.js";

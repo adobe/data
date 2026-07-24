@@ -3,6 +3,7 @@
 import { Observe } from "../../observe/index.js";
 import { Service } from "../service.js";
 import { Assert } from "../../types/assert.js";
+import type { AsyncArgsProvider } from "../../types/async-args-provider.js";
 
 /**
  * Checks if a service is a valid UI service.
@@ -67,9 +68,23 @@ type ValidReturnType<R> =
 // Helper: Check if a single property is valid.
 // Allows: any Observe, any function returning a valid return type, and
 // readonly objects whose properties are all valid (for organization).
+//
+// The transaction-overload check must precede the generic function check:
+// TypeScript's `infer` on a function type sees only the *last* overload, so a
+// plain `(...args) => R` match would miss the `AsyncArgsProvider` overload and
+// wrongly accept a raw (awaitable) transaction whose sync overload happens to
+// return `void`. A `Promise`-returning `AsyncArgsProvider` overload is exactly
+// the awaitable surface UI services forbid, so it is rejected outright. (Once
+// restricted, that overload returns `void` and no longer matches here, so it
+// correctly validates via the generic-function branch below.)
 type IsValidProperty<P> =
   P extends Observe<any>
   ? true
+  : P extends {
+    (arg: AsyncArgsProvider<any>): Promise<any>;
+    (arg: any): any;
+  }
+  ? false
   : P extends (...args: any[]) => infer R
   ? ValidReturnType<R>
   : P extends object

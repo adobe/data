@@ -9,7 +9,7 @@
 import { customElement } from "lit/decorators.js";
 import { DatabaseElement, useObservableValues, usePointerObserve, useEffect, useElement } from "@adobe/data-lit";
 import { Observe } from "@adobe/data/observe";
-import { presencePlugin } from "../../state/presence-plugin.js";
+import { PresenceDatabase } from "../../presence/database/presence-database.js";
 import { styles } from "./p2p-presence-overlay.css.js";
 import * as presentation from "./p2p-presence-overlay-presentation.js";
 
@@ -22,11 +22,11 @@ declare global {
 }
 
 @customElement(tagName)
-export class P2pPresenceOverlayElement extends DatabaseElement<typeof presencePlugin> {
+export class P2pPresenceOverlayElement extends DatabaseElement<typeof PresenceDatabase.plugin> {
     static styles = styles;
 
     get plugin() {
-        return presencePlugin;
+        return PresenceDatabase.plugin;
     }
 
     render() {

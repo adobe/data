@@ -1,12 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Store } from "./store.js";
 import { Entity } from "../entity/entity.js";
 import { Components } from "./components.js";
 import { ResourceComponents } from "./resource-components.js";
 import { ArchetypeComponents } from "./archetype-components.js";
 import { StringKeyof } from "../../types/types.js";
 import { IndexDeclarations } from "./index-types.js";
-import type { TransactionContext } from "../database/transactional-store/transactional-store.js";
+import type { Store } from "./store.js";
+import type { AsyncArgsProvider } from "../../types/async-args-provider.js";
+
+export type { AsyncArgsProvider };
 
 export type TransactionDeclaration<
     C extends Components,
@@ -14,9 +16,7 @@ export type TransactionDeclaration<
     A extends ArchetypeComponents<StringKeyof<C>>,
     IX extends IndexDeclarations<C> = {},
     PK extends string = never,
-    Input extends any | void = any> = (t: TransactionContext<C, R, A, IX, PK>, input: Input) => void | Entity;
-
-export type AsyncArgsProvider<T> = () => Promise<T> | AsyncGenerator<T>;
+    Input extends any | void = any> = (t: Store<C, R, A, IX, PK>, input: Input) => void | Entity;
 
 export type TransactionDeclarations<
     C extends Components,

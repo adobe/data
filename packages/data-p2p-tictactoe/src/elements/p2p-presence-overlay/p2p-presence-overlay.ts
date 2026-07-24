@@ -1,16 +1,15 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { html, type TemplateResult } from "lit";
-import type { Database } from "@adobe/data/ecs";
-import type { presencePlugin } from "../../state/presence-plugin.js";
+import type { PresenceDatabase } from "../../presence/database/presence-database.js";
 
-type PresenceService = Database.Plugin.ToDatabase<typeof presencePlugin>;
+type PresenceService = PresenceDatabase;
 
 /**
  * Generic over `S` so callers may pass a database built from any plugin
- * that extends `presencePlugin` (e.g. one that combines presence with a
- * game plugin like `tictactoePlugin`). The element class itself is typed
- * on the minimal `presencePlugin` surface and ignores the extra
+ * that extends the presence plugin (e.g. one that combines presence with a
+ * game plugin like `TictactoeGameDatabase.plugin`). The element class itself is typed
+ * on the minimal `PresenceDatabase` surface and ignores the extra
  * capabilities.
  */
 export const PresenceOverlay = <S extends PresenceService>(args: {

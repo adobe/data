@@ -1,0 +1,32 @@
+{
+  "package": "@adobe/data-ai",
+  "version": "0.9.84",
+  "skills": [
+    "build-actions",
+    "build-app-entry",
+    "build-application",
+    "build-computed",
+    "build-core-database",
+    "build-data",
+    "build-feature",
+    "build-game",
+    "build-indexes",
+    "build-service-database",
+    "build-services",
+    "build-systems",
+    "build-transactions",
+    "build-ui",
+    "meta-build",
+    "review",
+    "structure",
+    "x-alpha",
+    "x-beta",
+    "x-double",
+    "x-execute",
+    "x-log",
+    "x-pow",
+    "x-subagent",
+    "x-trace",
+    "x-validate"
+  ]
+}

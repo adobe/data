@@ -13,25 +13,6 @@ import { Undoable } from "../undoable.js";
 import { IndexDeclarations } from "../../store/index-types.js";
 import { PartitionKeysOf } from "../../store/partition.js";
 
-/**
- * The first argument passed to every transaction function. Extends the full
- * store read/write surface with `userId` — the identifier of the peer or user
- * that initiated the transaction. Transaction functions can use this to
- * enforce per-user authorization rules (e.g. a game that lets only the
- * current player move).
- *
- * `userId` is `undefined` in local-only (no-sync) databases.
- */
-export type TransactionContext<
-    C extends Components,
-    R extends ResourceComponents,
-    A extends ArchetypeComponents<StringKeyof<C>>,
-    IX extends IndexDeclarations<C> = {},
-    PK extends string = never,
-> = Store<C, R, A, IX, PK> & {
-    readonly userId: number | string | undefined;
-};
-
 export interface TransactionalStore<
     C extends Components = never,
     R extends ResourceComponents = never,
@@ -47,7 +28,7 @@ export interface TransactionalStore<
      * @returns A promise that resolves when the transaction is complete.
      */
     execute(
-        transactionFunction: (t: TransactionContext<C, R, A, IX, PK>) => Entity | void,
+        transactionFunction: (t: Store<C, R, A, IX, PK>) => Entity | void,
         options?: {
             intermediate?: boolean;
             userId?: number | string;

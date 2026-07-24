@@ -13,6 +13,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 
 import { Database } from "@adobe/data/ecs";
+import type { AsyncArgsProvider } from "@adobe/data/ecs";
 import { Observe } from "@adobe/data/observe";
 import { UIService } from "@adobe/data/service";
 import { DatabaseElement } from "./database-element.js";
@@ -24,6 +25,9 @@ const plugin = Database.Plugin.create({
   transactions: {
     increment: (t) => {
       t.resources.count = t.resources.count + 1;
+    },
+    setCount: (t, input: { readonly value: number }) => {
+      t.resources.count = input.value;
     },
   },
 });
@@ -92,6 +96,22 @@ type _CheckCancelStillVoid = Assert<Equal<ReturnType<ServiceType["cancel"]>, voi
 //    returning void after the restriction.
 type _CheckIncrementReturnsVoid = Assert<
   Equal<ReturnType<ServiceType["transactions"]["increment"]>, void>
+>;
+
+// 7. A transaction with input is exposed as an overload pair. The restriction
+//    must preserve the AsyncArgsProvider overload (return rewritten to void) so
+//    a UI element can drive a live, single-commit gesture through its
+//    restricted `service` — this is exactly what `useDragTransaction`
+//    consumes: `(asyncArgs: AsyncArgsProvider<T>) => void`. Regression guard
+//    for the overload-erasure bug in UIService's RestrictProperty.
+type DragConsumer<T> = (asyncArgs: AsyncArgsProvider<T>) => void;
+const _setCountDrivable: DragConsumer<{ readonly value: number }> =
+  null as unknown as ServiceType["transactions"]["setCount"];
+// The plain-args (fire-and-forget) overload also survives, still returning void.
+const _setCountCommit: (arg: { readonly value: number }) => void =
+  null as unknown as ServiceType["transactions"]["setCount"];
+type _CheckSetCountAsyncVoid = Assert<
+  Equal<ReturnType<ServiceType["transactions"]["setCount"]>, void>
 >;
 
 // ----------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 export * from "./types.js";
 export * from "./assert.js";
 export * from "./equal.js";
+export * from "./async-args-provider.js";
 export * from "./typed-array-constructer.js";
 export * from "./typed-array.js";
 export * from "./replace.js";

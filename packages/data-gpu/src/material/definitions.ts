@@ -54,7 +54,7 @@ export const definitions = {
         restitution: 0,
         emissiveFactor: [0,0,0],
         density: 1.225,
-        viscosity: 0,
+        viscosity: 1,
         heatCapacity: 1006,
         thermalConductivity: 0.024,
         ...defaultSolid,

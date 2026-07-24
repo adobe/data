@@ -1,0 +1,37 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+
+import { BoardState } from "../board-state/board-state.js";
+import { BoardCell } from "../board-cell/board-cell.js";
+import type { MoveRejectReason } from "../move-reject-reason/move-reject-reason.js";
+
+// Declared, not exported (one public export per file — `canPlayMove`). A
+// consumer needing these infers them from the function:
+// `Parameters<typeof canPlayMove>[0]` / `ReturnType<typeof canPlayMove>`.
+type CanPlayMoveArgs = {
+  readonly board: BoardState;
+  readonly index: number;
+};
+
+type CanPlayMoveResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: MoveRejectReason };
+
+export const canPlayMove = ({
+  board,
+  index,
+}: CanPlayMoveArgs): CanPlayMoveResult => {
+  if (!Number.isInteger(index) || index < 0 || index > 8) {
+    return { ok: false, reason: "index_out_of_bounds" };
+  }
+
+  const status = BoardState.deriveStatus(board);
+  if (status === "won" || status === "draw") {
+    return { ok: false, reason: "game_over" };
+  }
+
+  if (board[index] !== BoardCell.blank) {
+    return { ok: false, reason: "cell_occupied" };
+  }
+
+  return { ok: true };
+};

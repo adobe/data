@@ -4,7 +4,7 @@ import { ResourceComponents } from "../../store/resource-components.js";
 import { Store } from "../../store/index.js";
 import { Entity } from "../../entity/entity.js";
 import { EntityUpdateValues } from "../../store/core/index.js";
-import { TransactionalStore, TransactionContext, TransactionResult, TransactionWriteOperation } from "./transactional-store.js";
+import { TransactionalStore, TransactionResult, TransactionWriteOperation } from "./transactional-store.js";
 import { StringKeyof } from "../../../types/types.js";
 import { Components } from "../../store/components.js";
 import { ArchetypeComponents } from "../../store/archetype-components.js";
@@ -188,7 +188,7 @@ export function createTransactionalStore<
 
     // Execute transaction function
     const execute = (
-        transactionFunction: (t: TransactionContext<C, R, A>) => Entity | void,
+        transactionFunction: (t: Store<C, R, A>) => Entity | void,
         options?: {
             intermediate?: boolean;
             userId?: number | string;
@@ -205,7 +205,7 @@ export function createTransactionalStore<
 
         try {
             // Execute the transaction
-            const value = transactionFunction(transactionStore as TransactionContext<C, R, A>);
+            const value = transactionFunction(transactionStore);
 
             // Coalesce operations to optimize redo/undo arrays
             const coalescedRedo = coalesceWriteOperations([...redoOperations]);

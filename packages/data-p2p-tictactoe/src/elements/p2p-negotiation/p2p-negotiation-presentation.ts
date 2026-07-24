@@ -2,7 +2,7 @@
 
 import { html, nothing, type TemplateResult } from "lit";
 import type { Phase } from "../../types/phase/phase.js";
-import type { ConnectionState } from "../../state/negotiation-plugin.js";
+import type { ConnectionState } from "../../negotiation/types/connection-state.js";
 
 export type RenderGame = (args: { service: unknown }) => TemplateResult;
 export type RenderPresence = (args: { service: unknown; children: TemplateResult }) => TemplateResult;

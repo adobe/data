@@ -6,7 +6,7 @@ import { ReadonlyStore, Store } from "../store/index.js";
 import { Entity } from "../entity/entity.js";
 import { EntityReadValues } from "../store/core/index.js";
 import { Observe } from "../../observe/index.js";
-import { TransactionContext, TransactionResult } from "./transactional-store/index.js";
+import { TransactionResult } from "./transactional-store/index.js";
 import { TransactionEnvelope } from "./reconciling/reconciling-database.js";
 import { StringKeyof, RemoveIndex } from "../../types/types.js";
 import { Components } from "../store/components.js";
@@ -14,11 +14,12 @@ import { ArchetypeComponents } from "../store/archetype-components.js";
 import { RequiredComponents } from "../required-components.js";
 import { EntitySelectOptions } from "../store/entity-select-options.js";
 import { Filter } from "../../table/select-rows.js";
-import { Index as StoreIndex } from "../store/index-types.js";
+import { Index as StoreIndex, IndexKey } from "../store/index-types.js";
 import type { Service } from "../../service/index.js";
 import { createDatabase } from "./public/create-database.js";
 import type { ConcurrencyStrategy } from "./concurrency/concurrency-strategy.js";
 import { observeSelectDeep as _observeSelectDeep } from "./public/observe-select-deep.js";
+import { toSystemDatabase as _toSystemDatabase } from "./to-system-database.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
 import { PartitionKeysOf } from "../store/partition.js";
@@ -35,6 +36,9 @@ import type {
 } from "../store/action-functions.js";
 import { createPlugin } from "./create-plugin.js";
 import { combinePlugins } from "./combine-plugins.js";
+import { components as componentsFacet } from "./facets/components.js";
+import { resources as resourcesFacet } from "./facets/resources.js";
+import { archetypes as archetypesFacet } from "./facets/archetypes.js";
 
 export type SystemFunction = () => void | Promise<void>;
 export type SystemDeclaration = {
@@ -271,6 +275,16 @@ export interface Database<
 
 export namespace Database {
   /**
+   * Facet builders for a feature's `core-database`. Each groups declarations by
+   * schema scope (`document`/`settings`/`presence`/`session`) and stamps the
+   * matching flags; archetypes validate keys against the component map. See the
+   * `facets/` folder.
+   */
+  export const components = componentsFacet;
+  export const resources = resourcesFacet;
+  export const archetypes = archetypesFacet;
+
+  /**
    * Converts a Plugin type to its corresponding Database type.
    * Uses direct property access (P['components']) instead of conditional inference
    * (P extends Plugin<infer CS, ...> ? CS : never) to avoid expensive 8-way type
@@ -340,6 +354,8 @@ export namespace Database {
 
   export const create = createDatabase;
 
+  export const toSystemDatabase = _toSystemDatabase;
+
   export const is = (value: unknown): value is Database => {
     return value !== null && typeof value === "object" && "transactions" in value && "actions" in value && "store" in value && "observe" in value && "system" in value && "extend" in value;
   }
@@ -351,9 +367,16 @@ export namespace Database {
   // them there keeps the `Store` interface able to type `store.indexes`
   // (a lower-layer concern) without an import cycle into this module.
   // See `Index` and `Index.Handle` in `store/index-types.ts`.
+  //
+  // `K` is defaulted to `IndexKey<C>` (not erased to `any`) so that a bare
+  // `Database.Index<C>` still constrains `key` to real columns of `C`. This
+  // makes it usable as a `satisfies` target on a standalone index literal —
+  // `{ key: "bogus" } satisfies Database.Index<C>` is a compile error — while
+  // `O`/`U` stay wide since `order`/`unique` are optional and self-describing.
   export type Index<
     C extends Components = any,
-  > = StoreIndex<C, any, any, any>;
+    K extends IndexKey<C> = IndexKey<C>,
+  > = StoreIndex<C, K, any, any>;
 
   export namespace Index {
     export type Handle<C extends Components, I extends StoreIndex<C, any, any, any>> =
@@ -413,15 +436,13 @@ export namespace Database {
     export const create = createPlugin;
     export const combine = combinePlugins;
     export type ToDatabase<P extends Database.Plugin> = Database.FromPlugin<P>;
-    export type ToStore<P extends Database.Plugin> = Store<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>>;
     /**
-     * The plugin's store as seen *inside a transaction body* — i.e. `ToStore<P>`
-     * plus the `userId` field added by the transaction dispatcher. Use this
-     * when typing helper functions that forward a transaction's store into
-     * another plugin's transaction declaration; `ToStore<P>` is the bare
-     * store type and does not include `userId`.
+     * The plugin's store — including its index handles (`IX`) and the
+     * `userId` set by the dispatcher during a transaction. This is the single
+     * type transaction functions operate on; a store *is* the transaction
+     * context, so there is no separate transaction-context type.
      */
-    export type ToTransactionContext<P extends Database.Plugin> = TransactionContext<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>, RemoveIndex<P['indexes']>, PartitionKeysOf<RemoveIndex<P['components']>>>;
+    export type ToStore<P extends Database.Plugin> = Store<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>, RemoveIndex<P['indexes']>, PartitionKeysOf<RemoveIndex<P['components']>>>;
     export type ToSystemDatabase<P extends Database.Plugin> = Database.FromPlugin<P> & {
       // Systems are allowed to access the database store directly.
       // This direct access will NOT trigger observable transactions.

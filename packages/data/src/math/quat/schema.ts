@@ -2,7 +2,7 @@
 
 import { F32 } from "../f32/index.js";
 import { Schema } from "../../schema/index.js";
-import { slerp } from "./functions.js";
+import { slerp } from "./slerp.js";
 
 export const schema = {
     type: 'array',

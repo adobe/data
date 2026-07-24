@@ -1,6 +1,6 @@
 {
   "name": "@adobe/data-ai",
-  "version": "0.9.83",
+  "version": "0.9.84",
   "description": "Cross-agent architecture skills for @adobe/data — installable as a Claude Code plugin or copied into any Agent-Skills-compatible agent (Cursor, Codex).",
   "type": "module",
   "private": false,
@@ -13,6 +13,7 @@
   },
   "files": [
     "skills",
+    ".claude",
     "bin",
     ".claude-plugin",
     "README.md",
@@ -20,6 +21,7 @@
   ],
   "scripts": {
     "build": "cp ../../LICENSE .",
+    "typecheck": "true",
     "test": "vitest --run --passWithNoTests",
     "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
   },
@@ -32,7 +34,12 @@
     "codex",
     "skills"
   ],
+  "peerDependencies": {
+    "@adobe/data": "workspace:*"
+  },
   "devDependencies": {
+    "@adobe/data": "workspace:*",
+    "typescript": "^5.8.3",
     "vitest": "^1.6.0"
   },
   "license": "MIT"

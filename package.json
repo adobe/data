@@ -1,19 +1,25 @@
 {
   "name": "data-monorepo",
-  "version": "0.9.83",
+  "version": "0.9.84",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "pnpm -r run build",
     "test": "pnpm -r run test",
     "lint": "pnpm -r run lint",
     "lint-fix": "pnpm -r run lint-fix",
-    "typecheck": "pnpm -r run typecheck",
+    "typecheck": "pnpm run typecheck:foundation && pnpm run typecheck:libraries && pnpm run typecheck:samples",
+    "typecheck:foundation": "pnpm --filter @adobe/data run typecheck",
+    "typecheck:libraries": "pnpm --parallel --filter '@adobe/data-*' --filter '!@adobe/data' run typecheck",
+    "typecheck:samples": "pnpm --parallel --filter data-lit-todo --filter data-react-hello --filter data-react-pixie --filter data-lit-tictactoe --filter data-p2p-tictactoe --filter data-solid-dashboard --filter data-gpu-samples run typecheck",
     "dev": "pnpm -r --parallel run dev",
     "dev:data": "pnpm --filter @adobe/data run dev",
     "dev-gpu": "pnpm --parallel --filter @adobe/data --filter @adobe/data-gpu --filter data-gpu-samples run dev",
     "link": "pnpm -r --filter @adobe/data* run link",
     "publish": "sh -c 'for x in \"$@\"; do OTP=\"$x\"; done; export NPM_CONFIG_OTP=\"$OTP\"; pnpm -r --filter @adobe/data --filter @adobe/data-ai --filter @adobe/data-react --filter @adobe/data-lit --filter @adobe/data-solid --filter @adobe/data-gpu run publish-public' sh",
-    "bump": "pnpm version patch --no-git-tag-version && V=$(node -p \"require('$PWD/package.json').version\") && pnpm -r exec pnpm version $V --no-git-tag-version --allow-same-version",
+    "bump": "pnpm version patch --no-git-tag-version && V=$(node -p \"require('$PWD/package.json').version\") && pnpm -r exec pnpm version $V --no-git-tag-version --allow-same-version && node -e \"const fs=require('fs');const p='packages/data-ai/.claude-plugin/plugin.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.version=process.argv[1];fs.writeFileSync(p,JSON.stringify(j,null,2)+'\\n')\" $V",
     "release": "pnpm bump && pnpm publish",
     "bp": "pnpm bump && pnpm run publish"
   },

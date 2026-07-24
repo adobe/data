@@ -96,7 +96,7 @@ const plugin = Database.Plugin.create({
   resource of the canvas and render to it within a system. @adobe/data-gpu provides
   example patterns for doing this.
 - All simulation systems should be optimized for performance.
-  Avoid allocating intermediate objects if possible; read/write columns directly.
+  Avoid allocating intermediate objects if possible; read/write columns directly if hot-path. You can use transactions if needed, for instance if we are writing non hot path things which we have other things observing. (Only transactions are observable, not direct writes)
 
 ## Driving the loop — the scheduler
 

@@ -63,9 +63,8 @@ const plugin = Database.Plugin.create({
   HUD) are notified. Reserve direct `db.store` writes for the hot per-row paths
   (movement, aging) that run on every entity every frame and shouldn't pay
   per-entity transaction overhead.
-- **The step math lives in `data/`.** A system is the ecs wiring: it reads store
-  rows, calls a pure `data/` step/derive function, writes the result back — same
-  spec↔implementation discipline as transactions. No physics/game math inline.
+- **Optimize for execution speed in systems** if there are multiple items, then make sure we are using efficient store queries and reading/writing minimal data columns. If this is not hot path, then the simplified data functions can be used, but in hot paths we only consider data functions to be specification. (ie: only use them if it's clearly not a hot path or you cannot write anything more performant by directly using ecs store) 
+- **The step math may live in `data/`.** but only for non-hot path
 - **Iterate archetypes per `archetypes.md`.** Express selection with
   `queryArchetypes(include, { exclude })`; when a system destroys/migrates rows
   (bullets expiring, entities dying) iterate **tail → head** so hole-fills don't
@@ -96,8 +95,8 @@ const plugin = Database.Plugin.create({
 - Games or simulations with immediate mode rendering may want to store a session
   resource of the canvas and render to it within a system. @adobe/data-gpu provides
   example patterns for doing this.
-- All or simulation systems should be optimized for performance.
-  Avoid allocatin intermediate objects if possible, read directly from store.
+- All simulation systems should be optimized for performance.
+  Avoid allocating intermediate objects if possible; read/write columns directly.
 
 ## Driving the loop — the scheduler
 

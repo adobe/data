@@ -8,9 +8,11 @@ paths:
 The bridge that keeps the ecs implementation honest against the `data/` spec.
 **Test-only**: imported solely by `*.test.ts` and in no facet barrel, so it never
 enters the runtime bundle (test-support may import the test framework — it is not
-a runtime declaration). **Feature-level**: one projection per feature, reused by
-every transaction test and the system tick-loop test — don't nest it under
-`transaction-database/`.
+a runtime declaration). **Never call `fromState` / `toState` (or a shared
+clear-all + reinsert helper used only for that projection) from systems,
+transactions, or UI** — that is a full-store rewrite, not an O(1) ECS update.
+**Feature-level**: one projection per feature, reused by every transaction test
+and the system tick-loop test — don't nest it under `transaction-database/`.
 
 The property, per `{ before, args, after }` case:
 `toState(apply(fromState(before), args)) ≡ spec(before, args)`.

@@ -14,7 +14,8 @@ packages:
   - 'packages/data-solid-dashboard'
   - 'packages/data-gpu'
   - 'packages/data-gpu-samples'
-  - 'packages/data-lit-asteroids'
+  - 'packages/data-lit-space-rock-game'
+  - 'packages/data-gpu-hopper'
 allowBuilds:
   edgedriver: false
   esbuild: false

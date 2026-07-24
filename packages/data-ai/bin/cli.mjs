@@ -1,18 +1,21 @@
 #!/usr/bin/env node
-// Installer for the @adobe/data-ai skill bundle (Cursor / Codex / .agents-standard agents).
+// Installer for the @adobe/data-ai bundle (Cursor / Codex / .agents-standard agents).
 //
-// Copies the SKILL.md folders shipped in this package into a single namespaced
-// bundle directory that agents which recurse `.agents/skills/` will discover:
+// Lays down two managed, namespaced directories the agent discovers:
 //
-//   .agents/skills/adobe-data-ai/<name>/SKILL.md
+//   .agents/skills/adobe-data-ai/<name>/SKILL.md   — the build-* skills
+//   .claude/rules/adobe-data-ai/**/*.md            — the architecture rules
 //
-// We own the `adobe-data-ai/` directory outright, so a refresh is a clean
-// wipe-and-recopy — it never touches skills you authored elsewhere.
+// We own both `adobe-data-ai/` directories outright, so a refresh is a clean
+// wipe-and-recopy — it never touches files you authored elsewhere. Re-running
+// the installer is therefore also how you update.
 //
-// Claude Code is intentionally NOT a target: it does not scan `.agents/`, and
-// copying into `.claude/skills/` could collide with a user's own skills.
-// Claude consumes these as the `adobe-data-ai` marketplace plugin instead
-// (see README).
+// Claude Code is intentionally NOT a skills target: it does not scan `.agents/`,
+// and copying into `.claude/skills/` could collide with a user's own skills — it
+// consumes the skills as the `adobe-data-ai` marketplace plugin instead. The
+// rules, however, install into `.claude/rules/adobe-data-ai/` for every agent
+// (Claude auto-injects them by their `paths:` globs; other agents read them by
+// name as their skills run). See README.
 
 import {
     cpSync,
@@ -30,25 +33,38 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = resolve(here, "..");
 const skillsSrc = join(pkgRoot, "skills");
+const rulesSrc = join(pkgRoot, ".claude", "rules");
 const pkg = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
 const { name: PKG_NAME, version: VERSION } = pkg;
 
-// Namespaced bundle folder — the whole directory belongs to this package.
+// Namespaced bundle folder — the whole directory belongs to this package, under
+// each agent root.
 const BUNDLE = "adobe-data-ai";
 
-// Written into the bundle root on every install. Claude Code loads nested
-// CLAUDE.md files when working in a subtree, so an agent that opens a skill
-// here sees the do-not-edit notice before touching it.
-const CLAUDE_MD = `# Externally managed — do not edit
+// A do-not-edit notice dropped at each bundle root. Claude Code loads nested
+// CLAUDE.md files when working in a subtree, so an agent that opens one of these
+// folders sees the notice before touching anything. `extra` adds a pointer to
+// the companion bundle.
+function notice(extra) {
+    return `# Externally managed — do not edit
 
-The skills in this folder are installed and managed by the \`@adobe/data-ai\`
+The files in this folder are installed and managed by the \`${PKG_NAME}\`
 package. This entire directory is **deleted and rebuilt** on every
-\`npx @adobe/data-ai install\`, so any local edit here is silently discarded
-on the next reinstall or version upgrade.
+\`npx ${PKG_NAME} install\`, so any local edit here is silently discarded on the
+next reinstall or version upgrade.
 
-To change a skill, edit it upstream in the \`@adobe/data-ai\` package and
-publish a new version, then reinstall — do not modify these files in place.
-`;
+To change them, edit upstream in the \`${PKG_NAME}\` package and publish a new
+version, then reinstall — do not modify these files in place.
+${extra ? `\n${extra}\n` : ""}`;
+}
+
+function writeMeta(bundleDir, noticeBody, extraMeta) {
+    writeFileSync(join(bundleDir, "CLAUDE.md"), noticeBody);
+    writeFileSync(
+        join(bundleDir, ".data-ai.json"),
+        JSON.stringify({ package: PKG_NAME, version: VERSION, ...extraMeta }, null, 2) + "\n",
+    );
+}
 
 function discoverSkills() {
     if (!existsSync(skillsSrc)) return [];
@@ -58,18 +74,41 @@ function discoverSkills() {
         .sort();
 }
 
-function installTo(bundleDir, skills) {
-    // We own this directory — wipe and recopy for a clean refresh.
+// Recursively count the rule `.md` files, excluding the top-level README.md
+// (rules-authoring meta doc, not a rule — and it carries no `paths:` guard).
+function countRules(dir) {
+    let n = 0;
+    for (const d of readdirSync(dir, { withFileTypes: true })) {
+        if (d.isDirectory()) n += countRules(join(dir, d.name));
+        else if (d.name.endsWith(".md") && !(dir === rulesSrc && d.name === "README.md")) n += 1;
+    }
+    return n;
+}
+
+function installSkills(base, skills) {
+    const bundleDir = join(base, ".agents", "skills", BUNDLE);
     rmSync(bundleDir, { recursive: true, force: true });
     mkdirSync(bundleDir, { recursive: true });
     for (const name of skills) {
         cpSync(join(skillsSrc, name), join(bundleDir, name), { recursive: true });
     }
-    writeFileSync(join(bundleDir, "CLAUDE.md"), CLAUDE_MD);
-    writeFileSync(
-        join(bundleDir, ".data-ai.json"),
-        JSON.stringify({ package: PKG_NAME, version: VERSION, skills }, null, 2) + "\n",
+    writeMeta(
+        bundleDir,
+        notice("The architecture rules these skills follow are installed at\n`.claude/rules/adobe-data-ai/` (referenced by name from each SKILL.md)."),
+        { skills },
     );
+    return bundleDir;
+}
+
+function installRules(base) {
+    const bundleDir = join(base, ".claude", "rules", BUNDLE);
+    rmSync(bundleDir, { recursive: true, force: true });
+    mkdirSync(bundleDir, { recursive: true });
+    // Copy the whole rules tree, minus the top-level README.md meta doc.
+    const readme = join(rulesSrc, "README.md");
+    cpSync(rulesSrc, bundleDir, { recursive: true, filter: (src) => src !== readme });
+    writeMeta(bundleDir, notice(), { rules: countRules(rulesSrc) });
+    return bundleDir;
 }
 
 function parseArgs(argv) {
@@ -87,19 +126,20 @@ function parseArgs(argv) {
 
 const HELP = `${PKG_NAME} v${VERSION}
 
-Install the architecture-skill bundle for Cursor, Codex, and other agents
-that scan .agents/skills/. (Claude Code uses the marketplace plugin instead.)
+Install the architecture skills + rules for Cursor, Codex, and other agents.
+(Claude Code gets the skills from the marketplace plugin; the rules install the
+same way for every agent — see README.)
 
 Usage:
   npx ${PKG_NAME}@latest install [options]
   npx ${PKG_NAME}@latest list
 
 Commands:
-  install   Copy skills into .agents/skills/${BUNDLE}/ (default).
+  install   Skills → .agents/skills/${BUNDLE}/, rules → .claude/rules/${BUNDLE}/ (default).
   list      Print the skills bundled in this package.
 
 Options:
-  --global, -g    Install into your home directory (~/.agents/skills/${BUNDLE}/)
+  --global, -g    Install into your home directory (~/.agents, ~/.claude)
                   instead of the current project.
   --dir=<path>    Base directory to install into (default: cwd).
   --help, -h      Show this help.
@@ -134,13 +174,13 @@ function main() {
     }
 
     const base = flags.has("global") ? homedir() : dir ? resolve(dir) : process.cwd();
-    const bundleDir = join(base, ".agents", "skills", BUNDLE);
+    const skillsDir = installSkills(base, skills);
+    const rulesDir = installRules(base);
+    const ruleCount = countRules(rulesSrc);
 
-    installTo(bundleDir, skills);
-
-    process.stdout.write(`Installed ${skills.length} skill(s) from ${PKG_NAME} v${VERSION}\n`);
-    process.stdout.write(`  ${bundleDir}\n`);
-    process.stdout.write(`Skills: ${skills.join(", ")}\n`);
+    process.stdout.write(`Installed ${PKG_NAME} v${VERSION}\n`);
+    process.stdout.write(`  ${skills.length} skills → ${skillsDir}\n`);
+    process.stdout.write(`  ${ruleCount} rules  → ${rulesDir}\n`);
 }
 
 main();

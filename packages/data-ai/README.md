@@ -76,5 +76,5 @@ This presumes you are already running the agent within the directory you want to
 
 ```
 Find the @adobe/data-ai package on npmjs and then install it in the current directory.
-Next use it's /build-application skill to build <promt here>
+Next use it's /build-application skill to build <prompt here>
 ```

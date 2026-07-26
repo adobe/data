@@ -29,6 +29,18 @@ const plugin = Database.Plugin.create({
     setCount: (t, input: { readonly value: number }) => {
       t.resources.count = input.value;
     },
+    // A raw commit that the `save` action below wraps.
+    save: (t) => {
+      t.resources.count = t.resources.count;
+    },
+  },
+  actions: {
+    // The `save` action shadows the `save` transaction: it wraps the raw
+    // transaction with async work, so the UI must call the action. The
+    // restricted view masks `transactions.save` out entirely.
+    save: async (db) => {
+      db.transactions.save();
+    },
   },
 });
 
@@ -62,8 +74,9 @@ const _noPublicDatabaseProperty = (el: _CountElement): void => {
 };
 type _CheckNoDatabaseKey = Assert<Equal<Extract<keyof _CountElement, "database">, never>>;
 
-// 1. The exposed service type is the UIService-restricted view of the database.
-type _CheckRestricted = Assert<Equal<ServiceType, UIService.FromService<RawDatabase>>>;
+// 1. The exposed service type is the database-restricted UI view (FromService
+//    plus action masking).
+type _CheckRestricted = Assert<Equal<ServiceType, UIService.FromDatabase<RawDatabase>>>;
 
 // 2. Observe surfaces survive the restriction.
 type _CheckResourceObserveSurvives = Assert<
@@ -112,6 +125,26 @@ const _setCountCommit: (arg: { readonly value: number }) => void =
   null as unknown as ServiceType["transactions"]["setCount"];
 type _CheckSetCountAsyncVoid = Assert<
   Equal<ReturnType<ServiceType["transactions"]["setCount"]>, void>
+>;
+
+// 8. Action masking: a transaction shadowed by a same-named action is removed
+//    from the restricted `transactions`, so the UI can only reach it through
+//    the action. Unshadowed transactions are untouched, and the raw database
+//    still exposes the transaction (masking is a UI-view concern only).
+type _CheckSaveTransactionMasked = Assert<
+  Equal<Extract<keyof ServiceType["transactions"], "save">, never>
+>;
+type _CheckSaveTransactionStillRaw = Assert<
+  Equal<Extract<keyof RawDatabase["transactions"], "save">, "save">
+>;
+type _CheckSaveActionSurvivesAsVoid = Assert<
+  Equal<ReturnType<ServiceType["actions"]["save"]>, void>
+>;
+type _CheckIncrementNotMasked = Assert<
+  Equal<Extract<keyof ServiceType["transactions"], "increment">, "increment">
+>;
+type _CheckSetCountNotMasked = Assert<
+  Equal<Extract<keyof ServiceType["transactions"], "setCount">, "setCount">
 >;
 
 // ----------------------------------------------------------------------------

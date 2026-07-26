@@ -15,8 +15,10 @@ export abstract class DatabaseElement<P extends Database.Plugin> extends LitElem
   /**
    * The element's database surface.
    *  - SET to inject the full database (DI).
-   *  - GET returns the UI-restricted view (every mutator rewritten to
-   *    fire-and-forget `void`).
+   *  - GET returns the UI-restricted view: every mutator rewritten to
+   *    fire-and-forget `void`, and every transaction shadowed by a same-named
+   *    action masked out so the UI calls the action instead (see
+   *    {@link UIService.FromDatabase}).
    * Divergent get/set types are intentional: inject full, consume restricted.
    */
   set service(db: Database.Plugin.ToDatabase<P>) {
@@ -24,7 +26,7 @@ export abstract class DatabaseElement<P extends Database.Plugin> extends LitElem
     this.#database = db;
     this.requestUpdate('service', old);
   }
-  get service(): UIService.FromService<Database.Plugin.ToDatabase<P>> {
+  get service(): UIService.FromDatabase<Database.Plugin.ToDatabase<P>> {
     return UIService.restrict(this.#database);
   }
 

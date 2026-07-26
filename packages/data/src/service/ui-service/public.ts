@@ -2,4 +2,5 @@
 
 export * from "./is-valid.js";
 export * from "./from-service.js";
+export * from "./from-database.js";
 export * from "./restrict.js";

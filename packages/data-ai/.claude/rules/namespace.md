@@ -1,160 +1,118 @@
 ---
 paths:
-  - 'packages/**/src/**/*.ts'
+  - '**/*.ts'
 ---
 
 # Type namespace pattern
 
-Each type lives in its own folder. The folder's eponymous file is the only
-public import surface; a `<Type>` namespace re-exports every helper.
+Single import surface per type: `<type-name>/<type-name>.ts`. Schema in `-schema.ts`, namespace re-export from `public.js`. Types live in
+the `types/` layer.
 
-```
-src/types/<type-name>/
-  <type-name>.ts   # type alias + `export * as <Type> from "./public.js"`
-  schema.ts        # `export const schema = { ... } as const satisfies Schema`
-  public.ts        # re-exports every public helper
-  <helper>.ts      # one declaration per file, camelCase
-```
+## Authority
 
-## Example
+This rule defines the canonical pattern. **Follow this standard for all new and refactored type folders.** The codebase may contain legacy
+patterns (e.g., inline `export namespace` in shared files) that do not conform — do not copy those; follow this rule instead.
 
-```ts
-// types/log-level/schema.ts
-export const schema = { type: "string", enum: ["debug", "info", "warn", "error"] }
-    as const satisfies Schema;
+## Naming conventions
 
-// types/log-level/log-level.ts
-import { Schema } from "@adobe/data/schema";
-import { schema } from "./schema.js";
-export type LogLevel = Schema.ToType<typeof schema>;
-export * as LogLevel from "./public.js";
+- Constants are **camelCase** (`flicksPerSecond`, not `FLICKS_PER_SECOND`) — strong team preference
+- Each function/type gets its own file matching its name
 
-// types/log-level/public.ts
-export { schema } from "./schema.js";
-export { is } from "./is.js";          // when external code narrows broader input
-export { values } from "./values.js";  // when external code iterates the set
-```
+## Constant types
 
-Consumers import only `LogLevel` from `log-level/log-level.ts` and use it
-as both type and namespace (`LogLevel.is(x)`, `LogLevel.values`).
+| Visibility | Definition                      |
+| ---------- | ------------------------------- |
+| private    | Single-file only, not exported  |
+| exported   | Sole export from eponymous file |
+| public     | Re-exported from public.ts      |
+| internal   | Exported, not in public.ts      |
 
-## Rules
+## Constraints
 
-- Never import `schema.ts` or `public.ts` from outside the folder.
-- Consumers use one import: `import { LogLevel } from "./log-level.js"`.
-  The same identifier serves as type *and* namespace — a separate
-  `import type` is unnecessary and produces a duplicate-identifier error.
-- Helper files use `import type` from the sibling `<type-name>.ts` to
-  avoid cycling through `public.ts`.
-- Add `is` / `values` / per-member descriptors only when a consumer
-  actually needs them — not preemptively. A consumer in a not-yet-built
-  higher layer counts: a presentational descriptor the `ui/` will need
-  (per-member glyphs, a keypad `values` list) may be authored with the
-  data type, but give it a one-line doc naming the intended consumer (as
-  `player-mark/mark-color.ts` does) so the need is recorded, not guessed.
+- `<type-name>/<type-name>.ts` is the only public import surface
+- Export a single type alias: `export type <type-name> = <type>` (or `export type * from "./<type-name>-types.js"` when the type lives in a
+  separate file)
+- Schema-based types: schema in `<type-name>-schema.ts`, named `schema` (not `<type-name>Schema`), derive with
+  `Schema.ToType<typeof schema>`
+- Export namespace: `export * as <type-name> from "./public.js"`
+- In public.ts, re-export every public constant file
+- Filenames map deterministically to single export:
+  - `foo.ts` → `export type Foo = ...`
+  - `do-bar.ts` → `export function doBar() { }`
+  - DO NOT append other suffixes like `-type` etc.
+- Function files: name by purpose only (e.g., `add.ts`, `sub.ts`). **Do not prefix** with the type name — the folder provides the namespace
+  context.
 
-## Strict single public export per file
+## Anti-patterns (do not copy)
 
-**One public export per file** — this is strict, not a preference. A file
-that *declares* exports exactly one public symbol (private declarations
-inside it are fine and are tested through the public export). The reason is
-cohesion: when several declarations share one file, each pulls its own
-external imports to the top and the file becomes a jumble that belongs to no
-single concept. One declaration → one file → imports that are about that one
-thing.
+- **`export namespace <TypeName> { ... }`** — Use `export * as <TypeName> from "./public.js"` instead.
+- **Prefixing function files with the type name** (e.g., `vec2-add.ts`) — Use `add.ts`; the folder provides context.
+- **Importing from `public.js` or `-schema.js`** outside the type folder — Consumers must import only from `<type-name>/<type-name>.ts`.
 
-More than one public export in a file is allowed **only when explicitly
-approved on a per-file or per-file-type basis** — the deliberate, named
-patterns below, nothing else. There is no "shared imports" or "cohesive set"
-escape hatch: a folder of sibling pure functions over one type (e.g. the
-`vec3`/`vec4`/`mat4x4` math) is one function per file, collected by the
-folder's `public.ts` barrel — dozens of one-line files is the intended shape,
-not a reason to lump.
+## Consumers
 
-- **Barrels** — `index.ts` and a namespace's `public.ts` *only* re-export
-  (`export … from "./…"`); they never declare. Many re-exports is their job.
-- **The eponymous namespace file** (`<type>.ts`) — the type alias plus
-  `export * as <Type> from "./public.js"` (a type and its namespace value).
-- **The single-file pattern** (below) — one value export plus type-only
-  exports, for a trivial namespace not worth a folder.
-- **`<format>-schema.ts`** — a borrowed data-format projection (plain
-  `interface`s), next to its parser/emitter.
-- **Explicit authoring-cohesion files** — where two exports are genuinely one
-  unit to author, e.g. a presentation's `render` plus a co-located fixture
-  bundle (`unlocalized`). Rare; the pair must truly belong together.
+**Never:**
 
-Everything else is one-per-file. In particular, **ECS facet folders
-(`components/`, `resources/`, `archetypes/`, `indexes/`, …) are not exempt**:
-one component / resource / archetype / index per file, collected by the
-folder's `index.ts` barrel. Collapsing several into one `index.ts` is exactly
-the anti-pattern this rule exists to prevent.
+- Import from `public.js` outside the type namespace folder
+- Import from `<type-name>-schema.js` outside the type namespace folder
 
-Never `*-types.ts`. "Types" is a meta-word the `.ts` extension already
-implies; the name has to predict the contents. If you can't beat
-`-types`, the file isn't a real lump — split per type, or inline at use
-site.
+**Do:**
 
-## Casing: `PascalCase` for types, `camelCase` for everything else
+- `import { Volume } from "../../types/volume/volume.js"`
+- For schema: `import { PlayerMark } from "../../types/player-mark/player-mark.js"`, then `PlayerMark.schema`
 
-Capitalize a name **only** when it is a type, or a value that *represents a
-type*. Everything else — functions, values, methods — is `camelCase`.
-
-A `Schema` is a runtime type, so this extends to schema helpers:
-
-- A **schema value that is a type** is `PascalCase`: the namespace schemas
-  `F32`, `Boolean`, `Guid`, `True` (each *is* a type's schema).
-- A **higher-order schema function that returns a new type-representing
-  schema** is a runtime **type constructor** — the value-level analogue of
-  `Readonly<T>` / `Partial<T>` — and is `PascalCase`: `Nullable(schema)`,
-  `Tuple(item, n)`, `SuccessResultSchema(v)`, `ProgressiveResultSchema(v, e)`.
-- Everything else stays `camelCase`, even when it touches schemas: functions
-  that **annotate the same type** (`withValidation`), **build from a spec**
-  (`fromArchetype`, `fromObjectProperties`, `fromStructProperties`),
-  **resolve/transform** (`getDynamicSchema`, `toVertexBufferLayout`), or hang
-  off a namespace (`Guid.create`, `FractionalIndex.between`).
-
-The test: *does calling it yield a new runtime type?* Yes → `PascalCase`
-constructor. No → `camelCase`.
-
-## Domain namespaces (for types you don't own)
-
-When utility functions operate on a platform or third-party type (e.g.
-`GPUDevice`, `GPUTexture`), use a **domain namespace** instead: a folder
-named after the concept, with a namespace export but *no type re-export*.
-
-```
-src/gpu/
-  gpu.ts       # `export * as GPU from "./public.js"` — no type alias
-  public.ts    # re-exports every public helper
-  <helper>.ts  # one declaration per file
-```
+## Schema pattern example
 
 ```ts
-// gpu/gpu.ts
-export * as GPU from "./public.js";
+// src/types/player-mark/player-mark-schema.ts
+export const schema = { enum: ['X', 'O'] } as const;
 
-// gpu/public.ts
-export { createCubemap } from "./create-cubemap.js";
-export { cubeFaceView }  from "./cube-face-view.js";
+// src/types/player-mark/public.ts
+export { schema } from './player-mark-schema.js';
+
+// src/types/player-mark/player-mark.ts
+import { Schema } from '@adobe/data/schema';
+import { schema } from './player-mark-schema.js';
+export type PlayerMark = Schema.ToType<typeof schema>;
+export * as PlayerMark from './public.js';
 ```
 
-Consumers import the namespace and get discoverability without shadowing
-the platform type:
+## Example: `Point` type refactor
+
+Starting file `src/types/point.ts`:
 
 ```ts
-import { GPU } from "@adobe/data-graphics";
-GPU.createCubemap(device, 256, "rgba16float");
+export type Point = { x: number; y: number };
+export const length = ({ x, y }: Point) => Math.hypot(x, y);
+export const add = ({ x: x1, y: y1 }: Point, { x: x2, y: y2 }: Point): Point => ({ x: x1 + x2, y: y1 + y2 });
 ```
 
-**Name by purpose, not by the external type.** `GPU`, not `GPUDevice`.
+After applying the namespace pattern:
 
-**Tree-shaking still works**: bundlers (Rollup/Rolldown) trace static
-property accesses (`GPU.createCubemap`) and exclude unused helpers.
-Dynamic access (`GPU[name]`) defeats this — avoid it.
+```ts
+// src/types/point/point.ts
+export type Point = { x: number; y: number };
+export * as Point from './public.js';
 
-**When NOT to use a domain namespace**: if a utility is only useful as
-an internal implementation detail of a specific plugin (not callable by
-consumers), keep it private to that plugin's folder instead.
+// src/types/point/public.ts
+export * from './length.js';
+export * from './add.js';
+
+// src/types/point/length.ts
+export const length = ({ x, y }: Point) => Math.hypot(x, y);
+
+// src/types/point/add.ts
+export const add = ({ x: x1, y: y1 }: Point, { x: x2, y: y2 }: Point): Point => ({ x: x1 + x2, y: y1 + y2 });
+```
+
+## Execute
+
+1. **Follow this rule** — Do not copy patterns from existing code; apply this standard.
+2. Identify constants in the current file.
+3. Extract them into the standard pattern.
+4. Identify all consumers of public namespaces.
+5. Check each consumer: ensure imports use `<type-name>.ts` only, never public.js or -schema.js.
+6. Ensure unit tests exist per function file, splitting as needed.
 
 ## Single file pattern
 

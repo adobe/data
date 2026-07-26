@@ -2,6 +2,7 @@
 
 import RAPIER from "@dimforge/rapier3d-compat";
 import { Database, type Entity } from "@adobe/data/ecs";
+import type { Line3, Vec3 } from "@adobe/data/math";
 import { isVoxelShapePhysicsPending } from "../is-voxel-shape-physics-pending.js";
 import { True } from "@adobe/data/schema";
 import { physicsClock } from "../physics-clock-plugin.js";
@@ -9,6 +10,10 @@ import { physicsData } from "../physics-data-plugin.js";
 import { jointData } from "../joint/joint-plugin.js";
 import { BodyType } from "../body/body-type/body-type.js";
 import { ColliderShape } from "../body/collider-shape/collider-shape.js";
+import type { PhysicsQuery } from "../physics-query.js";
+import type { PhysicsHit } from "../physics-hit.js";
+import { orientNormalAgainstRay } from "./orient-normal-against-ray.js";
+import { newHit, type MutableHit } from "./mutable-hit.js";
 
 /**
  * A second rigid-body solver behind the same `physicsData` seam — the
@@ -84,6 +89,7 @@ export const rapierSolver = Database.Plugin.create({
                     desc.setTranslation(px, py, pz).setRotation({ x: q[0], y: q[1], z: q[2], w: q[3] });
                     if (motion === "dynamic") { desc.setLinvel(vx, vy, vz); desc.setAngvel({ x: wx, y: wy, z: wz }); }
                     const body = world.createRigidBody(desc);
+                    body.userData = id; // reverse lookup for ray-pick: collider → parent body → entity
                     // capsule: Y-aligned, halfHeight = cylinder half (hy), radius = hx.
                     // hull: convex hull of the authored point cloud (read once here).
                     let col: RAPIER.ColliderDesc | null;
@@ -107,11 +113,96 @@ export const rapierSolver = Database.Plugin.create({
                     bodies.set(id, body);
                 };
 
+                // Solver-agnostic ray-pick over the live Rapier world. Passing the
+                // segment vector (b − a) as the ray/shape-cast direction and capping
+                // the time-of-impact at 1 makes the returned toi the parametric α ∈
+                // [0,1] along the segment directly (matching PhysicsHit's convention).
+                const makeQuery = (w: RAPIER.World): PhysicsQuery => {
+                    // Fill `out` with a thin-ray hit. userData was set to the entity id
+                    // when the body was mirrored. Normal is oriented to oppose the ray.
+                    const fillRay = (out: MutableHit, entity: Entity, alpha: number, nx: number, ny: number, nz: number, a: Vec3, dx: number, dy: number, dz: number): void => {
+                        out.entity = entity; out.distance = alpha;
+                        out.point[0] = a[0] + dx * alpha; out.point[1] = a[1] + dy * alpha; out.point[2] = a[2] + dz * alpha;
+                        out.normal[0] = nx; out.normal[1] = ny; out.normal[2] = nz;
+                        orientNormalAgainstRay(out.normal, dx, dy, dz);
+                    };
+                    const nearest = (ray: Line3, options?: { radius?: number }): PhysicsHit | null => {
+                        const a = ray.a, b = ray.b;
+                        const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+                        const radius = options?.radius ?? 0;
+                        const out = newHit();
+                        if (radius > 0) {
+                            // sphere of `radius` swept along the segment
+                            const hit = w.castShape(
+                                { x: a[0], y: a[1], z: a[2] }, { x: 0, y: 0, z: 0, w: 1 }, { x: dx, y: dy, z: dz },
+                                new RAPIER.Ball(radius), 0, 1, true,
+                            );
+                            if (!hit) return null;
+                            const bod = hit.collider.parent();
+                            if (!bod) return null;
+                            const alpha = hit.time_of_impact;
+                            out.entity = bod.userData as Entity; out.distance = alpha;
+                            out.normal[0] = hit.normal1.x; out.normal[1] = hit.normal1.y; out.normal[2] = hit.normal1.z;
+                            orientNormalAgainstRay(out.normal, dx, dy, dz);
+                            // pull the swept-sphere centre at impact back onto the collider surface
+                            out.point[0] = a[0] + dx * alpha - out.normal[0] * radius;
+                            out.point[1] = a[1] + dy * alpha - out.normal[1] * radius;
+                            out.point[2] = a[2] + dz * alpha - out.normal[2] * radius;
+                            return out;
+                        }
+                        const hit = w.castRayAndGetNormal(new RAPIER.Ray({ x: a[0], y: a[1], z: a[2] }, { x: dx, y: dy, z: dz }), 1, true);
+                        if (!hit) return null;
+                        const bod = hit.collider.parent();
+                        if (!bod) return null;
+                        fillRay(out, bod.userData as Entity, hit.timeOfImpact, hit.normal.x, hit.normal.y, hit.normal.z, a, dx, dy, dz);
+                        return out;
+                    };
+                    // Zero-alloc scratch for castRayEach: one reused hit + a grow-only pool
+                    // of records. intersectionsWithRay reports crossings in broadphase-
+                    // arbitrary order, so records are collected then index-sorted near→far.
+                    const scratch = newHit();
+                    const pool: { entity: Entity; distance: number; nx: number; ny: number; nz: number }[] = [];
+                    const order: number[] = [];
+                    return {
+                        castRay: nearest,
+                        castRayEach(ray: Line3, visit, options): void {
+                            // The compat binding has no swept-shape all-hits query, so a
+                            // radius query degrades to the nearest hit (see PhysicsQuery).
+                            if ((options?.radius ?? 0) > 0) { const h = nearest(ray, options); if (h) visit(h); return; }
+                            const a = ray.a, b = ray.b;
+                            const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+                            let count = 0;
+                            w.intersectionsWithRay(new RAPIER.Ray({ x: a[0], y: a[1], z: a[2] }, { x: dx, y: dy, z: dz }), 1, true, (isect: RAPIER.RayColliderIntersection) => {
+                                const bod = isect.collider.parent();
+                                if (bod) {
+                                    let rec = pool[count];
+                                    if (!rec) { rec = { entity: 0 as Entity, distance: 0, nx: 0, ny: 0, nz: 0 }; pool[count] = rec; }
+                                    rec.entity = bod.userData as Entity; rec.distance = isect.timeOfImpact;
+                                    rec.nx = isect.normal.x; rec.ny = isect.normal.y; rec.nz = isect.normal.z;
+                                    count++;
+                                }
+                                return true; // keep collecting
+                            });
+                            for (let i = 0; i < count; i++) order[i] = i;
+                            order.length = count;
+                            order.sort((i, j) => pool[i].distance - pool[j].distance);
+                            for (let k = 0; k < count; k++) {
+                                const rec = pool[order[k]];
+                                fillRay(scratch, rec.entity, rec.distance, rec.nx, rec.ny, rec.nz, a, dx, dy, dz);
+                                if (visit(scratch) === false) break;
+                            }
+                        },
+                    };
+                };
+
                 return () => {
                     if (!world) {
                         if (!initStarted) {
                             initStarted = true;
-                            RAPIER.init().then(() => { world = new RAPIER.World({ x: 0, y: -GRAVITY, z: 0 }); });
+                            RAPIER.init().then(() => {
+                                world = new RAPIER.World({ x: 0, y: -GRAVITY, z: 0 });
+                                db.store.resources.physicsQuery = makeQuery(world);
+                            });
                         }
                         return; // WASM not ready yet
                     }

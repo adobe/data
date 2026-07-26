@@ -1,6 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 export * from "./physics-data-plugin.js";
+export * from "./physics-hit.js";
+export * from "./physics-query.js";
 export * from "./rigid-body-components.js";
 export * from "./static-collider-components.js";
 export * from "./collider-primitive-render-archetypes.js";

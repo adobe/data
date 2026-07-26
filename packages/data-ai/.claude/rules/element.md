@@ -1,6 +1,8 @@
 ---
 paths:
-  - 'packages/**/*-element.ts'
+  - '**/*-element.ts'
+  - '**/elements/**/*.ts'
+  - '**/ui/**/*.ts'
 ---
 
 # Container element authoring

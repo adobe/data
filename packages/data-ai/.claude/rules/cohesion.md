@@ -1,7 +1,7 @@
 ---
 paths:
-  - 'packages/**/*.ts'
-  - 'packages/**/*.tsx'
+  - '**/*.ts'
+  - '**/*.tsx'
 ---
 
 # Cohesion — make related code share a name

@@ -1,7 +1,7 @@
 ---
 paths:
-  - 'packages/**/*.ts'
-  - 'packages/**/*.tsx'
+  - '**/*.ts'
+  - '**/*.tsx'
 ---
 
 # Pass functions by reference — don't wrap them

@@ -1,6 +1,7 @@
 ---
 paths:
   - '**/features/*/ecs/**/systems/**/*.ts'
+  - '**/systems/*.ts'
 ---
 
 # database/systems/ — the real-time tick loop
@@ -63,9 +64,8 @@ const plugin = Database.Plugin.create({
   HUD) are notified. Reserve direct `db.store` writes for the hot per-row paths
   (movement, aging) that run on every entity every frame and shouldn't pay
   per-entity transaction overhead.
-- **The step math lives in `data/`.** A system is the ecs wiring: it reads store
-  rows, calls a pure `data/` step/derive function, writes the result back — same
-  spec↔implementation discipline as transactions. No physics/game math inline.
+- **Optimize for execution speed in systems** if there are multiple items, then make sure we are using efficient store queries and reading/writing minimal data columns. If this is not hot path, then the simplified data functions can be used, but in hot paths we only consider data functions to be specification. (ie: only use them if it's clearly not a hot path or you cannot write anything more performant by directly using ecs store) 
+- **The step math may live in `data/`.** but only for non-hot path
 - **Iterate archetypes per `archetypes.md`.** Express selection with
   `queryArchetypes(include, { exclude })`; when a system destroys/migrates rows
   (bullets expiring, entities dying) iterate **tail → head** so hole-fills don't
@@ -96,8 +96,8 @@ const plugin = Database.Plugin.create({
 - Games or simulations with immediate mode rendering may want to store a session
   resource of the canvas and render to it within a system. @adobe/data-gpu provides
   example patterns for doing this.
-- All or simulation systems should be optimized for performance.
-  Avoid allocatin intermediate objects if possible, read directly from store.
+- All simulation systems should be optimized for performance.
+  Avoid allocating intermediate objects if possible; read/write columns directly if hot-path. You can use transactions if needed, for instance if we are writing non hot path things which we have other things observing. (Only transactions are observable, not direct writes)
 
 ## Driving the loop — the scheduler
 
@@ -131,3 +131,59 @@ an inline body grows too large — the schedule and registration still live inli
 `system-database/tick-loop.test.ts`. Test **selection/detection** logic (which
 entities collide, which pair resolves) separately, with seeded edge-case geometries
 — it's a system concern, not a transaction, and where subtle bugs hide.
+
+# Archetypes — iteration rules
+
+## Express selection in the query, not the loop
+
+`queryArchetypes(include, { exclude })` accepts both required and excluded
+component lists. Use them. Don't query a wider set and then skip rows or
+archetypes with an `if`.
+
+```ts
+// ❌ post-filter
+for (const arch of db.store.queryArchetypes(["position", "rotation"])) {
+    if (arch.components.has("_worldMatrix")) continue;
+    ...
+}
+
+// ✅ declarative
+for (const arch of db.store.queryArchetypes(
+    ["position", "rotation"],
+    { exclude: ["_worldMatrix"] },
+)) {
+    ...
+}
+```
+
+## When every row migrates out, iterate tail → head
+
+Archetypes are densely packed. Removing or migrating a row that isn't the
+last one triggers a hole-fill: the tail row is moved into the gap.
+Iterating `0 → rowCount-1` while migrating every row pays this cost on
+every iteration. Iterating `rowCount-1 → 0` means each removal is from
+the tail — no shift, indices ahead of the cursor stay valid.
+
+```ts
+// ❌ shifts the tail into every hole, and the snapshot allocation is
+//    only there to survive the shifts.
+const ids = [...];
+for (let i = 0; i < arch.rowCount; i++) ids[i] = arch.columns.id.get(i);
+for (const id of ids) db.store.update(id, { _worldMatrix: Mat4x4.identity });
+
+// ✅ no shifts, no allocation
+for (let i = arch.rowCount - 1; i >= 0; i--) {
+    db.store.update(arch.columns.id.get(i), { _worldMatrix: Mat4x4.identity });
+}
+```
+
+If only *some* rows migrate (filter inside the loop), snapshot the ids
+you'll touch — forward iteration is fine because rows you don't touch
+stay put.
+
+## Don't snapshot what the query already filters
+
+A snapshot of "all entity ids in this archetype right now" is only
+needed when forward iteration would invalidate. Reverse iteration
+removes the need; an `exclude` clause removes the need to look at rows
+that don't qualify in the first place.

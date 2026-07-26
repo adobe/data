@@ -5,6 +5,8 @@ input: feature
 output: feature
 ---
 
+Skip if this feature doesn't contain or require services.
+
 Create the feature's `services/` layer: one `<name>-service/` namespace folder per async
 contract — an `interface` (validated with `AsyncDataService.IsValid`), async-only members,
 and `create*` factories.

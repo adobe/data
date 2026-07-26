@@ -1,6 +1,6 @@
 ---
 paths:
-  - 'packages/**/ui/**/*.ts'
+  - '**/ui/**/*.ts'
 ---
 
 # Lazy Lit element pattern

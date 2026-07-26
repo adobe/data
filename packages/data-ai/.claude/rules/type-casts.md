@@ -1,7 +1,7 @@
 ---
 paths:
-  - 'packages/**/*.ts'
-  - 'packages/**/*.tsx'
+  - '**/*.ts'
+  - '**/*.tsx'
 ---
 
 # Type casts — only two valid uses

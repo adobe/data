@@ -1,4 +1,6 @@
 ---
+paths:
+  - '**/data/*.ts'
 ---
 
 # Data modelling — locality of knowledge

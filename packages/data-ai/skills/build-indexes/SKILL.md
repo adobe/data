@@ -5,6 +5,8 @@ input: feature
 output: feature
 ---
 
+Skip if this feature doesn't contain or require indexes.
+
 Create `ecs/index-database/`: `index-database.ts` (extends `CoreDatabase`, adds the `indexes`
 facet from `./indexes/index.js`) plus an `indexes/` folder — one index per file + an `index.ts`
 barrel.

@@ -2,13 +2,15 @@
 
 import { Database } from "@adobe/data/ecs";
 import { F32 } from "@adobe/data/schema";
-import { Vec3, Quat } from "@adobe/data/math";
+import { Vec3, Quat, type Line3 } from "@adobe/data/math";
 import { BodyType } from "./body/body-type/body-type.js";
 import { ColliderShape } from "./body/collider-shape/collider-shape.js";
 import type { ColliderMesh } from "./body/collider-mesh.js";
 import { Material } from "../material/material.js";
 import { RIGID_BODY_COMPONENTS } from "./rigid-body-components.js";
 import { STATIC_COLLIDER_COMPONENTS } from "./static-collider-components.js";
+import type { PhysicsQuery } from "./physics-query.js";
+import type { PhysicsHit } from "./physics-hit.js";
 
 /**
  * The shared, solver-agnostic rigid-body data model — the seam every physics
@@ -39,6 +41,11 @@ import { STATIC_COLLIDER_COMPONENTS } from "./static-collider-components.js";
  * body the first time it mirrors it, so authors never supply derived state.
  *
  * Mass + inertia are derived per solver from shape + material (not stored here).
+ *
+ * Besides the authored model, this seam declares the pluggable spatial-query
+ * contract every solver fulfils: a `physicsQuery` resource (the active solver
+ * publishes its engine-backed implementation once its world is live) and a
+ * `pickRay` action that delegates to it — so ray/line picking is solver-agnostic.
  */
 export const physicsData = Database.Plugin.create({
     extends: Material.plugin,   // brings the `material` reference component
@@ -64,6 +71,13 @@ export const physicsData = Database.Plugin.create({
         convexPoints:    { default: null as Float32Array | null }, // colliderShape "hull": point cloud → convex hull
         colliderMesh:    { default: null as ColliderMesh | null }, // colliderShape "mesh": static triangle soup
     },
+    resources: {
+        // The pluggable spatial-query seam: the active solver publishes its
+        // engine-backed implementation here once its world is live, so picking
+        // is solver-agnostic. Null before then (lazy WASM init) and when no
+        // solver is combined in. Runtime object → nonPersistent.
+        physicsQuery: { default: null as PhysicsQuery | null, nonPersistent: true },
+    },
     archetypes: {
         RigidBody: [...RIGID_BODY_COMPONENTS],
         StaticCollider: [...STATIC_COLLIDER_COMPONENTS],
@@ -71,5 +85,19 @@ export const physicsData = Database.Plugin.create({
         ConvexBody: [...RIGID_BODY_COMPONENTS, "convexPoints"],
         // A static triangle-mesh collider (terrain / level geometry).
         MeshCollider: [...STATIC_COLLIDER_COMPONENTS, "colliderMesh"],
+    },
+    actions: {
+        // Consumer surface for engine-backed picking. An action (not a
+        // transaction) because it returns a value; a pure delegate to whatever
+        // solver filled `physicsQuery` — `physicsData` itself holds no engine
+        // knowledge. Returns null until a solver's world is live.
+        pickRay(db, args: { ray: Line3; radius?: number }): PhysicsHit | null {
+            return db.resources.physicsQuery?.castRay(args.ray, { radius: args.radius }) ?? null;
+        },
+        // Visit every collider along the ray, nearest first (see PhysicsQuery.castRayEach).
+        // Returns void; no-op until a solver's world is live.
+        pickRayEach(db, args: { ray: Line3; visit: (hit: PhysicsHit) => boolean | void; radius?: number }): void {
+            db.resources.physicsQuery?.castRayEach(args.ray, args.visit, { radius: args.radius });
+        },
     },
 });

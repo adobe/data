@@ -65,8 +65,21 @@ lose track. Keep it honest about approximations and limitations.
     so the skin flops. Runs on any solver. *Per-joint limit tuning is a follow-up.*
 - [ ] **Collision events + groups/masks + sensors** — contact callbacks drained
   to ECS; per-body layer masks; overlap-only sensor colliders.
-- [ ] **Spatial queries** — raycast / shape-cast / overlap against the broadphase
-  (picking, line-of-sight, ground checks).
+- [~] **Spatial queries** — a solver-agnostic `physicsQuery` resource +
+  `pickRay` / `pickRayEach` actions on the `physicsData` seam: **ray/line picking
+  with or without radius** (a thin ray, or a sphere of `radius` swept along the
+  segment). `pickRay` returns the nearest collider as a fresh, retainable
+  `PhysicsHit`; `pickRayEach` visits *every* collider along the segment, nearest
+  first, with early-out, passing a single reused (zero-alloc) hit valid only for
+  that call. A `PhysicsHit` is (entity, parametric α, world point, ray-opposing
+  normal). Backed by
+  each engine's native cast (Rapier `castRayAndGetNormal` / `castShape` /
+  `intersectionsWithRay`; Jolt `NarrowPhaseQuery.CastRay` / `CastShape` with
+  all-hit collectors) and verified by an abstract conformance suite run against
+  both. *Radius all-hits is native on Jolt; the Rapier compat binding has no
+  swept-shape all-hits query, so a radius `pickRayEach` degrades to the nearest
+  hit there. Still to do: overlap queries (sphere/AABB), general shape-cast vs.
+  arbitrary shapes, and a query `filter` (collision-group / entity predicate).*
 - [ ] **`uint32`-indexed primitives** — flat-shaded collider/render meshes
   currently emit `uint16` indices (fine for authored ramps/props, not dense
   terrain).

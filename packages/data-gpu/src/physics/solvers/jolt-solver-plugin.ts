@@ -2,6 +2,7 @@
 
 import initJolt from "jolt-physics";
 import { Database, type Entity } from "@adobe/data/ecs";
+import type { Line3, Vec3 } from "@adobe/data/math";
 import { isVoxelShapePhysicsPending } from "../is-voxel-shape-physics-pending.js";
 import { True } from "@adobe/data/schema";
 import { physicsClock } from "../physics-clock-plugin.js";
@@ -11,6 +12,10 @@ import { BodyType } from "../body/body-type/body-type.js";
 import { ColliderShape } from "../body/collider-shape/collider-shape.js";
 import type { ColliderMesh } from "../body/collider-mesh.js";
 import { massFromVolume } from "../body/collider-shape/mass-from-volume.js";
+import type { PhysicsQuery } from "../physics-query.js";
+import type { PhysicsHit } from "../physics-hit.js";
+import { orientNormalAgainstRay } from "./orient-normal-against-ray.js";
+import { newHit, type MutableHit } from "./mutable-hit.js";
 
 /**
  * A third rigid-body solver behind the same `physicsData` seam — Jolt Physics
@@ -61,6 +66,8 @@ type JQuat = InstanceType<JoltModule["Quat"]>;
 type JVec3 = InstanceType<JoltModule["Vec3"]>;
 type JShape = InstanceType<JoltModule["Shape"]>;
 type JPhysicsSystem = InstanceType<JoltModule["PhysicsSystem"]>;
+type JRayCastResult = InstanceType<JoltModule["RayCastResult"]>;
+type JShapeCastResult = InstanceType<JoltModule["ShapeCastResult"]>;
 
 interface MatProps { density: number; restitution: number; friction: number }
 
@@ -210,6 +217,7 @@ export const joltSolver = Database.Plugin.create({
                         }
                     }
                     const body = bi.CreateBody(settings);
+                    body.SetUserData(id); // reverse lookup for ray-pick: hit body id → entity
                     bi.AddBody(body.GetID(), motion === "static" ? jolt.EActivation_DontActivate : jolt.EActivation_Activate);
                     if (motion === "dynamic" && (vx || vy || vz || wx || wy || wz)) {
                         const lv = new jolt.Vec3(vx, vy, vz), av = new jolt.Vec3(wx, wy, wz);
@@ -222,6 +230,116 @@ export const joltSolver = Database.Plugin.create({
                     if (half) jolt.destroy(half);
                 };
 
+                // Solver-agnostic ray-pick over the live Jolt world. As in the Rapier
+                // plugin, the segment vector (b − a) is the cast direction, so the hit
+                // fraction is the parametric α ∈ [0,1] along the segment directly
+                // (matching PhysicsHit). Accept-all filters + reusable settings are
+                // created once here; per-call WASM temporaries are freed after each pick.
+                const makeQuery = (jolt: JoltModule, ps: JPhysicsSystem, bi: JBodyInterface): PhysicsQuery => {
+                    const narrow = ps.GetNarrowPhaseQuery();
+                    const bpFilter = new jolt.BroadPhaseLayerFilter();
+                    const objFilter = new jolt.ObjectLayerFilter();
+                    const bodyFilter = new jolt.BodyFilter();
+                    const shapeFilter = new jolt.ShapeFilter();
+                    const raySettings = new jolt.RayCastSettings();
+                    const shapeSettings = new jolt.ShapeCastSettings();
+                    const baseOffset = new jolt.RVec3(0, 0, 0); // results in world space
+                    const unitScale = new jolt.Vec3(1, 1, 1);
+
+                    // Fill `out` from one ray result. Surface normal comes from the body
+                    // we already hold (no body-lock round-trip). Reads every field into JS
+                    // before any collector is destroyed. userData = entity id.
+                    const fillRay = (out: MutableHit, hit: JRayCastResult, a: Vec3, dx: number, dy: number, dz: number): void => {
+                        const alpha = hit.get_mFraction();
+                        const entity = bi.GetUserData(hit.get_mBodyID()) as Entity;
+                        out.entity = entity; out.distance = alpha;
+                        out.point[0] = a[0] + dx * alpha; out.point[1] = a[1] + dy * alpha; out.point[2] = a[2] + dz * alpha;
+                        out.normal[0] = 0; out.normal[1] = 0; out.normal[2] = 0;
+                        const body = bodies.get(entity);
+                        if (body) {
+                            const p = new jolt.RVec3(out.point[0], out.point[1], out.point[2]);
+                            const nv = body.GetWorldSpaceSurfaceNormal(hit.get_mSubShapeID2(), p);
+                            out.normal[0] = nv.GetX(); out.normal[1] = nv.GetY(); out.normal[2] = nv.GetZ();
+                            jolt.destroy(p);
+                        }
+                        orientNormalAgainstRay(out.normal, dx, dy, dz);
+                    };
+                    // Fill `out` from one swept-sphere result (contact point + penetration
+                    // axis; both world-space with baseOffset = 0).
+                    const fillShape = (out: MutableHit, hit: JShapeCastResult, dx: number, dy: number, dz: number): void => {
+                        const cp = hit.get_mContactPointOn2();
+                        out.entity = bi.GetUserData(hit.get_mBodyID2()) as Entity; out.distance = hit.get_mFraction();
+                        out.point[0] = cp.GetX(); out.point[1] = cp.GetY(); out.point[2] = cp.GetZ();
+                        const pax = hit.get_mPenetrationAxis();
+                        out.normal[0] = pax.GetX(); out.normal[1] = pax.GetY(); out.normal[2] = pax.GetZ();
+                        orientNormalAgainstRay(out.normal, dx, dy, dz);
+                    };
+
+                    const scratch = newHit(); // reused across castRayEach visits (zero-alloc)
+                    return {
+                        castRay(ray: Line3, options): PhysicsHit | null {
+                            const a = ray.a, b = ray.b;
+                            const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+                            const out = newHit();
+                            if ((options?.radius ?? 0) > 0) {
+                                // sphere of `radius` swept along the segment
+                                const shape = new jolt.SphereShape(options!.radius!);
+                                const startPos = new jolt.RVec3(a[0], a[1], a[2]);
+                                const comStart = jolt.RMat44.prototype.sTranslation(startPos);
+                                const dir = new jolt.Vec3(dx, dy, dz);
+                                const shapeCast = new jolt.RShapeCast(shape, unitScale, comStart, dir);
+                                const collector = new jolt.CastShapeClosestHitCollisionCollector();
+                                narrow.CastShape(shapeCast, shapeSettings, baseOffset, collector, bpFilter, objFilter, bodyFilter, shapeFilter);
+                                const hadHit = collector.HadHit();
+                                if (hadHit) fillShape(out, collector.mHit, dx, dy, dz);
+                                jolt.destroy(shape); jolt.destroy(startPos); jolt.destroy(comStart); jolt.destroy(dir); jolt.destroy(shapeCast); jolt.destroy(collector);
+                                return hadHit ? out : null;
+                            }
+                            const origin = new jolt.RVec3(a[0], a[1], a[2]);
+                            const dir = new jolt.Vec3(dx, dy, dz);
+                            const rc = new jolt.RRayCast(origin, dir);
+                            const collector = new jolt.CastRayClosestHitCollisionCollector();
+                            narrow.CastRay(rc, raySettings, collector, bpFilter, objFilter, bodyFilter, shapeFilter);
+                            const hadHit = collector.HadHit();
+                            if (hadHit) fillRay(out, collector.mHit, a, dx, dy, dz);
+                            jolt.destroy(origin); jolt.destroy(dir); jolt.destroy(rc); jolt.destroy(collector);
+                            return hadHit ? out : null;
+                        },
+                        castRayEach(ray: Line3, visit, options): void {
+                            const a = ray.a, b = ray.b;
+                            const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+                            if ((options?.radius ?? 0) > 0) {
+                                // Jolt has a native swept-sphere all-hits query.
+                                const shape = new jolt.SphereShape(options!.radius!);
+                                const startPos = new jolt.RVec3(a[0], a[1], a[2]);
+                                const comStart = jolt.RMat44.prototype.sTranslation(startPos);
+                                const dir = new jolt.Vec3(dx, dy, dz);
+                                const shapeCast = new jolt.RShapeCast(shape, unitScale, comStart, dir);
+                                const collector = new jolt.CastShapeAllHitCollisionCollector();
+                                narrow.CastShape(shapeCast, shapeSettings, baseOffset, collector, bpFilter, objFilter, bodyFilter, shapeFilter);
+                                if (collector.HadHit()) {
+                                    collector.Sort(); // near→far
+                                    const hits = collector.get_mHits();
+                                    for (let i = 0, len = hits.size(); i < len; i++) { fillShape(scratch, hits.at(i), dx, dy, dz); if (visit(scratch) === false) break; }
+                                }
+                                jolt.destroy(shape); jolt.destroy(startPos); jolt.destroy(comStart); jolt.destroy(dir); jolt.destroy(shapeCast); jolt.destroy(collector);
+                                return;
+                            }
+                            const origin = new jolt.RVec3(a[0], a[1], a[2]);
+                            const dir = new jolt.Vec3(dx, dy, dz);
+                            const rc = new jolt.RRayCast(origin, dir);
+                            const collector = new jolt.CastRayAllHitCollisionCollector();
+                            narrow.CastRay(rc, raySettings, collector, bpFilter, objFilter, bodyFilter, shapeFilter);
+                            if (collector.HadHit()) {
+                                collector.Sort(); // near→far
+                                const hits = collector.get_mHits();
+                                for (let i = 0, len = hits.size(); i < len; i++) { fillRay(scratch, hits.at(i), a, dx, dy, dz); if (visit(scratch) === false) break; }
+                            }
+                            jolt.destroy(origin); jolt.destroy(dir); jolt.destroy(rc); jolt.destroy(collector);
+                        },
+                    };
+                };
+
                 return () => {
                     if (!J || !bodyInterface || !joltInterface) {
                         if (!initStarted) {
@@ -229,6 +347,7 @@ export const joltSolver = Database.Plugin.create({
                             initJolt().then((j: JoltModule) => {
                                 J = j; setup(j);
                                 db.store.resources._joltContext = { jolt: j, physicsSystem: physicsSystem!, bodyInterface: bodyInterface!, ragdollLayer: L_RAGDOLL };
+                                db.store.resources.physicsQuery = makeQuery(j, physicsSystem!, bodyInterface!);
                             });
                         }
                         return; // WASM not ready yet

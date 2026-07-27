@@ -8,7 +8,7 @@ import { EntityLocationTable } from "../entity-location-table/entity-location-ta
 import { Entity } from "../entity/entity.js";
 import { StringKeyof } from "../../types/types.js";
 import { ensureCapacity } from "../../table/ensure-capacity.js";
-import { TypedBuffer } from "../../typed-buffer/index.js";
+import { TypedBuffer, createTypedBuffer } from "../../typed-buffer/index.js";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Specialized insert function per archetype.
@@ -192,21 +192,32 @@ export const createArchetype = <C extends { id: typeof Entity.schema }>(
         ...table,
         components: componentSet as Set<StringKeyof<C>>,
         insert: createEntity,
-        toData: (copy = false) => ({
-            columns: copy
-                ? Object.fromEntries(
-                    Object.entries(archetype.columns as Record<string, { copy: () => unknown }>)
-                        .map(([name, column]) => [name, column.copy()]),
-                )
-                : archetype.columns,
+        toData: (copy = false, omit?: ReadonlySet<string>) => ({
+            columns: Object.fromEntries(
+                Object.entries(archetype.columns as Record<string, TypedBuffer<unknown>>)
+                    .filter(([name]) => omit === undefined || !omit.has(name))
+                    .map(([name, column]) => [name, copy ? column.copy() : column]),
+            ),
             rowCount: archetype.rowCount,
             rowCapacity: archetype.rowCapacity,
         }),
         fromData: (data: unknown) => {
+            // Capture the current column schemas before Object.assign replaces the
+            // whole `columns` object. Any component omitted from `data` (a
+            // nonPersistent column that wasn't serialized) is then rebuilt fresh
+            // rather than left missing — keeping the archetype structurally intact.
+            const columnSchemas: Record<string, Schema> = {};
+            for (const name in archetype.columns) {
+                columnSchemas[name] = (archetype.columns as Record<string, TypedBuffer<unknown>>)[name]!.schema;
+            }
             Object.assign(archetype, data);
-            // Restoring archetype state replaces archetype.columns with the
-            // deserialized columns object. Rebuild insertImpl so the baked
-            // column refs match the new live columns.
+            for (const name of archetype.components) {
+                if (!(name in archetype.columns)) {
+                    (archetype.columns as Record<string, TypedBuffer<unknown>>)[name] =
+                        createTypedBuffer(columnSchemas[name]!, archetype.rowCapacity);
+                }
+            }
+            // Rebuild insertImpl so the baked column refs match the new live columns.
             refreshInsertImpl();
             // component set cannot be changed by this as the archetype components should be the same.
         }

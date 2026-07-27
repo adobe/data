@@ -71,6 +71,12 @@ export const createIncrementalPersistenceService = async (
 
     const store = getMutableStore(database);
 
+    // A component whose SCHEMA is marked nonPersistent (distinct from the
+    // built-in `nonPersistent` marker component) is never journaled/checkpointed.
+    const isNonPersistentComponent = (component: string): boolean =>
+        component !== "nonPersistent" && component !== "nonShared" &&
+        (store.componentSchemas as Record<string, { nonPersistent?: boolean }>)[component]?.nonPersistent === true;
+
     // Cache per-archetype context. We discover archetypes lazily as
     // they appear in changedEntities so that newly-introduced
     // archetypes (created by an extend after service init) are picked
@@ -126,6 +132,10 @@ export const createIncrementalPersistenceService = async (
             // from entity-location.bin (which is keyed by entity id), so
             // storing them again per archetype row would be redundant.
             if (component === "id") continue;
+            // Skip nonPersistent-schema components — their values are never
+            // saved; on load they're reset to default or the component is
+            // stripped (see store.reconstructNonPersistentColumns).
+            if (isNonPersistentComponent(component)) continue;
             const buffer = getColumn(archetype, component);
             if (buffer === undefined) continue;
             encoders.set(component, createColumnEncoder(component, buffer));
@@ -134,7 +144,7 @@ export const createIncrementalPersistenceService = async (
 
         const componentIds = new Map<string, number>();
         for (const component of archetype.components) {
-            if (component === "id") continue;
+            if (component === "id" || isNonPersistentComponent(component)) continue;
             componentIds.set(component, internComponent(component));
         }
 
@@ -968,6 +978,11 @@ export const createIncrementalPersistenceService = async (
             entityLocationTables: serializedEntityLocationTables(locations),
             archetypesData: [],
         });
+
+        // nonPersistent-schema columns were never checkpointed/journaled, so the
+        // freshly-restored archetypes have them empty: reset defaulted ones to
+        // their default and strip no-default ones.
+        store.reconstructNonPersistentColumns();
     };
 
     const dispose = async (): Promise<void> => {

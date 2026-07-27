@@ -129,6 +129,14 @@ export interface Core<
     /** Wipe all entities. O(num_archetypes). Location tables and row counts reset to empty. */
     reset(): void;
     /**
+     * Reconcile nonPersistent-schema columns after an external restore (e.g. a
+     * persistence layer that rebuilt the store from disk column-by-column): reset
+     * defaulted ones to their schema default and strip no-default ones (the entity
+     * migrates out of the component). Idempotent. `fromData` already applies this
+     * to its own loads; this is for callers that restore columns another way.
+     */
+    reconstructNonPersistentColumns(): void;
+    /**
      * Restore from a snapshot. With no `scope`, performs a whole-database load
      * (restores both persistent quadrants and resets the non-persistent ones).
      * With a `scope`, restores only the in-scope persistent quadrant(s) and

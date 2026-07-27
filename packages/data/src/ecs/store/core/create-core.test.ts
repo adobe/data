@@ -883,6 +883,33 @@ export function createCoreTestSuite(
             expect(combined.read(settings)?.position).toEqual({ x: 2, y: 0, z: 0 });
         });
 
+        it("honors component-level nonPersistent: defaulted resets, no-default is stripped", () => {
+            const cacheSchema = { type: "number", default: 7, nonPersistent: true } as const satisfies Schema;
+            const derivedSchema = { type: "number", nonPersistent: true } as const satisfies Schema;
+            const make = () => factory({ position: positionSchema, cache: cacheSchema, derived: derivedSchema });
+
+            const core = make();
+            const e = core.ensureArchetype(["id", "position", "cache", "derived"]).insert({
+                position: { x: 1, y: 2, z: 3 }, cache: 99, derived: 42,
+            });
+
+            const data = core.toData();
+            const restored = make();
+            restored.fromData(data);
+
+            const view = restored.read(e) as { position: { x: number }; cache?: number; derived?: number } | null;
+            expect(view).not.toBeNull();
+            // Persistent component survives.
+            expect(view!.position).toEqual({ x: 1, y: 2, z: 3 });
+            // Defaulted nonPersistent component: not persisted, reset to default.
+            expect(view!.cache).toBe(7);
+            // No-default nonPersistent component: stripped — the entity restored
+            // into the reduced archetype without it.
+            expect("derived" in view!).toBe(false);
+            expect(restored.locate(e)!.archetype.components.has("derived")).toBe(false);
+            expect(restored.locate(e)!.archetype.components.has("cache")).toBe(true);
+        });
+
     });
 }
 

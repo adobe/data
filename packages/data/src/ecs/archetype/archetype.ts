@@ -31,15 +31,19 @@ export interface ReadonlyArchetype<C extends RequiredComponents> extends BaseArc
      * detached (`.copy()`) so the snapshot survives later mutation of the live
      * archetype; otherwise the snapshot references the live column buffers
      * (faster, but only valid until the next mutation).
+     *
+     * `omit` names columns to exclude from the snapshot (e.g. nonPersistent
+     * components). `fromData` rebuilds any omitted column fresh, so the archetype
+     * stays structurally intact.
      */
-    toData: (copy?: boolean) => unknown
+    toData: (copy?: boolean, omit?: ReadonlySet<string>) => unknown
 }
 
 export interface Archetype<C extends RequiredComponents = RequiredComponents> extends BaseArchetype, Table<C> {
     readonly components: ComponentSet<StringKeyof<C>>;
     insert: <T extends EntityInsertValues<C>>(rowData: Exact<EntityInsertValues<C>, T>) => Entity;
     /** See {@link ReadonlyArchetype.toData}. */
-    toData: (copy?: boolean) => unknown
+    toData: (copy?: boolean, omit?: ReadonlySet<string>) => unknown
     fromData: (data: unknown) => void
 }
 

@@ -29,6 +29,9 @@ const plugin = Database.Plugin.create({
         // Local-only resource — never replicates because of `nonPersistent: true`.
         // (Verified by the "nonPersistent resource never replicates" test below.)
         bannerText: { default: "" as string, nonPersistent: true },
+        // Local + durable resource — persisted locally, but never replicated to
+        // peers because of `nonShared: true`. (Verified by the nonShared test.)
+        localPref: { default: "" as string, nonShared: true },
     },
     archetypes: {
         Point: ["x", "y", "label"],
@@ -45,6 +48,9 @@ const plugin = Database.Plugin.create({
         },
         setBanner(s, args: { text: string }) {
             s.resources.bannerText = args.text;
+        },
+        setLocalPref(s, args: { text: string }) {
+            s.resources.localPref = args.text;
         },
     },
 });
@@ -219,6 +225,39 @@ describe("sync soundness", () => {
         db1.transactions.bumpScore({ delta: 5 });
         expect(db1.resources.score).toBe(5);
         expect(db2.resources.score).toBe(5);
+
+        sync1.dispose();
+        server.dispose();
+    });
+
+    // -----------------------------------------------------------------------
+    // 5b. NonShared resource never replicates (but is still local + durable).
+    //     The sync service skips envelopes with no shared effect.
+    // -----------------------------------------------------------------------
+
+    it("nonShared resource mutations are never replicated to peers", () => {
+        const server = createSyncServer();
+        const { client: c1t, server: s1t } = createLoopbackTransport();
+        const { client: c2t, server: s2t } = createLoopbackTransport();
+
+        const db1 = makeDb("peer1");
+        const db2 = makeDb("peer2");
+
+        server.connect(s1t);
+        server.connect(s2t);
+
+        const sync1 = createSyncService({ database: db1, transport: c1t });
+        createSyncService({ database: db2, transport: c2t });
+
+        db1.transactions.setLocalPref({ text: "local to peer1" });
+
+        // Local DB sees the change; peer 2 must NOT.
+        expect(db1.resources.localPref).toBe("local to peer1");
+        expect(db2.resources.localPref).toBe("");
+
+        // Sanity: a shared mutation in the same session DOES replicate.
+        db1.transactions.bumpScore({ delta: 3 });
+        expect(db2.resources.score).toBe(3);
 
         sync1.dispose();
         server.dispose();

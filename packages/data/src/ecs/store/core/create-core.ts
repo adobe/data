@@ -401,6 +401,53 @@ export function createCore<NC extends ComponentSchemas>(
     const archetypeQuadrant = (archetype: Archetype<any>): number =>
         quadrantFor(archetype.components.has("nonPersistent"), archetype.components.has("nonShared"));
 
+    // Component names whose SCHEMA is marked `nonPersistent` (distinct from the
+    // built-in `nonPersistent`/`nonShared` marker components). Their column data
+    // is never serialized; on load each is reconstructed — reset to its schema
+    // default, or (when it has no default) stripped from the entity entirely.
+    const nonPersistentComponents = (): Set<string> => {
+        const names = new Set<string>();
+        for (const name in componentSchemas) {
+            if (name === "id" || name === "nonPersistent" || name === "nonShared") continue;
+            if ((componentSchemas as Record<string, Schema>)[name]?.nonPersistent === true) names.add(name);
+        }
+        return names;
+    };
+
+    // After a restore, put nonPersistent columns back into a valid state for the
+    // archetypes whose data was just loaded (their nonPersistent columns were
+    // omitted from the snapshot and rebuilt empty by archetype.fromData).
+    const reconstructNonPersistentColumns = (restored: readonly Archetype<any>[]): void => {
+        const nonPersistent = nonPersistentComponents();
+        if (nonPersistent.size === 0) return;
+        const noDefault = new Set<string>();
+        for (const name of nonPersistent) {
+            if (!("default" in (componentSchemas as Record<string, Schema>)[name]!)) noDefault.add(name);
+        }
+        // Defaulted nonPersistent columns → reset every row to the schema default.
+        for (const archetype of restored) {
+            for (const name of nonPersistent) {
+                if (noDefault.has(name) || !archetype.components.has(name)) continue;
+                const column = archetype.columns[name]!;
+                const def = (componentSchemas as Record<string, Schema>)[name]!.default;
+                for (let row = 0; row < archetype.rowCount; row++) column.set(row, def);
+            }
+        }
+        // No-default nonPersistent components → strip them so the entity restores
+        // without the component (a system re-adds it on demand). Uses the normal
+        // remove-component migration, which naturally merges into reduced archetypes.
+        if (noDefault.size > 0) {
+            for (const archetype of restored) {
+                const present = [...noDefault].filter((n) => archetype.components.has(n));
+                if (present.length === 0) continue;
+                const removal = Object.fromEntries(present.map((n) => [n, undefined])) as EntityUpdateValues<C>;
+                while (archetype.rowCount > 0) {
+                    updateEntity(archetype.columns.id!.get(0), removal);
+                }
+            }
+        }
+    };
+
     const core: Core<C> = {
         componentSchemas: componentSchemas,
         queryArchetypes,
@@ -418,9 +465,13 @@ export function createCore<NC extends ComponentSchemas>(
         update: updateEntity,
         compact,
         reset: resetCore,
+        reconstructNonPersistentColumns: () => reconstructNonPersistentColumns(archetypes),
         toData: (options?: ToDataOptions): SerializedCore => {
             const { copy = false, scope } = options ?? {};
             const inScope = new Set(scopeQuadrants(scope));
+            // nonPersistent-schema components are never written; their column
+            // data is omitted and reconstructed on load.
+            const omit = nonPersistentComponents();
             return {
                 version: ECS_SNAPSHOT_VERSION,
                 componentSchemas,
@@ -441,7 +492,7 @@ export function createCore<NC extends ComponentSchemas>(
                         ? Object.fromEntries(partitionNames.map((n) => [n, archetype.columns[n]!.get(0)]))
                         : undefined;
                     return inScope.has(archetypeQuadrant(archetype))
-                        ? { componentNames, partitionValues, data: archetype.toData(copy) }
+                        ? { componentNames, partitionValues, data: archetype.toData(copy, omit) }
                         : { componentNames, partitionValues };
                 })
             };
@@ -483,6 +534,7 @@ export function createCore<NC extends ComponentSchemas>(
                     locationTables[quadrant]!.reset();
                 }
             }
+            const restoredArchetypes: Archetype<any>[] = [];
             for (const { componentNames, partitionValues, data: archetypeData } of data.archetypesData) {
                 // Recreating the archetype reserves its id and leaves it empty
                 // (keeping ids aligned); only in-scope entries carry data to
@@ -491,8 +543,12 @@ export function createCore<NC extends ComponentSchemas>(
                 const archetype = resolveArchetype(componentNames, partitionValues);
                 if (archetypeData !== undefined) {
                     archetype.fromData(archetypeData);
+                    restoredArchetypes.push(archetype as unknown as Archetype<any>);
                 }
             }
+            // The archetypes just loaded had their nonPersistent columns omitted
+            // and rebuilt empty; put those columns back into a valid state.
+            reconstructNonPersistentColumns(restoredArchetypes);
         }
     };
     return core as any;

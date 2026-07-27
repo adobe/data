@@ -159,7 +159,7 @@ describe("partition components", () => {
             const a = router.insert({ cell: 1, position: { x: 1, y: 1 } });
             const b = router.insert({ cell: 2, position: { x: 2, y: 2 } });
 
-            const snapshot = core.toData(true);
+            const snapshot = core.toData({ copy: true });
 
             const restored = makeCore();
             restored.fromData(snapshot);

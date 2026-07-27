@@ -7,6 +7,7 @@ import { Entity } from "../entity/entity.js";
 import { EntityReadValues } from "../store/core/index.js";
 import { Observe } from "../../observe/index.js";
 import { TransactionResult } from "./transactional-store/index.js";
+import { PersistenceScope } from "../persistence-scope.js";
 import { TransactionEnvelope } from "./reconciling/reconciling-database.js";
 import { StringKeyof, RemoveIndex } from "../../types/types.js";
 import { Components } from "../store/components.js";
@@ -258,8 +259,8 @@ export interface Database<
    * in-flight transients into persisted state. The old reconciler tests missed
    * it because they only asserted the snapshot was truthy, never round-tripped it.
    */
-  toData(): unknown
-  fromData(data: unknown): void
+  toData(options?: { readonly scope?: PersistenceScope }): unknown
+  fromData(data: unknown, scope?: PersistenceScope): void
   extend<P extends Database.Plugin>(plugin: P): Database<
     C & FromSchemas<RemoveIndex<P['components']>>,
     R & FromSchemas<RemoveIndex<P['resources']>>,

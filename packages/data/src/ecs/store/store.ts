@@ -13,6 +13,7 @@ import { Undoable } from "../database/undoable.js";
 import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";
 import { FromSchemas } from "../../schema/from-schemas.js";
+import { PersistenceScope, ToDataOptions } from "../persistence-scope.js";
 import { ComponentSchemas } from "../component-schemas.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { createStore } from "./public/create-store.js";
@@ -33,8 +34,10 @@ interface BaseStore<C extends object = never> {
      * remains valid after subsequent mutations; otherwise it references live
      * buffers and is only valid until the next mutation. See `Database.toData()`
      * for the bug this `copy` flag addresses for transient-bearing strategies.
+     *
+     * `options.scope` selects which persistent quadrants to emit; omit for all.
      */
-    toData(copy?: boolean): unknown
+    toData(options?: ToDataOptions): unknown
 }
 
 export interface ReadonlyStore<
@@ -92,7 +95,7 @@ export interface Store<
     readonly indexes: { readonly [K in keyof IX]: Index.Handle<C, IX[K]> };
     /** Wipe all entities and reset resources to plugin defaults. O(num_archetypes + num_resources). */
     reset(): void;
-    fromData(data: unknown): void
+    fromData(data: unknown, scope?: PersistenceScope): void
     extend<S extends Store.Schema>(schema: S): S extends Store.Schema<infer XC, infer XR, infer XA, infer XIX> ? Store<C & FromSchemas<XC>, R & FromSchemas<XR>, A & XA, IX & XIX, PK | PartitionKeysOf<XC>> : never;
 }
 

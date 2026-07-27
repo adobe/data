@@ -8,6 +8,7 @@ import { Archetype, ReadonlyArchetype } from "../../archetype/archetype.js";
 import { RequiredComponents } from "../../required-components.js";
 import { Entity } from "../../entity/entity.js";
 import { QUADRANT_COUNT, isPersistentQuadrant, quadrantFor, quadrantOf } from "../../entity/persistence-sharing.js";
+import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 import { Core, EntityUpdateValues, ArchetypeQueryOptions } from "./core.js";
 import { Assert, Equal, Simplify, StringKeyof } from "../../../types/index.js";
 import { ComponentSchemas } from "../../component-schemas.js";
@@ -386,6 +387,20 @@ export function createCore<NC extends ComponentSchemas>(
         }
     };
 
+    // The persistent quadrants a toData/fromData operates on. Omitted scope ⇒
+    // all persistent quadrants (whole-database behavior).
+    const scopeQuadrants = (scope?: PersistenceScope): number[] => {
+        if (scope === undefined) {
+            return locationTables.map((_, quadrant) => quadrant).filter(isPersistentQuadrant);
+        }
+        const quadrants: number[] = [];
+        if (scope.shared) quadrants.push(quadrantFor(false, false));
+        if (scope.nonShared) quadrants.push(quadrantFor(false, true));
+        return quadrants;
+    };
+    const archetypeQuadrant = (archetype: Archetype<any>): number =>
+        quadrantFor(archetype.components.has("nonPersistent"), archetype.components.has("nonShared"));
+
     const core: Core<C> = {
         componentSchemas: componentSchemas,
         queryArchetypes,
@@ -403,32 +418,35 @@ export function createCore<NC extends ComponentSchemas>(
         update: updateEntity,
         compact,
         reset: resetCore,
-        toData: (copy = false): SerializedCore => ({
-            version: ECS_SNAPSHOT_VERSION,
-            componentSchemas,
-            // Serialize only the persistent quadrants' location tables (0, 2).
-            entityLocationTables: Object.fromEntries(
-                locationTables.flatMap((table, quadrant) =>
-                    isPersistentQuadrant(quadrant) ? [[quadrant, table.toData(copy)]] : []),
-            ),
-            // Every archetype contributes an entry so its id (this array
-            // index, stored by value in the persistent location tables) is
-            // reproduced on load. Only persistent archetypes carry `data`;
-            // nonPersistent ones back the non-persistent quadrants, whose
-            // location tables are never serialized, so their rows aren't
-            // persistent.
-            archetypesData: archetypes.map((archetype): SerializedArchetype => {
-                const componentNames = [...archetype.components];
-                const partitionNames = partitionNamesIn(componentNames.slice().sort());
-                const partitionValues = partitionNames.length > 0
-                    ? Object.fromEntries(partitionNames.map((n) => [n, archetype.columns[n]!.get(0)]))
-                    : undefined;
-                return archetype.components.has("nonPersistent")
-                    ? { componentNames, partitionValues }
-                    : { componentNames, partitionValues, data: archetype.toData(copy) };
-            })
-        }),
-        fromData: (data: SerializedCore) => {
+        toData: (options?: ToDataOptions): SerializedCore => {
+            const { copy = false, scope } = options ?? {};
+            const inScope = new Set(scopeQuadrants(scope));
+            return {
+                version: ECS_SNAPSHOT_VERSION,
+                componentSchemas,
+                // Serialize the in-scope persistent quadrants' location tables.
+                entityLocationTables: Object.fromEntries(
+                    locationTables.flatMap((table, quadrant) =>
+                        inScope.has(quadrant) ? [[quadrant, table.toData(copy)]] : []),
+                ),
+                // Every archetype contributes a structural entry so its id (this
+                // array index, stored by value in the location tables) is
+                // reproduced on load — this is why a scoped snapshot can still be
+                // loaded without shifting ids. Only in-scope (persistent) quadrant
+                // archetypes carry `data`; everything else is structure only.
+                archetypesData: archetypes.map((archetype): SerializedArchetype => {
+                    const componentNames = [...archetype.components];
+                    const partitionNames = partitionNamesIn(componentNames.slice().sort());
+                    const partitionValues = partitionNames.length > 0
+                        ? Object.fromEntries(partitionNames.map((n) => [n, archetype.columns[n]!.get(0)]))
+                        : undefined;
+                    return inScope.has(archetypeQuadrant(archetype))
+                        ? { componentNames, partitionValues, data: archetype.toData(copy) }
+                        : { componentNames, partitionValues };
+                })
+            };
+        },
+        fromData: (data: SerializedCore, scope?: PersistenceScope) => {
             if (data.version !== ECS_SNAPSHOT_VERSION) {
                 // Incompatible (or legacy, unversioned) snapshot. Skip the load
                 // rather than throw: callers treat this as "no saved data" and
@@ -440,31 +458,35 @@ export function createCore<NC extends ComponentSchemas>(
                 return;
             }
             Object.assign(componentSchemas, data.componentSchemas);
-            // The non-persistent quadrants are never captured by toData, so a
-            // load must revert them to defaults rather than leak the loading
-            // store's pre-load live values across the load. Clear those tables
-            // the same way reset() does; the persistent tables below are fully
-            // overwritten by the restore. The store layer re-seeds nonPersistent
-            // resource defaults afterward (its rowCount === 0 re-init guard).
-            for (let quadrant = 0; quadrant < QUADRANT_COUNT; quadrant++) {
-                const restored = isPersistentQuadrant(quadrant) ? data.entityLocationTables[quadrant] : undefined;
+            // A whole-database load (no scope) also reverts the non-persistent
+            // quadrants to defaults, so the loading store's pre-load transient
+            // values don't leak across the load. A scoped load is surgical: it
+            // touches only its persistent quadrant(s) and leaves everything else
+            // — other persistent quadrants and the transient ones — alone.
+            if (scope === undefined) {
+                for (let quadrant = 0; quadrant < QUADRANT_COUNT; quadrant++) {
+                    if (!isPersistentQuadrant(quadrant)) locationTables[quadrant]!.reset();
+                }
+                for (const archetype of archetypes) {
+                    if (archetype.components.has("nonPersistent")) {
+                        archetype.rowCount = 0;
+                    }
+                }
+            }
+            for (const quadrant of scopeQuadrants(scope)) {
+                const restored = data.entityLocationTables[quadrant];
+                // Restore the quadrant's table, or reset it if the snapshot
+                // carried no entities for it.
                 if (restored !== undefined) {
                     locationTables[quadrant]!.fromData(restored);
                 } else {
-                    // Non-persistent quadrant, or a persistent quadrant with no
-                    // saved entities: reset to empty.
                     locationTables[quadrant]!.reset();
                 }
             }
-            for (const archetype of archetypes) {
-                if (archetype.components.has("nonPersistent")) {
-                    archetype.rowCount = 0;
-                }
-            }
             for (const { componentNames, partitionValues, data: archetypeData } of data.archetypesData) {
-                // Recreating the archetype reserves its id and leaves it
-                // empty; only persistent entries carry data to restore.
-                // resolveArchetype (not the public ensureArchetype) so a
+                // Recreating the archetype reserves its id and leaves it empty
+                // (keeping ids aligned); only in-scope entries carry data to
+                // restore. resolveArchetype (not the public ensureArchetype) so a
                 // partition archetype restores as its concrete value-child.
                 const archetype = resolveArchetype(componentNames, partitionValues);
                 if (archetypeData !== undefined) {

@@ -854,6 +854,35 @@ export function createCoreTestSuite(
             expect(() => core.update(entity, { nonShared: true } as never)).toThrow("Cannot update nonShared component");
         });
 
+        it("scopes toData/fromData to selected persistent quadrants", () => {
+            const core = factory({ position: positionSchema });
+            const doc = core.ensureArchetype(["id", "position"]).insert({ position: { x: 1, y: 0, z: 0 } });
+            const settings = core.ensureArchetype(["id", "position", "nonShared"]).insert({ position: { x: 2, y: 0, z: 0 }, nonShared: true });
+
+            // One scoped snapshot per persistent quadrant.
+            const docData = core.toData({ scope: { shared: true } });
+            const settingsData = core.toData({ scope: { nonShared: true } });
+
+            // Each scoped load restores only its own quadrant.
+            const onlyDoc = factory({ position: positionSchema });
+            onlyDoc.fromData(docData, { shared: true });
+            expect(onlyDoc.read(doc)?.position).toEqual({ x: 1, y: 0, z: 0 });
+            expect(onlyDoc.locate(settings)).toBeNull();
+
+            const onlySettings = factory({ position: positionSchema });
+            onlySettings.fromData(settingsData, { nonShared: true });
+            expect(onlySettings.read(settings)?.position).toEqual({ x: 2, y: 0, z: 0 });
+            expect(onlySettings.locate(doc)).toBeNull();
+
+            // Two independent scoped loads into one store compose without either
+            // clobbering the other — the "settings service + document service" model.
+            const combined = factory({ position: positionSchema });
+            combined.fromData(settingsData, { nonShared: true });
+            combined.fromData(docData, { shared: true });
+            expect(combined.read(doc)?.position).toEqual({ x: 1, y: 0, z: 0 });
+            expect(combined.read(settings)?.position).toEqual({ x: 2, y: 0, z: 0 });
+        });
+
     });
 }
 

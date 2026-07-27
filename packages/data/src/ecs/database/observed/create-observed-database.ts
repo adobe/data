@@ -9,6 +9,7 @@ import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { Archetype, ArchetypeId, ReadonlyArchetype } from "../../archetype/index.js";
 import { Store } from "../../store/index.js";
 import { TransactionResult } from "../transactional-store/index.js";
+import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 import { observeSelectEntities } from "../observe-select-entities.js";
 import { createDerive } from "../observe-derive.js";
 import { createTransactionalStore } from "../transactional-store/create-transactional-store.js";
@@ -186,9 +187,9 @@ export function createObservedDatabase<
             store.reset();
             notifyAllObserversStoreReloaded();
         },
-        toData: (copy = false) => store.toData(copy),
-        fromData: (data: unknown) => {
-            store.fromData(data);
+        toData: (options?: ToDataOptions) => store.toData(options),
+        fromData: (data: unknown, scope?: PersistenceScope) => {
+            store.fromData(data, scope);
             notifyAllObserversStoreReloaded();
         },
         extend: (plugin: any) => {

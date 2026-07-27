@@ -2,6 +2,7 @@
 
 import { ReadonlyStore, Store } from "../../store/index.js";
 import { Database, FromServiceFactories } from "../database.js";
+import { PersistenceScope } from "../../persistence-scope.js";
 import { calculateSystemOrder } from "../calculate-system-order.js";
 import { createTransactionDispatcher } from "./create-transaction-dispatcher.js";
 import { observeSelectEntities } from "../observe-select-entities.js";
@@ -131,22 +132,23 @@ function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined
     // `db.indexes.<name>` and `t.indexes.<name>` pointing at one source of
     // truth.
 
-    const toData = () => {
+    const toData = (options?: { readonly scope?: PersistenceScope }) => {
+        const scope = options?.scope;
         // Fast path: a strategy with no replay hook leaves the store untouched
         // after serialization, so a live-reference snapshot is safe.
         if (!strategy.onAfterToData) {
-            return observedDatabase.toData();
+            return observedDatabase.toData({ copy: false, scope });
         }
         // A replay strategy mutates the live buffers in `onAfterToData`, which
         // would corrupt a live-reference snapshot. Capture a detached copy of
         // the committed (rolled-back) state before replaying.
         strategy.onBeforeToData?.();
-        const data = observedDatabase.toData(true);
+        const data = observedDatabase.toData({ copy: true, scope });
         strategy.onAfterToData();
         return data;
     };
-    const fromData = (data: unknown) => {
-        observedDatabase.fromData(data);
+    const fromData = (data: unknown, scope?: PersistenceScope) => {
+        observedDatabase.fromData(data, scope);
         strategy.onAfterFromData?.();
     };
 

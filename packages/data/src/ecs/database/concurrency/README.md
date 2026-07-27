@@ -130,7 +130,7 @@ The two built-ins are the reference implementations and bracket the design space
 `db.toData()` rolls back, serializes, and replays so a snapshot excludes
 in-flight transients. The snapshot is otherwise backed by **live** store buffers,
 so the replay would corrupt it — therefore, when `onAfterToData` is present, the
-database serializes a **detached copy** (`store.toData(true)`, which clones
+database serializes a **detached copy** (`store.toData({ copy: true })`, which clones
 columns and the entity table) between `onBeforeToData` and `onAfterToData`. If
 your strategy keeps a pending buffer:
 

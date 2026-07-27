@@ -4,6 +4,7 @@ import { ComponentSchemas } from "../../component-schemas.js";
 import { StringKeyof } from "../../../types/types.js";
 import { RequiredComponents } from "../../required-components.js";
 import { Store } from "../store.js";
+import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 import { Schema } from "../../../schema/index.js";
 import { FromSchemas } from "../../../schema/from-schemas.js";
 import { createCore } from "../core/create-core.js";
@@ -345,9 +346,9 @@ export function createStore<
                 seedIndexFromArchetypes(idx);
             }
         },
-        toData: (copy = false) => core.toData(copy),
-        fromData: (data: unknown) => {
-            core.fromData(data);
+        toData: (options?: ToDataOptions) => core.toData(options),
+        fromData: (data: unknown, scope?: PersistenceScope) => {
+            core.fromData(data, scope);
             for (const [name, resourceSchema] of Object.entries(resourceSchemas)) {
                 ensureResourceInitialized(name, resourceSchema as any);
             }

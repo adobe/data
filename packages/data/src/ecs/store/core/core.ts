@@ -8,6 +8,7 @@ import { StringKeyof } from "../../../types/index.js";
 import { Components } from "../components.js";
 import { OptionalComponents } from "../../optional-components.js";
 import { HasPartitionKey } from "../partition.js";
+import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 
 export type EntityValues<C> = { readonly [K in (RequiredComponents & StringKeyof<C & OptionalComponents>)]: (C & OptionalComponents)[K] }
 export type EntityReadValues<C> = RequiredComponents & { readonly [K in StringKeyof<C & OptionalComponents> as string extends K ? never : K]?: (C & OptionalComponents)[K] }
@@ -79,8 +80,11 @@ export interface ReadonlyCore<
      * live store (column and entity buffers are copied) so it survives later
      * mutation; otherwise it references live buffers — faster, but only valid
      * until the next mutation. See {@link Store.toData} bug notes.
+     *
+     * `options.scope` selects which persistent quadrants to emit (see
+     * PersistenceScope); omit it for the whole persistent snapshot.
      */
-    toData(copy?: boolean): unknown
+    toData(options?: ToDataOptions): unknown
 }
 
 /**
@@ -124,5 +128,11 @@ export interface Core<
     compact: () => void;
     /** Wipe all entities. O(num_archetypes). Location tables and row counts reset to empty. */
     reset(): void;
-    fromData(data: unknown): void
+    /**
+     * Restore from a snapshot. With no `scope`, performs a whole-database load
+     * (restores both persistent quadrants and resets the non-persistent ones).
+     * With a `scope`, restores only the in-scope persistent quadrant(s) and
+     * leaves every other quadrant untouched (see PersistenceScope).
+     */
+    fromData(data: unknown, scope?: PersistenceScope): void
 }

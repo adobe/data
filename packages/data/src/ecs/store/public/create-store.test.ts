@@ -635,7 +635,7 @@ describe("createStore", () => {
             (store.resources as any).score = 999;
             (store.resources as any).persistentScore = 123;
 
-            const serializedData: any = store.toData(true);
+            const serializedData: any = store.toData({ copy: true });
 
             // The nonPersistent resource's value must never appear in the
             // snapshot: its entity lives in a non-persistent quadrant, whose
@@ -675,7 +675,7 @@ describe("createStore", () => {
             (store.resources as any).score = 999;
             (store.resources as any).persistentScore = 123;
 
-            const encoded = serialize(store.toData(true));
+            const encoded = serialize(store.toData({ copy: true }));
             // The nonPersistent value must not survive into the encoded bytes.
             expect(encoded.json).not.toContain("999");
             expect(encoded.json).toContain("123");
@@ -702,7 +702,7 @@ describe("createStore", () => {
             // Save a snapshot from a source store.
             const source = createStore(schema as any);
             (source.resources as any).persistentScore = 123;
-            const snapshot = source.toData(true);
+            const snapshot = source.toData({ copy: true });
 
             // Load into a store that ALREADY holds non-default state — the
             // same-instance Save-As -> Load path. The nonPersistent resource
@@ -728,7 +728,7 @@ describe("createStore", () => {
             });
 
             const source = makeStore();
-            const snapshot = source.toData(true);
+            const snapshot = source.toData({ copy: true });
 
             // Target holds a nonPersistent entity (non-persistent quadrant) before
             // the load. fromData must clear it — the non-persistent quadrants are
@@ -763,7 +763,7 @@ describe("createStore", () => {
             const positionArchetype = store.ensureArchetype(["id", "position"]);
             const positionEntity = positionArchetype.insert({ position: 42 });
 
-            const serializedData = store.toData(true);
+            const serializedData = store.toData({ copy: true });
 
             const newStore = makeStore();
             newStore.fromData(serializedData);
@@ -777,7 +777,7 @@ describe("createStore", () => {
         it("stamps a version and skips (warns, does not throw) snapshots of an incompatible or legacy format", () => {
             const store = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
             const entity = store.ensureArchetype(["id", "position"]).insert({ position: { x: 1, y: 2, z: 3 } });
-            const snapshot: any = store.toData(true);
+            const snapshot: any = store.toData({ copy: true });
             expect(snapshot.version).toBe(ECS_SNAPSHOT_VERSION);
 
             const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -820,7 +820,7 @@ describe("createStore", () => {
 
             // Detached: mutating after the snapshot must NOT change it.
             const detached = makePopulatedStore();
-            const detachedSnapshot = detached.store.toData(true);
+            const detachedSnapshot = detached.store.toData({ copy: true });
             detached.store.update(detached.entity, { health: { current: 1, max: 100 } });
             expect(restore(detachedSnapshot)).toBe(100);
 

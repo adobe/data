@@ -13,6 +13,7 @@ import { Entity } from "../../entity/entity.js";
 import { EntityReadValues } from "../../store/core/index.js";
 import { Database } from "../database.js";
 import { FromSchemas } from "../../../schema/from-schemas.js";
+import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 export interface ObservedDatabase<
     C extends Components,
     R extends ResourceComponents,
@@ -43,8 +44,8 @@ export interface ObservedDatabase<
     ): Observe<T>;
     readonly execute: (handler: (ctx: Store<C, R, A>) => Entity | void, options?: { transient?: boolean; userId?: number | string }) => TransactionResult<C>;
     readonly reset: () => void;
-    readonly toData: (copy?: boolean) => unknown;
-    readonly fromData: (data: unknown) => void;
+    readonly toData: (options?: ToDataOptions) => unknown;
+    readonly fromData: (data: unknown, scope?: PersistenceScope) => void;
     readonly extend: <
         P extends Database.Plugin<any, any, any, any, any>
     >(

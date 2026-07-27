@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { createCore } from "./create-core.js";
 import { Schema } from "../../../schema/index.js";
 import { Entity } from "../../entity/entity.js";
+import { quadrantOf } from "../../entity/persistence-sharing.js";
 import { F32 } from "../../../math/f32/index.js";
 
 // Shared test schemas
@@ -825,7 +826,7 @@ export function createCoreTestSuite(
             expect(Entity.isNonPersistent(presence) && Entity.isShared(presence)).toBe(true);
             expect(Entity.isNonPersistent(session) && Entity.isNonShared(session)).toBe(true);
 
-            const quadrants = new Set([doc, settings, presence, session].map(Entity.quadrantOf));
+            const quadrants = new Set([doc, settings, presence, session].map(quadrantOf));
             expect(quadrants.size).toBe(4);
         });
 

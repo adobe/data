@@ -2,6 +2,7 @@
 export * from "./store/index.js";
 export * from "./database/index.js";
 export { type EntityLocationTable } from "./entity-location-table/entity-location-table.js";
+export { serializedEntityLocationTables, type EntityLocationEntry } from "./entity-location-table/serialized-entity-location-tables.js";
 export * from "./archetype/index.js";
 export * from "./required-components.js";
 export * from "./optional-components.js";

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { ECS_SNAPSHOT_VERSION, Entity, type Archetype } from "@adobe/data/ecs";
+import { ECS_SNAPSHOT_VERSION, Entity, serializedEntityLocationTables, type Archetype, type EntityLocationEntry } from "@adobe/data/ecs";
 import { createColumnEncoder } from "../encoder/create-column-encoder.js";
 import {
     decodeJournalSnapshot,
@@ -943,11 +943,11 @@ export const createIncrementalPersistenceService = async (
      */
     const finalizeEntityLocationTable = (manifest: Manifest, eltState: EltState): void => {
         const { entities, nextIndex } = eltState;
-        // Entity ids carry a quadrant in their low bits, and each quadrant's
-        // location table is indexed by a dense per-quadrant local index. Bucket
-        // the flat (entity-id-indexed) ELT by quadrant, reconstructing each
-        // persistent quadrant's local-index table.
-        const buckets = new Map<number, { local: number; archetype: number; row: number }[]>();
+        // Rebuild each archetype's implicit `id` column and collect a flat list
+        // of live persistent entity locations. The ECS buckets these into its
+        // quadrant-partitioned location tables — the quadrant/id encoding stays
+        // inside `@adobe/data` (serializedEntityLocationTables).
+        const locations: EntityLocationEntry[] = [];
         for (let entity = 0; entity < nextIndex; entity++) {
             const archetypeId = entities[entity * 2 + 0];
             if (archetypeId === undefined || archetypeId < 0) continue;
@@ -959,57 +959,15 @@ export const createIncrementalPersistenceService = async (
             const idColumn = getIdColumn(liveArchetype);
             if (idColumn === undefined) continue;
             idColumn.set(rowIndex, entity);
-
-            const quadrant = Entity.quadrantOf(entity);
-            let bucket = buckets.get(quadrant);
-            if (bucket === undefined) {
-                bucket = [];
-                buckets.set(quadrant, bucket);
-            }
-            bucket.push({ local: Entity.toLocalIndex(entity), archetype: archetypeId, row: rowIndex });
-        }
-
-        const entityLocationTables: Record<number, unknown> = {};
-        for (const [quadrant, bucket] of buckets) {
-            entityLocationTables[quadrant] = buildQuadrantLocationTable(bucket);
+            locations.push({ entity, archetype: archetypeId, row: rowIndex });
         }
 
         store.fromData({
             version: ECS_SNAPSHOT_VERSION,
             componentSchemas: {},
-            entityLocationTables,
+            entityLocationTables: serializedEntityLocationTables(locations),
             archetypesData: [],
         });
-    };
-
-    /**
-     * Rebuild one quadrant's location-table snapshot (indexed by per-quadrant
-     * local index) from its live entities. Holes below the high-water mark are
-     * threaded into the free list so post-load allocations reuse them and
-     * `nextIndex` never collides with a restored id.
-     */
-    const buildQuadrantLocationTable = (
-        entries: { local: number; archetype: number; row: number }[],
-    ): { entities: Int32Array; freeListHead: number; nextIndex: number; capacity: number } => {
-        let nextIndex = 0;
-        for (const e of entries) nextIndex = Math.max(nextIndex, e.local + 1);
-        let capacity = 16;
-        while (capacity < Math.max(nextIndex, 16)) capacity *= 2;
-        const entities = new Int32Array(new ArrayBuffer(capacity * 2 * 4));
-        const occupied = new Uint8Array(nextIndex);
-        for (const e of entries) {
-            entities[e.local * 2 + 0] = e.archetype;
-            entities[e.local * 2 + 1] = e.row;
-            occupied[e.local] = 1;
-        }
-        let freeListHead = -1;
-        for (let local = 0; local < nextIndex; local++) {
-            if (occupied[local] === 1) continue;
-            entities[local * 2 + 0] = -1;
-            entities[local * 2 + 1] = freeListHead;
-            freeListHead = local;
-        }
-        return { entities, freeListHead, nextIndex, capacity };
     };
 
     const dispose = async (): Promise<void> => {

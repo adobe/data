@@ -106,8 +106,21 @@ export interface Core<
         partitionValues: { readonly [K in Extract<CC, PK>]: (C & RequiredComponents & OptionalComponents)[K] },
     ): Archetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>;
     locate: (entity: Entity) => { archetype: Archetype<RequiredComponents>, row: number } | null;
-    delete: (entity: Entity) => void;
-    update: (entity: Entity, values: EntityUpdateValues<C>) => void;
+    /**
+     * Deletes the entity. Returns the entity that was swap-moved into the
+     * vacated row (a relocation side effect), or `undefined` when the deleted
+     * row was the last row. The return is optional info — callers that don't
+     * track relocations may ignore it.
+     */
+    delete: (entity: Entity) => Entity | undefined;
+    /**
+     * Updates the entity. When the update migrates the entity to another
+     * archetype, its old archetype swap-moves a neighbor into the vacated row;
+     * that neighbor is returned (or `undefined` for an in-place update with no
+     * migration). The migrated entity's own relocation is observable via
+     * `locate`. The return is optional info — callers may ignore it.
+     */
+    update: (entity: Entity, values: EntityUpdateValues<C>) => Entity | undefined;
     compact: () => void;
     /** Wipe all entities. O(num_archetypes). Location tables and row counts reset to empty. */
     reset(): void;

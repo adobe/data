@@ -97,6 +97,11 @@ export function coalesceTransactions(
         combinedChangedArchetypes.add(archetype);
     }
 
+    const combinedRelocatedEntities = new Set(previous.relocatedEntities);
+    for (const entity of current.relocatedEntities) {
+        combinedRelocatedEntities.add(entity);
+    }
+
     return {
         value: current.value,
         intermediate: current.intermediate,
@@ -107,5 +112,6 @@ export function coalesceTransactions(
         changedEntities: combinedChangedEntities,
         changedComponents: combinedChangedComponents,
         changedArchetypes: combinedChangedArchetypes,
+        relocatedEntities: combinedRelocatedEntities,
     };
-} 
+}

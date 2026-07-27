@@ -7,6 +7,7 @@ import { Table, getRowData, addRow, updateRow } from "../../../table/index.js";
 import { Archetype, ReadonlyArchetype } from "../../archetype/archetype.js";
 import { RequiredComponents } from "../../required-components.js";
 import { Entity } from "../../entity/entity.js";
+import { QUADRANT_COUNT, isPersistentQuadrant, quadrantFor, quadrantOf } from "../../entity/persistence-sharing.js";
 import { Core, EntityUpdateValues, ArchetypeQueryOptions } from "./core.js";
 import { Assert, Equal, Simplify, StringKeyof } from "../../../types/index.js";
 import { ComponentSchemas } from "../../component-schemas.js";
@@ -19,19 +20,20 @@ import { PartitionKeysOf } from "../partition.js";
  * checked by `fromData`. A mismatch is thrown rather than silently
  * mis-reconstructed, so an incompatible snapshot fails loudly at load.
  *
- * Version 1 is the first *versioned* format. Snapshots produced before this
- * field existed carry no `version` and are therefore rejected — they used an
- * incompatible archetype-entry shape. Bump this whenever the snapshot shape
+ * Version 1 was the first *versioned* format. Version 2 changed the entity-id
+ * encoding: durability + sharing are now a 2-bit quadrant in the id's low bits
+ * (see entity/persistence-sharing), so persisted ids and the set of serialized
+ * location tables both changed shape. Bump this whenever the snapshot shape
  * changes in a way older readers cannot load.
  */
-export const ECS_SNAPSHOT_VERSION = 1;
+export const ECS_SNAPSHOT_VERSION = 2;
 
 /**
  * One archetype's entry in a serialized snapshot. Every archetype
  * contributes an entry so its `id` (a dense index into `archetypes`, stored
- * by value in the persistent location table) is reproduced exactly on load.
+ * by value in the persistent location tables) is reproduced exactly on load.
  * Only persistent archetypes carry `data`: nonPersistent archetypes back the
- * negative-ID entity space, whose location table is never serialized, so
+ * non-persistent quadrants, whose location tables are never serialized, so
  * their rows are not persistent state.
  */
 type SerializedArchetype = {
@@ -47,7 +49,10 @@ type SerializedArchetype = {
 type SerializedCore = {
     readonly version: number;
     readonly componentSchemas: object;
-    readonly entityLocationTableData: unknown;
+    // Serialized location tables for the persistent quadrants only, keyed by
+    // quadrant (0 = document, 2 = settings). Non-persistent quadrants (1, 3)
+    // are never serialized — they reset on load.
+    readonly entityLocationTables: { readonly [quadrant: number]: unknown };
     readonly archetypesData: readonly SerializedArchetype[];
 };
 
@@ -67,14 +72,17 @@ export function createCore<NC extends ComponentSchemas>(
     const componentSchemas: { readonly [K in StringKeyof<C & RequiredComponents & OptionalComponents>]: Schema } = {
         id: Entity.schema,
         nonPersistent: True.schema,
-        // Declared built-in (no behavior wired yet) — mirrors nonPersistent so
-        // apps can model local vs. shared scope; the store does not act on it.
+        // Built-in sharing tag, mirror of nonPersistent. Together they place an
+        // archetype's entities into one of four quadrants (persistence × sharing);
+        // see entity/persistence-sharing.
         nonShared: True.schema,
         ...newComponentSchemas
     };
-    const persistentLocationTable = createEntityLocationTable(16, false);
-    const nonPersistentLocationTable = createEntityLocationTable(16, true);
-    const getLocationTable = (entity: Entity) => entity < 0 ? nonPersistentLocationTable : persistentLocationTable;
+    // One location table per quadrant, indexed by an entity id's low 2 bits.
+    // Each table owns a disjoint id space (quadrant packed into the low bits),
+    // so an entity id alone names its quadrant.
+    const locationTables = Array.from({ length: QUADRANT_COUNT }, (_, quadrant) => createEntityLocationTable(16, quadrant));
+    const getLocationTable = (entity: Entity) => locationTables[quadrantOf(entity)]!;
     const archetypes = [] as unknown as Archetype<C & RequiredComponents & OptionalComponents>[] & { readonly [x: string]: Archetype<C> };
 
     // A component declared `partition: true`: every distinct runtime value gets
@@ -164,9 +172,11 @@ export function createCore<NC extends ComponentSchemas>(
         const archetypeComponentSchemas: Record<string, Schema> = {};
         let hasId = false;
         let isNonPersistent = false;
+        let isNonShared = false;
         for (const comp of namesArr) {
             if (comp === "id") hasId = true;
             if (comp === "nonPersistent") isNonPersistent = true;
+            if (comp === "nonShared") isNonShared = true;
             const base = componentSchemas[comp as StringKeyof<typeof componentSchemas>];
             archetypeComponentSchemas[comp] = isPartition(comp)
                 ? { ...base, const: partitionValues![comp] }
@@ -178,7 +188,7 @@ export function createCore<NC extends ComponentSchemas>(
         const archetype = ARCHETYPE.createArchetype(
             archetypeComponentSchemas as any,
             id,
-            isNonPersistent ? nonPersistentLocationTable : persistentLocationTable
+            locationTables[quadrantFor(isNonPersistent, isNonShared)]!
         );
         archetypes.push(archetype as unknown as Archetype<C & RequiredComponents & OptionalComponents>);
         archetypeByIdentity.set(key, archetype);
@@ -221,7 +231,7 @@ export function createCore<NC extends ComponentSchemas>(
     }) as Core<C>["ensureArchetype"];
 
     const locateInternal = (entity: Entity) => {
-        return (entity < 0 ? nonPersistentLocationTable : persistentLocationTable).locate(entity);
+        return getLocationTable(entity).locate(entity);
     }
 
     const readEntity = (
@@ -256,7 +266,7 @@ export function createCore<NC extends ComponentSchemas>(
         return getRowData(archetype, location.row);
     }
 
-    const deleteEntity = (entity: Entity) => {
+    const deleteEntity = (entity: Entity): Entity | undefined => {
         const locationTable = getLocationTable(entity);
         const location = locationTable.locate(entity);
         if (location !== null) {
@@ -264,18 +274,23 @@ export function createCore<NC extends ComponentSchemas>(
             if (!archetype) {
                 throw new Error("Archetype not found: " + JSON.stringify(location));
             }
-            ARCHETYPE.deleteRow(archetype, location.row, locationTable);
+            const swapped = ARCHETYPE.deleteRow(archetype, location.row, locationTable);
             locationTable.delete(entity);
+            return swapped;
         }
+        return undefined;
     }
 
-    const updateEntity = (entity: Entity, components: EntityUpdateValues<C>) => {
+    const updateEntity = (entity: Entity, components: EntityUpdateValues<C>): Entity | undefined => {
         const currentLocation = locateInternal(entity);
         if (currentLocation === null) {
             throw new Error(`Entity not found ${entity}`);
         }
         if ("nonPersistent" in components) {
             throw new Error("Cannot update nonPersistent component");
+        }
+        if ("nonShared" in components) {
+            throw new Error("Cannot update nonShared component");
         }
         const currentArchetype = archetypes[currentLocation.archetype];
         let newArchetype = currentArchetype;
@@ -335,12 +350,14 @@ export function createCore<NC extends ComponentSchemas>(
             const currentData = getRowData(currentArchetype, currentLocation.row);
             const currentLocationTable = getLocationTable(entity);
             // deletes the row from the current archetype (this will update the entity location table for any row which may have been moved into it's position)
-            ARCHETYPE.deleteRow(currentArchetype, currentLocation.row, currentLocationTable);
+            const swapped = ARCHETYPE.deleteRow(currentArchetype, currentLocation.row, currentLocationTable);
             const newRow = addRow(newArchetype, { ...currentData, ...components });
             // update the entity location table for the entity so it points to the new archetype and row
             currentLocationTable.update(entity, { archetype: newArchetype.id, row: newRow });
+            return swapped;
         } else {
             updateRow(newArchetype, currentLocation.row, components as any);
+            return undefined;
         }
     }
 
@@ -361,8 +378,9 @@ export function createCore<NC extends ComponentSchemas>(
     };
 
     const resetCore = () => {
-        persistentLocationTable.reset();
-        nonPersistentLocationTable.reset();
+        for (const table of locationTables) {
+            table.reset();
+        }
         for (const archetype of archetypes) {
             archetype.rowCount = 0;
         }
@@ -388,12 +406,17 @@ export function createCore<NC extends ComponentSchemas>(
         toData: (copy = false): SerializedCore => ({
             version: ECS_SNAPSHOT_VERSION,
             componentSchemas,
-            entityLocationTableData: persistentLocationTable.toData(copy),
+            // Serialize only the persistent quadrants' location tables (0, 2).
+            entityLocationTables: Object.fromEntries(
+                locationTables.flatMap((table, quadrant) =>
+                    isPersistentQuadrant(quadrant) ? [[quadrant, table.toData(copy)]] : []),
+            ),
             // Every archetype contributes an entry so its id (this array
-            // index, stored by value in the persistent location table) is
+            // index, stored by value in the persistent location tables) is
             // reproduced on load. Only persistent archetypes carry `data`;
-            // nonPersistent ones back the negative-ID space, whose location
-            // table is never serialized, so their rows aren't persistent.
+            // nonPersistent ones back the non-persistent quadrants, whose
+            // location tables are never serialized, so their rows aren't
+            // persistent.
             archetypesData: archetypes.map((archetype): SerializedArchetype => {
                 const componentNames = [...archetype.components];
                 const partitionNames = partitionNamesIn(componentNames.slice().sort());
@@ -417,20 +440,27 @@ export function createCore<NC extends ComponentSchemas>(
                 return;
             }
             Object.assign(componentSchemas, data.componentSchemas);
-            // The non-persistent (negative-ID) space is never captured by
-            // toData, so a load must revert it to defaults rather than leak the
-            // loading store's pre-load live values across the load. Clear it the
-            // same way reset() does; the persistent side below is fully
-            // overwritten by the restore, so only the nonPersistent rows need
-            // clearing here. The store layer re-seeds nonPersistent resource
-            // defaults afterward (its rowCount === 0 re-init guard).
-            nonPersistentLocationTable.reset();
+            // The non-persistent quadrants are never captured by toData, so a
+            // load must revert them to defaults rather than leak the loading
+            // store's pre-load live values across the load. Clear those tables
+            // the same way reset() does; the persistent tables below are fully
+            // overwritten by the restore. The store layer re-seeds nonPersistent
+            // resource defaults afterward (its rowCount === 0 re-init guard).
+            for (let quadrant = 0; quadrant < QUADRANT_COUNT; quadrant++) {
+                const restored = isPersistentQuadrant(quadrant) ? data.entityLocationTables[quadrant] : undefined;
+                if (restored !== undefined) {
+                    locationTables[quadrant]!.fromData(restored);
+                } else {
+                    // Non-persistent quadrant, or a persistent quadrant with no
+                    // saved entities: reset to empty.
+                    locationTables[quadrant]!.reset();
+                }
+            }
             for (const archetype of archetypes) {
                 if (archetype.components.has("nonPersistent")) {
                     archetype.rowCount = 0;
                 }
             }
-            persistentLocationTable.fromData(data.entityLocationTableData);
             for (const { componentNames, partitionValues, data: archetypeData } of data.archetypesData) {
                 // Recreating the archetype reserves its id and leaves it
                 // empty; only persistent entries carry data to restore.

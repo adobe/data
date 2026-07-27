@@ -841,4 +841,64 @@ describe("createTransactionalStore", () => {
             expect(baseStore.read(entity)?.health).toBeUndefined();
         });
     });
+
+    describe("relocatedEntities (swap-move / migration signal)", () => {
+        const make = () => createTransactionalStore(Store.create({
+            components: { value: F32.schema, tag: F32.schema },
+            resources: {},
+            archetypes: {},
+        }));
+
+        it("reports the swap-moved neighbor when a non-last entity is deleted", () => {
+            const store = make();
+            let a: Entity, b: Entity, c: Entity;
+            store.execute((t) => {
+                const ar = t.ensureArchetype(["id", "value"]);
+                a = ar.insert({ value: 1 });
+                b = ar.insert({ value: 2 });
+                c = ar.insert({ value: 3 });
+            });
+            // Deleting row 0 (a) swap-moves the last row (c) into it.
+            const result = store.execute((t) => { t.delete(a!); });
+            expect([...result.relocatedEntities]).toEqual([c!]);
+            expect(result.relocatedEntities.has(b!)).toBe(false);
+        });
+
+        it("reports none when the last entity is deleted (no swap)", () => {
+            const store = make();
+            let b: Entity;
+            store.execute((t) => {
+                const ar = t.ensureArchetype(["id", "value"]);
+                ar.insert({ value: 1 });
+                b = ar.insert({ value: 2 });
+            });
+            const result = store.execute((t) => { t.delete(b!); });
+            expect(result.relocatedEntities.size).toBe(0);
+        });
+
+        it("reports the migrated entity and its old-archetype neighbor on a component-add migration", () => {
+            const store = make();
+            let x: Entity, y: Entity;
+            store.execute((t) => {
+                const ar = t.ensureArchetype(["id", "value"]);
+                x = ar.insert({ value: 1 });
+                y = ar.insert({ value: 2 });
+            });
+            // Adding `tag` migrates x out of ["id","value"]; its vacated row 0
+            // is backfilled by y (the last row of the old archetype).
+            const result = store.execute((t) => { t.update(x!, { tag: 9 }); });
+            expect(result.relocatedEntities.has(x!)).toBe(true);
+            expect(result.relocatedEntities.has(y!)).toBe(true);
+        });
+
+        it("reports none for a value-only update (no relocation)", () => {
+            const store = make();
+            let x: Entity;
+            store.execute((t) => {
+                x = t.ensureArchetype(["id", "value"]).insert({ value: 1 });
+            });
+            const result = store.execute((t) => { t.update(x!, { value: 5 }); });
+            expect(result.relocatedEntities.size).toBe(0);
+        });
+    });
 });

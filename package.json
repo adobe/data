@@ -1,6 +1,6 @@
 {
   "name": "data-monorepo",
-  "version": "0.9.88",
+  "version": "0.9.89",
   "private": true,
   "engines": {
     "node": ">=22"

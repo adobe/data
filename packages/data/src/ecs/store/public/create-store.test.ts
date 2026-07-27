@@ -638,8 +638,8 @@ describe("createStore", () => {
             const serializedData: any = store.toData(true);
 
             // The nonPersistent resource's value must never appear in the
-            // snapshot: its entity lives in the negative-ID space, which
-            // entityLocationTableData never covers either. Its archetype slot
+            // snapshot: its entity lives in a non-persistent quadrant, whose
+            // location table is never serialized either. Its archetype slot
             // is still present (to keep archetype ids stable) but carries no
             // `data` — only its component names.
             const scoreEntry = serializedData.archetypesData.find(
@@ -730,9 +730,9 @@ describe("createStore", () => {
             const source = makeStore();
             const snapshot = source.toData(true);
 
-            // Target holds a nonPersistent entity (negative-ID space) before the
-            // load. fromData must clear it — the nonPersistent space is never
-            // serialized, so a load resets it exactly as reset() would.
+            // Target holds a nonPersistent entity (non-persistent quadrant) before
+            // the load. fromData must clear it — the non-persistent quadrants are
+            // never serialized, so a load resets them exactly as reset() would.
             const target = makeStore();
             const selectionArchetype = target.ensureArchetype(["id", "selection", "nonPersistent"]);
             const selectionEntity = selectionArchetype.insert({ selection: true, nonPersistent: true });

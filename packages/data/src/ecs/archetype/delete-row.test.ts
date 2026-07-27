@@ -22,8 +22,8 @@ describe('Archetype_deleteRow', () => {
         const entity2 = archetype.insert({ value: 200 });
         const entity3 = archetype.insert({ value: 300 });
 
-        // Delete the middle entity (entity2)
-        deleteRow(archetype, entity2, entityLocationTable);
+        // Delete the middle entity (entity2), which lives at row index 1
+        deleteRow(archetype, 1, entityLocationTable);
 
         // Verify entity3 was moved to position 1
         expect(archetype.columns.id.get(1)).toBe(entity3);
@@ -56,8 +56,8 @@ describe('Archetype_deleteRow', () => {
         const entity1 = archetype.insert({ value: 100 });
         const entity2 = archetype.insert({ value: 200 });
 
-        // Delete the last entity (entity2)
-        deleteRow(archetype, entity2, entityLocationTable);
+        // Delete the last entity (entity2), which lives at row index 1
+        deleteRow(archetype, 1, entityLocationTable);
 
         // Verify total rows decreased
         expect(archetype.rowCount).toBe(1);

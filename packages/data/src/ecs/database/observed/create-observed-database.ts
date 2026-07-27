@@ -116,10 +116,11 @@ export function createObservedDatabase<
     const observeComponent = mapEntries(store.componentSchemas, ([component]) => addToMapSet(component, componentObservers));
 
     const resourceArchetypeComponents = (resource: string): StringKeyof<C>[] => {
-        const isNonPersistent = (store.componentSchemas as any)[resource]?.nonPersistent;
-        return isNonPersistent
-            ? ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>, "nonPersistent" as StringKeyof<C>]
-            : ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>];
+        const schema = (store.componentSchemas as any)[resource];
+        const names: StringKeyof<C>[] = ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>];
+        if (schema?.nonPersistent) names.push("nonPersistent" as StringKeyof<C>);
+        if (schema?.nonShared) names.push("nonShared" as StringKeyof<C>);
+        return names;
     };
 
     const observeResource = Object.fromEntries(
@@ -168,6 +169,9 @@ export function createObservedDatabase<
             undo: [],
             redo: [],
             undoable: null,
+            // A full-store reload is not a swap/migration side effect; every
+            // present entity is already re-materialized via changedEntities.
+            relocatedEntities: new Set(),
         };
         notifyObservers(notifyResult);
     };

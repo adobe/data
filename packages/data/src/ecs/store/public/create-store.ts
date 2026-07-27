@@ -175,14 +175,15 @@ export function createStore<
     const ensureResourceInitialized = (name: string, resourceSchema: Schema & { default: unknown }) => {
         const resourceId = name as StringKeyof<C>;
         const isNonPersistent = resourceSchema.nonPersistent;
-        const componentNames: StringKeyof<C>[] = isNonPersistent
-            ? ["id" as StringKeyof<C>, resourceId, "nonPersistent" as StringKeyof<C>]
-            : ["id" as StringKeyof<C>, resourceId];
+        const isNonShared = resourceSchema.nonShared;
+        const componentNames: StringKeyof<C>[] = ["id" as StringKeyof<C>, resourceId];
+        if (isNonPersistent) componentNames.push("nonPersistent" as StringKeyof<C>);
+        if (isNonShared) componentNames.push("nonShared" as StringKeyof<C>);
         const archetype = core.ensureArchetype(componentNames);
         if (archetype.rowCount === 0) {
-            const insertValues = isNonPersistent
-                ? { [resourceId]: resourceSchema.default, nonPersistent: true }
-                : { [resourceId]: resourceSchema.default };
+            const insertValues: Record<string, unknown> = { [resourceId]: resourceSchema.default };
+            if (isNonPersistent) insertValues.nonPersistent = true;
+            if (isNonShared) insertValues.nonShared = true;
             // Resource singleton inserts bypass index pre-check because
             // resources are not typically indexed by their schema name and
             // the singleton row is created exactly once.
@@ -232,20 +233,22 @@ export function createStore<
         };
     };
 
-    const updateEntity = (entity: Entity, values: any) => {
+    const updateEntity = (entity: Entity, values: any): Entity | undefined => {
         indexRegistry.checkUniqueAvailableForUpdate(entity, values);
         // `update` can move the entity to a different archetype (when it
         // adds/removes components), so capture both ends for dispatch.
         const from = core.locate(entity)?.archetype ?? null;
-        core.update(entity, values);
+        const swapped = core.update(entity, values);
         const to = core.locate(entity)?.archetype ?? null;
         indexRegistry.applyUpdate(entity, from, to);
+        return swapped;
     };
 
-    const deleteEntity = (entity: Entity) => {
+    const deleteEntity = (entity: Entity): Entity | undefined => {
         const archetype = core.locate(entity)?.archetype ?? null;
-        core.delete(entity);
+        const swapped = core.delete(entity);
         indexRegistry.applyDelete(entity, archetype);
+        return swapped;
     };
 
     const extend = (schema: Store.Schema<any, any, any>) => {

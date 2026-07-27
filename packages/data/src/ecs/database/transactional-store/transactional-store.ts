@@ -76,12 +76,22 @@ export interface TransactionResult<C = unknown> {
     readonly value: Entity | void;
     /** True when the transaction is a non-final intermediate operation within a sequence. */
     readonly intermediate: boolean;
-    /** True when at least one changed entity is persistent (entity id >= 0). */
+    /** True when at least one changed entity is persistent (see Entity.isPersistent). */
     readonly persistent: boolean;
     readonly undoable: null | Undoable;
     readonly redo: TransactionWriteOperation<C>[];
     readonly undo: TransactionWriteOperation<C>[];
     readonly changedEntities: Map<Entity, EntityUpdateValues<C> | null>;
+    /**
+     * Entities relocated to a new backing row as a SIDE EFFECT of this
+     * transaction — swap-moved neighbors of a delete/migration, plus the
+     * migrated entity itself. Distinct from `changedEntities` (the directly
+     * touched entities): a relocated entity's columns are freshly established
+     * at its new row and are NOT covered by `changedEntities`, so a consumer
+     * that mirrors row layout (e.g. persistence) must full-write it. Empty for
+     * transactions with no swap/migration.
+     */
+    readonly relocatedEntities: Set<Entity>;
     // Component names are always strings. Keeping this `Set<string>` (rather
     // than `Set<keyof C | string>`) avoids widening to `string | number |
     // symbol` for a generic `C`, which otherwise makes `TransactionResult<C>`

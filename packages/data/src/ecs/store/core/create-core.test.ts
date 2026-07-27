@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { createCore } from "./create-core.js";
 import { Schema } from "../../../schema/index.js";
-import type { Entity } from "../../entity/entity.js";
+import { Entity } from "../../entity/entity.js";
 import { F32 } from "../../../math/f32/index.js";
 
 // Shared test schemas
@@ -446,7 +446,7 @@ export function createCoreTestSuite(
             }
         });
 
-        it("should create nonPersistent entities with negative ids", () => {
+        it("should create nonPersistent entities in the non-persistent quadrant", () => {
             const core = factory({
                 position: positionSchema,
                 health: healthSchema,
@@ -454,7 +454,7 @@ export function createCoreTestSuite(
 
             const ephemeralPositionTable = core.ensureArchetype(["id", "position", "nonPersistent"]);
             const writeId = ephemeralPositionTable.insert({ position: { x: 1, y: 2, z: 3 }, nonPersistent: true });
-            expect(writeId).toBe(-1);
+            expect(Entity.isNonPersistent(writeId)).toBe(true);
 
             const readId = ephemeralPositionTable.columns.id.get(0);
             expect(readId).toBe(writeId);
@@ -700,13 +700,14 @@ export function createCoreTestSuite(
                 const archetype = core.ensureArchetype(["id", "position"]);
 
                 // Add many entities
+                const ids: Entity[] = [];
                 for (let i = 0; i < 20; i++) {
-                    archetype.insert({ position: { x: i, y: i * 2, z: i * 3 } });
+                    ids.push(archetype.insert({ position: { x: i, y: i * 2, z: i * 3 } }));
                 }
 
-                // Delete most of them
+                // Delete most of them (keep the first two)
                 for (let i = 2; i < 20; i++) {
-                    core.delete(i);
+                    core.delete(ids[i]);
                 }
 
                 expect(archetype.rowCount).toBe(2);
@@ -768,8 +769,8 @@ export function createCoreTestSuite(
                 nonPersistent: true 
             });
 
-            // Verify nonPersistent entity exists and has negative id
-            expect(ephemeralEntity).toBeLessThan(0);
+            // Verify nonPersistent entity exists and is non-persistent
+            expect(Entity.isNonPersistent(ephemeralEntity)).toBe(true);
             expect(core.locate(ephemeralEntity)).not.toBeNull();
             expect(core.read(ephemeralEntity)).not.toBeNull();
 
@@ -794,8 +795,8 @@ export function createCoreTestSuite(
                 nonPersistent: true 
             });
 
-            // Verify nonPersistent entity exists and has negative id
-            expect(ephemeralEntity).toBeLessThan(0);
+            // Verify nonPersistent entity exists and is non-persistent
+            expect(Entity.isNonPersistent(ephemeralEntity)).toBe(true);
             expect(core.locate(ephemeralEntity)).not.toBeNull();
 
             // Add health component to trigger archetype change
@@ -810,6 +811,46 @@ export function createCoreTestSuite(
             expect(data?.position).toEqual({ x: 1, y: 2, z: 3 });
             expect(data?.health).toEqual({ current: 100, max: 100 });
             expect(data?.nonPersistent).toBe(true);
+        });
+
+        it("partitions entities into four disjoint quadrants by persistence × sharing", () => {
+            const core = factory({ position: positionSchema });
+            const doc = core.ensureArchetype(["id", "position"]).insert({ position: { x: 0, y: 0, z: 0 } });
+            const settings = core.ensureArchetype(["id", "position", "nonShared"]).insert({ position: { x: 0, y: 0, z: 0 }, nonShared: true });
+            const presence = core.ensureArchetype(["id", "position", "nonPersistent"]).insert({ position: { x: 0, y: 0, z: 0 }, nonPersistent: true });
+            const session = core.ensureArchetype(["id", "position", "nonPersistent", "nonShared"]).insert({ position: { x: 0, y: 0, z: 0 }, nonPersistent: true, nonShared: true });
+
+            expect(Entity.isPersistent(doc) && Entity.isShared(doc)).toBe(true);
+            expect(Entity.isPersistent(settings) && Entity.isNonShared(settings)).toBe(true);
+            expect(Entity.isNonPersistent(presence) && Entity.isShared(presence)).toBe(true);
+            expect(Entity.isNonPersistent(session) && Entity.isNonShared(session)).toBe(true);
+
+            const quadrants = new Set([doc, settings, presence, session].map(Entity.quadrantOf));
+            expect(quadrants.size).toBe(4);
+        });
+
+        it("serializes persistent quadrants and resets non-persistent ones on load", () => {
+            const core = factory({ position: positionSchema });
+            const doc = core.ensureArchetype(["id", "position"]).insert({ position: { x: 1, y: 0, z: 0 } });
+            const settings = core.ensureArchetype(["id", "position", "nonShared"]).insert({ position: { x: 2, y: 0, z: 0 }, nonShared: true });
+            core.ensureArchetype(["id", "position", "nonPersistent"]).insert({ position: { x: 3, y: 0, z: 0 }, nonPersistent: true });
+
+            const data = core.toData();
+
+            const restored = factory({ position: positionSchema });
+            restored.fromData(data);
+
+            // document (persistent+shared) and settings (persistent+nonShared) survive.
+            expect(restored.read(doc)?.position).toEqual({ x: 1, y: 0, z: 0 });
+            expect(restored.read(settings)?.position).toEqual({ x: 2, y: 0, z: 0 });
+            // presence (non-persistent) is not serialized: its archetype loads empty.
+            expect(restored.ensureArchetype(["id", "position", "nonPersistent"]).rowCount).toBe(0);
+        });
+
+        it("should throw when trying to update nonShared component", () => {
+            const core = factory({ position: positionSchema });
+            const entity = core.ensureArchetype(["id", "position", "nonShared"]).insert({ position: { x: 0, y: 0, z: 0 }, nonShared: true });
+            expect(() => core.update(entity, { nonShared: true } as never)).toThrow("Cannot update nonShared component");
         });
 
     });

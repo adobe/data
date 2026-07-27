@@ -1,6 +1,6 @@
 {
   "name": "@adobe/data-solid",
-  "version": "0.9.88",
+  "version": "0.9.89",
   "description": "Adobe data SolidJS bindings — context and provider for ECS database",
   "type": "module",
   "private": false,

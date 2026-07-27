@@ -49,7 +49,8 @@ describe("createInprocessTransport", () => {
             const off = transport.onMessage(msg => {
                 if (msg.kind === "ack") acks.push({ id: msg.id, error: msg.error });
             });
-            transport.send({ id: 42, kind: "writeEntityLocation", entity: 1, archetypeId: 5, rowIndex: 3 });
+            // entity 4 is persistent (quadrant 0); a non-persistent id would be rejected.
+            transport.send({ id: 42, kind: "writeEntityLocation", entity: 4, archetypeId: 5, rowIndex: 3 });
             await new Promise(resolve => setTimeout(resolve, 0));
             expect(acks).toEqual([{ id: 42, error: undefined }]);
             off();

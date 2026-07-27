@@ -4,16 +4,17 @@ import { createEntityLocationTable } from './create-entity-location-table.js';
 import { Entity } from '../entity/entity.js';
 
 describe('createEntityLocationTable', () => {
-    it('should create entities with increasing ids starting from 0', () => {
+    it('should create entities with quadrant-encoded ids (quadrant 0)', () => {
         const table = createEntityLocationTable();
 
         const entity0 = table.create({ archetype: 1, row: 10 });
         const entity1 = table.create({ archetype: 2, row: 20 });
         const entity2 = table.create({ archetype: 3, row: 30 });
 
+        // quadrant 0 packs local index n into id (n << 2): 0, 4, 8, …
         expect(entity0).toBe(0);
-        expect(entity1).toBe(1);
-        expect(entity2).toBe(2);
+        expect(entity1).toBe(4);
+        expect(entity2).toBe(8);
     });
 
     it('should store and retrieve entity locations correctly', () => {
@@ -37,7 +38,7 @@ describe('createEntityLocationTable', () => {
 
         // Create a new entity - should reuse entity1's id
         const entity3 = table.create({ archetype: 4, row: 40 });
-        expect(entity3).toBe(1);
+        expect(entity3).toBe(entity1); // reuses entity1's freed slot (same id)
 
         // Verify the new entity's location
         const location = table.locate(entity3);
@@ -60,20 +61,20 @@ describe('createEntityLocationTable', () => {
 
         // Recreate entities - should get IDs in reverse deletion order
         const newEntity1 = table.create({ archetype: 5, row: 50 });
-        expect(newEntity1).toBe(0); // Should get entity0's id (last deleted)
+        expect(newEntity1).toBe(entity0); // Should get entity0's id (last deleted)
         expect(table.locate(newEntity1)).toEqual({ archetype: 5, row: 50 });
 
         const newEntity2 = table.create({ archetype: 6, row: 60 });
-        expect(newEntity2).toBe(2); // Should get entity2's id (second-to-last deleted)
+        expect(newEntity2).toBe(entity2); // Should get entity2's id (second-to-last deleted)
         expect(table.locate(newEntity2)).toEqual({ archetype: 6, row: 60 });
 
         const newEntity3 = table.create({ archetype: 7, row: 70 });
-        expect(newEntity3).toBe(1); // Should get entity1's id (first deleted)
+        expect(newEntity3).toBe(entity1); // Should get entity1's id (first deleted)
         expect(table.locate(newEntity3)).toEqual({ archetype: 7, row: 70 });
 
         // Creating one more should create a new ID since free list is empty
         const newEntity4 = table.create({ archetype: 8, row: 80 });
-        expect(newEntity4).toBe(4); // Should get a new ID
+        expect(newEntity4).toBe(entity3 + 4); // fresh id: next local index in quadrant 0
         expect(table.locate(newEntity4)).toEqual({ archetype: 8, row: 80 });
     });
 
@@ -100,16 +101,16 @@ describe('createEntityLocationTable', () => {
         for (let i = 0; i < initialCapacity + 5; i++) {
             const entity = table.create({ archetype: i, row: i * 10 });
             entities.push(entity);
-            // Verify entity was created correctly
-            expect(entity).toBe(i);
+            // Verify entity was created in quadrant 0 and round-trips
+            expect(entity & 0b11).toBe(0);
             const location = table.locate(entity);
             expect(location).toEqual({ archetype: i, row: i * 10 });
         }
 
         // Delete some entities that span across the initial capacity boundary
-        table.delete(initialCapacity - 1);
-        table.delete(initialCapacity);
-        table.delete(initialCapacity + 1);
+        table.delete(entities[initialCapacity - 1]);
+        table.delete(entities[initialCapacity]);
+        table.delete(entities[initialCapacity + 1]);
 
         // Create new entities and verify they reuse the deleted IDs
         const newEntity1 = table.create({ archetype: 100, row: 1000 });
@@ -117,9 +118,9 @@ describe('createEntityLocationTable', () => {
         const newEntity3 = table.create({ archetype: 102, row: 1020 });
 
         // Verify the entities were reused in LIFO order
-        expect(newEntity1).toBe(initialCapacity + 1);
-        expect(newEntity2).toBe(initialCapacity);
-        expect(newEntity3).toBe(initialCapacity - 1);
+        expect(newEntity1).toBe(entities[initialCapacity + 1]);
+        expect(newEntity2).toBe(entities[initialCapacity]);
+        expect(newEntity3).toBe(entities[initialCapacity - 1]);
 
         // Verify their locations are correct
         expect(table.locate(newEntity1)).toEqual({ archetype: 100, row: 1000 });
@@ -148,26 +149,35 @@ describe('createEntityLocationTable', () => {
         expect(table.locate(entity2)).toEqual({ archetype: 4, row: 40 });
     });
 
-    it("should return null when locating entity with invalid id -1", () => {
+    it("should return null when locating an id that was never created", () => {
         const table = createEntityLocationTable();
-        expect(() => table.locate(-1)).toThrow("locate entity must be >= 0");
+        expect(table.locate(400)).toBeNull();
     });
 });
 
-describe('createNonPersistentEntityLocationTable', () => {
-    it('should create entities with increasing ids starting from -1', () => {
-        const table = createEntityLocationTable(16, true);
+describe('quadrant-encoded entity location table', () => {
+    it('packs the quadrant into each id (quadrant 1)', () => {
+        const table = createEntityLocationTable(16, 1);
 
         const entity0 = table.create({ archetype: 1, row: 10 });
         const entity1 = table.create({ archetype: 2, row: 20 });
         const entity2 = table.create({ archetype: 3, row: 30 });
 
-        expect(entity0).toBe(-1);
-        expect(entity1).toBe(-2);
-        expect(entity2).toBe(-3);
+        // quadrant 1 packs local index n into id ((n << 2) | 1): 1, 5, 9, …
+        expect(entity0).toBe(1);
+        expect(entity1).toBe(5);
+        expect(entity2).toBe(9);
 
         expect(table.locate(entity0)).toEqual({ archetype: 1, row: 10 });
         expect(table.locate(entity1)).toEqual({ archetype: 2, row: 20 });
         expect(table.locate(entity2)).toEqual({ archetype: 3, row: 30 });
+    });
+
+    it('keeps quadrant id-spaces disjoint under the & 0x3 mask', () => {
+        for (const q of [0, 1, 2, 3]) {
+            const table = createEntityLocationTable(16, q);
+            const e = table.create({ archetype: 1, row: 0 });
+            expect(e & 0b11).toBe(q);
+        }
     });
 });

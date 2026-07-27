@@ -42,3 +42,15 @@ export const toEntity = (localIndex: number, quadrant: number): Entity => (local
 
 /** Recover the per-quadrant local index from an entity id (unsigned). */
 export const toLocalIndex = (entity: Entity): number => entity >>> QUADRANT_BITS;
+
+// Persistent entities have PERSISTENCE_BIT (bit 0) clear, so dropping just that
+// bit packs BOTH persistent quadrants into one contiguous, gap-free range
+// (document → even slots, settings → odd slots). A persistence layer can index a
+// durable per-entity array by this slot to avoid the ~2-4x holes that raw
+// entity ids would leave. Only meaningful for persistent entities.
+
+/** Dense slot of a persistent entity among all persistent entities. */
+export const toPersistentSlot = (entity: Entity): number => entity >>> 1;
+
+/** Inverse of {@link toPersistentSlot}: recover the persistent entity id. */
+export const fromPersistentSlot = (slot: number): Entity => slot << 1;

@@ -723,10 +723,12 @@ export const createIncrementalPersistenceService = async (
      * Mutable in-memory snapshot of the entity-location table, used
      * during load() before journal replay.
      */
+    // Indexed by dense persistent slot (Entity.toPersistentSlot), mirroring the
+    // on-disk entity-location.bin. Two Int32 per slot: [archetypeId, rowIndex].
     interface EltState {
         entities: Int32Array;
         capacity: number;
-        nextIndex: number;
+        nextSlot: number;
         freeListHead: number;
     }
 
@@ -737,32 +739,33 @@ export const createIncrementalPersistenceService = async (
             path: ENTITY_LOCATION_FILE,
         });
         const eltBytes = new Uint8Array(reply.bytes);
-        const nextIndex = Math.floor(eltBytes.byteLength / ELT_STRIDE);
+        const nextSlot = Math.floor(eltBytes.byteLength / ELT_STRIDE);
 
         let capacity = 16;
-        while (capacity < Math.max(nextIndex, 16)) capacity *= 2;
+        while (capacity < Math.max(nextSlot, 16)) capacity *= 2;
         const entities = new Int32Array(new ArrayBuffer(capacity * 2 * 4));
         const view = new DataView(eltBytes.buffer, eltBytes.byteOffset, eltBytes.byteLength);
         let freeListHead = -1;
 
-        for (let entity = 0; entity < nextIndex; entity++) {
-            const offset = entity * ELT_STRIDE;
+        // Each 8-byte record is one persistent slot, in the same order the router
+        // wrote them (offset = slot * ELT_STRIDE), so this is a straight scan.
+        for (let slot = 0; slot < nextSlot; slot++) {
+            const offset = slot * ELT_STRIDE;
             // Stored archetype is biased by +1: 0 = empty (never written or
-            // deleted), N+1 = archetype N. Sparse quadrant ids leave gaps the
-            // backend zero-fills, so an empty slot is a free slot.
+            // deleted), N+1 = archetype N.
             const storedArchetype = view.getUint32(offset + 0, true);
             const rowIndex = view.getInt32(offset + 4, true);
             if (storedArchetype === 0) {
-                entities[entity * 2 + 0] = -1;
-                entities[entity * 2 + 1] = freeListHead;
-                freeListHead = entity;
+                entities[slot * 2 + 0] = -1;
+                entities[slot * 2 + 1] = freeListHead;
+                freeListHead = slot;
             } else {
-                entities[entity * 2 + 0] = storedArchetype - 1;
-                entities[entity * 2 + 1] = rowIndex;
+                entities[slot * 2 + 0] = storedArchetype - 1;
+                entities[slot * 2 + 1] = rowIndex;
             }
         }
 
-        return { entities, capacity, nextIndex, freeListHead };
+        return { entities, capacity, nextSlot, freeListHead };
     };
 
     /**
@@ -821,25 +824,25 @@ export const createIncrementalPersistenceService = async (
         if (maxTxId >= nextTxId) nextTxId = maxTxId + 1;
     };
 
-    const ensureEntityCapacity = (eltState: EltState, entity: number): void => {
-        // Grow `entities` to fit `entity` if needed. The persistent
+    const ensureEntityCapacity = (eltState: EltState, slot: number): void => {
+        // Grow `entities` to fit `slot` if needed. The persistent
         // location table grows by *2; mirror that policy so any later
         // round-trip through fromData matches what create() would do.
-        while (entity >= eltState.capacity) {
+        while (slot >= eltState.capacity) {
             const grown = new Int32Array(new ArrayBuffer(eltState.capacity * 2 * 2 * 4));
             grown.set(eltState.entities);
             eltState.entities = grown;
             eltState.capacity *= 2;
         }
-        if (entity >= eltState.nextIndex) {
+        if (slot >= eltState.nextSlot) {
             // Any slots between the previous high-water-mark and this
-            // entity were never allocated and become free-list entries.
-            for (let slot = eltState.nextIndex; slot < entity; slot++) {
-                eltState.entities[slot * 2 + 0] = -1;
-                eltState.entities[slot * 2 + 1] = eltState.freeListHead;
-                eltState.freeListHead = slot;
+            // slot were never allocated and become free-list entries.
+            for (let s = eltState.nextSlot; s < slot; s++) {
+                eltState.entities[s * 2 + 0] = -1;
+                eltState.entities[s * 2 + 1] = eltState.freeListHead;
+                eltState.freeListHead = s;
             }
-            eltState.nextIndex = entity + 1;
+            eltState.nextSlot = slot + 1;
         }
     };
 
@@ -847,38 +850,41 @@ export const createIncrementalPersistenceService = async (
         if (entry.kind === "commit") return; // tx-end markers carry no state to apply
         if (Entity.isNonPersistent(entry.entity)) return; // non-persistent — should not appear
 
+        // EltState is indexed by dense persistent slot, mirroring the on-disk file.
+        const slot = Entity.toPersistentSlot(entry.entity);
+
         if (entry.kind === "delete") {
-            ensureEntityCapacity(eltState, entry.entity);
-            const prevArch = eltState.entities[entry.entity * 2 + 0]!;
+            ensureEntityCapacity(eltState, slot);
+            const prevArch = eltState.entities[slot * 2 + 0]!;
             if (prevArch >= 0) {
-                eltState.entities[entry.entity * 2 + 0] = -1;
-                eltState.entities[entry.entity * 2 + 1] = eltState.freeListHead;
-                eltState.freeListHead = entry.entity;
+                eltState.entities[slot * 2 + 0] = -1;
+                eltState.entities[slot * 2 + 1] = eltState.freeListHead;
+                eltState.freeListHead = slot;
             }
             return;
         }
 
         // insert / update / migrate — set the location and re-apply
         // the component bytes.
-        ensureEntityCapacity(eltState, entry.entity);
-        const prevArch = eltState.entities[entry.entity * 2 + 0]!;
-        eltState.entities[entry.entity * 2 + 0] = entry.archetypeId;
-        eltState.entities[entry.entity * 2 + 1] = entry.rowIndex;
+        ensureEntityCapacity(eltState, slot);
+        const prevArch = eltState.entities[slot * 2 + 0]!;
+        eltState.entities[slot * 2 + 0] = entry.archetypeId;
+        eltState.entities[slot * 2 + 1] = entry.rowIndex;
         if (prevArch === -1) {
-            // Entity is moving out of the free list. Splice it out so
+            // Slot is moving out of the free list. Splice it out so
             // the free chain stays consistent. The list is short in
             // practice (bounded by the number of holes since the last
             // checkpoint), so a linear scan is fine.
-            if (eltState.freeListHead === entry.entity) {
-                eltState.freeListHead = eltState.entities[entry.entity * 2 + 1]!;
-                eltState.entities[entry.entity * 2 + 1] = entry.rowIndex;
+            if (eltState.freeListHead === slot) {
+                eltState.freeListHead = eltState.entities[slot * 2 + 1]!;
+                eltState.entities[slot * 2 + 1] = entry.rowIndex;
             } else {
                 let cursor = eltState.freeListHead;
                 while (cursor !== -1) {
                     const next = eltState.entities[cursor * 2 + 1]!;
-                    if (next === entry.entity) {
-                        eltState.entities[cursor * 2 + 1] = eltState.entities[entry.entity * 2 + 1]!;
-                        eltState.entities[entry.entity * 2 + 1] = entry.rowIndex;
+                    if (next === slot) {
+                        eltState.entities[cursor * 2 + 1] = eltState.entities[slot * 2 + 1]!;
+                        eltState.entities[slot * 2 + 1] = entry.rowIndex;
                         break;
                     }
                     cursor = next;
@@ -952,22 +958,24 @@ export const createIncrementalPersistenceService = async (
      * through `store.fromData`.
      */
     const finalizeEntityLocationTable = (manifest: Manifest, eltState: EltState): void => {
-        const { entities, nextIndex } = eltState;
+        const { entities, nextSlot } = eltState;
         // Rebuild each archetype's implicit `id` column and collect a flat list
-        // of live persistent entity locations. The ECS buckets these into its
-        // quadrant-partitioned location tables — the quadrant/id encoding stays
-        // inside `@adobe/data` (serializedEntityLocationTables).
+        // of live persistent entity locations. EltState is indexed by dense
+        // persistent slot, so recover each entity id from its slot. The ECS
+        // buckets these into its quadrant-partitioned location tables — the
+        // quadrant/id encoding stays inside `@adobe/data`.
         const locations: EntityLocationEntry[] = [];
-        for (let entity = 0; entity < nextIndex; entity++) {
-            const archetypeId = entities[entity * 2 + 0];
+        for (let slot = 0; slot < nextSlot; slot++) {
+            const archetypeId = entities[slot * 2 + 0];
             if (archetypeId === undefined || archetypeId < 0) continue;
-            const rowIndex = entities[entity * 2 + 1]!;
+            const rowIndex = entities[slot * 2 + 1]!;
             const aMan = manifest.archetypes[archetypeId];
             if (aMan === undefined) continue;
             const liveArchetype = store.archetypes[aMan.name];
             if (liveArchetype === undefined) continue;
             const idColumn = getIdColumn(liveArchetype);
             if (idColumn === undefined) continue;
+            const entity = Entity.fromPersistentSlot(slot);
             idColumn.set(rowIndex, entity);
             locations.push({ entity, archetype: archetypeId, row: rowIndex });
         }

@@ -9,9 +9,10 @@ const ENTITY_LOCATION_FILE = "entity-location.bin";
 const JOURNAL_FILE = "journal.bin";
 const META_FILE = "meta.json";
 // Packed entity-location entry: u32 (archetypeId + 1, so 0 = empty) + u32
-// rowIndex. 8 bytes per entity, indexed directly by entity id. Entity ids are
-// sparse under the quadrant encoding, so unwritten slots read as the zero
-// (empty) entry. Deletions write a zero entry.
+// rowIndex. 8 bytes per persistent entity, indexed by its dense persistent slot
+// (Entity.toPersistentSlot) so the two persistent quadrants pack contiguously
+// with no gaps. An unwritten slot reads as the zero (empty) entry; deletions
+// write a zero entry.
 const ELT_STRIDE = 8;
 
 const columnPath = (archetypeId: number, component: string): string =>
@@ -73,7 +74,7 @@ export const createPersistRouter = (backend: PersistenceBackend): PersistRouter 
                 // gaps the backend zero-fills; this bias keeps them absent.
                 view.setUint32(0, op.archetypeId + 1, true);
                 view.setUint32(4, op.rowIndex, true);
-                await file.writeAt(op.entity * ELT_STRIDE, new Uint8Array(entry));
+                await file.writeAt(Entity.toPersistentSlot(op.entity) * ELT_STRIDE, new Uint8Array(entry));
                 return undefined;
             }
             case "deleteEntityLocation": {
@@ -83,7 +84,7 @@ export const createPersistRouter = (backend: PersistenceBackend): PersistRouter 
                 const file = await openCached(ENTITY_LOCATION_FILE);
                 // Zero entry = empty slot (biased archetype 0 means "absent").
                 const tombstone = new Uint8Array(ELT_STRIDE);
-                await file.writeAt(op.entity * ELT_STRIDE, tombstone);
+                await file.writeAt(Entity.toPersistentSlot(op.entity) * ELT_STRIDE, tombstone);
                 return undefined;
             }
             case "writeJournalSnapshot": {

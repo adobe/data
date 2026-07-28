@@ -15,7 +15,9 @@ import { asMutableArchetype, getColumn, getIdColumn, getMutableStore } from "./i
 import type { IncrementalPersistenceService, IncrementalPersistenceServiceOptions } from "./incremental-persistence-service.js";
 
 const META_FILE = "meta.json";
-const ENTITY_LOCATION_FILE = "entity-location.bin";
+// One entity-location file per persistent quadrant (matches router.ts), each
+// densely indexed by the entity's per-quadrant local index.
+const entityLocationFile = (quadrant: number): string => `entity-location-${quadrant}.bin`;
 const JOURNAL_FILE = "journal.bin";
 const ELT_STRIDE = 8;
 const columnPath = (archetypeId: number, component: string): string =>
@@ -129,8 +131,8 @@ export const createIncrementalPersistenceService = async (
         const encoders = new Map<string, ColumnEncoder>();
         for (const component of archetype.components) {
             // Skip the implicit `id` column — entity ids are recovered
-            // from entity-location.bin (which is keyed by entity id), so
-            // storing them again per archetype row would be redundant.
+            // from the per-quadrant entity-location files, so storing them
+            // again per archetype row would be redundant.
             if (component === "id") continue;
             // Skip nonPersistent-schema components — their values are never
             // saved; on load they're reset to default or the component is
@@ -317,7 +319,7 @@ export const createIncrementalPersistenceService = async (
         txId: number,
     ): void => {
         // WAL discipline: append the journal entry FIRST, then update
-        // the on-disk snapshot (entity-location.bin). On crash, replay
+        // the on-disk snapshot (the entity-location files). On crash, replay
         // applies the journal — which means the snapshot is always
         // catching up to the WAL, never running ahead of it. The delete
         // op is keyed by entity id alone; the on-disk layer resolves the
@@ -544,7 +546,7 @@ export const createIncrementalPersistenceService = async (
      *      grow column buffers to the persisted capacity, bulk-copy
      *      each column file's bytes into the typed array, and restore
      *      `rowCount`.
-     *   4. Read `entity-location.bin` and build an in-memory snapshot
+     *   4. Read the per-quadrant entity-location files and build an in-memory snapshot
      *      of the entity-location table (entities Int32Array + free
      *      list).
      *   5. Replay the journal forward over the snapshot — this both
@@ -574,9 +576,9 @@ export const createIncrementalPersistenceService = async (
             await restoreArchetype(aMan);
         }
 
-        const eltState = await readEntityLocationSnapshot();
-        await replayJournal(manifest, eltState);
-        finalizeEntityLocationTable(manifest, eltState);
+        const eltStates = await readEntityLocationSnapshots();
+        await replayJournal(manifest, eltStates);
+        finalizeEntityLocationTable(manifest, eltStates);
     };
 
     const rehydrateComponentIds = (manifest: Manifest): void => {
@@ -723,20 +725,22 @@ export const createIncrementalPersistenceService = async (
      * Mutable in-memory snapshot of the entity-location table, used
      * during load() before journal replay.
      */
-    // Indexed by dense persistent slot (Entity.toPersistentSlot), mirroring the
-    // on-disk entity-location.bin. Two Int32 per slot: [archetypeId, rowIndex].
+    // One EltState per persistent quadrant, indexed by per-quadrant local index
+    // (Entity.toLocalIndex), mirroring that quadrant's on-disk file. Two Int32
+    // per slot: [archetypeId, rowIndex].
     interface EltState {
         entities: Int32Array;
         capacity: number;
         nextSlot: number;
         freeListHead: number;
     }
+    type EltStates = Map<number, EltState>;
 
-    const readEntityLocationSnapshot = async (): Promise<EltState> => {
+    const readEntityLocationSnapshot = async (quadrant: number): Promise<EltState> => {
         const reply = await transport.request<ReadFileResult>({
             id: allocOpId(),
             kind: "readFile",
-            path: ENTITY_LOCATION_FILE,
+            path: entityLocationFile(quadrant),
         });
         const eltBytes = new Uint8Array(reply.bytes);
         const nextSlot = Math.floor(eltBytes.byteLength / ELT_STRIDE);
@@ -747,8 +751,8 @@ export const createIncrementalPersistenceService = async (
         const view = new DataView(eltBytes.buffer, eltBytes.byteOffset, eltBytes.byteLength);
         let freeListHead = -1;
 
-        // Each 8-byte record is one persistent slot, in the same order the router
-        // wrote them (offset = slot * ELT_STRIDE), so this is a straight scan.
+        // Each 8-byte record is one local slot, in the same order the router
+        // wrote them (offset = localIndex * ELT_STRIDE), so this is a straight scan.
         for (let slot = 0; slot < nextSlot; slot++) {
             const offset = slot * ELT_STRIDE;
             // Stored archetype is biased by +1: 0 = empty (never written or
@@ -768,6 +772,14 @@ export const createIncrementalPersistenceService = async (
         return { entities, capacity, nextSlot, freeListHead };
     };
 
+    const readEntityLocationSnapshots = async (): Promise<EltStates> => {
+        const states: EltStates = new Map();
+        for (const quadrant of Entity.persistentQuadrants) {
+            states.set(quadrant, await readEntityLocationSnapshot(quadrant));
+        }
+        return states;
+    };
+
     /**
      * Read journal.bin, decode every entry, and apply only the
      * transactions that have a matching `commit` entry. The buffer
@@ -780,7 +792,7 @@ export const createIncrementalPersistenceService = async (
      * emitted post-load entries don't recycle ids and collide on a
      * subsequent crash-recovery pass.
      */
-    const replayJournal = async (manifest: Manifest, eltState: EltState): Promise<void> => {
+    const replayJournal = async (manifest: Manifest, eltStates: EltStates): Promise<void> => {
         const reply = await transport.request<ReadFileResult>({
             id: allocOpId(),
             kind: "readFile",
@@ -796,7 +808,7 @@ export const createIncrementalPersistenceService = async (
 
         const flushIfMatch = (commitTxId: number): void => {
             if (bufferedTxId === commitTxId) {
-                for (const e of buffered) applyJournalEntry(manifest, eltState, e);
+                for (const e of buffered) applyJournalEntry(manifest, eltStates, e);
             }
             buffered = [];
             bufferedTxId = null;
@@ -846,12 +858,14 @@ export const createIncrementalPersistenceService = async (
         }
     };
 
-    const applyJournalEntry = (manifest: Manifest, eltState: EltState, entry: JournalEntry): void => {
+    const applyJournalEntry = (manifest: Manifest, states: EltStates, entry: JournalEntry): void => {
         if (entry.kind === "commit") return; // tx-end markers carry no state to apply
         if (Entity.isNonPersistent(entry.entity)) return; // non-persistent — should not appear
 
-        // EltState is indexed by dense persistent slot, mirroring the on-disk file.
-        const slot = Entity.toPersistentSlot(entry.entity);
+        // Route to the entity's quadrant state, indexed by its local index.
+        const eltState = states.get(Entity.quadrantOf(entry.entity));
+        if (eltState === undefined) return;
+        const slot = Entity.toLocalIndex(entry.entity);
 
         if (entry.kind === "delete") {
             ensureEntityCapacity(eltState, slot);
@@ -957,27 +971,28 @@ export const createIncrementalPersistenceService = async (
      * column from the final ELT, then hand the rebuilt table back
      * through `store.fromData`.
      */
-    const finalizeEntityLocationTable = (manifest: Manifest, eltState: EltState): void => {
-        const { entities, nextSlot } = eltState;
+    const finalizeEntityLocationTable = (manifest: Manifest, eltStates: EltStates): void => {
         // Rebuild each archetype's implicit `id` column and collect a flat list
-        // of live persistent entity locations. EltState is indexed by dense
-        // persistent slot, so recover each entity id from its slot. The ECS
-        // buckets these into its quadrant-partitioned location tables — the
-        // quadrant/id encoding stays inside `@adobe/data`.
+        // of live persistent entity locations. Each quadrant's state is indexed
+        // by local index, so recover the entity id from (localIndex, quadrant).
+        // The ECS buckets these into its quadrant-partitioned location tables.
         const locations: EntityLocationEntry[] = [];
-        for (let slot = 0; slot < nextSlot; slot++) {
-            const archetypeId = entities[slot * 2 + 0];
-            if (archetypeId === undefined || archetypeId < 0) continue;
-            const rowIndex = entities[slot * 2 + 1]!;
-            const aMan = manifest.archetypes[archetypeId];
-            if (aMan === undefined) continue;
-            const liveArchetype = store.archetypes[aMan.name];
-            if (liveArchetype === undefined) continue;
-            const idColumn = getIdColumn(liveArchetype);
-            if (idColumn === undefined) continue;
-            const entity = Entity.fromPersistentSlot(slot);
-            idColumn.set(rowIndex, entity);
-            locations.push({ entity, archetype: archetypeId, row: rowIndex });
+        for (const [quadrant, eltState] of eltStates) {
+            const { entities, nextSlot } = eltState;
+            for (let slot = 0; slot < nextSlot; slot++) {
+                const archetypeId = entities[slot * 2 + 0];
+                if (archetypeId === undefined || archetypeId < 0) continue;
+                const rowIndex = entities[slot * 2 + 1]!;
+                const aMan = manifest.archetypes[archetypeId];
+                if (aMan === undefined) continue;
+                const liveArchetype = store.archetypes[aMan.name];
+                if (liveArchetype === undefined) continue;
+                const idColumn = getIdColumn(liveArchetype);
+                if (idColumn === undefined) continue;
+                const entity = Entity.toEntity(slot, quadrant);
+                idColumn.set(rowIndex, entity);
+                locations.push({ entity, archetype: archetypeId, row: rowIndex });
+            }
         }
 
         store.fromData({

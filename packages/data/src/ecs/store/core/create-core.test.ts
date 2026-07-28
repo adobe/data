@@ -2,7 +2,8 @@
 import { describe, it, expect } from "vitest";
 import { createCore } from "./create-core.js";
 import { Schema } from "../../../schema/index.js";
-import type { Entity } from "../../entity/entity.js";
+import { Entity } from "../../entity/entity.js";
+import { quadrantOf } from "../../entity/persistence-sharing.js";
 import { F32 } from "../../../math/f32/index.js";
 
 // Shared test schemas
@@ -446,7 +447,7 @@ export function createCoreTestSuite(
             }
         });
 
-        it("should create nonPersistent entities with negative ids", () => {
+        it("should create nonPersistent entities in the non-persistent quadrant", () => {
             const core = factory({
                 position: positionSchema,
                 health: healthSchema,
@@ -454,7 +455,7 @@ export function createCoreTestSuite(
 
             const ephemeralPositionTable = core.ensureArchetype(["id", "position", "nonPersistent"]);
             const writeId = ephemeralPositionTable.insert({ position: { x: 1, y: 2, z: 3 }, nonPersistent: true });
-            expect(writeId).toBe(-1);
+            expect(Entity.isNonPersistent(writeId)).toBe(true);
 
             const readId = ephemeralPositionTable.columns.id.get(0);
             expect(readId).toBe(writeId);
@@ -700,13 +701,14 @@ export function createCoreTestSuite(
                 const archetype = core.ensureArchetype(["id", "position"]);
 
                 // Add many entities
+                const ids: Entity[] = [];
                 for (let i = 0; i < 20; i++) {
-                    archetype.insert({ position: { x: i, y: i * 2, z: i * 3 } });
+                    ids.push(archetype.insert({ position: { x: i, y: i * 2, z: i * 3 } }));
                 }
 
-                // Delete most of them
+                // Delete most of them (keep the first two)
                 for (let i = 2; i < 20; i++) {
-                    core.delete(i);
+                    core.delete(ids[i]);
                 }
 
                 expect(archetype.rowCount).toBe(2);
@@ -768,8 +770,8 @@ export function createCoreTestSuite(
                 nonPersistent: true 
             });
 
-            // Verify nonPersistent entity exists and has negative id
-            expect(ephemeralEntity).toBeLessThan(0);
+            // Verify nonPersistent entity exists and is non-persistent
+            expect(Entity.isNonPersistent(ephemeralEntity)).toBe(true);
             expect(core.locate(ephemeralEntity)).not.toBeNull();
             expect(core.read(ephemeralEntity)).not.toBeNull();
 
@@ -794,8 +796,8 @@ export function createCoreTestSuite(
                 nonPersistent: true 
             });
 
-            // Verify nonPersistent entity exists and has negative id
-            expect(ephemeralEntity).toBeLessThan(0);
+            // Verify nonPersistent entity exists and is non-persistent
+            expect(Entity.isNonPersistent(ephemeralEntity)).toBe(true);
             expect(core.locate(ephemeralEntity)).not.toBeNull();
 
             // Add health component to trigger archetype change
@@ -810,6 +812,134 @@ export function createCoreTestSuite(
             expect(data?.position).toEqual({ x: 1, y: 2, z: 3 });
             expect(data?.health).toEqual({ current: 100, max: 100 });
             expect(data?.nonPersistent).toBe(true);
+        });
+
+        it("partitions entities into four disjoint quadrants by persistence × sharing", () => {
+            const core = factory({ position: positionSchema });
+            const doc = core.ensureArchetype(["id", "position"]).insert({ position: { x: 0, y: 0, z: 0 } });
+            const settings = core.ensureArchetype(["id", "position", "nonShared"]).insert({ position: { x: 0, y: 0, z: 0 }, nonShared: true });
+            const presence = core.ensureArchetype(["id", "position", "nonPersistent"]).insert({ position: { x: 0, y: 0, z: 0 }, nonPersistent: true });
+            const session = core.ensureArchetype(["id", "position", "nonPersistent", "nonShared"]).insert({ position: { x: 0, y: 0, z: 0 }, nonPersistent: true, nonShared: true });
+
+            expect(Entity.isPersistent(doc) && Entity.isShared(doc)).toBe(true);
+            expect(Entity.isPersistent(settings) && Entity.isNonShared(settings)).toBe(true);
+            expect(Entity.isNonPersistent(presence) && Entity.isShared(presence)).toBe(true);
+            expect(Entity.isNonPersistent(session) && Entity.isNonShared(session)).toBe(true);
+
+            const quadrants = new Set([doc, settings, presence, session].map(quadrantOf));
+            expect(quadrants.size).toBe(4);
+        });
+
+        it("serializes persistent quadrants and resets non-persistent ones on load", () => {
+            const core = factory({ position: positionSchema });
+            const doc = core.ensureArchetype(["id", "position"]).insert({ position: { x: 1, y: 0, z: 0 } });
+            const settings = core.ensureArchetype(["id", "position", "nonShared"]).insert({ position: { x: 2, y: 0, z: 0 }, nonShared: true });
+            core.ensureArchetype(["id", "position", "nonPersistent"]).insert({ position: { x: 3, y: 0, z: 0 }, nonPersistent: true });
+
+            const data = core.toData();
+
+            const restored = factory({ position: positionSchema });
+            restored.fromData(data);
+
+            // document (persistent+shared) and settings (persistent+nonShared) survive.
+            expect(restored.read(doc)?.position).toEqual({ x: 1, y: 0, z: 0 });
+            expect(restored.read(settings)?.position).toEqual({ x: 2, y: 0, z: 0 });
+            // presence (non-persistent) is not serialized: its archetype loads empty.
+            expect(restored.ensureArchetype(["id", "position", "nonPersistent"]).rowCount).toBe(0);
+        });
+
+        it("should throw when trying to update nonShared component", () => {
+            const core = factory({ position: positionSchema });
+            const entity = core.ensureArchetype(["id", "position", "nonShared"]).insert({ position: { x: 0, y: 0, z: 0 }, nonShared: true });
+            expect(() => core.update(entity, { nonShared: true } as never)).toThrow("Cannot update nonShared component");
+        });
+
+        it("scopes toData/fromData to selected persistent quadrants", () => {
+            const core = factory({ position: positionSchema });
+            const doc = core.ensureArchetype(["id", "position"]).insert({ position: { x: 1, y: 0, z: 0 } });
+            const settings = core.ensureArchetype(["id", "position", "nonShared"]).insert({ position: { x: 2, y: 0, z: 0 }, nonShared: true });
+
+            // One scoped snapshot per persistent quadrant.
+            const docData = core.toData({ scope: { shared: true } });
+            const settingsData = core.toData({ scope: { nonShared: true } });
+
+            // Each scoped load restores only its own quadrant.
+            const onlyDoc = factory({ position: positionSchema });
+            onlyDoc.fromData(docData, { shared: true });
+            expect(onlyDoc.read(doc)?.position).toEqual({ x: 1, y: 0, z: 0 });
+            expect(onlyDoc.locate(settings)).toBeNull();
+
+            const onlySettings = factory({ position: positionSchema });
+            onlySettings.fromData(settingsData, { nonShared: true });
+            expect(onlySettings.read(settings)?.position).toEqual({ x: 2, y: 0, z: 0 });
+            expect(onlySettings.locate(doc)).toBeNull();
+
+            // Two independent scoped loads into one store compose without either
+            // clobbering the other — the "settings service + document service" model.
+            const combined = factory({ position: positionSchema });
+            combined.fromData(settingsData, { nonShared: true });
+            combined.fromData(docData, { shared: true });
+            expect(combined.read(doc)?.position).toEqual({ x: 1, y: 0, z: 0 });
+            expect(combined.read(settings)?.position).toEqual({ x: 2, y: 0, z: 0 });
+        });
+
+        it("honors component-level nonPersistent: defaulted resets, no-default is stripped", () => {
+            const cacheSchema = { type: "number", default: 7, nonPersistent: true } as const satisfies Schema;
+            const derivedSchema = { type: "number", nonPersistent: true } as const satisfies Schema;
+            const make = () => factory({ position: positionSchema, cache: cacheSchema, derived: derivedSchema });
+
+            const core = make();
+            const e = core.ensureArchetype(["id", "position", "cache", "derived"]).insert({
+                position: { x: 1, y: 2, z: 3 }, cache: 99, derived: 42,
+            });
+
+            const data = core.toData();
+            const restored = make();
+            restored.fromData(data);
+
+            const view = restored.read(e) as { position: { x: number }; cache?: number; derived?: number } | null;
+            expect(view).not.toBeNull();
+            // Persistent component survives.
+            expect(view!.position).toEqual({ x: 1, y: 2, z: 3 });
+            // Defaulted nonPersistent component: not persisted, reset to default.
+            expect(view!.cache).toBe(7);
+            // No-default nonPersistent component: stripped — the entity restored
+            // into the reduced archetype without it.
+            expect("derived" in view!).toBe(false);
+            expect(restored.locate(e)!.archetype.components.has("derived")).toBe(false);
+            expect(restored.locate(e)!.archetype.components.has("cache")).toBe(true);
+        });
+
+        it("strips a nonPersistent component only when its default is undefined; retains null and falsy defaults", () => {
+            // `{ default: undefined }` is the type-only-placeholder pattern (e.g.
+            // an opaque GPUBuffer handle): the key carries a type, not a usable
+            // value — so it must be stripped.
+            const gpuRefSchema = { default: undefined as unknown, nonPersistent: true } satisfies Schema;
+            // `null` is a real, valid value → retained and reset to null.
+            const maybeSchema = { default: null as unknown, nonPersistent: true } satisfies Schema;
+            // A falsy-but-real default (0) → retained and reset.
+            const counterSchema = { type: "number", default: 0, nonPersistent: true } as const satisfies Schema;
+            const make = () => factory({ position: positionSchema, gpuRef: gpuRefSchema, maybe: maybeSchema, counter: counterSchema });
+
+            const core = make();
+            const e = core.ensureArchetype(["id", "position", "gpuRef", "maybe", "counter"]).insert({
+                position: { x: 1, y: 2, z: 3 }, gpuRef: 12345, maybe: 999, counter: 99,
+            });
+
+            const data = core.toData();
+            const restored = make();
+            restored.fromData(data);
+
+            const view = restored.read(e) as { position: unknown; gpuRef?: unknown; maybe?: unknown; counter?: number } | null;
+            expect(view).not.toBeNull();
+            // undefined default → stripped.
+            expect("gpuRef" in view!).toBe(false);
+            expect(restored.locate(e)!.archetype.components.has("gpuRef")).toBe(false);
+            // null default → retained, reset to null (null is a valid value).
+            expect(view!.maybe).toBe(null);
+            expect(restored.locate(e)!.archetype.components.has("maybe")).toBe(true);
+            // falsy-but-real default (0) → retained, reset to 0.
+            expect(view!.counter).toBe(0);
         });
 
     });

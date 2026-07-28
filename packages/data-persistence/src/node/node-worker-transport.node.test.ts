@@ -104,7 +104,7 @@ describe("createNodeWorkerTransport (E2E)", () => {
         // Verify on-disk artifacts exist.
         const metaStat = await stat(join(tmpRoot, "meta.json"));
         expect(metaStat.size).toBeGreaterThan(0);
-        const eltStat = await stat(join(tmpRoot, "entity-location.bin"));
+        const eltStat = await stat(join(tmpRoot, "entity-location-0.bin"));
         expect(eltStat.size).toBeGreaterThan(0);
 
         // Loading phase: fresh database, same plugin, recover via load().
@@ -136,7 +136,7 @@ describe("createNodeWorkerTransport (E2E)", () => {
         }
     });
 
-    it("writes column files and entity-location.bin via the worker", async () => {
+    it("writes column files and entity-location files via the worker", async () => {
         const workerScript = ensureBuilt();
 
         const db = Database.create(particlePlugin);
@@ -161,8 +161,8 @@ describe("createNodeWorkerTransport (E2E)", () => {
         const archetypeDir = archetypeDirs[0]!;
         const cols = [...(await backend.list(`archetypes/${archetypeDir}`))].sort();
         // position, velocity, mass — all .bin files. The implicit `id`
-        // column is intentionally not persisted (it's recoverable from
-        // entity-location.bin).
+        // column is intentionally not persisted (it is recoverable from the
+        // entity-location files).
         expect(cols).toEqual(["mass.bin", "position.bin", "velocity.bin"]);
 
         await service.dispose();

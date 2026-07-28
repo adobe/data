@@ -3,25 +3,28 @@ import { resize } from "../../internal/array-buffer-like/resize.js";
 import { EntityLocationTable } from "./entity-location-table.js";
 import { EntityLocation } from "./entity-location.js";
 import { Entity } from "../entity/entity.js";
+import { toEntity, toLocalIndex } from "../entity/persistence-sharing.js";
 import { createSharedArrayBuffer } from "../../internal/shared-array-buffer/create-shared-array-buffer.js";
 
-export const createEntityLocationTable = (initialCapacity: number = 16, nonPersistent: boolean = false): EntityLocationTable => {
-    return nonPersistent ? createNegativeEntityLocationTable(initialCapacity) : createPositiveEntityLocationTable(initialCapacity);
-}
-
-const createNegativeEntityLocationTable = (initialCapacity: number = 16): EntityLocationTable => {
-    const table = createEntityLocationTable(initialCapacity);
+/**
+ * A location table for one entity quadrant (0..3). The backing store allocates
+ * dense per-quadrant local indices; this wrapper packs the quadrant into each
+ * id's low bits (and strips it on the way back in) so an entity id alone names
+ * its quadrant. `toData`/`fromData` serialize the raw local-index array
+ * (quadrant-agnostic); the quadrant is re-established by table position on load.
+ */
+export const createEntityLocationTable = (initialCapacity: number = 16, quadrant: number = 0): EntityLocationTable => {
+    const table = createLocalIndexEntityLocationTable(initialCapacity);
     return {
         ...table,
-        create: (location: EntityLocation): Entity => -1 - table.create(location),
-        delete: (entity: Entity) => table.delete(-1 - entity),
-        locate: (entity: Entity) => table.locate(-1 - entity),
-        update: (entity: Entity, location: EntityLocation) => table.update(-1 - entity, location),
-        reset: () => table.reset(),
+        create: (location: EntityLocation): Entity => toEntity(table.create(location), quadrant),
+        delete: (entity: Entity) => table.delete(toLocalIndex(entity)),
+        locate: (entity: Entity) => table.locate(toLocalIndex(entity)),
+        update: (entity: Entity, location: EntityLocation) => table.update(toLocalIndex(entity), location),
     };
 }
 
-const createPositiveEntityLocationTable = (initialCapacity: number = 16): EntityLocationTable => {
+const createLocalIndexEntityLocationTable = (initialCapacity: number = 16): EntityLocationTable => {
     let freeListHead = -1;
     let nextIndex = 0;
     let capacity = initialCapacity;

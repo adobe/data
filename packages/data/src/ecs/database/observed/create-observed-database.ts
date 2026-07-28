@@ -9,6 +9,7 @@ import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { Archetype, ArchetypeId, ReadonlyArchetype } from "../../archetype/index.js";
 import { Store } from "../../store/index.js";
 import { TransactionResult } from "../transactional-store/index.js";
+import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 import { observeSelectEntities } from "../observe-select-entities.js";
 import { createDerive } from "../observe-derive.js";
 import { createTransactionalStore } from "../transactional-store/create-transactional-store.js";
@@ -116,10 +117,11 @@ export function createObservedDatabase<
     const observeComponent = mapEntries(store.componentSchemas, ([component]) => addToMapSet(component, componentObservers));
 
     const resourceArchetypeComponents = (resource: string): StringKeyof<C>[] => {
-        const isNonPersistent = (store.componentSchemas as any)[resource]?.nonPersistent;
-        return isNonPersistent
-            ? ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>, "nonPersistent" as StringKeyof<C>]
-            : ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>];
+        const schema = (store.componentSchemas as any)[resource];
+        const names: StringKeyof<C>[] = ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>];
+        if (schema?.nonPersistent) names.push("nonPersistent" as StringKeyof<C>);
+        if (schema?.nonShared) names.push("nonShared" as StringKeyof<C>);
+        return names;
     };
 
     const observeResource = Object.fromEntries(
@@ -168,6 +170,9 @@ export function createObservedDatabase<
             undo: [],
             redo: [],
             undoable: null,
+            // A full-store reload is not a swap/migration side effect; every
+            // present entity is already re-materialized via changedEntities.
+            relocatedEntities: new Set(),
         };
         notifyObservers(notifyResult);
     };
@@ -182,9 +187,9 @@ export function createObservedDatabase<
             store.reset();
             notifyAllObserversStoreReloaded();
         },
-        toData: (copy = false) => store.toData(copy),
-        fromData: (data: unknown) => {
-            store.fromData(data);
+        toData: (options?: ToDataOptions) => store.toData(options),
+        fromData: (data: unknown, scope?: PersistenceScope) => {
+            store.fromData(data, scope);
             notifyAllObserversStoreReloaded();
         },
         extend: (plugin: any) => {

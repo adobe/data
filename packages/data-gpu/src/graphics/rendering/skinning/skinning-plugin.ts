@@ -16,7 +16,7 @@ export const pbrSkinning = Database.Plugin.create({
     extends: Database.Plugin.combine(modelLoader, pbrCore, transform, animation),
     components: {
         _skeletonJoints:                  { default: [] as number[], nonPersistent: true },
-        _skeletonMesh:                    { ...Entity.schema, nonPersistent: true },
+        _skeletonMesh:                    { ...Entity.schema, default: undefined, nonPersistent: true },
         _skeletonInstanceBuffer:          { default: null as GPUBuffer | null, nonPersistent: true },
         _skeletonJointMatrixBuffer:       { default: null as GPUBuffer | null, nonPersistent: true },
     },

@@ -24,6 +24,7 @@ describe("shouldCoalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -36,6 +37,7 @@ describe("shouldCoalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         expect(shouldCoalesceTransactions(previous, current)).toBe(true);
@@ -52,6 +54,7 @@ describe("shouldCoalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -64,6 +67,7 @@ describe("shouldCoalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         expect(shouldCoalesceTransactions(previous, current)).toBe(false);
@@ -80,6 +84,7 @@ describe("shouldCoalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -92,6 +97,7 @@ describe("shouldCoalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         expect(shouldCoalesceTransactions(previous, current)).toBe(false);
@@ -108,6 +114,7 @@ describe("shouldCoalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -120,6 +127,7 @@ describe("shouldCoalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         expect(shouldCoalesceTransactions(previous, current)).toBe(false);
@@ -136,6 +144,7 @@ describe("shouldCoalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -148,6 +157,7 @@ describe("shouldCoalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         expect(shouldCoalesceTransactions(previous, current)).toBe(false);
@@ -164,6 +174,7 @@ describe("shouldCoalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -176,6 +187,7 @@ describe("shouldCoalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         expect(shouldCoalesceTransactions(previous, current)).toBe(false);
@@ -194,6 +206,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[123, { position: { x: 1 } }]]),
             changedComponents: new Set(["position"]),
             changedArchetypes: new Set([1]),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -206,6 +219,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[123, { position: { y: 2 } }]]),
             changedComponents: new Set(["position"]),
             changedArchetypes: new Set([1]),
+            relocatedEntities: new Set(),
         };
 
         const result = coalesceTransactions(previous, current);
@@ -236,6 +250,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[123, { position: { x: 1 } }]]),
             changedComponents: new Set(["position"]),
             changedArchetypes: new Set([1]),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -248,6 +263,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[456, { name: "test" }]]),
             changedComponents: new Set(["name"]),
             changedArchetypes: new Set([2]),
+            relocatedEntities: new Set(),
         };
 
         const result = coalesceTransactions(previous, current);
@@ -276,6 +292,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -288,6 +305,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map(),
             changedComponents: new Set(),
             changedArchetypes: new Set(),
+            relocatedEntities: new Set(),
         };
 
         const result = coalesceTransactions(previous, current);
@@ -308,6 +326,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[123, { position: { x: 1 } }]]),
             changedComponents: new Set(["position"]),
             changedArchetypes: new Set([1]),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -320,6 +339,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[123, { position: { y: 2 } }]]),
             changedComponents: new Set(["position"]),
             changedArchetypes: new Set([1]),
+            relocatedEntities: new Set(),
         };
 
         const result = coalesceTransactions(previous, current);
@@ -348,6 +368,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[123, { position: { x: 1 } }]]),
             changedComponents: new Set(["position"]),
             changedArchetypes: new Set([1]),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -360,6 +381,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[123, null]]),
             changedComponents: new Set(["position"]),
             changedArchetypes: new Set([1]),
+            relocatedEntities: new Set(),
         };
 
         const result = coalesceTransactions(previous, current);
@@ -386,6 +408,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[123, { position: { x: 1 } }]]),
             changedComponents: new Set(["position"]),
             changedArchetypes: new Set([1]),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -404,6 +427,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[123, { position: { y: 2 }, name: "test" }]]),
             changedComponents: new Set(["position", "name"]),
             changedArchetypes: new Set([1]),
+            relocatedEntities: new Set(),
         };
 
         const result = coalesceTransactions(previous, current);
@@ -435,6 +459,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[123, { position: { x: 1 } }]]),
             changedComponents: new Set(["position"]),
             changedArchetypes: new Set([1]),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -447,6 +472,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[123, null]]),
             changedComponents: new Set(["position"]),
             changedArchetypes: new Set([1]),
+            relocatedEntities: new Set(),
         };
 
         const result = coalesceTransactions(previous, current);
@@ -483,6 +509,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[123, { position: { x: 1 } }]]),
             changedComponents: new Set(["position"]),
             changedArchetypes: new Set([1]),
+            relocatedEntities: new Set(),
         };
 
         const current: TransactionResult<any> = {
@@ -495,6 +522,7 @@ describe("coalesceTransactions", () => {
             changedEntities: new Map([[456, { position: { y: 2 } }]]),
             changedComponents: new Set(["position"]),
             changedArchetypes: new Set([1]),
+            relocatedEntities: new Set(),
         };
 
         const result = coalesceTransactions(previous, current);

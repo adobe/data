@@ -1,16 +1,19 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
+import { Entity } from "@adobe/data/ecs";
 import type { PersistenceBackend } from "../backend/persistence-backend.js";
 import type { RandomAccessFile } from "../backend/random-access-file.js";
 import type { PersistOp } from "./transport.js";
 
-const ENTITY_LOCATION_FILE = "entity-location.bin";
+// One entity-location file per persistent quadrant (document = 0, settings = 2),
+// each indexed by the entity's per-quadrant local index so it packs fully
+// densely with no gaps.
+const entityLocationFile = (quadrant: number): string => `entity-location-${quadrant}.bin`;
 const JOURNAL_FILE = "journal.bin";
 const META_FILE = "meta.json";
-// Packed entity-location entry: u32 archetypeId (we reserve the high
-// bit as "deleted") + u32 rowIndex. 8 bytes per entity, indexed by the
-// absolute value of the entity id - 1 (entities are 1-indexed in the
-// store). Deletions are recorded by setting all bytes to 0xff.
+// Packed entity-location entry: u32 (archetypeId + 1, so 0 = empty) + u32
+// rowIndex. 8 bytes per persistent entity. An unwritten slot reads as the zero
+// (empty) entry; deletions write a zero entry.
 const ELT_STRIDE = 8;
 
 const columnPath = (archetypeId: number, component: string): string =>
@@ -60,25 +63,28 @@ export const createPersistRouter = (backend: PersistenceBackend): PersistRouter 
                 return file.appendAt(new Uint8Array(op.bytes));
             }
             case "writeEntityLocation": {
-                if (op.entity < 0) {
+                if (Entity.isNonPersistent(op.entity)) {
                     throw new Error(`writeEntityLocation: non-persistent entity not persistable (entity=${op.entity})`);
                 }
-                const file = await openCached(ENTITY_LOCATION_FILE);
+                const file = await openCached(entityLocationFile(Entity.quadrantOf(op.entity)));
                 const entry = new ArrayBuffer(ELT_STRIDE);
                 const view = new DataView(entry);
-                view.setUint32(0, op.archetypeId, true);
+                // Store archetypeId biased by +1 so a zero-filled (never-written)
+                // slot reads as "empty" rather than a valid archetype 0 (the
+                // backend zero-fills any gap left before the first write).
+                view.setUint32(0, op.archetypeId + 1, true);
                 view.setUint32(4, op.rowIndex, true);
-                // Entities are 0-indexed; offset = entity * stride.
-                await file.writeAt(op.entity * ELT_STRIDE, new Uint8Array(entry));
+                await file.writeAt(Entity.toLocalIndex(op.entity) * ELT_STRIDE, new Uint8Array(entry));
                 return undefined;
             }
             case "deleteEntityLocation": {
-                if (op.entity < 0) {
+                if (Entity.isNonPersistent(op.entity)) {
                     throw new Error(`deleteEntityLocation: non-persistent entity not persistable (entity=${op.entity})`);
                 }
-                const file = await openCached(ENTITY_LOCATION_FILE);
-                const tombstone = new Uint8Array(ELT_STRIDE).fill(0xff);
-                await file.writeAt(op.entity * ELT_STRIDE, tombstone);
+                const file = await openCached(entityLocationFile(Entity.quadrantOf(op.entity)));
+                // Zero entry = empty slot (biased archetype 0 means "absent").
+                const tombstone = new Uint8Array(ELT_STRIDE);
+                await file.writeAt(Entity.toLocalIndex(op.entity) * ELT_STRIDE, tombstone);
                 return undefined;
             }
             case "writeJournalSnapshot": {

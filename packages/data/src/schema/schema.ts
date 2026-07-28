@@ -27,9 +27,9 @@ export interface Schema {
   conditionals?: readonly Conditional[];
   nonPersistent?: boolean;
   // Marks state as local to this client — never replicated to peers. Orthogonal
-  // to nonPersistent (which is about durability). The database does not yet act
-  // on this flag; it is declared so application schemas can model local vs.
-  // shared scope now. See also the built-in `nonShared` component.
+  // to nonPersistent (which is about durability): together they place an entity
+  // in one of four quadrants, each with its own entity-id space. See also the
+  // built-in `nonShared` component and entity/persistence-sharing.
   nonShared?: boolean;
   // When true (only valid on a primitive schema), every distinct runtime value
   // of this component is stored in its own archetype: the value is lifted into

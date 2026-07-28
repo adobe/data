@@ -39,6 +39,12 @@ export function createTransactionalStore<
         entities: new Map<Entity, EntityUpdateValues<C> | null>(),
         components: new Set<string>(),
         archetypes: new Set<ArchetypeId>(),
+        // Entities relocated to a new backing row as a SIDE EFFECT of this
+        // transaction (swap-moved neighbors of a delete/migration, and the
+        // migrated entity itself) — NOT the entities the transaction directly
+        // touched. Their columns are not covered by `entities`, so a consumer
+        // must full-write them. See TransactionResult.relocatedEntities.
+        moves: new Set<Entity>(),
     };
 
     // Wrap archetype creation to track operations
@@ -77,7 +83,7 @@ export function createTransactionalStore<
         return wrappedArchetypes.get(archetype.id);
     };
 
-    const updateEntity = (entity: Entity, values: EntityUpdateValues<C>) => {
+    const updateEntity = (entity: Entity, values: EntityUpdateValues<C>): Entity | undefined => {
         trackEntity(entity);
         const oldValues = store.read(entity);
         if (!oldValues) {
@@ -111,19 +117,31 @@ export function createTransactionalStore<
         const redoValues = { ...values };
 
         // Perform the actual update
-        store.update(entity, values as any);
+        const swapped = store.update(entity, values as any);
+        if (swapped !== undefined) {
+            // The update migrated `entity` to a new archetype; its old
+            // archetype swap-moved `swapped` into the vacated row.
+            changed.moves.add(swapped);
+        }
 
         // Check if archetype changed after update
         const newLocation = store.locate(entity);
         if (newLocation) {
             changed.archetypes.add(newLocation.archetype.id);
+            // A migration relocates `entity` itself to a fresh row whose other
+            // columns are carried over (not in `values`), so it must be
+            // full-written by consumers even though it is a "changed" entity.
+            if (!location || newLocation.archetype.id !== location.archetype.id || newLocation.row !== location.row) {
+                changed.moves.add(entity);
+            }
         }
 
         // Add operations with potential combining
         addUpdateOperationsMaybeCombineLast(undoOperationsInReverseOrder, redoOperations, entity, redoValues, replacedValues);
+        return swapped;
     };
 
-    const deleteEntity = (entity: Entity) => {
+    const deleteEntity = (entity: Entity): Entity | undefined => {
         trackEntity(entity);
         const location = store.locate(entity);
         if (location) {
@@ -141,18 +159,28 @@ export function createTransactionalStore<
             changed.components.add(key);
         }
 
-        store.delete(entity);
+        const swapped = store.delete(entity);
+        if (swapped !== undefined) {
+            // Deleting `entity` swap-moved `swapped` into the vacated row.
+            changed.moves.add(swapped);
+        }
         redoOperations.push({ type: "delete", entity });
         undoOperationsInReverseOrder.push({ type: "insert", values: oldValuesWithoutId });
+        return swapped;
+    };
+
+    const resourceComponentNames = (name: string): StringKeyof<C>[] => {
+        const schema = (store.componentSchemas as any)[name];
+        const names = ["id", name] as StringKeyof<C>[];
+        if (schema?.nonPersistent) names.push("nonPersistent" as StringKeyof<C>);
+        if (schema?.nonShared) names.push("nonShared" as StringKeyof<C>);
+        return names;
     };
 
     const resources = {} as { [K in keyof R]: R[K] };
     for (const name of Object.keys(store.resources)) {
         const resourceId = name as keyof C;
-        const isNonPersistent = (store.componentSchemas as any)[name]?.nonPersistent;
-        const componentNames = isNonPersistent
-            ? ["id", resourceId, "nonPersistent"] as StringKeyof<C>[]
-            : ["id", resourceId] as StringKeyof<C>[];
+        const componentNames = resourceComponentNames(name);
         const archetype = store.ensureArchetype(componentNames);
         const entityId = archetype.columns.id.get(0);
         Object.defineProperty(resources, name, {
@@ -202,6 +230,7 @@ export function createTransactionalStore<
         changed.entities.clear();
         changed.components.clear();
         changed.archetypes.clear();
+        changed.moves.clear();
 
         try {
             // Execute the transaction
@@ -221,6 +250,7 @@ export function createTransactionalStore<
                 changedEntities: new Map(changed.entities),
                 changedComponents: new Set(changed.components),
                 changedArchetypes: new Set(changed.archetypes),
+                relocatedEntities: new Set(changed.moves),
             };
 
             return result;
@@ -236,6 +266,7 @@ export function createTransactionalStore<
             changed.entities.clear();
             changed.components.clear();
             changed.archetypes.clear();
+            changed.moves.clear();
             wrappedArchetypes.clear();
         }
     };
@@ -257,10 +288,7 @@ export function createTransactionalStore<
             for (const name of Object.keys(store.resources)) {
                 if (!Object.hasOwn(resources, name)) {
                     const resourceId = name as keyof C;
-                    const isNonPersistent = (store.componentSchemas as any)[name]?.nonPersistent;
-                    const componentNames = isNonPersistent
-                        ? ["id", resourceId, "nonPersistent"] as StringKeyof<C>[]
-                        : ["id", resourceId] as StringKeyof<C>[];
+                    const componentNames = resourceComponentNames(name);
                     const archetype = store.ensureArchetype(componentNames);
                     const entityId = archetype.columns.id.get(0);
                     Object.defineProperty(resources, name, {

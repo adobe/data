@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import type { Database } from "@adobe/data/ecs";
+import { Entity, type Database } from "@adobe/data/ecs";
 import type { ClientTransport, ServerMessage } from "./transport.js";
 
 /**
@@ -203,10 +203,36 @@ export const createSyncService = (options: SyncServiceOptions): SyncService => {
         }
     });
 
+    // A component whose SCHEMA is marked nonShared is local to this client.
+    const isNonSharedComponent = (component: string): boolean =>
+        (database.componentSchemas as Record<string, { nonShared?: boolean }>)[component]?.nonShared === true;
+
+    // Whether a transaction has any effect that must reach peers: it changed a
+    // shared entity through a shared (not nonShared) component. A transaction
+    // whose effects are entirely non-shared — only non-shared entities, or only
+    // nonShared components — stays local. NOTE: peers replay the WHOLE
+    // transaction, so a mixed shared/non-shared transaction cannot be partially
+    // stripped; keep non-shared mutations in their own transactions to keep them
+    // off the wire.
+    const hasSharedEffect = (result: {
+        readonly changedEntities: ReadonlyMap<number, unknown>;
+        readonly changedComponents: ReadonlySet<string>;
+    }): boolean => {
+        let sharedEntity = false;
+        for (const entity of result.changedEntities.keys()) {
+            if (Entity.isShared(entity)) { sharedEntity = true; break; }
+        }
+        if (!sharedEntity) return false;
+        for (const component of result.changedComponents) {
+            if (!isNonSharedComponent(component)) return true;
+        }
+        return false;
+    };
+
     const unsubscribeOutbound = database.observe.envelopes(({ envelope, result, intent }) => {
         // Skip envelopes whose only effect was on non-persistent entities/
-        // resources — those stay local-only by design.
-        if (result !== undefined && !result.persistent) return;
+        // resources, or entirely on non-shared (client-local) entities/components.
+        if (result !== undefined && (!result.persistent || !hasSharedEffect(result))) return;
 
         if (intent === "commit") {
             log(`propose out (id=${envelope.id}, name=${envelope.name})`);

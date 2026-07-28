@@ -43,9 +43,9 @@ describe('createArchetype', () => {
 
         // Create second entity
         const entity2 = archetype.insert({ value: 100 });
-        expect(entity2).toBe(1); // Second entity should have id 1
+        expect(entity2).toBe(4); // Second entity: local index 1 in quadrant 0 → id 4
         expect(archetype.rowCount).toBe(2);
-        expect(archetype.columns.id.get(1)).toBe(1);
+        expect(archetype.columns.id.get(1)).toBe(entity2);
         expect(archetype.columns.value.get(1)).toBe(100);
 
         // Verify entity locations in EntityLocationTable
@@ -129,7 +129,7 @@ describe('createArchetype', () => {
         expect(newArchetype.columns.mana.get(0)).toBe(50);
         expect(newArchetype.columns.mana.get(1)).toBe(25);
         expect(newArchetype.columns.id.get(0)).toBe(0);
-        expect(newArchetype.columns.id.get(1)).toBe(1);
+        expect(newArchetype.columns.id.get(1)).toBe(4);
     });
 
     it('should preserve component set during serialization/deserialization', () => {

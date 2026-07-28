@@ -8,6 +8,7 @@ import { StringKeyof } from "../../../types/index.js";
 import { Components } from "../components.js";
 import { OptionalComponents } from "../../optional-components.js";
 import { HasPartitionKey } from "../partition.js";
+import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 
 export type EntityValues<C> = { readonly [K in (RequiredComponents & StringKeyof<C & OptionalComponents>)]: (C & OptionalComponents)[K] }
 export type EntityReadValues<C> = RequiredComponents & { readonly [K in StringKeyof<C & OptionalComponents> as string extends K ? never : K]?: (C & OptionalComponents)[K] }
@@ -79,8 +80,11 @@ export interface ReadonlyCore<
      * live store (column and entity buffers are copied) so it survives later
      * mutation; otherwise it references live buffers — faster, but only valid
      * until the next mutation. See {@link Store.toData} bug notes.
+     *
+     * `options.scope` selects which persistent quadrants to emit (see
+     * PersistenceScope); omit it for the whole persistent snapshot.
      */
-    toData(copy?: boolean): unknown
+    toData(options?: ToDataOptions): unknown
 }
 
 /**
@@ -106,10 +110,37 @@ export interface Core<
         partitionValues: { readonly [K in Extract<CC, PK>]: (C & RequiredComponents & OptionalComponents)[K] },
     ): Archetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>;
     locate: (entity: Entity) => { archetype: Archetype<RequiredComponents>, row: number } | null;
-    delete: (entity: Entity) => void;
-    update: (entity: Entity, values: EntityUpdateValues<C>) => void;
+    /**
+     * Deletes the entity. Returns the entity that was swap-moved into the
+     * vacated row (a relocation side effect), or `undefined` when the deleted
+     * row was the last row. The return is optional info — callers that don't
+     * track relocations may ignore it.
+     */
+    delete: (entity: Entity) => Entity | undefined;
+    /**
+     * Updates the entity. When the update migrates the entity to another
+     * archetype, its old archetype swap-moves a neighbor into the vacated row;
+     * that neighbor is returned (or `undefined` for an in-place update with no
+     * migration). The migrated entity's own relocation is observable via
+     * `locate`. The return is optional info — callers may ignore it.
+     */
+    update: (entity: Entity, values: EntityUpdateValues<C>) => Entity | undefined;
     compact: () => void;
     /** Wipe all entities. O(num_archetypes). Location tables and row counts reset to empty. */
     reset(): void;
-    fromData(data: unknown): void
+    /**
+     * Reconcile nonPersistent-schema columns after an external restore (e.g. a
+     * persistence layer that rebuilt the store from disk column-by-column): reset
+     * defaulted ones to their schema default and strip no-default ones (the entity
+     * migrates out of the component). Idempotent. `fromData` already applies this
+     * to its own loads; this is for callers that restore columns another way.
+     */
+    reconstructNonPersistentColumns(): void;
+    /**
+     * Restore from a snapshot. With no `scope`, performs a whole-database load
+     * (restores both persistent quadrants and resets the non-persistent ones).
+     * With a `scope`, restores only the in-scope persistent quadrant(s) and
+     * leaves every other quadrant untouched (see PersistenceScope).
+     */
+    fromData(data: unknown, scope?: PersistenceScope): void
 }

@@ -26,7 +26,7 @@ db.transactions.addPoints(10);
 
 ## Core Concepts
 
-**Entity** — a unique integer ID. Persistent entities have positive IDs; nonPersistent entities have negative IDs.
+**Entity** — a unique integer ID. Its low 2 bits encode a quadrant (persistence × sharing): bit 0 set = nonPersistent, bit 1 set = nonShared. Use `Entity.isPersistent` / `Entity.isShared` (etc.) rather than reading the bits directly.
 
 **Component** — a named data column. Each component has a schema that describes its type. Numeric schemas (F32, Vec3, etc.) are stored in tightly packed typed arrays for cache-friendly performance.
 
@@ -668,7 +668,9 @@ const data = db.toData();
 db.fromData(data);
 ```
 
-nonPersistent entities, and components/resources whose schema is marked `nonPersistent: true`, are excluded from serialization.
+**nonPersistent** — nonPersistent entities are excluded from serialization entirely. An individual **component/resource** whose schema is marked `nonPersistent: true` is also never serialized; on load its value is reconstructed: if the schema has a real (non-`null`/`undefined`) `default` it is reset to that default, otherwise the component is stripped (the entity restores into the reduced archetype, so a system can re-add it on demand). A `default` of `null`/`undefined` — the type-only-placeholder pattern for opaque runtime types like `{ default: null as unknown as GPUBuffer }` — counts as no default and strips.
+
+**nonShared** — a component/resource marked `nonShared: true` is still persisted locally but is not replicated to peers by `@adobe/data-sync`. A transaction whose effects are entirely non-shared (only non-shared entities, or only nonShared components) is never sent. Note: peers replay whole transactions, so a transaction that mixes shared and non-shared mutations cannot be partially stripped — keep non-shared mutations in their own transactions to keep them local.
 
 ## Type Utilities
 
@@ -688,11 +690,15 @@ The ECS separates two orthogonal ideas. **nonPersistent** means *not persisted* 
 
 ### nonPersistent Component
 
-A built-in optional component that can only be set at entity creation time. It cannot be added to or removed from an existing entity. Entities created with this component are allocated negative IDs and stored in a separate entity table that is never serialized.
+A built-in optional component that can only be set at entity creation time. It cannot be added to or removed from an existing entity. Entities created with this component are allocated ids in a non-persistent quadrant, backed by a separate entity table that is never serialized.
 
 ### nonPersistent Entities
 
-Entities created with the `nonPersistent` component. They always have negative IDs and are never persisted. Use them for session-only or UI-local state (selections, hover states, panel positions, etc.).
+Entities created with the `nonPersistent` component (`Entity.isNonPersistent` is true). They are never persisted. Use them for session-only or UI-local state (selections, hover states, panel positions, etc.).
+
+### nonShared Component / Entities
+
+The sharing counterpart of `nonPersistent`, also creation-only. `nonShared` marks state as local to this client (never replicated to peers), orthogonal to durability. Together the two flags select one of four quadrants — document (shared+persistent), settings (nonShared+persistent), presence (shared+nonPersistent), session (nonShared+nonPersistent) — each with its own entity-id space. Query with `Entity.isShared` / `Entity.isNonShared`.
 
 ### nonPersistent Schema
 
@@ -704,7 +710,7 @@ resources: {
 },
 ```
 
-Setting `nonPersistent: true` on a **resource** schema also places that resource's singleton entity in the negative-ID space (it gets the `nonPersistent` component), so the resource resets to its default on load.
+Setting `nonPersistent: true` on a **resource** schema also places that resource's singleton entity in a non-persistent entity-id quadrant (it gets the `nonPersistent` component), so the resource resets to its default on load.
 
 ### Intermediate Transaction
 

@@ -53,8 +53,8 @@ describe("createWorkerPersistenceService", () => {
         const archetypeDirs = await backend.list("archetypes");
         expect(archetypeDirs.length).toBe(1);
 
-        // Entity-location.bin records the new entity at row 0.
-        const eltFile = await backend.open("entity-location.bin");
+        // The document-quadrant entity-location file records the new entity at row 0.
+        const eltFile = await backend.open("entity-location-0.bin");
         const eltSize = await eltFile.size();
         expect(eltSize).toBeGreaterThan(0);
         await eltFile.close();

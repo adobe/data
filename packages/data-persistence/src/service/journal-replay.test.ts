@@ -8,7 +8,7 @@ import { createWorkerPersistenceService } from "./create-worker-persistence-serv
 
 /**
  * Journal-replay focused tests. These exercise paths where the
- * snapshot (manifest + column files + entity-location.bin) is *not*
+ * snapshot (manifest + column files + entity-location files) is *not*
  * up to date and the journal must roll the database forward, plus
  * crash-recovery scenarios where the journal itself is partially
  * written or where the checkpoint was killed mid-step.

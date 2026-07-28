@@ -23,8 +23,8 @@ export const nodeData = Database.Plugin.create({
         rotation:     Quat.schema,
         scale:        Vec3.schema,
         parent:       Entity.schema,
-        _worldMatrix: { ...Mat4x4.schema, nonPersistent: true },
-        _worldBounds: { ...Aabb.schema, nonPersistent: true },
+        _worldMatrix: { ...Mat4x4.schema, default: undefined, nonPersistent: true },
+        _worldBounds: { ...Aabb.schema, default: undefined, nonPersistent: true },
     },
     archetypes: {
         Node: ["position", "rotation", "scale", "parent", "visible"],

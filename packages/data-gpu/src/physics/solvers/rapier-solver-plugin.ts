@@ -53,8 +53,8 @@ interface MatProps { density: number; restitution: number; friction: number }
 export const rapierSolver = Database.Plugin.create({
     extends: Database.Plugin.combine(physicsData, jointData, physicsClock),
     components: {
-        _rapierBody: { ...True.schema, nonPersistent: true }, // tag: this body has been mirrored into the Rapier world
-        _rapierJoint: { ...True.schema, nonPersistent: true }, // tag: this joint has been mirrored into the Rapier world
+        _rapierBody: { ...True.schema, default: undefined, nonPersistent: true }, // tag: this body has been mirrored into the Rapier world
+        _rapierJoint: { ...True.schema, default: undefined, nonPersistent: true }, // tag: this joint has been mirrored into the Rapier world
     },
     systems: {
         rapierStep: {

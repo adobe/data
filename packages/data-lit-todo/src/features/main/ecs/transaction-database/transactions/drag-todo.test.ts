@@ -16,7 +16,7 @@ describe("dragTodo transaction conforms to State.reorderTodo", () => {
   expectConforms({
     cases,
     spec: State.reorderTodo,
-    apply: (store, args) =>
-      dragTodo(store, { entity: args.id, dragPosition: 0, finalIndex: args.toIndex }),
+    apply: (store, args, resolve) =>
+      dragTodo(store, { entity: resolve(args.id), dragPosition: 0, finalIndex: args.toIndex }),
   });
 });

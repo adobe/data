@@ -13,6 +13,6 @@ describe("toggleComplete transaction conforms to State.toggleComplete", () => {
   expectConforms({
     cases,
     spec: State.toggleComplete,
-    apply: (store, args) => toggleComplete(store, args.id),
+    apply: (store, args, resolve) => toggleComplete(store, resolve(args.id)),
   });
 });

@@ -13,6 +13,6 @@ describe("deleteTodo transaction conforms to State.deleteTodo", () => {
   expectConforms({
     cases,
     spec: State.deleteTodo,
-    apply: (store, args) => deleteTodo(store, args.id),
+    apply: (store, args, resolve) => deleteTodo(store, resolve(args.id)),
   });
 });

@@ -36,7 +36,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -63,7 +63,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -80,11 +80,14 @@ jobs:
         run: pnpm --filter '!@adobe/data' run build
 
       - name: Test downstream packages
+        # Every workspace package except the core (tested in the `data` job) and
+        # data-persistence (whose `test` script pulls in Playwright — run its
+        # node project instead). pnpm skips packages that declare no `test`
+        # script. This now includes the private sample apps (data-lit-todo,
+        # data-lit-tictactoe, …); previously they were only built, so a broken
+        # sample unit test (e.g. the data-lit-todo conformance suite) merged green.
         run: |
-          pnpm --filter @adobe/data-lit \
-               --filter @adobe/data-gpu \
-               --filter @adobe/data-react \
-               --filter @adobe/data-solid \
-               --filter @adobe/data-sync \
+          pnpm --filter '!@adobe/data' \
+               --filter '!@adobe/data-persistence' \
                run test
           pnpm --filter @adobe/data-persistence run test:node

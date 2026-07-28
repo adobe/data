@@ -7,7 +7,7 @@
 // proves the projection round-trips faithfully on its own.
 import { describe, it } from "vitest";
 import type { State } from "../../data/state/state.js";
-import { expectStateMatches } from "../../data/state/expect-state-matches.js";
+import { expectStateMatchesIgnoringIds } from "./expect-state-matches-ignoring-ids.js";
 import { createStore } from "./create-store.js";
 import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
@@ -46,7 +46,7 @@ describe("ecs/conformance projection round-trips (toState ∘ fromState ≡ iden
     it(name, () => {
       const store = createStore();
       fromState(store, state);
-      expectStateMatches(toState(store), state);
+      expectStateMatchesIgnoringIds(toState(store), state);
     });
   }
 });

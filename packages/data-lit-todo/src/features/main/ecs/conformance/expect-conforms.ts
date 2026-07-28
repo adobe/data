@@ -10,15 +10,10 @@ import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
 import { expectStateMatchesIgnoringIds } from "./expect-state-matches-ignoring-ids.js";
 
-// A `document`-quadrant entity id far past any seeded todo, so resolving an
-// unknown spec `id` here makes an id-addressed transaction a no-op (its
-// `read` finds no such entity). Built via the public constructor — the bit
-// layout stays encapsulated in `Entity`.
-const ABSENT_ENTITY = Entity.toEntity(1_000_000, 0);
-
 // Resolve a spec domain `id` to the ecs entity seeded for it. `fromState`
 // returns the seeded entities in display order, so the i-th `before` todo maps
-// to the i-th entity; an id no todo carries resolves to `ABSENT_ENTITY`.
+// to the i-th entity; an id no todo carries resolves to `Entity.none`, so an
+// id-addressed transaction reads no such entity and is a no-op.
 export type ResolveEntity = (specId: number) => Entity;
 
 // The conformance runner, bound to THIS feature's projection (`fromState` /
@@ -50,7 +45,7 @@ export const expectConforms = <Args>(config: {
       const store = createStore();
       const entities = fromState(store, testCase.before);
       const bySpecId = new Map(testCase.before.todos.map((todo, i) => [todo.id, entities[i]]));
-      const resolve: ResolveEntity = (specId) => bySpecId.get(specId) ?? ABSENT_ENTITY;
+      const resolve: ResolveEntity = (specId) => bySpecId.get(specId) ?? Entity.none;
       config.apply(store, testCase.args, resolve);
       expectStateMatchesIgnoringIds(toState(store), testCase.after);
     });

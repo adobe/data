@@ -50,4 +50,12 @@ describe("Entity persistence/sharing quadrant", () => {
             }
         }
     });
+
+    it("none is the last representable id and past any allocatable local index", () => {
+        // The maximum local index the encoding can carry; the allocator never
+        // reaches it, so `none` decodes to an id no live entity occupies.
+        const maxLocalIndex = (1 << (32 - 2)) - 1;
+        expect(toLocalIndex(Entity.none)).toBe(maxLocalIndex);
+        expect(Entity.none).toBe(-1);
+    });
 });

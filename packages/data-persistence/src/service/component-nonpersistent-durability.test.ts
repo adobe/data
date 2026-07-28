@@ -19,9 +19,9 @@ const plugin = Database.Plugin.create({
         cache: { type: "number", default: 7, nonPersistent: true } as const,
         // No-default nonPersistent component → stripped on load.
         derived: { type: "number", nonPersistent: true } as const,
-        // null-default (type-only placeholder, e.g. a GPUBuffer handle) →
+        // undefined-default (type-only placeholder, e.g. a GPUBuffer handle) →
         // treated as no default → stripped on load.
-        gpuRef: { default: null as unknown, nonPersistent: true } satisfies Schema,
+        gpuRef: { default: undefined as unknown, nonPersistent: true } satisfies Schema,
     },
     archetypes: {
         Item: ["value", "cache", "derived", "gpuRef"],

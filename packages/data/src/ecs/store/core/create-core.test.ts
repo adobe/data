@@ -910,32 +910,36 @@ export function createCoreTestSuite(
             expect(restored.locate(e)!.archetype.components.has("cache")).toBe(true);
         });
 
-        it("treats a null/undefined nonPersistent default as no default (strips), but keeps falsy-valid defaults", () => {
-            // `{ default: null }` is the type-only-placeholder pattern (e.g. an
-            // opaque GPUBuffer handle): the key exists to carry a type, not a
-            // usable value — so it must be stripped, not retained as null.
-            const gpuRefSchema = { default: null as unknown, nonPersistent: true } satisfies Schema;
-            // A falsy-but-real default (0) must still be retained + reset.
+        it("strips a nonPersistent component only when its default is undefined; retains null and falsy defaults", () => {
+            // `{ default: undefined }` is the type-only-placeholder pattern (e.g.
+            // an opaque GPUBuffer handle): the key carries a type, not a usable
+            // value — so it must be stripped.
+            const gpuRefSchema = { default: undefined as unknown, nonPersistent: true } satisfies Schema;
+            // `null` is a real, valid value → retained and reset to null.
+            const maybeSchema = { default: null as unknown, nonPersistent: true } satisfies Schema;
+            // A falsy-but-real default (0) → retained and reset.
             const counterSchema = { type: "number", default: 0, nonPersistent: true } as const satisfies Schema;
-            const make = () => factory({ position: positionSchema, gpuRef: gpuRefSchema, counter: counterSchema });
+            const make = () => factory({ position: positionSchema, gpuRef: gpuRefSchema, maybe: maybeSchema, counter: counterSchema });
 
             const core = make();
-            const e = core.ensureArchetype(["id", "position", "gpuRef", "counter"]).insert({
-                position: { x: 1, y: 2, z: 3 }, gpuRef: 12345, counter: 99,
+            const e = core.ensureArchetype(["id", "position", "gpuRef", "maybe", "counter"]).insert({
+                position: { x: 1, y: 2, z: 3 }, gpuRef: 12345, maybe: 999, counter: 99,
             });
 
             const data = core.toData();
             const restored = make();
             restored.fromData(data);
 
-            const view = restored.read(e) as { position: unknown; gpuRef?: unknown; counter?: number } | null;
+            const view = restored.read(e) as { position: unknown; gpuRef?: unknown; maybe?: unknown; counter?: number } | null;
             expect(view).not.toBeNull();
-            // null-default nonPersistent component → stripped (not retained as null).
+            // undefined default → stripped.
             expect("gpuRef" in view!).toBe(false);
             expect(restored.locate(e)!.archetype.components.has("gpuRef")).toBe(false);
-            // falsy-but-real default (0) → retained and reset to the default.
+            // null default → retained, reset to null (null is a valid value).
+            expect(view!.maybe).toBe(null);
+            expect(restored.locate(e)!.archetype.components.has("maybe")).toBe(true);
+            // falsy-but-real default (0) → retained, reset to 0.
             expect(view!.counter).toBe(0);
-            expect(restored.locate(e)!.archetype.components.has("counter")).toBe(true);
         });
 
     });

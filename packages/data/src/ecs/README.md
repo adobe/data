@@ -668,7 +668,7 @@ const data = db.toData();
 db.fromData(data);
 ```
 
-**nonPersistent** — nonPersistent entities are excluded from serialization entirely. An individual **component/resource** whose schema is marked `nonPersistent: true` is also never serialized; on load its value is reconstructed: if the schema has a `default` it is reset to that default, and if it has no default the component is stripped (the entity restores into the reduced archetype, so a system can re-add it on demand).
+**nonPersistent** — nonPersistent entities are excluded from serialization entirely. An individual **component/resource** whose schema is marked `nonPersistent: true` is also never serialized; on load its value is reconstructed: if the schema has a real (non-`null`/`undefined`) `default` it is reset to that default, otherwise the component is stripped (the entity restores into the reduced archetype, so a system can re-add it on demand). A `default` of `null`/`undefined` — the type-only-placeholder pattern for opaque runtime types like `{ default: null as unknown as GPUBuffer }` — counts as no default and strips.
 
 **nonShared** — a component/resource marked `nonShared: true` is still persisted locally but is not replicated to peers by `@adobe/data-sync`. A transaction whose effects are entirely non-shared (only non-shared entities, or only nonShared components) is never sent. Note: peers replay whole transactions, so a transaction that mixes shared and non-shared mutations cannot be partially stripped — keep non-shared mutations in their own transactions to keep them local.
 

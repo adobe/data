@@ -910,6 +910,34 @@ export function createCoreTestSuite(
             expect(restored.locate(e)!.archetype.components.has("cache")).toBe(true);
         });
 
+        it("treats a null/undefined nonPersistent default as no default (strips), but keeps falsy-valid defaults", () => {
+            // `{ default: null }` is the type-only-placeholder pattern (e.g. an
+            // opaque GPUBuffer handle): the key exists to carry a type, not a
+            // usable value — so it must be stripped, not retained as null.
+            const gpuRefSchema = { default: null as unknown, nonPersistent: true } satisfies Schema;
+            // A falsy-but-real default (0) must still be retained + reset.
+            const counterSchema = { type: "number", default: 0, nonPersistent: true } as const satisfies Schema;
+            const make = () => factory({ position: positionSchema, gpuRef: gpuRefSchema, counter: counterSchema });
+
+            const core = make();
+            const e = core.ensureArchetype(["id", "position", "gpuRef", "counter"]).insert({
+                position: { x: 1, y: 2, z: 3 }, gpuRef: 12345, counter: 99,
+            });
+
+            const data = core.toData();
+            const restored = make();
+            restored.fromData(data);
+
+            const view = restored.read(e) as { position: unknown; gpuRef?: unknown; counter?: number } | null;
+            expect(view).not.toBeNull();
+            // null-default nonPersistent component → stripped (not retained as null).
+            expect("gpuRef" in view!).toBe(false);
+            expect(restored.locate(e)!.archetype.components.has("gpuRef")).toBe(false);
+            // falsy-but-real default (0) → retained and reset to the default.
+            expect(view!.counter).toBe(0);
+            expect(restored.locate(e)!.archetype.components.has("counter")).toBe(true);
+        });
+
     });
 }
 

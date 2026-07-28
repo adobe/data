@@ -420,9 +420,13 @@ export function createCore<NC extends ComponentSchemas>(
     const reconstructNonPersistentColumns = (restored: readonly Archetype<any>[]): void => {
         const nonPersistent = nonPersistentComponents();
         if (nonPersistent.size === 0) return;
+        // A default of null/undefined is a type-only placeholder (e.g. an opaque
+        // GPUBuffer handle) — not a usable value — so treat it as "no default"
+        // and strip the component. A falsy-but-real default (0, false, "") is
+        // kept. `== null` matches null AND undefined (and an absent key).
         const noDefault = new Set<string>();
         for (const name of nonPersistent) {
-            if (!("default" in (componentSchemas as Record<string, Schema>)[name]!)) noDefault.add(name);
+            if ((componentSchemas as Record<string, Schema>)[name]!.default == null) noDefault.add(name);
         }
         // Defaulted nonPersistent columns → reset every row to the schema default.
         for (const archetype of restored) {

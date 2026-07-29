@@ -13,7 +13,6 @@
     "dev": "tsc -b -w",
     "link": "pnpm build && pnpm link --global",
     "test": "vitest --run --passWithNoTests",
-    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public",
     "typecheck": "tsc -b"
   },
   "dependencies": {

@@ -1,5 +1,6 @@
 ---
 name: review
+disable-model-invocation: true
 description: Review built feature/application output against the @adobe/data feature rules; report whether it is optimal and where any fix belongs. Read-only.
 input: a path to built output (a layer, a feature, or a whole app)
 output: a review — OPTIMAL, or a list of issues each tagged code | skill | rule

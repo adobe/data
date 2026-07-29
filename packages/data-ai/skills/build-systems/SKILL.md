@@ -9,7 +9,10 @@ Skip if this feature doesn't contain or require systems.
 Most games that use a canvas will use systems but most applications will not.
 
 Create `services/main-service/system-database/system-database.ts`: `Database.Plugin.create({ extends:
-Database.Plugin.combine(ComputedDatabase.plugin, scheduler), systems })` where the `systems`
+Database.Plugin.combine(<currentTop>.plugin, scheduler), systems })` — combine `scheduler` with the
+feature's **current top** main-service layer (`ActionDatabase` / `ServiceDatabase` / `ComputedDatabase`,
+whichever it built), never a hardcoded `ComputedDatabase`, so systems *and* any services/actions
+compose into the one `FeatureDatabase`. The `systems`
 map is declared **inline** (see `features/services/main-service/systems.md` — inline is required for `db` to be
 typed and for system-name inference; a `systems/` folder is optional, only for extracted
 per-frame body helpers).

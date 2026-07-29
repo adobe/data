@@ -41,5 +41,5 @@ export const playMove = (t: CoreDatabase.Store, { index }: PlayMoveArgs) => {
   transactions (`readShip`, `readBoard` — a `(t) => value` function) may live
   beside them in `transactions/`, but keep it **out of the barrel**, or it gets
   registered as a dispatchable transaction. (These are related helpers, so they
-  belong here, not in a separate folder — `cohesion.md`'s peer-level caution
+  belong here, not in a separate folder — `global/cohesion.md`'s peer-level caution
   doesn't apply.)

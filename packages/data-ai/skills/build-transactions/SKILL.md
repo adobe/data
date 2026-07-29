@@ -5,7 +5,8 @@ input: feature
 output: feature
 ---
 
-Create `services/main-service/transaction-database/`: `transaction-database.ts` (extends `IndexDatabase`, adds
+Create `services/main-service/transaction-database/`: `transaction-database.ts` (extends the
+preceding layer — `IndexDatabase` if the feature built indexes, else `CoreDatabase` — adds
 `transactions` from `./transactions/index.js`) plus a `transactions/` folder — one mutation per
 file + barrel. Type the store param `CoreDatabase.Store` (entities/resources/archetypes) or
 `IndexDatabase.Store` (reads an index).

@@ -11,7 +11,7 @@ communication over the wire — no functions, no handles, just plain data.
 It depends on nothing but `@adobe/data` and other `data/` declarations, and
 needs no knowledge of anything built on top of it.
 
-Each data type is its own namespace folder (see `namespace.md`), holding
+Each data type is its own namespace folder (see `global/namespace.md`), holding
 its schema, its derived type, and its pure synchronous helpers together:
 
 ```

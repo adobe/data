@@ -32,6 +32,8 @@ import { Database, scheduler } from "@adobe/data/ecs";
 import { Motion } from "../../data/motion/motion.js";
 
 const plugin = Database.Plugin.create({
+    // combine scheduler with the CURRENT TOP layer — ComputedDatabase here, but
+    // ActionDatabase / ServiceDatabase if the feature built those (systems come last).
     extends: Database.Plugin.combine(ComputedDatabase.plugin, scheduler),
     systems: {
         control: { create: (db) => () => { /* input → ship; db.transactions.fireBullet() */ } },
@@ -119,8 +121,10 @@ with no rAF and no rendering attached.
 
 ## Layer
 
-`system-database.ts` extends the previous main-service layer (usually `ComputedDatabase`),
-combined with `scheduler`, and declares the `systems` map **inline** (see above —
+`system-database.ts` extends the feature's **current top** main-service layer (`ActionDatabase` /
+`ServiceDatabase` / `ComputedDatabase` — whichever it built; systems come last in the pipeline, so
+they must sit atop any service/action layers, not a hardcoded `ComputedDatabase`), combined with
+`scheduler`, and declares the `systems` map **inline** (see above —
 this is the one facet not split one-per-file, because `create`'s `db` is only typed
 inline and standalone declarations break name inference). A `systems/` folder is
 optional: it holds extracted per-frame body helpers (`(db) => () => void`) only when

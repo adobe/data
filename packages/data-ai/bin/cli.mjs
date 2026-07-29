@@ -50,8 +50,8 @@ function notice(extra) {
 
 The files in this folder are installed and managed by the \`${PKG_NAME}\`
 package. This entire directory is **deleted and rebuilt** on every
-\`npx ${PKG_NAME} install\`, so any local edit here is silently discarded on the
-next reinstall or version upgrade.
+\`npx ${PKG_NAME}@${VERSION} install\`, so any local edit here is silently discarded on
+the next reinstall or version upgrade.
 
 To change them, edit upstream in the \`${PKG_NAME}\` package and publish a new
 version, then reinstall — do not modify these files in place.
@@ -66,10 +66,21 @@ function writeMeta(bundleDir, noticeBody, extraMeta) {
     );
 }
 
+// Skills that author/evolve the bundle itself (the self-improvement loop and its
+// rule review). They mutate or critique the managed files, so they belong only to
+// the source repo — never a consumer install, where those files are read-only
+// managed copies. Both also carry `disable-model-invocation: true`.
+const MAINTAINER_ONLY = new Set(["meta-build", "review"]);
+
 function discoverSkills() {
     if (!existsSync(skillsSrc)) return [];
     return readdirSync(skillsSrc, { withFileTypes: true })
-        .filter((d) => d.isDirectory() && existsSync(join(skillsSrc, d.name, "SKILL.md")))
+        .filter(
+            (d) =>
+                d.isDirectory() &&
+                !MAINTAINER_ONLY.has(d.name) &&
+                existsSync(join(skillsSrc, d.name, "SKILL.md")),
+        )
         .map((d) => d.name)
         .sort();
 }
@@ -109,6 +120,41 @@ function installRules(base) {
     cpSync(rulesSrc, bundleDir, { recursive: true, filter: (src) => src !== readme });
     writeMeta(bundleDir, notice(), { rules: countRules(rulesSrc) });
     return bundleDir;
+}
+
+// A single managed rule (namespaced by its `adobe-data-ai-` filename prefix) telling
+// an agent to (re)install the bundle when the skills are absent — pinned to THIS
+// reviewed version, never `@latest`, so a drifted or compromised release cannot execute
+// during install. Rewritten with the matching version on every install. It sits beside
+// (not inside) the wiped bundle dir, so it survives and is simply overwritten.
+function installBootstrap(base) {
+    const file = join(base, ".claude", "rules", `${BUNDLE}-bootstrap.md`);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(
+        file,
+        `---
+paths:
+  - '**/features/*/data/**/*.ts'
+  - '**/features/*/services/**/*.ts'
+  - '**/features/*/ui/**/*.ts'
+---
+
+# ${PKG_NAME} skills — ensure installed
+
+Before using an \`@adobe/data\` build workflow, confirm the skills are present: look for
+a skill named \`build-feature\` (or \`build-application\`). If it is missing, install the
+pinned, reviewed bundle, then re-check:
+
+\`\`\`sh
+npx ${PKG_NAME}@${VERSION} install
+\`\`\`
+
+Pin the version to the reviewed bundle (never \`@latest\`) so a compromised or drifted
+release cannot execute during install. This file is regenerated with the matching
+version on every install. Package: <https://www.npmjs.com/package/${PKG_NAME}>
+`,
+    );
+    return file;
 }
 
 function parseArgs(argv) {
@@ -176,11 +222,13 @@ function main() {
     const base = flags.has("global") ? homedir() : dir ? resolve(dir) : process.cwd();
     const skillsDir = installSkills(base, skills);
     const rulesDir = installRules(base);
+    const bootstrapFile = installBootstrap(base);
     const ruleCount = countRules(rulesSrc);
 
     process.stdout.write(`Installed ${PKG_NAME} v${VERSION}\n`);
     process.stdout.write(`  ${skills.length} skills → ${skillsDir}\n`);
     process.stdout.write(`  ${ruleCount} rules  → ${rulesDir}\n`);
+    process.stdout.write(`  bootstrap → ${bootstrapFile}\n`);
 }
 
 main();

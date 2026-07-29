@@ -5,7 +5,7 @@ paths:
 
 # ui/ — user interface
 
-The top layer: UI that binds the `ecs/` database to what the user sees. It
+The top layer: UI that binds the `services/main-service/` database to what the user sees. It
 owns no business logic — it subscribes to state, hands it to a pure
 presentation, and wires actions back to transactions.
 

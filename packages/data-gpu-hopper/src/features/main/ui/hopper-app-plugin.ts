@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Database } from "@adobe/data/ecs";
-import { FeatureDatabase } from "../ecs/feature-database.js";
+import { FeatureDatabase } from "../services/main-service/feature-database.js";
 import { HopperRenderDatabase } from "./render/hopper-render-plugin.js";
 
 // The browser application: the headless simulation (`FeatureDatabase`) plus the

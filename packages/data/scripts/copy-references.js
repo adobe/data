@@ -14,6 +14,7 @@ const packagesDir = path.join(packageRoot, "..");
 const PACKAGES = [
   "data-lit",
   "data-lit-tictactoe",
+  "data-lit-todo",
   "data-react",
   "data-react-hello",
   "data-react-pixie",

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { DatabaseElement } from "@adobe/data-lit";
-import { FeatureDatabase } from "../ecs/feature-database.js";
+import { FeatureDatabase } from "../services/main-service/feature-database.js";
 
 /**
  * Base class for all todo elements. Typed on the assembled `FeatureDatabase`

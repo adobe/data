@@ -11,7 +11,7 @@ import {
   useRef,
   useWindowEvent,
 } from "@adobe/data-lit";
-import { FeatureDatabase } from "../../ecs/feature-database.js";
+import { FeatureDatabase } from "../../services/main-service/feature-database.js";
 import type { Input } from "../../data/input/input.js";
 import type { Size } from "../../data/size/size.js";
 import { styles } from "./space-rock-game.css.js";

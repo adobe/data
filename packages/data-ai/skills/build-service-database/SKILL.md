@@ -1,11 +1,11 @@
 ---
 name: build-service-database
-description: Build a feature's ecs service-database — db-bound service factories. If the feature exposes services.
+description: Build a feature's service-database — db-bound service factories. If the feature exposes services.
 input: feature
 output: feature
 ---
 
-Create `ecs/service-database/`: `service-database.ts` (extends the previous layer, registers the
+Create `services/main-service/service-database/`: `service-database.ts` (extends the previous layer, registers the
 `services` facet). Two forms:
 
 - db-bound factories `create<Name>Service(db, …)` in `service-database/services/` (one per file + barrel), for services that read `db.observe.*` / call `db.transactions.*`; or
@@ -13,4 +13,4 @@ Create `ecs/service-database/`: `service-database.ts` (extends the previous laye
 
 Comes after `computed-database`.
 
-The how is in the auto-loading `features/ecs/services.md` rule.
+The how is in the auto-loading `features/services/main-service/services.md` rule.

@@ -124,7 +124,7 @@ Lit-only: `static styles = styles` from a sibling `*.css.ts`. `@property`
 exists *only* for locator inputs — never for state, never for derived
 values, never for parent-forwarded flags. The `P` in `DatabaseElement<P>` (and
 the `get plugin()` it returns) is the surface the element *consumes* — never the
-varying topmost-layer name (see `features/ecs/index.md`): `typeof
+varying topmost-layer name (see `features/services/main-service/index.md`): `typeof
 FeatureDatabase.plugin` for a self-contained feature. **Exception:** an element
 meant to be *extended* — injected with various databases that build on this
 feature (a peer app that adds an agent, a p2p/presence build) — types on the

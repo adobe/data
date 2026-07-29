@@ -1,6 +1,6 @@
 {
   "name": "@adobe/data-react",
-  "version": "0.9.89",
+  "version": "0.9.90",
   "description": "Adobe data React bindings — hooks and context for ECS database",
   "type": "module",
   "private": false,

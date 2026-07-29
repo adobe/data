@@ -1,6 +1,6 @@
 ---
 name: build-ui
-description: Build a feature's ui/ layer — presentation bound to the ecs database. The final, top layer.
+description: Build a feature's ui/ layer — presentation bound to the main-service database. The final, top layer.
 input: feature
 output: feature
 ---

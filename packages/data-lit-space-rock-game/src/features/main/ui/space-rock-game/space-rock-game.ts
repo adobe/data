@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { html, type TemplateResult } from "lit";
-import type { SystemDatabase } from "../../ecs/system-database/system-database.js";
+import type { SystemDatabase } from "../../services/main-service/system-database/system-database.js";
 
 /**
  * Public lazy wrapper for the Space Rock Game element. Dynamically imports the

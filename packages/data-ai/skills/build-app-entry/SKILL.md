@@ -10,6 +10,6 @@ output: app
 - The base reaches a peer only through a lazy element wrapper (dynamic import), so peers
   load on demand.
 - The entry point creates the live database from `FeatureDatabase.plugin` (the base
-  feature's assembled database — see `features/ecs/index.md`) and mounts the root UI.
+  feature's assembled database — see `features/services/main-service/index.md`) and mounts the root UI.
 
 See `features/index.md` (one-app-many-features) for the wiring rules.

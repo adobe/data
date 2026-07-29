@@ -7,7 +7,7 @@
 // consumers (per the cross-feature naming rule). Carries `.plugin` (schema +
 // indexes + transactions + computed, combined with the built-in rAF scheduler)
 // and `.Store` for consumers that build their own database from it.
-export { FeatureDatabase as SpaceRockGameDatabase } from "./features/main/ecs/feature-database.js";
+export { FeatureDatabase as SpaceRockGameDatabase } from "./features/main/services/main-service/feature-database.js";
 
 export { SpaceRockGame } from "./features/main/ui/space-rock-game/space-rock-game.js";
 export { SpaceRockGameElement } from "./features/main/ui/space-rock-game/space-rock-game-element.js";

@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { html, type TemplateResult } from "lit";
 import type { Database } from "@adobe/data/ecs";
-import type { FeatureDatabase } from "../../ecs/feature-database.js";
+import type { FeatureDatabase } from "../../services/main-service/feature-database.js";
 
 type TodoService = Database.Plugin.ToDatabase<typeof FeatureDatabase.plugin>;
 

@@ -8,6 +8,7 @@ Source for peer packages and sample apps is included under `references/` (when p
 
 - **references/data-lit** — Support functions for Lit based projects.
 - **references/data-lit-tictactoe** — **Exemplary types and state.** Tic-Tac-Toe sample with Lit UI. The `types/` (BoardState namespace, PlayMoveArgs, etc.) and `state/` (tictactoe-plugin, agent-plugin) are a very good reference for proper type namespaces, ECS resources, computed observables, and transactions — even for consumers not using Lit.
+- **references/data-lit-todo** — Multi-feature Lit sample: a base feature plus a lazily-loaded peer feature and capability services. The most complete reference for the feature-folder layout (`data/`, `services/main-service/`, `ui/`), `imports`-based feature composition, indexes, and conformance tests.
 - **references/data-react** — Support functions for React based projects.
 - **references/data-react-hello** — Very simple react hello world sample.
 - **references/data-react-pixie** — Simple sample for react pixie based 2d games.

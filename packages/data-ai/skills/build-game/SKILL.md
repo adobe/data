@@ -16,6 +16,6 @@ transactions = moves/spawns, computed = score/status/winner, ui = view + input.
 - **Real-time** adds the `build-systems` phase: a per-frame tick loop (movement,
   collision, lifetime) driven by the scheduler, over many entities in distinct
   archetypes. Systems must stay O(1) per touched entity — never project the whole
-  `State` into/out of the store each frame (see `features/ecs/systems.md`).
+  `State` into/out of the store each frame (see `features/services/main-service/systems.md`).
   This is where components, archetypes, indexes, and systems all carry real
   weight.

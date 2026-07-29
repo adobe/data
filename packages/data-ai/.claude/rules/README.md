@@ -14,16 +14,17 @@ child gets its own file (recursing wherever the source tree does):
 
 ```
 features/
-  index.md            # the feature layering as a whole (ui → ecs → services → data)
+  index.md            # the feature layering as a whole (ui → services → data)
   data/
     index.md          # data-type namespaces (foundation)
     state.md          # the State aggregate: pure transforms & derivations
-  services/index.md   # service interfaces + service types
-  ecs/
-    index.md          # the ECS layer + layered database plugins
-    components.md  resources.md  archetypes.md
-    computed.md  indexes.md  transactions.md  services.md  actions.md
-    systems.md  conformance.md
+  services/
+    index.md          # the services layer: main-service + capability contracts
+    main-service/     # the feature service (ECS implementation)
+      index.md        # the service + its layered database plugins
+      components.md  resources.md  archetypes.md
+      computed.md  indexes.md  transactions.md  services.md  actions.md
+      systems.md  conformance.md
   ui/index.md         # UI (points to element / presentation / lazy-element file rules)
 ```
 
@@ -37,6 +38,6 @@ symlinks them into its own `.claude/rules/` (as it does `features/`).
 Each rule's `paths:` glob is scoped to `**/features/*/<layer>/…`, so these
 rules apply only once an application opts into the feature-folder pattern
 (source organized under `features/<name>/`). Editing
-`features/<name>/ecs/<layer>-database/components/foo.ts` pulls in both
-`ecs/index.md` (the layer overview) and `ecs/components.md` (the specifics) —
-at creation and at every later edit.
+`features/<name>/services/main-service/core-database/components.ts` pulls in both
+`main-service/index.md` (the layer overview) and `main-service/components.md`
+(the specifics) — at creation and at every later edit.

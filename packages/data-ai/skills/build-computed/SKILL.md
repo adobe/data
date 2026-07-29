@@ -1,16 +1,16 @@
 ---
 name: build-computed
-description: Build a feature's ecs computed-database — derived observable values.
+description: Build a feature's computed-database — derived observable values.
 input: feature
 output: feature
 ---
 
 Skip if this feature doesn't contain or require computed values.
 
-Create `ecs/computed-database/`: `computed-database.ts` (extends the previous layer, adds
+Create `services/main-service/computed-database/`: `computed-database.ts` (extends the previous layer, adds
 `computed` from `./computed/index.js`) plus a `computed/` folder — one `cached` derived value
 per file + barrel. Derivation logic lives in `data/`; a computed only wires a db observable to it.
 
 Comes after `transaction-database`.
 
-The how is in the auto-loading `features/ecs/computed.md` rule.
+The how is in the auto-loading `features/services/main-service/computed.md` rule.

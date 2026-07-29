@@ -1,11 +1,11 @@
 ---
 name: build-core-database
-description: Build a feature's ecs schema — the core-database (components, resources, archetypes). The first ecs layer.
+description: Build a feature's schema — the core-database (components, resources, archetypes). The first main-service layer.
 input: feature
 output: feature
 ---
 
-Create `ecs/core-database/` — `core-database.ts` plus one single-export file per facet
+Create `services/main-service/core-database/` — `core-database.ts` plus one single-export file per facet
 the feature actually uses (`components`, `resources`, `archetypes` are each optional on
 `Database.Plugin.create`). Create only the facet files you need; omit the rest rather than
 shipping empty `Database.components({})` boilerplate. A feature with **no entities** (a
@@ -20,5 +20,5 @@ The schema root; comes after `data/` (and `services/`). Bind each schema from it
 type — don't author shapes here. Components use JSON schemas; resources use the
 `{ default }` convention (a schemaless aggregate binds via `{ default: State.create() }`).
 
-The how is in the auto-loading `features/ecs/index.md` + `components.md` / `resources.md` /
+The how is in the auto-loading `features/services/main-service/index.md` + `components.md` / `resources.md` /
 `archetypes.md` rules.

@@ -3,7 +3,7 @@
 import { render } from "lit";
 import { Database } from "@adobe/data/ecs";
 import { SpaceRockGame } from "./features/main/ui/space-rock-game/space-rock-game.js";
-import { FeatureDatabase } from "./features/main/ecs/feature-database.js";
+import { FeatureDatabase } from "./features/main/services/main-service/feature-database.js";
 
 const app = document.getElementById("app");
 if (app) {

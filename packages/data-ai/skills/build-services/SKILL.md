@@ -11,6 +11,6 @@ Create the feature's `services/` layer: one `<name>-service/` namespace folder p
 contract — an `interface` (validated with `AsyncDataService.IsValid`), async-only members,
 and `create*` factories.
 
-Only if the feature talks to the outside world. Comes after `data/`, before `ecs/`.
+Only if the feature talks to the outside world. Comes after `data/`, before `services/main-service/`.
 
 The how is in the auto-loading `features/services/index.md` rule (and `namespace.md`).

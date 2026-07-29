@@ -1,15 +1,12 @@
 name: CI
 
-# Validates every pull request (and pushes to main) before merge. Prior to
-# this workflow the only GitHub Action was the post-merge docs deploy, so a PR
-# whose `tsc -b` / unit tests were red could still be merged green — exactly
-# what happened with #114. This gate makes those failures block the merge.
-#
-# Two jobs:
-#   data     — @adobe/data core: typecheck (tsc -b + WASM), lint, unit tests.
-#   packages — downstream published packages: build (tsc -b) + tests for each.
-#              Runs after `data` so a core failure surfaces once, not twice.
-#              @adobe/data is rebuilt here to provide dist/ for downstream tsc.
+# Validates every pull request (and pushes to main) before merge. The gate is
+# fully uniform: it never names individual packages. Each package owns how it
+# builds/tests/typechecks via standard script names, and every step here is a
+# single recursive invocation that pnpm runs in dependency (topological) order,
+# skipping packages that don't define the script. Adding a package therefore
+# needs no change to this file — see `scripts/check-workspace-conventions.mjs`
+# and the "Workspace script conventions" section of CLAUDE.md.
 
 on:
   pull_request:
@@ -24,8 +21,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  data:
-    name: "@adobe/data — typecheck, lint, test"
+  ci:
+    name: typecheck · lint · build · test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -41,53 +38,17 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Type-check (tsc -b, project references)
-        run: pnpm --filter @adobe/data run typecheck
+      - name: Check workspace conventions
+        run: pnpm run check:workspace
 
-      - name: Lint
-        run: pnpm --filter @adobe/data run lint
+      - name: Type-check (every package, topological)
+        run: pnpm -r run typecheck
 
-      - name: Unit tests
-        run: pnpm --filter @adobe/data run test:ci
+      - name: Lint (every package that defines it)
+        run: pnpm -r run lint
 
-  packages:
-    name: "downstream packages — build, test"
-    runs-on: ubuntu-latest
-    needs: [data]
-    steps:
-      - uses: actions/checkout@v6
+      - name: Build (every package, topological)
+        run: pnpm -r run build
 
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Build @adobe/data (provides dist/ for downstream tsc)
-        run: pnpm --filter @adobe/data run typecheck
-
-      - name: Build every downstream package (type-check via tsc -b / vite)
-        # Builds ALL workspace packages except the core (already built above),
-        # including the private, unscoped sample apps (data-p2p-tictactoe,
-        # data-lit-todo, …). A previous `--filter '@adobe/data-*'` only matched
-        # scoped published packages, so a type/build error that surfaced only in
-        # a private sample (e.g. a stripped `.d.ts` member) merged green.
-        run: pnpm --filter '!@adobe/data' run build
-
-      - name: Test downstream packages
-        # Every workspace package except the core (tested in the `data` job) and
-        # data-persistence (whose `test` script pulls in Playwright — run its
-        # node project instead). pnpm skips packages that declare no `test`
-        # script. This now includes the private sample apps (data-lit-todo,
-        # data-lit-tictactoe, …); previously they were only built, so a broken
-        # sample unit test (e.g. the data-lit-todo conformance suite) merged green.
-        run: |
-          pnpm --filter '!@adobe/data' \
-               --filter '!@adobe/data-persistence' \
-               run test
-          pnpm --filter @adobe/data-persistence run test:node
+      - name: Test (each package runs its own complete suite)
+        run: pnpm -r run test

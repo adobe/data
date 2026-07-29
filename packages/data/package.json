@@ -36,11 +36,10 @@
     "link": "pnpm build && pnpm link --global",
     "pre-commit": "lint-staged",
     "prepublishOnly": "node scripts/copy-references.js",
-    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public",
     "perftest": "node dist/perftest/index.js",
     "check:emit": "node scripts/emit-stripinternal/check.mjs",
-    "test": "vitest --run",
-    "test:ci": "SKIP_PERF=1 vitest --run",
+    "test": "SKIP_PERF=1 vitest --run",
+    "test:perf": "vitest --run",
     "asbuild:debug": "asc assembly/index.ts -o dist/assembly/index.wasm --target debug --enable simd && echo built dist/assembly/index.wasm",
     "asbuild:release": "asc assembly/index.ts -o dist/assembly/index.wasm --target release --enable simd --optimize && echo built dist/assembly/index.wasm",
     "start": "npx serve ."

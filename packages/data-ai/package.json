@@ -22,8 +22,7 @@
   "scripts": {
     "build": "cp ../../LICENSE .",
     "typecheck": "true",
-    "test": "vitest --run --passWithNoTests",
-    "publish-public": "pnpm build && pnpm publish --no-git-checks --access public"
+    "test": "vitest --run --passWithNoTests"
   },
   "keywords": [
     "adobe",

@@ -1,5 +1,6 @@
 ---
 name: meta-build
+disable-model-invocation: true
 description: Iteratively build an application or game phase-by-phase in clean subagents, reviewing each phase and refining the build-* skills / rules until each is optimal, then summarizing.
 input: a prompt describing the application or game to build
 options:

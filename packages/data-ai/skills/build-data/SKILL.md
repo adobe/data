@@ -19,4 +19,4 @@ The schema is the single source of truth; the type derives from it (`Schema.ToTy
 Helpers are pure and unit-tested. Run this first — every other layer imports `data/`.
 
 The how is in the auto-loading rules: `features/data/index.md`, `features/data/state.md`, and
-`namespace.md`.
+`global/namespace.md`.

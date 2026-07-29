@@ -2,7 +2,7 @@
 
 AI architecture skills + rules for building applications with
 [`@adobe/data`](https://www.npmjs.com/package/@adobe/data) — a layered,
-spec-first feature structure (`data → ecs → ui`) kept honest by conformance
+spec-first feature structure (`data → services → ui`) kept honest by conformance
 tests. Versioned in lockstep with the library: `@adobe/data-ai@x.y.z` targets
 `@adobe/data@x.y.z`.
 

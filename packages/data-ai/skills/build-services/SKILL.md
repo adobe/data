@@ -13,4 +13,4 @@ and `create*` factories.
 
 Only if the feature talks to the outside world. Comes after `data/`, before `services/main-service/`.
 
-The how is in the auto-loading `features/services/index.md` rule (and `namespace.md`).
+The how is in the auto-loading `features/services/index.md` rule (and `global/namespace.md`).

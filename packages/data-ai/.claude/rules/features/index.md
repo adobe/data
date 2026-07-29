@@ -106,6 +106,7 @@ current examples of this structure. `data-lit-todo` is the most complete
 See the rules under each folder: `data/`, `services/` — the `main-service/`
 subtree (components, resources, archetypes, computed, indexes, transactions,
 systems, conformance) and capability-contract services — and `ui/`.
-Cross-cutting patterns live at the rules root — `namespace.md`,
-`data-modelling.md`, `archetypes.md` (row iteration), `type-casts.md`,
-`cohesion.md`.
+Always-on conventions live in `global/` (`namespace.md`, `cohesion.md`,
+`type-casts.md`, `function-references.md`, `react.md` — deliberately repo-wide);
+other cross-cutting patterns at the rules root — `data-modelling.md`,
+`archetypes.md` (row iteration).

@@ -32,7 +32,7 @@ Presentation files (`*-presentation.ts`), CSS files (`*.css.ts`), tests (`*.test
 A binding element is a thin wire between a service and a presentation. The class body contains:
 
 1. Optional static `styles` property definition
-2. Zero or more `@property` declarations (whitelisted below).
+2. Zero or more `@property` declarations (allowed below).
 3. One `render()` method whose body is: one `useObservableValues(...)` call, another lifecycle hook call (in rare cases), a null-guard, and
    `return presentation.render({ ...values, ...callbacks })`.
 
@@ -40,7 +40,7 @@ No other members. No `@state`. No private handler fields. No lifecycle methods (
 `disconnectedCallback`) except on app-entrypoint classes where the lifecycle concern is app-boot shaped but cannot be expressed as a hook
 (see `.claude/rules/hooks.md` for hook-first lifecycle).
 
-## `@property` whitelist
+## `@property` allowlist
 
 The allowed set depends on **class role**:
 

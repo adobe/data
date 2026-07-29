@@ -22,7 +22,7 @@ its own subtree.
 
 ## Capability contracts
 
-Each is a namespace folder (`namespace.md`); the export and folder both carry the
+Each is a namespace folder (`global/namespace.md`); the export and folder both carry the
 `-service` suffix. A service is the boundary between pure feature code and the
 outside world, which is why its members are async — enabling cross-process
 portability and lazy loading (`AsyncDataService.createLazy`).

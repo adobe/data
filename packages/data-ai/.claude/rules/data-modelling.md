@@ -15,9 +15,10 @@ discriminated unions.
 ## Example
 
 ```ts
-// types/http-method/schema.ts
-export const schema = { type: "string", enum: ["GET", "POST", "PUT", "DELETE"] }
-    as const satisfies Schema;
+// types/http-method/http-method.ts — the hand-authored type owns the member identity
+export type HttpMethod = "GET" | "POST" | "PUT" | "DELETE";
+// (a schema.ts, if/when a runtime boundary needs one, is written to match this
+//  type and pinned to it — see global/namespace.md and features/data/index.md)
 
 // In an unrelated request-counter plugin:
 

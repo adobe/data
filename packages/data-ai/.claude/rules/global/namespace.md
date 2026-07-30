@@ -32,8 +32,10 @@ patterns (e.g., inline `export namespace` in shared files) that do not conform â
 - `<type-name>/<type-name>.ts` is the only public import surface
 - Export a single type alias: `export type <type-name> = <type>` (or `export type * from "./<type-name>-types.js"` when the type lives in a
   separate file)
-- Schema-based types: schema in `<type-name>-schema.ts`, named `schema` (not `<type-name>Schema`), derive with
-  `Schema.ToType<typeof schema>`
+- The type alias is **hand-authored** in `<type-name>.ts`. When a schema is needed it lives in `<type-name>-schema.ts` (or
+  `schema.ts` inside the folder), named `schema` (not `<type-name>Schema`), and is **written to match the hand-authored type and pinned
+  to it** with `Assert<Equal<Schema.ToType<typeof schema>, <TypeName>>>` â€” never the other way around. `Schema.ToType` appears only in
+  that assertion, never as the exported type.
 - Export namespace: `export * as <type-name> from "./public.js"`
 - In public.ts, re-export every public constant file
 - Filenames map deterministically to single export:
@@ -63,18 +65,24 @@ patterns (e.g., inline `export namespace` in shared files) that do not conform â
 
 ## Schema pattern example
 
+The type is authored first and by hand; the schema (if/when needed) is written
+to match it and pinned so it cannot drift.
+
 ```ts
-// src/types/player-mark/player-mark-schema.ts
-export const schema = { enum: ['X', 'O'] } as const;
+// src/types/player-mark/player-mark.ts â€” HAND-AUTHORED, the source of truth
+export type PlayerMark = 'X' | 'O';
+export * as PlayerMark from './public.js';
+
+// src/types/player-mark/player-mark-schema.ts â€” written to MATCH the type
+import { Schema } from '@adobe/data/schema';
+import type { Assert, Equal } from '@adobe/data/types';
+import type { PlayerMark } from './player-mark.js';
+export const schema = { type: 'string', enum: ['X', 'O'] } as const satisfies Schema;
+// Compile-time pin: fails to build if schema and type diverge.
+type _Pin = Assert<Equal<Schema.ToType<typeof schema>, PlayerMark>>;
 
 // src/types/player-mark/public.ts
 export { schema } from './player-mark-schema.js';
-
-// src/types/player-mark/player-mark.ts
-import { Schema } from '@adobe/data/schema';
-import { schema } from './player-mark-schema.js';
-export type PlayerMark = Schema.ToType<typeof schema>;
-export * as PlayerMark from './public.js';
 ```
 
 ## Example: `Point` type refactor

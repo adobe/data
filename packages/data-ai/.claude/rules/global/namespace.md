@@ -45,6 +45,26 @@ patterns (e.g., inline `export namespace` in shared files) that do not conform �
 - Function files: name by purpose only (e.g., `add.ts`, `sub.ts`). **Do not prefix** with the type name — the folder provides the namespace
   context.
 
+## Constants file
+
+Constants are the **one exception** to one-declaration-per-file. A namespace folder MAY have a single `constants.ts` exporting several
+plain `const` literals (no functions, no types), re-exported through `public.ts` so callers reach them as `<TypeName>.<constant>`:
+
+```ts
+// duration/constants.ts
+export const minSeconds = 5;
+export const maxSeconds = 300;
+export const defaultSeconds = 30;
+
+// duration/public.ts
+export * from './constants.js';
+
+// consumers: Duration.minSeconds, Duration.maxSeconds, Duration.defaultSeconds
+```
+
+Function declarations remain **one per file** (each in its own purpose-named file). If a value needs logic rather than being a plain
+literal, it is a function and does not belong in `constants.ts`.
+
 ## Anti-patterns (do not copy)
 
 - **`export namespace <TypeName> { ... }`** — Use `export * as <TypeName> from "./public.js"` instead.

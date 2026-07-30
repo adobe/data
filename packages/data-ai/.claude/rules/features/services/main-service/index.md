@@ -119,26 +119,29 @@ export namespace IndexDatabase {
 }
 ```
 
-### The assembled database — `FeatureDatabase`
+### The assembled database — `MainService`
 
 *Which* layer is topmost varies with the facets a feature uses (computed /
 service / action / system). Consumers — `ui/`, the app entry, `services/main-service/conformance/`
 — need the *whole* feature database but must not name that layer, or adding or
-dropping a layer rewrites them all. Alias it once:
+dropping a layer rewrites them all. Alias it once from the **folder-eponymous
+`main-service.ts`** (per `global/namespace.md`, a folder's primary export lives in
+its same-named file), as a namespace so consumers reach `MainService.plugin` /
+`MainService.Store`:
 
 ```ts
-// services/main-service/feature-database.ts
-export { SystemDatabase as FeatureDatabase } from "./system-database/system-database.js";
+// services/main-service/main-service.ts
+export { SystemDatabase as MainService } from "./system-database/system-database.js";
 ```
 
-Every consumer references **`FeatureDatabase`** (`.plugin`, `.Store`) — never the
+Every consumer references **`MainService`** (`.plugin`, `.Store`) — never the
 topmost layer. Add or drop a layer → change only this one line.
 
 **Cross-feature naming.** Inside a feature the core and assembled databases are
-the bare `CoreDatabase` / `FeatureDatabase`. When *another* feature or package
+the bare `CoreDatabase` / `MainService`. When *another* feature or package
 imports one — a peer built on it, the base `imports` a peer's `core-database`, a
 downstream package — reference it **feature-qualified**: `<Feature>CoreDatabase`
-/ `<Feature>Database`, re-exported so from the feature's barrel
+/ `<Feature>MainService`, re-exported so from the feature's barrel
 (`export { CoreDatabase as TodoCoreDatabase } from "…/core-database.js"`) — so
 two features' `CoreDatabase`s never collide.
 

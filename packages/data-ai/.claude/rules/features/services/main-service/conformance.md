@@ -29,8 +29,9 @@ Conformance test-support splits by concern along the layer boundary:
     `fromState(before)` → `apply(store, args)` → `toState ≡ after`.
 - **Spec-side, in `data/state/`** (State values, no store — so both the `data/`
   transform tests and this runner import them without a layer violation):
-  `conformance-case.ts` (`ConformanceCase<Args>`), the `<transform>.cases.ts`
-  cases, and `expect-state-matches.ts` (State equality).
+  `conformance-case.ts` (`ConformanceCase<Args>`), the cases **exported from each
+  `<transform>.test.ts`** (`import { cases } from "…/<transform>.test.js"` — no
+  separate `.cases.ts` file), and `expect-state-matches.ts` (State equality).
 
 ## No cast — build on `Store.create`, not a `Database`
 
@@ -39,7 +40,7 @@ A **transaction is `(store, args) => void`**, so transaction conformance needs n
 `CoreDatabase.Store` — pass the plugin directly, `Store.create` reads its schema
 facets. Source it from the **lowest layer that declares all the schema** —
 `IndexDatabase`, or `CoreDatabase` if the feature has no indexes — **not**
-`FeatureDatabase`: the store needs only schema, and the behaviour layers
+`MainService`: the store needs only schema, and the behaviour layers
 (transactions / computed / systems) add none.
 `fromState`/`toState`/`apply` all operate on it, and `apply` calls the **raw
 transaction function** directly:

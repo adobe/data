@@ -38,7 +38,7 @@ A binding element is a thin wire between a service and a presentation. The class
 
 No other members. No `@state`. No private handler fields. No lifecycle methods (`connectedCallback`, `updated`, `firstUpdated`,
 `disconnectedCallback`) except on app-entrypoint classes where the lifecycle concern is app-boot shaped but cannot be expressed as a hook
-(see `.claude/rules/hooks.md` for hook-first lifecycle).
+(see `hooks.md` for hook-first lifecycle).
 
 ## `@property` allowlist
 
@@ -114,7 +114,7 @@ one-liners** above.
 ## Lifecycle goes through hooks
 
 Any need for mount/unmount/update behavior routes through a hook. **Reuse order, one hook per file, presentation vs binding placement, and
-testing notes:** `.claude/rules/hooks.md`.
+testing notes:** `hooks.md`.
 
 Never inline lifecycle logic in the binding. App-entrypoint classes may override lifecycle methods when the concern is app-boot shaped
 (service wiring, ancestor lookup); even then, prefer a hook.
@@ -158,14 +158,14 @@ expose them by design; reaching for them means a missing computed.
 
 A binding element imports a sibling `*-presentation.ts` file that exports exactly `render` (required) and optionally `unlocalized`. Nothing
 else — no types, no styles, no helpers. Consumers derive the props type via `Parameters<typeof render>[0]`. Presentation stays hook-free by
-default; element hooks live here or in shared modules per `.claude/rules/hooks.md` and `.claude/rules/presentation.md`.
+default; element hooks live here or in shared modules per `hooks.md` and `features/ui/presentation.md`.
 
 **For refactors whose stated scope does not include presentations**, the matching `*-presentation.ts` file must not change. Verify with
 `git diff --name-only | grep presentation`. If a scope-limited refactor requires a presentation signature change, stop and reconsider the
 binding-side helper — the scope fence exists because presentations are the public contract between binding and render output.
 
 Callback prop names use **verb** or **verbNoun** form. Never `on*` prefix. The binding-side variable matches the presentation prop name 1:1.
-See `.claude/rules/presentation.md` for full examples.
+See `features/ui/presentation.md` for full examples.
 
 ## Size budget
 

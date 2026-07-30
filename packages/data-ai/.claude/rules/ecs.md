@@ -143,7 +143,7 @@ Synchronous, deterministic atomic mutations. Receive `store` and a payload.
 
 ### actions
 
-UI components that call actions must never consume returned values — see `.claude/rules/binding-element.md` (Actions are fire-and-forget).
+UI components that call actions must never consume returned values — see `features/ui/binding-element.md` (Actions are fire-and-forget).
 
 **At most one transaction per action.** Multiple transactions in a single action corrupt the undo/redo stack.
 

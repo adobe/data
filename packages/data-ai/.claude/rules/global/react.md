@@ -76,7 +76,7 @@ use `Parameters<typeof render>[0]`.
 
 ## Action callbacks (not events)
 
-Use **verb** or **verbNoun** names — never `on*` prefix. See `.claude/rules/presentation.md` for full examples.
+Use **verb** or **verbNoun** names — never `on*` prefix. See `features/ui/presentation.md` for full examples.
 
 **Pass function references directly** when the signature matches; wrap in an arrow function only to supply arguments:
 

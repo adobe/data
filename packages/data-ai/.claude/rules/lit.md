@@ -76,7 +76,7 @@ there.
 
 ## Action callbacks (not events)
 
-Use **verb** or **verbNoun** names — never `on*` prefix. See `.claude/rules/presentation.md` for full examples and rationale.
+Use **verb** or **verbNoun** names — never `on*` prefix. See `features/ui/presentation.md` for full examples and rationale.
 
 ---
 
@@ -91,7 +91,7 @@ view hosts. Multiple instances of the same element need a property to identify w
 
 ## Hooks
 
-Canonical rules (reuse order, one hook per file, binding vs presentation): `.claude/rules/hooks.md`.
+Canonical rules (reuse order, one hook per file, binding vs presentation): `hooks.md`.
 
 Use hooks from `src/elements/hooks/` and `@adobe/data-lit` instead of `connectedCallback`/`disconnectedCallback`. Use `useEffect` for
 setup/teardown, `useKeyboardEvent` for single key events.
@@ -107,7 +107,7 @@ When creating or modifying a Lit element:
 3. Use a single `useObservableValues` in the binding element. Observe only minimal values; use `Observe.withDefault` for slow-resolving
    values.
 4. Pass observed values and action callbacks to presentation.
-5. Keep presentation pure — no hooks (see `.claude/rules/hooks.md` for exceptions).
+5. Keep presentation pure — no hooks (see `hooks.md` for exceptions).
 6. Add `@property` only when entity binding requires it (multiple instances).
 7. Presentation exports only `render` (and localization bundles where appropriate). Binding element sets `static styles` from `*.css.ts`.
 8. Add `*-presentation.test.ts` for presentation when appropriate; do not unit test binding elements.

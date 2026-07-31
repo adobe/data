@@ -88,7 +88,7 @@ main-service mutation, seeded and read back through a test-only store↔`State`
 projection, equals the pure `data/` transform it stands for. The projection and
 its runner live in `services/main-service/conformance/` (see
 `services/main-service/conformance.md`); the shared `{ before, args, after }`
-cases are spec-owned (`data/state/<transform>.cases.ts`), so conforming the
+cases are spec-owned (exported from `data/state/<transform>.test.ts`), so conforming the
 implementation is "substitute the implementation, reuse the expectations." This
 lets `main-service` be largely mechanical and agent-generated, with the spec as
 oracle. *How* to author each layer lives in the per-folder rules below.

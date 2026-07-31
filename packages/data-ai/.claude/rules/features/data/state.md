@@ -41,13 +41,16 @@ export * as State from "./public.js";
 - Guard and **return `state` unchanged** on a no-op / illegal input rather
   than throwing — this keeps transforms idempotent under repeated application.
 - Each transform has a sibling `*.test.ts`; performance is irrelevant here,
-  correctness is everything. Keep its cases in a sibling `<transform>.cases.ts`
-  typed `ConformanceCase<Args>[]` (the shared `conformance-case.ts` type) —
-  spec-owned truth the matching main-service conformance test imports unchanged (see
-  `services/main-service/conformance.md`). Author `before`/`after` as full `State`
-  (`{ ...State.create(), …overrides }`); the generic-slice signature lets them
-  flow through. Tolerant full-`State` equality is the shared
-  `expect-state-matches.ts`, alongside the cases here.
+  correctness is everything. The test file **exports** its cases —
+  `export const cases: ConformanceCase<Args>[]` (the shared `conformance-case.ts`
+  type) — right alongside the `describe`/`it` that exercise them. This is
+  spec-owned truth the matching main-service conformance test imports **from the
+  `<transform>.test.js` file** unchanged (see `services/main-service/conformance.md`).
+  Keeping the cases in the test file rather than a separate `<transform>.cases.ts`
+  removes a file per transform — less folder clutter, same reuse. Author
+  `before`/`after` as full `State` (`{ ...State.create(), …overrides }`); the
+  generic-slice signature lets them flow through. Tolerant full-`State` equality is
+  the shared `expect-state-matches.ts`.
 
 ## Derivations — `(state) => value`
 

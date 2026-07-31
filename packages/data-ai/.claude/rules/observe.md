@@ -147,7 +147,7 @@ Observe.withMap(rows$, rows => rows.filter(r => r.selectedByUsers?.includes(user
 `observeSelectDeep` re-emits on **any** change to **any** listed component on **any** matched entity — so list only the fields actually
 read, and when the matched set is large pair it with a structural deduplicate downstream so identical-looking emissions don't propagate
 (`@adobe/data/observe`'s `withDeduplicate` is reference-equality only). `observeSelectDeep` from a UI element is banned — let each element
-observe its own entity (see `.claude/rules/ecs.md` and `.claude/rules/squirrel/ui-data-access.md`).
+observe its own entity (see `ecs.md`).
 
 ---
 

@@ -156,9 +156,10 @@ two features' `CoreDatabase`s never collide.
   reads/writes entities, resources, or archetypes; **`IndexDatabase.Store`** the
   moment it reads an index.
 - **the whole `Database`** — **computed**, **services**, and **actions** each
-  take `db: <Layer>` (the lowest layer whose database exposes what they
-  read/call): computed reads `db.observe.*`; services read observables and call
-  transactions; actions call `db.services.*` then `db.transactions.*`.
+  take `service: <Layer>` (the lowest layer whose database exposes what they
+  read/call): computed reads `service.observe.*`; services read observables and
+  call transactions; actions call `service.services.*` then
+  `service.transactions.*`.
 
 Each subfolder has its own rule. Modelling a plugin's authored vs. derived
 surface is covered by `plugin-modelling.md`.

@@ -7,7 +7,7 @@ paths:
 
 One derived value per file: a `cached` function of a database layer that
 returns an `Observe` of state projected through pure `data/` helpers.
-Derivation logic itself lives in `data/`; a computed only wires a db
+Derivation logic itself lives in `data/`; a computed only wires a service
 observable to it.
 
 ```ts
@@ -16,8 +16,8 @@ import { Observe } from "@adobe/data/observe";
 import { BoardState } from "../../../data/board-state/board-state.js";
 import type { IndexDatabase } from "../../index-database/index-database.js";
 
-export const status = cached((db: IndexDatabase) =>
-    Observe.withFilter(db.observe.resources.board, BoardState.deriveStatus),
+export const status = cached((service: IndexDatabase) =>
+    Observe.withFilter(service.observe.resources.board, BoardState.deriveStatus),
 );
 ```
 

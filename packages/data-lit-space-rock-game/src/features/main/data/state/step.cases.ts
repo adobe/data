@@ -7,9 +7,20 @@ import { Input } from "../input/input.js";
 // Spec-owned `{ before, args, after }` cases for the whole-tick `State.step`
 // (args = { dt, input }), shared with the ecs system tick-loop conformance
 // (one frame = one step). Each case exercises one branch of the step pipeline —
-// advance/wrap, fire, bullet↔asteroid resolution, ship↔asteroid resolution,
-// wave refill, and the game-over freeze — with geometry chosen so every `after`
-// is exact (stationary bodies, clean quadrant wave, F32-representable numbers).
+// advance/wrap, fire, bullet↔asteroid resolution, ship↔asteroid resolution, and
+// the game-over freeze — with geometry chosen so every `after` is exact
+// (stationary bodies, F32-representable numbers).
+//
+// NONE of these cases clears the field. The wave refill now draws randomness
+// (`spawnRandomWave`), and the ECS `waves` system's real `Math.random` source
+// cannot be shared with the pure oracle frame-for-frame — so, per the sanctioned
+// conformance tradeoff (`features/services/main-service/conformance.md`), the
+// randomized refill is kept OUT of the shared tick-loop cases and exercised
+// directly instead: `step.test.ts` (a `step` frame with the injected double),
+// `spawn-random-wave.test.ts` (the transition), and the `spawnRandomWave`
+// transaction conformance (the ECS mutation). With asteroids present in every
+// case here, `spawnRandomWave` is a no-op, so `step` never draws randomness and
+// both sides stay exact.
 type Args = { readonly dt: number; readonly input: Input };
 
 export const cases: readonly ConformanceCase<Args>[] = [
@@ -107,36 +118,6 @@ export const cases: readonly ConformanceCase<Args>[] = [
       asteroids: [{ position: [100, 100], velocity: [0, 0], size: "large" }],
       score: 0,
       lives: 2,
-      wave: 1,
-    },
-  },
-  {
-    // A clear field refills: wave 0 → 1 (asteroidsFor(1)=4) as a clean quadrant
-    // ring. spawnWave runs AFTER resolveShipHits, so the new rocks don't strike
-    // the ship this tick.
-    name: "refills the field with a new wave once it is clear",
-    before: {
-      bounds: [200, 200],
-      ship: Ship.spawn([100, 100]),
-      bullets: [],
-      asteroids: [],
-      score: 0,
-      lives: 3,
-      wave: 0,
-    },
-    args: { dt: 0.1, input: Input.none },
-    after: {
-      bounds: [200, 200],
-      ship: Ship.spawn([100, 100]),
-      bullets: [],
-      asteroids: [
-        { position: [180, 100], velocity: [0, 60], size: "large" },
-        { position: [100, 180], velocity: [-60, 0], size: "large" },
-        { position: [20, 100], velocity: [0, -60], size: "large" },
-        { position: [100, 20], velocity: [60, 0], size: "large" },
-      ],
-      score: 0,
-      lives: 3,
       wave: 1,
     },
   },

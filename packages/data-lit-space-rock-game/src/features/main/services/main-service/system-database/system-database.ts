@@ -10,6 +10,7 @@ import { Asteroid } from "../../../data/asteroid/asteroid.js";
 import { Bullet } from "../../../data/bullet/bullet.js";
 import { Ship } from "../../../data/ship/ship.js";
 import { State } from "../../../data/state/state.js";
+import { RandomService } from "../../random-service/random-service.js";
 
 // The real-time tick loop. Extends the computed database (schema + indexes +
 // transactions + computed) combined with the built-in `scheduler`, and declares
@@ -26,7 +27,7 @@ import { State } from "../../../data/state/state.js";
 //   lifetime → State.fireBullet THEN State.stepBullets (fire from the *post-move*
 //              muzzle, then advance + age + retire every bullet, new one included)
 //   collision→ resolveBulletHits then resolveShipHits (discrete transactions)
-//   waves    → State.spawnWave once the field is clear
+//   waves    → State.spawnRandomWave once the field is clear (injected random)
 //
 // Firing lives in `lifetime` (after `movement`) precisely so the bullet leaves
 // the ship's post-move muzzle and is advanced+aged in the same frame — matching
@@ -247,20 +248,27 @@ const systemDatabasePlugin = Database.Plugin.create({
       },
     },
 
-    // Refill the field once it is clear — the ecs wiring for State.spawnWave.
+    // Refill the field once it is clear — the ecs wiring for State.spawnRandomWave.
     // Only the Asteroid archetype carries `size`, so a non-empty match means rocks
-    // remain and there is nothing to do; otherwise dispatch spawnWave (which bumps
-    // `wave` and inserts the next ring through the data/-verified layout). Frozen
-    // once the game is over — step never reaches spawnWave after game over, so a
-    // dead game does not respawn a wave.
+    // remain and there is nothing to do; otherwise dispatch spawnRandomWave, which
+    // bumps `wave` and inserts the next ring through the data/-verified layout —
+    // its per-rock drift speeds jittered by the injected `random` service, so live
+    // waves vary run to run. The REAL Math.random-backed source is created once
+    // here (in `create`, before the per-frame loop) and injected on every spawn;
+    // tests inject RandomService.createFake for reproducible layouts. Frozen once
+    // the game is over — step never reaches the refill after game over, so a dead
+    // game does not respawn a wave.
     waves: {
       schedule: { after: ["collision"] },
-      create: (db) => () => {
-        if (State.isGameOver({ lives: db.store.resources.lives })) return;
-        for (const arch of db.store.queryArchetypes(["size"])) {
-          if (arch.rowCount > 0) return;
-        }
-        db.transactions.spawnWave();
+      create: (db) => {
+        const random = RandomService.create();
+        return () => {
+          if (State.isGameOver({ lives: db.store.resources.lives })) return;
+          for (const arch of db.store.queryArchetypes(["size"])) {
+            if (arch.rowCount > 0) return;
+          }
+          db.transactions.spawnRandomWave({ random });
+        };
       },
     },
   },

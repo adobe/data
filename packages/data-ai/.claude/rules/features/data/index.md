@@ -5,11 +5,17 @@ paths:
 
 # data/ — the data model
 
-The foundation layer: the feature's **data types**. A data type is a
-readonly, JSON-serializable value suitable for persistence and for
-communication over the wire — no functions, no handles, just plain data.
-It depends on nothing but `@adobe/data` and other `data/` declarations, and
-needs no knowledge of anything built on top of it.
+The foundation layer: the feature's **data types** and the pure declarations
+over them. A data type is a readonly, JSON-serializable value suitable for
+persistence and for communication over the wire — no functions, no handles, just
+plain data. A `data/` **type** depends on nothing but `@adobe/data` and other
+`data/` types, and needs no knowledge of anything built on top of it. The
+**transitions** over those types are less restricted: when one injects a service
+it may import freely from `services/` — the service type and any utilities its
+namespace exposes (see `state.md`). What it must **never** touch is `ui/`:
+`data/` never depends on presentation — that isolation is strict and inviolable.
+Only *services themselves* are never authored here; that is what makes this the
+value-type layer.
 
 Each data type is its own namespace folder (see `global/namespace.md`), holding
 its hand-authored type, its (optional, matching) schema, and its pure

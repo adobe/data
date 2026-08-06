@@ -12,7 +12,10 @@ const asteroidsFor = (wave: number): number => 3 + wave;
 
 // When the field is clear, advance to the next wave: spawn a ring of large
 // asteroids around the centre (clear of the ship's spawn), each drifting
-// tangentially. Deterministic — the ECS layer may randomise; the spec does not.
+// tangentially at a fixed speed. Deterministic — this seeds the FIRST wave
+// (`createInitial`, so a fresh game always starts from the same fair layout).
+// The randomized sibling `spawnRandomWave` injects a `random` service for the
+// varied refill waves the tick loop spawns.
 export const spawnWave = <T extends Pick<State, "asteroids" | "wave" | "bounds">>(
   state: T,
 ): T => {

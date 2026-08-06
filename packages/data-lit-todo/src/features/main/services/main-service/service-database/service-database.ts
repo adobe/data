@@ -2,7 +2,7 @@
 import { Database } from "@adobe/data/ecs";
 import { ComputedDatabase } from "../computed-database/computed-database.js";
 import { NameGeneratorService } from "../../name-generator-service/name-generator-service.js";
-import { TodoAnalyticsService } from "../../todo-analytics-service/todo-analytics-service.js";
+import { AnalyticsService } from "../../analytics-service/analytics-service.js";
 
 // These services are async ports with no ECS state to bind, so they are
 // registered directly from their `services/` contracts. A service that reads
@@ -12,7 +12,7 @@ const serviceDatabasePlugin = Database.Plugin.create({
   extends: ComputedDatabase.plugin,
   services: {
     nameGenerator: NameGeneratorService.create,
-    todoAnalytics: TodoAnalyticsService.create,
+    analytics: AnalyticsService.create,
   },
 });
 

@@ -7,7 +7,8 @@
 // proves the projection round-trips faithfully on its own.
 import { describe, it } from "vitest";
 import type { State } from "../../../data/state/state.js";
-import { expectStateMatchesIgnoringIds } from "./expect-state-matches-ignoring-ids.js";
+import { expectStateMatches } from "../../../data/state/expect-state-matches.js";
+import { anyNumber } from "../../../data/state/matchers.js";
 import { createStore } from "./create-store.js";
 import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
@@ -46,7 +47,12 @@ describe("ecs/conformance projection round-trips (toState ∘ fromState ≡ iden
     it(name, () => {
       const store = createStore();
       fromState(store, state);
-      expectStateMatchesIgnoringIds(toState(store), state);
+      // The ecs reassigns ids from its own id-space, so compare against the same
+      // state with ids left open.
+      expectStateMatches(toState(store), {
+        ...state,
+        todos: state.todos.map((todo) => ({ ...todo, id: anyNumber })),
+      });
     });
   }
 });

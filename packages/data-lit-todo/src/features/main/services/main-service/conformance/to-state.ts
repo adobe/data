@@ -2,6 +2,7 @@
 import type { State } from "../../../data/state/state.js";
 import type { Todo } from "../../../data/todo/todo.js";
 import type { CoreDatabase } from "../core-database/core-database.js";
+import { toData } from "./to-data.js";
 
 // Read a store back into a `data/` `State` — the inverse of `fromState`. Todos
 // are read in ascending `order` (the ecs materialisation of display order),
@@ -9,17 +10,12 @@ import type { CoreDatabase } from "../core-database/core-database.js";
 // the spec fields (`id`, `name`, `complete`) are projected — the ecs-only
 // `order` / `dragPosition` / `assignees` slots stay behind. The projected `id`
 // is the entity id (the ecs's own id-space, not the spec's domain id), so
-// conformance comparisons ignore it — see `expect-state-matches-ignoring-ids`.
+// cases author `after` ids as `anyNumber`, so the comparison leaves them open.
 // Test-only.
-const readTodos = (store: CoreDatabase.Store): Todo[] => {
-  const todos: Todo[] = [];
-  for (const entity of store.select(store.archetypes.Todo.components, { order: { order: true } })) {
-    const row = store.read(entity, store.archetypes.Todo);
-    if (row === null) throw new Error("conformance projection: expected a todo entity");
-    todos.push({ id: row.id, name: row.name, complete: row.complete });
-  }
-  return todos;
-};
+const readTodos = (store: CoreDatabase.Store): Todo[] =>
+  [...store.select(store.archetypes.Todo.components, { order: { order: true } })].map((entity) =>
+    toData(store, entity),
+  );
 
 export const toState = (store: CoreDatabase.Store): State => ({
   todos: readTodos(store),

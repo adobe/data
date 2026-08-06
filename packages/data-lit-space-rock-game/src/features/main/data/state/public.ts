@@ -9,5 +9,6 @@ export { stepAsteroids } from "./step-asteroids.js";
 export { resolveBulletHits } from "./resolve-bullet-hits.js";
 export { resolveShipHits } from "./resolve-ship-hits.js";
 export { spawnWave } from "./spawn-wave.js";
+export { spawnRandomWave } from "./spawn-random-wave.js";
 export { isGameOver } from "./is-game-over.js";
 export { step } from "./step.js";

@@ -2,10 +2,12 @@
 import { State } from "./state.js";
 import type { ConformanceCase } from "./conformance-case.js";
 
-// Spec-owned `{ before, args, after }` cases for `State.spawnWave` (no args),
-// shared with the ecs `spawnWave` transaction. When the field is clear it bumps
-// the wave and spawns a ring of large asteroids around the centre, each
-// drifting tangentially at 60px/s; while asteroids remain it is a no-op. Field
+// Spec-owned `{ before, args, after }` cases for the deterministic
+// `State.spawnWave` (no args) — the fixed FIRST wave `createInitial` seeds (its
+// randomized refill sibling is `spawn-random-wave.cases.ts`). When the field is
+// clear it bumps the wave and spawns a ring of large asteroids around the
+// centre, each drifting tangentially at 60px/s; while asteroids remain it is a
+// no-op. Field
 // 200×200 → centre [100,100], ring radius 80. From wave 0 the count is
 // asteroidsFor(1)=4, so the ring lands on the four clean quadrant angles and
 // every `after` position/velocity is exact.

@@ -2,6 +2,6 @@
 import type { ServiceDatabase } from "../../service-database/service-database.js";
 
 export const toggleDisplayCompleted = (db: ServiceDatabase) => {
-  db.services.todoAnalytics.displayCompletedToggled();
+  db.services.analytics.displayCompletedToggled();
   db.transactions.toggleDisplayCompleted();
 };

@@ -8,7 +8,6 @@ import type { CoreDatabase } from "../core-database/core-database.js";
 import { createStore } from "./create-store.js";
 import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
-import { expectStateMatchesIgnoringIds } from "./expect-state-matches-ignoring-ids.js";
 
 // Resolve a spec domain `id` to the ecs entity seeded for it. `fromState`
 // returns the seeded entities in display order, so the i-th `before` todo maps
@@ -30,24 +29,29 @@ export type ResolveEntity = (specId: number) => Entity;
 // `apply` receives the seeded writable store, the case args, and a `resolve`
 // that maps a spec `id` to the seeded entity, then calls the raw transaction
 // function directly (a transaction is `(store, …) => void`, so no `Database`
-// is involved). Half 2 compares ignoring todo `id` (`expectStateMatchesIgnoringIds`):
-// the ecs owns its entity-id space, so the projection conforms only up to a
-// renaming of ids. Half 1 stays id-strict — the spec fully owns its domain ids.
+// is involved). The `after` authors ids as `anyNumber`, so the same
+// `expectStateMatches` compares both halves — the ecs owns its entity-id space
+// and conforms only up to a renaming of ids, which the matcher expresses.
 export const expectConforms = <Args>(config: {
   readonly cases: readonly ConformanceCase<Args>[];
-  readonly spec: (before: State, args: Args) => State;
+  // Optional: half 1 (spec(before,args) ≡ after) is already asserted for every
+  // case by `data/state/spec.test.ts`, so the conformance aggregator omits it and
+  // this runner asserts only the ecs half. Pass `spec` to re-check it in place.
+  readonly spec?: (before: State, args: Args) => State;
   readonly apply: (store: CoreDatabase.Store, args: Args, resolve: ResolveEntity) => void;
 }): void => {
   for (const testCase of config.cases) {
     it(testCase.name, () => {
-      expectStateMatches(config.spec(testCase.before, testCase.args), testCase.after);
+      if (config.spec) {
+        expectStateMatches(config.spec(testCase.before, testCase.args), testCase.after);
+      }
 
       const store = createStore();
       const entities = fromState(store, testCase.before);
       const bySpecId = new Map(testCase.before.todos.map((todo, i) => [todo.id, entities[i]]));
       const resolve: ResolveEntity = (specId) => bySpecId.get(specId) ?? Entity.none;
       config.apply(store, testCase.args, resolve);
-      expectStateMatchesIgnoringIds(toState(store), testCase.after);
+      expectStateMatches(toState(store), testCase.after);
     });
   }
 };

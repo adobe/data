@@ -30,12 +30,16 @@ export const playMove = (t: CoreDatabase.Store, { index }: PlayMoveArgs) => {
   than throwing.
 - Decisions come from pure `data/` helpers; the transaction only applies the
   result — read the touched slice, call the `data/` transform, write the diff.
-- **Conform every transaction to its `data/` transform** in its sibling
-  `*.test.ts`, via `expectConforms` over the spec's shared cases (see
-  `services/main-service/conformance.md`): seed `fromState(before)`, dispatch, assert `toState ≡
-  after`, covering every branch and edge case. A transaction taking **entity
-  ids** resolves them from the seeded store in the `apply` closure; one with no
-  `data/` analogue (`setBounds`, `setInput`) gets a direct resource assertion.
+- Keep transaction files **single-export** (the `transactions/` barrel is
+  `export *`-ed into the plugin facet, so a second export would pollute it).
+- **Conformance is wired once, centrally** — not per-file. `conformance/transactions.test.ts`
+  runs each transition's shared `data/state` cases against its transaction
+  (`fromState(before)` → apply → `matches(toState, after)`), with a coverage
+  guard so none are missed (see `conformance.md`). A transaction taking **entity
+  ids** resolves them from the seeded store; a differently-named or reused
+  transaction (`dragTodo` ⇄ `reorderTodo`) wires its cases explicitly; an extra
+  transaction with no `data/` analogue (`setBounds`, `setInput`) gets a direct
+  resource assertion.
 - An `index.ts` barrel feeds the `transactions` plugin facet — so it must
   re-export **only** the mutations. A read/query helper shared by several
   transactions (`readShip`, `readBoard` — a `(t) => value` function) may live

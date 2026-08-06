@@ -10,6 +10,13 @@ argument and pure `data/` args. Actions orchestrate anything *outside* a
 single transaction — awaiting a `services/` port, sequencing calls, deriving
 timing — and then commit the result through a transaction.
 
+**Every state transition has a corresponding same-named action** — the async,
+app-facing realization the UI calls. It reads the same services the transition
+injects from `db.services`, so it reproduces both the transition's state change
+(through a transaction) and its side effects. It may reuse another transition's
+transaction (`createRandomTodo` reuses `createTodo`) — there need not be a
+same-named transaction; transactions are the looser layer.
+
 ```ts
 import type { ServiceDatabase } from "../../service-database/service-database.js";
 
@@ -29,4 +36,9 @@ export const addRandomTodo = async (service: ServiceDatabase) => {
   awaited-internally, never surfaced to the caller.
 - Do the outside-world work here: await/sequence `services/` calls, and if a
   slow call needs timing, compute it here around the call.
+- **Conformance** (`conformance/actions.test.ts`) runs each transition's shared
+  cases against its action, asserting **state and effects**: build the db with
+  fake services via `Database.create(MainService.plugin, { services })`, run the
+  action, then `matches(toState, after)` and check the recorded service calls
+  against the case's `effects` (see `conformance.md`).
 - An `index.ts` barrel feeds the `actions` plugin facet.

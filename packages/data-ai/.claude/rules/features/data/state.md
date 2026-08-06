@@ -5,94 +5,83 @@ paths:
 
 # data/state/ — the State specification
 
-`State` is the whole feature modelled as **one immutable object** — the
-pure, fully-tested source of truth for the feature. Modelling everything as
-a single value keeps each transform a small, trivially-testable function of
-state: collections of entity sub-types plus scalar fields.
+`State` is the whole feature as **one immutable object** — the pure, fully-tested
+source of truth. Each transform is a small function of state; each derivation a
+pure selector. Reference: `data-lit-todo`'s `data/state/`.
 
-Every feature that has ECS resources or transactions owns a `State` — including
-a host whose aggregate is a single scalar (`{ playing: boolean }`) or even when there is no state in which case use `{}`. 
 ```ts
-// state.ts — the aggregate, plus the namespace of transforms/derivations.
-export type State = {
-    readonly todos: readonly Todo[];        // a collection of entity sub-types
-    readonly displayCompleted: boolean;     // a scalar field
-};
+// state.ts — the aggregate + the transform/derivation namespace.
+export type State = { readonly todos: readonly Todo[]; readonly displayCompleted: boolean };
 export * as State from "./public.js";
 ```
 
-## Transforms — one per file, `(state, …args) => state`
+Every feature with ECS resources/transactions owns a `State` (a scalar
+`{ playing: boolean }`, or `{}` when there is none).
 
-- **Pure over its inputs.** No *ambient* I/O, no framework, no mutation — return
-  a new value. A capability the transform genuinely needs (a clock, a random
-  source, a name generator, a `services/` port) is passed in as an **injected
-  dependency** (see below), never reached ambiently; given what it is handed the
-  transform stays deterministic.
-- **Narrow in, same shape out.** Write on the smallest slice the transform
-  needs and keep the input generic over that slice so it lifts to
-  full-state-in / full-state-out:
+## One file per transform: the function **and** its cases
 
-  ```ts
-  export const playMove = <T extends Pick<State, "board" | "firstPlayer">>(
-      state: T,
-      input: PlayMoveArgs,
-  ): T => { /* … return { ...state, board: … } */ };
-  ```
-
-  A whole-`State` transform (`restartGame(state: State): State`) is fine when
-  it genuinely touches everything.
-- Args may be **narrowed or omitted** (`toggleDisplayCompleted(state)`).
-- Guard and **return `state` unchanged** on a no-op / illegal input rather
-  than throwing — this keeps transforms idempotent under repeated application.
-- Each transform has a sibling `*.test.ts`; performance is irrelevant here,
-  correctness is everything. The test file **exports** its cases —
-  `export const cases: ConformanceCase<Args>[]` (the shared `conformance-case.ts`
-  type) — right alongside the `describe`/`it` that exercise them. This is
-  spec-owned truth the matching main-service conformance test imports **from the
-  `<transform>.test.js` file** unchanged (see `services/main-service/conformance.md`).
-  Keeping the cases in the test file rather than a separate `<transform>.cases.ts`
-  removes a file per transform — less folder clutter, same reuse. Author
-  `before`/`after` as full `State` (`{ ...State.create(), …overrides }`); the
-  generic-slice signature lets them flow through. Tolerant full-`State` equality is
-  the shared `expect-state-matches.ts`.
-
-## Injected dependencies — services and other ports
-
-A transform that needs a capability it cannot compute from `state` alone
-receives it as an **injected dependency**, bundled with its plain data args into
-a single **named-parameter object**. This keeps dependencies and data named at
-the call site and lets tests substitute the capability.
+A transform file exports **exactly two things** — the function and its
+`cases` — nothing else (a private helper is fine; a second export is not, and the
+spec aggregator throws if it finds one). The cases are the spec-owned truth every
+conformance runner reuses; co-locating them removes the per-transform `.cases.ts`
+and `.test.ts`.
 
 ```ts
-export const addTodo = <T extends Pick<State, "todos">>(
+// create-todo.ts
+export const createTodo = <T extends Pick<State, "todos">>(
     state: T,
-    { nameGenerator, priority }: { nameGenerator: NameGeneratorService; priority: number },
-): T => { /* … uses nameGenerator, priority … return { ...state, todos: … } */ };
+    { name, complete, analytics }: { name: string; complete?: boolean; analytics: AnalyticsService },
+): T => { analytics.todoCreated({ name }); return appendTodo(state, { name, complete }); };
+
+export const cases: Conformance<typeof createTodo> = [
+    { name: "appends the first todo",
+      before: { todos: [], displayCompleted: false },
+      args: { name: "a", analytics: AnalyticsService.createFake() },
+      after: { todos: [{ id: anyNumber, name: "a", complete: false }], displayCompleted: false },
+      effects: { analytics: [["todoCreated", { name: "a" }]] } },
+];
 ```
 
-- **A service dependency is keyed by the service name minus its `-service`
-  suffix**, typed as the service interface: `NameGeneratorService` →
-  `nameGenerator`, `ClockService` → `clock`. The key names the port; the value
-  is the interface. Non-service dependencies (plain values, sync or async
-  callbacks) sit in the same object under whatever name reads best, e.g.
-  `{ foo: FooService, bar: BarService, retries: 12, label: "baz" }`.
-- Import the service (and any utilities its namespace exposes) straight from
-  `services/` — an ordinary import, not type-only. A transition may depend on
-  `services/` freely; the layers split by kind of type, not by dependency
-  (`features/index.md`). The caller still supplies the implementation instance.
-- The transform is **deterministic given its dependencies** — fix the
-  dependencies and the output is fully determined. That is what keeps it
-  testable and lets conformance treat it as the oracle.
-- An **async** dependency makes the transition itself async (it returns
-  `Promise<State>`); reserve that for transitions that genuinely need the
-  outside world and keep synchronous transforms the default.
-- **Tests inject deterministic test doubles**, never the production service.
-  Author those doubles adjacent to the service interface and rely on their
-  **published, exact responses** to compute the expected `after` — see
-  `features/services/index.md`.
+- **Signature** `(state, args) => state`. Narrow-in/same-shape-out — generic over
+  the smallest `Pick<State,…>` slice so it lifts to full-state. Args may be
+  narrowed/omitted. **Guard no-ops by returning `state` unchanged**, never throw.
+- **`Conformance<typeof fn>`** derives the case `args` type from the function's
+  own signature — author it once, and cases can't drift from what the function
+  accepts. `before`/`after` are full `State`.
+- **`after` leaves minted values open** with the `anyNumber`/`anyString` matchers
+  (`matchers.ts`, wrapping vitest `expect.any`): an id the ECS assigns from its
+  own id-space is `id: anyNumber`, so the pure spec and the ECS satisfy the same
+  case. Match by content, not by the value you don't control.
+- No per-transform test. The single **`spec.test.ts`** auto-discovers every file
+  exporting `cases` and asserts the pure result (see `conformance.md`).
 
-## Derivations — `(state) => value`
+## Injected services and side effects
 
-Pure selectors (`visibleTodos(state)`). Sub-type math (a winner, a status)
-lives on the relevant `data/<type>` namespace; `state/` only composes over
-the whole aggregate.
+A transform that needs an outside capability receives it as a **named parameter**
+in the args object, keyed by the service name minus its `-service` suffix
+(`AnalyticsService` → `analytics`, `NameGeneratorService` → `nameGenerator`);
+plain data args sit alongside. Import the service straight from `services/` (an
+ordinary import — layers split by kind of type, not dependency). The **same
+services appear on `db.services` for the matching action**, so the transition is
+the complete spec of *both* the state change and the service calls.
+
+- A transition **is deterministic given its dependencies** — inject a fixed
+  double and the output (and its calls) are fixed. An **async** dependency makes
+  the transition `Promise<State>`; keep sync the default.
+- **Side effects are declared in the case's `effects`**, keyed by the service
+  arg, as `[methodName, ...args]` tuples — an `Array` asserts these calls in
+  order, a `Set` in any order. Only listed services are checked (a value-returning
+  read like `generateName` you don't list is ignored). See `conformance.md` for
+  how the recording double captures them.
+- Tests inject **deterministic doubles** (never production) whose published
+  responses the case's `after`/`effects` are authored against — doubles live
+  adjacent to the interface (`features/services/index.md`).
+
+## Derivations — `(state) => value`, cases `{ input, value }`
+
+Pure selectors (`visibleTodos`). A derivation co-locates cases too, but shaped
+`{ input, value }` and typed `Derivation<typeof fn>` (input + value read from the
+signature); `value` may use matchers. The same `spec.test.ts` runs them (it
+dispatches on case shape), and its ECS computed is conformance-tested from the
+same cases (`conformance.md`). Sub-type math (a winner, a status) lives on the
+relevant `data/<type>` namespace; `state/` only composes over the aggregate.

@@ -3,70 +3,70 @@ paths:
   - '**/features/*/services/main-service/**/conformance/**/*.ts'
 ---
 
-# services/main-service/conformance/ — spec↔implementation projection (test-only)
+# services/main-service/conformance/ — keeping the ECS honest against the spec
 
-The bridge that keeps the ecs implementation honest against the `data/` spec.
-**Test-only**: imported solely by `*.test.ts` and in no facet barrel, so it never
-enters the runtime bundle (test-support may import the test framework — it is not
-a runtime declaration). **Never call `fromState` / `toState` (or a shared
-clear-all + reinsert helper used only for that projection) from systems,
-transactions, or UI** — that is a full-store rewrite, not an O(1) ECS update.
-**Feature-level**: one projection per feature, reused by every transaction test
-and the system tick-loop test — don't nest it under `transaction-database/`.
+Test-only (imported only by `*.test.ts`, in no facet barrel). The `data/state`
+cases are the shared truth; these runners replay them against the ECS. Reference:
+`data-lit-todo`'s `conformance/` + its `spec.test.ts`. Never call
+`fromState`/`toState`/`toData` from runtime code — they are full-store rewrites.
 
-The property, per `{ before, args, after }` case:
-`toState(apply(fromState(before), args)) ≡ spec(before, args)`.
+## Projection (store ⇄ State)
 
-Conformance test-support splits by concern along the layer boundary:
+- `from-state.ts` — `fromState(store, state)` seeds a store to a `State` (clear
+  tail→head, insert entities, set resources).
+- `to-data.ts` — **`toData(store, entity)`**: read one entity as its `data/`
+  value. The single place the ECS↔data mapping lives.
+- `to-state.ts` — `toState(store)` reads the whole store back, built on `toData`.
 
-- **Store-side, here in `services/main-service/conformance/`:**
-  - `from-state.ts` → `fromState(store: CoreDatabase.Store, state: State): void`
-    seeds the store (clear tail→head → insert entities → set resources) to a `State`.
-  - `to-state.ts` → `toState(store): State` reads the store back — each kind via
-    its full named-archetype component set, so the shapes never alias.
-  - `expect-conforms.ts` → **one export, `expectConforms({ cases, spec, apply })`**.
-    Per case it asserts `spec(before, args) ≡ after` (keeps the case honest), then
-    `fromState(before)` → `apply(store, args)` → `toState ≡ after`.
-- **Spec-side, in `data/state/`** (State values, no store — so both the `data/`
-  transform tests and this runner import them without a layer violation):
-  `conformance-case.ts` (`ConformanceCase<Args>`), the cases **exported from each
-  `<transform>.test.ts`** (`import { cases } from "…/<transform>.test.js"` — no
-  separate `.cases.ts` file), and `expect-state-matches.ts` (State equality).
+## Comparison — `expect-state-matches.ts`
 
-## No cast — build on `Store.create`, not a `Database`
+One matcher-aware `matches(actual, expected)` (exported; also backs derivations):
+honors vitest **asymmetric matchers** on the expected side (so `after`/`value`
+use `anyNumber` for ECS-assigned ids), quantizes numbers to absorb F32↔f64 noise,
+and compares arrays **in order** (`toState` reads in display order — this is what
+verifies a reorder). No separate id-ignoring variant. `expectStateMatches` /
+`expectMatches` wrap it.
 
-A **transaction is `(store, args) => void`**, so transaction conformance needs no
-`Database`: `Store.create(<schema-layer>.plugin)` returns a cast-free writable
-`CoreDatabase.Store` — pass the plugin directly, `Store.create` reads its schema
-facets. Source it from the **lowest layer that declares all the schema** —
-`IndexDatabase`, or `CoreDatabase` if the feature has no indexes — **not**
-`MainService`: the store needs only schema, and the behaviour layers
-(transactions / computed / systems) add none.
-`fromState`/`toState`/`apply` all operate on it, and `apply` calls the **raw
-transaction function** directly:
+## The runners — one aggregator per surface, each with a coverage guard
 
-```ts
-expectConforms({ cases, spec: State.hitTarget, apply: (store, args) => hitTarget(store, args) });
-```
+The same cases drive every surface. Each aggregator auto-discovers via
+`import.meta.glob` (`/// <reference types="vite/client" />`) and asserts every
+item is wired, so none are missed. Pair by name.
 
-A mutation addressed by **entity id** resolves its entities from the seeded store
-inside `apply` (the shared cases stay spec-shaped). Reads never need a cast —
-`Database extends ReadonlyStore`.
+- **`spec.test.ts` (in `data/state/`)** — the pure suite. Discovers every file
+  exporting `cases`; dispatches on shape: `"after"` → transition
+  (`matches(fn(before,args), after)` + effects), `"value"` → derivation
+  (`matches(fn(input), value)`). Enforces the two-exports rule.
+- **`transactions.test.ts`** — each transition's transaction, state only. Store
+  built cast-free via `Store.create(IndexDatabase.plugin)` (lowest schema layer).
+  Per transaction: `fromState(before)` → `apply(store, args, resolve)` →
+  `matches(toState, after)`. An id-addressed transaction resolves entities via
+  `resolve` (spec id → seeded entity); a differently-named transaction (`dragTodo`
+  ⇄ `reorderTodo`) just wires its cases explicitly.
+- **`actions.test.ts`** — each transition's action, state **and** effects. Build
+  the db with fake services via the `Database.create` override:
+  `Database.toSystemDatabase(Database.create(MainService.plugin, { services }))`.
+  Split the case `args` by key: service-typed keys become the (recording) service
+  overrides, the rest is the action input. Run the (async) action, then
+  `matches(toState, after)` + assert the recorded calls against `effects`.
+- **`computeds.test.ts`** — each derivation's ECS computed. `fromState(input)` →
+  read the computed's synchronous emission (`readComputed`: subscribe once) →
+  `matches(value)`. ECS list-computeds are entity-id based, so the runner
+  **hydrates** the output through `toData` by default — an id-based computed needs
+  no adapter; override only for a non-entity output (a scalar).
 
-**Systems** are the one exception: they run via `db.system.functions` and reach
-the store through the db. Get that writable view with the library lens —
-`Database.toSystemDatabase(Database.create(plugin))` (the widening twin of
-`UIService.restrict`, cast-free) — then `fromState(db.store, before)` → drive one
-frame → `toState(db.store)`. Test **selection/detection** logic (which entities
-interact) separately, with seeded edge-case geometries.
+## Recording side effects — no Proxy
 
-## State equality — ordering vs precision, kept separate
+A one-liner wraps a plain-object service so each method call is recorded, then
+delegates (enumerate its own methods and closure-wrap — no `Proxy`, per the repo
+rule). The spec test wraps the case's injected services; the action runner wraps
+the `db.services` overrides. `effects` asserts each **declared** service's calls
+exactly (Array = ordered, Set = any order); undeclared services (value-returning
+reads) are ignored.
 
-`expect-state-matches.ts` compares with **`equalsUnordered`** from `@adobe/data`
-(arrays as multisets — archetype hole-fill reorders rows — objects key-order
-independent). Absorb float noise — F32↔f64 storage rounding **and** trig epsilon
-(a quadrant `cos`/`sin` yields ~3e-15 where a case authors `0`) — by quantizing
-every number on both sides onto a small grid (`Math.round(Math.fround(n)*k)/k`)
-before comparing. Ordering and precision stay separate concerns. **Guard the
-projection itself** with one `fromState → toState` identity test on
-representative states.
+## Structural guard
+
+Guard the projection with one `fromState → toState` identity test on
+representative states (`projection.test.ts`), comparing with `anyNumber` ids.
+Systems reach the store through the db — drive one frame on
+`Database.toSystemDatabase(Database.create(plugin))`, then `toState(db.store)`.

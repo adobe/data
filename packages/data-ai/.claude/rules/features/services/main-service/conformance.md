@@ -54,6 +54,13 @@ item is wired, so none are missed. Pair by name.
   `matches(value)`. ECS list-computeds are entity-id based, so the runner
   **hydrates** the output through `toData` by default — an id-based computed needs
   no adapter; override only for a non-entity output (a scalar).
+  **Build the db from the `ComputedDatabase` layer (the lowest layer exposing the
+  computeds), not the assembled `MainService`.** A behaviour layer above it (a
+  service/action that subscribes to a computed at construction) would `withCache`
+  the pre-seed value, and a direct `fromState` seed emits no transaction to
+  invalidate it — reading on the computed layer keeps the seed authoritative.
+  Only computeds with a `data/` derivation are conformed (index-only helpers are
+  exempt); the coverage guard checks every derivation, not every computed.
 
 ## Recording side effects — no Proxy
 

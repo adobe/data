@@ -51,7 +51,9 @@ export const cases: Conformance<typeof createTodo> = [
 - **`after` leaves minted values open** with the `anyNumber`/`anyString` matchers
   (`matchers.ts`, wrapping vitest `expect.any`): an id the ECS assigns from its
   own id-space is `id: anyNumber`, so the pure spec and the ECS satisfy the same
-  case. Match by content, not by the value you don't control.
+  case. Match by content, not by the value you don't control. Add `matchers.ts`
+  only when a case needs one — a feature whose `State` exposes no ECS-minted ids
+  (values abstracted behind a scalar/string) never does.
 - No per-transform test. The single **`spec.test.ts`** auto-discovers every file
   exporting `cases` and asserts the pure result (see `conformance.md`).
 
@@ -79,9 +81,10 @@ the complete spec of *both* the state change and the service calls.
 
 ## Derivations — `(state) => value`, cases `{ input, value }`
 
-Pure selectors (`visibleTodos`). A derivation co-locates cases too, but shaped
-`{ input, value }` and typed `Derivation<typeof fn>` (input + value read from the
-signature); `value` may use matchers. The same `spec.test.ts` runs them (it
-dispatches on case shape), and its ECS computed is conformance-tested from the
-same cases (`conformance.md`). Sub-type math (a winner, a status) lives on the
+Pure selectors (`visibleTodos`, `winner`, `status`). A derivation co-locates
+cases too, but shaped `{ input, value }` and typed `Derivation<typeof fn>` (input
++ value read from the signature); author `input` as a full `State` (the computed
+conformance seeds it via `fromState`), and `value` may use matchers. The same
+`spec.test.ts` runs them (it dispatches on case shape), and its ECS computed is
+conformance-tested from the same cases (`conformance.md`). Sub-type math (a winner, a status) lives on the
 relevant `data/<type>` namespace; `state/` only composes over the aggregate.

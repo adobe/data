@@ -6,7 +6,7 @@ import type { Observe } from "@adobe/data/observe";
 import type { State } from "../../../data/state/state.js";
 import type { DerivationCase } from "../../../data/state/conformance-case.js";
 import { expectMatches } from "../../../data/state/expect-state-matches.js";
-import { FeatureDatabase } from "../feature-database.js";
+import { ComputedDatabase } from "../computed-database/computed-database.js";
 import { fromState } from "./from-state.js";
 import { toData } from "./to-data.js";
 import { visibleTodos } from "../computed-database/computed/visible-todos.js";
@@ -18,7 +18,12 @@ import { cases as visibleTodosCases } from "../../../data/state/visible-todos.js
 // `data/` values through the feature's per-entity `toData` (the same projection
 // `toState` uses) — so an id-based computed like `visibleTodos` needs no adapter.
 // This is the computed analog of the transaction/action runners.
-const makeDb = () => Database.toSystemDatabase(Database.create(FeatureDatabase.plugin));
+//
+// Built from the `ComputedDatabase` layer (which adds the computeds), not the
+// assembled feature db: a behaviour layer above it that subscribes to a computed
+// at construction would `withCache` the pre-seed value, and a direct `fromState`
+// seed emits no transaction to invalidate it.
+const makeDb = () => Database.toSystemDatabase(Database.create(ComputedDatabase.plugin));
 type Db = ReturnType<typeof makeDb>;
 
 // The default projection: hydrate a computed's entity-id list into the value

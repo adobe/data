@@ -6,7 +6,7 @@ import type { ConformanceCase } from "../../../data/state/conformance-case.js";
 import { splitAndRecordServices, expectEffects } from "../../../data/state/record-effects.js";
 import type { OpponentService } from "../../opponent-service/opponent-service.js";
 import { expectStateMatches } from "../../../data/state/expect-state-matches.js";
-import { FeatureDatabase } from "../feature-database.js";
+import { MainService } from "../main-service.js";
 import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
 import { playMove } from "../action-database/actions/play-move.js";
@@ -24,7 +24,7 @@ import { cases as restartGameCases } from "../../../data/state/restart-game.js";
 // keeping services/transactions/actions. Runtime invariant: the recording
 // wrappers preserve each service's shape, so they are valid factory overrides.
 const makeDb = (services: { opponent?: OpponentService }) =>
-  Database.toSystemDatabase(Database.create(FeatureDatabase.plugin, { services }));
+  Database.toSystemDatabase(Database.create(MainService.plugin, { services }));
 type Db = ReturnType<typeof makeDb>;
 type Run<Args> = (db: Db, input: Args) => Promise<void> | void;
 

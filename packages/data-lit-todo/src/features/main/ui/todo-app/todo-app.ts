@@ -1,14 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { html, type TemplateResult } from "lit";
 import type { Database } from "@adobe/data/ecs";
-import type { FeatureDatabase } from "../../services/main-service/feature-database.js";
+import type { MainService } from "../../services/main-service/main-service.js";
 
-type TodoService = Database.Plugin.ToDatabase<typeof FeatureDatabase.plugin>;
+type TodoService = Database.Plugin.ToDatabase<typeof MainService.plugin>;
 
 /**
  * Generic over `S` so callers may pass a database built from any plugin
  * that extends the todo plugin. The element is typed on the minimal
- * `FeatureDatabase` surface.
+ * `MainService` surface.
  */
 export const TodoApp = <S extends TodoService>(args: { service: S }): TemplateResult => {
   void import("./todo-app-element.js");

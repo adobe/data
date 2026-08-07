@@ -6,7 +6,7 @@ import type { ConformanceCase } from "../../../data/state/conformance-case.js";
 import { splitAndRecordServices, expectEffects } from "../../../data/state/record-effects.js";
 import type { AnalyticsService } from "../../analytics-service/analytics-service.js";
 import type { NameGeneratorService } from "../../name-generator-service/name-generator-service.js";
-import { FeatureDatabase } from "../feature-database.js";
+import { MainService } from "../main-service.js";
 import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
 import { expectStateMatches } from "../../../data/state/expect-state-matches.js";
@@ -35,7 +35,7 @@ import { cases as toggleDisplayCompletedCases } from "../../../data/state/toggle
 // keeping services/transactions/actions. Runtime invariant: the recording
 // wrappers preserve each service's shape, so they are valid factory overrides.
 const makeDb = (services: { analytics?: AnalyticsService; nameGenerator?: NameGeneratorService }) =>
-  Database.toSystemDatabase(Database.create(FeatureDatabase.plugin, { services }));
+  Database.toSystemDatabase(Database.create(MainService.plugin, { services }));
 type Db = ReturnType<typeof makeDb>;
 type Run<Args> = (db: Db, input: Args, resolve: (specId: number) => Entity) => Promise<void> | void;
 

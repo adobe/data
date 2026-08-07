@@ -3,7 +3,7 @@
 import { render } from "lit";
 import { Database } from "@adobe/data/ecs";
 import { SpaceRockGame } from "./features/main/ui/space-rock-game/space-rock-game.js";
-import { FeatureDatabase } from "./features/main/services/main-service/feature-database.js";
+import { MainService } from "./features/main/services/main-service/main-service.js";
 
 const app = document.getElementById("app");
 if (app) {
@@ -11,6 +11,6 @@ if (app) {
   // combined with the built-in rAF scheduler). Built once here and passed to
   // the lazy wrapper via its `.service` seam so the upgraded element receives
   // the ticking database.
-  const service = Database.create(FeatureDatabase.plugin);
+  const service = Database.create(MainService.plugin);
   render(SpaceRockGame({ service }), app);
 }

@@ -1,14 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { DatabaseElement } from "@adobe/data-lit";
-import { FeatureDatabase } from "../services/main-service/feature-database.js";
+import { MainService } from "../services/main-service/main-service.js";
 
 /**
- * Base class for all todo elements. Typed on the assembled `FeatureDatabase`
+ * Base class for all todo elements. Typed on the assembled `MainService`
  * plugin surface so every child element can read computed values off `.service`
  * and dispatch `.service.actions.*` (which orchestrate analytics + transactions).
  */
-export class TodoElement extends DatabaseElement<typeof FeatureDatabase.plugin> {
+export class TodoElement extends DatabaseElement<typeof MainService.plugin> {
   get plugin() {
-    return FeatureDatabase.plugin;
+    return MainService.plugin;
   }
 }

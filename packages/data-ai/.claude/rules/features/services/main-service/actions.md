@@ -36,6 +36,11 @@ export const addRandomTodo = async (service: ServiceDatabase) => {
   awaited-internally, never surfaced to the caller.
 - Do the outside-world work here: await/sequence `services/` calls, and if a
   slow call needs timing, compute it here around the call.
+- **Read current state synchronously from the store** (`db.resources` / `db.read`
+  / `db.select`, then a pure `data/` helper) — never from a cached `computed`.
+  Reactive computeds refresh only on a committed transaction, so an imperative
+  read of one can hand back a stale shared cache (and it's the UI's layer, not
+  the action's). This also keeps the action correct under the conformance seed.
 - **Conformance** (`conformance/actions.test.ts`) runs each transition's shared
   cases against its action, asserting **state and effects**: build the db with
   fake services via `Database.create(MainService.plugin, { services })`, run the

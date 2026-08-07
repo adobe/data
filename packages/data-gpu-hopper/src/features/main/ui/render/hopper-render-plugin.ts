@@ -30,7 +30,7 @@ const UNIT_CUBE_BOUNDS: Aabb = { min: [-1, -1, -1], max: [1, 1, 1] };
 
 const colorKey = (color: readonly number[]): string => color.join(",");
 
-// The renderer, combined ON TOP of the headless `FeatureDatabase` at the element
+// The renderer, combined ON TOP of the headless `MainService` at the element
 // level (never inside it, so the simulation stays GPU-free). Draws the game as
 // colored cubes via `pbrIblRender` — with `light.environmentUrl` left null so its
 // IBL bake is procedural (zero network) — reusing the shared unit cube baked by

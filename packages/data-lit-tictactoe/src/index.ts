@@ -7,7 +7,7 @@
 // services. Feature-qualified per the cross-feature naming rule so a peer or
 // downstream package never collides with another feature's database. Carries
 // `.plugin` / `.Store` for consumers that build their own database.
-export { FeatureDatabase as TictactoeDatabase } from "./features/main/services/main-service/feature-database.js";
+export { MainService as TictactoeDatabase } from "./features/main/services/main-service/main-service.js";
 
 // The base game database — all game logic (resources, transactions, computed),
 // no AI. Combine its `.plugin` with P2P-specific plugins, or reach for

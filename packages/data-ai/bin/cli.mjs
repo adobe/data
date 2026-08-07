@@ -157,14 +157,16 @@ version on every install. Package: <https://www.npmjs.com/package/${PKG_NAME}>
     return file;
 }
 
-// `init` — wire a consumer repo for auto-updating installs. Idempotently:
+// Wire the consumer repo for auto-updating installs (part of `install`, not a
+// separate step). Idempotently:
 //   1. pins `@adobe/data-ai` in devDependencies (exact version — never a range,
 //      so an install can't silently pull an unreviewed release),
 //   2. adds `data-ai install` to the consumer's OWN `postinstall` (a dependency's
 //      lifecycle script does NOT run under pnpm, so it must live here), and
 //   3. gitignores the managed, regenerated bundle folders.
 // After this, bumping the pinned version and re-installing recopies the bundle —
-// no manual step, no committed diff.
+// no manual step, no committed diff. Skips gracefully with a note when there is
+// no package.json (the bundle is still copied; the repo just isn't auto-wired).
 const MANAGED_GITIGNORE = [
     `# ${PKG_NAME} — managed, regenerated on install; do not edit or commit`,
     ".claude/rules/adobe-data-ai/",
@@ -172,11 +174,13 @@ const MANAGED_GITIGNORE = [
     ".agents/skills/adobe-data-ai/",
 ];
 
-function initConsumer(base) {
+function wireManagedUpdates(base) {
     const pkgPath = join(base, "package.json");
     if (!existsSync(pkgPath)) {
-        process.stderr.write(`No package.json in ${base} — run \`init\` from the project root.\n`);
-        process.exitCode = 1;
+        process.stdout.write(
+            `  (no package.json in ${base} — auto-update not wired; the bundle was still copied.\n` +
+                `   Add one, re-run install to wire it, or re-run manually to update.)\n`,
+        );
         return;
     }
     const consumer = JSON.parse(readFileSync(pkgPath, "utf8"));
@@ -211,15 +215,8 @@ function initConsumer(base) {
         changes.push(".gitignore += managed bundle paths");
     }
 
-    process.stdout.write(`${PKG_NAME} init (v${VERSION}) in ${base}\n`);
-    for (const c of changes) process.stdout.write(`  ✓ ${c}\n`);
-    if (!changes.length) process.stdout.write("  already configured — nothing to change\n");
-    process.stdout.write(
-        "\nNext: install (runs the postinstall, which copies the bundle):\n" +
-            "  pnpm install    # or npm install / yarn\n" +
-            "To update later: bump the pinned version above (or re-run this `init` from a newer\n" +
-            `\`npx ${PKG_NAME}@<version> init\`) and install again.\n`,
-    );
+    for (const c of changes) process.stdout.write(`  wired: ${c}\n`);
+    if (!changes.length) process.stdout.write("  auto-update already wired\n");
 }
 
 function parseArgs(argv) {
@@ -242,15 +239,17 @@ Install the architecture skills + rules for Cursor, Codex, and other agents.
 same way for every agent — see README.)
 
 Usage:
-  npx ${PKG_NAME}@<version> init      # wire this repo for auto-updating installs
-  npx ${PKG_NAME}@<version> install   # copy the bundle now (run by postinstall)
+  npx ${PKG_NAME}@<version> install   # copy the bundle AND wire auto-updates (default)
   npx ${PKG_NAME}@<version> list
 
 Commands:
-  init      Pin ${PKG_NAME} in devDependencies (exact), add \`data-ai install\` to the
-            repo's own postinstall, and gitignore the managed bundle folders. Then a
-            plain install copies the bundle; bumping the pinned version updates it.
-  install   Skills → .agents/skills/${BUNDLE}/, rules → .claude/rules/${BUNDLE}/ (default).
+  install   Copy the bundle (skills → .agents/skills/${BUNDLE}/, rules →
+            .claude/rules/${BUNDLE}/) AND wire this repo for auto-updating installs:
+            pin ${PKG_NAME} in devDependencies (exact), add \`data-ai install\` to the
+            repo's own postinstall, and gitignore the managed bundle folders. Run once;
+            thereafter a plain install refreshes the bundle and bumping the pinned
+            version updates it. Skips the wiring (copies only) with \`--global\` or when
+            there's no package.json.
   list      Print the skills bundled in this package.
 
 Options:
@@ -276,12 +275,6 @@ function main() {
         return;
     }
 
-    if (cmd === "init") {
-        const base = dir ? resolve(dir) : process.cwd();
-        initConsumer(base);
-        return;
-    }
-
     if (cmd !== "install") {
         process.stderr.write(`Unknown command: ${cmd}\n\n${HELP}`);
         process.exitCode = 1;
@@ -304,6 +297,10 @@ function main() {
     process.stdout.write(`  ${skills.length} skills → ${skillsDir}\n`);
     process.stdout.write(`  ${ruleCount} rules  → ${rulesDir}\n`);
     process.stdout.write(`  bootstrap → ${bootstrapFile}\n`);
+
+    // A project install also wires the repo for auto-updating installs (idempotent).
+    // A global install has no consumer package.json to wire, so it only copies.
+    if (!flags.has("global")) wireManagedUpdates(base);
 }
 
 main();

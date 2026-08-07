@@ -9,20 +9,23 @@ import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
 
 // The conformance runner, bound to the negotiation projection (`fromState` /
-// `toState`). For each case it proves
+// `toState`). For each case it proves the one conformance property
 //
 //   toState(apply(fromState(before), args)) ≡ spec(before, args)
 //
-// in two asserted halves: `spec(before, args) ≡ after` (keeps the shared case
-// honest), then seed → `apply` (the raw transaction) → `toState ≡ after`.
+// The pure half (`spec(before, args) ≡ after`) is asserted once, centrally, by
+// `data/state/spec.test.ts`, so this runner asserts only the ecs half; pass `spec`
+// to re-check it in place for a differently-named transaction.
 export const expectConforms = <Args>(config: {
   readonly cases: readonly ConformanceCase<Args>[];
-  readonly spec: (before: State, args: Args) => State;
+  readonly spec?: (before: State, args: Args) => State;
   readonly apply: (store: CoreDatabase.Store, args: Args) => void;
 }): void => {
   for (const testCase of config.cases) {
     it(testCase.name, () => {
-      expectStateMatches(config.spec(testCase.before, testCase.args), testCase.after);
+      if (config.spec) {
+        expectStateMatches(config.spec(testCase.before, testCase.args), testCase.after);
+      }
 
       const store = createStore();
       fromState(store, testCase.before);

@@ -1,3 +1,3 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-export * from "./create.js";
-export * from "./move-presence.js";
+export { create } from "./create.js";
+export { movePresence } from "./move-presence.js";

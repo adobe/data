@@ -9,15 +9,20 @@ import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
 
 // The conformance runner, bound to the presence projection. For each case it
-// proves `toState(apply(fromState(before), args)) ≡ spec(before, args)`.
+// proves `toState(apply(fromState(before), args)) ≡ spec(before, args)`. The pure
+// half (`spec(before, args) ≡ after`) is asserted once, centrally, by
+// `data/state/spec.test.ts`, so this runner asserts only the ecs half; pass `spec`
+// to re-check it in place.
 export const expectConforms = <Args>(config: {
   readonly cases: readonly ConformanceCase<Args>[];
-  readonly spec: (before: State, args: Args) => State;
+  readonly spec?: (before: State, args: Args) => State;
   readonly apply: (store: CoreDatabase.Store, args: Args) => void;
 }): void => {
   for (const testCase of config.cases) {
     it(testCase.name, () => {
-      expectStateMatches(config.spec(testCase.before, testCase.args), testCase.after);
+      if (config.spec) {
+        expectStateMatches(config.spec(testCase.before, testCase.args), testCase.after);
+      }
 
       const store = createStore();
       fromState(store, testCase.before);

@@ -1,15 +1,57 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect } from "vitest";
-import { equalsUnordered } from "@adobe/data";
 import type { State } from "./state.js";
 
-// Spec-owned tolerant `State` equality, shared by the data/ transform tests and
-// the ecs conformance runner. `equalsUnordered` is object key-order independent.
-// (Negotiation state is all scalars, so ordering never bites — the shared helper
-// is kept to mirror the pattern and stay robust if a collection field is added.)
+// A vitest asymmetric matcher (`expect.any(...)`): honored on the EXPECTED side
+// so a case can assert "any number" for a value it does not pin. Negotiation's
+// `State` is all scalars/strings and exposes no ecs-minted ids, so no case needs
+// one today — but the comparison stays matcher-aware to match the shared pattern
+// and stay robust if one is ever added.
+const isMatcher = (value: unknown): value is { asymmetricMatch(actual: unknown): boolean } =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as { asymmetricMatch?: unknown }).asymmetricMatch === "function";
+
+// Collapse F32↔f64 storage rounding onto a small grid so float noise compares
+// equal. `+ 0` normalises `-0` to `0`. (Negotiation stores only strings, booleans
+// and enums, so this is a no-op here — kept to mirror the shared pattern and stay
+// robust if a numeric field is added.)
+const quantize = (n: number): number => Math.round(Math.fround(n) * 1e6) / 1e6 + 0;
+
+// Tolerant structural match honoring asymmetric matchers, float precision, and
+// order-sensitive arrays. Exported so it can back other conformance comparisons.
+export const matches = (actual: unknown, expected: unknown): boolean => {
+  if (isMatcher(expected)) return expected.asymmetricMatch(actual);
+  if (typeof expected === "number" && typeof actual === "number") {
+    return quantize(actual) === quantize(expected);
+  }
+  if (Array.isArray(expected)) {
+    if (!Array.isArray(actual) || actual.length !== expected.length) return false;
+    return expected.every((exp, index) => matches(actual[index], exp));
+  }
+  if (expected !== null && typeof expected === "object") {
+    if (actual === null || typeof actual !== "object" || Array.isArray(actual)) return false;
+    const expectedKeys = Object.keys(expected);
+    const actualKeys = Object.keys(actual as object);
+    if (expectedKeys.length !== actualKeys.length) return false;
+    return expectedKeys.every((key) =>
+      matches((actual as Record<string, unknown>)[key], (expected as Record<string, unknown>)[key]),
+    );
+  }
+  return Object.is(actual, expected);
+};
+
+// Spec-owned tolerant `State` equality, shared by the data/ transform spec and the
+// ecs conformance runners. `after` may use asymmetric matchers, so this one
+// comparison serves both the pure spec and the ecs projection — no separate
+// id-ignoring variant is needed.
 export const expectStateMatches = (actual: State, expected: State): void => {
-  expect(
-    equalsUnordered(actual, expected),
-    `State mismatch:\n  actual   ${JSON.stringify(actual)}\n  expected ${JSON.stringify(expected)}`,
-  ).toBe(true);
+  expectMatches(actual, expected);
+};
+
+// The same tolerant, matcher-aware comparison for any value — used by derivation
+// spec tests and computed conformance, where the compared value may be a scalar
+// rather than a whole `State`.
+export const expectMatches = (actual: unknown, expected: unknown): void => {
+  expect(matches(actual, expected), `mismatch:\n  actual ${JSON.stringify(actual)}`).toBe(true);
 };

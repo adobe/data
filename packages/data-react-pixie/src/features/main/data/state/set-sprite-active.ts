@@ -1,5 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import type { Sprite } from "../sprite/sprite.js";
 import type { State } from "./state.js";
+import type { Conformance } from "./conformance-case.js";
+import { anyNumber } from "./matchers.js";
 
 export const setSpriteActive = <T extends Pick<State, "sprites">>(
   state: T,
@@ -10,3 +13,36 @@ export const setSpriteActive = <T extends Pick<State, "sprites">>(
     sprite.id === input.id ? { ...sprite, active: input.active } : sprite,
   ),
 });
+
+const bunny: Sprite = { id: 1, position: [100, 100], rotation: 0, kind: "bunny", hovered: false, active: false };
+const fox: Sprite = { id: 2, position: [300, 200], rotation: 1, kind: "fox", hovered: false, active: false };
+
+// Spec-owned cases, shared with the ecs `setSpriteActive` transaction. Sets the
+// addressed sprite's `active` flag; a no-op for an unknown id. `before` ids
+// address the sprite; `after` ids are left open (`anyNumber`).
+export const cases: Conformance<typeof setSpriteActive> = [
+  {
+    name: "sets active true on the addressed sprite only",
+    before: { sprites: [bunny, fox], filter: "none" },
+    args: { id: 2, active: true },
+    after: {
+      sprites: [
+        { ...bunny, id: anyNumber },
+        { ...fox, id: anyNumber, active: true },
+      ],
+      filter: "none",
+    },
+  },
+  {
+    name: "is a no-op for an unknown id",
+    before: { sprites: [bunny, fox], filter: "none" },
+    args: { id: 99, active: true },
+    after: {
+      sprites: [
+        { ...bunny, id: anyNumber },
+        { ...fox, id: anyNumber },
+      ],
+      filter: "none",
+    },
+  },
+];

@@ -22,16 +22,20 @@ import { toState } from "./to-state.js";
 // `apply` receives the seeded writable store and calls the raw transaction
 // function directly (a transaction is `(store, args) => void`, so no `Database`
 // is involved). tictactoe's transactions take plain data args (a board index,
-// or nothing), so no entity resolution is needed in `apply`. Entity collections
-// compare as multisets; scalars and resources exactly (see `expectStateMatches`).
+// or nothing), so no entity resolution is needed in `apply`.
 export const expectConforms = <Args>(config: {
   readonly cases: readonly ConformanceCase<Args>[];
-  readonly spec: (before: State, args: Args) => State;
+  // Optional: half 1 (spec(before,args) ≡ after) is already asserted for every
+  // case by `data/state/spec.test.ts`, so the conformance aggregator omits it and
+  // this runner asserts only the ecs half. Pass `spec` to re-check it in place.
+  readonly spec?: (before: State, args: Args) => State;
   readonly apply: (store: CoreDatabase.Store, args: Args) => void;
 }): void => {
   for (const testCase of config.cases) {
     it(testCase.name, () => {
-      expectStateMatches(config.spec(testCase.before, testCase.args), testCase.after);
+      if (config.spec) {
+        expectStateMatches(config.spec(testCase.before, testCase.args), testCase.after);
+      }
 
       const store = createStore();
       fromState(store, testCase.before);

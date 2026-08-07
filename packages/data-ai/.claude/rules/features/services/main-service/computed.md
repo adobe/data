@@ -10,6 +10,13 @@ returns an `Observe` of state projected through pure `data/` helpers.
 Derivation logic itself lives in `data/`; a computed only wires a service
 observable to it.
 
+Wire the **pure `data/<type>` helper** (or compose indexes) — do **not** import a
+`data/state` derivation into a production computed. A `state/` derivation's module
+co-locates conformance `cases` that construct service test-doubles at load; it is
+the spec the computed is *conformed to*, not a production dependency. Both the
+computed and the `state/` derivation call the same `data/<type>` helper, so they
+agree.
+
 ```ts
 import { cached } from "@adobe/data/cache";
 import { Observe } from "@adobe/data/observe";

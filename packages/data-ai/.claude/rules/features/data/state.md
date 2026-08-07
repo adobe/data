@@ -89,9 +89,10 @@ namespace (`winner`/`status` from `board` → `data/board-state`), tested there 
 **not** in `state/`. A feature may therefore have zero `state/` derivations.
 
 A `state/` derivation co-locates cases shaped `{ input, value }`, typed
-`Derivation<typeof fn>` (input + value read from the signature); author `input`
-as a full `State` (computed conformance seeds it via `fromState`), and `value`
-may use matchers. The same `spec.test.ts` runs them (dispatching on case shape),
+`Derivation<typeof fn>` (input + value read from the signature). Take the **full
+`State`** as the parameter (not a `Pick` slice like a transform) — so the case
+`input` type is the full `State` and computed conformance can seed it via
+`fromState`; `value` may use matchers. The same `spec.test.ts` runs them (dispatching on case shape),
 and each ECS computed backing one is conformance-tested from the same cases
 (`conformance.md`). Sub-type math (a winner, a status) lives on the
 relevant `data/<type>` namespace; `state/` only composes over the aggregate.

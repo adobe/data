@@ -29,16 +29,18 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
   for (const testCase of cases) {
     it(testCase.name, () => {
       const dt = testCase.args;
-      // A case `before` is a delta over the feature default (`Case.before` is
-      // `Partial<State>`), so materialise the full seed the same way the runners do.
+      // A case `before` is a delta over the feature default and `after` a writes
+      // patch (`Case.before`/`after` are `Partial<State>`), so materialise the full
+      // seed and the full expected state the same way the runners do.
       const before = { ...State.create(), ...testCase.before };
-      Match.assert(State.step(before, dt), testCase.after, unordered);
+      const expected = { ...before, ...testCase.after };
+      Match.assert({ ...before, ...State.step(before, dt) }, expected, unordered);
 
       const db = createSystemDatabase();
       projection.fromState(db.store, before);
       db.store.resources.frameDelta = dt;
       driveFrame(db);
-      Match.assert(projection.toState(db.store), testCase.after, unordered);
+      Match.assert(projection.toState(db.store), expected, unordered);
     });
   }
 });

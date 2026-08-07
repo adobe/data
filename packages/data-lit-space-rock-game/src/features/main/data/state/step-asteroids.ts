@@ -6,10 +6,10 @@ import { Motion } from "../motion/motion.js";
 import { Size } from "../size/size.js";
 
 // Drift every asteroid one tick by its constant velocity, wrapping at edges.
-export const stepAsteroids = <T extends Pick<State, "asteroids" | "bounds">>(
-  state: T,
+export const stepAsteroids = (
+  state: Pick<State, "asteroids" | "bounds">,
   dt: number,
-): T => {
+): Pick<State, "asteroids"> => {
   const asteroids = state.asteroids.map((a) => ({
     ...a,
     position: Motion.wrap(
@@ -17,7 +17,7 @@ export const stepAsteroids = <T extends Pick<State, "asteroids" | "bounds">>(
       state.bounds,
     ),
   }));
-  return { ...state, asteroids };
+  return { asteroids };
 };
 
 // Spec-owned cases, shared with the ecs system conformance (the asteroid half of

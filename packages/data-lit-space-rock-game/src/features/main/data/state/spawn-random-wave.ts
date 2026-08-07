@@ -26,14 +26,12 @@ const asteroidsFor = (wave: number): number => 3 + wave;
  * `[0.5×, 1.5×)` — drawing one value per asteroid in ring order. A no-op while
  * asteroids remain (draws nothing, returns the same reference).
  */
-export const spawnRandomWave = <
-  T extends Pick<State, "asteroids" | "wave" | "bounds">,
->(
-  state: T,
+export const spawnRandomWave = (
+  state: Pick<State, "asteroids" | "wave" | "bounds">,
   { random }: { random: RandomService },
-): T => {
+): Pick<State, "asteroids" | "wave"> => {
   if (state.asteroids.length > 0) {
-    return state;
+    return { asteroids: state.asteroids, wave: state.wave };
   }
   const wave = state.wave + 1;
   const count = asteroidsFor(wave);
@@ -51,7 +49,7 @@ export const spawnRandomWave = <
       size: Size.largest,
     });
   }
-  return { ...state, wave, asteroids };
+  return { wave, asteroids };
 };
 
 // Spec-owned cases, shared with the ecs `spawnRandomWave` transaction. Each case

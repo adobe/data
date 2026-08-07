@@ -10,10 +10,10 @@ import { Motion } from "../motion/motion.js";
 // and wrap at the screen edges. `dt` and `input` are bundled into one args object
 // (second parameter) so the co-located conformance cases derive their `args` type
 // straight from this signature (`Conformance<typeof stepShip>`).
-export const stepShip = <T extends Pick<State, "ship" | "bounds">>(
-  state: T,
+export const stepShip = (
+  state: Pick<State, "ship" | "bounds">,
   { dt, input }: { readonly dt: number; readonly input: Input },
-): T => {
+): Pick<State, "ship"> => {
   const { ship } = state;
   const rotation = Ship.turn(ship.rotation, input.turn, dt);
   const velocity = input.thrust
@@ -23,7 +23,7 @@ export const stepShip = <T extends Pick<State, "ship" | "bounds">>(
     Motion.advance(ship.position, velocity, dt),
     state.bounds,
   );
-  return { ...state, ship: { position, velocity, rotation } };
+  return { ship: { position, velocity, rotation } };
 };
 
 // Spec-owned cases, shared with the ecs system conformance (the `control` + ship

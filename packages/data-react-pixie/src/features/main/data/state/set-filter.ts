@@ -3,24 +3,24 @@ import type { FilterKind } from "../filter-kind/filter-kind.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 
-export const setFilter = <T extends Pick<State, "filter">>(
-  state: T,
+// Replace the scene-wide filter. Writes only `filter`; sprites are untouched.
+export const setFilter = (
+  _state: Pick<State, "filter">,
   input: { readonly filter: FilterKind },
-): T => ({ ...state, filter: input.filter });
+): Pick<State, "filter"> => ({ filter: input.filter });
 
-// Spec-owned cases, shared with the ecs `setFilter` transaction. Replaces the
-// scene-wide filter; sprites are untouched.
+// Spec-owned cases, shared with the ecs `setFilter` transaction.
 export const cases: Conformance<typeof setFilter> = [
   {
     name: "sets the filter from none to sepia",
-    before: { sprites: [], filter: "none" },
+    before: {},
     args: { filter: "sepia" },
-    after: { sprites: [], filter: "sepia" },
+    after: { filter: "sepia" },
   },
   {
     name: "replaces an existing filter",
-    before: { sprites: [], filter: "blur" },
+    before: { filter: "blur" },
     args: { filter: "night" },
-    after: { sprites: [], filter: "night" },
+    after: { filter: "night" },
   },
 ];

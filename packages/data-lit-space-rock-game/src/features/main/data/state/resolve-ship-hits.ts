@@ -9,11 +9,9 @@ import { Collision } from "../collision/collision.js";
 
 // If any asteroid is touching the ship, it costs a life and the ship respawns
 // at the centre. No collision leaves the state untouched (idempotent).
-export const resolveShipHits = <
-  T extends Pick<State, "ship" | "asteroids" | "lives" | "bounds">,
->(
-  state: T,
-): T => {
+export const resolveShipHits = (
+  state: Pick<State, "ship" | "asteroids" | "lives" | "bounds">,
+): Pick<State, "ship" | "lives"> => {
   const struck = state.asteroids.some((a) =>
     Collision.circlesOverlap(
       state.ship.position,
@@ -23,10 +21,9 @@ export const resolveShipHits = <
     ),
   );
   if (!struck) {
-    return state;
+    return { ship: state.ship, lives: state.lives };
   }
   return {
-    ...state,
     lives: Math.max(0, state.lives - 1),
     ship: Ship.spawn(Vec2.scale(state.bounds, 0.5)),
   };

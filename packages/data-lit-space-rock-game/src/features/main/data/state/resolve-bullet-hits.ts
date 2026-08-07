@@ -17,12 +17,10 @@ import { Collision } from "../collision/collision.js";
 // prev = position - velocity*dt — and test that whole segment against each
 // asteroid. Asteroids are treated as stationary at their current position: they
 // drift ~1px/frame, negligible against the bullet's sweep.
-export const resolveBulletHits = <
-  T extends Pick<State, "bullets" | "asteroids" | "score">,
->(
-  state: T,
+export const resolveBulletHits = (
+  state: Pick<State, "bullets" | "asteroids" | "score">,
   dt: number,
-): T => {
+): Pick<State, "bullets" | "asteroids" | "score"> => {
   const asteroids: Asteroid[] = [...state.asteroids];
   // Children spawned this pass are collected separately and appended only after
   // every bullet has resolved — a bullet may hit an asteroid that existed at the
@@ -52,7 +50,6 @@ export const resolveBulletHits = <
     spawned.push(...Asteroid.split(asteroid));
   }
   return {
-    ...state,
     bullets: survivors,
     asteroids: [...asteroids, ...spawned],
     score,

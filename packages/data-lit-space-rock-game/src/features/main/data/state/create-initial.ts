@@ -15,8 +15,8 @@ import { spawnWave } from "./spawn-wave.js";
 export const createInitial = (
   _state: State,
   { bounds }: { readonly bounds: Vec2 },
-): State =>
-  spawnWave({
+): State => {
+  const fresh: State = {
     bounds,
     ship: Ship.spawn(Vec2.scale(bounds, 0.5)),
     bullets: [],
@@ -24,7 +24,10 @@ export const createInitial = (
     score: 0,
     lives: 3,
     wave: 0,
-  });
+  };
+  // spawnWave returns only { asteroids, wave }; layer it over the fresh game.
+  return { ...fresh, ...spawnWave(fresh) };
+};
 
 // Spec-owned cases, shared with the ecs `newGame` transaction. `createInitial`
 // ignores `before` entirely — it produces a fresh game from the bounds alone — so

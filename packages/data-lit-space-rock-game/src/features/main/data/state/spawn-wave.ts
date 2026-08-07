@@ -18,13 +18,11 @@ const asteroidsFor = (wave: number): number => 3 + wave;
 // (`createInitial`, so a fresh game always starts from the same fair layout).
 // The randomized sibling `spawnRandomWave` injects a `random` service for the
 // varied refill waves the tick loop spawns.
-export const spawnWave = <
-  T extends Pick<State, "asteroids" | "wave" | "bounds">,
->(
-  state: T,
-): T => {
+export const spawnWave = (
+  state: Pick<State, "asteroids" | "wave" | "bounds">,
+): Pick<State, "asteroids" | "wave"> => {
   if (state.asteroids.length > 0) {
-    return state;
+    return { asteroids: state.asteroids, wave: state.wave };
   }
   const wave = state.wave + 1;
   const count = asteroidsFor(wave);
@@ -41,7 +39,7 @@ export const spawnWave = <
       size: Size.largest,
     });
   }
-  return { ...state, wave, asteroids };
+  return { wave, asteroids };
 };
 
 // Spec-owned cases for the deterministic `spawnWave` (no args) — the fixed FIRST

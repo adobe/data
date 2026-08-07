@@ -15,13 +15,14 @@ export const spawnRandomWave = (
   t: CoreDatabase.Store,
   { random }: { random: RandomService },
 ): void => {
-  const before = {
-    asteroids: readAsteroids(t),
-    wave: t.resources.wave,
-    bounds: t.resources.bounds,
-  };
-  const after = State.spawnRandomWave(before, { random });
-  if (after === before) return;
+  // spawnRandomWave is a no-op while the field still has asteroids; guard here so
+  // a mid-wave dispatch inserts nothing (the patch return is a fresh object, so it
+  // can no longer be reference-compared to detect the no-op).
+  if (readAsteroids(t).length > 0) return;
+  const after = State.spawnRandomWave(
+    { asteroids: [], wave: t.resources.wave, bounds: t.resources.bounds },
+    { random },
+  );
   t.resources.wave = after.wave;
   for (const asteroid of after.asteroids) {
     t.archetypes.Asteroid.insert(asteroid);

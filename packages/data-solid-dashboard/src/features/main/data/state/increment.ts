@@ -2,27 +2,22 @@
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 
-// Raise the counter by one and record it in the activity log.
-export const increment = <T extends Pick<State, "count" | "log">>(state: T): T => {
+// Raise the counter by one and record it in the activity log. Returns only the
+// fields it writes (count + log); the runner merges the patch over the rest.
+export const increment = (
+  state: Pick<State, "count" | "log">,
+): Pick<State, "count" | "log"> => {
   const count = state.count + 1;
-  return { ...state, count, log: [...state.log, `Incremented to ${count}`] };
+  return { count, log: [...state.log, `Incremented to ${count}`] };
 };
 
 // Spec-owned cases, shared with the ecs `increment` transaction and action.
-// `before`/`after` are authored as full `State` literals (a value-level import of
-// the `State` namespace here would form an eager `state → public → increment`
-// cycle, so the defaults are inlined).
+// `before` is a delta over `State.create()`; `after` is the writes patch.
 export const cases: Conformance<typeof increment> = [
-  {
-    name: "increments from zero and logs the new value",
-    before: { count: 0, log: [], userName: "Guest" },
-    args: undefined,
-    after: { count: 1, log: ["Incremented to 1"], userName: "Guest" },
-  },
-  {
-    name: "increments an existing count, preserving prior log entries",
-    before: { count: 4, log: ["earlier"], userName: "Guest" },
-    args: undefined,
-    after: { count: 5, log: ["earlier", "Incremented to 5"], userName: "Guest" },
-  },
+  { name: "increments from zero and logs the new value",
+    before: {},
+    after: { count: 1, log: ["Incremented to 1"] } },
+  { name: "increments an existing count, preserving prior log entries",
+    before: { count: 4, log: ["earlier"] },
+    after: { count: 5, log: ["earlier", "Incremented to 5"] } },
 ];

@@ -7,10 +7,10 @@ import { Motion } from "../motion/motion.js";
 
 // Advance every bullet one tick: drop the ones that expire this tick, and move
 // + age + wrap the survivors.
-export const stepBullets = <T extends Pick<State, "bullets" | "bounds">>(
-  state: T,
+export const stepBullets = (
+  state: Pick<State, "bullets" | "bounds">,
   dt: number,
-): T => {
+): Pick<State, "bullets"> => {
   const bullets = state.bullets
     .filter((b) => !Bullet.isExpired(b.age, dt))
     .map((b) => ({
@@ -21,7 +21,7 @@ export const stepBullets = <T extends Pick<State, "bullets" | "bounds">>(
       ),
       age: b.age + dt,
     }));
-  return { ...state, bullets };
+  return { bullets };
 };
 
 // Spec-owned cases, shared with the ecs system conformance (the `lifetime`

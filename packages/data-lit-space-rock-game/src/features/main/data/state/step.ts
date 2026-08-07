@@ -42,15 +42,17 @@ export const step = (
   if (isGameOver(state)) {
     return state;
   }
-  let next = stepShip(state, { dt, input });
+  // Each sub-transition returns only the fields it writes; layer each patch over
+  // the running full state so the whole tick composes into one State.
+  let next: State = { ...state, ...stepShip(state, { dt, input }) };
   if (input.fire) {
-    next = fireBullet(next);
+    next = { ...next, ...fireBullet(next) };
   }
-  next = stepBullets(next, dt);
-  next = stepAsteroids(next, dt);
-  next = resolveBulletHits(next, dt);
-  next = resolveShipHits(next);
-  next = spawnRandomWave(next, { random });
+  next = { ...next, ...stepBullets(next, dt) };
+  next = { ...next, ...stepAsteroids(next, dt) };
+  next = { ...next, ...resolveBulletHits(next, dt) };
+  next = { ...next, ...resolveShipHits(next) };
+  next = { ...next, ...spawnRandomWave(next, { random }) };
   return next;
 };
 

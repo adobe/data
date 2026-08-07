@@ -7,12 +7,12 @@ import { Ship } from "../ship/ship.js";
 
 // Fire one bullet from the ship's nose, inheriting its momentum. Composes the
 // ship's muzzle kinematics with the bullet's own speed constant.
-export const fireBullet = <T extends Pick<State, "ship" | "bullets">>(
-  state: T,
-): T => {
+export const fireBullet = (
+  state: Pick<State, "ship" | "bullets">,
+): Pick<State, "bullets"> => {
   const { position, velocity } = Ship.muzzle(state.ship, Bullet.speed);
   const bullet: Bullet = { position, velocity, age: 0 };
-  return { ...state, bullets: [...state.bullets, bullet] };
+  return { bullets: [...state.bullets, bullet] };
 };
 
 // Spec-owned cases, shared with the ecs `fireBullet` transaction. A bullet leaves

@@ -8,15 +8,15 @@ import { Match } from "@adobe/data/testing";
 const nextSpriteId = (state: Pick<State, "sprites">): number =>
   state.sprites.reduce((max, sprite) => Math.max(max, sprite.id), 0) + 1;
 
-export const createSprite = <T extends Pick<State, "sprites">>(
-  state: T,
+// Append a sprite to the scene. Returns only the field it writes (`sprites`).
+export const createSprite = (
+  state: Pick<State, "sprites">,
   input: {
     readonly position: Vec2;
     readonly rotation?: number;
     readonly kind: SpriteKind;
   },
-): T => ({
-  ...state,
+): Pick<State, "sprites"> => ({
   sprites: [
     ...state.sprites,
     {
@@ -33,11 +33,11 @@ export const createSprite = <T extends Pick<State, "sprites">>(
 // Spec-owned cases, shared with the ecs `createSprite` transaction. A sprite is
 // appended (minted id left open as `anyNumber` — the ecs assigns its own) with
 // rotation defaulting to 0 and hovered/active to false; existing sprites are
-// untouched.
+// untouched. `before` is a delta over `State.create()`; `after` is the writes patch.
 export const cases: Conformance<typeof createSprite> = [
   {
     name: "appends the first sprite to an empty scene",
-    before: { sprites: [], filter: "none" },
+    before: {},
     args: { position: [100, 100], kind: "bunny" },
     after: {
       sprites: [
@@ -50,7 +50,6 @@ export const cases: Conformance<typeof createSprite> = [
           active: false,
         },
       ],
-      filter: "none",
     },
   },
   {
@@ -88,7 +87,6 @@ export const cases: Conformance<typeof createSprite> = [
           active: false,
         },
       ],
-      filter: "sepia",
     },
   },
 ];

@@ -29,9 +29,13 @@ verifies a reorder). No separate id-ignoring variant. `expectStateMatches` /
 
 ## The runners — one aggregator per surface, each with a coverage guard
 
-The same cases drive every surface. Each aggregator auto-discovers via
-`import.meta.glob` (`/// <reference types="vite/client" />`) and asserts every
-item is wired, so none are missed. Pair by name.
+The same cases drive every surface. Each aggregator's **coverage guard** asserts
+every item is wired, so none are missed — keyed off the **registered set** (the
+`transactions/index.ts` barrel, the derivation files), not a raw file glob, so a
+shared read helper parked flat in `transactions/` (kept out of the barrel) or a
+non-participating file never trips it. Pair by name. Runners must tolerate a
+**no-arg transition** (`args: undefined`) — split/record on args only when it is
+an object.
 
 - **`spec.test.ts` (in `data/state/`)** — the pure suite. Discovers every file
   exporting `cases`; dispatches on shape: `"after"` → transition

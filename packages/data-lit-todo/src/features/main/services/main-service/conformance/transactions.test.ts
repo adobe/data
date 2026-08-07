@@ -4,6 +4,7 @@ import { describe, it, expect } from "vitest";
 import type { CoreDatabase } from "../core-database/core-database.js";
 import type { ConformanceCase } from "../../../data/state/conformance-case.js";
 import { expectConforms, type ResolveEntity } from "./expect-conforms.js";
+import * as registeredTransactions from "../transaction-database/transactions/index.js";
 import { createTodo } from "../transaction-database/transactions/create-todo.js";
 import { createBulkTodos } from "../transaction-database/transactions/create-bulk-todos.js";
 import { deleteTodo } from "../transaction-database/transactions/delete-todo.js";
@@ -60,16 +61,12 @@ conforms("toggleDisplayCompleted", {
   apply: toggleDisplayCompleted,
 });
 
-// None-missed guard: every transaction file must be wired above.
-const kebabToCamel = (name: string): string =>
-  name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
+// None-missed guard: every **registered** transaction must be wired above. Keyed
+// off the barrel (the transactions the plugin actually dispatches), not a file
+// glob — so a shared read helper parked flat in `transactions/` (kept out of the
+// barrel) is naturally excluded.
 describe("transaction conformance coverage", () => {
-  const files = import.meta.glob([
-    "../transaction-database/transactions/*.ts",
-    "!../transaction-database/transactions/index.ts",
-  ]);
-  for (const path of Object.keys(files)) {
-    const transaction = kebabToCamel(path.replace(/.*\//, "").replace(/\.ts$/, ""));
+  for (const transaction of Object.keys(registeredTransactions)) {
     it(`${transaction} has a conformance case`, () => expect(covered.has(transaction)).toBe(true));
   }
 });

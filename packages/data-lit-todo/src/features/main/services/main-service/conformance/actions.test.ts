@@ -40,7 +40,7 @@ type Db = ReturnType<typeof makeDb>;
 type Run<Args> = (db: Db, input: Args, resolve: (specId: number) => Entity) => Promise<void> | void;
 
 const covered = new Set<string>();
-const conformsAction = <Args extends object>(
+const conformsAction = <Args>(
   action: string,
   config: { readonly cases: readonly ConformanceCase<Args>[]; readonly run: Run<Partial<Args>> },
 ): void => {

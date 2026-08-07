@@ -73,7 +73,7 @@ export const expectEffects = (
 // Split a case's `args` into the injected services (wrapped for recording, to be
 // used as `Database.create` service overrides) and the remaining plain data (the
 // action input). Keyed by the same arg name so `calls` matches against `effects`.
-export const splitAndRecordServices = <Args extends object>(
+export const splitAndRecordServices = <Args>(
   args: Args,
 ): {
   services: Record<string, object>;
@@ -83,13 +83,16 @@ export const splitAndRecordServices = <Args extends object>(
   const services: Record<string, object> = {};
   const input: Record<string, unknown> = {};
   const calls: Record<string, RecordedCall[]> = {};
-  for (const [key, value] of Object.entries(args)) {
-    if (isServiceValue(value)) {
-      const recorded = recordCalls(value);
-      services[key] = recorded.service;
-      calls[key] = recorded.calls;
-    } else {
-      input[key] = value;
+  // A no-arg transition has `undefined` args — nothing to split.
+  if (args !== null && typeof args === "object") {
+    for (const [key, value] of Object.entries(args)) {
+      if (isServiceValue(value)) {
+        const recorded = recordCalls(value);
+        services[key] = recorded.service;
+        calls[key] = recorded.calls;
+      } else {
+        input[key] = value;
+      }
     }
   }
   return { services, input, calls };

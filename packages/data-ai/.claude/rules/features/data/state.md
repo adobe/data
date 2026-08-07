@@ -81,10 +81,17 @@ the complete spec of *both* the state change and the service calls.
 
 ## Derivations — `(state) => value`, cases `{ input, value }`
 
-Pure selectors (`visibleTodos`, `winner`, `status`). A derivation co-locates
-cases too, but shaped `{ input, value }` and typed `Derivation<typeof fn>` (input
-+ value read from the signature); author `input` as a full `State` (the computed
-conformance seeds it via `fromState`), and `value` may use matchers. The same
-`spec.test.ts` runs them (it dispatches on case shape), and its ECS computed is
-conformance-tested from the same cases (`conformance.md`). Sub-type math (a winner, a status) lives on the
+Pure selectors that **compose the aggregate** — a value drawn from **two or more
+`State` fields** (`visibleTodos` from `todos` + `displayCompleted`;
+`currentPlayer` from `board` + `firstPlayer`). A value computed from a **single**
+`State` field is that field's own type math and lives on its `data/<type>`
+namespace (`winner`/`status` from `board` → `data/board-state`), tested there —
+**not** in `state/`. A feature may therefore have zero `state/` derivations.
+
+A `state/` derivation co-locates cases shaped `{ input, value }`, typed
+`Derivation<typeof fn>` (input + value read from the signature); author `input`
+as a full `State` (computed conformance seeds it via `fromState`), and `value`
+may use matchers. The same `spec.test.ts` runs them (dispatching on case shape),
+and each ECS computed backing one is conformance-tested from the same cases
+(`conformance.md`). Sub-type math (a winner, a status) lives on the
 relevant `data/<type>` namespace; `state/` only composes over the aggregate.

@@ -63,8 +63,12 @@ an object.
   service/action that subscribes to a computed at construction) would `withCache`
   the pre-seed value, and a direct `fromState` seed emits no transaction to
   invalidate it — reading on the computed layer keeps the seed authoritative.
-  Only computeds with a `data/` derivation are conformed (index-only helpers are
-  exempt); the coverage guard checks every derivation, not every computed.
+  Only computeds backing a `state/` derivation are conformed here; the coverage
+  guard checks every `state/` derivation, not every computed. A computed that
+  projects a single `data/<type>`'s math (`winner`/`status` from the board) is
+  conformed by **that type's** helper tests, not here — and a feature with no
+  `state/` derivation **omits `computeds.test.ts` entirely** (an aggregator whose
+  guard registers zero tests fails vitest; don't ship an empty one).
 
 ## Recording side effects — no Proxy
 

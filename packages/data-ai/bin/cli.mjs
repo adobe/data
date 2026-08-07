@@ -249,8 +249,8 @@ Install the architecture skills + rules for Cursor, Codex, and other agents.
 same way for every agent — see README.)
 
 Usage:
-  npx ${PKG_NAME}@<version> install   # copy the bundle AND wire auto-updates (default)
-  npx ${PKG_NAME}@<version> list
+  npx ${PKG_NAME}@latest install   # copy the bundle AND wire auto-updates (default)
+  npx ${PKG_NAME}@latest list
 
 Commands:
   install   Copy the bundle (skills → .agents/skills/${BUNDLE}/, rules →

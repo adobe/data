@@ -13,26 +13,26 @@ import { toState } from "./to-state.js";
 //
 //   toState(apply(fromState(before), args)) ≡ spec(before, args)
 //
-// in two asserted halves:
-//   1. `spec(before, args) ≡ after` — keeps the shared case honest (a
-//      mis-authored `after` is caught here, independent of the ecs path).
-//   2. seed `fromState(before)` → run the caller's `apply` → `toState ≡ after`
-//      — the ecs implementation reproduces the pure transform.
+// seeding `fromState(before)`, running the caller's `apply`, and asserting
+// `toState ≡ after`. The pure half (`spec(before, args) ≡ after`) is asserted for
+// every case once, centrally, by `data/state/spec.test.ts`, so this runner omits
+// it by default; pass `spec` to re-check it in place. Entity collections compare
+// as multisets, scalars/`Vec2` exactly (see `expectStateMatches`).
 //
 // `apply` receives the seeded writable store and calls the raw transaction
-// function directly (a transaction is `(store, args) => void`, so no `Database`
-// is involved). A mutation addressed by entity id resolves its entities from the
-// seeded store there (the shared cases stay spec-shaped). Entity collections
-// compare as multisets; scalars and resources exactly (see `expectStateMatches`).
+// function directly (a transaction is `(store, args) => void`, so no `Database` is
+// involved). A mutation addressed by entity ids resolves them from the seeded
+// store inside its own `apply` closure (the shared cases stay spec-shaped).
 export const expectConforms = <Args>(config: {
   readonly cases: readonly ConformanceCase<Args>[];
-  readonly spec: (before: State, args: Args) => State;
+  readonly spec?: (before: State, args: Args) => State;
   readonly apply: (store: CoreDatabase.Store, args: Args) => void;
 }): void => {
   for (const testCase of config.cases) {
     it(testCase.name, () => {
-      expectStateMatches(config.spec(testCase.before, testCase.args), testCase.after);
-
+      if (config.spec) {
+        expectStateMatches(config.spec(testCase.before, testCase.args), testCase.after);
+      }
       const store = createStore();
       fromState(store, testCase.before);
       config.apply(store, testCase.args);

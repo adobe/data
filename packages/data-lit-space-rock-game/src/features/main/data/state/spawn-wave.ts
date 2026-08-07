@@ -1,6 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Vec2 } from "@adobe/data/math";
 import type { State } from "./state.js";
+import type { Conformance } from "./conformance-case.js";
+import { create } from "./create.js";
 import type { Asteroid } from "../asteroid/asteroid.js";
 import { Size } from "../size/size.js";
 import { Motion } from "../motion/motion.js";
@@ -39,3 +41,43 @@ export const spawnWave = <T extends Pick<State, "asteroids" | "wave" | "bounds">
   }
   return { ...state, wave, asteroids };
 };
+
+// Spec-owned cases for the deterministic `spawnWave` (no args) — the fixed FIRST
+// wave `createInitial` seeds (its randomized refill sibling is `spawnRandomWave`).
+// When the field is clear it bumps the wave and spawns a ring of large asteroids
+// around the centre, each drifting tangentially at 60px/s; while asteroids remain
+// it is a no-op. Field 200×200 → centre [100,100], ring radius 80. From wave 0 the
+// count is asteroidsFor(1)=4, so the ring lands on the four clean quadrant angles.
+const field = { ...create(), bounds: [200, 200] as [number, number] };
+
+export const cases: Conformance<typeof spawnWave> = [
+  {
+    name: "spawns the next wave of large asteroids when the field is clear",
+    before: { ...field, asteroids: [], wave: 0 },
+    args: undefined,
+    after: {
+      ...field,
+      wave: 1,
+      asteroids: [
+        { position: [180, 100], velocity: [0, 60], size: "large" },
+        { position: [100, 180], velocity: [-60, 0], size: "large" },
+        { position: [20, 100], velocity: [0, -60], size: "large" },
+        { position: [100, 20], velocity: [60, 0], size: "large" },
+      ],
+    },
+  },
+  {
+    name: "does nothing while asteroids still remain",
+    before: {
+      ...field,
+      wave: 1,
+      asteroids: [{ position: [10, 10], velocity: [0, 0], size: "large" }],
+    },
+    args: undefined,
+    after: {
+      ...field,
+      wave: 1,
+      asteroids: [{ position: [10, 10], velocity: [0, 0], size: "large" }],
+    },
+  },
+];

@@ -4,52 +4,35 @@ import type { Ship } from "../../../data/ship/ship.js";
 import type { Bullet } from "../../../data/bullet/bullet.js";
 import type { Asteroid } from "../../../data/asteroid/asteroid.js";
 import type { CoreDatabase } from "../core-database/core-database.js";
+import { toData } from "./to-data.js";
 
-// Read a store back into a `data/` `State` — the inverse of `fromState`. Each
-// kind is read through its named archetype's full component set (not an
-// incidental single column), so the three entity shapes never alias. Test-only.
-const readShip = (store: CoreDatabase.Store): Ship => {
-  const [entity] = store.select(store.archetypes.Ship.components);
-  if (entity === undefined) throw new Error("conformance projection: expected a ship entity");
-  const row = store.read(entity, store.archetypes.Ship);
-  if (row === null) throw new Error("conformance projection: expected a ship entity");
-  return { position: row.position, velocity: row.velocity, rotation: row.rotation };
-};
-
-const readBullets = (store: CoreDatabase.Store): Bullet[] => {
+// Read a store back into a `data/` `State` — the inverse of `fromState`, built on
+// the per-entity `toData` projection. Every entity carries `position`, so one
+// query covers all three archetypes; each entity is projected through `toData` and
+// sorted into the ship, bullets, or asteroids slot by its distinguishing member
+// (`rotation` → ship, `age` → bullet, `size` → asteroid). Row order across
+// archetypes is arbitrary, but the entity collections compare as multisets
+// (`expectStateMatches`), so it need not be stable. Test-only.
+export const toState = (store: CoreDatabase.Store): State => {
+  let ship: Ship | undefined;
   const bullets: Bullet[] = [];
-  for (const arch of store.queryArchetypes(store.archetypes.Bullet.components)) {
-    for (let row = 0; row < arch.rowCount; row++) {
-      bullets.push({
-        position: arch.columns.position.get(row),
-        velocity: arch.columns.velocity.get(row),
-        age: arch.columns.age.get(row),
-      });
-    }
-  }
-  return bullets;
-};
-
-const readAsteroids = (store: CoreDatabase.Store): Asteroid[] => {
   const asteroids: Asteroid[] = [];
-  for (const arch of store.queryArchetypes(store.archetypes.Asteroid.components)) {
+  for (const arch of store.queryArchetypes(["position"])) {
     for (let row = 0; row < arch.rowCount; row++) {
-      asteroids.push({
-        position: arch.columns.position.get(row),
-        velocity: arch.columns.velocity.get(row),
-        size: arch.columns.size.get(row),
-      });
+      const value = toData(store, arch.columns.id.get(row));
+      if ("rotation" in value) ship = value;
+      else if ("age" in value) bullets.push(value);
+      else asteroids.push(value);
     }
   }
-  return asteroids;
+  if (ship === undefined) throw new Error("conformance projection: expected a ship entity");
+  return {
+    bounds: store.resources.bounds,
+    ship,
+    bullets,
+    asteroids,
+    score: store.resources.score,
+    lives: store.resources.lives,
+    wave: store.resources.wave,
+  };
 };
-
-export const toState = (store: CoreDatabase.Store): State => ({
-  bounds: store.resources.bounds,
-  ship: readShip(store),
-  bullets: readBullets(store),
-  asteroids: readAsteroids(store),
-  score: store.resources.score,
-  lives: store.resources.lives,
-  wave: store.resources.wave,
-});

@@ -2,7 +2,7 @@
 import { Database, scheduler } from "@adobe/data/ecs";
 import type { Entity } from "@adobe/data/ecs";
 import { Vec2 } from "@adobe/data/math";
-import { ComputedDatabase } from "../computed-database/computed-database.js";
+import { ActionDatabase } from "../action-database/action-database.js";
 import { Motion } from "../../../data/motion/motion.js";
 import { Spatial } from "../../../data/spatial/spatial.js";
 import { Collision } from "../../../data/collision/collision.js";
@@ -10,10 +10,11 @@ import { Asteroid } from "../../../data/asteroid/asteroid.js";
 import { Bullet } from "../../../data/bullet/bullet.js";
 import { Ship } from "../../../data/ship/ship.js";
 import { State } from "../../../data/state/state.js";
-import { RandomService } from "../../random-service/random-service.js";
 
-// The real-time tick loop. Extends the computed database (schema + indexes +
-// transactions + computed) combined with the built-in `scheduler`, and declares
+// The real-time tick loop. Extends the action database (schema + indexes +
+// transactions + computed + services + actions) combined with the built-in
+// `scheduler` — systems come last in the pipeline, so they sit atop the service
+// and action layers the feature builds — and declares
 // the `systems` facet INLINE so each `create`'s `db` is strongly typed (the
 // assembled database with a *writable* store) and the scheduler can infer the
 // system-name union from the map's keys.
@@ -37,7 +38,7 @@ import { RandomService } from "../../random-service/random-service.js";
 // rAF and drives frames itself by invoking `db.system.functions[name]()` for each
 // name in `db.system.order`.
 const systemDatabasePlugin = Database.Plugin.create({
-  extends: Database.Plugin.combine(ComputedDatabase.plugin, scheduler),
+  extends: Database.Plugin.combine(ActionDatabase.plugin, scheduler),
   systems: {
     // Apply the player's intent to the ship: turn, then thrust along the new
     // facing — the rotation/velocity half of State.stepShip (movement advances
@@ -253,15 +254,15 @@ const systemDatabasePlugin = Database.Plugin.create({
     // remain and there is nothing to do; otherwise dispatch spawnRandomWave, which
     // bumps `wave` and inserts the next ring through the data/-verified layout —
     // its per-rock drift speeds jittered by the injected `random` service, so live
-    // waves vary run to run. The REAL Math.random-backed source is created once
-    // here (in `create`, before the per-frame loop) and injected on every spawn;
-    // tests inject RandomService.createFake for reproducible layouts. Frozen once
-    // the game is over — step never reaches the refill after game over, so a dead
-    // game does not respawn a wave.
+    // waves vary run to run. The random source is the feature's `random` service
+    // (`db.services.random`, the real Math.random-backed source in production);
+    // it is read once here (in `create`, before the per-frame loop) and injected on
+    // every spawn. Frozen once the game is over — step never reaches the refill
+    // after game over, so a dead game does not respawn a wave.
     waves: {
       schedule: { after: ["collision"] },
       create: (db) => {
-        const random = RandomService.create();
+        const random = db.services.random;
         return () => {
           if (State.isGameOver({ lives: db.store.resources.lives })) return;
           for (const arch of db.store.queryArchetypes(["size"])) {

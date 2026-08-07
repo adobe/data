@@ -25,9 +25,8 @@ import { describe, it, expect } from "vitest";
 import { State } from "../../../data/state/state.js";
 import { Ship } from "../../../data/ship/ship.js";
 import { Input } from "../../../data/input/input.js";
-import { cases } from "../../../data/state/step.cases.js";
+import { cases } from "../../../data/state/step.js";
 import { expectStateMatches } from "../../../data/state/expect-state-matches.js";
-import { RandomService } from "../../random-service/random-service.js";
 import { createSystemDatabase } from "../conformance/create-system-database.js";
 import { fromState } from "../conformance/from-state.js";
 import { toState } from "../conformance/to-state.js";
@@ -37,10 +36,9 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
   for (const testCase of cases) {
     it(testCase.name, () => {
       const { dt, input } = testCase.args;
-      expectStateMatches(
-        State.step(testCase.before, dt, input, { random: RandomService.createFake() }),
-        testCase.after,
-      );
+      // The co-located case carries its own inert `random` double (no case clears
+      // the field, so it is never drawn), so drive the oracle with the case args.
+      expectStateMatches(State.step(testCase.before, testCase.args), testCase.after);
 
       const db = createSystemDatabase();
       fromState(db.store, testCase.before);

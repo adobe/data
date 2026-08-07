@@ -32,6 +32,27 @@ Both are re-exported through `public.js`, so `State.create()` / `State.samples`
 are namespace members. (A `cases` literal must still not touch `public.js` at
 load — import `create` from `./create.js` directly there; see below.)
 
+**The discovered transitions are a test-only sibling, NOT on the namespace.**
+`data/state/transitions.ts` exports one `import.meta.glob` of the folder — the
+`{ fn, cases }` modules — imported by *both* `spec.test.ts` and the ecs
+`conformance.test.ts` so the glob is authored once per feature:
+
+```ts
+// data/state/transitions.ts — test-only; both test entry points import it
+export const transitions = import.meta.glob<Record<string, unknown>>(
+  ["./*.ts", "!./*.test.ts", "!./*.type-test.ts", "!./transitions.ts"],
+  { eager: true },
+);
+```
+
+It stays **out of `public.js`** deliberately: unlike `create`/`samples` (plain
+prod-safe values), `transitions` is the test-case graph — hanging it on `State`
+would drag `import.meta.glob` (a Vite-only construct) and every `cases` fixture
+(fake services, matchers, the whole `@adobe/data/testing` module) into every
+production import of `State`, none of which tree-shakes off a live namespace
+re-export. So `create`/`samples` earn a namespace slot; `transitions` is a test
+concern the tests import directly.
+
 ## One file per transform: the function **and** its cases
 
 A transform file exports **exactly two things** — the function and its
@@ -138,12 +159,13 @@ export const cases: Conformance<typeof createTodo> = [
   own arg type. `runSpec` unwraps it to the plain data-id for the pure side; the ECS
   runners resolve it to the seeded entity (see `conformance.md`).
 - No per-transform test. The single **`spec.test.ts`** is one call —
-  `Conformance.runSpec({ state: State, transitions: import.meta.glob(["./*.ts", "!./*.test.ts", "!./*.type-test.ts"], { eager: true }) })`
-  — that auto-discovers every sibling exporting `cases`, enforces the two-exports
-  rule, and dispatches on case shape (a `value` case → derivation; otherwise a
-  transition whose declared `effects` are also asserted). Passing `{ state: State }`
-  (the same `state` shape `runFeature` takes) is what makes each case's
-  `before`/`input` a delta over `State.create()`. Add `match` alongside it only when
+  `Conformance.runSpec({ state: State, transitions })` importing `transitions`
+  from the test-only `./transitions.js` (above) — that auto-discovers every module
+  exporting `cases`, enforces the two-exports rule, and dispatches on case shape (a
+  `value` case → derivation; otherwise a transition whose declared `effects` are
+  also asserted). Passing `{ state: State }` (the same `state` shape `runFeature`
+  takes) is what makes each case's `before`/`input` a delta over `State.create()`.
+  Add `match` alongside it only when
   the feature needs float tolerance or unordered collections (see `conformance.md`).
   There is no per-feature `expect-state-matches.ts`, `record-effects.ts`,
   `expect-conforms.ts`, or `conformance-case.type-test.ts` — those are gone; the

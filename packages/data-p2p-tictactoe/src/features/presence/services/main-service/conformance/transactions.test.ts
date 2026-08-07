@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-/// <reference types="vite/client" />
 import { Conformance } from "@adobe/data/testing";
+import { transitions } from "../../../data/state/transitions.js";
 import * as transactions from "../transaction-database/transactions/index.js";
 import { createStore } from "./create-store.js";
 import { seedUserId } from "./seed-user-id.js";
@@ -14,14 +14,7 @@ Conformance.runTransactions({
   createStore,
   fromState,
   toState,
-  transitions: import.meta.glob(
-    [
-      "../../../data/state/*.ts",
-      "!../../../data/state/*.test.ts",
-      "!../../../data/state/*.type-test.ts",
-    ],
-    { eager: true },
-  ),
+  transitions,
   transactions,
   seedContext: (store, _before, args) =>
     seedUserId(store, (args as { mark: string }).mark),

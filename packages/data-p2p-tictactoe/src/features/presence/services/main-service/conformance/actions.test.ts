@@ -3,6 +3,7 @@
 import { Database } from "@adobe/data/ecs";
 import type { ConcurrencyStrategyFactory } from "@adobe/data/ecs";
 import { Conformance } from "@adobe/data/testing";
+import { transitions } from "../../../data/state/transitions.js";
 import { MainService } from "../main-service.js";
 import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
@@ -40,14 +41,7 @@ Conformance.runActions({
   store: (db) => db.store,
   fromState,
   toState,
-  transitions: import.meta.glob(
-    [
-      "../../../data/state/*.ts",
-      "!../../../data/state/*.test.ts",
-      "!../../../data/state/*.type-test.ts",
-    ],
-    { eager: true },
-  ),
+  transitions,
   actions: import.meta.glob(
     ["../action-database/actions/*.ts", "!../action-database/actions/index.ts"],
     { eager: true },

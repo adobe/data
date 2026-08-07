@@ -81,12 +81,12 @@ round-trip. No per-surface test file, no `define` callback, no `conforms(...)`
 adapters, no coverage guard.
 
 ```ts
+import { State } from "../../../data/state/state.js";
+import { transitions } from "../../../data/state/transitions.js";
+
 Conformance.runFeature({
   state: State,
-  transitions: import.meta.glob(
-    ["../../../data/state/*.ts", "!**/*.test.ts", "!**/*.type-test.ts"],
-    { eager: true },
-  ),
+  transitions,
   plugin: MainService.plugin,
   computedPlugin: ComputedDatabase.plugin,   // omit if no state/ derivations
   projection,
@@ -99,7 +99,9 @@ Conformance.runFeature({
 - **`state`** is the `State` namespace itself — the runner calls `State.create()`
   for the default each case's `before` deltas over, and round-trips `State.samples`
   through the projection.
-- **`transitions`** is the `data/state` glob (the `{ fn, cases }` source).
+- **`transitions`** is imported from the feature's test-only
+  `data/state/transitions.ts` (the single `import.meta.glob` of the `{ fn, cases }`
+  source, shared with `spec.test.ts` — see `data/state.md`). Never re-glob it here.
 - **Ops come off the plugin facets.** The runner reads
   `plugin.transactions` / `plugin.actions` / `computedPlugin.computed` and builds
   the stores/dbs itself (`Store.create(plugin)` for transactions,
@@ -139,13 +141,13 @@ markers). `data-lit-todo` adds `hydrate: ["visibleTodos"]` and `entity()` marker
 
 ## The pure spec — `data/state/spec.test.ts`
 
-Lives in `data/state/`, not here. One call:
+Lives in `data/state/`, not here. One call, importing the same `transitions`:
 
 ```ts
-Conformance.runSpec({
-  state: State,
-  transitions: import.meta.glob(["./*.ts", "!./*.test.ts", "!./*.type-test.ts"], { eager: true }),
-});
+import { State } from "./state.js";
+import { transitions } from "./transitions.js";
+
+Conformance.runSpec({ state: State, transitions });
 ```
 
 It discovers every file exporting `cases`, enforces the two-exports rule, and

@@ -18,5 +18,5 @@ Conformance.runSpec(
       eager: true,
     },
   ),
-  { initial: State.create() },
+  { state: State },
 );

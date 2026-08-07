@@ -138,13 +138,13 @@ export const cases: Conformance<typeof createTodo> = [
   own arg type. `runSpec` unwraps it to the plain data-id for the pure side; the ECS
   runners resolve it to the seeded entity (see `conformance.md`).
 - No per-transform test. The single **`spec.test.ts`** is one call —
-  `Conformance.runSpec(import.meta.glob(["./*.ts", "!./*.test.ts", "!./*.type-test.ts"], { eager: true }), { initial: State.create() })`
+  `Conformance.runSpec(import.meta.glob(["./*.ts", "!./*.test.ts", "!./*.type-test.ts"], { eager: true }), { state: State })`
   — that auto-discovers every sibling exporting `cases`, enforces the two-exports
   rule, and dispatches on case shape (a `value` case → derivation; otherwise a
-  transition whose declared `effects` are also asserted). The `{ initial:
-  State.create() }` is what makes each case's `before`/`input` a delta over the
-  default. Add `match` alongside it only when the feature needs float tolerance or
-  unordered collections (see `conformance.md`).
+  transition whose declared `effects` are also asserted). Passing `{ state: State }`
+  (the same `state` shape `runFeature` takes) is what makes each case's
+  `before`/`input` a delta over `State.create()`. Add `match` alongside it only when
+  the feature needs float tolerance or unordered collections (see `conformance.md`).
   There is no per-feature `expect-state-matches.ts`, `record-effects.ts`,
   `expect-conforms.ts`, or `conformance-case.type-test.ts` — those are gone; the
   shared driver owns comparison, effect recording, and name-based auto-pairing, and

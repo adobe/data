@@ -15,7 +15,7 @@ Conformance.runSpec(
     },
   ),
   {
-    initial: State.create(),
+    state: State,
     match: { unordered: new Set(["bullets", "asteroids"]) },
   },
 );

@@ -10,10 +10,11 @@ const isDerivationCase = (c: unknown): c is DerivationCase<unknown, unknown> =>
   typeof c === "object" && c !== null && "value" in c;
 
 export interface SpecOptions {
-  // The feature's default `State`. Each case's `before` is merged over it, so a
-  // case names only the fields it sets differently from the default. Omit it and
-  // cases must carry a full `before`.
-  readonly initial?: object;
+  // The feature's `State` namespace (the same `state` shape `runFeature` takes).
+  // Its `create()` is the default each case's `before` deltas over, so a case
+  // names only the fields it sets differently. Omit it and cases must carry a
+  // full `before`.
+  readonly state?: { create(): object };
   // Passed through to `matches` (float tolerance, unordered collections).
   readonly match?: MatchOptions;
   // Override the `describe` label per module (default `State.<fnName>`).
@@ -61,7 +62,7 @@ export const runSpec = (modules: Record<string, Record<string, unknown>>, option
           // wrap injected services so their calls are recorded.
           const { args, calls } = recordArgServices(adaptArgs(tc.args));
           // Case `before` is a delta over the feature default; `after` a writes patch.
-          const before = { ...(options.initial ?? {}), ...(tc.before as Record<string, unknown>) };
+          const before = { ...(options.state?.create() ?? {}), ...(tc.before as Record<string, unknown>) };
           const result = (await fn(before, args)) as Record<string, unknown>;
           assert({ ...before, ...result }, { ...before, ...(tc.after as Record<string, unknown>) }, options.match);
           expectEffects(calls, tc.effects);

@@ -144,7 +144,7 @@ Lives in `data/state/`, not here. One call:
 ```ts
 Conformance.runSpec(
   import.meta.glob(["./*.ts", "!./*.test.ts", "!./*.type-test.ts"], { eager: true }),
-  { initial: State.create() },
+  { state: State },
 );
 ```
 

@@ -11,42 +11,67 @@ It installs two things:
 - **skills** — `build-*` commands that scaffold features and applications.
 - **rules** — the path-scoped conventions those skills follow while building.
 
-> **For the installing agent:** find the block below that matches your host
-> (Claude Code or Cursor/other), run its commands, and stop. Each install owns a
-> namespaced folder and is a clean wipe-and-recopy, so re-running is also how you
-> **update** — it never touches files you authored.
+The **rules** are the part that evolves often, so the recommended setup pins the
+package and re-copies them automatically on every install: bump the version and
+they refresh — no manual step, no committed diff, no hand-editing.
 
-## Install — Claude Code
+> **For the installing agent:** run the "Recommended" setup below from the project
+> root (plus the Claude-Code plugin step if the host is Claude Code), then stop.
+> Everything the package writes lives in namespaced folders it wipes-and-recopies,
+> so it never touches files you authored.
 
-Skills load as a marketplace plugin; rules install into the project. Run these
-three from a shell (agent-runnable):
+## Recommended — managed, auto-updating (any host)
+
+From the project root:
+
+```
+npx @adobe/data-ai@<version> init   # <version> = the latest published version (pin it, never @latest)
+pnpm install                        # or npm/yarn — runs the postinstall init just added
+```
+
+`init` edits your `package.json` and `.gitignore` to make installs self-updating:
+
+1. pins `@adobe/data-ai` in `devDependencies` at the exact `<version>`;
+2. adds `data-ai install` to **your own** `postinstall` script (chaining if one
+   exists) — it must be *your* script: pnpm does not run a dependency's lifecycle
+   scripts, so a `postinstall` shipped inside the package would silently not fire;
+3. gitignores the managed bundle folders.
+
+Every install then runs the copy: rules → `.claude/rules/adobe-data-ai/`, and (for
+Cursor/Codex) skills → `.agents/skills/adobe-data-ai/`. They're regenerated
+artifacts — never committed, never edited in place.
+
+**Update:** bump the `@adobe/data-ai` version in `package.json` (or re-run
+`npx @adobe/data-ai@<newer> init`) and install again. That's it.
+
+### Claude Code — add the skills plugin (one time)
+
+Claude Code loads skills from a marketplace plugin, not from `.claude/skills/`, so
+its skills are a separate one-time install (the `init` step above already handles
+the rules for Claude Code):
 
 ```
 claude plugin marketplace add adobe/data --scope project
 claude plugin install adobe-data-ai@adobe-data-skills --scope project
-npx @adobe/data-ai@latest install
 ```
 
-In an interactive Claude session you can instead use the slash-command form of
-the first two — `/plugin marketplace add adobe/data` then
-`/plugin install adobe-data-ai@adobe-data-skills` — but an agent driving a shell
-should use the `claude plugin …` commands above (slash commands aren't
-shell-runnable).
+(Interactive sessions can use `/plugin marketplace add adobe/data` then
+`/plugin install adobe-data-ai@adobe-data-skills`.) **Update the skills:**
+`claude plugin update adobe-data-ai`. Cursor/Codex need no plugin — `init` copies
+their skills too.
 
-- Skills → the `adobe-data-ai` plugin. **Update:** `claude plugin update adobe-data-ai`.
-- Rules → `.claude/rules/adobe-data-ai/`. **Update:** re-run `npx @adobe/data-ai@latest install`.
+## One-shot alternative — no dependency
 
-## Install — Cursor (and Codex / other `.agents` agents)
-
-One command installs both:
+If you don't want a managed dev-dependency, copy the bundle once (re-run to
+update):
 
 ```
-npx @adobe/data-ai@latest install
+npx @adobe/data-ai@<version> install
 ```
 
-- Skills → `.agents/skills/adobe-data-ai/`.
-- Rules → `.claude/rules/adobe-data-ai/`.
-- **Update:** re-run the same command.
+Rules → `.claude/rules/adobe-data-ai/`; skills → `.agents/skills/adobe-data-ai/`
+(Claude Code: add the plugin as above). Re-running is a clean wipe-and-recopy —
+it never touches files you authored.
 
 ## Use
 
@@ -75,6 +100,9 @@ your prompt.
 This presumes you are already running the agent within the directory you want to use as your project root.
 
 ```
-Find the @adobe/data-ai package on npmjs and then install it in the current directory.
-Next use it's /build-application skill to build <prompt here>
+Find the latest @adobe/data-ai version on npmjs, then set it up in the current
+directory: run `npx @adobe/data-ai@<version> init` and install (this pins it and
+makes rules auto-update on every install). On Claude Code also add the skills
+plugin per the package README. Then use its /build-application skill to build
+<prompt here>
 ```

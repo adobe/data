@@ -157,6 +157,71 @@ version on every install. Package: <https://www.npmjs.com/package/${PKG_NAME}>
     return file;
 }
 
+// `init` — wire a consumer repo for auto-updating installs. Idempotently:
+//   1. pins `@adobe/data-ai` in devDependencies (exact version — never a range,
+//      so an install can't silently pull an unreviewed release),
+//   2. adds `data-ai install` to the consumer's OWN `postinstall` (a dependency's
+//      lifecycle script does NOT run under pnpm, so it must live here), and
+//   3. gitignores the managed, regenerated bundle folders.
+// After this, bumping the pinned version and re-installing recopies the bundle —
+// no manual step, no committed diff.
+const MANAGED_GITIGNORE = [
+    `# ${PKG_NAME} — managed, regenerated on install; do not edit or commit`,
+    ".claude/rules/adobe-data-ai/",
+    ".claude/rules/adobe-data-ai-bootstrap.md",
+    ".agents/skills/adobe-data-ai/",
+];
+
+function initConsumer(base) {
+    const pkgPath = join(base, "package.json");
+    if (!existsSync(pkgPath)) {
+        process.stderr.write(`No package.json in ${base} — run \`init\` from the project root.\n`);
+        process.exitCode = 1;
+        return;
+    }
+    const consumer = JSON.parse(readFileSync(pkgPath, "utf8"));
+    const changes = [];
+
+    // 1. pinned devDependency
+    consumer.devDependencies ??= {};
+    if (consumer.devDependencies[PKG_NAME] !== VERSION) {
+        consumer.devDependencies[PKG_NAME] = VERSION;
+        changes.push(`devDependencies["${PKG_NAME}"] = "${VERSION}" (exact)`);
+    }
+
+    // 2. own postinstall runs the installer (chain if one already exists)
+    consumer.scripts ??= {};
+    const INSTALL = "data-ai install";
+    const post = consumer.scripts.postinstall;
+    if (!post) {
+        consumer.scripts.postinstall = INSTALL;
+        changes.push(`scripts.postinstall = "${INSTALL}"`);
+    } else if (!post.includes(INSTALL)) {
+        consumer.scripts.postinstall = `${post} && ${INSTALL}`;
+        changes.push(`scripts.postinstall += " && ${INSTALL}"`);
+    }
+    if (changes.length) writeFileSync(pkgPath, JSON.stringify(consumer, null, 2) + "\n");
+
+    // 3. gitignore the managed bundle folders
+    const giPath = join(base, ".gitignore");
+    const gi = existsSync(giPath) ? readFileSync(giPath, "utf8") : "";
+    if (!gi.includes(MANAGED_GITIGNORE[0])) {
+        const sep = gi === "" ? "" : gi.endsWith("\n") ? "\n" : "\n\n";
+        writeFileSync(giPath, gi + sep + MANAGED_GITIGNORE.join("\n") + "\n");
+        changes.push(".gitignore += managed bundle paths");
+    }
+
+    process.stdout.write(`${PKG_NAME} init (v${VERSION}) in ${base}\n`);
+    for (const c of changes) process.stdout.write(`  ✓ ${c}\n`);
+    if (!changes.length) process.stdout.write("  already configured — nothing to change\n");
+    process.stdout.write(
+        "\nNext: install (runs the postinstall, which copies the bundle):\n" +
+            "  pnpm install    # or npm install / yarn\n" +
+            "To update later: bump the pinned version above (or re-run this `init` from a newer\n" +
+            `\`npx ${PKG_NAME}@<version> init\`) and install again.\n`,
+    );
+}
+
 function parseArgs(argv) {
     const positional = [];
     const flags = new Set();
@@ -177,10 +242,14 @@ Install the architecture skills + rules for Cursor, Codex, and other agents.
 same way for every agent — see README.)
 
 Usage:
-  npx ${PKG_NAME}@latest install [options]
-  npx ${PKG_NAME}@latest list
+  npx ${PKG_NAME}@<version> init      # wire this repo for auto-updating installs
+  npx ${PKG_NAME}@<version> install   # copy the bundle now (run by postinstall)
+  npx ${PKG_NAME}@<version> list
 
 Commands:
+  init      Pin ${PKG_NAME} in devDependencies (exact), add \`data-ai install\` to the
+            repo's own postinstall, and gitignore the managed bundle folders. Then a
+            plain install copies the bundle; bumping the pinned version updates it.
   install   Skills → .agents/skills/${BUNDLE}/, rules → .claude/rules/${BUNDLE}/ (default).
   list      Print the skills bundled in this package.
 
@@ -204,6 +273,12 @@ function main() {
     if (cmd === "list") {
         process.stdout.write(`${PKG_NAME} v${VERSION} bundles ${skills.length} skill(s):\n`);
         for (const s of skills) process.stdout.write(`  - ${s}\n`);
+        return;
+    }
+
+    if (cmd === "init") {
+        const base = dir ? resolve(dir) : process.cwd();
+        initConsumer(base);
         return;
     }
 

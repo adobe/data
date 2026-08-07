@@ -2,9 +2,10 @@
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
-import { anyNumber } from "./matchers.js";
-
-export const toggleDisplayCompleted = <T extends Pick<State, "displayCompleted">>(
+import { Match } from "@adobe/data/testing";
+export const toggleDisplayCompleted = <
+  T extends Pick<State, "displayCompleted">,
+>(
   state: T,
   { analytics }: { readonly analytics: AnalyticsService },
 ): T => {
@@ -25,9 +26,15 @@ export const cases: Conformance<typeof toggleDisplayCompleted> = [
   },
   {
     name: "turns the completed view off, leaving todos intact",
-    before: { todos: [{ id: 1, name: "a", complete: true }], displayCompleted: true },
+    before: {
+      todos: [{ id: 1, name: "a", complete: true }],
+      displayCompleted: true,
+    },
     args: { analytics: AnalyticsService.createFake() },
-    after: { todos: [{ id: anyNumber, name: "a", complete: true }], displayCompleted: false },
+    after: {
+      todos: [{ id: Match.anyNumber, name: "a", complete: true }],
+      displayCompleted: false,
+    },
     effects: { analytics: [["displayCompletedToggled"]] },
   },
 ];

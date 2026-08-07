@@ -13,9 +13,11 @@ import { toData } from "./to-data.js";
 // cases author `after` ids as `anyNumber`, so the comparison leaves them open.
 // Test-only.
 const readTodos = (store: CoreDatabase.Store): Todo[] =>
-  [...store.select(store.archetypes.Todo.components, { order: { order: true } })].map((entity) =>
-    toData(store, entity),
-  );
+  [
+    ...store.select(store.archetypes.Todo.components, {
+      order: { order: true },
+    }),
+  ].map((entity) => toData(store, entity));
 
 export const toState = (store: CoreDatabase.Store): State => ({
   todos: readTodos(store),

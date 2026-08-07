@@ -4,8 +4,7 @@ import { AnalyticsService } from "../../services/analytics-service/analytics-ser
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { appendTodo } from "./append-todo.js";
-import { anyNumber } from "./matchers.js";
-
+import { Match } from "@adobe/data/testing";
 /**
  * Async, service-injected transition: brackets the slow name generation with
  * analytics timing, then appends the todo via the shared {@link appendTodo} (so
@@ -15,7 +14,10 @@ import { anyNumber } from "./matchers.js";
  */
 export const createRandomTodo = async <T extends Pick<State, "todos">>(
   state: T,
-  { nameGenerator, analytics }: {
+  {
+    nameGenerator,
+    analytics,
+  }: {
     readonly nameGenerator: NameGeneratorService;
     readonly analytics: AnalyticsService;
   },
@@ -36,15 +38,30 @@ export const cases: Conformance<typeof createRandomTodo> = [
   {
     name: "names the new todo from the generator and logs the timed add",
     before: { todos: [], displayCompleted: false },
-    args: { nameGenerator: NameGeneratorService.createFake(), analytics: AnalyticsService.createFake() },
+    args: {
+      nameGenerator: NameGeneratorService.createFake(),
+      analytics: AnalyticsService.createFake(),
+    },
     after: {
-      todos: [{ id: anyNumber, name: NameGeneratorService.fakeNames[0], complete: false }],
+      todos: [
+        {
+          id: Match.anyNumber,
+          name: NameGeneratorService.fakeNames[0],
+          complete: false,
+        },
+      ],
       displayCompleted: false,
     },
     effects: {
       analytics: [
         ["randomTodoRequested"],
-        ["randomTodoAdded", { timing: AnalyticsService.fakeTiming, name: NameGeneratorService.fakeNames[0] }],
+        [
+          "randomTodoAdded",
+          {
+            timing: AnalyticsService.fakeTiming,
+            name: NameGeneratorService.fakeNames[0],
+          },
+        ],
       ],
     },
   },
@@ -55,11 +72,17 @@ export const cases: Conformance<typeof createRandomTodo> = [
       nameGenerator: NameGeneratorService.createFake(["only name"]),
       analytics: AnalyticsService.createFake(),
     },
-    after: { todos: [{ id: anyNumber, name: "only name", complete: false }], displayCompleted: false },
+    after: {
+      todos: [{ id: Match.anyNumber, name: "only name", complete: false }],
+      displayCompleted: false,
+    },
     effects: {
       analytics: [
         ["randomTodoRequested"],
-        ["randomTodoAdded", { timing: AnalyticsService.fakeTiming, name: "only name" }],
+        [
+          "randomTodoAdded",
+          { timing: AnalyticsService.fakeTiming, name: "only name" },
+        ],
       ],
     },
   },

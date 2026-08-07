@@ -10,9 +10,13 @@ export const appendTodo = <T extends Pick<State, "todos">>(
   state: T,
   input: { readonly name: string; readonly complete?: boolean },
 ): T => {
-  const nextId = state.todos.reduce((max, todo) => Math.max(max, todo.id), 0) + 1;
+  const nextId =
+    state.todos.reduce((max, todo) => Math.max(max, todo.id), 0) + 1;
   return {
     ...state,
-    todos: [...state.todos, { id: nextId, name: input.name, complete: input.complete ?? false }],
+    todos: [
+      ...state.todos,
+      { id: nextId, name: input.name, complete: input.complete ?? false },
+    ],
   };
 };

@@ -3,12 +3,14 @@ import { AnalyticsService } from "../../services/analytics-service/analytics-ser
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { appendTodo } from "./append-todo.js";
-import { anyNumber } from "./matchers.js";
-
+import { Match } from "@adobe/data/testing";
 /** Adds numbered placeholder todos for demos and performance testing. */
 export const createBulkTodos = <T extends Pick<State, "todos">>(
   state: T,
-  { count, analytics }: { readonly count: number; readonly analytics: AnalyticsService },
+  {
+    count,
+    analytics,
+  }: { readonly count: number; readonly analytics: AnalyticsService },
 ): T => {
   analytics.bulkTodosCreated({ count });
   const total = Math.max(0, Math.floor(count));
@@ -22,7 +24,7 @@ export const createBulkTodos = <T extends Pick<State, "todos">>(
 // Spec-owned cases, shared with the ecs `createBulkTodos` transaction. `count`
 // (floored, clamped at 0) numbered todos are appended; the transition logs
 // `bulkTodosCreated` with the raw count (as the action does), even on a no-op.
-// Minted ids are left open (`anyNumber`) — the ecs assigns its own.
+// Minted ids are left open (`Match.anyNumber`) — the ecs assigns its own.
 export const cases: Conformance<typeof createBulkTodos> = [
   {
     name: "appends count numbered todos to an empty list",
@@ -30,9 +32,9 @@ export const cases: Conformance<typeof createBulkTodos> = [
     args: { count: 3, analytics: AnalyticsService.createFake() },
     after: {
       todos: [
-        { id: anyNumber, name: "Todo 0", complete: false },
-        { id: anyNumber, name: "Todo 1", complete: false },
-        { id: anyNumber, name: "Todo 2", complete: false },
+        { id: Match.anyNumber, name: "Todo 0", complete: false },
+        { id: Match.anyNumber, name: "Todo 1", complete: false },
+        { id: Match.anyNumber, name: "Todo 2", complete: false },
       ],
       displayCompleted: false,
     },
@@ -40,13 +42,16 @@ export const cases: Conformance<typeof createBulkTodos> = [
   },
   {
     name: "continues names after existing todos",
-    before: { todos: [{ id: 1, name: "a", complete: false }], displayCompleted: false },
+    before: {
+      todos: [{ id: 1, name: "a", complete: false }],
+      displayCompleted: false,
+    },
     args: { count: 2, analytics: AnalyticsService.createFake() },
     after: {
       todos: [
-        { id: anyNumber, name: "a", complete: false },
-        { id: anyNumber, name: "Todo 1", complete: false },
-        { id: anyNumber, name: "Todo 2", complete: false },
+        { id: Match.anyNumber, name: "a", complete: false },
+        { id: Match.anyNumber, name: "Todo 1", complete: false },
+        { id: Match.anyNumber, name: "Todo 2", complete: false },
       ],
       displayCompleted: false,
     },
@@ -58,8 +63,8 @@ export const cases: Conformance<typeof createBulkTodos> = [
     args: { count: 2.9, analytics: AnalyticsService.createFake() },
     after: {
       todos: [
-        { id: anyNumber, name: "Todo 0", complete: false },
-        { id: anyNumber, name: "Todo 1", complete: false },
+        { id: Match.anyNumber, name: "Todo 0", complete: false },
+        { id: Match.anyNumber, name: "Todo 1", complete: false },
       ],
       displayCompleted: false,
     },
@@ -67,9 +72,15 @@ export const cases: Conformance<typeof createBulkTodos> = [
   },
   {
     name: "is a no-op for count 0 but still logs the request",
-    before: { todos: [{ id: 1, name: "a", complete: false }], displayCompleted: true },
+    before: {
+      todos: [{ id: 1, name: "a", complete: false }],
+      displayCompleted: true,
+    },
     args: { count: 0, analytics: AnalyticsService.createFake() },
-    after: { todos: [{ id: anyNumber, name: "a", complete: false }], displayCompleted: true },
+    after: {
+      todos: [{ id: Match.anyNumber, name: "a", complete: false }],
+      displayCompleted: true,
+    },
     effects: { analytics: [["bulkTodosCreated", { count: 0 }]] },
   },
 ];

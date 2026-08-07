@@ -13,24 +13,30 @@ import type { CoreDatabase } from "../core-database/core-database.js";
 // the implementation-only slots (`dragPosition`, `assignees`) are seeded empty.
 //
 // The ecs assigns entity ids from its own quadrant-encoded id-space, unrelated
-// to the spec's domain `id`. So the seeded entities are returned in display
-// order and the caller maps spec `id` → entity positionally (see
-// `expect-conforms.ts`); nothing here assumes the two id-spaces coincide.
-export const fromState = (store: CoreDatabase.Store, state: State): readonly Entity[] => {
+// to the spec's domain `id`. This returns the `spec id → seeded entity` map so the
+// conformance runners resolve id-addressed operations generically
+// (`Conformance.resolver`); nothing here assumes the two id-spaces coincide.
+export const fromState = (
+  store: CoreDatabase.Store,
+  state: State,
+): ReadonlyMap<number, Entity> => {
   for (const arch of store.queryArchetypes(store.archetypes.Todo.components)) {
     for (let row = arch.rowCount - 1; row >= 0; row--) {
       store.delete(arch.columns.id.get(row));
     }
   }
   store.resources.displayCompleted = state.displayCompleted;
-  return state.todos.map((todo, index) =>
-    store.archetypes.Todo.insert({
-      todo: true,
-      name: todo.name,
-      complete: todo.complete,
-      order: index,
-      dragPosition: null,
-      assignees: [],
-    }),
+  return new Map(
+    state.todos.map((todo, index) => [
+      todo.id,
+      store.archetypes.Todo.insert({
+        todo: true,
+        name: todo.name,
+        complete: todo.complete,
+        order: index,
+        dragPosition: null,
+        assignees: [],
+      }),
+    ]),
   );
 };

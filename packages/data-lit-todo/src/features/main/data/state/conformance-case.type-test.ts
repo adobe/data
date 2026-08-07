@@ -9,14 +9,25 @@ import type { AnalyticsService } from "../../services/analytics-service/analytic
 import type { Effects } from "./conformance-case.js";
 
 // A representative transition arg shape: plain data + one injected service.
-type Args = { readonly name: string; readonly complete?: boolean; readonly analytics: AnalyticsService };
+type Args = {
+  readonly name: string;
+  readonly complete?: boolean;
+  readonly analytics: AnalyticsService;
+};
 
 // ===== POSITIVE — must compile =====
-const ordered: Effects<Args> = { analytics: [["todoCreated", { name: "a" }], ["todoToggled"]] };
-const anyOrder: Effects<Args> = { analytics: new Set([["todoToggled"] as const, ["allTodosCleared"] as const]) };
+const ordered: Effects<Args> = {
+  analytics: [["todoCreated", { name: "a" }], ["todoToggled"]],
+};
+const anyOrder: Effects<Args> = {
+  analytics: new Set([["todoToggled"] as const, ["allTodosCleared"] as const]),
+};
 const noArgMethod: Effects<Args> = { analytics: [["displayCompletedToggled"]] };
 const empty: Effects<Args> = {};
-void ordered; void anyOrder; void noArgMethod; void empty;
+void ordered;
+void anyOrder;
+void noArgMethod;
+void empty;
 
 // ===== NEGATIVE — each must error =====
 const badMethod: Effects<Args> = {
@@ -39,4 +50,8 @@ const dataKey: Effects<Args> = {
   // @ts-expect-error - "name" is a data arg, not a service
   name: [["todoCreated", { name: "a" }]],
 };
-void badMethod; void badArgs; void missingArgs; void extraArg; void dataKey;
+void badMethod;
+void badArgs;
+void missingArgs;
+void extraArg;
+void dataKey;

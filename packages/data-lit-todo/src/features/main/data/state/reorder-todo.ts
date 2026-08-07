@@ -1,8 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
-import { anyNumber } from "./matchers.js";
-
+import { Match } from "@adobe/data/testing";
 /**
  * Moves the todo with the given id to `toIndex` within the list, preserving the
  * relative order of every other todo. Out-of-range indices are clamped and an
@@ -35,7 +34,7 @@ const three = [
 // the same move — `finalIndex` is `toIndex`). Every case keeps all todos
 // incomplete with `displayCompleted` true, so the visible list `dragTodo` indexes
 // equals the full list. `before` ids address the move; `after` ids are open
-// (`anyNumber`) but their *order* is verified. The unknown-id no-op is exercised
+// (`Match.anyNumber`) but their *order* is verified. The unknown-id no-op is exercised
 // only by the pure transform — `dragTodo` has no such guard.
 export const cases: Conformance<typeof reorderTodo> = [
   {
@@ -44,9 +43,9 @@ export const cases: Conformance<typeof reorderTodo> = [
     args: { id: 1, toIndex: 2 },
     after: {
       todos: [
-        { id: anyNumber, name: "b", complete: false },
-        { id: anyNumber, name: "c", complete: false },
-        { id: anyNumber, name: "a", complete: false },
+        { id: Match.anyNumber, name: "b", complete: false },
+        { id: Match.anyNumber, name: "c", complete: false },
+        { id: Match.anyNumber, name: "a", complete: false },
       ],
       displayCompleted: true,
     },
@@ -57,9 +56,9 @@ export const cases: Conformance<typeof reorderTodo> = [
     args: { id: 3, toIndex: 0 },
     after: {
       todos: [
-        { id: anyNumber, name: "c", complete: false },
-        { id: anyNumber, name: "a", complete: false },
-        { id: anyNumber, name: "b", complete: false },
+        { id: Match.anyNumber, name: "c", complete: false },
+        { id: Match.anyNumber, name: "a", complete: false },
+        { id: Match.anyNumber, name: "b", complete: false },
       ],
       displayCompleted: true,
     },
@@ -70,9 +69,9 @@ export const cases: Conformance<typeof reorderTodo> = [
     args: { id: 1, toIndex: 99 },
     after: {
       todos: [
-        { id: anyNumber, name: "b", complete: false },
-        { id: anyNumber, name: "c", complete: false },
-        { id: anyNumber, name: "a", complete: false },
+        { id: Match.anyNumber, name: "b", complete: false },
+        { id: Match.anyNumber, name: "c", complete: false },
+        { id: Match.anyNumber, name: "a", complete: false },
       ],
       displayCompleted: true,
     },
@@ -83,9 +82,9 @@ export const cases: Conformance<typeof reorderTodo> = [
     args: { id: 2, toIndex: 1 },
     after: {
       todos: [
-        { id: anyNumber, name: "a", complete: false },
-        { id: anyNumber, name: "b", complete: false },
-        { id: anyNumber, name: "c", complete: false },
+        { id: Match.anyNumber, name: "a", complete: false },
+        { id: Match.anyNumber, name: "b", complete: false },
+        { id: Match.anyNumber, name: "c", complete: false },
       ],
       displayCompleted: true,
     },

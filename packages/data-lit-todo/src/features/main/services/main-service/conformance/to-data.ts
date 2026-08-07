@@ -10,6 +10,7 @@ import type { CoreDatabase } from "../core-database/core-database.js";
 // yields, so those computeds need no bespoke projection. Test-only.
 export const toData = (store: CoreDatabase.Store, entity: Entity): Todo => {
   const row = store.read(entity, store.archetypes.Todo);
-  if (row === null) throw new Error("conformance projection: expected a todo entity");
+  if (row === null)
+    throw new Error("conformance projection: expected a todo entity");
   return { id: row.id, name: row.name, complete: row.complete };
 };

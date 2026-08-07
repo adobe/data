@@ -2,8 +2,7 @@
 import type { State } from "./state.js";
 import type { Todo } from "../todo/todo.js";
 import type { Derivation } from "./conformance-case.js";
-import { anyNumber } from "./matchers.js";
-
+import { Match } from "@adobe/data/testing";
 // The todos the user should see, in display order: all of them when
 // `displayCompleted`, otherwise only the incomplete ones.
 export const visibleTodos = (
@@ -14,7 +13,7 @@ export const visibleTodos = (
     : state.todos.filter((todo) => !todo.complete);
 
 // Spec-owned cases, shared with the ecs `visibleTodos` computed. A derivation
-// case is `{ input, value }`; `value` leaves ids open (`anyNumber`) and its order
+// case is `{ input, value }`; `value` leaves ids open (`Match.anyNumber`) and its order
 // is significant (display order).
 export const cases: Derivation<typeof visibleTodos> = [
   {
@@ -28,8 +27,8 @@ export const cases: Derivation<typeof visibleTodos> = [
       displayCompleted: false,
     },
     value: [
-      { id: anyNumber, name: "a", complete: false },
-      { id: anyNumber, name: "c", complete: false },
+      { id: Match.anyNumber, name: "a", complete: false },
+      { id: Match.anyNumber, name: "c", complete: false },
     ],
   },
   {
@@ -42,8 +41,8 @@ export const cases: Derivation<typeof visibleTodos> = [
       displayCompleted: true,
     },
     value: [
-      { id: anyNumber, name: "a", complete: false },
-      { id: anyNumber, name: "b", complete: true },
+      { id: Match.anyNumber, name: "a", complete: false },
+      { id: Match.anyNumber, name: "b", complete: true },
     ],
   },
 ];

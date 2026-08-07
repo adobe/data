@@ -10,12 +10,19 @@ argument and pure `data/` args. Actions orchestrate anything *outside* a
 single transaction — awaiting a `services/` port, sequencing calls, deriving
 timing — and then commit the result through a transaction.
 
-**Every state transition has a corresponding same-named action** — the async,
-app-facing realization the UI calls. It reads the same services the transition
-injects from `db.services`, so it reproduces both the transition's state change
-(through a transaction) and its side effects. It may reuse another transition's
-transaction (`createRandomTodo` reuses `createTodo`) — there need not be a
-same-named transaction; transactions are the looser layer.
+**Every *app-facing, transaction-backed* transition has a corresponding
+same-named action** — the async realization the UI drives. It reads the same
+services the transition injects from `db.services`, so it reproduces both the
+transition's state change (through a transaction) and its side effects. It may
+reuse another transition's transaction (`createRandomTodo` reuses `createTodo`) —
+there need not be a same-named transaction; transactions are the looser layer.
+
+**Per-frame / system transitions are exempt.** In a real-time feature the `step*`
+/ physics / collision transitions are realized by the **systems** tick loop, not
+by an action, and are conformed by the tick-loop test (`systems.md`), not
+`actions.test.ts`. Give an action only to transitions a user/UI invokes directly
+(and skip it too when the realization needs more than one transaction — e.g. a
+`newGame` that both sets bounds and resets is conformed via its transaction).
 
 ```ts
 import type { ServiceDatabase } from "../../service-database/service-database.js";

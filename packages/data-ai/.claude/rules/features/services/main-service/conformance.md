@@ -23,9 +23,16 @@ cases are the shared truth; these runners replay them against the ECS. Reference
 One matcher-aware `matches(actual, expected)` (exported; also backs derivations):
 honors vitest **asymmetric matchers** on the expected side (so `after`/`value`
 use `anyNumber` for ECS-assigned ids), quantizes numbers to absorb F32↔f64 noise,
-and compares arrays **in order** (`toState` reads in display order — this is what
-verifies a reorder). No separate id-ignoring variant. `expectStateMatches` /
-`expectMatches` wrap it.
+and compares arrays **in order** by default (`toState` reads a display-ordered
+collection in order — this is what verifies a reorder; and ordered tuples like a
+`Vec2` must stay in order). No separate id-ignoring variant.
+
+**Ordering is per-collection.** A collection the ECS materialises with **no
+display order** (an entity *bag* — bullets, asteroids — whose row order is
+nondeterministic) must compare as a **multiset**: expose a `matchesUnordered` and
+apply it to just those fields in that feature's `expectStateMatches`. Ordered
+default + multiset for orderless bags — never blanket-unordered (it would conflate
+`[100,180]` with `[180,100]`). `expectStateMatches` / `expectMatches` wrap it.
 
 ## The runners — one aggregator per surface, each with a coverage guard
 

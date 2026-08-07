@@ -43,8 +43,16 @@ export const cases: Conformance<typeof createTodo> = [
 ```
 
 - **Signature** `(state, args) => state`. Narrow-in/same-shape-out — generic over
-  the smallest `Pick<State,…>` slice so it lifts to full-state. Args may be
-  narrowed/omitted. **Guard no-ops by returning `state` unchanged**, never throw.
+  the smallest `Pick<State,…>` slice so it lifts to full-state. **All non-state
+  inputs go in the single `args` object** (`Conformance<typeof fn>` reads
+  `Parameters[1]`) — bundle a `dt`, an injected service, etc. into it, never as a
+  third positional. Args may be narrowed/omitted. **Guard no-ops by returning
+  `state` unchanged**, never throw.
+- **Co-located `cases` must not touch the feature's `public.js` barrel at module
+  load** — that barrel re-exports this very file, so calling `State.create()` (or
+  any barrel member) in a top-level `cases` literal dead-locks the import cycle.
+  Import the concrete helper directly (`import { create } from "./create.js"`) or
+  inline full-`State` literals.
 - **`Conformance<typeof fn>`** derives the case `args` type from the function's
   own signature — author it once, and cases can't drift from what the function
   accepts. `before`/`after` are full `State`.
@@ -55,7 +63,11 @@ export const cases: Conformance<typeof createTodo> = [
   only when a case needs one — a feature whose `State` exposes no ECS-minted ids
   (values abstracted behind a scalar/string) never does.
 - No per-transform test. The single **`spec.test.ts`** auto-discovers every file
-  exporting `cases` and asserts the pure result (see `conformance.md`).
+  exporting `cases` and asserts the pure result (see `conformance.md`). Only the
+  redundant per-transform tests are removed. A genuine **non-transition helper** in
+  `state/` — a `create()` constructor, a single-field predicate — has no `cases`
+  and isn't a `(state,args)=>state` transform, so `spec.test.ts` skips it: **keep
+  its own sibling `*.test.ts`** rather than deleting it and losing coverage.
 
 ## Injected services and side effects
 

@@ -7,7 +7,9 @@ import { Ship } from "../ship/ship.js";
 
 // Fire one bullet from the ship's nose, inheriting its momentum. Composes the
 // ship's muzzle kinematics with the bullet's own speed constant.
-export const fireBullet = <T extends Pick<State, "ship" | "bullets">>(state: T): T => {
+export const fireBullet = <T extends Pick<State, "ship" | "bullets">>(
+  state: T,
+): T => {
   const { position, velocity } = Ship.muzzle(state.ship, Bullet.speed);
   const bullet: Bullet = { position, velocity, age: 0 };
   return { ...state, bullets: [...state.bullets, bullet] };
@@ -22,7 +24,11 @@ const field = { ...create(), bounds: [800, 600] as [number, number] };
 export const cases: Conformance<typeof fireBullet> = [
   {
     name: "fires from a ship facing +x at rest",
-    before: { ...field, ship: { position: [100, 100], velocity: [0, 0], rotation: 0 }, bullets: [] },
+    before: {
+      ...field,
+      ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
+      bullets: [],
+    },
     args: undefined,
     after: {
       ...field,
@@ -32,7 +38,11 @@ export const cases: Conformance<typeof fireBullet> = [
   },
   {
     name: "inherits the ship's momentum",
-    before: { ...field, ship: { position: [100, 100], velocity: [10, 20], rotation: 0 }, bullets: [] },
+    before: {
+      ...field,
+      ship: { position: [100, 100], velocity: [10, 20], rotation: 0 },
+      bullets: [],
+    },
     args: undefined,
     after: {
       ...field,

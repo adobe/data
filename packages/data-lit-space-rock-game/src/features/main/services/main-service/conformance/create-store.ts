@@ -9,4 +9,5 @@ import { IndexDatabase } from "../index-database/index-database.js";
 // none — and `Store.create` reads a plugin's schema facets directly. Typed as
 // `CoreDatabase.Store`: the surface the projection (`fromState` / `toState`) and
 // the raw transaction functions use. Test-only.
-export const createStore = (): CoreDatabase.Store => Store.create(IndexDatabase.plugin);
+export const createStore = (): CoreDatabase.Store =>
+  Store.create(IndexDatabase.plugin);

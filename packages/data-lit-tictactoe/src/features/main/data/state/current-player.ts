@@ -17,22 +17,46 @@ export const currentPlayer = (state: State): PlayerMark =>
 export const cases: Derivation<typeof currentPlayer> = [
   {
     name: "the first player moves on an empty board",
-    input: { board: "         ", firstPlayer: "X", xWins: 0, oWins: 0, draws: 0 },
+    input: {
+      board: "         ",
+      firstPlayer: "X",
+      xWins: 0,
+      oWins: 0,
+      draws: 0,
+    },
     value: "X",
   },
   {
     name: "honors a first player of O on an empty board",
-    input: { board: "         ", firstPlayer: "O", xWins: 0, oWins: 0, draws: 0 },
+    input: {
+      board: "         ",
+      firstPlayer: "O",
+      xWins: 0,
+      oWins: 0,
+      draws: 0,
+    },
     value: "O",
   },
   {
     name: "alternates to the opponent after the first move",
-    input: { board: "    X    ", firstPlayer: "X", xWins: 0, oWins: 0, draws: 0 },
+    input: {
+      board: "    X    ",
+      firstPlayer: "X",
+      xWins: 0,
+      oWins: 0,
+      draws: 0,
+    },
     value: "O",
   },
   {
     name: "returns to the first player after both have moved",
-    input: { board: "XO       ", firstPlayer: "X", xWins: 1, oWins: 2, draws: 0 },
+    input: {
+      board: "XO       ",
+      firstPlayer: "X",
+      xWins: 1,
+      oWins: 2,
+      draws: 0,
+    },
     value: "X",
   },
 ];

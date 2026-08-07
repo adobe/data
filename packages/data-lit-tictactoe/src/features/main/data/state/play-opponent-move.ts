@@ -16,7 +16,9 @@ import type { Conformance } from "./conformance-case.js";
  * is still **deterministic given its dependency**: inject a fixed opponent and
  * the result is fixed — which is exactly how it is unit-tested.
  */
-export const playOpponentMove = async <T extends Pick<State, "board" | "firstPlayer">>(
+export const playOpponentMove = async <
+  T extends Pick<State, "board" | "firstPlayer">,
+>(
   state: T,
   { opponent }: { opponent: OpponentService },
 ): Promise<T> => {
@@ -32,25 +34,61 @@ export const playOpponentMove = async <T extends Pick<State, "board" | "firstPla
 export const cases: Conformance<typeof playOpponentMove> = [
   {
     name: "plays the opponent's first selected move for the current player",
-    before: { board: "         ", firstPlayer: "X", xWins: 0, oWins: 0, draws: 0 },
+    before: {
+      board: "         ",
+      firstPlayer: "X",
+      xWins: 0,
+      oWins: 0,
+      draws: 0,
+    },
     args: { opponent: OpponentService.createFake() },
     // fakeMoves[0] === 4; the current player on an empty board is the first
     // player (X), so an X lands in the centre cell.
-    after: { board: "    X    ", firstPlayer: "X", xWins: 0, oWins: 0, draws: 0 },
+    after: {
+      board: "    X    ",
+      firstPlayer: "X",
+      xWins: 0,
+      oWins: 0,
+      draws: 0,
+    },
   },
   {
     name: "plays the next mark onto a running board",
-    before: { board: "    X    ", firstPlayer: "X", xWins: 0, oWins: 0, draws: 0 },
+    before: {
+      board: "    X    ",
+      firstPlayer: "X",
+      xWins: 0,
+      oWins: 0,
+      draws: 0,
+    },
     args: { opponent: OpponentService.createFake([0]) },
     // The published move is cell 0; the current player alternates to O by move
     // count, so an O lands in the top-left cell.
-    after: { board: "O   X    ", firstPlayer: "X", xWins: 0, oWins: 0, draws: 0 },
+    after: {
+      board: "O   X    ",
+      firstPlayer: "X",
+      xWins: 0,
+      oWins: 0,
+      draws: 0,
+    },
   },
   {
     name: "ignores an illegal selected move, leaving the state unchanged",
-    before: { board: "    X    ", firstPlayer: "X", xWins: 0, oWins: 0, draws: 0 },
+    before: {
+      board: "    X    ",
+      firstPlayer: "X",
+      xWins: 0,
+      oWins: 0,
+      draws: 0,
+    },
     args: { opponent: OpponentService.createFake([4]) },
     // Cell 4 is occupied — `playMove` rejects it, so the transition is a no-op.
-    after: { board: "    X    ", firstPlayer: "X", xWins: 0, oWins: 0, draws: 0 },
+    after: {
+      board: "    X    ",
+      firstPlayer: "X",
+      xWins: 0,
+      oWins: 0,
+      draws: 0,
+    },
   },
 ];

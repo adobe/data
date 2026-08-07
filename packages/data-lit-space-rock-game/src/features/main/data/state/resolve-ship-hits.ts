@@ -15,7 +15,12 @@ export const resolveShipHits = <
   state: T,
 ): T => {
   const struck = state.asteroids.some((a) =>
-    Collision.circlesOverlap(state.ship.position, Ship.radius, a.position, Asteroid.radius(a)),
+    Collision.circlesOverlap(
+      state.ship.position,
+      Ship.radius,
+      a.position,
+      Asteroid.radius(a),
+    ),
   );
   if (!struck) {
     return state;

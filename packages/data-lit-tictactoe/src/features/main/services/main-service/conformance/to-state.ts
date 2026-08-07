@@ -10,7 +10,9 @@ import { toData } from "./to-data.js";
 // Test-only.
 const readBoard = (store: CoreDatabase.Store): BoardState =>
   BoardState.fromMarks(
-    [...store.select(store.archetypes.PlacedMark.components)].map((entity) => toData(store, entity)),
+    [...store.select(store.archetypes.PlacedMark.components)].map((entity) =>
+      toData(store, entity),
+    ),
   );
 
 export const toState = (store: CoreDatabase.Store): State => ({

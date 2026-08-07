@@ -15,7 +15,10 @@ export const stepBullets = <T extends Pick<State, "bullets" | "bounds">>(
     .filter((b) => !Bullet.isExpired(b.age, dt))
     .map((b) => ({
       ...b,
-      position: Motion.wrap(Motion.advance(b.position, b.velocity, dt), state.bounds),
+      position: Motion.wrap(
+        Motion.advance(b.position, b.velocity, dt),
+        state.bounds,
+      ),
       age: b.age + dt,
     }));
   return { ...state, bullets };
@@ -30,27 +33,50 @@ const field = { ...create(), bounds: [100, 100] as [number, number] };
 export const cases: Conformance<typeof stepBullets> = [
   {
     name: "moves and ages a live bullet",
-    before: { ...field, bullets: [{ position: [10, 50], velocity: [100, 0], age: 0 }] },
+    before: {
+      ...field,
+      bullets: [{ position: [10, 50], velocity: [100, 0], age: 0 }],
+    },
     args: 0.1,
-    after: { ...field, bullets: [{ position: [20, 50], velocity: [100, 0], age: 0.1 }] },
+    after: {
+      ...field,
+      bullets: [{ position: [20, 50], velocity: [100, 0], age: 0.1 }],
+    },
   },
   {
     name: "wraps a bullet across the right edge",
-    before: { ...field, bullets: [{ position: [95, 50], velocity: [100, 0], age: 0 }] },
+    before: {
+      ...field,
+      bullets: [{ position: [95, 50], velocity: [100, 0], age: 0 }],
+    },
     args: 0.1,
-    after: { ...field, bullets: [{ position: [5, 50], velocity: [100, 0], age: 0.1 }] },
+    after: {
+      ...field,
+      bullets: [{ position: [5, 50], velocity: [100, 0], age: 0.1 }],
+    },
   },
   {
     name: "drops a bullet that expires this tick (age + dt ≥ lifetime)",
-    before: { ...field, bullets: [{ position: [10, 50], velocity: [100, 0], age: Bullet.lifetime }] },
+    before: {
+      ...field,
+      bullets: [
+        { position: [10, 50], velocity: [100, 0], age: Bullet.lifetime },
+      ],
+    },
     args: 0.1,
     after: { ...field, bullets: [] },
   },
   {
     name: "keeps and ages a bullet still under its lifetime",
-    before: { ...field, bullets: [{ position: [10, 50], velocity: [0, 0], age: 1.0 }] },
+    before: {
+      ...field,
+      bullets: [{ position: [10, 50], velocity: [0, 0], age: 1.0 }],
+    },
     args: 0.1,
-    after: { ...field, bullets: [{ position: [10, 50], velocity: [0, 0], age: 1.1 }] },
+    after: {
+      ...field,
+      bullets: [{ position: [10, 50], velocity: [0, 0], age: 1.1 }],
+    },
   },
   {
     name: "advances survivors and drops only the expired bullet",
@@ -62,7 +88,10 @@ export const cases: Conformance<typeof stepBullets> = [
       ],
     },
     args: 0.1,
-    after: { ...field, bullets: [{ position: [20, 50], velocity: [100, 0], age: 0.1 }] },
+    after: {
+      ...field,
+      bullets: [{ position: [20, 50], velocity: [100, 0], age: 0.1 }],
+    },
   },
   {
     name: "an empty list stays empty",

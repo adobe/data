@@ -1,16 +1,17 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 //
 // Guards the projection itself. `fromState` and `toState` are the bridge every
-// transaction / system conformance test trusts; a symmetric bug in the pair
-// (e.g. both dropping the same field) would cancel out and mask a real ecs
-// defect. This identity test — `toState(fromState(s)) ≡ s` over representative
-// states — proves the projection round-trips faithfully on its own.
+// transaction / system conformance test trusts; a symmetric bug in the pair would
+// cancel out and mask a real ecs defect. This identity test — `toState(fromState(s))
+// ≡ s` over representative states — proves the projection round-trips on its own.
 import { describe, it } from "vitest";
+import { Match } from "@adobe/data/testing";
 import type { State } from "../../../data/state/state.js";
-import { expectStateMatches } from "../../../data/state/expect-state-matches.js";
 import { createStore } from "./create-store.js";
 import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
+
+const unordered = { unordered: new Set(["bullets", "asteroids"]) };
 
 const states: readonly { readonly name: string; readonly state: State }[] = [
   {
@@ -67,7 +68,7 @@ describe("ecs/conformance projection round-trips (toState ∘ fromState ≡ iden
     it(name, () => {
       const store = createStore();
       fromState(store, state);
-      expectStateMatches(toState(store), state);
+      Match.assert(toState(store), state, unordered);
     });
   }
 });

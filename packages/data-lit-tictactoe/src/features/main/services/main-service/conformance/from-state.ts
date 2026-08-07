@@ -13,7 +13,9 @@ import type { CoreDatabase } from "../core-database/core-database.js";
 // shift). The board string carries the marks (tictactoe stores each mark as an
 // entity), so `PlayerMark.is` narrows each cell and skips the blanks.
 export const fromState = (store: CoreDatabase.Store, state: State): void => {
-  for (const arch of store.queryArchetypes(store.archetypes.PlacedMark.components)) {
+  for (const arch of store.queryArchetypes(
+    store.archetypes.PlacedMark.components,
+  )) {
     for (let row = arch.rowCount - 1; row >= 0; row--) {
       store.delete(arch.columns.id.get(row));
     }

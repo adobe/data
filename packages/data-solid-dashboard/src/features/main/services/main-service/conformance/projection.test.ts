@@ -7,8 +7,8 @@
 // the projection round-trips faithfully on its own. The state is entirely scalar
 // resources (no ecs-minted ids), so the compare is exact.
 import { describe, it } from "vitest";
+import { Match } from "@adobe/data/testing";
 import type { State } from "../../../data/state/state.js";
-import { expectStateMatches } from "../../../data/state/expect-state-matches.js";
 import { createStore } from "./create-store.js";
 import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
@@ -16,7 +16,11 @@ import { toState } from "./to-state.js";
 const states: readonly { readonly name: string; readonly state: State }[] = [
   {
     name: "a populated dashboard: positive count, multi-entry log, named user",
-    state: { count: 3, log: ["Incremented to 1", "Name changed to Ada"], userName: "Ada" },
+    state: {
+      count: 3,
+      log: ["Incremented to 1", "Name changed to Ada"],
+      userName: "Ada",
+    },
   },
   {
     name: "the initial defaults: zero count, empty log, guest user",
@@ -29,7 +33,7 @@ describe("ecs conformance projection round-trips (toState ∘ fromState ≡ iden
     it(name, () => {
       const store = createStore();
       fromState(store, state);
-      expectStateMatches(toState(store), state);
+      Match.assert(toState(store), state);
     });
   }
 });

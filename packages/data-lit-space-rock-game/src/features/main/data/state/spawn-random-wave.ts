@@ -26,7 +26,9 @@ const asteroidsFor = (wave: number): number => 3 + wave;
  * `[0.5×, 1.5×)` — drawing one value per asteroid in ring order. A no-op while
  * asteroids remain (draws nothing, returns the same reference).
  */
-export const spawnRandomWave = <T extends Pick<State, "asteroids" | "wave" | "bounds">>(
+export const spawnRandomWave = <
+  T extends Pick<State, "asteroids" | "wave" | "bounds">,
+>(
   state: T,
   { random }: { random: RandomService },
 ): T => {

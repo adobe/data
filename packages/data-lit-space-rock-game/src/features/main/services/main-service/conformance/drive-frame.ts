@@ -13,7 +13,10 @@ export const driveFrame = (db: SystemDatabase): void => {
       // `name` comes from `db.system.order`, so it is always one of this
       // database's declared system keys — an invariant the `string` element
       // type of `order` cannot carry.
-      const fn = db.system.functions[name as keyof SystemDatabase["system"]["functions"]];
+      const fn =
+        db.system.functions[
+          name as keyof SystemDatabase["system"]["functions"]
+        ];
       if (typeof fn === "function") fn();
     }
   }

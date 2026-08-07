@@ -11,12 +11,32 @@ import type { CoreDatabase } from "../core-database/core-database.js";
 // one of Ship / Bullet / Asteroid, so `toData` probes each named archetype (their
 // component sets are distinct — only Ship has `rotation`, only Bullet `age`, only
 // Asteroid `size`) and projects the first that matches. Test-only.
-export const toData = (store: CoreDatabase.Store, entity: Entity): Ship | Bullet | Asteroid => {
+export const toData = (
+  store: CoreDatabase.Store,
+  entity: Entity,
+): Ship | Bullet | Asteroid => {
   const ship = store.read(entity, store.archetypes.Ship);
-  if (ship !== null) return { position: ship.position, velocity: ship.velocity, rotation: ship.rotation };
+  if (ship !== null)
+    return {
+      position: ship.position,
+      velocity: ship.velocity,
+      rotation: ship.rotation,
+    };
   const bullet = store.read(entity, store.archetypes.Bullet);
-  if (bullet !== null) return { position: bullet.position, velocity: bullet.velocity, age: bullet.age };
+  if (bullet !== null)
+    return {
+      position: bullet.position,
+      velocity: bullet.velocity,
+      age: bullet.age,
+    };
   const asteroid = store.read(entity, store.archetypes.Asteroid);
-  if (asteroid !== null) return { position: asteroid.position, velocity: asteroid.velocity, size: asteroid.size };
-  throw new Error("conformance projection: entity is not a ship, bullet, or asteroid");
+  if (asteroid !== null)
+    return {
+      position: asteroid.position,
+      velocity: asteroid.velocity,
+      size: asteroid.size,
+    };
+  throw new Error(
+    "conformance projection: entity is not a ship, bullet, or asteroid",
+  );
 };

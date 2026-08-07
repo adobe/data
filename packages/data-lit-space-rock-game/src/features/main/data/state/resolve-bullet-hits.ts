@@ -31,9 +31,17 @@ export const resolveBulletHits = <
   const survivors: Bullet[] = [];
   let score = state.score;
   for (const bullet of state.bullets) {
-    const prev = Vec2.subtract(bullet.position, Vec2.scale(bullet.velocity, dt));
+    const prev = Vec2.subtract(
+      bullet.position,
+      Vec2.scale(bullet.velocity, dt),
+    );
     const hit = asteroids.findIndex((a) =>
-      Collision.segmentCircleOverlap(prev, bullet.position, a.position, Bullet.radius + Asteroid.radius(a)),
+      Collision.segmentCircleOverlap(
+        prev,
+        bullet.position,
+        a.position,
+        Bullet.radius + Asteroid.radius(a),
+      ),
     );
     if (hit < 0) {
       survivors.push(bullet);
@@ -43,7 +51,12 @@ export const resolveBulletHits = <
     score += Asteroid.score(asteroid);
     spawned.push(...Asteroid.split(asteroid));
   }
-  return { ...state, bullets: survivors, asteroids: [...asteroids, ...spawned], score };
+  return {
+    ...state,
+    bullets: survivors,
+    asteroids: [...asteroids, ...spawned],
+    score,
+  };
 };
 
 // Spec-owned cases, shared with the ecs `hitAsteroid` transaction (dispatched

@@ -40,7 +40,7 @@ export const recordArgServices = <Args>(
   args: Args,
 ): { args: Args; calls: Record<string, RecordedCall[]> } => {
   const calls: Record<string, RecordedCall[]> = {};
-  if (args === null || typeof args !== "object") return { args, calls };
+  if (args === null || typeof args !== "object" || Array.isArray(args)) return { args, calls };
   const next = { ...(args as object) } as Record<string, unknown>;
   for (const [key, value] of Object.entries(args as object)) {
     if (isServiceValue(value)) {
@@ -61,7 +61,7 @@ export const splitAndRecordServices = <Args>(
   const services: Record<string, object> = {};
   const input: Record<string, unknown> = {};
   const calls: Record<string, RecordedCall[]> = {};
-  if (args !== null && typeof args === "object") {
+  if (args !== null && typeof args === "object" && !Array.isArray(args)) {
     for (const [key, value] of Object.entries(args)) {
       if (isServiceValue(value)) {
         const recorded = recordCalls(value);

@@ -12,7 +12,10 @@ export const stepAsteroids = <T extends Pick<State, "asteroids" | "bounds">>(
 ): T => {
   const asteroids = state.asteroids.map((a) => ({
     ...a,
-    position: Motion.wrap(Motion.advance(a.position, a.velocity, dt), state.bounds),
+    position: Motion.wrap(
+      Motion.advance(a.position, a.velocity, dt),
+      state.bounds,
+    ),
   }));
   return { ...state, asteroids };
 };
@@ -25,21 +28,47 @@ const field = { ...create(), bounds: [100, 100] as [number, number] };
 export const cases: Conformance<typeof stepAsteroids> = [
   {
     name: "drifts an asteroid by its velocity",
-    before: { ...field, asteroids: [{ position: [10, 10], velocity: [30, 0], size: Size.largest }] },
+    before: {
+      ...field,
+      asteroids: [
+        { position: [10, 10], velocity: [30, 0], size: Size.largest },
+      ],
+    },
     args: 1,
-    after: { ...field, asteroids: [{ position: [40, 10], velocity: [30, 0], size: Size.largest }] },
+    after: {
+      ...field,
+      asteroids: [
+        { position: [40, 10], velocity: [30, 0], size: Size.largest },
+      ],
+    },
   },
   {
     name: "wraps an asteroid around the toroidal field",
-    before: { ...field, asteroids: [{ position: [80, 80], velocity: [50, 50], size: Size.largest }] },
+    before: {
+      ...field,
+      asteroids: [
+        { position: [80, 80], velocity: [50, 50], size: Size.largest },
+      ],
+    },
     args: 1,
-    after: { ...field, asteroids: [{ position: [30, 30], velocity: [50, 50], size: Size.largest }] },
+    after: {
+      ...field,
+      asteroids: [
+        { position: [30, 30], velocity: [50, 50], size: Size.largest },
+      ],
+    },
   },
   {
     name: "wraps negatively across the left edge",
-    before: { ...field, asteroids: [{ position: [10, 10], velocity: [-50, 0], size: "medium" }] },
+    before: {
+      ...field,
+      asteroids: [{ position: [10, 10], velocity: [-50, 0], size: "medium" }],
+    },
     args: 1,
-    after: { ...field, asteroids: [{ position: [60, 10], velocity: [-50, 0], size: "medium" }] },
+    after: {
+      ...field,
+      asteroids: [{ position: [60, 10], velocity: [-50, 0], size: "medium" }],
+    },
   },
   {
     name: "advances several asteroids of different sizes independently",

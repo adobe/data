@@ -2,7 +2,7 @@
 import type { Sprite } from "../sprite/sprite.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
-import { anyNumber } from "./matchers.js";
+import { Match } from "@adobe/data/testing";
 
 export const setSpriteHovered = <T extends Pick<State, "sprites">>(
   state: T,
@@ -14,8 +14,22 @@ export const setSpriteHovered = <T extends Pick<State, "sprites">>(
   ),
 });
 
-const bunny: Sprite = { id: 1, position: [100, 100], rotation: 0, kind: "bunny", hovered: false, active: false };
-const fox: Sprite = { id: 2, position: [300, 200], rotation: 1, kind: "fox", hovered: false, active: false };
+const bunny: Sprite = {
+  id: 1,
+  position: [100, 100],
+  rotation: 0,
+  kind: "bunny",
+  hovered: false,
+  active: false,
+};
+const fox: Sprite = {
+  id: 2,
+  position: [300, 200],
+  rotation: 1,
+  kind: "fox",
+  hovered: false,
+  active: false,
+};
 
 // Spec-owned cases, shared with the ecs `setSpriteHovered` transaction. Sets the
 // addressed sprite's `hovered` flag; a no-op for an unknown id. `before` ids
@@ -27,8 +41,8 @@ export const cases: Conformance<typeof setSpriteHovered> = [
     args: { id: 1, hovered: true },
     after: {
       sprites: [
-        { ...bunny, id: anyNumber, hovered: true },
-        { ...fox, id: anyNumber },
+        { ...bunny, id: Match.anyNumber, hovered: true },
+        { ...fox, id: Match.anyNumber },
       ],
       filter: "none",
     },
@@ -39,8 +53,8 @@ export const cases: Conformance<typeof setSpriteHovered> = [
     args: { id: 99, hovered: true },
     after: {
       sprites: [
-        { ...bunny, id: anyNumber },
-        { ...fox, id: anyNumber },
+        { ...bunny, id: Match.anyNumber },
+        { ...fox, id: Match.anyNumber },
       ],
       filter: "none",
     },

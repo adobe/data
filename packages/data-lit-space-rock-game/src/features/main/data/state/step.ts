@@ -29,7 +29,15 @@ import { RandomService } from "../../services/random-service/random-service.js";
 // conformed via the `spawnRandomWave` transaction).
 export const step = (
   state: State,
-  { dt, input, random }: { readonly dt: number; readonly input: Input; readonly random: RandomService },
+  {
+    dt,
+    input,
+    random,
+  }: {
+    readonly dt: number;
+    readonly input: Input;
+    readonly random: RandomService;
+  },
 ): State => {
   if (isGameOver(state)) {
     return state;
@@ -87,7 +95,11 @@ export const cases: Conformance<typeof step> = [
       lives: 3,
       wave: 1,
     },
-    args: { dt: 0.1, input: { turn: 0, thrust: false, fire: true }, random: RandomService.createFake() },
+    args: {
+      dt: 0.1,
+      input: { turn: 0, thrust: false, fire: true },
+      random: RandomService.createFake(),
+    },
     after: {
       bounds: [400, 400],
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
@@ -156,7 +168,11 @@ export const cases: Conformance<typeof step> = [
       lives: 0,
       wave: 2,
     },
-    args: { dt: 0.1, input: { turn: 1, thrust: true, fire: true }, random: RandomService.createFake() },
+    args: {
+      dt: 0.1,
+      input: { turn: 1, thrust: true, fire: true },
+      random: RandomService.createFake(),
+    },
     after: {
       bounds: [200, 200],
       ship: { position: [50, 50], velocity: [10, 0], rotation: 0 },

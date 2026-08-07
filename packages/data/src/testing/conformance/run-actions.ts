@@ -25,7 +25,7 @@ export interface ActionRunConfig<Db, Store, State, Id> {
   readonly makeDb: (services: Record<string, object>) => Db;
   // The writable store exposed by that db (usually `(db) => db.store`).
   readonly store: (db: Db) => Store;
-  readonly fromState: (store: Store, before: State) => ReadonlyMap<Id, Entity>;
+  readonly fromState: (store: Store, before: State) => ReadonlyMap<Id, Entity> | void;
   readonly toState: (store: Store) => State;
   // The registered-actions barrel — coverage requires every key wired.
   readonly registered: Record<string, unknown>;

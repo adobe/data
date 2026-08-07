@@ -16,8 +16,13 @@ export const stepShip = <T extends Pick<State, "ship" | "bounds">>(
 ): T => {
   const { ship } = state;
   const rotation = Ship.turn(ship.rotation, input.turn, dt);
-  const velocity = input.thrust ? Ship.thrust(ship.velocity, rotation, dt) : ship.velocity;
-  const position = Motion.wrap(Motion.advance(ship.position, velocity, dt), state.bounds);
+  const velocity = input.thrust
+    ? Ship.thrust(ship.velocity, rotation, dt)
+    : ship.velocity;
+  const position = Motion.wrap(
+    Motion.advance(ship.position, velocity, dt),
+    state.bounds,
+  );
   return { ...state, ship: { position, velocity, rotation } };
 };
 
@@ -30,46 +35,88 @@ const idle: Input = { turn: 0, thrust: false, fire: false };
 export const cases: Conformance<typeof stepShip> = [
   {
     name: "turns right by a positive turn input",
-    before: { ...field, ship: { position: [50, 50], velocity: [0, 0], rotation: 0 } },
+    before: {
+      ...field,
+      ship: { position: [50, 50], velocity: [0, 0], rotation: 0 },
+    },
     args: { dt: 1, input: { turn: 1, thrust: false, fire: false } },
-    after: { ...field, ship: { position: [50, 50], velocity: [0, 0], rotation: 3 } },
+    after: {
+      ...field,
+      ship: { position: [50, 50], velocity: [0, 0], rotation: 3 },
+    },
   },
   {
     name: "turns left by a negative turn input",
-    before: { ...field, ship: { position: [50, 50], velocity: [0, 0], rotation: 0 } },
+    before: {
+      ...field,
+      ship: { position: [50, 50], velocity: [0, 0], rotation: 0 },
+    },
     args: { dt: 1, input: { turn: -1, thrust: false, fire: false } },
-    after: { ...field, ship: { position: [50, 50], velocity: [0, 0], rotation: -3 } },
+    after: {
+      ...field,
+      ship: { position: [50, 50], velocity: [0, 0], rotation: -3 },
+    },
   },
   {
     name: "no turn holds rotation and coasts by velocity",
-    before: { ...field, ship: { position: [50, 50], velocity: [10, 0], rotation: 0.7 } },
+    before: {
+      ...field,
+      ship: { position: [50, 50], velocity: [10, 0], rotation: 0.7 },
+    },
     args: { dt: 1, input: idle },
-    after: { ...field, ship: { position: [60, 50], velocity: [10, 0], rotation: 0.7 } },
+    after: {
+      ...field,
+      ship: { position: [60, 50], velocity: [10, 0], rotation: 0.7 },
+    },
   },
   {
     name: "thrusts along the facing, then coasts by the new velocity",
-    before: { ...field, ship: { position: [50, 50], velocity: [0, 0], rotation: 0 } },
+    before: {
+      ...field,
+      ship: { position: [50, 50], velocity: [0, 0], rotation: 0 },
+    },
     args: { dt: 0.1, input: { turn: 0, thrust: true, fire: false } },
-    after: { ...field, ship: { position: [52, 50], velocity: [20, 0], rotation: 0 } },
+    after: {
+      ...field,
+      ship: { position: [52, 50], velocity: [20, 0], rotation: 0 },
+    },
   },
   {
     name: "wraps across the right edge",
-    before: { ...field, ship: { position: [95, 50], velocity: [100, 0], rotation: 0 } },
+    before: {
+      ...field,
+      ship: { position: [95, 50], velocity: [100, 0], rotation: 0 },
+    },
     args: { dt: 0.1, input: idle },
-    after: { ...field, ship: { position: [5, 50], velocity: [100, 0], rotation: 0 } },
+    after: {
+      ...field,
+      ship: { position: [5, 50], velocity: [100, 0], rotation: 0 },
+    },
   },
   {
     name: "wraps across the top edge (negative wrap)",
-    before: { ...field, ship: { position: [5, 5], velocity: [0, -100], rotation: 0 } },
+    before: {
+      ...field,
+      ship: { position: [5, 5], velocity: [0, -100], rotation: 0 },
+    },
     args: { dt: 0.1, input: idle },
-    after: { ...field, ship: { position: [5, 95], velocity: [0, -100], rotation: 0 } },
+    after: {
+      ...field,
+      ship: { position: [5, 95], velocity: [0, -100], rotation: 0 },
+    },
   },
   {
     // Turn then thrust: −3 turns to 0, and thrust must use the NEW rotation 0
     // (facing +x → velocity [200,0]); using the old −3 would point elsewhere.
     name: "turn composes before thrust — thrust uses the post-turn rotation",
-    before: { ...field, ship: { position: [50, 50], velocity: [0, 0], rotation: -3 } },
+    before: {
+      ...field,
+      ship: { position: [50, 50], velocity: [0, 0], rotation: -3 },
+    },
     args: { dt: 1, input: { turn: 1, thrust: true, fire: false } },
-    after: { ...field, ship: { position: [50, 50], velocity: [200, 0], rotation: 0 } },
+    after: {
+      ...field,
+      ship: { position: [50, 50], velocity: [200, 0], rotation: 0 },
+    },
   },
 ];

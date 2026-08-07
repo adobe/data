@@ -2,7 +2,7 @@
 import type { Sprite } from "../sprite/sprite.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
-import { anyNumber } from "./matchers.js";
+import { Match } from "@adobe/data/testing";
 
 // Advance one animation frame: every sprite rotates by `delta * 0.1` radians.
 // `delta` is the frame time step, supplied by the caller (the render loop).
@@ -17,8 +17,22 @@ export const tick = <T extends Pick<State, "sprites">>(
   })),
 });
 
-const bunny: Sprite = { id: 1, position: [100, 100], rotation: 0, kind: "bunny", hovered: false, active: false };
-const fox: Sprite = { id: 2, position: [300, 200], rotation: 1, kind: "fox", hovered: false, active: false };
+const bunny: Sprite = {
+  id: 1,
+  position: [100, 100],
+  rotation: 0,
+  kind: "bunny",
+  hovered: false,
+  active: false,
+};
+const fox: Sprite = {
+  id: 2,
+  position: [300, 200],
+  rotation: 1,
+  kind: "fox",
+  hovered: false,
+  active: false,
+};
 
 // Spec-owned cases, shared with the ecs `tick` transaction. Every sprite's
 // rotation advances by delta * 0.1; ids are left open (`anyNumber`).
@@ -29,8 +43,8 @@ export const cases: Conformance<typeof tick> = [
     args: { delta: 10 },
     after: {
       sprites: [
-        { ...bunny, id: anyNumber, rotation: 1 },
-        { ...fox, id: anyNumber, rotation: 2 },
+        { ...bunny, id: Match.anyNumber, rotation: 1 },
+        { ...fox, id: Match.anyNumber, rotation: 2 },
       ],
       filter: "none",
     },

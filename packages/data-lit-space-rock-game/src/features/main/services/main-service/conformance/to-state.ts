@@ -25,7 +25,8 @@ export const toState = (store: CoreDatabase.Store): State => {
       else asteroids.push(value);
     }
   }
-  if (ship === undefined) throw new Error("conformance projection: expected a ship entity");
+  if (ship === undefined)
+    throw new Error("conformance projection: expected a ship entity");
   return {
     bounds: store.resources.bounds,
     ship,

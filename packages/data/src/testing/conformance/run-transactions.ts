@@ -19,12 +19,18 @@ export type TransactionConforms<Store, State, Id> = <Args>(
 
 export interface TransactionRunConfig<Store, State, Id> {
   readonly createStore: () => Store;
-  // Seed a fresh store to `before`, returning the `spec id → seeded entity` map.
-  readonly fromState: (store: Store, before: State) => ReadonlyMap<Id, Entity>;
+  // Seed a fresh store to `before`, returning the `spec id → seeded entity` map
+  // (or `void` when the feature is index/singleton-addressed and needs no
+  // resolution).
+  readonly fromState: (store: Store, before: State) => ReadonlyMap<Id, Entity> | void;
   readonly toState: (store: Store) => State;
   // The registered-transactions barrel — the coverage guard requires every key
   // here to be wired, so none can be missed.
   readonly registered: Record<string, unknown>;
+  // Transactions asserted OUTSIDE the shared-cases mechanism (e.g. one with no
+  // `data/` transform, checked with a direct resource assertion) — named here so
+  // the coverage guard counts them as covered.
+  readonly covers?: readonly string[];
   readonly match?: MatchOptions;
   readonly define: (conforms: TransactionConforms<Store, State, Id>) => void;
 }
@@ -58,6 +64,7 @@ export const runTransactions = <Store, State, Id>(config: TransactionRunConfig<S
     });
   };
   config.define(conforms);
+  for (const transaction of config.covers ?? []) covered.add(transaction);
   describe("transaction conformance coverage", () => {
     for (const transaction of Object.keys(config.registered)) {
       it(`${transaction} has a conformance case`, () => {

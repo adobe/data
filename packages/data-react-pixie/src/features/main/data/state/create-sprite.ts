@@ -3,14 +3,18 @@ import type { Vec2 } from "@adobe/data/math";
 import type { SpriteKind } from "../sprite-kind/sprite-kind.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
-import { anyNumber } from "./matchers.js";
+import { Match } from "@adobe/data/testing";
 
 const nextSpriteId = (state: Pick<State, "sprites">): number =>
   state.sprites.reduce((max, sprite) => Math.max(max, sprite.id), 0) + 1;
 
 export const createSprite = <T extends Pick<State, "sprites">>(
   state: T,
-  input: { readonly position: Vec2; readonly rotation?: number; readonly kind: SpriteKind },
+  input: {
+    readonly position: Vec2;
+    readonly rotation?: number;
+    readonly kind: SpriteKind;
+  },
 ): T => ({
   ...state,
   sprites: [
@@ -36,21 +40,53 @@ export const cases: Conformance<typeof createSprite> = [
     before: { sprites: [], filter: "none" },
     args: { position: [100, 100], kind: "bunny" },
     after: {
-      sprites: [{ id: anyNumber, position: [100, 100], rotation: 0, kind: "bunny", hovered: false, active: false }],
+      sprites: [
+        {
+          id: Match.anyNumber,
+          position: [100, 100],
+          rotation: 0,
+          kind: "bunny",
+          hovered: false,
+          active: false,
+        },
+      ],
       filter: "none",
     },
   },
   {
     name: "appends a fox with the next id and an explicit rotation",
     before: {
-      sprites: [{ id: 1, position: [100, 100], rotation: 0, kind: "bunny", hovered: false, active: false }],
+      sprites: [
+        {
+          id: 1,
+          position: [100, 100],
+          rotation: 0,
+          kind: "bunny",
+          hovered: false,
+          active: false,
+        },
+      ],
       filter: "sepia",
     },
     args: { position: [300, 200], rotation: 1, kind: "fox" },
     after: {
       sprites: [
-        { id: anyNumber, position: [100, 100], rotation: 0, kind: "bunny", hovered: false, active: false },
-        { id: anyNumber, position: [300, 200], rotation: 1, kind: "fox", hovered: false, active: false },
+        {
+          id: Match.anyNumber,
+          position: [100, 100],
+          rotation: 0,
+          kind: "bunny",
+          hovered: false,
+          active: false,
+        },
+        {
+          id: Match.anyNumber,
+          position: [300, 200],
+          rotation: 1,
+          kind: "fox",
+          hovered: false,
+          active: false,
+        },
       ],
       filter: "sepia",
     },

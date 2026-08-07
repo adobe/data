@@ -8,5 +8,9 @@ import { Entity } from "../../ecs/entity/entity.js";
 // id-addressed transaction reads no such entity and is a no-op.
 export type Resolve<Id> = (id: Id) => Entity;
 
-export const resolver = <Id>(seeded: ReadonlyMap<Id, Entity>): Resolve<Id> => (id) =>
-  seeded.get(id) ?? Entity.none;
+// Build a resolver from a `fromState` seed map. A feature whose transactions are
+// addressed by index or are singleton (no id → entity mapping) returns `void`
+// from `fromState`; its resolver is then never called, and any id resolves to
+// `Entity.none`.
+export const resolver = <Id>(seeded: ReadonlyMap<Id, Entity> | void): Resolve<Id> => (id) =>
+  (seeded ? seeded.get(id) : undefined) ?? Entity.none;

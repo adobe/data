@@ -26,7 +26,7 @@ import { State } from "../../../data/state/state.js";
 import { Ship } from "../../../data/ship/ship.js";
 import { Input } from "../../../data/input/input.js";
 import { cases } from "../../../data/state/step.js";
-import { expectStateMatches } from "../../../data/state/expect-state-matches.js";
+import { Match } from "@adobe/data/testing";
 import { createSystemDatabase } from "../conformance/create-system-database.js";
 import { fromState } from "../conformance/from-state.js";
 import { toState } from "../conformance/to-state.js";
@@ -36,16 +36,21 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
   for (const testCase of cases) {
     it(testCase.name, () => {
       const { dt, input } = testCase.args;
+      const unordered = { unordered: new Set(["bullets", "asteroids"]) };
       // The co-located case carries its own inert `random` double (no case clears
       // the field, so it is never drawn), so drive the oracle with the case args.
-      expectStateMatches(State.step(testCase.before, testCase.args), testCase.after);
+      Match.assert(
+        State.step(testCase.before, testCase.args),
+        testCase.after,
+        unordered,
+      );
 
       const db = createSystemDatabase();
       fromState(db.store, testCase.before);
       db.store.resources.frameDelta = dt;
       db.transactions.setInput(input);
       driveFrame(db);
-      expectStateMatches(toState(db.store), testCase.after);
+      Match.assert(toState(db.store), testCase.after, unordered);
     });
   }
 

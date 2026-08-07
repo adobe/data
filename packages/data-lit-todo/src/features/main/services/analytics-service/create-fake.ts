@@ -1,20 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Timing, AnalyticsService } from "./analytics-service.js";
-
-/**
- * Published response for the deterministic double. `randomTodoRequested`
- * always resolves this exact {@link Timing} — consumers' tests rely on this
- * fixed value to compute their expected `after`, it is part of the double's
- * contract, not a hidden detail.
- */
-export const fakeTiming: Timing = { startedAt: 0 };
+import type { AnalyticsService } from "./analytics-service.js";
 
 /**
  * Deterministic test double for {@link AnalyticsService}. The `void`
- * fire-and-forget methods do nothing; `randomTodoRequested` resolves
- * {@link fakeTiming} on the microtask queue instead of reading the clock. This
- * is the implementation tests inject so their assertions are predictable —
- * see `features/services/index.md`.
+ * fire-and-forget methods do nothing; `randomTodoRequested` resolves a fixed
+ * timing of `{ startedAt: 0 }` on the microtask queue instead of reading the
+ * clock. A case that asserts on the timing references that literal directly.
+ * This is the implementation tests inject so their
+ * assertions are predictable — see `features/services/index.md`.
  */
 export const createFake = (): AnalyticsService => ({
   serviceName: "analytics",
@@ -24,6 +17,6 @@ export const createFake = (): AnalyticsService => ({
   todoDeleted: () => {},
   allTodosCleared: () => {},
   displayCompletedToggled: () => {},
-  randomTodoRequested: () => Promise.resolve(fakeTiming),
+  randomTodoRequested: () => Promise.resolve({ startedAt: 0 }),
   randomTodoAdded: () => {},
 });

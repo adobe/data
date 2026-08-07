@@ -1,21 +1,18 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+/// <reference types="vite/client" />
 import { Database } from "@adobe/data/ecs";
 import type { ConcurrencyStrategyFactory } from "@adobe/data/ecs";
 import { Conformance } from "@adobe/data/testing";
 import { MainService } from "../main-service.js";
-import { movePresence } from "../action-database/actions/move-presence.js";
-import { cases as movePresenceCases } from "../../../data/state/move-presence.js";
 import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
 
-// `movePresence`'s peer identity is the transaction `userId` (the peer's assigned
-// mark). A live game database stamps it via its concurrency strategy at db
-// construction — before the shared `runActions` driver knows the case, and the
-// mark travels as plain action input (never a service) so `makeDb` cannot see it.
-// So a test-only concurrency reads the peer id from a closure the `run` adapter
-// primes immediately before dispatch; otherwise it commits immediately, like
-// `createImmediateConcurrency`. This reproduces the old runner's per-case
-// `createRebaseReplayConcurrency(mark)` db through the generic driver.
+// `movePresence`'s peer identity is the transaction `userId`, stamped by the db's
+// concurrency at dispatch. A test-only concurrency reads it from a closure that
+// `seedContext` primes with the case's `mark` just before the action runs; it
+// otherwise commits immediately. This is the one residual seam (user-scoped
+// context). The per-transition `movePresence` action isn't in the facet barrel
+// (the UI streams via `trackPresence`), so it's discovered via the actions glob.
 let peerUserId: string | undefined;
 const peerConcurrency: ConcurrencyStrategyFactory = (
   execute,
@@ -35,10 +32,6 @@ const peerConcurrency: ConcurrencyStrategyFactory = (
   onReset: () => {},
 });
 
-// The registered set the coverage guard checks: only the transition-backed
-// `movePresence` action. The UI-facing streaming `trackPresence` action (the sole
-// member of the `actions` barrel) has no pure-transition analogue and is not
-// conformed here, so the barrel is not the registered set.
 Conformance.runActions({
   makeDb: () =>
     Database.toSystemDatabase(
@@ -47,14 +40,19 @@ Conformance.runActions({
   store: (db) => db.store,
   fromState,
   toState,
-  registered: { movePresence },
-  define: (conforms) => {
-    conforms("movePresence", {
-      cases: movePresenceCases,
-      run: (db, input) => {
-        peerUserId = input.mark;
-        return movePresence(db, { x: input.x ?? 0, y: input.y ?? 0 });
-      },
-    });
+  transitions: import.meta.glob(
+    [
+      "../../../data/state/*.ts",
+      "!../../../data/state/*.test.ts",
+      "!../../../data/state/*.type-test.ts",
+    ],
+    { eager: true },
+  ),
+  actions: import.meta.glob(
+    ["../action-database/actions/*.ts", "!../action-database/actions/index.ts"],
+    { eager: true },
+  ),
+  seedContext: (_db, _before, args) => {
+    peerUserId = (args as { mark: string }).mark;
   },
 });

@@ -54,24 +54,25 @@ export const spawnRandomWave = <
   return { ...state, wave, asteroids };
 };
 
-// Spec-owned cases, shared with the ecs `spawnRandomWave` transaction. The args
-// carry the SAME injected double on both sides — `RandomService.createFake()`
-// replays `RandomService.fakeRandoms` — so the randomized velocities are exact and
-// the two sides agree: conformance stays honest even though the transition draws
+// Spec-owned cases, shared with the ecs `spawnRandomWave` transaction. Each case
+// injects its own fixed random sequence and authors `after` against it — the same
+// double flows to both sides, so the randomized velocities are exact and the two
+// sides agree: conformance stays honest even though the transition draws
 // randomness. `next` is a value-returning read (not a fire-and-forget side
 // effect), so it is NOT declared in `effects`.
 //
-// The published sequence has length 4 and a spawn draws exactly 4 values (one per
+// The injected sequence has length 4 and a spawn draws exactly 4 values (one per
 // asteroid at `asteroidsFor(1) = 4`). Field 200×200 → centre [100,100], ring
 // radius 80; positions match `spawnWave`, only drift SPEED is jittered:
-// `speed(i) = 60·(0.5 + fakeRandoms[i])` → [30, 60, 45, 75] in ring order.
+// `speed(i) = 60·(0.5 + sequence[i])` → [30, 60, 45, 75] in ring order.
 const field = { ...create(), bounds: [200, 200] as [number, number] };
+const randoms = [0, 0.5, 0.25, 0.75];
 
 export const cases: Conformance<typeof spawnRandomWave> = [
   {
     name: "spawns a randomized wave (jittered drift speeds) when the field is clear",
     before: { ...field, asteroids: [], wave: 0 },
-    args: { random: RandomService.createFake() },
+    args: { random: RandomService.createFake(randoms) },
     after: {
       ...field,
       wave: 1,
@@ -90,7 +91,7 @@ export const cases: Conformance<typeof spawnRandomWave> = [
       wave: 1,
       asteroids: [{ position: [10, 10], velocity: [0, 0], size: "large" }],
     },
-    args: { random: RandomService.createFake() },
+    args: { random: RandomService.createFake(randoms) },
     after: {
       ...field,
       wave: 1,

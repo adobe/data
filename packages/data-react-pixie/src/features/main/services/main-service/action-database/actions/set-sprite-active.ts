@@ -6,7 +6,7 @@ import type { TransactionDatabase } from "../../transaction-database/transaction
 // entity directly; the action commits through the same-named transaction.
 export const setSpriteActive = (
   db: TransactionDatabase,
-  input: { readonly entity: Entity; readonly active: boolean },
+  input: { readonly id: Entity; readonly active: boolean },
 ) => {
   db.transactions.setSpriteActive(input);
 };

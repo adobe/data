@@ -4,7 +4,7 @@ import type { Observe } from "../../observe/index.js";
 import type { Entity } from "../../ecs/entity/entity.js";
 import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
-import { discoverDerivations } from "./discover.js";
+import { discoverDerivations, discoverOps } from "./discover.js";
 
 // Read a computed's synchronous emission: subscribe once, capture, unsubscribe.
 const readComputed = <T>(observe: Observe<T>): T => {
@@ -43,8 +43,7 @@ export interface ComputedRunConfig<Db, Store, State> {
 export function runComputeds<Db, Store, State>(config: ComputedRunConfig<Db, Store, State>): void {
   const derivations = discoverDerivations(config.derivations);
   const hydrate = new Set(config.hydrate ?? []);
-  for (const [name, computed] of Object.entries(config.computeds)) {
-    if (typeof computed !== "function") continue;
+  for (const [name, computed] of discoverOps(config.computeds)) {
     const paired = derivations.get(name);
     if (!paired) continue; // computed with no `state/` derivation — covered by its data/<type> helper
     describe(`${name} computed conforms`, () => {

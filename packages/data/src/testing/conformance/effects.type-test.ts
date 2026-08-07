@@ -1,24 +1,26 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 //
-// Compile-time only (no runtime tests): proves the `Effects` conformance shape
-// accepts valid side-effect declarations and REJECTS invalid ones. `tsc` checks
-// this file; vitest does not run it (it is not a `.test.ts`). If any
-// `@ts-expect-error` below stops erroring, or any positive stops compiling, the
-// build fails — which is the point.
-import type { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
-import type { Effects } from "./conformance-case.js";
+// Compile-time only (no runtime tests): proves the shared `Effects` conformance
+// shape accepts valid side-effect declarations and REJECTS invalid ones, ONCE for
+// the whole library rather than per feature. `tsc` checks this file; vitest does
+// not run it (it is not a `.test.ts`). If any `@ts-expect-error` stops erroring, or
+// any positive stops compiling, the build fails — which is the point.
+import type { Effects } from "./types.js";
 
-// A representative transition arg shape: plain data + one injected service.
-type Args = {
-  readonly name: string;
-  readonly complete?: boolean;
-  readonly analytics: AnalyticsService;
-};
+// A representative injected service, and a transition arg shape: plain data + the
+// service. (A stand-in for any feature's `SomethingService` — the type machinery
+// is identical, which is exactly why this test lives here and not per feature.)
+interface AnalyticsService {
+  readonly serviceName: "analytics";
+  todoCreated(input: { readonly name: string }): void;
+  todoToggled(): void;
+  allTodosCleared(): void;
+  displayCompletedToggled(): void;
+}
+type Args = { readonly name: string; readonly complete?: boolean; readonly analytics: AnalyticsService };
 
 // ===== POSITIVE — must compile =====
-const ordered: Effects<Args> = {
-  analytics: [["todoCreated", { name: "a" }], ["todoToggled"]],
-};
+const ordered: Effects<Args> = { analytics: [["todoCreated", { name: "a" }], ["todoToggled"]] };
 const anyOrder: Effects<Args> = {
   analytics: new Set([["todoToggled"] as const, ["allTodosCleared"] as const]),
 };

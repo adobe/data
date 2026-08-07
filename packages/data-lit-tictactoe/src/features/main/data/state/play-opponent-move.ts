@@ -27,10 +27,11 @@ export const playOpponentMove = async <
 };
 
 // Spec-owned cases, shared with the ecs `playOpponentMove` action. Each injects
-// the deterministic double and authors `after` against its PUBLISHED move
-// schedule (`OpponentService.fakeMoves`, resolved in order). `selectMove` is a
-// value-returning read, not a fire-and-forget side effect, so it is NOT declared
-// in `effects` — the transition's whole observable result is the placed mark.
+// the deterministic double with the exact move schedule it needs and authors
+// `after` against it — the case owns its fixture, not a shared published const.
+// `selectMove` is a value-returning read, not a fire-and-forget side effect, so
+// it is NOT declared in `effects` — the transition's whole observable result is
+// the placed mark.
 export const cases: Conformance<typeof playOpponentMove> = [
   {
     name: "plays the opponent's first selected move for the current player",
@@ -41,9 +42,9 @@ export const cases: Conformance<typeof playOpponentMove> = [
       oWins: 0,
       draws: 0,
     },
-    args: { opponent: OpponentService.createFake() },
-    // fakeMoves[0] === 4; the current player on an empty board is the first
-    // player (X), so an X lands in the centre cell.
+    args: { opponent: OpponentService.createFake([4]) },
+    // The injected move is cell 4; the current player on an empty board is the
+    // first player (X), so an X lands in the centre cell.
     after: {
       board: "    X    ",
       firstPlayer: "X",
@@ -62,7 +63,7 @@ export const cases: Conformance<typeof playOpponentMove> = [
       draws: 0,
     },
     args: { opponent: OpponentService.createFake([0]) },
-    // The published move is cell 0; the current player alternates to O by move
+    // The injected move is cell 0; the current player alternates to O by move
     // count, so an O lands in the top-left cell.
     after: {
       board: "O   X    ",

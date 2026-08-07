@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Sprite } from "../sprite/sprite.js";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { entity, type Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data/testing";
 
 export const setSpriteHovered = <T extends Pick<State, "sprites">>(
@@ -38,7 +38,7 @@ export const cases: Conformance<typeof setSpriteHovered> = [
   {
     name: "sets hovered true on the addressed sprite only",
     before: { sprites: [bunny, fox], filter: "none" },
-    args: { id: 1, hovered: true },
+    args: { id: entity(1), hovered: true },
     after: {
       sprites: [
         { ...bunny, id: Match.anyNumber, hovered: true },
@@ -50,7 +50,7 @@ export const cases: Conformance<typeof setSpriteHovered> = [
   {
     name: "is a no-op for an unknown id",
     before: { sprites: [bunny, fox], filter: "none" },
-    args: { id: 99, hovered: true },
+    args: { id: entity(99), hovered: true },
     after: {
       sprites: [
         { ...bunny, id: Match.anyNumber },

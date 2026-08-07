@@ -32,19 +32,20 @@ export const playMove = (t: CoreDatabase.Store, { index }: PlayMoveArgs) => {
   result — read the touched slice, call the `data/` transform, write the diff.
 - Keep transaction files **single-export** (the `transactions/` barrel is
   `export *`-ed into the plugin facet, so a second export would pollute it).
-- **Conformance is wired once, centrally** — not per-file.
+- **Conformance is wired once, centrally, and auto-paired** — not per-file.
   `conformance/transactions.test.ts` is a single `Conformance.runTransactions({
-  createStore, fromState, toState, registered, covers?, define })` call: each
-  `conforms(name, { cases, apply })` runs the transition's shared `data/state`
-  cases against its transaction — the shared driver seeds `fromState(before)`,
-  calls `apply(store, args, resolve)`, then `Match.assert`s `toState ≡ after` —
-  with a coverage guard keyed off the registered barrel so none are missed (see
-  `conformance.md`). A transaction taking **entity ids** resolves them with the
-  driver's `resolve` (`resolve(args.id)`, from the seeded `id → entity` map); a
-  differently-named or reused transaction (`dragTodo` ⇄ `reorderTodo`) just names
-  the cases it reuses; an extra transaction with no `data/` analogue (`setBounds`,
-  `setInput`) gets a direct `Match.assert` / resource check and is named in
-  `covers` so the guard still counts it.
+  createStore, fromState, toState, transitions, transactions, match?, seedContext?
+  })` call: it discovers the `data/state` transitions (the `transitions:` glob),
+  pairs each registered `transactions` barrel entry to the **same-named** transition,
+  and conforms it — seed `fromState(before)`, apply, `Match.assert` `toState ≡ after`
+  (state only; service effects are asserted through the action). There is **no**
+  `define`/`conforms` adapter and **no** `covers` guard. A transaction taking
+  **entity ids** takes them under the transition's own arg key (`{ id }`); the driver
+  resolves each `entity(specId)` marker via the id→entity map `fromState` returns. A
+  transaction with **no same-named transition** is infrastructure (`setInput`,
+  `setBounds`) or the drag UI op (`dragTodo`) or system-dispatched — it is simply
+  **skipped**, no guard needed. Don't add a per-item adapter for a renamed op; add a
+  thin same-named transaction instead (see `conformance.md`).
 - An `index.ts` barrel feeds the `transactions` plugin facet — so it must
   re-export **only** the mutations. A read/query helper shared by several
   transactions (`readShip`, `readBoard` — a `(t) => value` function) may live

@@ -48,13 +48,20 @@ export const addRandomTodo = async (service: ServiceDatabase) => {
   Reactive computeds refresh only on a committed transaction, so an imperative
   read of one can hand back a stale shared cache (and it's the UI's layer, not
   the action's). This also keeps the action correct under the conformance seed.
-- **Conformance** (`conformance/actions.test.ts`) is a single
-  `Conformance.runActions({ makeDb, store, fromState, toState, registered, define })`
-  call: each `conforms(name, { cases, run })` runs the transition's shared cases
-  against its action, asserting **state and effects**. `makeDb(services)` builds
-  the db with the case's recording service overrides via
-  `Database.toSystemDatabase(Database.create(MainService.plugin, { services }))`;
-  the driver splits the case `args` into services and plain input, runs the action,
-  then `Match.assert`s `toState ≡ after` and checks the recorded service calls
-  against the case's `effects` (see `conformance.md`).
+- **Conformance** (`conformance/actions.test.ts`) is a single, auto-paired
+  `Conformance.runActions({ makeDb, store, fromState, toState, transitions, actions,
+  match?, seedContext? })` call: it discovers the `data/state` transitions and pairs
+  each `actions` entry to the **same-named** transition. **The action is the primary
+  seam** — it reads injected services from `db.services`, so the case's service args
+  become recording overrides via `makeDb(services)` (built as
+  `Database.toSystemDatabase(Database.create(MainService.plugin, { services }))`); the
+  driver splits the case `args` into services and plain input, runs the action, then
+  `Match.assert`s `toState ≡ after` **and** checks the recorded calls against the
+  case's `effects`. There is no `define`/`conforms` and no coverage guard. A thin
+  **same-named** action gives a transaction-only or renamed transition something to
+  pair with (todo's `reorderTodo`). A streaming/capability action with no transition
+  is skipped — if it isn't in the facet barrel (p2p's `movePresence`, streamed via
+  `trackPresence`), point `actions:` at a directory glob
+  (`import.meta.glob([".../actions/*.ts", "!.../actions/index.ts"], { eager: true })`)
+  so it is still discovered (see `conformance.md`).
 - An `index.ts` barrel feeds the `actions` plugin facet.

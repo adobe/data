@@ -48,11 +48,16 @@ registers it under the `computed` facet.
 
 **Conform a computed to its `data/state` derivation** whenever one exists. The
 derivation co-locates `{ input, value }` cases (`Derivation<typeof fn>`), and
-`conformance/computeds.test.ts` — one `Conformance.runComputeds(...)` call whose
-`define` wires each computed — seeds the store from `input`, reads the computed's
-value, and `Match.assert`s it against `value` (see `conformance.md`). A
-list-computed returning entity ids needs no adapter — the runner hydrates through
-`toData` by default (override `project` only for a scalar / single-entity output).
+`conformance/computeds.test.ts` — one auto-paired `Conformance.runComputeds({ makeDb,
+store, fromState, toData, derivations, computeds, hydrate?, match? })` call — pairs
+each computed to its **same-named** derivation, seeds the store from `input`, reads
+the computed's synchronous emission, and `Match.assert`s it against `value` (see
+`conformance.md`). There is no `define`/`conforms` wiring. Build `makeDb` from the
+**`ComputedDatabase`** layer. Comparison is identity by default; a computed that
+emits an **entity-id list** names itself in `hydrate: [...]` (todo's `visibleTodos`)
+so the runner projects each id through `toData`. A computed with **no `state/`
+derivation is skipped** — single-`data/<type>` math is covered by that helper's own
+test.
 
 **What needs conformance is proportional to wiring logic.** A computed that
 composes/branches over the aggregate *is* a `state/` derivation (composes ≥2

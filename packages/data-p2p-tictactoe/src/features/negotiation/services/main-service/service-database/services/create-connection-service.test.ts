@@ -9,7 +9,7 @@ import { createConnectionService } from "./create-connection-service.js";
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe("connection service (deterministic fake signaling)", () => {
-  it("startHost enters host-signaling and records the published invite code", async () => {
+  it("startHost enters host-signaling and records the invite code", async () => {
     const db = Database.create(TransactionDatabase.plugin);
     const service = createConnectionService(db, SignalingService.createFake);
 
@@ -19,10 +19,10 @@ describe("connection service (deterministic fake signaling)", () => {
     expect(db.resources.connection).toBe("connecting");
 
     await flush();
-    expect(db.resources.offerCode).toBe(SignalingService.fakeInviteCode);
+    expect(db.resources.offerCode).toBe("fake-invite-code");
   });
 
-  it("generateAnswer records the published answer code", async () => {
+  it("generateAnswer records the answer code", async () => {
     const db = Database.create(TransactionDatabase.plugin);
     const service = createConnectionService(db, SignalingService.createFake);
 
@@ -32,6 +32,6 @@ describe("connection service (deterministic fake signaling)", () => {
 
     service.generateAnswer();
     await flush();
-    expect(db.resources.answerCode).toBe(SignalingService.fakeAnswerCode);
+    expect(db.resources.answerCode).toBe("fake-answer-code");
   });
 });

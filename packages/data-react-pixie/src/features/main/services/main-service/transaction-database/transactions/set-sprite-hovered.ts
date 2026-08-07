@@ -4,9 +4,9 @@ import type { CoreDatabase } from "../../core-database/core-database.js";
 
 export const setSpriteHovered = (
   t: CoreDatabase.Store,
-  args: { readonly entity: Entity; readonly hovered: boolean },
+  args: { readonly id: Entity; readonly hovered: boolean },
 ) => {
-  if (t.read(args.entity)) {
-    t.update(args.entity, { hovered: args.hovered });
+  if (t.read(args.id)) {
+    t.update(args.id, { hovered: args.hovered });
   }
 };

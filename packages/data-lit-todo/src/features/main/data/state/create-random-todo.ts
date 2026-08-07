@@ -29,24 +29,26 @@ export const createRandomTodo = async <T extends Pick<State, "todos">>(
   return next;
 };
 
-// Spec-owned cases. Each injects deterministic doubles and authors `after` +
-// `effects` against their published responses (`fakeNames`, `fakeTiming`). The
-// value-returning reads (`randomTodoRequested`, `generateName`) are still calls on
-// `analytics`, so — analytics being a declared service — its full call sequence is
-// listed; `nameGenerator` is not declared, so its read is ignored.
+// Spec-owned cases. Each injects deterministic doubles with the exact responses
+// it needs and authors `after` + `effects` against those self-owned values (the
+// name it schedules, the fixed `{ startedAt: 0 }` timing the analytics double
+// resolves). The value-returning reads (`randomTodoRequested`, `generateName`)
+// are still calls on `analytics`, so — analytics being a declared service — its
+// full call sequence is listed; `nameGenerator` is not declared, so its read is
+// ignored.
 export const cases: Conformance<typeof createRandomTodo> = [
   {
     name: "names the new todo from the generator and logs the timed add",
     before: { todos: [], displayCompleted: false },
     args: {
-      nameGenerator: NameGeneratorService.createFake(),
+      nameGenerator: NameGeneratorService.createFake(["random task"]),
       analytics: AnalyticsService.createFake(),
     },
     after: {
       todos: [
         {
           id: Match.anyNumber,
-          name: NameGeneratorService.fakeNames[0],
+          name: "random task",
           complete: false,
         },
       ],
@@ -58,8 +60,8 @@ export const cases: Conformance<typeof createRandomTodo> = [
         [
           "randomTodoAdded",
           {
-            timing: AnalyticsService.fakeTiming,
-            name: NameGeneratorService.fakeNames[0],
+            timing: { startedAt: 0 },
+            name: "random task",
           },
         ],
       ],
@@ -79,10 +81,7 @@ export const cases: Conformance<typeof createRandomTodo> = [
     effects: {
       analytics: [
         ["randomTodoRequested"],
-        [
-          "randomTodoAdded",
-          { timing: AnalyticsService.fakeTiming, name: "only name" },
-        ],
+        ["randomTodoAdded", { timing: { startedAt: 0 }, name: "only name" }],
       ],
     },
   },

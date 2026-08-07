@@ -4,9 +4,9 @@ import type { CoreDatabase } from "../../core-database/core-database.js";
 
 export const setSpriteActive = (
   t: CoreDatabase.Store,
-  args: { readonly entity: Entity; readonly active: boolean },
+  args: { readonly id: Entity; readonly active: boolean },
 ) => {
-  if (t.read(args.entity)) {
-    t.update(args.entity, { active: args.active });
+  if (t.read(args.id)) {
+    t.update(args.id, { active: args.active });
   }
 };

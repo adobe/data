@@ -3,6 +3,9 @@ import type { Entity } from "@adobe/data/ecs";
 import type { TransactionDatabase } from "../../transaction-database/transaction-database.js";
 
 // The app-facing realization of `State.toggleSpriteActive`.
-export const toggleSpriteActive = (db: TransactionDatabase, entity: Entity) => {
-  db.transactions.toggleSpriteActive({ entity });
+export const toggleSpriteActive = (
+  db: TransactionDatabase,
+  { id }: { readonly id: Entity },
+) => {
+  db.transactions.toggleSpriteActive({ id });
 };

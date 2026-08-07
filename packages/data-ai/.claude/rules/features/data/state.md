@@ -45,11 +45,14 @@ binds `State` once so transform/derivation files can write a one-parameter type:
 
 ```ts
 // data/state/conformance-case.ts — the only per-feature conformance declaration
-import type { Conformance as ConformanceApi } from "@adobe/data/testing";
+import { Conformance as ConformanceApi } from "@adobe/data/testing";
 import type { State } from "./state.js";
 export type Conformance<F extends (...args: never[]) => unknown> = ConformanceApi.Cases<State, F>;
 export type Derivation<F extends (...args: never[]) => unknown> = ConformanceApi.DerivationCases<F>;
 export type Effects<Args> = ConformanceApi.Effects<Args>;
+// The entity-reference marker for identity-addressed case args, re-exported so
+// cases import it beside `Conformance`: `args: { id: entity(2) }`.
+export const entity = ConformanceApi.entity;
 ```
 
 ```ts
@@ -98,15 +101,22 @@ export const cases: Conformance<typeof createTodo> = [
   not a pinned value, so the two occurrences of the label must resolve to the same
   actual id and two labels can't collide. `anyNumber`/`anyString` are for an id a
   case does not pin at all; `ref` for one that must be consistent across the case.
+- **Entity-addressed cases use `entity(specId)`.** A transition that addresses an
+  entity by id writes it as `args: { id: entity(2) }` — `entity` imported from the
+  feature's `conformance-case.ts` (re-exported from `@adobe/data/testing`). It types
+  as the id it stands for (like `Match.anyNumber`), so it slots into the transform's
+  own arg type. `runSpec` unwraps it to the plain data-id for the pure side; the ECS
+  runners resolve it to the seeded entity (see `conformance.md`).
 - No per-transform test. The single **`spec.test.ts`** is one call —
   `Conformance.runSpec(import.meta.glob(["./*.ts", "!./*.test.ts"], { eager: true }))`
   — that auto-discovers every sibling exporting `cases`, enforces the two-exports
   rule, and dispatches on case shape (a `value` case → derivation; otherwise a
   transition whose declared `effects` are also asserted). Pass `{ match }` only when
   the feature needs float tolerance or unordered collections (see `conformance.md`).
-  There is no per-feature `expect-state-matches.ts`, `record-effects.ts`, or
-  `expect-conforms.ts` — those are gone; the shared driver owns comparison, effect
-  recording, and the coverage guard. A genuine **non-transition helper** in
+  There is no per-feature `expect-state-matches.ts`, `record-effects.ts`,
+  `expect-conforms.ts`, or `conformance-case.type-test.ts` — those are gone; the
+  shared driver owns comparison, effect recording, and name-based auto-pairing, and
+  the `Effects` type-test now lives once in `@adobe/data/testing`. A genuine **non-transition helper** in
   `state/` — a `create()` constructor, a single-field predicate — has no `cases`
   and isn't a `(state,args)=>state` transform, so `runSpec` skips it: **keep its own
   sibling `*.test.ts`** rather than deleting it and losing coverage.

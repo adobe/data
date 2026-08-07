@@ -36,10 +36,12 @@ here):
   `tolerance` (default `0.01`) to absorb F32↔f64 / trig noise. Framework-agnostic:
   it honors any asymmetric matcher, so vitest's `expect.any(...)` interops.
 - **`Conformance`** — the case types (`Case`, `Cases`, `DerivationCase`,
-  `DerivationCases`, `Effects`, `ServiceCall`), the id `resolver(map)`, and the
-  four runner drivers `runSpec` / `runTransactions` / `runActions` /
-  `runComputeds`. Effect recording and the coverage guard are built **into** the
-  drivers — no per-feature helper writes them.
+  `DerivationCases`, `Effects`, `ServiceCall`), the `entity(specId)` identity
+  marker, the id `resolver(map)`, and the four runner drivers `runSpec` /
+  `runTransactions` / `runActions` / `runComputeds`. Auto-pairing (transition ⇄ op
+  by name), effect recording, and id resolution are built **into** the drivers —
+  no per-feature helper writes them. The `Effects` type-test also lives here (once),
+  so there is no per-feature `conformance-case.type-test.ts` to author.
 
 ## Projection (store ⇄ State) — the one per-feature piece
 
@@ -61,51 +63,89 @@ Only these files are feature-specific; each is small and mechanical:
 
 ## The four runner test files — one `Conformance.run*` call each
 
-Each surface is a single driver call whose `define` callback wires each item's
-bespoke adapter. The driver owns the fresh store, the `fromState` seed, `resolve`
-(built from the returned map), the `toState` compare, effect recording, and a
-**coverage guard keyed off the registered barrel** (every registered item must be
-wired, or the guard fails). Pair by name; the adapters are the only per-feature
-logic.
+Each surface is a **single driver call, with no per-item wiring** — no `define`
+callback, no `conforms(...)` adapters, no `registered`/`covers` coverage guards.
+Each ECS runner takes the `data/state` **transitions** (or **derivations**) glob
+and the ECS **ops** (a facet barrel `import * as x`, OR a directory glob
+`import.meta.glob([".../ops/*.ts", "!.../index.ts"], { eager: true })` when an op
+isn't registered in the facet), and **pairs them by name**: each ECS op is
+conformed against the same-named transition/derivation. The driver owns the fresh
+store, the `fromState` seed, `resolve` (built from the returned id map), the
+`toState` compare, and effect recording. Auto-pairing can't forget an item, so
+**there is no coverage guard**: an op with **no same-named transition** is
+infrastructure or system-dispatched and is simply **skipped** (a streaming action
+with no transition is skipped too).
 
 - **`data/state/spec.test.ts`** (in `data/state/`, not here) — the pure suite:
   `Conformance.runSpec(import.meta.glob([...], { eager: true }), { match? })`.
   Discovers every file exporting `cases`, enforces the two-exports rule, and
   dispatches on case shape (transition → state + effects, derivation →
-  `fn(input) ≡ value`).
+  `fn(input) ≡ value`). Unwraps any `entity(specId)` arg marker to its plain
+  data-id for the pure side.
 - **`transactions.test.ts`** — `Conformance.runTransactions({ createStore,
-  fromState, toState, registered, covers?, match?, define })`. Each
-  `conforms(name, { cases, apply })` wires a transaction's `apply(store, args,
-  resolve)` — an id-addressed transaction calls `resolve(args.id)`; a
-  differently-named transaction (`dragTodo` ⇄ `reorderTodo`) just names the cases
-  it reuses. A transaction with **no `data/` transform** (e.g. `setInput` /
-  `setBounds`, which only record a resource) is asserted directly with its own
-  `describe` + `Match.assert` and named in **`covers`** so the guard still counts
-  it.
+  fromState, toState, transitions, transactions, match?, seedContext? })`.
+  `transitions` is the `data/state` glob; `transactions` is the facet barrel. Each
+  transaction pairs to its same-named transition and is conformed **state-only**
+  (seed `fromState(before)`, apply, `Match.assert` `toState ≡ after`) — service
+  effects are asserted through the action. A transaction with no same-named
+  transition is skipped: `dragTodo` (the drag UI op), `setInput` / `setBounds` /
+  `newGame` (infra, no `data/` transform), `hitAsteroid` / `loseLife`
+  (system-dispatched). tictactoe is the zero-config example (moves are board-index
+  addressed — no `entity()` markers).
 - **`actions.test.ts`** — `Conformance.runActions({ makeDb, store, fromState,
-  toState, registered, match?, define })`. `makeDb(services)` builds the db with
-  the case's recording service overrides —
-  `Database.toSystemDatabase(Database.create(MainService.plugin, { services }))`
-  — and each `conforms(name, { cases, run })` runs the (async) action; the driver
-  splits the case `args` into services (wrapped for recording) and plain input,
-  then asserts **state and the declared `effects`**. A transition realized only by
-  a transaction (not an action) is covered by `runTransactions`, not here.
+  toState, transitions, actions, match?, seedContext? })`. **The action is the
+  primary, app-facing seam**: it reads injected services from `db.services`, so the
+  case's service args become **recording overrides** via `makeDb(services)` —
+  `Database.toSystemDatabase(Database.create(MainService.plugin, { services }))`.
+  The driver splits the case `args` into services (wrapped for recording) and plain
+  input, runs the (async) action, then asserts **state and the declared
+  `effects`**. A same-named thin action gives a transaction-only or renamed
+  transition something to pair with; `actions` may be the facet barrel OR a
+  directory glob when the op isn't in the barrel (p2p's `movePresence` — the UI
+  streams via `trackPresence` — is discovered via the actions glob). A
+  streaming/capability action with no transition is skipped.
 - **`computeds.test.ts`** — `Conformance.runComputeds({ makeDb, store, fromState,
-  toData?, derivationModules, match?, define })`. Each `conforms(name, { cases,
-  computed, project? })` seeds from the case `input`, reads the computed's
-  synchronous emission, hydrates it, and matches the derivation's `value`. An
-  id-list computed (`visibleTodos`) needs **no adapter** — the default `project`
-  hydrates through `toData`; override `project` only for a scalar / single-entity
-  output. **Build `makeDb` from the `ComputedDatabase` layer**
+  toData, derivations, computeds, hydrate?, match? })`. Pairs each computed to its
+  same-named `data/state` derivation, seeds from the case `input`, reads the
+  computed's synchronous emission, and matches the derivation's `value`. Comparison
+  is **identity by default**; a computed that emits an entity-id list names itself
+  in **`hydrate: [...]`** (todo's `visibleTodos`) so the runner projects each id
+  through `toData` into the value shape the derivation yields. **Build `makeDb` from
+  the `ComputedDatabase` layer**
   (`Database.toSystemDatabase(Database.create(ComputedDatabase.plugin))`), not the
-  assembled `MainService`: a behaviour layer above may `withCache` a pre-seed
-  value that a direct `fromState` seed emits no transaction to invalidate — the
-  computed layer keeps the seed authoritative. Coverage is keyed off the
-  `derivationModules` glob (every `data/state/` derivation must be wired). A
-  feature with **no `state/` derivation omits `computeds.test.ts` entirely** (a
-  guard registering zero tests fails vitest; don't ship an empty one). A computed
-  that trivially projects one `data/<type>`'s math (`winner`/`status`) is
-  conformed by that type's helper tests, not here.
+  assembled `MainService`: a behaviour layer above may `withCache` a pre-seed value
+  that a direct `fromState` seed emits no transaction to invalidate — the computed
+  layer keeps the seed authoritative. A computed with **no `state/` derivation is
+  skipped** — single-`data/<type>` math (tictactoe's `winner` / `status`) is covered
+  by that helper's own test. A feature with no `state/` derivation ships **no
+  `computeds.test.ts` at all** (a test file that registers zero tests fails vitest).
+
+## Identity — the `entity(specId)` marker
+
+An entity-addressed transition writes its addressed id as `args: { id: entity(2) }`
+— import `entity`, re-exported from the feature's `data/state/conformance-case.ts`.
+`runSpec` unwraps it to the plain data-id; the ECS runners resolve it to the
+**seeded entity** via the id→entity map `fromState` returns (turned into a `resolve`
+by `Conformance.resolver` — no feature writes `resolve` by hand). Two conventions
+make the wiring vanish: the ECS op takes the entity **under the transition's own arg
+key** (`{ id }`, same-shape args, no reshape), and `fromState` returns the
+`ReadonlyMap<Id, Entity>` id→entity map (or `void` for an index-addressed / singleton
+feature, whose ids then resolve to `Entity.none`). todo is the reference.
+
+## Name-parity — add a same-named op, never a per-item adapter
+
+Every app transition is realized by a **same-named** transaction and/or action. When
+the real UI op is richer or renamed — todo's `dragTodo`, space-rock's `newGame` — that
+op is infra, and a thin **same-named** op (todo's `reorderTodo` action, space-rock's
+`createInitial` transaction) gives the transition something to pair with. Do **not**
+reintroduce a per-item adapter to bridge a name mismatch — add the same-named op.
+
+## The residual seam — `seedContext`
+
+The one thing not derivable from cases is ambient, user-scoped context. Pass
+`seedContext?: (store|db, before, args) => void` — it runs after `fromState`, before
+the op — only when a feature needs it (p2p seeds the acting peer's `userId` from the
+case's `mark`). Ordinary features omit it entirely.
 
 ## Ordering, tolerance, `ref` — all via `Match` options
 

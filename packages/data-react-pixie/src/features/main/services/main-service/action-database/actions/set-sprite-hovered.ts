@@ -5,7 +5,7 @@ import type { TransactionDatabase } from "../../transaction-database/transaction
 // The app-facing realization of `State.setSpriteHovered`.
 export const setSpriteHovered = (
   db: TransactionDatabase,
-  input: { readonly entity: Entity; readonly hovered: boolean },
+  input: { readonly id: Entity; readonly hovered: boolean },
 ) => {
   db.transactions.setSpriteHovered(input);
 };

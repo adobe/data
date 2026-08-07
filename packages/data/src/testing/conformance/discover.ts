@@ -34,3 +34,23 @@ export const discoverTransitions = (modules: Record<string, Record<string, unkno
 // derivation's function name (the name the ecs computed must share).
 export const discoverDerivations = (modules: Record<string, Record<string, unknown>>): Map<string, Discovered> =>
   scan(modules, (c) => "value" in c);
+
+// Normalize the ecs-op source to `name → fn`. Accepts EITHER a facet barrel
+// (`import * as x` — values are the functions, keyed by export name) OR a directory
+// glob (`import.meta.glob(..., { eager: true })` — values are modules, each
+// contributing its function exports). The glob form finds ops that live beside a
+// barrel but aren't registered in it (a conformance-only action kept out of the
+// plugin facet), so they still pair by name.
+export const discoverOps = (source: Record<string, unknown>): Map<string, (...a: never[]) => unknown> => {
+  const out = new Map<string, (...a: never[]) => unknown>();
+  for (const [key, value] of Object.entries(source)) {
+    if (typeof value === "function") {
+      out.set(key, value as (...a: never[]) => unknown);
+    } else if (value !== null && typeof value === "object") {
+      for (const [name, member] of Object.entries(value)) {
+        if (typeof member === "function") out.set(name, member as (...a: never[]) => unknown);
+      }
+    }
+  }
+  return out;
+};

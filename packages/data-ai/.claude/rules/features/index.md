@@ -103,7 +103,8 @@ The tie between `data/` (spec) and `main-service` (implementation) is
 main-service mutation, seeded and read back through a test-only store↔`State`
 projection, equals the pure `data/` transform it stands for. The per-feature
 projection lives in `services/main-service/conformance/` and is replayed by the
-shared `@adobe/data/testing` runners (see `services/main-service/conformance.md`);
+shared `@adobe/data/testing` runners, which pair each ECS op to its same-named
+transition automatically (see `services/main-service/conformance.md`);
 the shared `{ before, args, after }` cases are spec-owned — co-located in each
 `data/state/<transform>.ts`, which exports its function plus `cases` — so
 conforming the implementation is "substitute the implementation, reuse the

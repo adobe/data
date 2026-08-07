@@ -38,17 +38,19 @@ portability and lazy loading (`AsyncDataService.createLazy`).
 A service is the seam consumers swap out under test — `data/` transitions that
 take it as an injected dependency (`data/state.md`), actions, systems. Ship a
 **deterministic test double** alongside the interface, in the same namespace
-folder and under the same `global/namespace.md` standard: implement it in a
-sub-folder like the real factory and re-export through `public.ts` so callers
-reach it as `MyService.createFake` (mirroring the `create` / `factory` pair).
+folder and under the same `global/namespace.md` standard: `create-fake.ts` is a
+**single export**, `createFake`, re-exported through `public.ts` so callers reach
+it as `MyService.createFake` (mirroring the `create` / `factory` pair).
 
-Because tests assert on exact `after` values, the double MUST **publish the
-precise responses it gives** — the fixed value or the ordered sequence each
-method returns — as part of its documented contract, not as a hidden
-implementation detail. A test then relies on those published responses to derive
-its expected result. If the double's outputs were opaque or free to change,
-every consumer's assertions would be guessing; the published response schedule
-is exactly what makes the double a dependable oracle.
+Because tests assert on exact `after` values, the double must be **deterministic
+and its responses caller-controlled**: `createFake` takes the exact response — the
+fixed value, or the ordered sequence each method returns — as a parameter, with a
+small inline default. A conformance case then **injects the responses it needs**
+(`createFake(["random task"])`, `createFake([4])`) and authors its `after` /
+`effects` against those values it supplied — nothing is read from a shared
+published constant (that would be a second export, and it makes the assertion
+guess at a value it doesn't own). The injected schedule is exactly what makes the
+double a dependable oracle: the test controls both the input and the expectation.
 
 ## Where the I/O types live
 

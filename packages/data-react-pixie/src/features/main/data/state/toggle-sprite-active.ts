@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Sprite } from "../sprite/sprite.js";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { entity, type Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data/testing";
 
 export const toggleSpriteActive = <T extends Pick<State, "sprites">>(
@@ -38,7 +38,7 @@ export const cases: Conformance<typeof toggleSpriteActive> = [
   {
     name: "toggles a sprite from inactive to active",
     before: { sprites: [bunny, activeFox], filter: "none" },
-    args: { id: 1 },
+    args: { id: entity(1) },
     after: {
       sprites: [
         { ...bunny, id: Match.anyNumber, active: true },
@@ -50,7 +50,7 @@ export const cases: Conformance<typeof toggleSpriteActive> = [
   {
     name: "toggles a sprite from active to inactive",
     before: { sprites: [bunny, activeFox], filter: "none" },
-    args: { id: 2 },
+    args: { id: entity(2) },
     after: {
       sprites: [
         { ...bunny, id: Match.anyNumber },
@@ -62,7 +62,7 @@ export const cases: Conformance<typeof toggleSpriteActive> = [
   {
     name: "is a no-op for an unknown id",
     before: { sprites: [bunny, activeFox], filter: "none" },
-    args: { id: 99 },
+    args: { id: entity(99) },
     after: {
       sprites: [
         { ...bunny, id: Match.anyNumber },

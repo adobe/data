@@ -2,6 +2,7 @@
 export * from "./set-input.js";
 export * from "./set-bounds.js";
 export * from "./new-game.js";
+export * from "./create-initial.js";
 export * from "./spawn-random-wave.js";
 export * from "./fire-bullet.js";
 export * from "./hit-asteroid.js";

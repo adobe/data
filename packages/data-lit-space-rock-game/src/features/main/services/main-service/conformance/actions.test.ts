@@ -1,21 +1,18 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+/// <reference types="vite/client" />
 import { Database } from "@adobe/data/ecs";
 import { Conformance } from "@adobe/data/testing";
 import type { RandomService } from "../../random-service/random-service.js";
 import { MainService } from "../main-service.js";
-import * as registeredActions from "../action-database/actions/index.js";
-import { fireBullet } from "../action-database/actions/fire-bullet.js";
-import { spawnRandomWave } from "../action-database/actions/spawn-random-wave.js";
-import { cases as fireBulletCases } from "../../../data/state/fire-bullet.js";
-import { cases as spawnRandomWaveCases } from "../../../data/state/spawn-random-wave.js";
+import * as actions from "../action-database/actions/index.js";
 import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
 
-// Only the app-facing, single-transaction transitions get an action: `fireBullet`
-// (no service) and `spawnRandomWave` (injects the `random` service — a
-// value-returning read, so nothing is declared in `effects`). The per-frame step
-// transitions are realized by the systems layer and conformed by the tick-loop
-// test, not here. Entity bags compare as multisets via the `match` option.
+// Every ecs action, conformed by name against its transition. `runActions`
+// discovers transitions, turns each case's injected services into recording
+// overrides via `makeDb`, runs the action, and asserts state + declared effects.
+// Auto-pairs `fireBullet` and `spawnRandomWave`. Entity bags compare as
+// multisets via the `match` option.
 Conformance.runActions({
   // Runtime invariant: the recording wrappers preserve the service's shape, so
   // they are a valid factory override.
@@ -28,16 +25,14 @@ Conformance.runActions({
   store: (db) => db.store,
   fromState,
   toState,
-  registered: registeredActions,
+  transitions: import.meta.glob(
+    [
+      "../../../data/state/*.ts",
+      "!../../../data/state/*.test.ts",
+      "!../../../data/state/*.type-test.ts",
+    ],
+    { eager: true },
+  ),
+  actions,
   match: { unordered: new Set(["bullets", "asteroids"]) },
-  define: (conforms) => {
-    conforms("fireBullet", {
-      cases: fireBulletCases,
-      run: (db) => fireBullet(db),
-    });
-    conforms("spawnRandomWave", {
-      cases: spawnRandomWaveCases,
-      run: (db) => spawnRandomWave(db),
-    });
-  },
 });

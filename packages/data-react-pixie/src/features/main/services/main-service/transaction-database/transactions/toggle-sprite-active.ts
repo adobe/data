@@ -2,9 +2,12 @@
 import type { Entity } from "@adobe/data/ecs";
 import type { CoreDatabase } from "../../core-database/core-database.js";
 
-export const toggleSpriteActive = (t: CoreDatabase.Store, args: { readonly entity: Entity }) => {
-  const sprite = t.read(args.entity);
+export const toggleSpriteActive = (
+  t: CoreDatabase.Store,
+  args: { readonly id: Entity },
+) => {
+  const sprite = t.read(args.id);
   if (sprite && sprite.active !== undefined) {
-    t.update(args.entity, { active: !sprite.active });
+    t.update(args.id, { active: !sprite.active });
   }
 };

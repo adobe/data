@@ -3,16 +3,15 @@
 import { Conformance } from "@adobe/data/testing";
 
 // The single pure-spec test for every transform AND derivation in this folder.
-// `runSpec` auto-discovers each sibling that exports `cases`, requires it to
-// export exactly its function plus `cases`, and dispatches on case shape (a
-// `value` case is a derivation, otherwise a transition whose declared `effects`
-// are also asserted). Cursor positions are `Vec2` tuples compared in order and the
-// `cursors` map compares by key set, so the default comparison is correct.
-Conformance.runSpec(
-  import.meta.glob<Record<string, unknown>>(
+// `runSpec` auto-discovers each sibling exporting `cases`, requires it to export
+// exactly its function plus `cases`, and dispatches on case shape. Presence cases
+// carry a full `before`, so no `state` default is passed. Cursor positions are
+// `Vec2` tuples compared in order; the `cursors` map compares by key set.
+Conformance.runSpec({
+  transitions: import.meta.glob<Record<string, unknown>>(
     ["./*.ts", "!./*.test.ts", "!./*.type-test.ts"],
     {
       eager: true,
     },
   ),
-);
+});

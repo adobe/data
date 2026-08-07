@@ -142,10 +142,10 @@ markers). `data-lit-todo` adds `hydrate: ["visibleTodos"]` and `entity()` marker
 Lives in `data/state/`, not here. One call:
 
 ```ts
-Conformance.runSpec(
-  import.meta.glob(["./*.ts", "!./*.test.ts", "!./*.type-test.ts"], { eager: true }),
-  { state: State },
-);
+Conformance.runSpec({
+  state: State,
+  transitions: import.meta.glob(["./*.ts", "!./*.test.ts", "!./*.type-test.ts"], { eager: true }),
+});
 ```
 
 It discovers every file exporting `cases`, enforces the two-exports rule, and

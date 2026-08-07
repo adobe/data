@@ -4,17 +4,13 @@ import { Conformance } from "@adobe/data/testing";
 import { State } from "./state.js";
 
 // The single pure-spec test for every transform AND derivation in this folder.
-// `runSpec` auto-discovers each sibling that exports `cases`, requires it to
-// export exactly its function plus `cases`, and dispatches on case shape (a
-// `value` case is a derivation, otherwise a transition whose declared `effects`
-// are also asserted). This feature's `State` is entirely scalar (the `log` trail
-// is chronological), so the default ordered, matcher-aware comparison is correct.
-Conformance.runSpec(
-  import.meta.glob<Record<string, unknown>>(
+// `runSpec` auto-discovers each sibling exporting `cases`, requires it to export
+// exactly its function plus `cases`, and dispatches on case shape. Each case's
+// `before`/`input` is a delta over `State.create()`.
+Conformance.runSpec({
+  state: State,
+  transitions: import.meta.glob(
     ["./*.ts", "!./*.test.ts", "!./*.type-test.ts"],
-    {
-      eager: true,
-    },
+    { eager: true },
   ),
-  { state: State },
-);
+});

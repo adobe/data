@@ -138,7 +138,7 @@ export const cases: Conformance<typeof createTodo> = [
   own arg type. `runSpec` unwraps it to the plain data-id for the pure side; the ECS
   runners resolve it to the seeded entity (see `conformance.md`).
 - No per-transform test. The single **`spec.test.ts`** is one call —
-  `Conformance.runSpec(import.meta.glob(["./*.ts", "!./*.test.ts", "!./*.type-test.ts"], { eager: true }), { state: State })`
+  `Conformance.runSpec({ state: State, transitions: import.meta.glob(["./*.ts", "!./*.test.ts", "!./*.type-test.ts"], { eager: true }) })`
   — that auto-discovers every sibling exporting `cases`, enforces the two-exports
   rule, and dispatches on case shape (a `value` case → derivation; otherwise a
   transition whose declared `effects` are also asserted). Passing `{ state: State }`

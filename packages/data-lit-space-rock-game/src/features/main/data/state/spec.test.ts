@@ -4,18 +4,14 @@ import { Conformance } from "@adobe/data/testing";
 import { State } from "./state.js";
 
 // The single pure-spec test for every transform AND derivation in this folder.
-// `runSpec` auto-discovers each sibling exporting `cases` and dispatches on shape.
-// The entity bags (`bullets`, `asteroids`) the ecs materialises in nondeterministic
-// row order compare as multisets; ordered `Vec2`s and scalars compare in order.
-Conformance.runSpec(
-  import.meta.glob<Record<string, unknown>>(
+// `runSpec` auto-discovers each sibling exporting `cases`, requires it to export
+// exactly its function plus `cases`, and dispatches on case shape. Each case's
+// `before`/`input` is a delta over `State.create()`.
+Conformance.runSpec({
+  state: State,
+  transitions: import.meta.glob(
     ["./*.ts", "!./*.test.ts", "!./*.type-test.ts"],
-    {
-      eager: true,
-    },
+    { eager: true },
   ),
-  {
-    state: State,
-    match: { unordered: new Set(["bullets", "asteroids"]) },
-  },
-);
+  match: { unordered: new Set(["bullets", "asteroids"]) },
+});

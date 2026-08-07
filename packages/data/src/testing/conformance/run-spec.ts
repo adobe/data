@@ -9,12 +9,14 @@ import type { DerivationCase, Effects } from "./types.js";
 const isDerivationCase = (c: unknown): c is DerivationCase<unknown, unknown> =>
   typeof c === "object" && c !== null && "value" in c;
 
-export interface SpecOptions {
-  // The feature's `State` namespace (the same `state` shape `runFeature` takes).
-  // Its `create()` is the default each case's `before` deltas over, so a case
-  // names only the fields it sets differently. Omit it and cases must carry a
-  // full `before`.
+export interface SpecRunConfig {
+  // The feature's `State` namespace (the same `state` `runFeature` takes). Its
+  // `create()` is the default each case's `before` deltas over, so a case names
+  // only the fields it sets differently. Omit it and cases must carry a full `before`.
   readonly state?: { create(): object };
+  // `import.meta.glob(["./*.ts", "!./*.test.ts", "!./*.type-test.ts"], { eager: true })`
+  // — the same `transitions` glob `runFeature` takes.
+  readonly transitions: Record<string, Record<string, unknown>>;
   // Passed through to `matches` (float tolerance, unordered collections).
   readonly match?: MatchOptions;
   // Override the `describe` label per module (default `State.<fnName>`).
@@ -22,23 +24,28 @@ export interface SpecOptions {
 }
 
 // The single pure-spec test for every transform AND derivation in a `data/state/`
-// folder. Pass `import.meta.glob(["./*.ts", "!./*.test.ts"], { eager: true })`; it
-// auto-discovers each file that exports `cases`, requires that file to export
-// exactly its function plus `cases`, and dispatches on case shape: a `value` case
-// checks a derivation `(state) => value`; otherwise a transition `(state, args) =>
-// state`, whose declared `effects` on injected services are also asserted. A
-// service-injected transition is async, so results are awaited uniformly.
-export const runSpec = (modules: Record<string, Record<string, unknown>>, options: SpecOptions = {}): void => {
-  for (const [path, module] of Object.entries(modules)) {
+// folder. It auto-discovers each file that exports `cases`, requires that file to
+// export exactly its function plus `cases`, and dispatches on case shape: a `value`
+// case checks a derivation `(state) => value`; otherwise a transition `(state,
+// args) => state`, whose declared `effects` on injected services are also asserted.
+// A service-injected transition is async, so results are awaited uniformly.
+export const runSpec = (config: SpecRunConfig): void => {
+  for (const [path, module] of Object.entries(config.transitions)) {
     const exportNames = Object.keys(module);
     if (!exportNames.includes("cases")) continue;
-    const functionNames = exportNames.filter((key) => typeof module[key] === "function");
+    const functionNames = exportNames.filter(
+      (key) => typeof module[key] === "function",
+    );
     const fnName = functionNames.length === 1 ? functionNames[0] : undefined;
-    const label = options.label ? options.label(path, fnName) : `State.${fnName ?? path}`;
+    const label = config.label
+      ? config.label(path, fnName)
+      : `State.${fnName ?? path}`;
     describe(label, () => {
       if (exportNames.length !== 2 || functionNames.length !== 1) {
         it("exports exactly its function and `cases`", () => {
-          throw new Error(`${path} exports [${exportNames.join(", ")}] — expected one function + cases`);
+          throw new Error(
+            `${path} exports [${exportNames.join(", ")}] — expected one function + cases`,
+          );
         });
         return;
       }
@@ -47,7 +54,9 @@ export const runSpec = (modules: Record<string, Record<string, unknown>>, option
       const cases = module["cases"] as readonly unknown[];
       for (const testCase of cases) {
         if (isDerivationCase(testCase)) {
-          it(testCase.name, () => assert(fn(testCase.input), testCase.value, options.match));
+          it(testCase.name, () =>
+            assert(fn(testCase.input), testCase.value, config.match),
+          );
           continue;
         }
         const tc = testCase as {
@@ -62,9 +71,16 @@ export const runSpec = (modules: Record<string, Record<string, unknown>>, option
           // wrap injected services so their calls are recorded.
           const { args, calls } = recordArgServices(adaptArgs(tc.args));
           // Case `before` is a delta over the feature default; `after` a writes patch.
-          const before = { ...(options.state?.create() ?? {}), ...(tc.before as Record<string, unknown>) };
+          const before = {
+            ...(config.state?.create() ?? {}),
+            ...(tc.before as Record<string, unknown>),
+          };
           const result = (await fn(before, args)) as Record<string, unknown>;
-          assert({ ...before, ...result }, { ...before, ...(tc.after as Record<string, unknown>) }, options.match);
+          assert(
+            { ...before, ...result },
+            { ...before, ...(tc.after as Record<string, unknown>) },
+            config.match,
+          );
           expectEffects(calls, tc.effects);
         });
       }

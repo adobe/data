@@ -7,8 +7,15 @@ paths:
 
 Test-only (imported only by `*.test.ts`, in no facet barrel). The `data/state`
 cases are the shared truth; these runners replay them against the ECS. Reference:
-`data-lit-todo`'s `conformance/` + its `spec.test.ts`. Never call
-`fromState`/`toState`/`toData` from runtime code — they are full-store rewrites.
+`data-lit-todo`'s `conformance/` + its `spec.test.ts`.
+
+**These `conformance/` projection helpers — `fromState`, `toState`, and the
+`toData(store, entity)` reader defined here — are strictly for conformance tests
+and MUST NEVER run in production code, ever.** `fromState`/`toState` rewrite the
+whole store out-of-band; runtime code reads through observables/indexes and writes
+through transactions. (This conformance `toData(store, entity)` reader is unrelated
+to the library's `db.toData()` store-serialization method, which *is* a normal
+runtime API — the collision is only in the name.)
 
 ## Projection (store ⇄ State)
 
@@ -22,7 +29,8 @@ cases are the shared truth; these runners replay them against the ECS. Reference
 
 One matcher-aware `matches(actual, expected)` (exported; also backs derivations):
 honors vitest **asymmetric matchers** on the expected side (so `after`/`value`
-use `anyNumber` for ECS-assigned ids), quantizes numbers to absorb F32↔f64 noise,
+use `anyNumber` — i.e. `expect.any(Number)`, see `state.md` — for ECS-assigned
+ids), quantizes numbers to absorb F32↔f64 noise,
 and compares arrays **in order** by default (`toState` reads a display-ordered
 collection in order — this is what verifies a reorder; and ordered tuples like a
 `Vec2` must stay in order). No separate id-ignoring variant.

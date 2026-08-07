@@ -13,25 +13,25 @@ import { toState } from "./to-state.js";
 //
 //   toState(apply(fromState(before), args)) ≡ spec(before, args)
 //
-// in two asserted halves:
-//   1. `spec(before, args) ≡ after` — keeps the shared case honest, independent
-//      of the ecs path.
-//   2. seed `fromState(before)` → run the caller's `apply` → `toState ≡ after`
-//      — the ecs transaction reproduces the pure transform.
+// The ecs half is always asserted here: seed `fromState(before)` → run the
+// caller's `apply` → `toState ≡ after`. Half 1 (`spec(before,args) ≡ after`) is
+// already asserted for every case by `data/state/spec.test.ts`, so the central
+// aggregator omits it; pass `spec` to re-check it in place.
 //
 // `apply` receives the seeded writable store and the case args, then calls the
 // raw transaction function directly (a transaction is `(store, …) => void`, so
 // no `Database` is involved). This feature holds only scalar resources, so the
-// projection is id-free and the comparison is strict on both halves.
+// projection is id-free and there are no entities to resolve.
 export const expectConforms = <Args>(config: {
   readonly cases: readonly ConformanceCase<Args>[];
-  readonly spec: (before: State, args: Args) => State;
+  readonly spec?: (before: State, args: Args) => State;
   readonly apply: (store: CoreDatabase.Store, args: Args) => void;
 }): void => {
   for (const testCase of config.cases) {
     it(testCase.name, () => {
-      expectStateMatches(config.spec(testCase.before, testCase.args), testCase.after);
-
+      if (config.spec) {
+        expectStateMatches(config.spec(testCase.before, testCase.args), testCase.after);
+      }
       const store = createStore();
       fromState(store, testCase.before);
       config.apply(store, testCase.args);

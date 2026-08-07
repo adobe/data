@@ -1,0 +1,7 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+import type { TransactionDatabase } from "../../transaction-database/transaction-database.js";
+
+// The app-facing realization of `State.clearLog` — commits the transaction.
+export const clearLog = (db: TransactionDatabase) => {
+  db.transactions.clearLog();
+};

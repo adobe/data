@@ -26,8 +26,20 @@ spec aggregator throws if it finds one). The cases are the spec-owned truth ever
 conformance runner reuses; co-locating them removes the per-transform `.cases.ts`
 and `.test.ts`.
 
+**Why co-locate `cases` (not a sibling `*.test.ts`)?** They are spec-owned
+fixtures **four runners reuse** (spec / transaction / action / computed) — the
+transform's contract expressed as data, not a per-file test — so they belong
+beside the thing they specify, and `Conformance<typeof fn>` binds them to the
+signature so they can't drift. Kept inert (no `describe`; one aggregator runs
+them) they also sidestep the double execution vitest triggers when a single file
+both exports cases and runs its own `describe`. Coverage is then enforced
+centrally by the aggregator's barrel-driven guard rather than by eyeballing one
+test file per transform — and genuine non-transition helpers still keep their own
+`*.test.ts` (see below).
+
 ```ts
 // create-todo.ts
+import { anyNumber } from "./matchers.js"; // vitest expect.any(Number) — see below
 export const createTodo = <T extends Pick<State, "todos">>(
     state: T,
     { name, complete, analytics }: { name: string; complete?: boolean; analytics: AnalyticsService },
@@ -56,12 +68,23 @@ export const cases: Conformance<typeof createTodo> = [
 - **`Conformance<typeof fn>`** derives the case `args` type from the function's
   own signature — author it once, and cases can't drift from what the function
   accepts. `before`/`after` are full `State`.
-- **`after` leaves minted values open** with the `anyNumber`/`anyString` matchers
-  (`matchers.ts`, wrapping vitest `expect.any`): an id the ECS assigns from its
-  own id-space is `id: anyNumber`, so the pure spec and the ECS satisfy the same
-  case. Match by content, not by the value you don't control. Add `matchers.ts`
-  only when a case needs one — a feature whose `State` exposes no ECS-minted ids
-  (values abstracted behind a scalar/string) never does.
+- **`after` leaves minted values open** with the `anyNumber`/`anyString`
+  matchers. These are just **vitest's asymmetric matchers**, centralised so the
+  `vitest` import lives in one place and tree-shakes out of the app build:
+
+  ```ts
+  // matchers.ts
+  import { expect } from "vitest";
+  export const anyNumber = expect.any(Number);
+  export const anyString = expect.any(String);
+  ```
+
+  An id the ECS assigns from its own id-space is `id: anyNumber` (i.e.
+  `expect.any(Number)`), so the pure spec and the ECS satisfy the same case —
+  match by content, not by the value you don't control. `matches()` honors any
+  vitest asymmetric matcher here (`expect.stringContaining`, …), not only these
+  two. Add `matchers.ts` only when a case needs one — a feature whose `State`
+  exposes no ECS-minted ids (values abstracted behind a scalar/string) never does.
 - No per-transform test. The single **`spec.test.ts`** auto-discovers every file
   exporting `cases` and asserts the pure result (see `conformance.md`). Only the
   redundant per-transform tests are removed. A genuine **non-transition helper** in

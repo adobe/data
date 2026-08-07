@@ -10,12 +10,25 @@ returns an `Observe` of state projected through pure `data/` helpers.
 Derivation logic itself lives in `data/`; a computed only wires a service
 observable to it.
 
-Wire the **pure `data/<type>` helper** (or compose indexes) — do **not** import a
-`data/state` derivation into a production computed. A `state/` derivation's module
-co-locates conformance `cases` that construct service test-doubles at load; it is
-the spec the computed is *conformed to*, not a production dependency. Both the
-computed and the `state/` derivation call the same `data/<type>` helper, so they
-agree.
+**Reuse tested pure logic; let performance pick the wiring.** Prefer wiring the
+pure **`data/<type>` helper** (or composing indexes) directly — the tictactoe
+computeds delegate their observable straight to
+`BoardState.deriveStatus`/`getWinner`/`currentPlayer` — because a helper reads
+exactly the resource/entities it needs, and both the computed and the matching
+`state/` derivation call it, so they agree by construction.
+
+You **may** also import a pure `state/` derivation `(state) => value` into a
+computed where performance is adequate: a small-N or resource/scalar composition,
+not a hot per-entity or large-N path. Reusing a tested derivation is good — the
+only cost is that it takes the **whole `State`**, so the computed must observe the
+full-state projection and re-runs on *any* field change (fine for a small feature,
+wasteful on a large or hot one, where you hand-wire the minimal resource/index
+reads instead). A derivation takes **no services**, so its co-located `cases` are
+inert `{ input, value }` data (no test-doubles) that tree-shake out of the app
+build like `matchers.ts` does — the one hazard is a `cases` literal touching the
+`public.js` barrel at load, which `state.md` already forbids. **Performance is the
+first-class constraint**: reuse freely where it doesn't matter, hand-wire minimal
+reads where it does.
 
 ```ts
 import { cached } from "@adobe/data/cache";

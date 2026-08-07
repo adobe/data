@@ -2,6 +2,7 @@
 /// <reference types="vite/client" />
 import { Database } from "@adobe/data/ecs";
 import { Conformance } from "@adobe/data/testing";
+import { State } from "../../../data/state/state.js";
 import { ComputedDatabase } from "../computed-database/computed-database.js";
 import * as computeds from "../computed-database/computed/index.js";
 import { fromState } from "./from-state.js";
@@ -26,4 +27,5 @@ Conformance.runComputeds({
     { eager: true },
   ),
   computeds,
+  initial: State.create(),
 });

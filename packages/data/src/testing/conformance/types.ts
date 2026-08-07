@@ -34,14 +34,18 @@ type ArgsOf<F extends (...args: never[]) => unknown> = Parameters<F> extends [un
   ? Args
   : void;
 
-// One spec-owned conformance case: a `data/` transform's `{ before, args, after }`
-// authored as full `State`, optionally with the side effects it makes on its
-// injected service args. `args` is OMITTABLE exactly when the transform takes
-// none. Shared unchanged by the spec aggregator and the ecs conformance runners.
+// One spec-owned conformance case, authored as **deltas over the feature default**
+// (the runner's `initial` state). `before` lists only the fields this case sets
+// differently from the default; `after` is the transform's **writes patch** — only
+// the fields it changes. The runner seeds `{ ...initial, ...before }` and compares
+// against `{ ...initial, ...before, ...after }`, so every field a case doesn't
+// mention is the default and stays unchanged. (A full `before`/`after` still works
+// — it just overrides the default wholesale.) `args` is OMITTABLE exactly when the
+// transform takes none. Shared by the spec aggregator and the ecs runners.
 export type Case<State, Args> = {
   readonly name: string;
-  readonly before: State;
-  readonly after: State;
+  readonly before: Partial<State>;
+  readonly after: Partial<State>;
   readonly effects?: Effects<Args>;
 } & ([Args] extends [void] ? { readonly args?: undefined } : { readonly args: Args });
 

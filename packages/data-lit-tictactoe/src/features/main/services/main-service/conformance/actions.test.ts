@@ -2,6 +2,7 @@
 /// <reference types="vite/client" />
 import { Database } from "@adobe/data/ecs";
 import { Conformance } from "@adobe/data/testing";
+import { State } from "../../../data/state/state.js";
 import type { OpponentService } from "../../opponent-service/opponent-service.js";
 import { MainService } from "../main-service.js";
 import * as actions from "../action-database/actions/index.js";
@@ -31,4 +32,5 @@ Conformance.runActions({
     { eager: true },
   ),
   actions,
+  initial: State.create(),
 });

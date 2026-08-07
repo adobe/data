@@ -25,13 +25,7 @@ export const restartGame = (state: State): State => {
 export const cases: Conformance<typeof restartGame> = [
   {
     name: "tallies an X win, alternates first player, clears the board",
-    before: {
-      board: "XXX      ",
-      firstPlayer: "X",
-      xWins: 0,
-      oWins: 0,
-      draws: 0,
-    },
+    before: { board: "XXX      " },
     args: undefined,
     after: {
       board: "         ",
@@ -43,13 +37,7 @@ export const cases: Conformance<typeof restartGame> = [
   },
   {
     name: "tallies an O win",
-    before: {
-      board: "OOOXX    ",
-      firstPlayer: "O",
-      xWins: 1,
-      oWins: 2,
-      draws: 0,
-    },
+    before: { board: "OOOXX    ", firstPlayer: "O", xWins: 1, oWins: 2 },
     args: undefined,
     after: {
       board: "         ",
@@ -61,13 +49,7 @@ export const cases: Conformance<typeof restartGame> = [
   },
   {
     name: "tallies a draw (full board, no line)",
-    before: {
-      board: "XOXXOOOXX",
-      firstPlayer: "O",
-      xWins: 2,
-      oWins: 1,
-      draws: 0,
-    },
+    before: { board: "XOXXOOOXX", firstPlayer: "O", xWins: 2, oWins: 1 },
     args: undefined,
     after: {
       board: "         ",
@@ -79,13 +61,7 @@ export const cases: Conformance<typeof restartGame> = [
   },
   {
     name: "restarts an unfinished game without touching any counter",
-    before: {
-      board: "X O      ",
-      firstPlayer: "X",
-      xWins: 1,
-      oWins: 1,
-      draws: 1,
-    },
+    before: { board: "X O      ", xWins: 1, oWins: 1, draws: 1 },
     args: undefined,
     after: {
       board: "         ",

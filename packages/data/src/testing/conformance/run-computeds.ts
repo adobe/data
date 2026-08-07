@@ -33,6 +33,9 @@ export interface ComputedRunConfig<Db, Store, State> {
   readonly derivations: Record<string, Record<string, unknown>>;
   readonly computeds: Record<string, unknown>;
   readonly hydrate?: readonly string[];
+  // The feature's default `State`; each case's `input` is merged over it before
+  // seeding, so a derivation case names only the fields it reads.
+  readonly initial?: State;
   readonly match?: MatchOptions;
 }
 
@@ -50,7 +53,8 @@ export function runComputeds<Db, Store, State>(config: ComputedRunConfig<Db, Sto
       for (const testCase of paired.cases) {
         it(testCase.name as string, () => {
           const db = config.makeDb();
-          config.fromState(config.store(db), testCase.input as State);
+          const input = { ...(config.initial ?? {}), ...(testCase.input as object) } as State;
+          config.fromState(config.store(db), input);
           const raw = readComputed((computed as (d: Db) => Observe<unknown>)(db));
           const value =
             hydrate.has(name) && config.toData

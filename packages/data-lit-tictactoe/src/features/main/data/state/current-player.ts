@@ -9,8 +9,9 @@ import type { Derivation } from "./conformance-case.js";
 // (see `data/state.md`). The mark-counting itself is the board's own helper
 // (`BoardState.currentPlayer`), which the ecs implementation reuses directly; this
 // derivation is the spec the ecs `currentPlayer` computed is conformed against.
-export const currentPlayer = (state: State): PlayerMark =>
-  BoardState.currentPlayer(state.board, state.firstPlayer);
+export const currentPlayer = (
+  state: Pick<State, "board" | "firstPlayer">,
+): PlayerMark => BoardState.currentPlayer(state.board, state.firstPlayer);
 
 // Spec-owned cases, shared with the ecs `currentPlayer` computed. A derivation
 // case is `{ input, value }`; `input` is a full `State`, `value` the mark to move.
@@ -20,9 +21,6 @@ export const cases: Derivation<typeof currentPlayer> = [
     input: {
       board: "         ",
       firstPlayer: "X",
-      xWins: 0,
-      oWins: 0,
-      draws: 0,
     },
     value: "X",
   },
@@ -31,9 +29,6 @@ export const cases: Derivation<typeof currentPlayer> = [
     input: {
       board: "         ",
       firstPlayer: "O",
-      xWins: 0,
-      oWins: 0,
-      draws: 0,
     },
     value: "O",
   },
@@ -42,9 +37,6 @@ export const cases: Derivation<typeof currentPlayer> = [
     input: {
       board: "    X    ",
       firstPlayer: "X",
-      xWins: 0,
-      oWins: 0,
-      draws: 0,
     },
     value: "O",
   },
@@ -53,9 +45,6 @@ export const cases: Derivation<typeof currentPlayer> = [
     input: {
       board: "XO       ",
       firstPlayer: "X",
-      xWins: 1,
-      oWins: 2,
-      draws: 0,
     },
     value: "X",
   },

@@ -23,6 +23,9 @@ export interface TransactionRunConfig<Store, State> {
   // `import * as transactions from ".../transactions/index.js"`, OR a directory
   // glob when ops live beside a barrel they aren't registered in.
   readonly transactions: Record<string, unknown>;
+  // The feature's default `State`; each case's `before` is merged over it, so a
+  // case names only what differs from the default.
+  readonly initial?: State;
   // Optional ambient, non-spec context a user-scoped feature needs before the raw
   // transaction runs (e.g. seed the acting peer's `userId`) — the one seam not
   // derivable from cases. Runs after `fromState`, before the transaction.
@@ -40,11 +43,14 @@ export function runTransactions<Store, State>(config: TransactionRunConfig<Store
     describe(`${name} transaction conforms`, () => {
       for (const testCase of paired.cases) {
         it(testCase.name as string, () => {
+          // Case `before` is a delta over the feature default.
+          const before = { ...(config.initial ?? {}), ...(testCase.before as object) } as State;
           const store = config.createStore();
-          const resolve = resolver(config.fromState(store, testCase.before as State));
-          config.seedContext?.(store, testCase.before as State, testCase.args);
+          const resolve = resolver(config.fromState(store, before));
+          config.seedContext?.(store, before, testCase.args);
           (transaction as (s: Store, a?: unknown) => void)(store, adaptArgs(testCase.args, resolve));
-          assert(config.toState(store), testCase.after, config.match);
+          // `after` is a writes patch — compare `toState` against it merged over `before`.
+          assert(config.toState(store), { ...(before as object), ...(testCase.after as object) }, config.match);
         });
       }
     });

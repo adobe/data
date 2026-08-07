@@ -22,6 +22,8 @@ export interface ActionRunConfig<Db, Store, State> {
   readonly toState: (store: Store) => State;
   readonly transitions: Record<string, Record<string, unknown>>;
   readonly actions: Record<string, unknown>;
+  // The feature's default `State`; each case's `before` is merged over it.
+  readonly initial?: State;
   // Optional ambient, non-spec context a user-scoped feature needs before dispatch
   // (e.g. the acting peer's `userId`) — the one seam not derivable from cases.
   readonly seedContext?: (db: Db, before: State, args: unknown) => void;
@@ -39,11 +41,14 @@ export function runActions<Db, Store, State>(config: ActionRunConfig<Db, Store, 
       for (const testCase of paired.cases) {
         it(testCase.name as string, async () => {
           const { services, input, calls } = splitAndRecordServices(testCase.args);
+          // Case `before` is a delta over the feature default.
+          const before = { ...(config.initial ?? {}), ...(testCase.before as object) } as State;
           const db = config.makeDb(services);
-          const resolve = resolver(config.fromState(config.store(db), testCase.before as State));
-          config.seedContext?.(db, testCase.before as State, testCase.args);
+          const resolve = resolver(config.fromState(config.store(db), before));
+          config.seedContext?.(db, before, testCase.args);
           await (action as (d: Db, a?: unknown) => Promise<void> | void)(db, adaptArgs(input, resolve));
-          assert(config.toState(config.store(db)), testCase.after, config.match);
+          // `after` is a writes patch — compare `toState` against it merged over `before`.
+          assert(config.toState(config.store(db)), { ...(before as object), ...(testCase.after as object) }, config.match);
           expectEffects(calls, testCase.effects as never);
         });
       }

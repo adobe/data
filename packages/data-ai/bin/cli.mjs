@@ -188,9 +188,11 @@ function wireManagedUpdates(base) {
 
     // 1. pinned devDependency
     consumer.devDependencies ??= {};
+    let pinnedDep = false;
     if (consumer.devDependencies[PKG_NAME] !== VERSION) {
         consumer.devDependencies[PKG_NAME] = VERSION;
         changes.push(`devDependencies["${PKG_NAME}"] = "${VERSION}" (exact)`);
+        pinnedDep = true;
     }
 
     // 2. own postinstall runs the installer (chain if one already exists)
@@ -217,6 +219,14 @@ function wireManagedUpdates(base) {
 
     for (const c of changes) process.stdout.write(`  wired: ${c}\n`);
     if (!changes.length) process.stdout.write("  auto-update already wired\n");
+    // Adding/repinning the dev-dependency leaves the lockfile out of sync until a
+    // normal install records it (and CI with a frozen lockfile would fail until then).
+    if (pinnedDep) {
+        process.stdout.write(
+            "\nNext: run your package manager's install to sync the lockfile\n" +
+                "  pnpm install    # or npm install / yarn\n",
+        );
+    }
 }
 
 function parseArgs(argv) {

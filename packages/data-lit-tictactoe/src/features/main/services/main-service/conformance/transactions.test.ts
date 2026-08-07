@@ -1,28 +1,27 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+/// <reference types="vite/client" />
 import { Conformance } from "@adobe/data/testing";
-import * as registeredTransactions from "../transaction-database/transactions/index.js";
-import { playMove } from "../transaction-database/transactions/play-move.js";
-import { restartGame } from "../transaction-database/transactions/restart-game.js";
-import { cases as playMoveCases } from "../../../data/state/play-move.js";
-import { cases as restartGameCases } from "../../../data/state/restart-game.js";
+import * as transactions from "../transaction-database/transactions/index.js";
 import { createStore } from "./create-store.js";
 import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
 
-// The single conformance test for every ecs transaction. `runTransactions` owns
-// the harness (fresh store, `fromState` seed, `toState` compare, coverage guard
-// keyed off the registered barrel). Tic-tac-toe moves are addressed by board
-// index, not entity id, so the `apply` adapters need no `resolve`.
+// Every ecs transaction, conformed by name against its `data/state` transition —
+// no per-item wiring. `runTransactions` discovers the transitions (the glob),
+// pairs each registered transaction to the same-named one, seeds `fromState`,
+// applies, and compares `toState`. Moves are addressed by board index (plain
+// data), so no `entity()` markers are needed.
 Conformance.runTransactions({
   createStore,
   fromState,
   toState,
-  registered: registeredTransactions,
-  define: (conforms) => {
-    conforms("playMove", { cases: playMoveCases, apply: playMove });
-    conforms("restartGame", {
-      cases: restartGameCases,
-      apply: (t) => restartGame(t),
-    });
-  },
+  transitions: import.meta.glob(
+    [
+      "../../../data/state/*.ts",
+      "!../../../data/state/*.test.ts",
+      "!../../../data/state/*.type-test.ts",
+    ],
+    { eager: true },
+  ),
+  transactions,
 });

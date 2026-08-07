@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Conformance as ConformanceApi } from "@adobe/data/testing";
+import { Conformance as ConformanceApi } from "@adobe/data/testing";
 import type { State } from "./state.js";
 
 // The conformance case types for this feature — the shared `@adobe/data/testing`
@@ -12,3 +12,8 @@ export type Conformance<F extends (...args: never[]) => unknown> =
 export type Derivation<F extends (...args: never[]) => unknown> =
   ConformanceApi.DerivationCases<F>;
 export type Effects<Args> = ConformanceApi.Effects<Args>;
+
+// The entity-reference marker for case args: `args: { id: entity(2) }` names "the
+// entity seeded for spec-id 2". The pure spec reads `2`; the ecs runner resolves
+// it to the seeded entity. Re-exported here so cases import it beside `Conformance`.
+export const entity = ConformanceApi.entity;

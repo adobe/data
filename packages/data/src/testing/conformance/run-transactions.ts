@@ -3,12 +3,30 @@ import { describe, it } from "vitest";
 import type { Entity } from "../../ecs/entity/entity.js";
 import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
+import { adaptArgs } from "./entity-ref.js";
+import { discoverTransitions } from "./discover.js";
 import { resolver, type Resolve } from "./resolve.js";
 import type { Case } from "./types.js";
 
-// Wire one transaction to a transform's shared cases. `apply` receives the seeded
-// writable store, the case args, and a `resolve` mapping a spec id to the seeded
-// entity — then calls the raw transaction directly.
+// Auto-pairing config: discover transitions (from the `data/state` glob) and the
+// registered transactions (the facet barrel), pair by name, and conform each —
+// no per-item wiring. A transaction with no same-named transition is
+// infrastructure (e.g. `setInput`) and is skipped; a transition realized by an
+// action or a system is conformed there. Entity-addressed args carry a
+// `Conformance.entity(specId)` marker the runner resolves; a transaction ignores
+// any injected-service arg (its effects are asserted through the action).
+export interface TransactionRunConfig<Store, State> {
+  readonly createStore: () => Store;
+  readonly fromState: (store: Store, before: State) => ReadonlyMap<unknown, Entity> | void;
+  readonly toState: (store: Store) => State;
+  // `import.meta.glob("../../../data/state/*.ts", { eager: true })`.
+  readonly transitions: Record<string, Record<string, unknown>>;
+  // `import * as transactions from "../transaction-database/transactions/index.js"`.
+  readonly transactions: Record<string, unknown>;
+  readonly match?: MatchOptions;
+}
+
+// Legacy explicit-wiring config (being retired as samples move to auto-pairing).
 export type TransactionConforms<Store, State, Id> = <Args>(
   transaction: string,
   config: {
@@ -16,31 +34,43 @@ export type TransactionConforms<Store, State, Id> = <Args>(
     readonly apply: (store: Store, args: Args, resolve: Resolve<Id>) => void;
   },
 ) => void;
-
-export interface TransactionRunConfig<Store, State, Id> {
+export interface TransactionDefineConfig<Store, State, Id> {
   readonly createStore: () => Store;
-  // Seed a fresh store to `before`, returning the `spec id → seeded entity` map
-  // (or `void` when the feature is index/singleton-addressed and needs no
-  // resolution).
   readonly fromState: (store: Store, before: State) => ReadonlyMap<Id, Entity> | void;
   readonly toState: (store: Store) => State;
-  // The registered-transactions barrel — the coverage guard requires every key
-  // here to be wired, so none can be missed.
   readonly registered: Record<string, unknown>;
-  // Transactions asserted OUTSIDE the shared-cases mechanism (e.g. one with no
-  // `data/` transform, checked with a direct resource assertion) — named here so
-  // the coverage guard counts them as covered.
   readonly covers?: readonly string[];
   readonly match?: MatchOptions;
   readonly define: (conforms: TransactionConforms<Store, State, Id>) => void;
 }
 
 // The single conformance test for every ecs transaction, proving
-// `toState(apply(fromState(before), args)) ≡ after` for each shared case (half 1,
-// `spec(before,args) ≡ after`, is asserted by `runSpec`). Bespoke `apply`
-// adapters stay per-feature (an id-addressed transaction resolves its entity); the
-// seed, projection, matching, and coverage guard are all shared here.
-export const runTransactions = <Store, State, Id>(config: TransactionRunConfig<Store, State, Id>): void => {
+// `toState(apply(fromState(before), args)) ≡ after` for each shared case.
+export function runTransactions<Store, State>(config: TransactionRunConfig<Store, State>): void;
+export function runTransactions<Store, State, Id>(config: TransactionDefineConfig<Store, State, Id>): void;
+export function runTransactions<Store, State, Id>(
+  config: TransactionRunConfig<Store, State> | TransactionDefineConfig<Store, State, Id>,
+): void {
+  if ("transitions" in config) {
+    const transitions = discoverTransitions(config.transitions);
+    for (const [name, transaction] of Object.entries(config.transactions)) {
+      if (typeof transaction !== "function") continue;
+      const paired = transitions.get(name);
+      if (!paired) continue; // infrastructure transaction — no transition to conform to
+      describe(`${name} transaction conforms`, () => {
+        for (const testCase of paired.cases) {
+          it(testCase.name as string, () => {
+            const store = config.createStore();
+            const resolve = resolver(config.fromState(store, testCase.before as State));
+            (transaction as (s: Store, a?: unknown) => void)(store, adaptArgs(testCase.args, resolve));
+            assert(config.toState(store), testCase.after, config.match);
+          });
+        }
+      });
+    }
+    return;
+  }
+
   const covered = new Set<string>();
   const conforms = <Args>(
     transaction: string,
@@ -55,7 +85,6 @@ export const runTransactions = <Store, State, Id>(config: TransactionRunConfig<S
         it(testCase.name, () => {
           const store = config.createStore();
           const resolve = resolver(config.fromState(store, testCase.before));
-          // A void-arg case omits `args` (see `Case`); reading yields the correct `undefined`.
           const args = (testCase as { readonly args?: Args }).args as Args;
           tconfig.apply(store, args, resolve);
           assert(config.toState(store), testCase.after, config.match);
@@ -72,4 +101,4 @@ export const runTransactions = <Store, State, Id>(config: TransactionRunConfig<S
       });
     }
   });
-};
+}

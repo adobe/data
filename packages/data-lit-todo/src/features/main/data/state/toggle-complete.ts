@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { entity, type Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data/testing";
 export const toggleComplete = <T extends Pick<State, "todos">>(
   state: T,
@@ -33,7 +33,7 @@ export const cases: Conformance<typeof toggleComplete> = [
       ],
       displayCompleted: false,
     },
-    args: { id: 1, analytics: AnalyticsService.createFake() },
+    args: { id: entity(1), analytics: AnalyticsService.createFake() },
     after: {
       todos: [
         { id: Match.anyNumber, name: "a", complete: true },
@@ -52,7 +52,7 @@ export const cases: Conformance<typeof toggleComplete> = [
       ],
       displayCompleted: true,
     },
-    args: { id: 1, analytics: AnalyticsService.createFake() },
+    args: { id: entity(1), analytics: AnalyticsService.createFake() },
     after: {
       todos: [
         { id: Match.anyNumber, name: "a", complete: false },
@@ -68,7 +68,7 @@ export const cases: Conformance<typeof toggleComplete> = [
       todos: [{ id: 1, name: "a", complete: false }],
       displayCompleted: false,
     },
-    args: { id: 99, analytics: AnalyticsService.createFake() },
+    args: { id: entity(99), analytics: AnalyticsService.createFake() },
     after: {
       todos: [{ id: Match.anyNumber, name: "a", complete: false }],
       displayCompleted: false,

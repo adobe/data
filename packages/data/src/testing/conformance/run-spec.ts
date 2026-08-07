@@ -2,6 +2,7 @@
 import { describe, it } from "vitest";
 import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
+import { adaptArgs } from "./entity-ref.js";
 import { recordArgServices, expectEffects } from "./record-effects.js";
 import type { DerivationCase, Effects } from "./types.js";
 
@@ -52,7 +53,9 @@ export const runSpec = (modules: Record<string, Record<string, unknown>>, option
           readonly effects?: Effects<Record<string, unknown>>;
         };
         it(tc.name, async () => {
-          const { args, calls } = recordArgServices(tc.args);
+          // Unwrap `entity(specId)` markers to their data-id for the pure spec, then
+          // wrap injected services so their calls are recorded.
+          const { args, calls } = recordArgServices(adaptArgs(tc.args));
           assert(await fn(tc.before, args), tc.after, options.match);
           expectEffects(calls, tc.effects);
         });

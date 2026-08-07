@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { entity, type Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data/testing";
 /**
  * Moves the todo with the given id to `toIndex` within the list, preserving the
@@ -40,7 +40,7 @@ export const cases: Conformance<typeof reorderTodo> = [
   {
     name: "moves the first todo to the end",
     before: { todos: [...three], displayCompleted: true },
-    args: { id: 1, toIndex: 2 },
+    args: { id: entity(1), toIndex: 2 },
     after: {
       todos: [
         { id: Match.anyNumber, name: "b", complete: false },
@@ -53,7 +53,7 @@ export const cases: Conformance<typeof reorderTodo> = [
   {
     name: "moves the last todo to the front",
     before: { todos: [...three], displayCompleted: true },
-    args: { id: 3, toIndex: 0 },
+    args: { id: entity(3), toIndex: 0 },
     after: {
       todos: [
         { id: Match.anyNumber, name: "c", complete: false },
@@ -66,7 +66,7 @@ export const cases: Conformance<typeof reorderTodo> = [
   {
     name: "clamps an out-of-range index to the end",
     before: { todos: [...three], displayCompleted: true },
-    args: { id: 1, toIndex: 99 },
+    args: { id: entity(1), toIndex: 99 },
     after: {
       todos: [
         { id: Match.anyNumber, name: "b", complete: false },
@@ -79,7 +79,7 @@ export const cases: Conformance<typeof reorderTodo> = [
   {
     name: "keeps the order when moving to the same index",
     before: { todos: [...three], displayCompleted: true },
-    args: { id: 2, toIndex: 1 },
+    args: { id: entity(2), toIndex: 1 },
     after: {
       todos: [
         { id: Match.anyNumber, name: "a", complete: false },

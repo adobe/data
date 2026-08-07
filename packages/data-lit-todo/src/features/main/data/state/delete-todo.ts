@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { entity, type Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data/testing";
 export const deleteTodo = <T extends Pick<State, "todos">>(
   state: T,
@@ -28,7 +28,7 @@ export const cases: Conformance<typeof deleteTodo> = [
   {
     name: "removes a middle todo",
     before: { todos: [...three], displayCompleted: false },
-    args: { id: 2, analytics: AnalyticsService.createFake() },
+    args: { id: entity(2), analytics: AnalyticsService.createFake() },
     after: {
       todos: [
         { id: Match.anyNumber, name: "a", complete: false },
@@ -41,7 +41,7 @@ export const cases: Conformance<typeof deleteTodo> = [
   {
     name: "removes the first todo",
     before: { todos: [...three], displayCompleted: true },
-    args: { id: 1, analytics: AnalyticsService.createFake() },
+    args: { id: entity(1), analytics: AnalyticsService.createFake() },
     after: {
       todos: [
         { id: Match.anyNumber, name: "b", complete: true },
@@ -54,7 +54,7 @@ export const cases: Conformance<typeof deleteTodo> = [
   {
     name: "is a no-op for an unknown id but still logs the delete",
     before: { todos: [...three], displayCompleted: false },
-    args: { id: 99, analytics: AnalyticsService.createFake() },
+    args: { id: entity(99), analytics: AnalyticsService.createFake() },
     after: {
       todos: [
         { id: Match.anyNumber, name: "a", complete: false },

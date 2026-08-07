@@ -2,7 +2,7 @@
 import type { Entity } from "@adobe/data/ecs";
 import type { CoreDatabase } from "../../core-database/core-database.js";
 
-export const toggleComplete = (t: CoreDatabase.Store, id: Entity) => {
+export const toggleComplete = (t: CoreDatabase.Store, { id }: { id: Entity }) => {
   const todo = t.read(id);
   if (todo) {
     t.update(id, { complete: !todo.complete });

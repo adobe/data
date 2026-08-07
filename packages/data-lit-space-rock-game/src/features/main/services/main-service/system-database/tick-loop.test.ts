@@ -37,16 +37,19 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
     it(testCase.name, () => {
       const { dt, input } = testCase.args;
       const unordered = { unordered: new Set(["bullets", "asteroids"]) };
+      // A case `before` is a delta over the feature default (`Case.before` is
+      // `Partial<State>`), so materialise the full seed the same way the runners do.
+      const before = { ...State.create(), ...testCase.before };
       // The co-located case carries its own inert `random` double (no case clears
       // the field, so it is never drawn), so drive the oracle with the case args.
       Match.assert(
-        State.step(testCase.before, testCase.args),
+        State.step(before, testCase.args),
         testCase.after,
         unordered,
       );
 
       const db = createSystemDatabase();
-      fromState(db.store, testCase.before);
+      fromState(db.store, before);
       db.store.resources.frameDelta = dt;
       db.transactions.setInput(input);
       driveFrame(db);

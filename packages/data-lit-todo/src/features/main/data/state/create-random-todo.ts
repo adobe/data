@@ -8,12 +8,13 @@ import { Match } from "@adobe/data/testing";
 /**
  * Async, service-injected transition: brackets the slow name generation with
  * analytics timing, then appends the todo via the shared {@link appendTodo} (so
- * it does NOT fire `todoCreated` — it logs its own `randomTodoAdded`). Awaiting an
- * async port makes it `Promise<State>`, but it stays deterministic given its
- * injected services — which is how it is unit-tested.
+ * it does NOT fire `todoCreated` — it logs its own `randomTodoAdded`). Reads and
+ * writes the todos — a `{ todos }` patch. Awaiting an async port makes it
+ * `Promise<Pick<State, "todos">>`, but it stays deterministic given its injected
+ * services — which is how it is unit-tested.
  */
-export const createRandomTodo = async <T extends Pick<State, "todos">>(
-  state: T,
+export const createRandomTodo = async (
+  state: Pick<State, "todos">,
   {
     nameGenerator,
     analytics,
@@ -21,7 +22,7 @@ export const createRandomTodo = async <T extends Pick<State, "todos">>(
     readonly nameGenerator: NameGeneratorService;
     readonly analytics: AnalyticsService;
   },
-): Promise<T> => {
+): Promise<Pick<State, "todos">> => {
   const timing = await analytics.randomTodoRequested();
   const name = await nameGenerator.generateName();
   const next = appendTodo(state, { name });
@@ -29,7 +30,8 @@ export const createRandomTodo = async <T extends Pick<State, "todos">>(
   return next;
 };
 
-// Spec-owned cases. Each injects deterministic doubles with the exact responses
+// Spec-owned cases. `before` is a delta over `State.create()`; `after` lists only
+// the written todos. Each injects deterministic doubles with the exact responses
 // it needs and authors `after` + `effects` against those self-owned values (the
 // name it schedules, the fixed `{ startedAt: 0 }` timing the analytics double
 // resolves). The value-returning reads (`randomTodoRequested`, `generateName`)
@@ -39,7 +41,7 @@ export const createRandomTodo = async <T extends Pick<State, "todos">>(
 export const cases: Conformance<typeof createRandomTodo> = [
   {
     name: "names the new todo from the generator and logs the timed add",
-    before: { todos: [], displayCompleted: false },
+    before: {},
     args: {
       nameGenerator: NameGeneratorService.createFake(["random task"]),
       analytics: AnalyticsService.createFake(),
@@ -52,7 +54,6 @@ export const cases: Conformance<typeof createRandomTodo> = [
           complete: false,
         },
       ],
-      displayCompleted: false,
     },
     effects: {
       analytics: [
@@ -69,14 +70,13 @@ export const cases: Conformance<typeof createRandomTodo> = [
   },
   {
     name: "uses an explicit response schedule when supplied",
-    before: { todos: [], displayCompleted: false },
+    before: {},
     args: {
       nameGenerator: NameGeneratorService.createFake(["only name"]),
       analytics: AnalyticsService.createFake(),
     },
     after: {
       todos: [{ id: Match.anyNumber, name: "only name", complete: false }],
-      displayCompleted: false,
     },
     effects: {
       analytics: [

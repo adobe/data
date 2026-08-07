@@ -3,25 +3,27 @@ import { AnalyticsService } from "../../services/analytics-service/analytics-ser
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data/testing";
-export const toggleDisplayCompleted = <
-  T extends Pick<State, "displayCompleted">,
->(
-  state: T,
+
+// Reads `displayCompleted`, writes `displayCompleted` — a `{ displayCompleted }`
+// patch — flipping the flag; also logs `displayCompletedToggled`.
+export const toggleDisplayCompleted = (
+  state: Pick<State, "displayCompleted">,
   { analytics }: { readonly analytics: AnalyticsService },
-): T => {
+): Pick<State, "displayCompleted"> => {
   analytics.displayCompletedToggled();
-  return { ...state, displayCompleted: !state.displayCompleted };
+  return { displayCompleted: !state.displayCompleted };
 };
 
 // Spec-owned cases, shared with the ecs `toggleDisplayCompleted` transaction.
-// Only the `displayCompleted` flag flips; the transition logs
-// `displayCompletedToggled` (as the action does).
+// `before` is a delta over `State.create()`; `after` lists only the written
+// `displayCompleted`. Only the flag flips; todos are untouched; the transition
+// logs `displayCompletedToggled` (as the action does).
 export const cases: Conformance<typeof toggleDisplayCompleted> = [
   {
     name: "turns the completed view on",
-    before: { todos: [], displayCompleted: false },
+    before: {},
     args: { analytics: AnalyticsService.createFake() },
-    after: { todos: [], displayCompleted: true },
+    after: { displayCompleted: true },
     effects: { analytics: [["displayCompletedToggled"]] },
   },
   {
@@ -31,6 +33,9 @@ export const cases: Conformance<typeof toggleDisplayCompleted> = [
       displayCompleted: true,
     },
     args: { analytics: AnalyticsService.createFake() },
+    // Only `displayCompleted` is written, but the carried-through todo holds an
+    // ecs-minted id, so it is restated with `Match.anyNumber` to bridge the
+    // seeded data id (1) and the id the ecs assigns on the round-trip.
     after: {
       todos: [{ id: Match.anyNumber, name: "a", complete: true }],
       displayCompleted: false,

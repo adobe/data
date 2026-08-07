@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="vite/client" />
 import { Conformance } from "@adobe/data/testing";
+import { State } from "../../../data/state/state.js";
 import * as transactions from "../transaction-database/transactions/index.js";
 import { createStore } from "./create-store.js";
 import { fromState } from "./from-state.js";
@@ -24,4 +25,5 @@ Conformance.runTransactions({
     { eager: true },
   ),
   transactions,
+  initial: State.create(),
 });

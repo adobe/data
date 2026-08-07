@@ -3,15 +3,18 @@ import { AnalyticsService } from "../../services/analytics-service/analytics-ser
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 
-export const deleteAllTodos = <T extends Pick<State, "todos">>(
-  state: T,
+// Reads the todos, writes the todos — a `{ todos }` patch — clearing them;
+// `displayCompleted` is untouched. Logs `allTodosCleared`.
+export const deleteAllTodos = (
+  state: Pick<State, "todos">,
   { analytics }: { readonly analytics: AnalyticsService },
-): T => {
+): Pick<State, "todos"> => {
   analytics.allTodosCleared();
-  return { ...state, todos: [] };
+  return { todos: [] };
 };
 
-// Spec-owned cases, shared with the ecs `deleteAllTodos` transaction. Every todo
+// Spec-owned cases, shared with the ecs `deleteAllTodos` transaction. `before` is
+// a delta over `State.create()`; `after` lists only the written todos. Every todo
 // is removed and `displayCompleted` is untouched; the transition logs
 // `allTodosCleared` (as the action does).
 export const cases: Conformance<typeof deleteAllTodos> = [
@@ -26,14 +29,14 @@ export const cases: Conformance<typeof deleteAllTodos> = [
       displayCompleted: true,
     },
     args: { analytics: AnalyticsService.createFake() },
-    after: { todos: [], displayCompleted: true },
+    after: { todos: [] },
     effects: { analytics: [["allTodosCleared"]] },
   },
   {
     name: "is a no-op on an already empty list but still logs the clear",
-    before: { todos: [], displayCompleted: false },
+    before: {},
     args: { analytics: AnalyticsService.createFake() },
-    after: { todos: [], displayCompleted: false },
+    after: { todos: [] },
     effects: { analytics: [["allTodosCleared"]] },
   },
 ];

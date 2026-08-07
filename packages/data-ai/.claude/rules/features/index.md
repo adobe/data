@@ -101,13 +101,14 @@ The tie between `data/` (spec) and `main-service` (implementation) is
 **conformance**, one property —
 `toState(apply(fromState(before), args)) ≡ transform(before, args)`: each
 main-service mutation, seeded and read back through a test-only store↔`State`
-projection, equals the pure `data/` transform it stands for. The projection and
-its runner live in `services/main-service/conformance/` (see
-`services/main-service/conformance.md`); the shared `{ before, args, after }`
-cases are spec-owned (exported from `data/state/<transform>.test.ts`), so conforming the
-implementation is "substitute the implementation, reuse the expectations." This
-lets `main-service` be largely mechanical and agent-generated, with the spec as
-oracle. *How* to author each layer lives in the per-folder rules below.
+projection, equals the pure `data/` transform it stands for. The per-feature
+projection lives in `services/main-service/conformance/` and is replayed by the
+shared `@adobe/data/testing` runners (see `services/main-service/conformance.md`);
+the shared `{ before, args, after }` cases are spec-owned — co-located in each
+`data/state/<transform>.ts`, which exports its function plus `cases` — so
+conforming the implementation is "substitute the implementation, reuse the
+expectations." This lets `main-service` be largely mechanical and agent-generated,
+with the spec as oracle. *How* to author each layer lives in the per-folder rules below.
 
 ## Reference implementations
 

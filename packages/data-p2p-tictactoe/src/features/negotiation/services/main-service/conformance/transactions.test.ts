@@ -1,9 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { describe, it, expect } from "vitest";
-import { State } from "../../../data/state/state.js";
-import type { CoreDatabase } from "../core-database/core-database.js";
-import type { ConformanceCase } from "../../../data/state/conformance-case.js";
-import { expectConforms } from "./expect-conforms.js";
+import { Conformance } from "@adobe/data/testing";
 import * as registeredTransactions from "../transaction-database/transactions/index.js";
 import { startHostSignaling } from "../transaction-database/transactions/start-host-signaling.js";
 import { startJoinSignaling } from "../transaction-database/transactions/start-join-signaling.js";
@@ -23,47 +19,53 @@ import { cases as setConnectionCases } from "../../../data/state/set-connection.
 import { cases as setHostAnswerInputCases } from "../../../data/state/set-host-answer-input.js";
 import { cases as setJoinerOfferInputCases } from "../../../data/state/set-joiner-offer-input.js";
 import { cases as enterGameCases } from "../../../data/state/enter-game.js";
+import { createStore } from "./create-store.js";
+import { fromState } from "./from-state.js";
+import { toState } from "./to-state.js";
 
-// The single conformance test for every ecs transaction. Each transaction's
-// shared `data/state` cases run through its raw `apply` (`fromState(before)` →
-// apply → `matches(toState, after)`); the pure half is asserted once, centrally,
-// by `data/state/spec.test.ts`. The guard at the bottom asserts every REGISTERED
-// transaction (the `transactions/index.ts` barrel, not a file glob) is wired
-// below, so none can be missed.
-const covered = new Set<string>();
-const conforms = <Args>(
-  transaction: string,
-  config: {
-    readonly cases: readonly ConformanceCase<Args>[];
-    readonly spec?: (before: State, args: Args) => State;
-    readonly apply: (t: CoreDatabase.Store, args: Args) => void;
+// The single conformance test for every ecs transaction. `runTransactions` owns
+// the harness (fresh store, `fromState` seed, `toState` compare, coverage guard
+// keyed off the registered barrel); the pure half is asserted centrally by
+// `data/state/spec.test.ts`. Negotiation resources are addressed by name, not
+// entity id, so the `apply` adapters need no `resolve`. `setGameDb` is a
+// differently-named transaction whose visible effect equals `State.enterGame`, so
+// it wires the `enterGame` cases explicitly (passing `gameDb: null` isolates the
+// serializable effect the spec observes).
+Conformance.runTransactions({
+  createStore,
+  fromState,
+  toState,
+  registered: registeredTransactions,
+  define: (conforms) => {
+    conforms("startHostSignaling", {
+      cases: startHostSignalingCases,
+      apply: (t) => startHostSignaling(t),
+    });
+    conforms("startJoinSignaling", {
+      cases: startJoinSignalingCases,
+      apply: (t) => startJoinSignaling(t),
+    });
+    conforms("setOfferCode", { cases: setOfferCodeCases, apply: setOfferCode });
+    conforms("setAnswerCode", {
+      cases: setAnswerCodeCases,
+      apply: setAnswerCode,
+    });
+    conforms("setBanner", { cases: setBannerCases, apply: setBanner });
+    conforms("setConnection", {
+      cases: setConnectionCases,
+      apply: setConnection,
+    });
+    conforms("setHostAnswerInput", {
+      cases: setHostAnswerInputCases,
+      apply: setHostAnswerInput,
+    });
+    conforms("setJoinerOfferInput", {
+      cases: setJoinerOfferInputCases,
+      apply: setJoinerOfferInput,
+    });
+    conforms("setGameDb", {
+      cases: enterGameCases,
+      apply: (t) => setGameDb(t, { gameDb: null }),
+    });
   },
-): void => {
-  covered.add(transaction);
-  describe(`${transaction} transaction conforms`, () => expectConforms(config));
-};
-
-conforms("startHostSignaling", { cases: startHostSignalingCases, apply: (t) => startHostSignaling(t) });
-conforms("startJoinSignaling", { cases: startJoinSignalingCases, apply: (t) => startJoinSignaling(t) });
-conforms("setOfferCode", { cases: setOfferCodeCases, apply: setOfferCode });
-conforms("setAnswerCode", { cases: setAnswerCodeCases, apply: setAnswerCode });
-conforms("setBanner", { cases: setBannerCases, apply: setBanner });
-conforms("setConnection", { cases: setConnectionCases, apply: setConnection });
-conforms("setHostAnswerInput", { cases: setHostAnswerInputCases, apply: setHostAnswerInput });
-conforms("setJoinerOfferInput", { cases: setJoinerOfferInputCases, apply: setJoinerOfferInput });
-// `setGameDb` also stores a non-serializable game-database handle the spec's
-// serializable `State` never observes; passing `gameDb: null` isolates its visible
-// effect, which equals the differently-named `State.enterGame` transition. Its
-// pure half is checked here in place (the shared spec test runs `enterGame`).
-conforms("setGameDb", {
-  cases: enterGameCases,
-  spec: (before) => State.enterGame(before),
-  apply: (t) => setGameDb(t, { gameDb: null }),
-});
-
-// None-missed guard: every **registered** transaction must be wired above.
-describe("transaction conformance coverage", () => {
-  for (const transaction of Object.keys(registeredTransactions)) {
-    it(`${transaction} has a conformance case`, () => expect(covered.has(transaction)).toBe(true));
-  }
 });

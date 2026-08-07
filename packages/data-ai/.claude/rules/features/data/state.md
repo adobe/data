@@ -33,13 +33,29 @@ beside the thing they specify, and `Conformance<typeof fn>` binds them to the
 signature so they can't drift. Kept inert (no `describe`; one aggregator runs
 them) they also sidestep the double execution vitest triggers when a single file
 both exports cases and runs its own `describe`. Coverage is then enforced
-centrally by the aggregator's barrel-driven guard rather than by eyeballing one
-test file per transform — and genuine non-transition helpers still keep their own
-`*.test.ts` (see below).
+centrally by the shared driver's barrel-driven guard rather than by eyeballing
+one test file per transform — and genuine non-transition helpers still keep
+their own `*.test.ts` (see below).
+
+The case types, matchers, and runners all live in the shared
+**`@adobe/data/testing`** module (two namespaces, `Match` and `Conformance`;
+`vitest` is an *optional* peer dependency, already satisfied here). Only one
+tiny per-feature file remains — a ~10-line alias, `conformance-case.ts`, that
+binds `State` once so transform/derivation files can write a one-parameter type:
+
+```ts
+// data/state/conformance-case.ts — the only per-feature conformance declaration
+import type { Conformance as ConformanceApi } from "@adobe/data/testing";
+import type { State } from "./state.js";
+export type Conformance<F extends (...args: never[]) => unknown> = ConformanceApi.Cases<State, F>;
+export type Derivation<F extends (...args: never[]) => unknown> = ConformanceApi.DerivationCases<F>;
+export type Effects<Args> = ConformanceApi.Effects<Args>;
+```
 
 ```ts
 // create-todo.ts
-import { anyNumber } from "./matchers.js"; // vitest expect.any(Number) — see below
+import { Match } from "@adobe/data/testing";
+import type { Conformance } from "./conformance-case.js"; // the thin per-feature alias above
 export const createTodo = <T extends Pick<State, "todos">>(
     state: T,
     { name, complete, analytics }: { name: string; complete?: boolean; analytics: AnalyticsService },
@@ -49,7 +65,7 @@ export const cases: Conformance<typeof createTodo> = [
     { name: "appends the first todo",
       before: { todos: [], displayCompleted: false },
       args: { name: "a", analytics: AnalyticsService.createFake() },
-      after: { todos: [{ id: anyNumber, name: "a", complete: false }], displayCompleted: false },
+      after: { todos: [{ id: Match.anyNumber, name: "a", complete: false }], displayCompleted: false },
       effects: { analytics: [["todoCreated", { name: "a" }]] } },
 ];
 ```
@@ -58,39 +74,42 @@ export const cases: Conformance<typeof createTodo> = [
   the smallest `Pick<State,…>` slice so it lifts to full-state. **All non-state
   inputs go in the single `args` object** (`Conformance<typeof fn>` reads
   `Parameters[1]`) — bundle a `dt`, an injected service, etc. into it, never as a
-  third positional. Args may be narrowed/omitted. **Guard no-ops by returning
-  `state` unchanged**, never throw.
+  third positional. Args may be narrowed/omitted; a transform that takes **none**
+  omits `args` from each case entirely (the shared `Case` type makes `args`
+  optional exactly then). **Guard no-ops by returning `state` unchanged**, never
+  throw.
 - **Co-located `cases` must not touch the feature's `public.js` barrel at module
   load** — that barrel re-exports this very file, so calling `State.create()` (or
   any barrel member) in a top-level `cases` literal dead-locks the import cycle.
   Import the concrete helper directly (`import { create } from "./create.js"`) or
   inline full-`State` literals.
-- **`Conformance<typeof fn>`** derives the case `args` type from the function's
-  own signature — author it once, and cases can't drift from what the function
-  accepts. `before`/`after` are full `State`.
-- **`after` leaves minted values open** with the `anyNumber`/`anyString`
-  matchers. These are just **vitest's asymmetric matchers**, centralised so the
-  `vitest` import lives in one place and tree-shakes out of the app build:
-
-  ```ts
-  // matchers.ts
-  import { expect } from "vitest";
-  export const anyNumber = expect.any(Number);
-  export const anyString = expect.any(String);
-  ```
-
-  An id the ECS assigns from its own id-space is `id: anyNumber` (i.e.
-  `expect.any(Number)`), so the pure spec and the ECS satisfy the same case —
-  match by content, not by the value you don't control. `matches()` honors any
-  vitest asymmetric matcher here (`expect.stringContaining`, …), not only these
-  two. Add `matchers.ts` only when a case needs one — a feature whose `State`
-  exposes no ECS-minted ids (values abstracted behind a scalar/string) never does.
-- No per-transform test. The single **`spec.test.ts`** auto-discovers every file
-  exporting `cases` and asserts the pure result (see `conformance.md`). Only the
-  redundant per-transform tests are removed. A genuine **non-transition helper** in
+- **`Conformance<typeof fn>`** (the alias above) derives the case `args` type from
+  the function's own signature — author it once, and cases can't drift from what
+  the function accepts. `before`/`after` are full `State`.
+- **`after` leaves minted values open** with the shared matchers `Match.anyNumber`
+  / `Match.anyString`, imported from `@adobe/data/testing` — there is **no**
+  per-feature `matchers.ts` anymore. An id the ECS assigns from its own id-space is
+  `id: Match.anyNumber`, so the pure spec and the ECS satisfy the same case — match
+  by content, not by the value you don't control. `Match` is framework-agnostic and
+  honors any asymmetric matcher, so vitest's `expect.stringContaining(...)` interops
+  on the expected side too. When an id must **line up in two places** within one
+  comparison — a `selectedId` that points at a specific todo, say — use
+  `Match.ref(label)`: it asserts id *correspondence* (a bijection up to renaming),
+  not a pinned value, so the two occurrences of the label must resolve to the same
+  actual id and two labels can't collide. `anyNumber`/`anyString` are for an id a
+  case does not pin at all; `ref` for one that must be consistent across the case.
+- No per-transform test. The single **`spec.test.ts`** is one call —
+  `Conformance.runSpec(import.meta.glob(["./*.ts", "!./*.test.ts"], { eager: true }))`
+  — that auto-discovers every sibling exporting `cases`, enforces the two-exports
+  rule, and dispatches on case shape (a `value` case → derivation; otherwise a
+  transition whose declared `effects` are also asserted). Pass `{ match }` only when
+  the feature needs float tolerance or unordered collections (see `conformance.md`).
+  There is no per-feature `expect-state-matches.ts`, `record-effects.ts`, or
+  `expect-conforms.ts` — those are gone; the shared driver owns comparison, effect
+  recording, and the coverage guard. A genuine **non-transition helper** in
   `state/` — a `create()` constructor, a single-field predicate — has no `cases`
-  and isn't a `(state,args)=>state` transform, so `spec.test.ts` skips it: **keep
-  its own sibling `*.test.ts`** rather than deleting it and losing coverage.
+  and isn't a `(state,args)=>state` transform, so `runSpec` skips it: **keep its own
+  sibling `*.test.ts`** rather than deleting it and losing coverage.
 
 ## Injected services and side effects
 

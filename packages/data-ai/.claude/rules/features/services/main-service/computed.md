@@ -25,7 +25,8 @@ full-state projection and re-runs on *any* field change (fine for a small featur
 wasteful on a large or hot one, where you hand-wire the minimal resource/index
 reads instead). A derivation takes **no services**, so its co-located `cases` are
 inert `{ input, value }` data (no test-doubles) that tree-shake out of the app
-build like `matchers.ts` does — the one hazard is a `cases` literal touching the
+build (they reference the `@adobe/data/testing` matchers only, and that module is
+`sideEffects: false`) — the one hazard is a `cases` literal touching the
 `public.js` barrel at load, which `state.md` already forbids. **Performance is the
 first-class constraint**: reuse freely where it doesn't matter, hand-wire minimal
 reads where it does.
@@ -47,9 +48,11 @@ registers it under the `computed` facet.
 
 **Conform a computed to its `data/state` derivation** whenever one exists. The
 derivation co-locates `{ input, value }` cases (`Derivation<typeof fn>`), and
-`conformance/computeds.test.ts` seeds the store from `input`, reads the computed's
-value, and `matches(value)` (see `conformance.md`). A list-computed returning
-entity ids needs no adapter — the runner hydrates through `toData`.
+`conformance/computeds.test.ts` — one `Conformance.runComputeds(...)` call whose
+`define` wires each computed — seeds the store from `input`, reads the computed's
+value, and `Match.assert`s it against `value` (see `conformance.md`). A
+list-computed returning entity ids needs no adapter — the runner hydrates through
+`toData` by default (override `project` only for a scalar / single-entity output).
 
 **What needs conformance is proportional to wiring logic.** A computed that
 composes/branches over the aggregate *is* a `state/` derivation (composes ≥2

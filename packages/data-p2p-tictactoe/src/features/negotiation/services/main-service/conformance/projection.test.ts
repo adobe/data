@@ -3,8 +3,8 @@
 // Guards the projection itself: `toState(fromState(s)) ≡ s` over representative
 // states, so a symmetric bug in the pair can't mask a real ecs defect.
 import { describe, it } from "vitest";
+import { Match } from "@adobe/data/testing";
 import { State } from "../../../data/state/state.js";
-import { expectStateMatches } from "../../../data/state/expect-state-matches.js";
 import { createStore } from "./create-store.js";
 import { fromState } from "./from-state.js";
 import { toState } from "./to-state.js";
@@ -40,7 +40,7 @@ describe("negotiation conformance projection round-trips (toState ∘ fromState 
     it(name, () => {
       const store = createStore();
       fromState(store, state);
-      expectStateMatches(toState(store), state);
+      Match.assert(toState(store), state);
     });
   }
 });

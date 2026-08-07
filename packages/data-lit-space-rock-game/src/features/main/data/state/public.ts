@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 export { create } from "./create.js";
+export { samples } from "./samples.js";
 export { createInitial } from "./create-initial.js";
 export { stepShip } from "./step-ship.js";
 export { fireBullet } from "./fire-bullet.js";

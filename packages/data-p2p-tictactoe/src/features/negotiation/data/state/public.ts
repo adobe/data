@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 export { create } from "./create.js";
+export { samples } from "./samples.js";
 export { startHostSignaling } from "./start-host-signaling.js";
 export { startJoinSignaling } from "./start-join-signaling.js";
 export { setOfferCode } from "./set-offer-code.js";

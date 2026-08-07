@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="vite/client" />
 import { Conformance } from "@adobe/data/testing";
+import { State } from "./state.js";
 
 // The single pure-spec test for every transform AND derivation in this folder.
 // `runSpec` auto-discovers each sibling exporting `cases` and dispatches on shape.
@@ -13,5 +14,8 @@ Conformance.runSpec(
       eager: true,
     },
   ),
-  { match: { unordered: new Set(["bullets", "asteroids"]) } },
+  {
+    initial: State.create(),
+    match: { unordered: new Set(["bullets", "asteroids"]) },
+  },
 );

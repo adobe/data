@@ -28,8 +28,7 @@ import { Input } from "../../../data/input/input.js";
 import { cases } from "../../../data/state/step.js";
 import { Match } from "@adobe/data/testing";
 import { createSystemDatabase } from "../conformance/create-system-database.js";
-import { fromState } from "../conformance/from-state.js";
-import { toState } from "../conformance/to-state.js";
+import { projection } from "../conformance/projection.js";
 import { driveFrame } from "../conformance/drive-frame.js";
 
 describe("ECS system tick loop conforms to State.step (one frame = one step)", () => {
@@ -49,11 +48,11 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
       );
 
       const db = createSystemDatabase();
-      fromState(db.store, before);
+      projection.fromState(db.store, before);
       db.store.resources.frameDelta = dt;
       db.transactions.setInput(input);
       driveFrame(db);
-      Match.assert(toState(db.store), testCase.after, unordered);
+      Match.assert(projection.toState(db.store), testCase.after, unordered);
     });
   }
 
@@ -64,7 +63,7 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
   // is random), so assert those and the count, not the velocities.
   it("waves system refills a cleared field with the large-asteroid ring", () => {
     const db = createSystemDatabase();
-    fromState(db.store, {
+    projection.fromState(db.store, {
       ...State.create(),
       bounds: [200, 200],
       ship: Ship.spawn([100, 100]),
@@ -75,7 +74,7 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
     db.transactions.setInput(Input.none);
     driveFrame(db);
 
-    const after = toState(db.store);
+    const after = projection.toState(db.store);
     expect(after.wave).toBe(1);
     expect(after.asteroids).toHaveLength(4);
     expect(after.asteroids.every((a) => a.size === "large")).toBe(true);

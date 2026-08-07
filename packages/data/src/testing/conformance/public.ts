@@ -5,3 +5,4 @@ export { runSpec, type SpecOptions } from "./run-spec.js";
 export { runTransactions, type TransactionRunConfig } from "./run-transactions.js";
 export { runActions, type ActionRunConfig } from "./run-actions.js";
 export { runComputeds, type ComputedRunConfig } from "./run-computeds.js";
+export { runFeature, type FeatureRunConfig, type Projection } from "./run-feature.js";

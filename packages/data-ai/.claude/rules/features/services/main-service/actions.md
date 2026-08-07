@@ -19,8 +19,8 @@ there need not be a same-named transaction; transactions are the looser layer.
 
 **Per-frame / system transitions are exempt.** In a real-time feature the `step*`
 / physics / collision transitions are realized by the **systems** tick loop, not
-by an action, and are conformed by the tick-loop test (`systems.md`), not
-`actions.test.ts`. Give an action only to transitions a user/UI invokes directly
+by an action, and are conformed by the tick-loop test (`systems.md`), not the
+action surface of `runFeature`. Give an action only to transitions a user/UI invokes directly
 (and skip it too when the realization needs more than one transaction — e.g. a
 `newGame` that both sets bounds and resets is conformed via its transaction).
 
@@ -48,20 +48,19 @@ export const addRandomTodo = async (service: ServiceDatabase) => {
   Reactive computeds refresh only on a committed transaction, so an imperative
   read of one can hand back a stale shared cache (and it's the UI's layer, not
   the action's). This also keeps the action correct under the conformance seed.
-- **Conformance** (`conformance/actions.test.ts`) is a single, auto-paired
-  `Conformance.runActions({ makeDb, store, fromState, toState, transitions, actions,
-  match?, seedContext? })` call: it discovers the `data/state` transitions and pairs
-  each `actions` entry to the **same-named** transition. **The action is the primary
-  seam** — it reads injected services from `db.services`, so the case's service args
-  become recording overrides via `makeDb(services)` (built as
-  `Database.toSystemDatabase(Database.create(MainService.plugin, { services }))`); the
-  driver splits the case `args` into services and plain input, runs the action, then
+- **Conformance** is the action surface of the feature's single
+  `conformance/conformance.test.ts` `Conformance.runFeature({...})` call. It pulls
+  actions off **`plugin.actions`** and pairs each to the **same-named** `data/state`
+  transition. **The action is the primary seam** — it reads injected services from
+  `db.services`, so the case's service args become recording overrides (the runner
+  builds `Database.toSystemDatabase(Database.create(plugin, { services }))`); it
+  splits the case `args` into services and plain input, runs the action, then
   `Match.assert`s `toState ≡ after` **and** checks the recorded calls against the
   case's `effects`. There is no `define`/`conforms` and no coverage guard. A thin
   **same-named** action gives a transaction-only or renamed transition something to
   pair with (todo's `reorderTodo`). A streaming/capability action with no transition
-  is skipped — if it isn't in the facet barrel (p2p's `movePresence`, streamed via
-  `trackPresence`), point `actions:` at a directory glob
-  (`import.meta.glob([".../actions/*.ts", "!.../actions/index.ts"], { eager: true })`)
-  so it is still discovered (see `conformance.md`).
+  is skipped. **A per-transition action kept out of the facet** (to bound the
+  plugin's type) is discovered via `runFeature`'s `ops.actions` glob —
+  `ops: { actions: import.meta.glob([".../actions/*.ts", "!.../actions/index.ts"], { eager: true }) }`
+  (p2p negotiation). That is the *only* reason to pass `ops` (see `conformance.md`).
 - An `index.ts` barrel feeds the `actions` plugin facet.

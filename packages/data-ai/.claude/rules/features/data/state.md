@@ -6,17 +6,31 @@ paths:
 # data/state/ — the State specification
 
 `State` is the whole feature as **one immutable object** — the pure, fully-tested
-source of truth. Each transform is a small function of state; each derivation a
-pure selector. Reference: `data-lit-todo`'s `data/state/`.
+source of truth. Each transition is a read→write **patch** over state; each
+derivation a pure selector. Reference: `data-lit-todo`'s `data/state/`.
 
 ```ts
-// state.ts — the aggregate + the transform/derivation namespace.
+// state.ts — the aggregate + the transition/derivation namespace.
 export type State = { readonly todos: readonly Todo[]; readonly displayCompleted: boolean };
 export * as State from "./public.js";
 ```
 
 Every feature with ECS resources/transactions owns a `State` (a scalar
 `{ playing: boolean }`, or `{}` when there is none).
+
+**`State` has a standard shape.** Two exports are conventional and drive
+conformance:
+
+- **`create(): State`** (`data/state/create.ts`) — the default state. Every
+  conformance case's `before` is a **delta over `State.create()`**, and both the
+  pure `spec.test.ts` and the ecs `runFeature` seed from it.
+- **`samples: readonly State[]`** (`data/state/samples.ts`) — representative
+  **full** states `runFeature` round-trips through the projection
+  (`toState ∘ fromState ≡ identity`, see `conformance.md`).
+
+Both are re-exported through `public.js`, so `State.create()` / `State.samples`
+are namespace members. (A `cases` literal must still not touch `public.js` at
+load — import `create` from `./create.js` directly there; see below.)
 
 ## One file per transform: the function **and** its cases
 
@@ -27,8 +41,9 @@ conformance runner reuses; co-locating them removes the per-transform `.cases.ts
 and `.test.ts`.
 
 **Why co-locate `cases` (not a sibling `*.test.ts`)?** They are spec-owned
-fixtures **four runners reuse** (spec / transaction / action / computed) — the
-transform's contract expressed as data, not a per-file test — so they belong
+fixtures the pure `spec.test.ts` **and** the ecs `runFeature` call both reuse
+(driving transaction / action / computed conformance) — the transform's contract
+expressed as data, not a per-file test — so they belong
 beside the thing they specify, and `Conformance<typeof fn>` binds them to the
 signature so they can't drift. Kept inert (no `describe`; one aggregator runs
 them) they also sidestep the double execution vitest triggers when a single file
@@ -59,28 +74,37 @@ export const entity = ConformanceApi.entity;
 // create-todo.ts
 import { Match } from "@adobe/data/testing";
 import type { Conformance } from "./conformance-case.js"; // the thin per-feature alias above
-export const createTodo = <T extends Pick<State, "todos">>(
-    state: T,
+export const createTodo = (
+    state: Pick<State, "todos">,
     { name, complete, analytics }: { name: string; complete?: boolean; analytics: AnalyticsService },
-): T => { analytics.todoCreated({ name }); return appendTodo(state, { name, complete }); };
+): Pick<State, "todos"> => {
+    analytics.todoCreated({ name });
+    return { todos: [...state.todos, { name, complete: complete ?? false }] }; // writes patch only
+};
 
 export const cases: Conformance<typeof createTodo> = [
     { name: "appends the first todo",
-      before: { todos: [], displayCompleted: false },
+      before: {},                       // empty delta — the default State.create()
       args: { name: "a", analytics: AnalyticsService.createFake() },
-      after: { todos: [{ id: Match.anyNumber, name: "a", complete: false }], displayCompleted: false },
+      after: { todos: [{ id: Match.anyNumber, name: "a", complete: false }] }, // only the changed field
       effects: { analytics: [["todoCreated", { name: "a" }]] } },
 ];
 ```
 
-- **Signature** `(state, args) => state`. Narrow-in/same-shape-out — generic over
-  the smallest `Pick<State,…>` slice so it lifts to full-state. **All non-state
-  inputs go in the single `args` object** (`Conformance<typeof fn>` reads
-  `Parameters[1]`) — bundle a `dt`, an injected service, etc. into it, never as a
-  third positional. Args may be narrowed/omitted; a transform that takes **none**
-  omits `args` from each case entirely (the shared `Case` type makes `args`
-  optional exactly then). **Guard no-ops by returning `state` unchanged**, never
-  throw.
+- **Signature** `(state: Pick<State, …reads>, args) => Pick<State, …writes>` — a
+  **read→write patch**. The parameter is the smallest `Pick<State,…>` the
+  transition **reads**; the return is *only the fields it **writes***. **No
+  `<T> => T` generic, no `...state` spread** in the return — return the patch and
+  let the runner merge it. **All non-state inputs go in the single `args` object**
+  (`Conformance<typeof fn>` reads `Parameters[1]`) — bundle a `dt`, an injected
+  service, etc. into it, never as a third positional. A transition that takes
+  **no** args omits `args` from each case entirely (the shared `Case` type makes
+  `args` optional exactly then). **Guard no-ops by returning an empty patch `{}`**
+  (or the unchanged slice), never throw.
+- **A composer merges sub-patches explicitly.** A transition built from smaller
+  ones spreads them — `return { ...s, ...sub(s) }` — so each sub-patch's writes
+  layer in; a transition that merely **delegates** to one sub-transition returns
+  that delegate's patch directly (no spread needed).
 - **Co-located `cases` must not touch the feature's `public.js` barrel at module
   load** — that barrel re-exports this very file, so calling `State.create()` (or
   any barrel member) in a top-level `cases` literal dead-locks the import cycle.
@@ -88,7 +112,13 @@ export const cases: Conformance<typeof createTodo> = [
   inline full-`State` literals.
 - **`Conformance<typeof fn>`** (the alias above) derives the case `args` type from
   the function's own signature — author it once, and cases can't drift from what
-  the function accepts. `before`/`after` are full `State`.
+  the function accepts. **`before` is a delta over `State.create()`** — list only
+  the fields this case sets differently from the default; **`after` is the writes
+  patch** — only the fields the transition changes. The runner seeds
+  `{ ...State.create(), ...before }` and compares against
+  `{ ...State.create(), ...before, ...after }`, so any field a case doesn't mention
+  is the default and stays unchanged. (A full `before`/`after` still works — it just
+  overrides the default wholesale.)
 - **`after` leaves minted values open** with the shared matchers `Match.anyNumber`
   / `Match.anyString`, imported from `@adobe/data/testing` — there is **no**
   per-feature `matchers.ts` anymore. An id the ECS assigns from its own id-space is
@@ -108,11 +138,13 @@ export const cases: Conformance<typeof createTodo> = [
   own arg type. `runSpec` unwraps it to the plain data-id for the pure side; the ECS
   runners resolve it to the seeded entity (see `conformance.md`).
 - No per-transform test. The single **`spec.test.ts`** is one call —
-  `Conformance.runSpec(import.meta.glob(["./*.ts", "!./*.test.ts"], { eager: true }))`
+  `Conformance.runSpec(import.meta.glob(["./*.ts", "!./*.test.ts", "!./*.type-test.ts"], { eager: true }), { initial: State.create() })`
   — that auto-discovers every sibling exporting `cases`, enforces the two-exports
   rule, and dispatches on case shape (a `value` case → derivation; otherwise a
-  transition whose declared `effects` are also asserted). Pass `{ match }` only when
-  the feature needs float tolerance or unordered collections (see `conformance.md`).
+  transition whose declared `effects` are also asserted). The `{ initial:
+  State.create() }` is what makes each case's `before`/`input` a delta over the
+  default. Add `match` alongside it only when the feature needs float tolerance or
+  unordered collections (see `conformance.md`).
   There is no per-feature `expect-state-matches.ts`, `record-effects.ts`,
   `expect-conforms.ts`, or `conformance-case.type-test.ts` — those are gone; the
   shared driver owns comparison, effect recording, and name-based auto-pairing, and

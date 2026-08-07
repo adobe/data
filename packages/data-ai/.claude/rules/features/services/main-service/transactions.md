@@ -32,15 +32,14 @@ export const playMove = (t: CoreDatabase.Store, { index }: PlayMoveArgs) => {
   result — read the touched slice, call the `data/` transform, write the diff.
 - Keep transaction files **single-export** (the `transactions/` barrel is
   `export *`-ed into the plugin facet, so a second export would pollute it).
-- **Conformance is wired once, centrally, and auto-paired** — not per-file.
-  `conformance/transactions.test.ts` is a single `Conformance.runTransactions({
-  createStore, fromState, toState, transitions, transactions, match?, seedContext?
-  })` call: it discovers the `data/state` transitions (the `transitions:` glob),
-  pairs each registered `transactions` barrel entry to the **same-named** transition,
-  and conforms it — seed `fromState(before)`, apply, `Match.assert` `toState ≡ after`
+- **Conformance is wired once, centrally, and auto-paired** — not per-file. The
+  feature's single `conformance/conformance.test.ts` `Conformance.runFeature({...})`
+  call conforms transactions: it pulls them off **`plugin.transactions`** (the
+  registered facet), pairs each to the **same-named** `data/state` transition, and
+  conforms it — seed `fromState(before)`, apply, `Match.assert` `toState ≡ after`
   (state only; service effects are asserted through the action). There is **no**
   `define`/`conforms` adapter and **no** `covers` guard. A transaction taking
-  **entity ids** takes them under the transition's own arg key (`{ id }`); the driver
+  **entity ids** takes them under the transition's own arg key (`{ id }`); the runner
   resolves each `entity(specId)` marker via the id→entity map `fromState` returns. A
   transaction with **no same-named transition** is infrastructure (`setInput`,
   `setBounds`) or the drag UI op (`dragTodo`) or system-dispatched — it is simply

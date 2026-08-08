@@ -1,6 +1,6 @@
 {
   "name": "data-lit-space-rock-game",
-  "version": "0.9.92",
+  "version": "0.9.93",
   "description": "Space Rock Game sample - real-time ECS game with Lit and @adobe/data",
   "type": "module",
   "private": true,

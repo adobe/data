@@ -42,7 +42,7 @@ export class TodoToolbarElement extends TodoElement {
       displayCompleted: values?.displayCompleted ?? false,
       setDraftName,
       addTodo,
-      addRandomTodo: () => this.service.actions.addRandomTodo(),
+      addRandomTodo: () => this.service.actions.createRandomTodo(),
       addBulkTodos: (count) => this.service.actions.createBulkTodos({ count }),
       toggleDisplayCompleted: () => this.service.actions.toggleDisplayCompleted(),
       clearAll: () => this.service.actions.deleteAllTodos(),

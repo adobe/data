@@ -1,13 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import type { Conformance as ConformanceApi } from "@adobe/data/testing";
 import type { State } from "./state.js";
 
-// One spec-owned conformance case: a `data/` transform's `{ before, args, after }`
-// authored as full `State`. Lives in `<transform>.cases.ts` and is shared,
-// unchanged, by the data transform test and the ecs conformance runner
-// (see `ecs/conformance/`).
-export type ConformanceCase<Args> = {
-  readonly name: string;
-  readonly before: State;
-  readonly args: Args;
-  readonly after: State;
-};
+// The conformance case types for this feature — the shared `@adobe/data/testing`
+// machinery with `State` bound once, so a transform authors `Conformance<typeof fn>`
+// and a derivation `Derivation<typeof fn>` (args/input/value read from the
+// function's own signature). This tiny file is the only per-feature conformance
+// type declaration; everything else lives in `@adobe/data/testing`.
+export type Conformance<F extends (...args: never[]) => unknown> =
+  ConformanceApi.Cases<State, F>;
+export type Derivation<F extends (...args: never[]) => unknown> =
+  ConformanceApi.DerivationCases<F>;

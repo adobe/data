@@ -30,12 +30,21 @@ export const playMove = (t: CoreDatabase.Store, { index }: PlayMoveArgs) => {
   than throwing.
 - Decisions come from pure `data/` helpers; the transaction only applies the
   result — read the touched slice, call the `data/` transform, write the diff.
-- **Conform every transaction to its `data/` transform** in its sibling
-  `*.test.ts`, via `expectConforms` over the spec's shared cases (see
-  `services/main-service/conformance.md`): seed `fromState(before)`, dispatch, assert `toState ≡
-  after`, covering every branch and edge case. A transaction taking **entity
-  ids** resolves them from the seeded store in the `apply` closure; one with no
-  `data/` analogue (`setBounds`, `setInput`) gets a direct resource assertion.
+- Keep transaction files **single-export** (the `transactions/` barrel is
+  `export *`-ed into the plugin facet, so a second export would pollute it).
+- **Conformance is wired once, centrally, and auto-paired** — not per-file. The
+  feature's single `conformance/conformance.test.ts` `Conformance.runFeature({...})`
+  call conforms transactions: it pulls them off **`plugin.transactions`** (the
+  registered facet), pairs each to the **same-named** `data/state` transition, and
+  conforms it — seed `fromState(before)`, apply, `Match.assert` `toState ≡ after`
+  (state only; service effects are asserted through the action). There is **no**
+  `define`/`conforms` adapter and **no** `covers` guard. A transaction taking
+  **entity ids** takes them under the transition's own arg key (`{ id }`); the runner
+  resolves each `entity(specId)` marker via the id→entity map `fromState` returns. A
+  transaction with **no same-named transition** is infrastructure (`setInput`,
+  `setBounds`) or the drag UI op (`dragTodo`) or system-dispatched — it is simply
+  **skipped**, no guard needed. Don't add a per-item adapter for a renamed op; add a
+  thin same-named transaction instead (see `conformance.md`).
 - An `index.ts` barrel feeds the `transactions` plugin facet — so it must
   re-export **only** the mutations. A read/query helper shared by several
   transactions (`readShip`, `readBoard` — a `(t) => value` function) may live

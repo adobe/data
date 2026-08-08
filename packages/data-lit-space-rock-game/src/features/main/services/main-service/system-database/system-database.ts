@@ -2,7 +2,7 @@
 import { Database, scheduler } from "@adobe/data/ecs";
 import type { Entity } from "@adobe/data/ecs";
 import { Vec2 } from "@adobe/data/math";
-import { ComputedDatabase } from "../computed-database/computed-database.js";
+import { ActionDatabase } from "../action-database/action-database.js";
 import { Motion } from "../../../data/motion/motion.js";
 import { Spatial } from "../../../data/spatial/spatial.js";
 import { Collision } from "../../../data/collision/collision.js";
@@ -11,8 +11,10 @@ import { Bullet } from "../../../data/bullet/bullet.js";
 import { Ship } from "../../../data/ship/ship.js";
 import { State } from "../../../data/state/state.js";
 
-// The real-time tick loop. Extends the computed database (schema + indexes +
-// transactions + computed) combined with the built-in `scheduler`, and declares
+// The real-time tick loop. Extends the action database (schema + indexes +
+// transactions + computed + services + actions) combined with the built-in
+// `scheduler` — systems come last in the pipeline, so they sit atop the service
+// and action layers the feature builds — and declares
 // the `systems` facet INLINE so each `create`'s `db` is strongly typed (the
 // assembled database with a *writable* store) and the scheduler can infer the
 // system-name union from the map's keys.
@@ -26,7 +28,7 @@ import { State } from "../../../data/state/state.js";
 //   lifetime → State.fireBullet THEN State.stepBullets (fire from the *post-move*
 //              muzzle, then advance + age + retire every bullet, new one included)
 //   collision→ resolveBulletHits then resolveShipHits (discrete transactions)
-//   waves    → State.spawnWave once the field is clear
+//   waves    → State.spawnRandomWave once the field is clear (injected random)
 //
 // Firing lives in `lifetime` (after `movement`) precisely so the bullet leaves
 // the ship's post-move muzzle and is advanced+aged in the same frame — matching
@@ -36,7 +38,7 @@ import { State } from "../../../data/state/state.js";
 // rAF and drives frames itself by invoking `db.system.functions[name]()` for each
 // name in `db.system.order`.
 const systemDatabasePlugin = Database.Plugin.create({
-  extends: Database.Plugin.combine(ComputedDatabase.plugin, scheduler),
+  extends: Database.Plugin.combine(ActionDatabase.plugin, scheduler),
   systems: {
     // Apply the player's intent to the ship: turn, then thrust along the new
     // facing — the rotation/velocity half of State.stepShip (movement advances
@@ -247,20 +249,27 @@ const systemDatabasePlugin = Database.Plugin.create({
       },
     },
 
-    // Refill the field once it is clear — the ecs wiring for State.spawnWave.
+    // Refill the field once it is clear — the ecs wiring for State.spawnRandomWave.
     // Only the Asteroid archetype carries `size`, so a non-empty match means rocks
-    // remain and there is nothing to do; otherwise dispatch spawnWave (which bumps
-    // `wave` and inserts the next ring through the data/-verified layout). Frozen
-    // once the game is over — step never reaches spawnWave after game over, so a
-    // dead game does not respawn a wave.
+    // remain and there is nothing to do; otherwise dispatch spawnRandomWave, which
+    // bumps `wave` and inserts the next ring through the data/-verified layout —
+    // its per-rock drift speeds jittered by the injected `random` service, so live
+    // waves vary run to run. The random source is the feature's `random` service
+    // (`db.services.random`, the real Math.random-backed source in production);
+    // it is read once here (in `create`, before the per-frame loop) and injected on
+    // every spawn. Frozen once the game is over — step never reaches the refill
+    // after game over, so a dead game does not respawn a wave.
     waves: {
       schedule: { after: ["collision"] },
-      create: (db) => () => {
-        if (State.isGameOver({ lives: db.store.resources.lives })) return;
-        for (const arch of db.store.queryArchetypes(["size"])) {
-          if (arch.rowCount > 0) return;
-        }
-        db.transactions.spawnWave();
+      create: (db) => {
+        const random = db.services.random;
+        return () => {
+          if (State.isGameOver({ lives: db.store.resources.lives })) return;
+          for (const arch of db.store.queryArchetypes(["size"])) {
+            if (arch.rowCount > 0) return;
+          }
+          db.transactions.spawnRandomWave({ random });
+        };
       },
     },
   },

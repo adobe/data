@@ -27,29 +27,38 @@ pnpm dev        # starts Vite on http://localhost:3004
 
 ## Structure
 
+Organized into the feature-folder architecture — layered by the *kind of type*
+each folder holds (`data/` value types & pure transforms, `services/` the ECS
+implementation, `ui/` presentation):
+
 ```
 src/
-  state/
-    dashboard-plugin.ts        ECS plugin — resources and transactions
-  components/
-    control-panel.tsx           data wiring — observes count, exposes transactions
-    control-panel.presentation.tsx
-    counter-display.tsx         data wiring — observes count
-    counter-display.presentation.tsx
-    activity-log.tsx            data wiring — observes log
-    activity-log.presentation.tsx
-    status-bar.tsx              data wiring — observes userName, count, log
-    status-bar.presentation.tsx
-  app.tsx                       root component — sets up DatabaseProvider
-  main.tsx                      entry point
+  main.tsx                              entry point
+  features/main/
+    data/state/                         the spec — one immutable State + pure transforms
+      state.ts  create.ts  public.ts
+      increment.ts / .test.ts  decrement.ts / .test.ts  reset.ts / .test.ts
+      set-user-name.ts / .test.ts  clear-log.ts / .test.ts
+      conformance-case.ts  expect-state-matches.ts
+    services/main-service/              the implementation — the sole entrypoint the ui/ binds to
+      core-database/                    resources (count, userName, log) — no entities
+      transaction-database/transactions/  one mutation per file + conformance test
+      conformance/                      fromState / toState / expectConforms (test-only)
+      main-service.ts                   aliases the top layer as MainService
+    ui/                                 Solid components (element + pure presentation)
+      app/  status-bar/  control-panel/  counter-display/  activity-log/
 ```
+
+Each transaction is proven equivalent to its pure `data/` transform via
+`toState(apply(fromState(before), args)) ≡ State.transform(before, args)`, reusing
+the spec-owned cases exported from each `data/state/<transform>.test.ts`.
 
 ## Pattern summary
 
 ```tsx
 // data wiring: setup reactive graph, delegate to presentation
 function CounterDisplay() {
-  const db = useDatabase(dashboardPlugin);
+  const db = useDatabase(MainService.plugin);
   const count = fromObserve(db.observe.resources.count, 0);
   return presentation.render({ count });
 }

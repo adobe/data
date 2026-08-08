@@ -11,8 +11,7 @@ import { describe, it, expect } from "vitest";
 import type { State } from "../../../data/state/state.js";
 import type { Lane } from "../../../data/lane/lane.js";
 import { createSystemDatabase } from "../conformance/create-system-database.js";
-import { fromState } from "../conformance/from-state.js";
-import { toState } from "../conformance/to-state.js";
+import { projection } from "../conformance/projection.js";
 import { driveFrame } from "../conformance/drive-frame.js";
 
 const roadLanes: readonly Lane[] = [
@@ -41,10 +40,10 @@ const base = (overrides: Partial<State>): State => ({
 // Seed the geometry, run exactly one selection-only frame (dt 0), project back.
 const detect = (state: State): State => {
   const db = createSystemDatabase();
-  fromState(db.store, state);
+  projection.fromState(db.store, state);
   db.store.resources.frameDelta = 0;
   driveFrame(db);
-  return toState(db.store);
+  return projection.toState(db.store);
 };
 
 describe("outcome selection — road", () => {

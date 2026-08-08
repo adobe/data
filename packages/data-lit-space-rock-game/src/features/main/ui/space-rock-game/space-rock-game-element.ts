@@ -11,7 +11,7 @@ import {
   useRef,
   useWindowEvent,
 } from "@adobe/data-lit";
-import { FeatureDatabase } from "../../services/main-service/feature-database.js";
+import { MainService } from "../../services/main-service/main-service.js";
 import type { Input } from "../../data/input/input.js";
 import type { Size } from "../../data/size/size.js";
 import { styles } from "./space-rock-game.css.js";
@@ -45,7 +45,7 @@ const toInput = (held: Held, fire: boolean): Input => ({
 // render bridge, not game logic: the scheduler advances the sim on its own rAF,
 // mostly via in-place column writes that never fire observers, so the canvas
 // must read the current columns synchronously each frame rather than subscribe.
-const buildScene = (game: FeatureDatabase) => {
+const buildScene = (game: MainService) => {
   const ships: { position: Vec2; rotation: number }[] = [];
   for (const arch of game.queryArchetypes(["position", "rotation"])) {
     const position = arch.columns.position;
@@ -73,11 +73,11 @@ const buildScene = (game: FeatureDatabase) => {
 };
 
 @customElement(tagName)
-export class SpaceRockGameElement extends DatabaseElement<typeof FeatureDatabase.plugin> {
+export class SpaceRockGameElement extends DatabaseElement<typeof MainService.plugin> {
   static styles = styles;
 
   get plugin() {
-    return FeatureDatabase.plugin;
+    return MainService.plugin;
   }
 
   render() {

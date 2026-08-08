@@ -8,7 +8,7 @@ import { clearEntities } from "./clear-entities.js";
 // the ship, and spawn the first wave. `bounds` is preserved — it is set by the
 // UI on canvas resize, not part of the reset.
 export const newGame = (t: CoreDatabase.Store): void => {
-  const initial = State.createInitial(t.resources.bounds);
+  const initial = State.createInitial(State.create(), { bounds: t.resources.bounds });
   clearEntities(t);
   t.resources.score = initial.score;
   t.resources.lives = initial.lives;

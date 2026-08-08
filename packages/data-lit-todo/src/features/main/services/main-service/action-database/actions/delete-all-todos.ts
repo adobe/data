@@ -2,6 +2,6 @@
 import type { ServiceDatabase } from "../../service-database/service-database.js";
 
 export const deleteAllTodos = (db: ServiceDatabase) => {
-  db.services.todoAnalytics.allTodosCleared();
+  db.services.analytics.allTodosCleared();
   db.transactions.deleteAllTodos();
 };

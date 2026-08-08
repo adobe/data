@@ -75,8 +75,8 @@ export class TodoRowElement extends TodoElement {
       toggleEditing: () => setEditing(!editing),
       index: this.index,
       entity: this.entity,
-      toggleComplete: () => this.service.actions.toggleComplete(this.entity),
-      deleteTodo: () => this.service.actions.deleteTodo(this.entity),
+      toggleComplete: () => this.service.actions.toggleComplete({ id: this.entity }),
+      deleteTodo: () => this.service.actions.deleteTodo({ id: this.entity }),
     });
   }
 }

@@ -157,6 +157,78 @@ version on every install. Package: <https://www.npmjs.com/package/${PKG_NAME}>
     return file;
 }
 
+// Wire the consumer repo for auto-updating installs (part of `install`, not a
+// separate step). Idempotently:
+//   1. pins `@adobe/data-ai` in devDependencies (exact version — never a range,
+//      so an install can't silently pull an unreviewed release),
+//   2. adds `data-ai install` to the consumer's OWN `postinstall` (a dependency's
+//      lifecycle script does NOT run under pnpm, so it must live here), and
+//   3. gitignores the managed, regenerated bundle folders.
+// After this, bumping the pinned version and re-installing recopies the bundle —
+// no manual step, no committed diff. Skips gracefully with a note when there is
+// no package.json (the bundle is still copied; the repo just isn't auto-wired).
+const MANAGED_GITIGNORE = [
+    `# ${PKG_NAME} — managed, regenerated on install; do not edit or commit`,
+    ".claude/rules/adobe-data-ai/",
+    ".claude/rules/adobe-data-ai-bootstrap.md",
+    ".agents/skills/adobe-data-ai/",
+];
+
+function wireManagedUpdates(base) {
+    const pkgPath = join(base, "package.json");
+    if (!existsSync(pkgPath)) {
+        process.stdout.write(
+            `  (no package.json in ${base} — auto-update not wired; the bundle was still copied.\n` +
+                `   Add one, re-run install to wire it, or re-run manually to update.)\n`,
+        );
+        return;
+    }
+    const consumer = JSON.parse(readFileSync(pkgPath, "utf8"));
+    const changes = [];
+
+    // 1. pinned devDependency
+    consumer.devDependencies ??= {};
+    let pinnedDep = false;
+    if (consumer.devDependencies[PKG_NAME] !== VERSION) {
+        consumer.devDependencies[PKG_NAME] = VERSION;
+        changes.push(`devDependencies["${PKG_NAME}"] = "${VERSION}" (exact)`);
+        pinnedDep = true;
+    }
+
+    // 2. own postinstall runs the installer (chain if one already exists)
+    consumer.scripts ??= {};
+    const INSTALL = "data-ai install";
+    const post = consumer.scripts.postinstall;
+    if (!post) {
+        consumer.scripts.postinstall = INSTALL;
+        changes.push(`scripts.postinstall = "${INSTALL}"`);
+    } else if (!post.includes(INSTALL)) {
+        consumer.scripts.postinstall = `${post} && ${INSTALL}`;
+        changes.push(`scripts.postinstall += " && ${INSTALL}"`);
+    }
+    if (changes.length) writeFileSync(pkgPath, JSON.stringify(consumer, null, 2) + "\n");
+
+    // 3. gitignore the managed bundle folders
+    const giPath = join(base, ".gitignore");
+    const gi = existsSync(giPath) ? readFileSync(giPath, "utf8") : "";
+    if (!gi.includes(MANAGED_GITIGNORE[0])) {
+        const sep = gi === "" ? "" : gi.endsWith("\n") ? "\n" : "\n\n";
+        writeFileSync(giPath, gi + sep + MANAGED_GITIGNORE.join("\n") + "\n");
+        changes.push(".gitignore += managed bundle paths");
+    }
+
+    for (const c of changes) process.stdout.write(`  wired: ${c}\n`);
+    if (!changes.length) process.stdout.write("  auto-update already wired\n");
+    // Adding/repinning the dev-dependency leaves the lockfile out of sync until a
+    // normal install records it (and CI with a frozen lockfile would fail until then).
+    if (pinnedDep) {
+        process.stdout.write(
+            "\nNext: run your package manager's install to sync the lockfile\n" +
+                "  pnpm install    # or npm install / yarn\n",
+        );
+    }
+}
+
 function parseArgs(argv) {
     const positional = [];
     const flags = new Set();
@@ -177,11 +249,17 @@ Install the architecture skills + rules for Cursor, Codex, and other agents.
 same way for every agent — see README.)
 
 Usage:
-  npx ${PKG_NAME}@latest install [options]
+  npx ${PKG_NAME}@latest install   # copy the bundle AND wire auto-updates (default)
   npx ${PKG_NAME}@latest list
 
 Commands:
-  install   Skills → .agents/skills/${BUNDLE}/, rules → .claude/rules/${BUNDLE}/ (default).
+  install   Copy the bundle (skills → .agents/skills/${BUNDLE}/, rules →
+            .claude/rules/${BUNDLE}/) AND wire this repo for auto-updating installs:
+            pin ${PKG_NAME} in devDependencies (exact), add \`data-ai install\` to the
+            repo's own postinstall, and gitignore the managed bundle folders. Run once;
+            thereafter a plain install refreshes the bundle and bumping the pinned
+            version updates it. Skips the wiring (copies only) with \`--global\` or when
+            there's no package.json.
   list      Print the skills bundled in this package.
 
 Options:
@@ -229,6 +307,10 @@ function main() {
     process.stdout.write(`  ${skills.length} skills → ${skillsDir}\n`);
     process.stdout.write(`  ${ruleCount} rules  → ${rulesDir}\n`);
     process.stdout.write(`  bootstrap → ${bootstrapFile}\n`);
+
+    // A project install also wires the repo for auto-updating installs (idempotent).
+    // A global install has no consumer package.json to wire, so it only copies.
+    if (!flags.has("global")) wireManagedUpdates(base);
 }
 
 main();

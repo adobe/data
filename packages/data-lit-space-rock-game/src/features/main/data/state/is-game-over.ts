@@ -2,4 +2,5 @@
 import type { State } from "./state.js";
 
 // The game is over once every life is spent.
-export const isGameOver = (state: Pick<State, "lives">): boolean => state.lives <= 0;
+export const isGameOver = (state: Pick<State, "lives">): boolean =>
+  state.lives <= 0;

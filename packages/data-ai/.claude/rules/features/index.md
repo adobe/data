@@ -26,9 +26,25 @@ derive a fast one that provably behaves the same.
 
 ## The layers
 
-`ui → services → data` — higher imports lower, never the reverse. `data/`
-depends on nothing but `@adobe/data` and other `data/` declarations. A feature
-creates only the layers it uses.
+**The layers organize by the *kind of type* each folder holds, not by a strict
+dependency wall.** `data/` holds **value types** (pure, serializable data) and
+the pure declarations over them; `services/` holds **service types** (interfaces
+**and** implementations); `ui/` holds presentation. The rule is about *what
+lives where*: a service is never authored under `data/`, a value type is never
+authored under `services/`.
+
+**`ui/` isolation is strict and inviolable.** `ui/` sits at the top: neither
+`data/` nor `services/` may ever import from `ui/`, no exceptions. Presentation
+depends on the model; the model never depends on presentation.
+
+Beneath that hard line, `data/` and `services/` are **not** strictly ordered.
+Value types are fundamental — a `data/` **type** depends on nothing but
+`@adobe/data` and other `data/` types. But the **transition functions** over
+them may depend on `services/` **without restriction**: they import whatever they
+need — service interfaces they inject, and any associated utilities the service
+namespace exposes — as ordinary imports, not type-only. So the strict wall is
+`ui/` above `data/` + `services/`; the `data/ ↔ services/` boundary is the loose
+one. A feature creates only the layers it uses.
 
 | Layer | Role |
 |-------|------|
@@ -85,13 +101,16 @@ The tie between `data/` (spec) and `main-service` (implementation) is
 **conformance**, one property —
 `toState(apply(fromState(before), args)) ≡ transform(before, args)`: each
 main-service mutation, seeded and read back through a test-only store↔`State`
-projection, equals the pure `data/` transform it stands for. The projection and
-its runner live in `services/main-service/conformance/` (see
-`services/main-service/conformance.md`); the shared `{ before, args, after }`
-cases are spec-owned (exported from `data/state/<transform>.test.ts`), so conforming the
-implementation is "substitute the implementation, reuse the expectations." This
-lets `main-service` be largely mechanical and agent-generated, with the spec as
-oracle. *How* to author each layer lives in the per-folder rules below.
+projection, equals the pure `data/` transform it stands for. The per-feature
+projection lives in `services/main-service/conformance/`, and a **single
+`Conformance.runFeature({...})` call** replays the shared cases against the ecs —
+pairing each ECS op to its same-named transition automatically and round-tripping
+the projection (see `services/main-service/conformance.md`);
+the shared `{ before, args, after }` cases are spec-owned — co-located in each
+`data/state/<transform>.ts`, which exports its function plus `cases` — so
+conforming the implementation is "substitute the implementation, reuse the
+expectations." This lets `main-service` be largely mechanical and agent-generated,
+with the spec as oracle. *How* to author each layer lives in the per-folder rules below.
 
 ## Reference implementations
 

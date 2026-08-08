@@ -5,6 +5,6 @@ export const createBulkTodos = (
   db: ServiceDatabase,
   input: { readonly count: number },
 ) => {
-  db.services.todoAnalytics.bulkTodosCreated({ count: input.count });
+  db.services.analytics.bulkTodosCreated({ count: input.count });
   db.transactions.createBulkTodos(input);
 };

@@ -1,6 +1,6 @@
 {
   "name": "data-react-pixie",
-  "version": "0.9.94",
+  "version": "0.9.95",
   "description": "PixiJS React sample - ECS sprites (bunny, fox) with @adobe/data-react",
   "type": "module",
   "private": true,

@@ -562,6 +562,64 @@ describe("observeSelectEntities", () => {
         });
     });
 
+    describe("Set-based include (archetype.components)", () => {
+        // `observe.select` accepts `ReadonlySet<string>` — exactly the shape
+        // `archetype.components` has. Every other test in this file passes an
+        // array, so the Set path is unexercised. The select-observe cache keys
+        // on `JSON.stringify({ include, options })`, and `JSON.stringify(aSet)`
+        // is always `"{}"`, so two selects made with *different* component Sets
+        // collide on one cache key and the second is served the first's observe
+        // function. With a single Set-based subscription (a minimal chain) the
+        // collision is invisible; with two or more (a composed graph) it bites.
+
+        it("should return distinct results for selects made with different component Sets", () => {
+            const positionObserver = vi.fn();
+            const healthObserver = vi.fn();
+
+            database.observe.select(new Set(["position"]))(positionObserver);
+            database.observe.select(new Set(["health"]))(healthObserver);
+
+            const positionResult = positionObserver.mock.calls[0][0];
+            const healthResult = healthObserver.mock.calls[0][0];
+
+            expect(positionResult).toContain(entities.pos1);
+            expect(positionResult).not.toContain(entities.health1);
+
+            expect(healthResult).toContain(entities.health1);
+            expect(healthResult).not.toContain(entities.pos1);
+        });
+
+        it("should re-emit on membership contraction for a Set-based select after another Set-based select was made", async () => {
+            // A prior subscription keyed on a different component Set poisons the
+            // shared cache key, so the select below is wrongly served it.
+            database.observe.select(new Set(["position"]))(vi.fn());
+
+            const observer = vi.fn();
+            const unsubscribe = database.observe.select(new Set(["position", "health"]))(observer);
+
+            // Initial emission looks correct: posHealth1 has position (the
+            // poisoned observe's include), so it is present.
+            expect(observer).toHaveBeenCalledTimes(1);
+            expect(observer.mock.calls[0][0]).toContain(entities.posHealth1);
+
+            // Remove health: posHealth1 migrates out of the position+health set.
+            database.transactions.updateEntity({
+                entity: entities.posHealth1,
+                values: { health: undefined }
+            });
+
+            await Promise.resolve();
+
+            // Must re-emit without posHealth1. With the collapsed cache key the
+            // subscription is actually observing {position}, for which removing
+            // health is a no-op, so no notification fires.
+            expect(observer).toHaveBeenCalledTimes(2);
+            expect(observer.mock.calls[1][0]).not.toContain(entities.posHealth1);
+
+            unsubscribe();
+        });
+    });
+
     describe("Filtering and ordering", () => {
         it("should support where clause filtering", () => {
             const observer = vi.fn();

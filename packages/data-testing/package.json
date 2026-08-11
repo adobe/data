@@ -1,0 +1,46 @@
+{
+  "name": "@adobe/data-testing",
+  "version": "0.9.95",
+  "description": "Conformance-testing utilities (Match + Conformance runners) for @adobe/data ECS features",
+  "type": "module",
+  "sideEffects": false,
+  "private": false,
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "cp ../../LICENSE . && tsc -b",
+    "dev": "tsc -b -w --preserveWatchOutput",
+    "clean": "rm -rf dist node_modules",
+    "link": "pnpm build && pnpm link --global",
+    "test": "vitest --run --passWithNoTests",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@adobe/data": "workspace:*"
+  },
+  "peerDependencies": {
+    "vitest": "^1.6.0"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^1.6.0"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  }
+}

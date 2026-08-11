@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it } from "vitest";
-import { Database, Store } from "../../ecs/index.js";
-import type { Entity } from "../../ecs/entity/entity.js";
+import { Database, Store } from "@adobe/data/ecs";
+import type { Entity } from "@adobe/data/ecs";
 import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
 import { runTransactions } from "./run-transactions.js";

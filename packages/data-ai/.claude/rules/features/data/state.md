@@ -48,7 +48,7 @@ export const transitions = import.meta.glob<Record<string, unknown>>(
 It stays **out of `public.js`** deliberately: unlike `create`/`samples` (plain
 prod-safe values), `transitions` is the test-case graph — hanging it on `State`
 would drag `import.meta.glob` (a Vite-only construct) and every `cases` fixture
-(fake services, matchers, the whole `@adobe/data/testing` module) into every
+(fake services, matchers, the whole `@adobe/data-testing` module) into every
 production import of `State`, none of which tree-shakes off a live namespace
 re-export. So `create`/`samples` earn a namespace slot; `transitions` is a test
 concern the tests import directly.
@@ -73,15 +73,17 @@ centrally by the shared driver's barrel-driven guard rather than by eyeballing
 one test file per transform — and genuine non-transition helpers still keep
 their own `*.test.ts` (see below).
 
-The case types, matchers, and runners all live in the shared
-**`@adobe/data/testing`** module (two namespaces, `Match` and `Conformance`;
-`vitest` is an *optional* peer dependency, already satisfied here). Only one
-tiny per-feature file remains — a ~10-line alias, `conformance-case.ts`, that
-binds `State` once so transform/derivation files can write a one-parameter type:
+The case types, matchers, and runners all live in the separate
+**`@adobe/data-testing`** package (two namespaces, `Match` and `Conformance`) —
+kept out of `@adobe/data` itself so installing `@adobe/data` never pulls in a
+`vitest` peer dependency; add `@adobe/data-testing` as a devDependency alongside
+`vitest`, its optional peer dependency. Only one tiny per-feature file remains —
+a ~10-line alias, `conformance-case.ts`, that binds `State` once so
+transform/derivation files can write a one-parameter type:
 
 ```ts
 // data/state/conformance-case.ts — the only per-feature conformance declaration
-import { Conformance as ConformanceApi } from "@adobe/data/testing";
+import { Conformance as ConformanceApi } from "@adobe/data-testing";
 import type { State } from "./state.js";
 export type Conformance<F extends (...args: never[]) => unknown> = ConformanceApi.Cases<State, F>;
 export type Derivation<F extends (...args: never[]) => unknown> = ConformanceApi.DerivationCases<F>;
@@ -93,7 +95,7 @@ export const entity = ConformanceApi.entity;
 
 ```ts
 // create-todo.ts
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 import type { Conformance } from "./conformance-case.js"; // the thin per-feature alias above
 export const createTodo = (
     state: Pick<State, "todos">,
@@ -141,7 +143,7 @@ export const cases: Conformance<typeof createTodo> = [
   is the default and stays unchanged. (A full `before`/`after` still works — it just
   overrides the default wholesale.)
 - **`after` leaves minted values open** with the shared matchers `Match.anyNumber`
-  / `Match.anyString`, imported from `@adobe/data/testing` — there is **no**
+  / `Match.anyString`, imported from `@adobe/data-testing` — there is **no**
   per-feature `matchers.ts` anymore. An id the ECS assigns from its own id-space is
   `id: Match.anyNumber`, so the pure spec and the ECS satisfy the same case — match
   by content, not by the value you don't control. `Match` is framework-agnostic and
@@ -154,7 +156,7 @@ export const cases: Conformance<typeof createTodo> = [
   case does not pin at all; `ref` for one that must be consistent across the case.
 - **Entity-addressed cases use `entity(specId)`.** A transition that addresses an
   entity by id writes it as `args: { id: entity(2) }` — `entity` imported from the
-  feature's `conformance-case.ts` (re-exported from `@adobe/data/testing`). It types
+  feature's `conformance-case.ts` (re-exported from `@adobe/data-testing`). It types
   as the id it stands for (like `Match.anyNumber`), so it slots into the transform's
   own arg type. `runSpec` unwraps it to the plain data-id for the pure side; the ECS
   runners resolve it to the seeded entity (see `conformance.md`).
@@ -170,7 +172,7 @@ export const cases: Conformance<typeof createTodo> = [
   There is no per-feature `expect-state-matches.ts`, `record-effects.ts`,
   `expect-conforms.ts`, or `conformance-case.type-test.ts` — those are gone; the
   shared driver owns comparison, effect recording, and name-based auto-pairing, and
-  the `Effects` type-test now lives once in `@adobe/data/testing`. A genuine **non-transition helper** in
+  the `Effects` type-test now lives once in `@adobe/data-testing`. A genuine **non-transition helper** in
   `state/` — a `create()` constructor, a single-field predicate — has no `cases`
   and isn't a `(state,args)=>state` transform, so `runSpec` skips it: **keep its own
   sibling `*.test.ts`** rather than deleting it and losing coverage.

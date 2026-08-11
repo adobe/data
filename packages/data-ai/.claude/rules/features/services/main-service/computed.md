@@ -25,7 +25,7 @@ full-state projection and re-runs on *any* field change (fine for a small featur
 wasteful on a large or hot one, where you hand-wire the minimal resource/index
 reads instead). A derivation takes **no services**, so its co-located `cases` are
 inert `{ input, value }` data (no test-doubles) that tree-shake out of the app
-build (they reference the `@adobe/data/testing` matchers only, and that module is
+build (they reference the `@adobe/data-testing` matchers only, and that module is
 `sideEffects: false`) — the one hazard is a `cases` literal touching the
 `public.js` barrel at load, which `state.md` already forbids. **Performance is the
 first-class constraint**: reuse freely where it doesn't matter, hand-wire minimal

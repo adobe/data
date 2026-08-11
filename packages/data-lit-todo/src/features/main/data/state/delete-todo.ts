@@ -2,7 +2,7 @@
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
 import type { State } from "./state.js";
 import { entity, type Conformance } from "./conformance-case.js";
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 
 // Reads the todos, writes the todos — a `{ todos }` patch — dropping the
 // addressed id; also logs `todoDeleted`.

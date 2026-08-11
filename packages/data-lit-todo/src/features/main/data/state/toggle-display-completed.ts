@@ -2,7 +2,7 @@
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 
 // Reads `displayCompleted`, writes `displayCompleted` — a `{ displayCompleted }`
 // patch — flipping the flag; also logs `displayCompletedToggled`.

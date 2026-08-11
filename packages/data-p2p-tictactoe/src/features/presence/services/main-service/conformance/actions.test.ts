@@ -2,7 +2,7 @@
 /// <reference types="vite/client" />
 import { Database } from "@adobe/data/ecs";
 import type { ConcurrencyStrategyFactory } from "@adobe/data/ecs";
-import { Conformance } from "@adobe/data/testing";
+import { Conformance } from "@adobe/data-testing";
 import { transitions } from "../../../data/state/transitions.js";
 import { MainService } from "../main-service.js";
 import { fromState } from "./from-state.js";

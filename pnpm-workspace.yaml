@@ -1,6 +1,7 @@
 packages:
   - 'packages/data'
   - 'packages/data-ai'
+  - 'packages/data-testing'
   - 'packages/data-persistence'
   - 'packages/data-sync'
   - 'packages/data-lit'

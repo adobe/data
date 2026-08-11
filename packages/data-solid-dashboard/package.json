@@ -16,6 +16,7 @@
     "solid-js": "^1.9.12"
   },
   "devDependencies": {
+    "@adobe/data-testing": "workspace:*",
     "jsdom": "^24.1.0",
     "typescript": "^5.8.3",
     "vite": "^5.1.1",

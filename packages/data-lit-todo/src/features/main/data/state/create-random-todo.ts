@@ -4,7 +4,7 @@ import { AnalyticsService } from "../../services/analytics-service/analytics-ser
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { appendTodo } from "./append-todo.js";
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 /**
  * Async, service-injected transition: brackets the slow name generation with
  * analytics timing, then appends the todo via the shared {@link appendTodo} (so

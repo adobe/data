@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Conformance } from "@adobe/data/testing";
+import { Conformance } from "@adobe/data-testing";
 import { State } from "../../../data/state/state.js";
 import { transitions } from "../../../data/state/transitions.js";
 import { MainService } from "../main-service.js";

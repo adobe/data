@@ -26,7 +26,7 @@ import { State } from "../../../data/state/state.js";
 import { Ship } from "../../../data/ship/ship.js";
 import { Input } from "../../../data/input/input.js";
 import { cases } from "../../../data/state/step.js";
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 import { createSystemDatabase } from "../conformance/create-system-database.js";
 import { projection } from "../conformance/projection.js";
 import { driveFrame } from "../conformance/drive-frame.js";

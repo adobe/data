@@ -20,6 +20,7 @@
     "lit": "^3.3.1"
   },
   "devDependencies": {
+    "@adobe/data-testing": "workspace:*",
     "@webgpu/types": "^0.1.61",
     "jsdom": "^24.1.0",
     "typescript": "^5.8.3",

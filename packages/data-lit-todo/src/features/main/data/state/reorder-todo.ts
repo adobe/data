@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { State } from "./state.js";
 import { entity, type Conformance } from "./conformance-case.js";
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 /**
  * Moves the todo with the given id to `toIndex` within the list, preserving the
  * relative order of every other todo. Reads the todos, writes the todos — a

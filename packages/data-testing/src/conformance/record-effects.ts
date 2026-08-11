@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { equalsUnordered } from "../../equals-unordered.js";
+import { equalsUnordered } from "@adobe/data";
 import { matches } from "../match/match.js";
 import type { Effects } from "./types.js";
 

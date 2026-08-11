@@ -19,7 +19,7 @@ export interface MatchOptions {
 // line up structurally — e.g. a `selectedId` points at the entity a case means —
 // even though the ecs assigns ids from its own space. For an id a case does not
 // care about, use `anyNumber` instead.
-const REF = Symbol.for("@adobe/data/testing:ref");
+const REF = Symbol.for("@adobe/data-testing:ref");
 export const ref = (label: string): { readonly [REF]: string } => ({ [REF]: label });
 const isRef = (value: unknown): value is { readonly [REF]: string } =>
   typeof value === "object" && value !== null && REF in value;

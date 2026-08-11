@@ -3,7 +3,7 @@ import type { Vec2 } from "@adobe/data/math";
 import type { SpriteKind } from "../sprite-kind/sprite-kind.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 
 const nextSpriteId = (state: Pick<State, "sprites">): number =>
   state.sprites.reduce((max, sprite) => Math.max(max, sprite.id), 0) + 1;

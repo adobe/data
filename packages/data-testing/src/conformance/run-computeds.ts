@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it } from "vitest";
-import type { Observe } from "../../observe/index.js";
-import type { Entity } from "../../ecs/entity/entity.js";
+import type { Observe } from "@adobe/data/observe";
+import type { Entity } from "@adobe/data/ecs";
 import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
 import { discoverDerivations, discoverOps } from "./discover.js";

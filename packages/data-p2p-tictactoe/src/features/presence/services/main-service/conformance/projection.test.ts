@@ -5,7 +5,7 @@
 // `runFeature` feature, which folds this round-trip into the one call — its
 // projection round-trip is a standalone test over the same shared samples.
 import { describe, it } from "vitest";
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 import { State } from "../../../data/state/state.js";
 import { createStore } from "./create-store.js";
 import { fromState } from "./from-state.js";

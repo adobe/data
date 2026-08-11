@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Conformance } from "@adobe/data/testing";
+import { Conformance } from "@adobe/data-testing";
 import { transitions } from "./transitions.js";
 
 // The single pure-spec test for every transform AND derivation in this folder.

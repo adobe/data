@@ -1,16 +1,23 @@
 {
-  "name": "@adobe/data-react",
+  "name": "@adobe/data-testing",
   "version": "0.9.96",
-  "description": "Adobe data React bindings — hooks and context for ECS database",
+  "description": "Conformance-testing utilities (Match + Conformance runners) for @adobe/data ECS features",
   "type": "module",
+  "sideEffects": false,
   "private": false,
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
     "access": "public"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "cp ../../LICENSE . && tsc -b",
-    "dev": "tsc -b -w",
+    "dev": "tsc -b -w --preserveWatchOutput",
+    "clean": "rm -rf dist node_modules",
     "link": "pnpm build && pnpm link --global",
     "test": "vitest --run --passWithNoTests",
     "typecheck": "tsc -b"
@@ -19,11 +26,14 @@
     "@adobe/data": "workspace:*"
   },
   "peerDependencies": {
-    "react": ">=17.0.0"
+    "vitest": "^1.6.0"
+  },
+  "peerDependenciesMeta": {
+    "vitest": {
+      "optional": true
+    }
   },
   "devDependencies": {
-    "@types/react": "^19",
-    "react": "^19",
     "typescript": "^5.8.3",
     "vitest": "^1.6.0"
   },

@@ -2,7 +2,7 @@
 import type { State } from "./state.js";
 import type { Todo } from "../todo/todo.js";
 import type { Derivation } from "./conformance-case.js";
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 // The todos the user should see, in display order: all of them when
 // `displayCompleted`, otherwise only the incomplete ones.
 export const visibleTodos = (

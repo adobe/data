@@ -2,7 +2,7 @@
 import type { Sprite } from "../sprite/sprite.js";
 import type { State } from "./state.js";
 import { entity, type Conformance } from "./conformance-case.js";
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 
 // Set the addressed sprite's `active` flag. Writes only `sprites`.
 export const setSpriteActive = (

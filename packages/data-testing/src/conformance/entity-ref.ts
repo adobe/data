@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Entity } from "../../ecs/entity/entity.js";
+import type { Entity } from "@adobe/data/ecs";
 import type { Resolve } from "./resolve.js";
 
 // A spec entity reference inside a case's `args`: `{ id: entity(1) }` names "the
@@ -7,7 +7,7 @@ import type { Resolve } from "./resolve.js";
 // gap — identity: the pure spec reads the data-id, the ecs reads the entity the
 // runner resolves. Typed as the id it stands in for, so it slots into the
 // transform's own arg type (`{ id: number }`), exactly like `Match.anyNumber`.
-const ENTITY_REF = Symbol.for("@adobe/data/testing:entity-ref");
+const ENTITY_REF = Symbol.for("@adobe/data-testing:entity-ref");
 
 export const entity = <T>(specId: T): T => ({ [ENTITY_REF]: specId }) as unknown as T;
 

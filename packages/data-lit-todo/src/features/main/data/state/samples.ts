@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
 
 // Representative full states for the projection round-trip (toState ∘ fromState ≡

@@ -1,6 +1,6 @@
 {
   "name": "data-solid-dashboard",
-  "version": "0.9.95",
+  "version": "0.9.96",
   "description": "Mini dashboard sample — multiple components sharing one @adobe/data ECS database with SolidJS",
   "type": "module",
   "private": true,
@@ -16,6 +16,7 @@
     "solid-js": "^1.9.12"
   },
   "devDependencies": {
+    "@adobe/data-testing": "workspace:*",
     "jsdom": "^24.1.0",
     "typescript": "^5.8.3",
     "vite": "^5.1.1",

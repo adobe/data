@@ -1,6 +1,6 @@
 {
   "name": "data-gpu-hopper",
-  "version": "0.9.95",
+  "version": "0.9.96",
   "description": "Hopper sample - real-time ECS game rendered as colored cubes via @adobe/data-gpu",
   "type": "module",
   "private": true,
@@ -20,6 +20,7 @@
     "lit": "^3.3.1"
   },
   "devDependencies": {
+    "@adobe/data-testing": "workspace:*",
     "@webgpu/types": "^0.1.61",
     "jsdom": "^24.1.0",
     "typescript": "^5.8.3",

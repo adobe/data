@@ -6,7 +6,7 @@ paths:
 # services/main-service/conformance/ — keeping the ECS honest against the spec
 
 Test-only (imported only by `*.test.ts`, in no facet barrel). The `data/state`
-cases are the shared truth; the shared **`@adobe/data/testing`** runner replays
+cases are the shared truth; the shared **`@adobe/data-testing`** runner replays
 them against the ECS. This folder holds only the *feature-specific projection*
 (`projection.ts`) plus one `conformance.test.ts` that makes a **single**
 `Conformance.runFeature({...})` call. Reference: `data-lit-tictactoe`'s
@@ -23,11 +23,12 @@ a normal runtime API — the collision is only in the name.) Likewise
 `Match.matches` / `Match.assert` are comparison helpers for `*.test.ts` only —
 never a runtime branch.
 
-## What `@adobe/data/testing` gives you
+## What `@adobe/data-testing` gives you
 
 Two namespaces, imported only from `*.test.ts` (the module is
-`sideEffects: false`, and `vitest` is an optional peer dependency, satisfied
-here):
+`sideEffects: false`; add it as a devDependency alongside `vitest`, its
+optional peer dependency — kept as a separate package from `@adobe/data` so
+installing `@adobe/data` never pulls in a `vitest` peer dependency):
 
 - **`Match`** — the tolerant, matcher-aware value comparison: `matches(actual,
   expected, options?)` and its throwing wrapper `assert(...)`, plus the matchers

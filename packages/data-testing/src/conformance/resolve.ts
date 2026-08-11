@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Entity } from "../../ecs/entity/entity.js";
+import { Entity } from "@adobe/data/ecs";
 
 // Maps a spec-domain id to the ecs entity seeded for it. A feature's `fromState`
 // returns the `Id → Entity` map (it already loops its collections to seed); the

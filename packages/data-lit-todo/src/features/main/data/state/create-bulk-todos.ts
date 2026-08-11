@@ -3,7 +3,7 @@ import { AnalyticsService } from "../../services/analytics-service/analytics-ser
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { appendTodo } from "./append-todo.js";
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 /** Adds numbered placeholder todos for demos and performance testing. Reads and
  * writes the todos — a `{ todos }` patch. */
 export const createBulkTodos = (

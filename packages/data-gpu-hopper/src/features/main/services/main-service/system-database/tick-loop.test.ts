@@ -16,7 +16,7 @@
 // and assert `toState ≡ after`. Each case also asserts `State.step ≡ after` first,
 // keeping the shared case honest. The hazard bag compares as a multiset.
 import { describe, it } from "vitest";
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 import { State } from "../../../data/state/state.js";
 import { cases } from "../../../data/state/step.js";
 import { createSystemDatabase } from "../conformance/create-system-database.js";

@@ -2,7 +2,7 @@
 import type { Sprite } from "../sprite/sprite.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
-import { Match } from "@adobe/data/testing";
+import { Match } from "@adobe/data-testing";
 
 // Advance one animation frame: every sprite rotates by `delta * 0.1` radians.
 // `delta` is the frame time step, supplied by the caller (the render loop).

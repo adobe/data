@@ -150,7 +150,7 @@ export const observeSelectEntities = <C extends object>(store: ReadonlyStore<C, 
         include: readonly Include[] | ReadonlySet<string>,
         options?: EntitySelectOptions<C, Pick<C & RequiredComponents & OptionalComponents, Include>>
     ) => {
-        const key = JSON.stringify({ include, options });
+        const key = canonicalSelectKey(include, options);
         let observeFunction = cachedSelectObserveFunctions.get(key);
         if (!observeFunction) {
             observeFunction = Observe.withCache(createSelectObserveFunction(include, options));
@@ -159,3 +159,45 @@ export const observeSelectEntities = <C extends object>(store: ReadonlyStore<C, 
         return observeFunction;
     }
 }
+
+// Segment/element delimiters. Component names are schema keys (identifiers), so
+// these control chars cannot occur inside one, making the key unambiguous.
+const SECTION = "\u0001";
+const ELEMENT = "\u0000";
+
+/**
+ * Canonical string key for a `(include, options)` query so semantically-equal
+ * queries share one cached Observe.
+ *
+ * Not `JSON.stringify({ include, options })`: a `Set` (the shape of
+ * `archetype.components`) serializes to `"{}"`, collapsing every set-based
+ * select onto one key. Not a WeakMap identity cache either: it would only help
+ * stable references and measurably pessimizes fresh-literal callers, on a
+ * subscription-setup path where absolute cost is already sub-microsecond.
+ *
+ * `include`/`exclude` are set-like (sorted, so order and array-vs-Set don't
+ * matter); `where` is a conjunction (keys sorted, values JSON-serialized);
+ * `order` is a sort-priority sequence (preserved as written).
+ */
+const canonicalSelectKey = <C extends object, T extends object>(
+    include: readonly string[] | ReadonlySet<string>,
+    options?: EntitySelectOptions<C, T>,
+): string => {
+    let key = [...include].sort().join(ELEMENT);
+    if (!options) return key;
+    if (options.exclude && options.exclude.length > 0) {
+        key += SECTION + "x" + [...options.exclude].sort().join(ELEMENT);
+    }
+    if (options.where) {
+        const parts = Object.entries(options.where)
+            .map(([k, v]) => k + "=" + JSON.stringify(v))
+            .sort();
+        if (parts.length > 0) key += SECTION + "w" + parts.join(ELEMENT);
+    }
+    if (options.order) {
+        const parts = Object.entries(options.order)
+            .map(([k, v]) => k + "=" + (v ? "1" : "0"));
+        if (parts.length > 0) key += SECTION + "o" + parts.join(ELEMENT);
+    }
+    return key;
+};

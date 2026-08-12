@@ -79,7 +79,7 @@ const RENDER_COMPONENTS = ["position", "rotation", "halfExtents", "colliderShape
 export const rigidStackDebugRender = Database.Plugin.create({
     extends: Database.Plugin.combine(graphics, physicsData, SceneUniforms.plugin),
     resources: {
-        rigidGpu: { default: null as RigidGpu | null, nonPersistent: true },
+        rigidGpu: { default: null as RigidGpu | null, nonPersistent: true, mutable: true },
     },
     systems: {
         rigidRenderInit: {

@@ -29,7 +29,7 @@ const base = (overrides: Partial<State>): State => ({
   width: 5,
   height: 3,
   lanes: roadLanes,
-  hazards: [],
+  hazards: new Set(),
   frog: { x: 2, y: 0 },
   lives: 3,
   score: 0,
@@ -51,7 +51,7 @@ describe("outcome selection — road", () => {
     const after = detect(
       base({
         frog: { x: 2, y: 1 },
-        hazards: [{ kind: "car", lane: 1, x: 2, width: 1, velocity: 0 }],
+        hazards: new Set([{ kind: "car", lane: 1, x: 2, width: 1, velocity: 0 }]),
       }),
     );
     expect(after.lives).toBe(2);
@@ -63,7 +63,7 @@ describe("outcome selection — road", () => {
     const after = detect(
       base({
         frog: { x: 2, y: 1 },
-        hazards: [{ kind: "car", lane: 1, x: 0, width: 1, velocity: 0 }],
+        hazards: new Set([{ kind: "car", lane: 1, x: 0, width: 1, velocity: 0 }]),
       }),
     );
     expect(after.lives).toBe(3);
@@ -74,7 +74,7 @@ describe("outcome selection — road", () => {
     const after = detect(
       base({
         frog: { x: 2, y: 1 },
-        hazards: [{ kind: "car", lane: 1, x: 2, width: 1, velocity: 0 }],
+        hazards: new Set([{ kind: "car", lane: 1, x: 2, width: 1, velocity: 0 }]),
         lives: 1,
       }),
     );
@@ -90,7 +90,7 @@ describe("outcome selection — river", () => {
       base({
         lanes: riverLanes,
         frog: { x: 2, y: 1 },
-        hazards: [{ kind: "log", lane: 1, x: 0, width: 3, velocity: 0 }],
+        hazards: new Set([{ kind: "log", lane: 1, x: 0, width: 3, velocity: 0 }]),
       }),
     );
     expect(after.lives).toBe(3);
@@ -98,7 +98,7 @@ describe("outcome selection — river", () => {
   });
 
   it("open water with no log drowns the frog", () => {
-    const after = detect(base({ lanes: riverLanes, frog: { x: 2, y: 1 }, hazards: [] }));
+    const after = detect(base({ lanes: riverLanes, frog: { x: 2, y: 1 }, hazards: new Set() }));
     expect(after.lives).toBe(2);
     expect(after.frog).toEqual({ x: 2, y: 0 });
   });
@@ -108,7 +108,7 @@ describe("outcome selection — river", () => {
       base({
         lanes: riverLanes,
         frog: { x: 3, y: 1 }, // log covers [0, 3); x = 3 is NOT covered
-        hazards: [{ kind: "log", lane: 1, x: 0, width: 3, velocity: 0 }],
+        hazards: new Set([{ kind: "log", lane: 1, x: 0, width: 3, velocity: 0 }]),
       }),
     );
     expect(after.lives).toBe(2);

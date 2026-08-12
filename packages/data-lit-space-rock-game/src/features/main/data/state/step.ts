@@ -12,6 +12,7 @@ import { resolveShipHits } from "./resolve-ship-hits.js";
 import { spawnRandomWave } from "./spawn-random-wave.js";
 import { isGameOver } from "./is-game-over.js";
 import { RandomService } from "../../services/random-service/random-service.js";
+import type { Services } from "../../services/services.js";
 
 // Advance the whole game one tick. This is the authoritative spec the ECS systems
 // are verified against: move the ship, fire, advance bullets and asteroids,
@@ -36,8 +37,7 @@ export const step = (
   }: {
     readonly dt: number;
     readonly input: Input;
-    readonly random: RandomService;
-  },
+  } & Pick<Services, "random">,
 ): State => {
   if (isGameOver(state)) {
     return state;
@@ -69,8 +69,10 @@ export const cases: Conformance<typeof step> = [
     before: {
       bounds: [200, 200],
       ship: { position: [190, 100], velocity: [30, 0], rotation: 0 },
-      bullets: [],
-      asteroids: [{ position: [190, 180], velocity: [30, 30], size: "large" }],
+      bullets: new Set(),
+      asteroids: new Set([
+        { position: [190, 180], velocity: [30, 30], size: "large" },
+      ]),
       score: 0,
       lives: 3,
       wave: 1,
@@ -79,8 +81,10 @@ export const cases: Conformance<typeof step> = [
     after: {
       bounds: [200, 200],
       ship: { position: [20, 100], velocity: [30, 0], rotation: 0 },
-      bullets: [],
-      asteroids: [{ position: [20, 10], velocity: [30, 30], size: "large" }],
+      bullets: new Set(),
+      asteroids: new Set([
+        { position: [20, 10], velocity: [30, 30], size: "large" },
+      ]),
       score: 0,
       lives: 3,
       wave: 1,
@@ -91,8 +95,10 @@ export const cases: Conformance<typeof step> = [
     before: {
       bounds: [400, 400],
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
-      bullets: [],
-      asteroids: [{ position: [350, 350], velocity: [0, 0], size: "large" }],
+      bullets: new Set(),
+      asteroids: new Set([
+        { position: [350, 350], velocity: [0, 0], size: "large" },
+      ]),
       score: 0,
       lives: 3,
       wave: 1,
@@ -105,8 +111,10 @@ export const cases: Conformance<typeof step> = [
     after: {
       bounds: [400, 400],
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
-      bullets: [{ position: [152, 100], velocity: [400, 0], age: 0.1 }],
-      asteroids: [{ position: [350, 350], velocity: [0, 0], size: "large" }],
+      bullets: new Set([{ position: [152, 100], velocity: [400, 0], age: 0.1 }]),
+      asteroids: new Set([
+        { position: [350, 350], velocity: [0, 0], size: "large" },
+      ]),
       score: 0,
       lives: 3,
       wave: 1,
@@ -117,8 +125,10 @@ export const cases: Conformance<typeof step> = [
     before: {
       bounds: [800, 600],
       ship: { position: [700, 500], velocity: [0, 0], rotation: 0 },
-      bullets: [{ position: [100, 100], velocity: [0, 0], age: 0 }],
-      asteroids: [{ position: [100, 100], velocity: [0, 0], size: "large" }],
+      bullets: new Set([{ position: [100, 100], velocity: [0, 0], age: 0 }]),
+      asteroids: new Set([
+        { position: [100, 100], velocity: [0, 0], size: "large" },
+      ]),
       score: 0,
       lives: 3,
       wave: 1,
@@ -127,11 +137,11 @@ export const cases: Conformance<typeof step> = [
     after: {
       bounds: [800, 600],
       ship: { position: [700, 500], velocity: [0, 0], rotation: 0 },
-      bullets: [],
-      asteroids: [
+      bullets: new Set(),
+      asteroids: new Set([
         { position: [100, 100], velocity: [0, 0], size: "medium" },
         { position: [100, 100], velocity: [0, 0], size: "medium" },
-      ],
+      ]),
       score: 20,
       lives: 3,
       wave: 1,
@@ -142,8 +152,10 @@ export const cases: Conformance<typeof step> = [
     before: {
       bounds: [200, 200],
       ship: Ship.spawn([100, 100]),
-      bullets: [],
-      asteroids: [{ position: [100, 100], velocity: [0, 0], size: "large" }],
+      bullets: new Set(),
+      asteroids: new Set([
+        { position: [100, 100], velocity: [0, 0], size: "large" },
+      ]),
       score: 0,
       lives: 3,
       wave: 1,
@@ -152,8 +164,10 @@ export const cases: Conformance<typeof step> = [
     after: {
       bounds: [200, 200],
       ship: Ship.spawn([100, 100]),
-      bullets: [],
-      asteroids: [{ position: [100, 100], velocity: [0, 0], size: "large" }],
+      bullets: new Set(),
+      asteroids: new Set([
+        { position: [100, 100], velocity: [0, 0], size: "large" },
+      ]),
       score: 0,
       lives: 2,
       wave: 1,
@@ -164,8 +178,10 @@ export const cases: Conformance<typeof step> = [
     before: {
       bounds: [200, 200],
       ship: { position: [50, 50], velocity: [10, 0], rotation: 0 },
-      bullets: [{ position: [60, 60], velocity: [0, 0], age: 0.5 }],
-      asteroids: [{ position: [100, 100], velocity: [0, 0], size: "large" }],
+      bullets: new Set([{ position: [60, 60], velocity: [0, 0], age: 0.5 }]),
+      asteroids: new Set([
+        { position: [100, 100], velocity: [0, 0], size: "large" },
+      ]),
       score: 40,
       lives: 0,
       wave: 2,
@@ -178,8 +194,10 @@ export const cases: Conformance<typeof step> = [
     after: {
       bounds: [200, 200],
       ship: { position: [50, 50], velocity: [10, 0], rotation: 0 },
-      bullets: [{ position: [60, 60], velocity: [0, 0], age: 0.5 }],
-      asteroids: [{ position: [100, 100], velocity: [0, 0], size: "large" }],
+      bullets: new Set([{ position: [60, 60], velocity: [0, 0], age: 0.5 }]),
+      asteroids: new Set([
+        { position: [100, 100], velocity: [0, 0], size: "large" },
+      ]),
       score: 40,
       lives: 0,
       wave: 2,

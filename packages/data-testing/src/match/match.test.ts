@@ -23,12 +23,36 @@ describe("Match.matches", () => {
     expect(matches(7, expect.any(Number))).toBe(true);
   });
 
-  it("compares arrays in order by default, as multisets when named", () => {
+  it("ignores a numeric id a case does not mention, honors one it pins", () => {
+    // Omitted → the ecs-allocated id is not compared.
+    expect(matches({ id: 7, name: "a" }, { name: "a" })).toBe(true);
+    expect(matches({ id: 7, name: "a" }, { name: "b" })).toBe(false);
+    // Present → compared like any field (so a case can still pin it).
+    expect(matches({ id: 7 }, { id: 7 })).toBe(true);
+    expect(matches({ id: 7 }, { id: 8 })).toBe(false);
+    // Only the `id` key is special; another extra key still fails.
+    expect(matches({ extra: 1, name: "a" }, { name: "a" })).toBe(false);
+    // Only a NUMERIC id is auto-ignored.
+    expect(matches({ id: "x", name: "a" }, { name: "a" })).toBe(false);
+  });
+
+  it("compares arrays in order, Sets and Maps order-independently", () => {
     expect(matches([1, 2, 3], [1, 2, 3])).toBe(true);
     expect(matches([1, 2, 3], [3, 2, 1])).toBe(false);
-    const opts = { unordered: new Set(["bag"]) };
-    expect(matches({ bag: [1, 2, 3] }, { bag: [3, 1, 2] }, opts)).toBe(true);
-    expect(matches({ bag: [1, 2] }, { bag: [1, 2, 3] }, opts)).toBe(false);
+
+    expect(matches(new Set([1, 2, 3]), new Set([3, 1, 2]))).toBe(true);
+    expect(matches(new Set([1, 2]), new Set([1, 2, 3]))).toBe(false);
+    expect(matches(new Set([1, 2]), [1, 2])).toBe(false); // Set ≠ Array
+
+    // Set of entities: content pairs order-independently, ids ignored.
+    expect(
+      matches(new Set([{ id: 1, x: 1 }, { id: 2, x: 2 }]), new Set([{ x: 2 }, { x: 1 }])),
+    ).toBe(true);
+
+    // Map entries pair by (meaningful) key regardless of insertion order.
+    expect(matches(new Map([["a", 1], ["b", 2]]), new Map([["b", 2], ["a", 1]]))).toBe(true);
+    expect(matches(new Map([["a", 1]]), new Map([["a", 2]]))).toBe(false);
+    expect(matches(new Map([["a", 1]]), new Map([["b", 1]]))).toBe(false);
   });
 
   describe("ref — id correspondence up to renaming", () => {
@@ -46,6 +70,22 @@ describe("Match.matches", () => {
     it("is injective — two labels cannot bind the same actual", () => {
       expect(matches([5, 6], [ref("a"), ref("b")])).toBe(true);
       expect(matches([5, 5], [ref("a"), ref("b")])).toBe(false);
+    });
+
+    it("corresponds across an unordered Set boundary", () => {
+      // `sel` points at the entity that has x:1 — whatever ecs id that entity got.
+      // The referenced entity lives in a Set (nondeterministic order), so the
+      // pairing must try candidates until the ref binding is globally consistent.
+      const actual = { sel: 100, items: new Set([{ id: 100, x: 1 }, { id: 200, x: 2 }]) };
+      const expected = {
+        sel: ref("a"),
+        items: new Set([{ id: ref("a"), x: 1 }, { x: 2 }]),
+      };
+      expect(matches(actual, expected)).toBe(true);
+
+      // `sel` points at an id no item carries → no consistent pairing exists.
+      const dangling = { sel: 999, items: new Set([{ id: 100, x: 1 }, { id: 200, x: 2 }]) };
+      expect(matches(dangling, expected)).toBe(false);
     });
   });
 });

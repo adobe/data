@@ -12,7 +12,7 @@ import { Collision } from "../collision/collision.js";
 export const resolveShipHits = (
   state: Pick<State, "ship" | "asteroids" | "lives" | "bounds">,
 ): Pick<State, "ship" | "lives"> => {
-  const struck = state.asteroids.some((a) =>
+  const struck = [...state.asteroids].some((a) =>
     Collision.circlesOverlap(
       state.ship.position,
       Ship.radius,
@@ -44,14 +44,18 @@ export const cases: Conformance<typeof resolveShipHits> = [
     before: {
       ...field,
       ship: { position: [10, 10], velocity: [5, 5], rotation: 1 },
-      asteroids: [{ position: [10, 10], velocity: [0, 0], size: "large" }],
+      asteroids: new Set([
+        { position: [10, 10], velocity: [0, 0], size: "large" },
+      ]),
       lives: 3,
     },
     args: undefined,
     after: {
       ...field,
       ship: respawned,
-      asteroids: [{ position: [10, 10], velocity: [0, 0], size: "large" }],
+      asteroids: new Set([
+        { position: [10, 10], velocity: [0, 0], size: "large" },
+      ]),
       lives: 2,
     },
   },
@@ -60,14 +64,18 @@ export const cases: Conformance<typeof resolveShipHits> = [
     before: {
       ...field,
       ship: { position: [10, 10], velocity: [0, 0], rotation: 0 },
-      asteroids: [{ position: [500, 500], velocity: [0, 0], size: "large" }],
+      asteroids: new Set([
+        { position: [500, 500], velocity: [0, 0], size: "large" },
+      ]),
       lives: 3,
     },
     args: undefined,
     after: {
       ...field,
       ship: { position: [10, 10], velocity: [0, 0], rotation: 0 },
-      asteroids: [{ position: [500, 500], velocity: [0, 0], size: "large" }],
+      asteroids: new Set([
+        { position: [500, 500], velocity: [0, 0], size: "large" },
+      ]),
       lives: 3,
     },
   },
@@ -76,14 +84,18 @@ export const cases: Conformance<typeof resolveShipHits> = [
     before: {
       ...field,
       ship: { position: [10, 10], velocity: [0, 0], rotation: 0 },
-      asteroids: [{ position: [10, 10], velocity: [0, 0], size: "large" }],
+      asteroids: new Set([
+        { position: [10, 10], velocity: [0, 0], size: "large" },
+      ]),
       lives: 0,
     },
     args: undefined,
     after: {
       ...field,
       ship: respawned,
-      asteroids: [{ position: [10, 10], velocity: [0, 0], size: "large" }],
+      asteroids: new Set([
+        { position: [10, 10], velocity: [0, 0], size: "large" },
+      ]),
       lives: 0,
     },
   },
@@ -92,14 +104,18 @@ export const cases: Conformance<typeof resolveShipHits> = [
     before: {
       ...field,
       ship: { position: [0, 0], velocity: [0, 0], rotation: 0 },
-      asteroids: [{ position: [52, 0], velocity: [0, 0], size: "large" }],
+      asteroids: new Set([
+        { position: [52, 0], velocity: [0, 0], size: "large" },
+      ]),
       lives: 3,
     },
     args: undefined,
     after: {
       ...field,
       ship: respawned,
-      asteroids: [{ position: [52, 0], velocity: [0, 0], size: "large" }],
+      asteroids: new Set([
+        { position: [52, 0], velocity: [0, 0], size: "large" },
+      ]),
       lives: 2,
     },
   },
@@ -108,14 +124,14 @@ export const cases: Conformance<typeof resolveShipHits> = [
     before: {
       ...field,
       ship: { position: [10, 10], velocity: [0, 0], rotation: 0 },
-      asteroids: [],
+      asteroids: new Set(),
       lives: 3,
     },
     args: undefined,
     after: {
       ...field,
       ship: { position: [10, 10], velocity: [0, 0], rotation: 0 },
-      asteroids: [],
+      asteroids: new Set(),
       lives: 3,
     },
   },

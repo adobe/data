@@ -14,7 +14,8 @@
 // the per-frame systems' combined effect equals `State.step(before, dt)` exactly
 // (hop is covered by the transaction conformance). Then drive one headless frame
 // and assert `toState ≡ after`. Each case also asserts `State.step ≡ after` first,
-// keeping the shared case honest. The hazard bag compares as a multiset.
+// keeping the shared case honest. The hazard bag is a `ReadonlySet`, so the
+// comparator matches it order-independently.
 import { describe, it } from "vitest";
 import { Match } from "@adobe/data-testing";
 import { State } from "../../../data/state/state.js";
@@ -22,8 +23,6 @@ import { cases } from "../../../data/state/step.js";
 import { createSystemDatabase } from "../conformance/create-system-database.js";
 import { projection } from "../conformance/projection.js";
 import { driveFrame } from "../conformance/drive-frame.js";
-
-const unordered = { unordered: new Set(["hazards"]) };
 
 describe("ECS system tick loop conforms to State.step (one frame = one step)", () => {
   for (const testCase of cases) {
@@ -34,13 +33,13 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
       // seed and the full expected state the same way the runners do.
       const before = { ...State.create(), ...testCase.before };
       const expected = { ...before, ...testCase.after };
-      Match.assert({ ...before, ...State.step(before, dt) }, expected, unordered);
+      Match.assert({ ...before, ...State.step(before, dt) }, expected);
 
       const db = createSystemDatabase();
       projection.fromState(db.store, before);
       db.store.resources.frameDelta = dt;
       driveFrame(db);
-      Match.assert(projection.toState(db.store), expected, unordered);
+      Match.assert(projection.toState(db.store), expected);
     });
   }
 });

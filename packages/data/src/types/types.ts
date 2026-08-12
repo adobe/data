@@ -111,6 +111,10 @@ export type DeepReadonly<T> = T extends Function | Branded | Element | Blob
   ? IsTuple<T> extends true
   ? { readonly [K in keyof T]: DeepReadonly<T[K]> } // T is a tuple
   : ReadonlyArray<DeepReadonly<U>> // T is an array
+  : T extends ReadonlyMap<infer K, infer V>
+  ? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>>
+  : T extends ReadonlySet<infer U>
+  ? ReadonlySet<DeepReadonly<U>>
   : T extends object
   ? { readonly [K in keyof T]: DeepReadonly<T[K]> }
   : T;

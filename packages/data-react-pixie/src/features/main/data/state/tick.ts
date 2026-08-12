@@ -11,10 +11,12 @@ export const tick = (
   state: Pick<State, "sprites">,
   input: { readonly delta: number },
 ): Pick<State, "sprites"> => ({
-  sprites: state.sprites.map((sprite) => ({
-    ...sprite,
-    rotation: sprite.rotation + input.delta * 0.1,
-  })),
+  sprites: new Set(
+    [...state.sprites].map((sprite) => ({
+      ...sprite,
+      rotation: sprite.rotation + input.delta * 0.1,
+    })),
+  ),
 });
 
 const bunny: Sprite = {
@@ -29,19 +31,19 @@ const fox: Sprite = {
 export const cases: Conformance<typeof tick> = [
   {
     name: "advances every sprite's rotation by delta * 0.1",
-    before: { sprites: [bunny, fox] },
+    before: { sprites: new Set([bunny, fox]) },
     args: { delta: 10 },
     after: {
-      sprites: [
+      sprites: new Set([
         { ...bunny, id: Match.anyNumber, rotation: 1 },
         { ...fox, id: Match.anyNumber, rotation: 2 },
-      ],
+      ]),
     },
   },
   {
     name: "is a no-op on an empty scene",
-    before: { sprites: [], filter: "blur" },
+    before: { sprites: new Set<Sprite>(), filter: "blur" },
     args: { delta: 5 },
-    after: { sprites: [] },
+    after: { sprites: new Set<Sprite>() },
   },
 ];

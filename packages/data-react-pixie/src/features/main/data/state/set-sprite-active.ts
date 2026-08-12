@@ -9,8 +9,10 @@ export const setSpriteActive = (
   state: Pick<State, "sprites">,
   input: { readonly id: number; readonly active: boolean },
 ): Pick<State, "sprites"> => ({
-  sprites: state.sprites.map((sprite) =>
-    sprite.id === input.id ? { ...sprite, active: input.active } : sprite,
+  sprites: new Set(
+    [...state.sprites].map((sprite) =>
+      sprite.id === input.id ? { ...sprite, active: input.active } : sprite,
+    ),
   ),
 });
 
@@ -26,24 +28,24 @@ const fox: Sprite = {
 export const cases: Conformance<typeof setSpriteActive> = [
   {
     name: "sets active true on the addressed sprite only",
-    before: { sprites: [bunny, fox] },
+    before: { sprites: new Set([bunny, fox]) },
     args: { id: entity(2), active: true },
     after: {
-      sprites: [
+      sprites: new Set([
         { ...bunny, id: Match.anyNumber },
         { ...fox, id: Match.anyNumber, active: true },
-      ],
+      ]),
     },
   },
   {
     name: "is a no-op for an unknown id",
-    before: { sprites: [bunny, fox] },
+    before: { sprites: new Set([bunny, fox]) },
     args: { id: entity(99), active: true },
     after: {
-      sprites: [
+      sprites: new Set([
         { ...bunny, id: Match.anyNumber },
         { ...fox, id: Match.anyNumber },
-      ],
+      ]),
     },
   },
 ];

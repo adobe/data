@@ -2,15 +2,17 @@
 
 // Options controlling the tolerant structural comparison.
 export interface MatchOptions {
-  // Object keys whose array values compare as multisets (order-independent) at
-  // any depth — for ecs entity collections materialised in nondeterministic row
-  // order. Every other array stays order-sensitive (positional tuples like a
-  // `Vec2`, or a display-ordered list whose order a case verifies).
-  readonly unordered?: ReadonlySet<string>;
   // Float grid that absorbs F32↔f64 storage rounding and trig epsilon. Numbers
   // are snapped to this grid before comparing. Default `0.01`.
   readonly tolerance?: number;
 }
+
+// Ordered vs. unordered is carried by the value's own type, not by configuration:
+// an `Array` compares positionally (tuples like a `Vec2`, or a display-ordered
+// list a case verifies), while a `Set` or `Map` compares order-independently (ecs
+// entity collections materialised in nondeterministic row order). This mirrors the
+// `State` modelling rule — `ReadonlyArray` means order matters, `ReadonlySet` /
+// `ReadonlyMap` mean it does not.
 
 // A `ref(label)` on the EXPECTED side asserts id CORRESPONDENCE without pinning
 // the value: the first occurrence of a label binds to whatever actual value sits
@@ -18,7 +20,8 @@ export interface MatchOptions {
 // labels can never bind the same actual (a bijection). This checks that ecs ids
 // line up structurally — e.g. a `selectedId` points at the entity a case means —
 // even though the ecs assigns ids from its own space. For an id a case does not
-// care about, use `anyNumber` instead.
+// care about, simply omit it (a numeric `id` the expected side does not mention is
+// ignored — see `matchesWith`), or use `anyNumber` to assert only that one exists.
 const REF = Symbol.for("@adobe/data-testing:ref");
 export const ref = (label: string): { readonly [REF]: string } => ({ [REF]: label });
 const isRef = (value: unknown): value is { readonly [REF]: string } =>
@@ -37,22 +40,38 @@ const quantize = (n: number, tolerance: number): number => {
   return Math.round(Math.fround(n) * factor) / factor + 0; // `+ 0` normalises `-0` to `0`
 };
 
-// Multiset (order-independent) match: greedy pairing, sufficient for concrete
-// values. Elements compare with the ordered, matcher-aware path; `ref` bindings
-// do not cross element boundaries here (ids in bags are `anyNumber`, not refs).
+// Order-independent match over a fixed pair of element lists (a `Set`'s values, or
+// a `Map`'s `[key, value]` entries). Finds a perfect pairing under which every
+// element matches AND all `ref` bindings stay globally consistent — so a `ref`
+// correspondence may cross into an unordered collection. Backtracking (rather than
+// greedy) is required because one element's binding can invalidate another's
+// pairing; test collections are small, so the worst case is irrelevant. `bindings`
+// is snapshotted before each tentative pairing and restored on failure.
 const matchesUnordered = (
   actual: readonly unknown[],
   expected: readonly unknown[],
   options: MatchOptions,
+  bindings: Map<string, unknown>,
 ): boolean => {
   if (actual.length !== expected.length) return false;
   const used = new Array<boolean>(actual.length).fill(false);
-  return expected.every((exp) => {
-    const index = actual.findIndex((act, i) => !used[i] && matchesWith(act, exp, options, new Map()));
-    if (index < 0) return false;
-    used[index] = true;
-    return true;
-  });
+  const pair = (i: number): boolean => {
+    if (i === expected.length) return true;
+    for (let j = 0; j < actual.length; j++) {
+      if (used[j]) continue;
+      const snapshot = new Map(bindings);
+      if (matchesWith(actual[j], expected[i], options, bindings)) {
+        used[j] = true;
+        if (pair(i + 1)) return true;
+        used[j] = false;
+      }
+      // Undo any bindings the failed attempt added before trying the next candidate.
+      bindings.clear();
+      for (const [label, value] of snapshot) bindings.set(label, value);
+    }
+    return false;
+  };
+  return pair(0);
 };
 
 const matchesWith = (
@@ -73,30 +92,51 @@ const matchesWith = (
     const tolerance = options.tolerance ?? 0.01;
     return quantize(actual, tolerance) === quantize(expected, tolerance);
   }
+  if (expected instanceof Set) {
+    if (!(actual instanceof Set)) return false;
+    return matchesUnordered([...actual], [...expected], options, bindings);
+  }
+  if (expected instanceof Map) {
+    if (!(actual instanceof Map)) return false;
+    // Compare entries as an unordered collection of `[key, value]` pairs. Keys are
+    // meaningful/deterministic by convention (identity-keyed collections are Sets),
+    // so pairing an expected entry to the actual entry with the equal key and a
+    // matching value is exactly key-based comparison, and reports missing/extra
+    // keys as a failed pairing.
+    return matchesUnordered([...actual], [...expected], options, bindings);
+  }
   if (Array.isArray(expected)) {
     if (!Array.isArray(actual) || actual.length !== expected.length) return false;
     return expected.every((exp, index) => matchesWith(actual[index], exp, options, bindings));
   }
   if (expected !== null && typeof expected === "object") {
-    if (actual === null || typeof actual !== "object" || Array.isArray(actual)) return false;
-    const expectedKeys = Object.keys(expected as object);
-    const actualKeys = Object.keys(actual as object);
+    if (
+      actual === null ||
+      typeof actual !== "object" ||
+      Array.isArray(actual) ||
+      actual instanceof Set ||
+      actual instanceof Map
+    )
+      return false;
+    const eo = expected as Record<string, unknown>;
+    const ao = actual as Record<string, unknown>;
+    // A numeric `id` the case does not mention is an ecs-allocated identity a case
+    // cannot predict — ignore it so entity content compares without pinning ids. A
+    // case that DOES care pins it explicitly (`id: ref(...)` / `anyNumber`), which
+    // puts `id` on the expected side and takes it through the normal path below.
+    const ignoreId = !("id" in eo) && typeof ao.id === "number";
+    const expectedKeys = Object.keys(eo);
+    const actualKeys = ignoreId ? Object.keys(ao).filter((k) => k !== "id") : Object.keys(ao);
     if (expectedKeys.length !== actualKeys.length) return false;
-    return expectedKeys.every((key) => {
-      const exp = (expected as Record<string, unknown>)[key];
-      const act = (actual as Record<string, unknown>)[key];
-      if (options.unordered?.has(key) && Array.isArray(exp) && Array.isArray(act)) {
-        return matchesUnordered(act, exp, options);
-      }
-      return matchesWith(act, exp, options, bindings);
-    });
+    return expectedKeys.every((key) => matchesWith(ao[key], eo[key], options, bindings));
   }
   return Object.is(actual, expected);
 };
 
 // Tolerant structural comparison: honors asymmetric matchers and `ref`
-// correspondence on the expected side, absorbs float noise, and compares arrays
-// in order except where `options.unordered` names a multiset collection. Pure
-// and framework-agnostic — `assert` wraps it for a throwing test assertion.
+// correspondence on the expected side, absorbs float noise, compares arrays in
+// order and Sets/Maps order-independently, and ignores an ecs-allocated numeric
+// `id` a case does not pin. Pure and framework-agnostic — `assert` wraps it for a
+// throwing test assertion.
 export const matches = (actual: unknown, expected: unknown, options: MatchOptions = {}): boolean =>
   matchesWith(actual, expected, options, new Map());

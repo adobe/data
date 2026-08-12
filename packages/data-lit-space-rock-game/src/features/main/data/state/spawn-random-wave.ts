@@ -7,6 +7,7 @@ import type { Asteroid } from "../asteroid/asteroid.js";
 import { Size } from "../size/size.js";
 import { Motion } from "../motion/motion.js";
 import { RandomService } from "../../services/random-service/random-service.js";
+import type { Services } from "../../services/services.js";
 
 // Base drift speed; each rock's actual speed is jittered around it.
 const waveSpeed = 60;
@@ -28,9 +29,9 @@ const asteroidsFor = (wave: number): number => 3 + wave;
  */
 export const spawnRandomWave = (
   state: Pick<State, "asteroids" | "wave" | "bounds">,
-  { random }: { random: RandomService },
+  { random }: Pick<Services, "random">,
 ): Pick<State, "asteroids" | "wave"> => {
-  if (state.asteroids.length > 0) {
+  if (state.asteroids.size > 0) {
     return { asteroids: state.asteroids, wave: state.wave };
   }
   const wave = state.wave + 1;
@@ -49,7 +50,7 @@ export const spawnRandomWave = (
       size: Size.largest,
     });
   }
-  return { wave, asteroids };
+  return { wave, asteroids: new Set(asteroids) };
 };
 
 // Spec-owned cases, shared with the ecs `spawnRandomWave` transaction. Each case
@@ -69,17 +70,17 @@ const randoms = [0, 0.5, 0.25, 0.75];
 export const cases: Conformance<typeof spawnRandomWave> = [
   {
     name: "spawns a randomized wave (jittered drift speeds) when the field is clear",
-    before: { ...field, asteroids: [], wave: 0 },
+    before: { ...field, asteroids: new Set(), wave: 0 },
     args: { random: RandomService.createFake(randoms) },
     after: {
       ...field,
       wave: 1,
-      asteroids: [
+      asteroids: new Set([
         { position: [180, 100], velocity: [0, 30], size: "large" },
         { position: [100, 180], velocity: [-60, 0], size: "large" },
         { position: [20, 100], velocity: [0, -45], size: "large" },
         { position: [100, 20], velocity: [75, 0], size: "large" },
-      ],
+      ]),
     },
   },
   {
@@ -87,13 +88,17 @@ export const cases: Conformance<typeof spawnRandomWave> = [
     before: {
       ...field,
       wave: 1,
-      asteroids: [{ position: [10, 10], velocity: [0, 0], size: "large" }],
+      asteroids: new Set([
+        { position: [10, 10], velocity: [0, 0], size: "large" },
+      ]),
     },
     args: { random: RandomService.createFake(randoms) },
     after: {
       ...field,
       wave: 1,
-      asteroids: [{ position: [10, 10], velocity: [0, 0], size: "large" }],
+      asteroids: new Set([
+        { position: [10, 10], velocity: [0, 0], size: "large" },
+      ]),
     },
   },
 ];

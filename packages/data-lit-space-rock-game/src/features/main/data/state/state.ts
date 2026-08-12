@@ -10,8 +10,8 @@ import type { Asteroid } from "../asteroid/asteroid.js";
 export type State = {
   readonly bounds: Vec2; // play-field size [width, height]; entities wrap within it
   readonly ship: Ship;
-  readonly bullets: readonly Bullet[];
-  readonly asteroids: readonly Asteroid[];
+  readonly bullets: ReadonlySet<Bullet>;
+  readonly asteroids: ReadonlySet<Asteroid>;
   readonly score: number;
   readonly lives: number;
   readonly wave: number;

@@ -8,7 +8,7 @@ paths:
 
 Asynchronous data services. Live in the `services/` layer. Adhere to the namespace rule for type and function organization.
 
-**Data** = readonly JSON values or Blobs.
+**Data** = readonly JSON values, `ReadonlySet`, `ReadonlyMap`, or Blobs.
 
 ---
 

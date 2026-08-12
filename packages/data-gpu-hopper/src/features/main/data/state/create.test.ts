@@ -35,7 +35,7 @@ describe("State.create", () => {
     const carrying = new Set(["road", "river"]);
     for (const lane of state.lanes) {
       if (!carrying.has(lane.kind)) continue;
-      const populated = state.hazards.some((hazard) => hazard.lane === lane.row);
+      const populated = [...state.hazards].some((hazard) => hazard.lane === lane.row);
       expect(populated, `lane ${lane.row} (${lane.kind}) has no hazard`).toBe(true);
     }
   });

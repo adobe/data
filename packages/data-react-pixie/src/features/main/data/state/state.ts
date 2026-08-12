@@ -6,7 +6,7 @@ import type { FilterKind } from "../filter-kind/filter-kind.js";
 // ECS implementation is verified against. `sprites` is an unordered collection;
 // `filter` is the scene-wide colour filter.
 export type State = {
-  readonly sprites: readonly Sprite[];
+  readonly sprites: ReadonlySet<Sprite>;
   readonly filter: FilterKind;
 };
 export * as State from "./public.js";

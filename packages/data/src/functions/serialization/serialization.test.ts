@@ -237,6 +237,42 @@ describe('serialize/deserialize', () => {
     expect(roundTrip.buf.get(2)).toBe("a");
   });
 
+  it('round-trips a typed buffer whose column values are Maps and Sets', () => {
+    // A component/resource column typed only by `{ default }` stores arbitrary Data
+    // in an array buffer; Set/Map values survive the store serialization path.
+    const buf = createTypedBuffer(
+      { default: new Map() as ReadonlyMap<string, number> },
+      [new Map([['a', 1]]), new Map([['b', 2], ['c', 3]])],
+    );
+    const roundTrip = deserialize<typeof buf>(serialize(buf));
+    expect(equals(roundTrip, buf)).toBe(true);
+    expect(roundTrip.get(1)).toEqual(new Map([['b', 2], ['c', 3]]));
+
+    const setBuf = createTypedBuffer(
+      { default: new Set() as ReadonlySet<number> },
+      [new Set([1, 2]), new Set([3])],
+    );
+    const setRoundTrip = deserialize<typeof setBuf>(serialize(setBuf));
+    expect(equals(setRoundTrip, setBuf)).toBe(true);
+    expect(setRoundTrip.get(0)).toEqual(new Set([1, 2]));
+  });
+
+  it('round-trips Map and Set alongside typed-array codecs', () => {
+    const original = {
+      byName: new Map<string, Int32Array>([
+        ['a', new Int32Array([1, 2])],
+        ['b', new Int32Array([3, 4])],
+      ]),
+      ids: new Set([10, 20, 30]),
+    };
+    const payload = serialize(original);
+    const roundTrip = deserialize<typeof original>(payload);
+    expect(roundTrip.byName).toBeInstanceOf(Map);
+    expect(roundTrip.byName.get('a')).toEqual(new Int32Array([1, 2]));
+    expect(roundTrip.ids).toBeInstanceOf(Set);
+    expect(roundTrip).toEqual(original);
+  });
+
   it('round-trips boolean typed buffers', () => {
     const buf = createTypedBuffer({ type: "boolean" }, 65);
     buf.set(0, true);

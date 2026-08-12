@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
+import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { appendTodo } from "./append-todo.js";
@@ -16,8 +17,7 @@ export const createTodo = (
   }: {
     readonly name: string;
     readonly complete?: boolean;
-    readonly analytics: AnalyticsService;
-  },
+  } & Pick<Services, "analytics">,
 ): Pick<State, "todos"> => {
   analytics.todoCreated({ name });
   return appendTodo(state, { name, complete });

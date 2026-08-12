@@ -36,6 +36,27 @@ function record(m: unknown) {
 }
 ```
 
+## Collection ordering is carried by the type
+
+A collection's type states whether its order is meaningful — the model is the
+single source of truth, not a downstream comparison flag:
+
+- **`ReadonlyArray<T>`** — order is meaningful. A display list rendered in sequence,
+  a drag-reorderable list, a positional tuple (`Vec2 = readonly [number, number]`).
+- **`ReadonlySet<T>`** — an unordered bag. Entities materialised in nondeterministic
+  order, a membership set. Use this for **identity-keyed** collections: the element
+  carries its own `id`, so a `ReadonlySet<Entity>` replaces any
+  `ReadonlyMap<id, Entity>`.
+- **`ReadonlyMap<K, V>`** — a keyed lookup whose **keys are meaningful/deterministic**
+  (an enum, a name, a stable string). Not for identity keys (those are Sets).
+
+These are first-class `Data` (see `features/data/index.md`) — serialize a
+Set/Map-bearing value with `Data.stringify` / `Data.parse` (plain `JSON.stringify`
+cannot represent them), and `equals` compares them faithfully. Conformance mirrors
+the semantics: `ReadonlyArray` compares positionally, `ReadonlySet` / `ReadonlyMap`
+order-independently, and a numeric `id` is ignored (the ECS allocates it) — so there
+is no separate "unordered" declaration when writing conformance cases.
+
 ## Shape of keyed collections
 
 - `Record<EnumKey, T>` — every key required at all times. Default lists

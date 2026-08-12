@@ -20,6 +20,33 @@ Everything a feature exposes as a service lives here. Two kinds:
 The rest of this rule governs the capability contracts; `main-service` follows
 its own subtree.
 
+## `services/services.ts` — the injectable service map
+
+The folder root exports one `Services` type: the feature's capability services
+keyed by short name (the `-service` suffix dropped), the single source of truth for
+service injection.
+
+```ts
+// services/services.ts
+import type { AnalyticsService } from "./analytics-service/analytics-service.js";
+import type { NameGeneratorService } from "./name-generator-service/name-generator-service.js";
+export type Services = {
+  readonly analytics: AnalyticsService;
+  readonly nameGenerator: NameGeneratorService;
+};
+```
+
+- **Transitions inject with `Pick<Services, …>`** (`data/state.md`), never a
+  re-declared inline `{ analytics: AnalyticsService }` — so the key/type live in one
+  place.
+- **The ecs `service-database` is pinned to it.** After its `ServiceDatabase` type,
+  a drift-guard asserts the resolved services match the map, so `db.services` (what
+  actions call) and `Services` (what transitions inject) can't diverge:
+  `type _Pin = Assert<Equal<ServiceDatabase["services"], Services>>`.
+- **Inherited services**, when a peer feature builds on another, intersect the
+  parent map: `export type Services = MainServices & { readonly baz: BazService }`.
+- A feature with no capability services needs no `services.ts`.
+
 ## Capability contracts
 
 Each is a namespace folder (`global/namespace.md`); the export and folder both carry the

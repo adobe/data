@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
+import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
 import { entity, type Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data-testing";
@@ -11,7 +12,7 @@ export const toggleComplete = (
   {
     id,
     analytics,
-  }: { readonly id: number; readonly analytics: AnalyticsService },
+  }: { readonly id: number } & Pick<Services, "analytics">,
 ): Pick<State, "todos"> => {
   analytics.todoToggled();
   return {

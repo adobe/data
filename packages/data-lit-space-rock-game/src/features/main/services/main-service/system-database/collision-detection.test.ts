@@ -22,8 +22,8 @@ import { driveFrame } from "../conformance/drive-frame.js";
 const base = (overrides: Partial<State>): State => ({
   bounds: [800, 600],
   ship: Ship.spawn([750, 550]), // far corner — no ship strike unless overridden
-  bullets: [],
-  asteroids: [],
+  bullets: new Set(),
+  asteroids: new Set(),
   score: 0,
   lives: 3,
   wave: 1,
@@ -44,18 +44,19 @@ describe("collision detection — bullet ↔ asteroid selection", () => {
   it("destroys only the asteroid the bullet overlaps, scoring it", () => {
     const after = detect(
       base({
-        bullets: [{ position: [100, 100], velocity: [0, 0], age: 0 }],
-        asteroids: [
+        bullets: new Set([{ position: [100, 100], velocity: [0, 0], age: 0 }]),
+        asteroids: new Set([
           { position: [100, 100], velocity: [0, 0], size: "large" }, // overlapped
           { position: [400, 300], velocity: [0, 0], size: "large" }, // far away
-        ],
+        ]),
       }),
     );
     expect(after.score).toBe(Size.score.large);
-    expect(after.bullets).toHaveLength(0);
+    expect(after.bullets.size).toBe(0);
     // The struck large became two mediums; the distant large is untouched.
-    expect(after.asteroids.filter((a) => a.size === "medium")).toHaveLength(2);
-    expect(after.asteroids.filter((a) => a.size === "large")).toHaveLength(1);
+    const asteroids = [...after.asteroids];
+    expect(asteroids.filter((a) => a.size === "medium")).toHaveLength(2);
+    expect(asteroids.filter((a) => a.size === "large")).toHaveLength(1);
   });
 
   it("registers a hit across a cell boundary (broad phase unions neighbours)", () => {
@@ -63,48 +64,56 @@ describe("collision detection — bullet ↔ asteroid selection", () => {
     // 2px apart, well within 2+40, so a correct 3×3 neighbour union finds it.
     const after = detect(
       base({
-        bullets: [{ position: [79, 100], velocity: [0, 0], age: 0 }],
-        asteroids: [{ position: [81, 100], velocity: [0, 0], size: "large" }],
+        bullets: new Set([{ position: [79, 100], velocity: [0, 0], age: 0 }]),
+        asteroids: new Set([
+          { position: [81, 100], velocity: [0, 0], size: "large" },
+        ]),
       }),
     );
     expect(after.score).toBe(Size.score.large);
-    expect(after.bullets).toHaveLength(0);
+    expect(after.bullets.size).toBe(0);
   });
 
   it("registers a hit exactly at the radius-sum boundary (distance == r₁+r₂)", () => {
     const after = detect(
       base({
-        bullets: [{ position: [0, 0], velocity: [0, 0], age: 0 }],
-        asteroids: [{ position: [42, 0], velocity: [0, 0], size: "large" }], // 42 == 2+40
+        bullets: new Set([{ position: [0, 0], velocity: [0, 0], age: 0 }]),
+        asteroids: new Set([
+          { position: [42, 0], velocity: [0, 0], size: "large" }, // 42 == 2+40
+        ]),
       }),
     );
     expect(after.score).toBe(Size.score.large);
-    expect(after.bullets).toHaveLength(0);
+    expect(after.bullets.size).toBe(0);
   });
 
   it("does NOT register just beyond the radius sum (no false positive)", () => {
     const after = detect(
       base({
-        bullets: [{ position: [0, 0], velocity: [0, 0], age: 0 }],
-        asteroids: [{ position: [43, 0], velocity: [0, 0], size: "large" }], // 43 > 42
+        bullets: new Set([{ position: [0, 0], velocity: [0, 0], age: 0 }]),
+        asteroids: new Set([
+          { position: [43, 0], velocity: [0, 0], size: "large" }, // 43 > 42
+        ]),
       }),
     );
     expect(after.score).toBe(0);
-    expect(after.bullets).toHaveLength(1);
-    expect(after.asteroids).toHaveLength(1);
-    expect(after.asteroids[0].size).toBe("large");
+    expect(after.bullets.size).toBe(1);
+    expect(after.asteroids.size).toBe(1);
+    expect([...after.asteroids][0].size).toBe("large");
   });
 
   it("leaves a bullet that overlaps nothing untouched", () => {
     const after = detect(
       base({
-        bullets: [{ position: [10, 10], velocity: [0, 0], age: 0 }],
-        asteroids: [{ position: [400, 300], velocity: [0, 0], size: "large" }],
+        bullets: new Set([{ position: [10, 10], velocity: [0, 0], age: 0 }]),
+        asteroids: new Set([
+          { position: [400, 300], velocity: [0, 0], size: "large" },
+        ]),
       }),
     );
     expect(after.score).toBe(0);
-    expect(after.bullets).toHaveLength(1);
-    expect(after.asteroids).toHaveLength(1);
+    expect(after.bullets.size).toBe(1);
+    expect(after.asteroids.size).toBe(1);
   });
 
   it("does not let a second bullet hit a child the first spawned this same frame", () => {
@@ -112,17 +121,20 @@ describe("collision detection — bullet ↔ asteroid selection", () => {
     // find no ORIGINAL target and survive — never chain onto a fresh medium.
     const after = detect(
       base({
-        bullets: [
+        bullets: new Set([
           { position: [100, 100], velocity: [0, 0], age: 0 },
           { position: [100, 100], velocity: [0, 0], age: 0 },
-        ],
-        asteroids: [{ position: [100, 100], velocity: [0, 0], size: "large" }],
+        ]),
+        asteroids: new Set([
+          { position: [100, 100], velocity: [0, 0], size: "large" },
+        ]),
       }),
     );
     expect(after.score).toBe(Size.score.large);
-    expect(after.asteroids.filter((a) => a.size === "medium")).toHaveLength(2);
-    expect(after.asteroids.filter((a) => a.size === "small")).toHaveLength(0);
-    expect(after.bullets).toHaveLength(1);
+    const asteroids = [...after.asteroids];
+    expect(asteroids.filter((a) => a.size === "medium")).toHaveLength(2);
+    expect(asteroids.filter((a) => a.size === "small")).toHaveLength(0);
+    expect(after.bullets.size).toBe(1);
   });
 });
 
@@ -131,7 +143,9 @@ describe("collision detection — ship ↔ asteroid selection", () => {
     const after = detect(
       base({
         ship: Ship.spawn([400, 300]),
-        asteroids: [{ position: [400, 300], velocity: [0, 0], size: "large" }],
+        asteroids: new Set([
+          { position: [400, 300], velocity: [0, 0], size: "large" },
+        ]),
         lives: 3,
       }),
     );
@@ -143,10 +157,10 @@ describe("collision detection — ship ↔ asteroid selection", () => {
     const after = detect(
       base({
         ship: Ship.spawn([400, 300]),
-        asteroids: [
+        asteroids: new Set([
           { position: [400, 300], velocity: [0, 0], size: "large" },
           { position: [410, 300], velocity: [0, 0], size: "large" },
-        ],
+        ]),
         lives: 3,
       }),
     );
@@ -157,7 +171,9 @@ describe("collision detection — ship ↔ asteroid selection", () => {
     const after = detect(
       base({
         ship: Ship.spawn([400, 300]),
-        asteroids: [{ position: [460, 300], velocity: [0, 0], size: "large" }], // 60 > 52
+        asteroids: new Set([
+          { position: [460, 300], velocity: [0, 0], size: "large" }, // 60 > 52
+        ]),
         lives: 3,
       }),
     );

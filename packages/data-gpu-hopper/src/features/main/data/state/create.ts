@@ -23,7 +23,7 @@ const lanes: readonly Lane[] = [
 
 // Two hazards per moving lane, evenly spaced, with direction and speed varying
 // by lane. Cars are one cell wide; logs are wider so the frog can ride them.
-const hazards: readonly Hazard[] = [
+const hazards: ReadonlySet<Hazard> = new Set([
   { kind: "car", lane: 1, x: 0, width: 1, velocity: 1.5 },
   { kind: "car", lane: 1, x: 5, width: 1, velocity: 1.5 },
   { kind: "car", lane: 2, x: 2, width: 1, velocity: -2 },
@@ -36,7 +36,7 @@ const hazards: readonly Hazard[] = [
   { kind: "log", lane: 6, x: 7, width: 2, velocity: -1 },
   { kind: "log", lane: 7, x: 1, width: 3, velocity: 2 },
   { kind: "log", lane: 7, x: 6, width: 3, velocity: 2 },
-];
+]);
 
 // The initial, full game state: frog at the bottom, three lives, nothing scored.
 export const create = (): State => ({

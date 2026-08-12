@@ -6,9 +6,10 @@ paths:
 # data/ — the data model
 
 The foundation layer: the feature's **data types** and the pure declarations
-over them. A data type is a readonly, JSON-serializable value suitable for
-persistence and for communication over the wire — no functions, no handles, just
-plain data. A `data/` **type** depends on nothing but `@adobe/data` and other
+over them. A data type is a readonly, serializable value suitable for persistence
+and for communication over the wire — no functions, no handles, just plain data:
+JSON primitives/arrays/objects plus `ReadonlySet`, `ReadonlyMap`, and `Blob`
+(serialize a Set/Map-bearing value with `Data.stringify` / `Data.parse`). A `data/` **type** depends on nothing but `@adobe/data` and other
 `data/` types, and needs no knowledge of anything built on top of it. The
 **transitions** over those types are less restricted: when one injects a service
 it may import freely from `services/` — the service type and any utilities its

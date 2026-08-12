@@ -96,8 +96,8 @@ export const projection = {
     return {
       bounds: store.resources.bounds,
       ship,
-      bullets,
-      asteroids,
+      bullets: new Set(bullets),
+      asteroids: new Set(asteroids),
       score: store.resources.score,
       lives: store.resources.lives,
       wave: store.resources.wave,

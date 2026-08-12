@@ -20,7 +20,7 @@ We prefer composition over inheritance, avoid classes when possible and emphasiz
 
 This library uses data oriented design paradigm and prefers pure functional interfaces whenever practical.
 
-For our purposes, `Data` is immutable `JSON` (de)serializable objects and primitives.
+For our purposes, `Data` is immutable, (de)serializable objects and primitives — `JSON` extended with `ReadonlySet`, `ReadonlyMap`, and `Blob`. A `ReadonlyArray` is ordered (position is meaningful); a `ReadonlySet` / `ReadonlyMap` is unordered. Serialize Set/Map-bearing `Data` with `Data.stringify` / `Data.parse` (plain `JSON.stringify` renders a `Set`/`Map` as `{}`); `equals` compares them faithfully.
 
 ### Why immutable Data?
 
@@ -69,6 +69,8 @@ Data is considered "Normalized" when all object keys contained anywhere within i
 const notNormalized = { b: 2, a: 1 };
 const normalized = normalize(notNormalized); // { a: 1, b: 2 }
 ```
+
+> `normalize` operates on plain JSON structure only — it does not canonicalize `Set` or `Map` values (which have no JSON form). Don't feed Set/Map-bearing `Data` through `normalize` for cache-keying; key on a `Data.stringify` of the value, or model the collection with plain arrays/objects where a canonical cache key is required.
 
 ## Observables
 

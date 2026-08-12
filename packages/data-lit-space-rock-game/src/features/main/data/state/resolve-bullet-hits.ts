@@ -50,8 +50,8 @@ export const resolveBulletHits = (
     spawned.push(...Asteroid.split(asteroid));
   }
   return {
-    bullets: survivors,
-    asteroids: [...asteroids, ...spawned],
+    bullets: new Set(survivors),
+    asteroids: new Set([...asteroids, ...spawned]),
     score,
   };
 };
@@ -72,18 +72,20 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     name: "destroys bullet + asteroid, scores, and spawns split children (large → 2 medium)",
     before: {
       ...field,
-      bullets: [{ position: [50, 50], velocity: [0, 0], age: 0 }],
-      asteroids: [{ position: [50, 50], velocity: [0, 0], size: "large" }],
+      bullets: new Set([{ position: [50, 50], velocity: [0, 0], age: 0 }]),
+      asteroids: new Set([
+        { position: [50, 50], velocity: [0, 0], size: "large" },
+      ]),
       score: 0,
     },
     args: 1 / 60,
     after: {
       ...field,
-      bullets: [],
-      asteroids: [
+      bullets: new Set(),
+      asteroids: new Set([
         { position: [50, 50], velocity: [0, 0], size: "medium" },
         { position: [50, 50], velocity: [0, 0], size: "medium" },
-      ],
+      ]),
       score: 20,
     },
   },
@@ -91,18 +93,20 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     name: "medium splits into two small",
     before: {
       ...field,
-      bullets: [{ position: [50, 50], velocity: [0, 0], age: 0 }],
-      asteroids: [{ position: [50, 50], velocity: [0, 0], size: "medium" }],
+      bullets: new Set([{ position: [50, 50], velocity: [0, 0], age: 0 }]),
+      asteroids: new Set([
+        { position: [50, 50], velocity: [0, 0], size: "medium" },
+      ]),
       score: 5,
     },
     args: 1 / 60,
     after: {
       ...field,
-      bullets: [],
-      asteroids: [
+      bullets: new Set(),
+      asteroids: new Set([
         { position: [50, 50], velocity: [0, 0], size: "small" },
         { position: [50, 50], velocity: [0, 0], size: "small" },
-      ],
+      ]),
       score: 55,
     },
   },
@@ -110,26 +114,32 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     name: "the smallest tier is destroyed outright — no children",
     before: {
       ...field,
-      bullets: [{ position: [50, 50], velocity: [0, 0], age: 0 }],
-      asteroids: [{ position: [50, 50], velocity: [0, 0], size: "small" }],
+      bullets: new Set([{ position: [50, 50], velocity: [0, 0], age: 0 }]),
+      asteroids: new Set([
+        { position: [50, 50], velocity: [0, 0], size: "small" },
+      ]),
       score: 0,
     },
     args: 1 / 60,
-    after: { ...field, bullets: [], asteroids: [], score: 100 },
+    after: { ...field, bullets: new Set(), asteroids: new Set(), score: 100 },
   },
   {
     name: "a bullet that hits nothing is left untouched",
     before: {
       ...field,
-      bullets: [{ position: [10, 10], velocity: [0, 0], age: 0 }],
-      asteroids: [{ position: [500, 500], velocity: [0, 0], size: "large" }],
+      bullets: new Set([{ position: [10, 10], velocity: [0, 0], age: 0 }]),
+      asteroids: new Set([
+        { position: [500, 500], velocity: [0, 0], size: "large" },
+      ]),
       score: 7,
     },
     args: 1 / 60,
     after: {
       ...field,
-      bullets: [{ position: [10, 10], velocity: [0, 0], age: 0 }],
-      asteroids: [{ position: [500, 500], velocity: [0, 0], size: "large" }],
+      bullets: new Set([{ position: [10, 10], velocity: [0, 0], age: 0 }]),
+      asteroids: new Set([
+        { position: [500, 500], velocity: [0, 0], size: "large" },
+      ]),
       score: 7,
     },
   },
@@ -137,22 +147,22 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     name: "only the overlapping asteroid is hit; distant ones remain",
     before: {
       ...field,
-      bullets: [{ position: [50, 50], velocity: [0, 0], age: 0 }],
-      asteroids: [
+      bullets: new Set([{ position: [50, 50], velocity: [0, 0], age: 0 }]),
+      asteroids: new Set([
         { position: [50, 50], velocity: [0, 0], size: "large" },
         { position: [500, 500], velocity: [0, 0], size: "small" },
-      ],
+      ]),
       score: 0,
     },
     args: 1 / 60,
     after: {
       ...field,
-      bullets: [],
-      asteroids: [
+      bullets: new Set(),
+      asteroids: new Set([
         { position: [50, 50], velocity: [0, 0], size: "medium" },
         { position: [50, 50], velocity: [0, 0], size: "medium" },
         { position: [500, 500], velocity: [0, 0], size: "small" },
-      ],
+      ]),
       score: 20,
     },
   },
@@ -160,28 +170,30 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     name: "two bullets each destroy their own asteroid",
     before: {
       ...field,
-      bullets: [
+      bullets: new Set([
         { position: [50, 50], velocity: [0, 0], age: 0 },
         { position: [500, 500], velocity: [0, 0], age: 0 },
-      ],
-      asteroids: [
+      ]),
+      asteroids: new Set([
         { position: [50, 50], velocity: [0, 0], size: "small" },
         { position: [500, 500], velocity: [0, 0], size: "small" },
-      ],
+      ]),
       score: 0,
     },
     args: 1 / 60,
-    after: { ...field, bullets: [], asteroids: [], score: 200 },
+    after: { ...field, bullets: new Set(), asteroids: new Set(), score: 200 },
   },
   {
     name: "split children are not hittable by another bullet in the same pass",
     before: {
       ...field,
-      bullets: [
+      bullets: new Set([
         { position: [50, 50], velocity: [0, 0], age: 0 },
         { position: [50, 50], velocity: [0, 0], age: 0 },
-      ],
-      asteroids: [{ position: [50, 50], velocity: [0, 0], size: "large" }],
+      ]),
+      asteroids: new Set([
+        { position: [50, 50], velocity: [0, 0], size: "large" },
+      ]),
       score: 0,
     },
     args: 1 / 60,
@@ -190,11 +202,11 @@ export const cases: Conformance<typeof resolveBulletHits> = [
       // One bullet destroys the large (→ 2 medium). The second finds no original
       // target — the large is gone and its children, spawned this same pass, are
       // not yet hittable — so it survives.
-      bullets: [{ position: [50, 50], velocity: [0, 0], age: 0 }],
-      asteroids: [
+      bullets: new Set([{ position: [50, 50], velocity: [0, 0], age: 0 }]),
+      asteroids: new Set([
         { position: [50, 50], velocity: [0, 0], size: "medium" },
         { position: [50, 50], velocity: [0, 0], size: "medium" },
-      ],
+      ]),
       score: 20,
     },
   },
@@ -202,18 +214,20 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     name: "boundary: distance exactly equal to the radius sum still overlaps",
     before: {
       ...field,
-      bullets: [{ position: [0, 0], velocity: [0, 0], age: 0 }],
-      asteroids: [{ position: [42, 0], velocity: [0, 0], size: "large" }],
+      bullets: new Set([{ position: [0, 0], velocity: [0, 0], age: 0 }]),
+      asteroids: new Set([
+        { position: [42, 0], velocity: [0, 0], size: "large" },
+      ]),
       score: 0,
     },
     args: 1 / 60,
     after: {
       ...field,
-      bullets: [],
-      asteroids: [
+      bullets: new Set(),
+      asteroids: new Set([
         { position: [42, 0], velocity: [0, 0], size: "medium" },
         { position: [42, 0], velocity: [0, 0], size: "medium" },
-      ],
+      ]),
       score: 20,
     },
   },
@@ -225,18 +239,20 @@ export const cases: Conformance<typeof resolveBulletHits> = [
       // Both endpoints are 25px from the medium at [25,0] — outside the 22px radius
       // sum, so a point test misses. The travelled segment crosses [25,0], so a
       // swept test hits.
-      bullets: [{ position: [0, 0], velocity: [-3000, 0], age: 0 }],
-      asteroids: [{ position: [25, 0], velocity: [0, 0], size: "medium" }],
+      bullets: new Set([{ position: [0, 0], velocity: [-3000, 0], age: 0 }]),
+      asteroids: new Set([
+        { position: [25, 0], velocity: [0, 0], size: "medium" },
+      ]),
       score: 0,
     },
     args: 1 / 60,
     after: {
       ...field,
-      bullets: [],
-      asteroids: [
+      bullets: new Set(),
+      asteroids: new Set([
         { position: [25, 0], velocity: [0, 0], size: "small" },
         { position: [25, 0], velocity: [0, 0], size: "small" },
-      ],
+      ]),
       score: 50,
     },
   },

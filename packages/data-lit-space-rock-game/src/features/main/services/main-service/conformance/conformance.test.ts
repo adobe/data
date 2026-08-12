@@ -10,12 +10,12 @@ import { projection } from "./projection.js";
 // delta) over `State.create()`, and round-trips `State.samples` through the
 // projection. `transitions` (the discovered `{ fn, cases }` modules) is shared with
 // spec.test. The entity bags the ecs materialises in nondeterministic row order
-// (`bullets`, `asteroids`) compare as multisets via `match.unordered`. There is no
-// `computedPlugin` — space-rock has no `state/` derivations.
+// (`bullets`, `asteroids`) are typed `ReadonlySet`, so the comparator matches them
+// order-independently. There is no `computedPlugin` — space-rock has no `state/`
+// derivations.
 Conformance.runFeature({
   state: State,
   transitions,
   plugin: MainService.plugin,
   projection,
-  match: { unordered: new Set(["bullets", "asteroids"]) },
 });

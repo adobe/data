@@ -157,6 +157,49 @@ describe('equals', () => {
     });
   });
 
+  describe('sets', () => {
+    it('compares sets order-independently', () => {
+      expect(equals(new Set([1, 2, 3]), new Set([3, 1, 2]))).toBe(true);
+      expect(equals(new Set([1, 2]), new Set([1, 2, 3]))).toBe(false);
+      expect(equals(new Set([1, 2, 3]), new Set([1, 2, 4]))).toBe(false);
+      expect(equals(new Set(), new Set())).toBe(true);
+    });
+
+    it('deep-compares object elements, still order-independently', () => {
+      expect(equals(new Set([{ a: 1 }, { a: 2 }]), new Set([{ a: 2 }, { a: 1 }]))).toBe(true);
+      expect(equals(new Set([{ a: 1 }]), new Set([{ a: 2 }]))).toBe(false);
+    });
+
+    it('keeps arrays inside a set ordered', () => {
+      expect(equals(new Set([[1, 2]]), new Set([[1, 2]]))).toBe(true);
+      expect(equals(new Set([[1, 2]]), new Set([[2, 1]]))).toBe(false);
+    });
+
+    it('is not equal to a non-set', () => {
+      expect(equals(new Set([1, 2]), [1, 2])).toBe(false);
+      expect(equals([1, 2], new Set([1, 2]))).toBe(false);
+    });
+  });
+
+  describe('maps', () => {
+    it('compares maps by entries, order-independently', () => {
+      expect(equals(new Map([['a', 1], ['b', 2]]), new Map([['b', 2], ['a', 1]]))).toBe(true);
+      expect(equals(new Map([['a', 1]]), new Map([['a', 2]]))).toBe(false);
+      expect(equals(new Map([['a', 1]]), new Map([['b', 1]]))).toBe(false);
+      expect(equals(new Map(), new Map())).toBe(true);
+    });
+
+    it('deep-compares values', () => {
+      expect(equals(new Map([['a', { x: 1 }]]), new Map([['a', { x: 1 }]]))).toBe(true);
+      expect(equals(new Map([['a', { x: 1 }]]), new Map([['a', { x: 2 }]]))).toBe(false);
+    });
+
+    it('is not equal to a non-map', () => {
+      expect(equals(new Map([['a', 1]]), { a: 1 })).toBe(false);
+      expect(equals(new Set(['a']), new Map([['a', 1]]))).toBe(false);
+    });
+  });
+
   describe('typed buffers', () => {
     it('should return true for identical number buffers', () => {
       const buffer1 = createNumberBuffer({ type: 'number', precision: 1 }, 3);

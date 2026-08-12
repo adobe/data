@@ -19,8 +19,8 @@ export const createInitial = (
   const fresh: State = {
     bounds,
     ship: Ship.spawn(Vec2.scale(bounds, 0.5)),
-    bullets: [],
-    asteroids: [],
+    bullets: new Set(),
+    asteroids: new Set(),
     score: 0,
     lives: 3,
     wave: 0,
@@ -38,8 +38,8 @@ export const createInitial = (
 const dirty: State = {
   bounds: [1, 1],
   ship: { position: [10, 10], velocity: [5, 5], rotation: 1 },
-  bullets: [{ position: [1, 1], velocity: [0, 0], age: 0.5 }],
-  asteroids: [{ position: [9, 9], velocity: [0, 0], size: "small" }],
+  bullets: new Set([{ position: [1, 1], velocity: [0, 0], age: 0.5 }]),
+  asteroids: new Set([{ position: [9, 9], velocity: [0, 0], size: "small" }]),
   score: 99,
   lives: 1,
   wave: 7,
@@ -53,13 +53,13 @@ export const cases: Conformance<typeof createInitial> = [
     after: {
       bounds: [200, 200],
       ship: { position: [100, 100], velocity: [0, 0], rotation: -Math.PI / 2 },
-      bullets: [],
-      asteroids: [
+      bullets: new Set(),
+      asteroids: new Set([
         { position: [180, 100], velocity: [0, 60], size: "large" },
         { position: [100, 180], velocity: [-60, 0], size: "large" },
         { position: [20, 100], velocity: [0, -60], size: "large" },
         { position: [100, 20], velocity: [60, 0], size: "large" },
-      ],
+      ]),
       score: 0,
       lives: 3,
       wave: 1,
@@ -72,13 +72,13 @@ export const cases: Conformance<typeof createInitial> = [
     after: {
       bounds: [400, 400],
       ship: { position: [200, 200], velocity: [0, 0], rotation: -Math.PI / 2 },
-      bullets: [],
-      asteroids: [
+      bullets: new Set(),
+      asteroids: new Set([
         { position: [360, 200], velocity: [0, 60], size: "large" },
         { position: [200, 360], velocity: [-60, 0], size: "large" },
         { position: [40, 200], velocity: [0, -60], size: "large" },
         { position: [200, 40], velocity: [60, 0], size: "large" },
-      ],
+      ]),
       score: 0,
       lives: 3,
       wave: 1,

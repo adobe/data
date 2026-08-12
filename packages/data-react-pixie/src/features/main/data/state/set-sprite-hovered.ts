@@ -9,8 +9,10 @@ export const setSpriteHovered = (
   state: Pick<State, "sprites">,
   input: { readonly id: number; readonly hovered: boolean },
 ): Pick<State, "sprites"> => ({
-  sprites: state.sprites.map((sprite) =>
-    sprite.id === input.id ? { ...sprite, hovered: input.hovered } : sprite,
+  sprites: new Set(
+    [...state.sprites].map((sprite) =>
+      sprite.id === input.id ? { ...sprite, hovered: input.hovered } : sprite,
+    ),
   ),
 });
 
@@ -26,24 +28,24 @@ const fox: Sprite = {
 export const cases: Conformance<typeof setSpriteHovered> = [
   {
     name: "sets hovered true on the addressed sprite only",
-    before: { sprites: [bunny, fox] },
+    before: { sprites: new Set([bunny, fox]) },
     args: { id: entity(1), hovered: true },
     after: {
-      sprites: [
+      sprites: new Set([
         { ...bunny, id: Match.anyNumber, hovered: true },
         { ...fox, id: Match.anyNumber },
-      ],
+      ]),
     },
   },
   {
     name: "is a no-op for an unknown id",
-    before: { sprites: [bunny, fox] },
+    before: { sprites: new Set([bunny, fox]) },
     args: { id: entity(99), hovered: true },
     after: {
-      sprites: [
+      sprites: new Set([
         { ...bunny, id: Match.anyNumber },
         { ...fox, id: Match.anyNumber },
-      ],
+      ]),
     },
   },
 ];

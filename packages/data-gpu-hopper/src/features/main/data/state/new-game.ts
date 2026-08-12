@@ -24,7 +24,7 @@ export const cases: Conformance<typeof newGame> = [
         { row: 1, kind: "river" },
         { row: 2, kind: "goal" },
       ],
-      hazards: [{ kind: "log", lane: 1, x: 0, width: 2, velocity: 1 }],
+      hazards: new Set([{ kind: "log", lane: 1, x: 0, width: 2, velocity: 1 }]),
       frog: { x: 1, y: 2 },
       lives: 0,
       score: 7,

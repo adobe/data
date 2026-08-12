@@ -19,6 +19,6 @@ export const frogOutcome = <
   const onBoard = state.frog.x >= 0 && state.frog.x <= state.width - 1;
   const covered =
     onBoard &&
-    state.hazards.some((hazard) => hazard.lane === state.frog.y && Hazard.covers(hazard, state.frog.x));
+    [...state.hazards].some((hazard) => hazard.lane === state.frog.y && Hazard.covers(hazard, state.frog.x));
   return covered ? LaneKind.coveredOutcome[lane.kind] : LaneKind.emptyOutcome[lane.kind];
 };

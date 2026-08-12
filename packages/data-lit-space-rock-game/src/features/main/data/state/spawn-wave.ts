@@ -21,7 +21,7 @@ const asteroidsFor = (wave: number): number => 3 + wave;
 export const spawnWave = (
   state: Pick<State, "asteroids" | "wave" | "bounds">,
 ): Pick<State, "asteroids" | "wave"> => {
-  if (state.asteroids.length > 0) {
+  if (state.asteroids.size > 0) {
     return { asteroids: state.asteroids, wave: state.wave };
   }
   const wave = state.wave + 1;
@@ -39,7 +39,7 @@ export const spawnWave = (
       size: Size.largest,
     });
   }
-  return { wave, asteroids };
+  return { wave, asteroids: new Set(asteroids) };
 };
 
 // Spec-owned cases for the deterministic `spawnWave` (no args) — the fixed FIRST
@@ -53,17 +53,17 @@ const field = { ...create(), bounds: [200, 200] as [number, number] };
 export const cases: Conformance<typeof spawnWave> = [
   {
     name: "spawns the next wave of large asteroids when the field is clear",
-    before: { ...field, asteroids: [], wave: 0 },
+    before: { ...field, asteroids: new Set(), wave: 0 },
     args: undefined,
     after: {
       ...field,
       wave: 1,
-      asteroids: [
+      asteroids: new Set([
         { position: [180, 100], velocity: [0, 60], size: "large" },
         { position: [100, 180], velocity: [-60, 0], size: "large" },
         { position: [20, 100], velocity: [0, -60], size: "large" },
         { position: [100, 20], velocity: [60, 0], size: "large" },
-      ],
+      ]),
     },
   },
   {
@@ -71,13 +71,17 @@ export const cases: Conformance<typeof spawnWave> = [
     before: {
       ...field,
       wave: 1,
-      asteroids: [{ position: [10, 10], velocity: [0, 0], size: "large" }],
+      asteroids: new Set([
+        { position: [10, 10], velocity: [0, 0], size: "large" },
+      ]),
     },
     args: undefined,
     after: {
       ...field,
       wave: 1,
-      asteroids: [{ position: [10, 10], velocity: [0, 0], size: "large" }],
+      asteroids: new Set([
+        { position: [10, 10], velocity: [0, 0], size: "large" },
+      ]),
     },
   },
 ];

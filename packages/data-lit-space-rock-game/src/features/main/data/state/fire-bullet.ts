@@ -12,7 +12,7 @@ export const fireBullet = (
 ): Pick<State, "bullets"> => {
   const { position, velocity } = Ship.muzzle(state.ship, Bullet.speed);
   const bullet: Bullet = { position, velocity, age: 0 };
-  return { bullets: [...state.bullets, bullet] };
+  return { bullets: new Set(state.bullets).add(bullet) };
 };
 
 // Spec-owned cases, shared with the ecs `fireBullet` transaction. A bullet leaves
@@ -27,13 +27,13 @@ export const cases: Conformance<typeof fireBullet> = [
     before: {
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
-      bullets: [],
+      bullets: new Set(),
     },
     args: undefined,
     after: {
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
-      bullets: [{ position: [112, 100], velocity: [400, 0], age: 0 }],
+      bullets: new Set([{ position: [112, 100], velocity: [400, 0], age: 0 }]),
     },
   },
   {
@@ -41,13 +41,13 @@ export const cases: Conformance<typeof fireBullet> = [
     before: {
       ...field,
       ship: { position: [100, 100], velocity: [10, 20], rotation: 0 },
-      bullets: [],
+      bullets: new Set(),
     },
     args: undefined,
     after: {
       ...field,
       ship: { position: [100, 100], velocity: [10, 20], rotation: 0 },
-      bullets: [{ position: [112, 100], velocity: [410, 20], age: 0 }],
+      bullets: new Set([{ position: [112, 100], velocity: [410, 20], age: 0 }]),
     },
   },
   {
@@ -55,16 +55,16 @@ export const cases: Conformance<typeof fireBullet> = [
     before: {
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
-      bullets: [{ position: [0, 0], velocity: [1, 0], age: 0.2 }],
+      bullets: new Set([{ position: [0, 0], velocity: [1, 0], age: 0.2 }]),
     },
     args: undefined,
     after: {
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
-      bullets: [
+      bullets: new Set([
         { position: [0, 0], velocity: [1, 0], age: 0.2 },
         { position: [112, 100], velocity: [400, 0], age: 0 },
-      ],
+      ]),
     },
   },
   {
@@ -72,13 +72,13 @@ export const cases: Conformance<typeof fireBullet> = [
     before: {
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: -Math.PI / 2 },
-      bullets: [],
+      bullets: new Set(),
     },
     args: undefined,
     after: {
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: -Math.PI / 2 },
-      bullets: [{ position: [100, 88], velocity: [0, -400], age: 0 }],
+      bullets: new Set([{ position: [100, 88], velocity: [0, -400], age: 0 }]),
     },
   },
 ];

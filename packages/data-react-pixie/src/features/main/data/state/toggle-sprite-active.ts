@@ -9,8 +9,10 @@ export const toggleSpriteActive = (
   state: Pick<State, "sprites">,
   input: { readonly id: number },
 ): Pick<State, "sprites"> => ({
-  sprites: state.sprites.map((sprite) =>
-    sprite.id === input.id ? { ...sprite, active: !sprite.active } : sprite,
+  sprites: new Set(
+    [...state.sprites].map((sprite) =>
+      sprite.id === input.id ? { ...sprite, active: !sprite.active } : sprite,
+    ),
   ),
 });
 
@@ -26,35 +28,35 @@ const activeFox: Sprite = {
 export const cases: Conformance<typeof toggleSpriteActive> = [
   {
     name: "toggles a sprite from inactive to active",
-    before: { sprites: [bunny, activeFox] },
+    before: { sprites: new Set([bunny, activeFox]) },
     args: { id: entity(1) },
     after: {
-      sprites: [
+      sprites: new Set([
         { ...bunny, id: Match.anyNumber, active: true },
         { ...activeFox, id: Match.anyNumber },
-      ],
+      ]),
     },
   },
   {
     name: "toggles a sprite from active to inactive",
-    before: { sprites: [bunny, activeFox] },
+    before: { sprites: new Set([bunny, activeFox]) },
     args: { id: entity(2) },
     after: {
-      sprites: [
+      sprites: new Set([
         { ...bunny, id: Match.anyNumber },
         { ...activeFox, id: Match.anyNumber, active: false },
-      ],
+      ]),
     },
   },
   {
     name: "is a no-op for an unknown id",
-    before: { sprites: [bunny, activeFox] },
+    before: { sprites: new Set([bunny, activeFox]) },
     args: { id: entity(99) },
     after: {
-      sprites: [
+      sprites: new Set([
         { ...bunny, id: Match.anyNumber },
         { ...activeFox, id: Match.anyNumber },
-      ],
+      ]),
     },
   },
 ];

@@ -7,8 +7,8 @@ describe("State.create", () => {
     const state = State.create();
     expect(state.bounds).toEqual([0, 0]);
     expect(state.ship.velocity).toEqual([0, 0]);
-    expect(state.bullets).toEqual([]);
-    expect(state.asteroids).toEqual([]);
+    expect(state.bullets).toEqual(new Set());
+    expect(state.asteroids).toEqual(new Set());
     expect(state.score).toBe(0);
     expect(state.lives).toBe(3);
     expect(state.wave).toBe(0);

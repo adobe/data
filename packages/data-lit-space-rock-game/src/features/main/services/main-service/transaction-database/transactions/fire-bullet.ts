@@ -10,8 +10,11 @@ import { readShip } from "./read-ship.js";
 export const fireBullet = (t: CoreDatabase.Store): void => {
   const found = readShip(t);
   if (found === undefined) return;
-  // Typed seed so the empty bullets list widens to `Bullet[]`, not `never[]`.
-  const seed: Pick<State, "ship" | "bullets"> = { ship: found.ship, bullets: [] };
+  // Typed seed so the empty bullets set widens to `Set<Bullet>`, not `Set<never>`.
+  const seed: Pick<State, "ship" | "bullets"> = {
+    ship: found.ship,
+    bullets: new Set(),
+  };
   const { bullets } = State.fireBullet(seed);
   const [bullet] = bullets;
   t.archetypes.Bullet.insert(bullet);

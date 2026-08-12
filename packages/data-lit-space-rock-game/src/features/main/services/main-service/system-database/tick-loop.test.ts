@@ -35,24 +35,19 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
   for (const testCase of cases) {
     it(testCase.name, () => {
       const { dt, input } = testCase.args;
-      const unordered = { unordered: new Set(["bullets", "asteroids"]) };
       // A case `before` is a delta over the feature default (`Case.before` is
       // `Partial<State>`), so materialise the full seed the same way the runners do.
       const before = { ...State.create(), ...testCase.before };
       // The co-located case carries its own inert `random` double (no case clears
       // the field, so it is never drawn), so drive the oracle with the case args.
-      Match.assert(
-        State.step(before, testCase.args),
-        testCase.after,
-        unordered,
-      );
+      Match.assert(State.step(before, testCase.args), testCase.after);
 
       const db = createSystemDatabase();
       projection.fromState(db.store, before);
       db.store.resources.frameDelta = dt;
       db.transactions.setInput(input);
       driveFrame(db);
-      Match.assert(projection.toState(db.store), testCase.after, unordered);
+      Match.assert(projection.toState(db.store), testCase.after);
     });
   }
 
@@ -67,7 +62,7 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
       ...State.create(),
       bounds: [200, 200],
       ship: Ship.spawn([100, 100]),
-      asteroids: [],
+      asteroids: new Set(),
       wave: 0,
     });
     db.store.resources.frameDelta = 0.1;
@@ -76,9 +71,9 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
 
     const after = projection.toState(db.store);
     expect(after.wave).toBe(1);
-    expect(after.asteroids).toHaveLength(4);
-    expect(after.asteroids.every((a) => a.size === "large")).toBe(true);
-    const positions = after.asteroids.map((a) => [
+    expect(after.asteroids.size).toBe(4);
+    expect([...after.asteroids].every((a) => a.size === "large")).toBe(true);
+    const positions = [...after.asteroids].map((a) => [
       Math.round(a.position[0]),
       Math.round(a.position[1]),
     ]);

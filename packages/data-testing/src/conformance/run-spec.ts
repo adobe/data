@@ -17,7 +17,8 @@ export interface SpecRunConfig {
   // `import.meta.glob(["./*.ts", "!./*.test.ts", "!./*.type-test.ts"], { eager: true })`
   // — the same `transitions` glob `runFeature` takes.
   readonly transitions: Record<string, Record<string, unknown>>;
-  // Passed through to `matches` (float tolerance, unordered collections).
+  // Passed through to `matches` (float tolerance). Ordered vs. unordered is now
+  // carried by the value's type — `Array` positional, `Set`/`Map` order-independent.
   readonly match?: MatchOptions;
   // Override the `describe` label per module (default `State.<fnName>`).
   readonly label?: (path: string, fnName: string | undefined) => string;

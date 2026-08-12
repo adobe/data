@@ -15,11 +15,11 @@ const readFrog = (store: CoreDatabase.Store): Frog => {
   throw new Error("frog entity missing from store");
 };
 
-const readHazards = (store: CoreDatabase.Store): Hazard[] => {
-  const hazards: Hazard[] = [];
+const readHazards = (store: CoreDatabase.Store): Set<Hazard> => {
+  const hazards = new Set<Hazard>();
   for (const arch of store.queryArchetypes(store.archetypes.Hazard.components)) {
     for (let row = 0; row < arch.rowCount; row++) {
-      hazards.push({
+      hazards.add({
         kind: arch.columns.kind.get(row),
         lane: arch.columns.lane.get(row),
         x: arch.columns.x.get(row),

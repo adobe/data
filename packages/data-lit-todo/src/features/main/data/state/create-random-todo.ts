@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { NameGeneratorService } from "../../services/name-generator-service/name-generator-service.js";
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
+import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { appendTodo } from "./append-todo.js";
@@ -18,10 +19,7 @@ export const createRandomTodo = async (
   {
     nameGenerator,
     analytics,
-  }: {
-    readonly nameGenerator: NameGeneratorService;
-    readonly analytics: AnalyticsService;
-  },
+  }: Pick<Services, "nameGenerator" | "analytics">,
 ): Promise<Pick<State, "todos">> => {
   const timing = await analytics.randomTodoRequested();
   const name = await nameGenerator.generateName();

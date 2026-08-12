@@ -24,6 +24,34 @@ spec, it can be generated and kept honest by AI rules, with the conformance
 tests as the safety net. Net result: write a slow-but-verifiable app, then
 derive a fast one that provably behaves the same.
 
+## Two modes: state-based vs. ECS-based
+
+The "built twice" structure above is the **state-based** mode. Every feature is in
+one of two modes, discriminated by **the presence of `data/state/`**:
+
+- **State-based** — a **Functional State Specification (FSS)** is the source of
+  truth: the pure `data/State` aggregate with its transitions and derivations, and
+  the ECS is a conformance-verified implementation of it. Adds `data/state/` (State,
+  transitions, co-located `cases`, `spec.test.ts`), `services/main-service/conformance/`,
+  and the `state` projection computed. **This is how every new feature is authored.**
+- **ECS-based** — the **ECS is the source of truth**, authored directly:
+  **no `data/state/`**, no FSS, no conformance. This is a **legacy** shape — features
+  written before the state-based approach existed. New features are **never** authored
+  this way; ECS-based exists only to describe and maintain those older features.
+
+**Discriminator:** `data/state/` present → state-based; absent → ECS-based. The
+`data/<type>` value folders (the serializable types backing components/resources,
+the wire, and persistence) exist in **both** modes — only the aggregate `State`
+spec and the conformance layer are mode-specific. `data/` never disappears; the
+*aggregate spec* does.
+
+**Testing follows the mode.** A state-based feature is verified by conformance: the
+shared `cases` drive both the pure spec and the ECS, so a transaction or action with
+a same-named transition needs no test of its own. An **ECS-based feature has no
+conformance cases, so every transaction and every action carries its own unit
+test** — the direct substitute for the conformance oracle (see `services/main-service/transactions.md`
+and `actions.md`).
+
 ## The layers
 
 **The layers organize by the *kind of type* each folder holds, not by a strict

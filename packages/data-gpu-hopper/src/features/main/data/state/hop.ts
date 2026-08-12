@@ -29,7 +29,7 @@ const base: Omit<State, "frog"> = {
   width: 5,
   height: 3,
   lanes: [],
-  hazards: [],
+  hazards: new Set(),
   lives: 3,
   score: 0,
   status: "playing",

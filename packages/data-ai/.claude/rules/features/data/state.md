@@ -9,14 +9,24 @@ paths:
 source of truth. Each transition is a read→write **patch** over state; each
 derivation a pure selector. Reference: `data-lit-todo`'s `data/state/`.
 
+The presence of this folder makes the feature **state-based** — its Functional
+State Specification is authoritative and the ECS conforms to it. A feature without
+`data/state/` is **ECS-based** (the ECS is the source of truth, no conformance) and
+this rule does not apply — see `../index.md`, Two modes.
+
 ```ts
 // state.ts — the aggregate + the transition/derivation namespace.
 export type State = { readonly todos: readonly Todo[]; readonly displayCompleted: boolean };
 export * as State from "./public.js";
 ```
 
-Every feature with ECS resources/transactions owns a `State` (a scalar
-`{ playing: boolean }`, or `{}` when there is none).
+Every **state-based** feature owns a `State` (a scalar `{ playing: boolean }`, or
+`{}` when there is none). An ECS-based feature has no `State` at all.
+
+**A `State` field's collection type carries its ordering** — see
+`../../data-modelling.md` (Collection ordering is carried by the type). `todos`
+above is a `ReadonlyArray` because todo order is a user-visible, reorderable fact;
+an unordered entity bag (bullets, sprites) is a `ReadonlySet`.
 
 **`State` has a standard shape.** Two exports are conventional and drive
 conformance:
@@ -97,9 +107,10 @@ export const entity = ConformanceApi.entity;
 // create-todo.ts
 import { Match } from "@adobe/data-testing";
 import type { Conformance } from "./conformance-case.js"; // the thin per-feature alias above
+import type { Services } from "../../services/services.js"; // the feature's service map
 export const createTodo = (
     state: Pick<State, "todos">,
-    { name, complete, analytics }: { name: string; complete?: boolean; analytics: AnalyticsService },
+    { name, complete, analytics }: { name: string; complete?: boolean } & Pick<Services, "analytics">,
 ): Pick<State, "todos"> => {
     analytics.todoCreated({ name });
     return { todos: [...state.todos, { name, complete: complete ?? false }] }; // writes patch only
@@ -144,9 +155,12 @@ export const cases: Conformance<typeof createTodo> = [
   overrides the default wholesale.)
 - **`after` leaves minted values open** with the shared matchers `Match.anyNumber`
   / `Match.anyString`, imported from `@adobe/data-testing` — there is **no**
-  per-feature `matchers.ts` anymore. An id the ECS assigns from its own id-space is
-  `id: Match.anyNumber`, so the pure spec and the ECS satisfy the same case — match
-  by content, not by the value you don't control. `Match` is framework-agnostic and
+  per-feature `matchers.ts` anymore. An entity's own numeric `id` is **ignored by
+  default** (the ECS allocates it from its own id-space), so a case simply **omits
+  `id`** and the entity's content still compares — no `id: Match.anyNumber` needed.
+  (Reach for `id: Match.anyNumber` only when the type makes `id` required and a
+  literal would otherwise pin it.) Match by content, not by the value you don't
+  control. `Match` is framework-agnostic and
   honors any asymmetric matcher, so vitest's `expect.stringContaining(...)` interops
   on the expected side too. When an id must **line up in two places** within one
   comparison — a `selectedId` that points at a specific todo, say — use
@@ -167,8 +181,9 @@ export const cases: Conformance<typeof createTodo> = [
   `value` case → derivation; otherwise a transition whose declared `effects` are
   also asserted). Passing `{ state: State }` (the same `state` shape `runFeature`
   takes) is what makes each case's `before`/`input` a delta over `State.create()`.
-  Add `match` alongside it only when
-  the feature needs float tolerance or unordered collections (see `conformance.md`).
+  Add `match` alongside it only when the feature needs float `tolerance` (see
+  `conformance.md`); unordered collections are modeled as `ReadonlySet` /
+  `ReadonlyMap` on `State` (below), not declared as a match option.
   There is no per-feature `expect-state-matches.ts`, `record-effects.ts`,
   `expect-conforms.ts`, or `conformance-case.type-test.ts` — those are gone; the
   shared driver owns comparison, effect recording, and name-based auto-pairing, and
@@ -179,13 +194,16 @@ export const cases: Conformance<typeof createTodo> = [
 
 ## Injected services and side effects
 
-A transform that needs an outside capability receives it as a **named parameter**
-in the args object, keyed by the service name minus its `-service` suffix
-(`AnalyticsService` → `analytics`, `NameGeneratorService` → `nameGenerator`);
-plain data args sit alongside. Import the service straight from `services/` (an
-ordinary import — layers split by kind of type, not dependency). The **same
-services appear on `db.services` for the matching action**, so the transition is
-the complete spec of *both* the state change and the service calls.
+A transform that needs an outside capability injects it with **`Pick<Services,
+…>`** — never an ad-hoc inline type. `Services` is the feature's service map
+(`services/services.ts`, see `../services/index.md`), keyed by the service name
+minus its `-service` suffix (`analytics`, `nameGenerator`), so the key and its type
+come from **one** place and can't drift per-transition. Plain data args sit
+alongside via intersection: `{ readonly count: number } & Pick<Services, "analytics">`
+(or `Pick<Services, "a" | "b">` when a transition takes only services). The **same
+services appear on `db.services` for the matching action** — pinned to `Services` in
+the ecs `service-database` — so the transition is the complete spec of *both* the
+state change and the service calls.
 
 - A transition **is deterministic given its dependencies** — inject a fixed
   double and the output (and its calls) are fixed. An **async** dependency makes

@@ -32,6 +32,11 @@ export const playMove = (t: CoreDatabase.Store, { index }: PlayMoveArgs) => {
   result — read the touched slice, call the `data/` transform, write the diff.
 - Keep transaction files **single-export** (the `transactions/` barrel is
   `export *`-ed into the plugin facet, so a second export would pollute it).
+- **ECS-based feature (no `data/state/`):** there are no conformance cases, so
+  **every transaction carries its own unit test** — `Store.create(plugin)`, run the
+  transaction, assert the resulting resources/entities/archetypes. That test is the
+  direct substitute for the conformance oracle (see `../../index.md`, Two modes). The
+  bullet below applies only to **state-based** features.
 - **Conformance is wired once, centrally, and auto-paired** — not per-file. The
   feature's single `conformance/conformance.test.ts` `Conformance.runFeature({...})`
   call conforms transactions: it pulls them off **`plugin.transactions`** (the

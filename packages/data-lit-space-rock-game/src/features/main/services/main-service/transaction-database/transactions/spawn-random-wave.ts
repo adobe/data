@@ -20,7 +20,7 @@ export const spawnRandomWave = (
   // can no longer be reference-compared to detect the no-op).
   if (readAsteroids(t).length > 0) return;
   const after = State.spawnRandomWave(
-    { asteroids: [], wave: t.resources.wave, bounds: t.resources.bounds },
+    { asteroids: new Set(), wave: t.resources.wave, bounds: t.resources.bounds },
     { random },
   );
   t.resources.wave = after.wave;

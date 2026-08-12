@@ -40,7 +40,7 @@ export const projection = {
     }
     store.resources.filter = state.filter;
     return new Map(
-      state.sprites.map((sprite) => [
+      [...state.sprites].map((sprite) => [
         sprite.id,
         store.archetypes.Sprite.insert({
           position: sprite.position,
@@ -53,8 +53,10 @@ export const projection = {
     );
   },
   toState: (store: CoreDatabase.Store): State => ({
-    sprites: [...store.select(store.archetypes.Sprite.components)].map(
-      (entity) => toData(store, entity),
+    sprites: new Set(
+      [...store.select(store.archetypes.Sprite.components)].map((entity) =>
+        toData(store, entity),
+      ),
     ),
     filter: store.resources.filter,
   }),

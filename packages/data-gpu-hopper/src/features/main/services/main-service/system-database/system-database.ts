@@ -134,10 +134,10 @@ const systemDatabasePlugin = Database.Plugin.create({
         }
         if (!hasFrog) return;
 
-        const hazards: Hazard[] = [];
+        const hazards = new Set<Hazard>();
         for (const arch of db.store.queryArchetypes(["kind", "lane", "x", "width", "velocity"])) {
           for (let i = 0; i < arch.rowCount; i++) {
-            hazards.push({
+            hazards.add({
               kind: arch.columns.kind.get(i),
               lane: arch.columns.lane.get(i),
               x: arch.columns.x.get(i),

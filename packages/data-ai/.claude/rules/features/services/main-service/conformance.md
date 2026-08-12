@@ -5,6 +5,11 @@ paths:
 
 # services/main-service/conformance/ — keeping the ECS honest against the spec
 
+**State-based features only.** This folder exists only when the feature has a
+`data/state/` spec to conform to. An **ECS-based** feature (no `data/state/`) omits
+this folder entirely and unit-tests its transactions/actions directly instead (see
+`../../index.md`, Two modes, and `transactions.md` / `actions.md`).
+
 Test-only (imported only by `*.test.ts`, in no facet barrel). The `data/state`
 cases are the shared truth; the shared **`@adobe/data-testing`** runner replays
 them against the ECS. This folder holds only the *feature-specific projection*
@@ -33,10 +38,13 @@ installing `@adobe/data` never pulls in a `vitest` peer dependency):
 - **`Match`** — the tolerant, matcher-aware value comparison: `matches(actual,
   expected, options?)` and its throwing wrapper `assert(...)`, plus the matchers
   `Match.anyNumber` / `Match.anyString` / `Match.ref(label)`. Options are
-  `{ unordered?: ReadonlySet<string>; tolerance?: number }` — arrays compare **in
-  order** (default) unless a key is named in `unordered`, and numbers snap to
-  `tolerance` (default `0.01`) to absorb F32↔f64 / trig noise. Framework-agnostic:
-  it honors any asymmetric matcher, so vitest's `expect.any(...)` interops.
+  `{ tolerance?: number }` — numbers snap to `tolerance` (default `0.01`) to absorb
+  F32↔f64 / trig noise. **Ordering is carried by the value's type**: a
+  `ReadonlyArray` compares **in order**, a `ReadonlySet` / `ReadonlyMap`
+  **order-independently** — there is no `unordered` option. A numeric `id` a case
+  does not mention is **ignored** (the ECS allocates it), so entity content compares
+  without pinning ids. Framework-agnostic: it honors any asymmetric matcher, so
+  vitest's `expect.any(...)` interops.
 - **`Conformance`** — the case types (`Case`, `Cases`, `DerivationCase`,
   `DerivationCases`, `Effects`, `ServiceCall`), the `entity(specId)` identity
   marker, the id `resolver(map)`, the whole-feature driver **`runFeature`**, the
@@ -92,7 +100,7 @@ Conformance.runFeature({
   computedPlugin: ComputedDatabase.plugin,   // omit if no state/ derivations
   projection,
   hydrate: ["visibleTodos"],                 // entity-id-list computeds; omit if none
-  match: { unordered: new Set(["bullets", "asteroids"]) }, // entity bags / tolerance; omit if none
+  match: { tolerance: 0.1 },                  // float grid only; omit if 0.01 is fine
   ops: { actions: import.meta.glob([...]) }, // ONLY when ops aren't in the plugin facet
 });
 ```
@@ -136,8 +144,9 @@ Conformance.runFeature({
 `data-lit-tictactoe` is the zero-config call (no `computedPlugin`, no `hydrate`,
 no `match`, no `ops` — moves are board-index addressed, so no `entity()`
 markers). `data-lit-todo` adds `hydrate: ["visibleTodos"]` and `entity()` markers.
-`data-lit-space-rock-game` adds `match: { unordered: … }` for its entity bags
-(its per-frame transitions are conformed by the systems tick loop, not here — see
+`data-lit-space-rock-game` models its entity bags (`bullets`, `asteroids`) as
+`ReadonlySet` on `State`, so they compare order-independently by type — no `match`
+option (its per-frame transitions are conformed by the systems tick loop, not here — see
 `systems.md`).
 
 ## The pure spec — `data/state/spec.test.ts`
@@ -189,24 +198,24 @@ op is infra, and a thin **same-named** op (todo's `reorderTodo` action, space-ro
 `createInitial` transaction) gives the transition something to pair with. Do **not**
 reintroduce a per-item adapter to bridge a name mismatch — add the same-named op.
 
-## Ordering, tolerance, `ref` — all via `match`
+## Ordering, tolerance, `ref`
 
-`runFeature` threads `match?: MatchOptions` through to every comparison, so
-per-feature tuning is data, not code:
+Ordering is carried by the value's **type**, not a match option — `ReadonlyArray`
+positional, `ReadonlySet` / `ReadonlyMap` order-independent (the rule and its
+rationale live in `../../../data-modelling.md`). What's specific to writing
+conformance cases:
 
-- **Ordered by default.** `toState` reads a display-ordered collection in order —
-  that is what verifies a reorder — and positional tuples (a `Vec2`) must stay in
-  order.
-- **Entity bags compare as multisets.** A collection the ECS materialises with no
-  display order (bullets, asteroids) is named in
-  `match: { unordered: new Set(["bullets", "asteroids"]) }` so just those fields
-  compare order-independently — never blanket-unordered (it would conflate
-  `[100,180]` with `[180,100]`).
-- **Float noise** is absorbed by the default `tolerance` (`0.01`); raise it only
-  when a case genuinely needs a looser grid.
-- **`Match.ref(label)`** on the expected side asserts id correspondence for a
-  referential feature (an id that must line up in two places); `Match.anyNumber` /
-  `anyString` leave an id a case doesn't pin fully open.
+- **A numeric `id` is ignored unless a case pins it.** The ECS allocates entity ids
+  from its own space, so a case omits `id` and the entity's content still compares.
+  Pin it only to assert a reference (below).
+- **Float noise** is absorbed by the default `tolerance` (`0.01`), threaded through
+  `match?: { tolerance }`; raise it only when a case needs a looser grid.
+- **`Match.ref(label)`** on the expected side asserts id *correspondence* for a
+  referential feature — a reference that must line up with the entity it points at
+  (a `selectedId` → a specific todo). Put `ref("t")` on both the reference **and**
+  that entity's `id`; the labels form a bijection over the actual ids.
+  `Match.anyNumber` / `anyString` leave an id a case doesn't pin fully open. `ref`
+  correspondence holds even across a `ReadonlySet` boundary.
 
 ## Recording side effects — built in, no Proxy
 

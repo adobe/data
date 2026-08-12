@@ -8,7 +8,7 @@ import type { State } from "./state.js";
 // + scene filters exercise the whole ecs↔State map.
 export const samples: readonly State[] = [
   {
-    sprites: [
+    sprites: new Set([
       {
         id: Match.anyNumber,
         position: [100, 100],
@@ -33,15 +33,15 @@ export const samples: readonly State[] = [
         hovered: false,
         active: true,
       },
-    ],
+    ]),
     filter: "sepia",
   },
   {
-    sprites: [],
+    sprites: new Set(),
     filter: "none",
   },
   {
-    sprites: [
+    sprites: new Set([
       {
         id: Match.anyNumber,
         position: [10, 10],
@@ -58,7 +58,7 @@ export const samples: readonly State[] = [
         hovered: false,
         active: false,
       },
-    ],
+    ]),
     filter: "blur",
   },
 ];

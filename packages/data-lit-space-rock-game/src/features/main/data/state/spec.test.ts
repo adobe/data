@@ -10,5 +10,4 @@ import { transitions } from "./transitions.js";
 Conformance.runSpec({
   state: State,
   transitions,
-  match: { unordered: new Set(["bullets", "asteroids"]) },
 });

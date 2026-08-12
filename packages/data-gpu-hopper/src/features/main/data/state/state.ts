@@ -11,7 +11,7 @@ export type State = {
   readonly width: number;
   readonly height: number;
   readonly lanes: readonly Lane[];
-  readonly hazards: readonly Hazard[];
+  readonly hazards: ReadonlySet<Hazard>;
   readonly frog: Frog;
   readonly lives: number;
   readonly score: number;

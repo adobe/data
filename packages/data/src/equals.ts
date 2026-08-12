@@ -39,6 +39,20 @@ export function equals(a: unknown, b: unknown): boolean {
     return true;
   }
 
+  // 2b  Sets & Maps — membership is order-independent, but each element/entry
+  //     recurses through `equals` (so an array *inside* a Set stays ordered). A
+  //     Map's entries compare as `[key, value]` pairs. O(n²) greedy pairing, which
+  //     is exact because `equals` is an equivalence relation; intended for modest
+  //     collections, not large hot-path Sets/Maps.
+  if (a instanceof Set || b instanceof Set) {
+    if (!(a instanceof Set) || !(b instanceof Set)) return false;
+    return multisetEquals([...a], [...b]);
+  }
+  if (a instanceof Map || b instanceof Map) {
+    if (!(a instanceof Map) || !(b instanceof Map)) return false;
+    return multisetEquals([...a], [...b]);
+  }
+
   // 3  Typed-buffer fast path. Inlined here (rather than dispatched to
   // `typedBufferEquals`) so the recursion stays intra-module; see the
   // brand comment above.
@@ -70,4 +84,24 @@ export function equals(a: unknown, b: unknown): boolean {
   for (const _ in bo) keyBalance--;
 
   return keyBalance === 0;
+}
+
+// Multiset equality: same length and every element of `aa` pairs with a distinct
+// `equals` partner in `bb`. Greedy first-match is exact because `equals` is an
+// equivalence relation, so equal elements are interchangeable.
+function multisetEquals(aa: readonly unknown[], bb: readonly unknown[]): boolean {
+  if (aa.length !== bb.length) return false;
+  const used = new Array<boolean>(bb.length).fill(false);
+  for (const x of aa) {
+    let matched = false;
+    for (let j = 0; j < bb.length; j++) {
+      if (!used[j] && equals(x, bb[j])) {
+        used[j] = true;
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) return false;
+  }
+  return true;
 }

@@ -10,8 +10,8 @@ import { Ship } from "../ship/ship.js";
 export const create = (): State => ({
   bounds: [0, 0],
   ship: Ship.spawn([0, 0]),
-  bullets: [],
-  asteroids: [],
+  bullets: new Set(),
+  asteroids: new Set(),
   score: 0,
   lives: 3,
   wave: 0,

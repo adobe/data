@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
+import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { appendTodo } from "./append-todo.js";
@@ -11,7 +12,7 @@ export const createBulkTodos = (
   {
     count,
     analytics,
-  }: { readonly count: number; readonly analytics: AnalyticsService },
+  }: { readonly count: number } & Pick<Services, "analytics">,
 ): Pick<State, "todos"> => {
   analytics.bulkTodosCreated({ count });
   const total = Math.max(0, Math.floor(count));

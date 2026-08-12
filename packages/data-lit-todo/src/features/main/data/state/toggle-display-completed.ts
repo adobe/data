@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
+import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data-testing";
@@ -8,7 +9,7 @@ import { Match } from "@adobe/data-testing";
 // patch — flipping the flag; also logs `displayCompletedToggled`.
 export const toggleDisplayCompleted = (
   state: Pick<State, "displayCompleted">,
-  { analytics }: { readonly analytics: AnalyticsService },
+  { analytics }: Pick<Services, "analytics">,
 ): Pick<State, "displayCompleted"> => {
   analytics.displayCompletedToggled();
   return { displayCompleted: !state.displayCompleted };

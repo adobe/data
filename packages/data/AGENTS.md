@@ -126,8 +126,9 @@ Transactions receive `(store, payload)`. Mutate via:
 
 ## Data and schemas
 
-- **Data:** immutable, JSON-serializable values.
+- **Data:** immutable, serializable values — JSON plus `ReadonlySet`, `ReadonlyMap`, and `Blob`. `ReadonlyArray` is ordered; `ReadonlySet` / `ReadonlyMap` are unordered. Serialize Set/Map-bearing Data with `Data.stringify` / `Data.parse` (plain `JSON.stringify` cannot represent them).
 - **Schemas:** JSON Schema with `as const` so `FromSchema` (or equivalent) can derive TypeScript types. Use schema namespaces for component definitions in ECS if we the types are numeric and we want them stored in linear memory for performance. See Vec2, Vec3 etc. Follow those patterns for numeric values. Do not use an explicit schema for resources, just use `{ default: value as Type }` since there is only one value we don't need linear memory layout.
+- **Set / Map values:** a `ReadonlySet` / `ReadonlyMap` column needs no dedicated schema type — declare it with the same `{ default: value as Type }` form (it lands in a generic array buffer, not linear memory). `Data.stringify` / `Data.parse` and the store's serialize/deserialize round-trip it; `equals` compares it order-independently.
 
 ### Data modeling example
 

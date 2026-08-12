@@ -48,6 +48,10 @@ export const addRandomTodo = async (service: ServiceDatabase) => {
   Reactive computeds refresh only on a committed transaction, so an imperative
   read of one can hand back a stale shared cache (and it's the UI's layer, not
   the action's). This also keeps the action correct under the conformance seed.
+- **ECS-based feature (no `data/state/`):** no conformance cases exist, so **every
+  action carries its own unit test** — build a db, run the action with fake
+  `services`, and assert the committed state and the recorded service calls. The
+  bullet below applies only to **state-based** features (see `../../index.md`, Two modes).
 - **Conformance** is the action surface of the feature's single
   `conformance/conformance.test.ts` `Conformance.runFeature({...})` call. It pulls
   actions off **`plugin.actions`** and pairs each to the **same-named** `data/state`

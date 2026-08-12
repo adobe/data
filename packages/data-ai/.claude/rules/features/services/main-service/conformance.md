@@ -5,6 +5,11 @@ paths:
 
 # services/main-service/conformance/ — keeping the ECS honest against the spec
 
+**State-based features only.** This folder exists only when the feature has a
+`data/state/` spec to conform to. An **ECS-based** feature (no `data/state/`) omits
+this folder entirely and unit-tests its transactions/actions directly instead (see
+`../../index.md`, Two modes, and `transactions.md` / `actions.md`).
+
 Test-only (imported only by `*.test.ts`, in no facet barrel). The `data/state`
 cases are the shared truth; the shared **`@adobe/data-testing`** runner replays
 them against the ECS. This folder holds only the *feature-specific projection*

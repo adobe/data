@@ -9,14 +9,19 @@ paths:
 source of truth. Each transition is a read→write **patch** over state; each
 derivation a pure selector. Reference: `data-lit-todo`'s `data/state/`.
 
+The presence of this folder makes the feature **state-based** — its Functional
+State Specification is authoritative and the ECS conforms to it. A feature without
+`data/state/` is **ECS-based** (the ECS is the source of truth, no conformance) and
+this rule does not apply — see `../index.md`, Two modes.
+
 ```ts
 // state.ts — the aggregate + the transition/derivation namespace.
 export type State = { readonly todos: readonly Todo[]; readonly displayCompleted: boolean };
 export * as State from "./public.js";
 ```
 
-Every feature with ECS resources/transactions owns a `State` (a scalar
-`{ playing: boolean }`, or `{}` when there is none).
+Every **state-based** feature owns a `State` (a scalar `{ playing: boolean }`, or
+`{}` when there is none). An ECS-based feature has no `State` at all.
 
 **Collections carry their ordering in the type.** Use `ReadonlyArray` **only** when
 order is meaningful — a display list the UI renders in sequence, a drag-reorderable

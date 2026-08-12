@@ -23,19 +23,10 @@ export * as State from "./public.js";
 Every **state-based** feature owns a `State` (a scalar `{ playing: boolean }`, or
 `{}` when there is none). An ECS-based feature has no `State` at all.
 
-**Collections carry their ordering in the type.** Use `ReadonlyArray` **only** when
-order is meaningful — a display list the UI renders in sequence, a drag-reorderable
-list, a positional tuple like a `Vec2`. Use `ReadonlySet` for an **unordered** bag
-(entities the ECS materialises in nondeterministic row order — bullets, asteroids,
-sprites), and `ReadonlyMap` for a keyed lookup whose **keys are meaningful** (an
-enum, a name, a stable string). The type *is* the ordering contract: conformance
-compares `ReadonlyArray` positionally and `ReadonlySet`/`ReadonlyMap`
-order-independently, with no per-feature match option (see
-`conformance.md` and `../../data-modelling.md`). Identity-keyed collections are a
-`ReadonlySet<Entity>` (the entity carries its own `id`), never a
-`ReadonlyMap<id, Entity>` — a numeric `id` is ignored in comparison, so the set
-compares by content. `todos` above is a `ReadonlyArray` because todo order is a
-user-visible, reorderable fact.
+**A `State` field's collection type carries its ordering** — see
+`../../data-modelling.md` (Collection ordering is carried by the type). `todos`
+above is a `ReadonlyArray` because todo order is a user-visible, reorderable fact;
+an unordered entity bag (bullets, sprites) is a `ReadonlySet`.
 
 **`State` has a standard shape.** Two exports are conventional and drive
 conformance:

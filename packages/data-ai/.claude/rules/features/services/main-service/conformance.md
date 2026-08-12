@@ -200,17 +200,11 @@ reintroduce a per-item adapter to bridge a name mismatch — add the same-named 
 
 ## Ordering, tolerance, `ref`
 
-Ordering is carried by the **type**, so per-feature tuning is mostly the model, not
-config:
+Ordering is carried by the value's **type**, not a match option — `ReadonlyArray`
+positional, `ReadonlySet` / `ReadonlyMap` order-independent (the rule and its
+rationale live in `../../../data-modelling.md`). What's specific to writing
+conformance cases:
 
-- **`ReadonlyArray` compares in order.** `toState` reads a display-ordered
-  collection in order — that is what verifies a reorder — and positional tuples (a
-  `Vec2`) stay in order.
-- **`ReadonlySet` / `ReadonlyMap` compare order-independently.** Model a collection
-  the ECS materialises with no display order (bullets, asteroids) as a `ReadonlySet`
-  on `State` (see `data/state.md`); it then compares as a multiset **by type** — no
-  `match` option, and no risk of blanket-unordering a coordinate tuple (which would
-  conflate `[100,180]` with `[180,100]`).
 - **A numeric `id` is ignored unless a case pins it.** The ECS allocates entity ids
   from its own space, so a case omits `id` and the entity's content still compares.
   Pin it only to assert a reference (below).

@@ -103,9 +103,9 @@ main-service/
   core-database/            # the schema (above)
   index-database/           # extends core;        indexes/
   transaction-database/     # extends index;       transactions/
-  computed-database/        # extends transaction; computed/
-  service-database/         # extends computed;     services/
-  action-database/          # extends service;      actions/
+  service-database/         # extends transaction; services/
+  computed-database/        # extends service;     computed/
+  action-database/          # extends computed;     actions/
 ```
 
 Each exports a namespace mirroring the plugin — the composed object is a
@@ -121,8 +121,8 @@ export namespace IndexDatabase {
 
 ### The assembled database — `MainService`
 
-*Which* layer is topmost varies with the facets a feature uses (computed /
-service / action / system). Consumers — `ui/`, the app entry, `services/main-service/conformance/`
+*Which* layer is topmost varies with the facets a feature uses (service /
+computed / action / system). Consumers — `ui/`, the app entry, `services/main-service/conformance/`
 — need the *whole* feature database but must not name that layer, or adding or
 dropping a layer rewrites them all. Alias it once from the **folder-eponymous
 `main-service.ts`** (per `global/namespace.md`, a folder's primary export lives in
@@ -155,10 +155,11 @@ two features' `CoreDatabase`s never collide.
   transaction-context type. Use **`CoreDatabase.Store`** for a transaction that
   reads/writes entities, resources, or archetypes; **`IndexDatabase.Store`** the
   moment it reads an index.
-- **the whole `Database`** — **computed**, **services**, and **actions** each
+- **the whole `Database`** — **services**, **computed**, and **actions** each
   take `service: <Layer>` (the lowest layer whose database exposes what they
-  read/call): computed reads `service.observe.*`; services read observables and
-  call transactions; actions call `service.services.*` then
+  read/call): services read observables and call transactions; computed reads
+  `service.observe.*` and, once it needs a service's own reactive surface,
+  `service.services.*`; actions call `service.services.*` then
   `service.transactions.*`.
 
 Each subfolder has its own rule. Modelling a plugin's authored vs. derived

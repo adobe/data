@@ -11,7 +11,7 @@ its transactions. This is where the async `services/` contracts (or
 framework services like `AgenticService`) are wired to ECS state.
 
 ```ts
-export const createAgentService = (service: ComputedDatabase, mark: PlayerMark): AgenticService =>
+export const createAgentService = (service: TransactionDatabase, mark: PlayerMark): AgenticService =>
     /* … reads service.observe.*, calls service.transactions.* … */;
 ```
 

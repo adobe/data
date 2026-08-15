@@ -55,6 +55,21 @@ export function isBlobRef(value: unknown): value is BlobRef {
   return isRemoteBlobRef(value) || isLocalBlobRef(value);
 }
 
+/**
+ * Namespaced surface for {@link BlobRef}, mirroring `BlobHandle` / `BlobMeta`
+ * in `../blob/`. Lets consumers reach the schema and guard through the type's
+ * own name — `BlobRef.schema`, `BlobRef.is(x)` — instead of importing the
+ * standalone `BlobRefSchema` / `isBlobRef`. An ECS component that stores a
+ * BlobRef has no natural empty value, so model the column as
+ * `Nullable(BlobRef.schema)` with a `null` default (no cast) rather than a
+ * `null as unknown as BlobRef` placeholder.
+ */
+// eslint-disable-next-line @typescript-eslint/no-namespace
+export namespace BlobRef {
+  export const schema = BlobRefSchema;
+  export const is = isBlobRef;
+}
+
 function isRemoteUrl(url: string): url is RemoteUrl {
   return url.startsWith(remoteUrlPrefix);
 }

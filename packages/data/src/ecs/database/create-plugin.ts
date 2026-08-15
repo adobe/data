@@ -194,7 +194,15 @@ export function createPlugin<
     const AD,
     const S extends string = never,
     const SVF extends ServiceFactories<Database.FromPlugin<AmbientPlugin<XP, IP>>> = {},
-    const CVF extends PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, RemoveIndex<TD>, S, RemoveIndex<AD> & XP['actions'] & IP['actions'], AmbientPlugin<XP, IP>, RemoveIndex<SVF>, RemoveIndex<IX>>> = {},
+    // The computed-factory `db` surfaces only the BASE plugins' actions
+    // (`XP['actions'] & IP['actions']`), never this call's own `AD`. `AD` is
+    // inferred from the sibling `actions` property, so referencing it in the
+    // `computed` contextual type made `AD` un-inferable whenever both facets
+    // shared one `create` — it collapsed to `{}` and every action vanished.
+    // Excluding it is also correct semantically: `actions` are declared after
+    // `computed`, so a computed reading a same-call action is a forward
+    // reference — the action factory `db` already omits `AD` for the same reason.
+    const CVF extends PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, RemoveIndex<TD>, S, XP['actions'] & IP['actions'], AmbientPlugin<XP, IP>, RemoveIndex<SVF>, RemoveIndex<IX>>> = {},
 >(
     plugins: {
         imports?: IP,
@@ -206,7 +214,7 @@ export function createPlugin<
         resources?: RS,
         archetypes?: A,
         indexes?: IX,
-        computed?: CVF & PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, {}, string, RemoveIndex<AD> & XP['actions'] & IP['actions'], AmbientPlugin<XP, IP>, RemoveIndex<SVF>, RemoveIndex<IX>>>,
+        computed?: CVF & PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, {}, string, XP['actions'] & IP['actions'], AmbientPlugin<XP, IP>, RemoveIndex<SVF>, RemoveIndex<IX>>>,
         transactions?: TD,
         actions?: AD & {
             readonly [K: string]: (db: Database<

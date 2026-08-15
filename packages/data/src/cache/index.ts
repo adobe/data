@@ -2,7 +2,7 @@
 
 export {
   type BlobStore,
-  type BlobRef,
+  BlobRef,
   blobStore,
   isBlobRef,
   BlobRefSchema,

@@ -10,7 +10,7 @@ import { laneAt } from "./lane-at.js";
 // composes them with hazard coverage and an on-board test. A frog carried off
 // the board edge is no longer "covered" by any hazard, so open water drowns it.
 export const frogOutcome = <
-  T extends Pick<State, "lanes" | "hazards" | "frog" | "width">,
+  T extends Pick<State, "lanes" | "entities" | "frog" | "width">,
 >(
   state: T,
 ): Outcome => {
@@ -19,6 +19,8 @@ export const frogOutcome = <
   const onBoard = state.frog.x >= 0 && state.frog.x <= state.width - 1;
   const covered =
     onBoard &&
-    [...state.hazards].some((hazard) => hazard.lane === state.frog.y && Hazard.covers(hazard, state.frog.x));
+    [...state.entities.values()].some(
+      (hazard) => Hazard.is(hazard) && hazard.lane === state.frog.y && Hazard.covers(hazard, state.frog.x),
+    );
   return covered ? LaneKind.coveredOutcome[lane.kind] : LaneKind.emptyOutcome[lane.kind];
 };

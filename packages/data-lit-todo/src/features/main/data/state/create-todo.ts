@@ -6,10 +6,10 @@ import type { Conformance } from "./conformance-case.js";
 import { appendTodo } from "./append-todo.js";
 import { Match } from "@adobe/data-testing";
 
-// Reads the todos, writes the todos — a `{ todos }` patch — by delegating to the
-// shared `appendTodo`; also logs `todoCreated`.
+// Reads the entities, writes the entities — an `{ entities }` patch — by
+// delegating to the shared `appendTodo`; also logs `todoCreated`.
 export const createTodo = (
-  state: Pick<State, "todos">,
+  state: Pick<State, "entities">,
   {
     name,
     complete,
@@ -18,59 +18,65 @@ export const createTodo = (
     readonly name: string;
     readonly complete?: boolean;
   } & Pick<Services, "analytics">,
-): Pick<State, "todos"> => {
+): Pick<State, "entities"> => {
   analytics.todoCreated({ name });
   return appendTodo(state, { name, complete });
 };
 
 // Spec-owned cases, shared with the ecs `createTodo` transaction. `before` is a
-// delta over `State.create()` (no todos, completed hidden); `after` lists only
-// what the transition writes — the todos (minted id left open as `Match.anyNumber`,
-// the ecs assigns its own). `complete` defaults to false; it logs `todoCreated`.
+// delta over `State.create()` (empty entities, completed hidden); the `before`
+// map is keyed by PLAIN spec-id numbers. `after` lists only what the transition
+// writes — the entities — keyed by `Match.ref` with a DISTINCT label per entry
+// (the ecs mints its own ids, so keys stay open; values are id-less and compare by
+// content). `complete` defaults to false; it logs `todoCreated`.
 export const cases: Conformance<typeof createTodo> = [
   {
     name: "appends the first todo to an empty list",
     before: {},
     args: { name: "a", analytics: AnalyticsService.createFake() },
     after: {
-      todos: [{ id: Match.anyNumber, name: "a", complete: false }],
+      entities: new Map([
+        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
+      ]),
     },
     effects: { analytics: [["todoCreated", { name: "a" }]] },
   },
   {
     name: "appends a complete todo",
-    before: { todos: [{ id: 1, name: "a", complete: false }] },
+    before: {
+      entities: new Map([[1, { name: "a", complete: false, order: 0 }]]),
+    },
     args: {
       name: "b",
       complete: true,
       analytics: AnalyticsService.createFake(),
     },
     after: {
-      todos: [
-        { id: Match.anyNumber, name: "a", complete: false },
-        { id: Match.anyNumber, name: "b", complete: true },
-      ],
+      entities: new Map([
+        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
+        [Match.ref("b"), { name: "b", complete: true, order: 1 }],
+      ]),
     },
     effects: { analytics: [["todoCreated", { name: "b" }]] },
   },
   {
     name: "appends onto a longer list",
     before: {
-      todos: [
-        { id: 1, name: "a", complete: false },
-        { id: 2, name: "b", complete: true },
-        { id: 3, name: "c", complete: false },
-      ],
+      entities: new Map([
+        [1, { name: "a", complete: false, order: 0 }],
+        [2, { name: "b", complete: true, order: 1 }],
+        [3, { name: "c", complete: false, order: 2 }],
+      ]),
       displayCompleted: true,
     },
     args: { name: "d", analytics: AnalyticsService.createFake() },
     after: {
-      todos: [
-        { id: Match.anyNumber, name: "a", complete: false },
-        { id: Match.anyNumber, name: "b", complete: true },
-        { id: Match.anyNumber, name: "c", complete: false },
-        { id: Match.anyNumber, name: "d", complete: false },
-      ],
+      entities: new Map([
+        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
+        [Match.ref("b"), { name: "b", complete: true, order: 1 }],
+        [Match.ref("c"), { name: "c", complete: false, order: 2 }],
+        [Match.ref("d"), { name: "d", complete: false, order: 3 }],
+      ]),
     },
     effects: { analytics: [["todoCreated", { name: "d" }]] },
   },

@@ -24,7 +24,7 @@ describe("State.create", () => {
   });
 
   it("places cars only on roads and logs only on rivers", () => {
-    for (const hazard of state.hazards) {
+    for (const hazard of state.entities.values()) {
       const kind = State.laneAt(state, hazard.lane)?.kind;
       const expected = hazard.kind === "car" ? "road" : "river";
       expect(kind).toBe(expected);
@@ -35,7 +35,7 @@ describe("State.create", () => {
     const carrying = new Set(["road", "river"]);
     for (const lane of state.lanes) {
       if (!carrying.has(lane.kind)) continue;
-      const populated = [...state.hazards].some((hazard) => hazard.lane === lane.row);
+      const populated = [...state.entities.values()].some((hazard) => hazard.lane === lane.row);
       expect(populated, `lane ${lane.row} (${lane.kind}) has no hazard`).toBe(true);
     }
   });

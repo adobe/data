@@ -2,68 +2,72 @@
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
 import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
+import type { Todo } from "../todo/todo.js";
 import { entity, type Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data-testing";
 
-// Reads the todos, writes the todos — a `{ todos }` patch — dropping the
-// addressed id; also logs `todoDeleted`.
+// Reads the entities, writes the entities — an `{ entities }` patch — dropping the
+// addressed id; also logs `todoDeleted`. Surviving todos keep their `order` (the
+// ecs `deleteTodo` does not renumber either).
 export const deleteTodo = (
-  state: Pick<State, "todos">,
+  state: Pick<State, "entities">,
   {
     id,
     analytics,
   }: { readonly id: number } & Pick<Services, "analytics">,
-): Pick<State, "todos"> => {
+): Pick<State, "entities"> => {
   analytics.todoDeleted();
-  return { todos: state.todos.filter((todo) => todo.id !== id) };
+  const entities = new Map(state.entities);
+  entities.delete(id);
+  return { entities };
 };
 
-const three = [
-  { id: 1, name: "a", complete: false },
-  { id: 2, name: "b", complete: true },
-  { id: 3, name: "c", complete: false },
+const three: readonly (readonly [number, Todo])[] = [
+  [1, { name: "a", complete: false, order: 0 }],
+  [2, { name: "b", complete: true, order: 1 }],
+  [3, { name: "c", complete: false, order: 2 }],
 ];
 
 // Spec-owned cases, shared with the ecs `deleteTodo` transaction. `before` is a
-// delta over `State.create()`; `after` lists only the written todos. The
-// addressed todo is removed; an unknown id is a no-op. The transition logs
-// `todoDeleted`. `before` ids are concrete (they address the delete); surviving
-// `after` ids are left open (`Match.anyNumber`) — the ecs assigns its own.
+// delta over `State.create()` keyed by PLAIN spec-ids (so `entity(2)` resolves via
+// the seed map); `after` lists the surviving entities with distinct `Match.ref`
+// keys. The addressed todo is removed; an unknown id is a no-op. The transition
+// logs `todoDeleted`.
 export const cases: Conformance<typeof deleteTodo> = [
   {
     name: "removes a middle todo",
-    before: { todos: [...three] },
+    before: { entities: new Map(three) },
     args: { id: entity(2), analytics: AnalyticsService.createFake() },
     after: {
-      todos: [
-        { id: Match.anyNumber, name: "a", complete: false },
-        { id: Match.anyNumber, name: "c", complete: false },
-      ],
+      entities: new Map([
+        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
+        [Match.ref("c"), { name: "c", complete: false, order: 2 }],
+      ]),
     },
     effects: { analytics: [["todoDeleted"]] },
   },
   {
     name: "removes the first todo",
-    before: { todos: [...three], displayCompleted: true },
+    before: { entities: new Map(three), displayCompleted: true },
     args: { id: entity(1), analytics: AnalyticsService.createFake() },
     after: {
-      todos: [
-        { id: Match.anyNumber, name: "b", complete: true },
-        { id: Match.anyNumber, name: "c", complete: false },
-      ],
+      entities: new Map([
+        [Match.ref("b"), { name: "b", complete: true, order: 1 }],
+        [Match.ref("c"), { name: "c", complete: false, order: 2 }],
+      ]),
     },
     effects: { analytics: [["todoDeleted"]] },
   },
   {
     name: "is a no-op for an unknown id but still logs the delete",
-    before: { todos: [...three] },
+    before: { entities: new Map(three) },
     args: { id: entity(99), analytics: AnalyticsService.createFake() },
     after: {
-      todos: [
-        { id: Match.anyNumber, name: "a", complete: false },
-        { id: Match.anyNumber, name: "b", complete: true },
-        { id: Match.anyNumber, name: "c", complete: false },
-      ],
+      entities: new Map([
+        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
+        [Match.ref("b"), { name: "b", complete: true, order: 1 }],
+        [Match.ref("c"), { name: "c", complete: false, order: 2 }],
+      ]),
     },
     effects: { analytics: [["todoDeleted"]] },
   },

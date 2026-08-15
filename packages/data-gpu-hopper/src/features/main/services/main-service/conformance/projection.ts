@@ -15,11 +15,14 @@ const readFrog = (store: CoreDatabase.Store): Frog => {
   throw new Error("frog entity missing from store");
 };
 
-const readHazards = (store: CoreDatabase.Store): Set<Hazard> => {
-  const hazards = new Set<Hazard>();
+// Read every hazard entity back into the identity-keyed `entities` map. The key is
+// the allocated ecs entity id (the runner leaves it open via `Match.ref`); the
+// value is id-less.
+const readEntities = (store: CoreDatabase.Store): Map<number, Hazard> => {
+  const entities = new Map<number, Hazard>();
   for (const arch of store.queryArchetypes(store.archetypes.Hazard.components)) {
     for (let row = 0; row < arch.rowCount; row++) {
-      hazards.add({
+      entities.set(arch.columns.id.get(row), {
         kind: arch.columns.kind.get(row),
         lane: arch.columns.lane.get(row),
         x: arch.columns.x.get(row),
@@ -28,7 +31,7 @@ const readHazards = (store: CoreDatabase.Store): Set<Hazard> => {
       });
     }
   }
-  return hazards;
+  return entities;
 };
 
 // The test-only ecs↔`State` projection, passed to `Conformance.runFeature` (and
@@ -59,17 +62,17 @@ export const projection = {
     store.resources.lanes = state.lanes;
 
     store.archetypes.Frog.insert({ x: state.frog.x, y: state.frog.y });
-    for (const hazard of state.hazards) {
+    for (const hazard of state.entities.values()) {
       store.archetypes.Hazard.insert(hazard);
     }
   },
   // Read a store back into a `data/` `State` — the inverse of `fromState`. The
-  // scalar resources join the frog and the hazard entities.
+  // scalar resources join the singleton frog and the identity-keyed hazard entities.
   toState: (store: CoreDatabase.Store): State => ({
     width: store.resources.width,
     height: store.resources.height,
     lanes: store.resources.lanes,
-    hazards: readHazards(store),
+    entities: readEntities(store),
     frog: readFrog(store),
     lives: store.resources.lives,
     score: store.resources.score,

@@ -2,75 +2,81 @@
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
 import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
+import type { Todo } from "../todo/todo.js";
 import { entity, type Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data-testing";
 
-// Reads the todos, writes the todos — a `{ todos }` patch — flipping the
+// Reads the entities, writes the entities — an `{ entities }` patch — flipping the
 // addressed todo's `complete`; also logs `todoToggled`.
 export const toggleComplete = (
-  state: Pick<State, "todos">,
+  state: Pick<State, "entities">,
   {
     id,
     analytics,
   }: { readonly id: number } & Pick<Services, "analytics">,
-): Pick<State, "todos"> => {
+): Pick<State, "entities"> => {
   analytics.todoToggled();
+  const target = state.entities.get(id);
+  if (target === undefined) return { entities: state.entities };
   return {
-    todos: state.todos.map((todo) =>
-      todo.id === id ? { ...todo, complete: !todo.complete } : todo,
-    ),
+    entities: new Map(state.entities).set(id, {
+      ...target,
+      complete: !target.complete,
+    }),
   };
 };
 
+const two: readonly (readonly [number, Todo])[] = [
+  [1, { name: "a", complete: false, order: 0 }],
+  [2, { name: "b", complete: false, order: 1 }],
+];
+
 // Spec-owned cases, shared with the ecs `toggleComplete` transaction. `before` is
-// a delta over `State.create()`; `after` lists only the written todos. Only the
-// addressed todo's `complete` flips; an unknown id is a no-op. The transition
-// logs `todoToggled` unconditionally (as the action does). `before` ids address
-// the toggle; `after` ids are left open (`Match.anyNumber`).
+// a delta over `State.create()` keyed by PLAIN spec-ids; `after` lists the written
+// entities with distinct `Match.ref` keys. Only the addressed todo's `complete`
+// flips; an unknown id is a no-op. The transition logs `todoToggled`
+// unconditionally (as the action does).
 export const cases: Conformance<typeof toggleComplete> = [
   {
     name: "marks an incomplete todo complete",
-    before: {
-      todos: [
-        { id: 1, name: "a", complete: false },
-        { id: 2, name: "b", complete: false },
-      ],
-    },
+    before: { entities: new Map(two) },
     args: { id: entity(1), analytics: AnalyticsService.createFake() },
     after: {
-      todos: [
-        { id: Match.anyNumber, name: "a", complete: true },
-        { id: Match.anyNumber, name: "b", complete: false },
-      ],
+      entities: new Map([
+        [Match.ref("a"), { name: "a", complete: true, order: 0 }],
+        [Match.ref("b"), { name: "b", complete: false, order: 1 }],
+      ]),
     },
     effects: { analytics: [["todoToggled"]] },
   },
   {
     name: "marks a complete todo incomplete",
     before: {
-      todos: [
-        { id: 1, name: "a", complete: true },
-        { id: 2, name: "b", complete: false },
-      ],
+      entities: new Map([
+        [1, { name: "a", complete: true, order: 0 }],
+        [2, { name: "b", complete: false, order: 1 }],
+      ]),
       displayCompleted: true,
     },
     args: { id: entity(1), analytics: AnalyticsService.createFake() },
     after: {
-      todos: [
-        { id: Match.anyNumber, name: "a", complete: false },
-        { id: Match.anyNumber, name: "b", complete: false },
-      ],
+      entities: new Map([
+        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
+        [Match.ref("b"), { name: "b", complete: false, order: 1 }],
+      ]),
     },
     effects: { analytics: [["todoToggled"]] },
   },
   {
     name: "is a no-op for an unknown id but still logs the toggle",
     before: {
-      todos: [{ id: 1, name: "a", complete: false }],
+      entities: new Map([[1, { name: "a", complete: false, order: 0 }]]),
     },
     args: { id: entity(99), analytics: AnalyticsService.createFake() },
     after: {
-      todos: [{ id: Match.anyNumber, name: "a", complete: false }],
+      entities: new Map([
+        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
+      ]),
     },
     effects: { analytics: [["todoToggled"]] },
   },

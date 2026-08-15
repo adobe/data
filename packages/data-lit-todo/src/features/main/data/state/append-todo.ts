@@ -5,17 +5,20 @@ import type { State } from "./state.js";
 // re-exported through `public.ts`, so it is not a public `State.` transform and
 // carries no conformance cases. Shared by the `createTodo` and `createRandomTodo`
 // transitions so the pure append stays single-sourced while each fires its own
-// analytics side effect. Reads the todos, writes the todos — a `{ todos }` patch.
+// analytics side effect. Reads the entities, writes the entities — an `{ entities }`
+// patch. Mints the next id (the map key) and sets `order` to the current size so
+// the todo sorts after every existing one.
 export const appendTodo = (
-  state: Pick<State, "todos">,
+  state: Pick<State, "entities">,
   input: { readonly name: string; readonly complete?: boolean },
-): Pick<State, "todos"> => {
-  const nextId =
-    state.todos.reduce((max, todo) => Math.max(max, todo.id), 0) + 1;
+): Pick<State, "entities"> => {
+  const id = Math.max(0, ...state.entities.keys()) + 1;
+  const order = state.entities.size;
   return {
-    todos: [
-      ...state.todos,
-      { id: nextId, name: input.name, complete: input.complete ?? false },
-    ],
+    entities: new Map(state.entities).set(id, {
+      name: input.name,
+      complete: input.complete ?? false,
+      order,
+    }),
   };
 };

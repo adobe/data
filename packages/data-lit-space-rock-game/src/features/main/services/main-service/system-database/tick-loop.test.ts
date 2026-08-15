@@ -24,6 +24,7 @@
 import { describe, it, expect } from "vitest";
 import { State } from "../../../data/state/state.js";
 import { Ship } from "../../../data/ship/ship.js";
+import { Asteroid } from "../../../data/asteroid/asteroid.js";
 import { Input } from "../../../data/input/input.js";
 import { cases } from "../../../data/state/step.js";
 import { Match } from "@adobe/data-testing";
@@ -62,7 +63,7 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
       ...State.create(),
       bounds: [200, 200],
       ship: Ship.spawn([100, 100]),
-      asteroids: new Set(),
+      entities: new Map(),
       wave: 0,
     });
     db.store.resources.frameDelta = 0.1;
@@ -70,10 +71,11 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
     driveFrame(db);
 
     const after = projection.toState(db.store);
+    const asteroids = [...after.entities.values()].filter(Asteroid.is);
     expect(after.wave).toBe(1);
-    expect(after.asteroids.size).toBe(4);
-    expect([...after.asteroids].every((a) => a.size === "large")).toBe(true);
-    const positions = [...after.asteroids].map((a) => [
+    expect(asteroids.length).toBe(4);
+    expect(asteroids.every((a) => a.size === "large")).toBe(true);
+    const positions = asteroids.map((a) => [
       Math.round(a.position[0]),
       Math.round(a.position[1]),
     ]);

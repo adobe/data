@@ -1,4 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
@@ -6,13 +7,15 @@ import { Bullet } from "../bullet/bullet.js";
 import { Ship } from "../ship/ship.js";
 
 // Fire one bullet from the ship's nose, inheriting its momentum. Composes the
-// ship's muzzle kinematics with the bullet's own speed constant.
+// ship's muzzle kinematics with the bullet's own speed constant, minting a fresh
+// entity id (the map key) for it — the bullet value itself carries no id.
 export const fireBullet = (
-  state: Pick<State, "ship" | "bullets">,
-): Pick<State, "bullets"> => {
+  state: Pick<State, "ship" | "entities">,
+): Pick<State, "entities"> => {
   const { position, velocity } = Ship.muzzle(state.ship, Bullet.speed);
   const bullet: Bullet = { position, velocity, age: 0 };
-  return { bullets: new Set(state.bullets).add(bullet) };
+  const id = Math.max(0, ...state.entities.keys()) + 1;
+  return { entities: new Map(state.entities).set(id, bullet) };
 };
 
 // Spec-owned cases, shared with the ecs `fireBullet` transaction. A bullet leaves
@@ -27,13 +30,15 @@ export const cases: Conformance<typeof fireBullet> = [
     before: {
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
-      bullets: new Set(),
+      entities: new Map(),
     },
     args: undefined,
     after: {
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
-      bullets: new Set([{ position: [112, 100], velocity: [400, 0], age: 0 }]),
+      entities: new Map([
+        [Match.ref("fired"), { position: [112, 100], velocity: [400, 0], age: 0 }],
+      ]),
     },
   },
   {
@@ -41,13 +46,15 @@ export const cases: Conformance<typeof fireBullet> = [
     before: {
       ...field,
       ship: { position: [100, 100], velocity: [10, 20], rotation: 0 },
-      bullets: new Set(),
+      entities: new Map(),
     },
     args: undefined,
     after: {
       ...field,
       ship: { position: [100, 100], velocity: [10, 20], rotation: 0 },
-      bullets: new Set([{ position: [112, 100], velocity: [410, 20], age: 0 }]),
+      entities: new Map([
+        [Match.ref("fired"), { position: [112, 100], velocity: [410, 20], age: 0 }],
+      ]),
     },
   },
   {
@@ -55,15 +62,15 @@ export const cases: Conformance<typeof fireBullet> = [
     before: {
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
-      bullets: new Set([{ position: [0, 0], velocity: [1, 0], age: 0.2 }]),
+      entities: new Map([[1, { position: [0, 0], velocity: [1, 0], age: 0.2 }]]),
     },
     args: undefined,
     after: {
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
-      bullets: new Set([
-        { position: [0, 0], velocity: [1, 0], age: 0.2 },
-        { position: [112, 100], velocity: [400, 0], age: 0 },
+      entities: new Map([
+        [Match.ref("existing"), { position: [0, 0], velocity: [1, 0], age: 0.2 }],
+        [Match.ref("fired"), { position: [112, 100], velocity: [400, 0], age: 0 }],
       ]),
     },
   },
@@ -72,13 +79,15 @@ export const cases: Conformance<typeof fireBullet> = [
     before: {
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: -Math.PI / 2 },
-      bullets: new Set(),
+      entities: new Map(),
     },
     args: undefined,
     after: {
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: -Math.PI / 2 },
-      bullets: new Set([{ position: [100, 88], velocity: [0, -400], age: 0 }]),
+      entities: new Map([
+        [Match.ref("fired"), { position: [100, 88], velocity: [0, -400], age: 0 }],
+      ]),
     },
   },
 ];

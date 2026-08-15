@@ -22,7 +22,12 @@ export interface MatchOptions {
 // even though the ecs assigns ids from its own space. For an id a case does not
 // want to pin to a specific number, use `anyNumber` to assert only that one exists.
 const REF = Symbol.for("@adobe/data-testing:ref");
-export const ref = (label: string): { readonly [REF]: string } => ({ [REF]: label });
+// Typed as the value it stands in for (defaulting to `number`, the common entity-id
+// case), like `anyNumber`, so it slots into a pinned `number` position — including a
+// `ReadonlyMap<number, …>` KEY. Each call returns a fresh object, so distinct labels
+// are distinct keys (a shared matcher like `anyNumber` would collapse duplicate map
+// keys); same-label occurrences still assert the same actual id (correspondence).
+export const ref = <T = number>(label: string): T => ({ [REF]: label }) as unknown as T;
 const isRef = (value: unknown): value is { readonly [REF]: string } =>
   typeof value === "object" && value !== null && REF in value;
 

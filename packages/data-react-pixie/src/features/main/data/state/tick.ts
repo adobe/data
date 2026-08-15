@@ -6,44 +6,44 @@ import { Match } from "@adobe/data-testing";
 
 // Advance one animation frame: every sprite rotates by `delta * 0.1` radians.
 // `delta` is the frame time step, supplied by the caller (the render loop).
-// Writes only `sprites`.
+// Writes only `entities`.
 export const tick = (
-  state: Pick<State, "sprites">,
+  state: Pick<State, "entities">,
   input: { readonly delta: number },
-): Pick<State, "sprites"> => ({
-  sprites: new Set(
-    [...state.sprites].map((sprite) => ({
-      ...sprite,
-      rotation: sprite.rotation + input.delta * 0.1,
-    })),
+): Pick<State, "entities"> => ({
+  entities: new Map(
+    [...state.entities].map(([id, sprite]): [number, Sprite] => [
+      id,
+      { ...sprite, rotation: sprite.rotation + input.delta * 0.1 },
+    ]),
   ),
 });
 
 const bunny: Sprite = {
-  id: 1, position: [100, 100], rotation: 0, kind: "bunny", hovered: false, active: false,
+  position: [100, 100], rotation: 0, kind: "bunny", hovered: false, active: false,
 };
 const fox: Sprite = {
-  id: 2, position: [300, 200], rotation: 1, kind: "fox", hovered: false, active: false,
+  position: [300, 200], rotation: 1, kind: "fox", hovered: false, active: false,
 };
 
 // Spec-owned cases, shared with the ecs `tick` transaction. Every sprite's
-// rotation advances by delta * 0.1; ids are left open (`anyNumber`).
+// rotation advances by delta * 0.1; `after` keys are `Match.ref` distinct labels.
 export const cases: Conformance<typeof tick> = [
   {
     name: "advances every sprite's rotation by delta * 0.1",
-    before: { sprites: new Set([bunny, fox]) },
+    before: { entities: new Map([[1, bunny], [2, fox]]) },
     args: { delta: 10 },
     after: {
-      sprites: new Set([
-        { ...bunny, id: Match.anyNumber, rotation: 1 },
-        { ...fox, id: Match.anyNumber, rotation: 2 },
+      entities: new Map([
+        [Match.ref("a"), { ...bunny, rotation: 1 }],
+        [Match.ref("b"), { ...fox, rotation: 2 }],
       ]),
     },
   },
   {
     name: "is a no-op on an empty scene",
-    before: { sprites: new Set<Sprite>(), filter: "blur" },
+    before: { entities: new Map<number, Sprite>(), filter: "blur" },
     args: { delta: 5 },
-    after: { sprites: new Set<Sprite>() },
+    after: { entities: new Map<number, Sprite>() },
   },
 ];

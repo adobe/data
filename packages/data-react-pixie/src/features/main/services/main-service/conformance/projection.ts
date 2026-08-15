@@ -4,16 +4,14 @@ import type { Sprite } from "../../../data/sprite/sprite.js";
 import type { State } from "../../../data/state/state.js";
 import type { CoreDatabase } from "../core-database/core-database.js";
 
-// Read one entity back into its `data/` value — the per-entity projection
+// Read one entity back into its id-less `data/` value — the per-entity projection
 // `toState` folds over, and the single place the ecs↔data mapping for a sprite
-// lives. The projected `id` is the entity id (the ecs's own id-space).
+// lives. Identity is the `State.entities` key (the entity itself), never a field.
 const toData = (store: CoreDatabase.Store, entity: Entity): Sprite => {
   const row = store.read(entity, store.archetypes.Sprite);
   if (row === null)
     throw new Error("conformance projection: expected a sprite entity");
   return {
-    // `id` is the entity itself (reads no longer echo it back as a component).
-    id: entity,
     position: row.position,
     rotation: row.rotation,
     kind: row.kind,
@@ -25,8 +23,8 @@ const toData = (store: CoreDatabase.Store, entity: Entity): Sprite => {
 // The test-only ecs↔`State` projection, passed to `Conformance.runFeature`.
 // `fromState` seeds a store to a `State` (clear every sprite, set `filter`, then
 // insert the sprites) and returns the `spec id → seeded entity` map so the
-// runners resolve id-addressed operations generically; `toState` reads it back;
-// `toData` reads one entity.
+// runners resolve id-addressed operations generically; `toState` reads it back
+// into the identity-keyed `entities` map; `toData` reads one entity.
 export const projection = {
   fromState: (
     store: CoreDatabase.Store,
@@ -41,8 +39,8 @@ export const projection = {
     }
     store.resources.filter = state.filter;
     return new Map(
-      [...state.sprites].map((sprite) => [
-        sprite.id,
+      [...state.entities].map(([id, sprite]): [number, Entity] => [
+        id,
         store.archetypes.Sprite.insert({
           position: sprite.position,
           rotation: sprite.rotation,
@@ -54,12 +52,12 @@ export const projection = {
     );
   },
   toState: (store: CoreDatabase.Store): State => ({
-    sprites: new Set(
-      [...store.select(store.archetypes.Sprite.components)].map((entity) =>
-        toData(store, entity),
+    filter: store.resources.filter,
+    entities: new Map(
+      [...store.select(store.archetypes.Sprite.components)].map(
+        (entity): [number, Sprite] => [entity, toData(store, entity)],
       ),
     ),
-    filter: store.resources.filter,
   }),
   toData,
 };

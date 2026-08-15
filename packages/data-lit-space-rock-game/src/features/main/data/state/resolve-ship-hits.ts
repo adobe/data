@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Vec2 } from "@adobe/data/math";
+import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
@@ -10,15 +11,17 @@ import { Collision } from "../collision/collision.js";
 // If any asteroid is touching the ship, it costs a life and the ship respawns
 // at the centre. No collision leaves the state untouched (idempotent).
 export const resolveShipHits = (
-  state: Pick<State, "ship" | "asteroids" | "lives" | "bounds">,
+  state: Pick<State, "ship" | "entities" | "lives" | "bounds">,
 ): Pick<State, "ship" | "lives"> => {
-  const struck = [...state.asteroids].some((a) =>
-    Collision.circlesOverlap(
-      state.ship.position,
-      Ship.radius,
-      a.position,
-      Asteroid.radius(a),
-    ),
+  const struck = [...state.entities.values()].some(
+    (v) =>
+      Asteroid.is(v) &&
+      Collision.circlesOverlap(
+        state.ship.position,
+        Ship.radius,
+        v.position,
+        Asteroid.radius(v),
+      ),
   );
   if (!struck) {
     return { ship: state.ship, lives: state.lives };
@@ -44,8 +47,8 @@ export const cases: Conformance<typeof resolveShipHits> = [
     before: {
       ...field,
       ship: { position: [10, 10], velocity: [5, 5], rotation: 1 },
-      asteroids: new Set([
-        { position: [10, 10], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [1, { position: [10, 10], velocity: [0, 0], size: "large" }],
       ]),
       lives: 3,
     },
@@ -53,8 +56,8 @@ export const cases: Conformance<typeof resolveShipHits> = [
     after: {
       ...field,
       ship: respawned,
-      asteroids: new Set([
-        { position: [10, 10], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [Match.ref("a"), { position: [10, 10], velocity: [0, 0], size: "large" }],
       ]),
       lives: 2,
     },
@@ -64,8 +67,8 @@ export const cases: Conformance<typeof resolveShipHits> = [
     before: {
       ...field,
       ship: { position: [10, 10], velocity: [0, 0], rotation: 0 },
-      asteroids: new Set([
-        { position: [500, 500], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [1, { position: [500, 500], velocity: [0, 0], size: "large" }],
       ]),
       lives: 3,
     },
@@ -73,8 +76,8 @@ export const cases: Conformance<typeof resolveShipHits> = [
     after: {
       ...field,
       ship: { position: [10, 10], velocity: [0, 0], rotation: 0 },
-      asteroids: new Set([
-        { position: [500, 500], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [Match.ref("a"), { position: [500, 500], velocity: [0, 0], size: "large" }],
       ]),
       lives: 3,
     },
@@ -84,8 +87,8 @@ export const cases: Conformance<typeof resolveShipHits> = [
     before: {
       ...field,
       ship: { position: [10, 10], velocity: [0, 0], rotation: 0 },
-      asteroids: new Set([
-        { position: [10, 10], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [1, { position: [10, 10], velocity: [0, 0], size: "large" }],
       ]),
       lives: 0,
     },
@@ -93,8 +96,8 @@ export const cases: Conformance<typeof resolveShipHits> = [
     after: {
       ...field,
       ship: respawned,
-      asteroids: new Set([
-        { position: [10, 10], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [Match.ref("a"), { position: [10, 10], velocity: [0, 0], size: "large" }],
       ]),
       lives: 0,
     },
@@ -104,8 +107,8 @@ export const cases: Conformance<typeof resolveShipHits> = [
     before: {
       ...field,
       ship: { position: [0, 0], velocity: [0, 0], rotation: 0 },
-      asteroids: new Set([
-        { position: [52, 0], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [1, { position: [52, 0], velocity: [0, 0], size: "large" }],
       ]),
       lives: 3,
     },
@@ -113,8 +116,8 @@ export const cases: Conformance<typeof resolveShipHits> = [
     after: {
       ...field,
       ship: respawned,
-      asteroids: new Set([
-        { position: [52, 0], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [Match.ref("a"), { position: [52, 0], velocity: [0, 0], size: "large" }],
       ]),
       lives: 2,
     },
@@ -124,14 +127,14 @@ export const cases: Conformance<typeof resolveShipHits> = [
     before: {
       ...field,
       ship: { position: [10, 10], velocity: [0, 0], rotation: 0 },
-      asteroids: new Set(),
+      entities: new Map(),
       lives: 3,
     },
     args: undefined,
     after: {
       ...field,
       ship: { position: [10, 10], velocity: [0, 0], rotation: 0 },
-      asteroids: new Set(),
+      entities: new Map(),
       lives: 3,
     },
   },

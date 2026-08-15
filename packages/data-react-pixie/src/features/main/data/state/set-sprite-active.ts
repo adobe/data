@@ -4,47 +4,51 @@ import type { State } from "./state.js";
 import { entity, type Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data-testing";
 
-// Set the addressed sprite's `active` flag. Writes only `sprites`.
+// Set the addressed sprite's `active` flag. Writes only `entities`.
 export const setSpriteActive = (
-  state: Pick<State, "sprites">,
+  state: Pick<State, "entities">,
   input: { readonly id: number; readonly active: boolean },
-): Pick<State, "sprites"> => ({
-  sprites: new Set(
-    [...state.sprites].map((sprite) =>
-      sprite.id === input.id ? { ...sprite, active: input.active } : sprite,
-    ),
-  ),
-});
+): Pick<State, "entities"> => {
+  const sprite = state.entities.get(input.id);
+  if (sprite === undefined) return { entities: state.entities };
+  return {
+    entities: new Map(state.entities).set(input.id, {
+      ...sprite,
+      active: input.active,
+    }),
+  };
+};
 
 const bunny: Sprite = {
-  id: 1, position: [100, 100], rotation: 0, kind: "bunny", hovered: false, active: false,
+  position: [100, 100], rotation: 0, kind: "bunny", hovered: false, active: false,
 };
 const fox: Sprite = {
-  id: 2, position: [300, 200], rotation: 1, kind: "fox", hovered: false, active: false,
+  position: [300, 200], rotation: 1, kind: "fox", hovered: false, active: false,
 };
 
 // Spec-owned cases, shared with the ecs `setSpriteActive` transaction. `before`
-// ids address the sprite (`entity(2)`); `after` ids are left open (`anyNumber`).
+// keys are plain spec-ids the `args` address via `entity(2)`; `after` keys are
+// `Match.ref` distinct labels (the ecs mints its own ids).
 export const cases: Conformance<typeof setSpriteActive> = [
   {
     name: "sets active true on the addressed sprite only",
-    before: { sprites: new Set([bunny, fox]) },
+    before: { entities: new Map([[1, bunny], [2, fox]]) },
     args: { id: entity(2), active: true },
     after: {
-      sprites: new Set([
-        { ...bunny, id: Match.anyNumber },
-        { ...fox, id: Match.anyNumber, active: true },
+      entities: new Map([
+        [Match.ref("a"), bunny],
+        [Match.ref("b"), { ...fox, active: true }],
       ]),
     },
   },
   {
     name: "is a no-op for an unknown id",
-    before: { sprites: new Set([bunny, fox]) },
+    before: { entities: new Map([[1, bunny], [2, fox]]) },
     args: { id: entity(99), active: true },
     after: {
-      sprites: new Set([
-        { ...bunny, id: Match.anyNumber },
-        { ...fox, id: Match.anyNumber },
+      entities: new Map([
+        [Match.ref("a"), bunny],
+        [Match.ref("b"), fox],
       ]),
     },
   },

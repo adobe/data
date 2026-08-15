@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { State } from "../../../../data/state/state.js";
+import { Asteroid } from "../../../../data/asteroid/asteroid.js";
 import type { CoreDatabase } from "../../core-database/core-database.js";
 import { RandomService } from "../../../random-service/random-service.js";
 import { readAsteroids } from "./read-asteroids.js";
@@ -20,11 +21,12 @@ export const spawnRandomWave = (
   // can no longer be reference-compared to detect the no-op).
   if (readAsteroids(t).length > 0) return;
   const after = State.spawnRandomWave(
-    { asteroids: new Set(), wave: t.resources.wave, bounds: t.resources.bounds },
+    { entities: new Map(), wave: t.resources.wave, bounds: t.resources.bounds },
     { random },
   );
   t.resources.wave = after.wave;
-  for (const asteroid of after.asteroids) {
-    t.archetypes.Asteroid.insert(asteroid);
+  // The seed's entities were empty, so the patch holds exactly the spawned rocks.
+  for (const value of after.entities.values()) {
+    if (Asteroid.is(value)) t.archetypes.Asteroid.insert(value);
   }
 };

@@ -1,89 +1,97 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { State } from "./state.js";
+import type { Todo } from "../todo/todo.js";
 import { entity, type Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data-testing";
 /**
- * Moves the todo with the given id to `toIndex` within the list, preserving the
- * relative order of every other todo. Reads the todos, writes the todos — a
- * `{ todos }` patch. Out-of-range indices are clamped and an unknown id is a
- * no-op. A pure reorder — no side effects.
+ * Moves the todo with the given id to `toIndex` within the display order,
+ * preserving the relative order of every other todo, then recomputes every
+ * `order` to a contiguous 0,1,2,… sequence so the moved todo lands at the target
+ * rank (mirroring the ecs `dragTodo` drop + `normalizeOrder`). Reads the entities,
+ * writes the entities — an `{ entities }` patch. Out-of-range indices are clamped
+ * and an unknown id is a no-op. A pure reorder — no side effects.
  */
 export const reorderTodo = (
-  state: Pick<State, "todos">,
+  state: Pick<State, "entities">,
   input: { readonly id: number; readonly toIndex: number },
-): Pick<State, "todos"> => {
-  const fromIndex = state.todos.findIndex((todo) => todo.id === input.id);
-  if (fromIndex === -1) return { todos: state.todos };
+): Pick<State, "entities"> => {
+  if (!state.entities.has(input.id)) return { entities: state.entities };
 
-  const moved = state.todos[fromIndex];
-  const without = state.todos.filter((todo) => todo.id !== input.id);
-  const toIndex = Math.max(0, Math.min(input.toIndex, without.length));
+  const ordered = [...state.entities].sort(
+    ([, a], [, b]) => a.order - b.order,
+  );
+  const fromIndex = ordered.findIndex(([id]) => id === input.id);
+  const [moved] = ordered.splice(fromIndex, 1);
+  const toIndex = Math.max(0, Math.min(input.toIndex, ordered.length));
+  ordered.splice(toIndex, 0, moved);
 
   return {
-    todos: [...without.slice(0, toIndex), moved, ...without.slice(toIndex)],
+    entities: new Map(
+      ordered.map(([id, todo], index) => [id, { ...todo, order: index }]),
+    ),
   };
 };
 
-const three = [
-  { id: 1, name: "a", complete: false },
-  { id: 2, name: "b", complete: false },
-  { id: 3, name: "c", complete: false },
+const three: readonly (readonly [number, Todo])[] = [
+  [1, { name: "a", complete: false, order: 0 }],
+  [2, { name: "b", complete: false, order: 1 }],
+  [3, { name: "c", complete: false, order: 2 }],
 ];
 
 // Spec-owned cases, shared with the ecs `dragTodo` transaction (its final drop is
-// the same move — `finalIndex` is `toIndex`). `before` is a delta over
-// `State.create()`; `after` lists only the written todos. Every case keeps all
-// todos incomplete with `displayCompleted` true, so the visible list `dragTodo`
-// indexes equals the full list. `before` ids address the move; `after` ids are
-// open (`Match.anyNumber`) but their *order* is verified. The unknown-id no-op is
+// the same move — `finalIndex` is `toIndex`, followed by `normalizeOrder`).
+// `before` is a delta over `State.create()` keyed by PLAIN spec-ids; `after` lists
+// the entities with distinct `Match.ref` keys and their RECOMPUTED contiguous
+// `order`. Every case keeps all todos incomplete with `displayCompleted` true, so
+// the visible list `dragTodo` indexes equals the full list. The unknown-id no-op is
 // exercised only by the pure transform — `dragTodo` has no such guard.
 export const cases: Conformance<typeof reorderTodo> = [
   {
     name: "moves the first todo to the end",
-    before: { todos: [...three], displayCompleted: true },
+    before: { entities: new Map(three), displayCompleted: true },
     args: { id: entity(1), toIndex: 2 },
     after: {
-      todos: [
-        { id: Match.anyNumber, name: "b", complete: false },
-        { id: Match.anyNumber, name: "c", complete: false },
-        { id: Match.anyNumber, name: "a", complete: false },
-      ],
+      entities: new Map([
+        [Match.ref("b"), { name: "b", complete: false, order: 0 }],
+        [Match.ref("c"), { name: "c", complete: false, order: 1 }],
+        [Match.ref("a"), { name: "a", complete: false, order: 2 }],
+      ]),
     },
   },
   {
     name: "moves the last todo to the front",
-    before: { todos: [...three], displayCompleted: true },
+    before: { entities: new Map(three), displayCompleted: true },
     args: { id: entity(3), toIndex: 0 },
     after: {
-      todos: [
-        { id: Match.anyNumber, name: "c", complete: false },
-        { id: Match.anyNumber, name: "a", complete: false },
-        { id: Match.anyNumber, name: "b", complete: false },
-      ],
+      entities: new Map([
+        [Match.ref("c"), { name: "c", complete: false, order: 0 }],
+        [Match.ref("a"), { name: "a", complete: false, order: 1 }],
+        [Match.ref("b"), { name: "b", complete: false, order: 2 }],
+      ]),
     },
   },
   {
     name: "clamps an out-of-range index to the end",
-    before: { todos: [...three], displayCompleted: true },
+    before: { entities: new Map(three), displayCompleted: true },
     args: { id: entity(1), toIndex: 99 },
     after: {
-      todos: [
-        { id: Match.anyNumber, name: "b", complete: false },
-        { id: Match.anyNumber, name: "c", complete: false },
-        { id: Match.anyNumber, name: "a", complete: false },
-      ],
+      entities: new Map([
+        [Match.ref("b"), { name: "b", complete: false, order: 0 }],
+        [Match.ref("c"), { name: "c", complete: false, order: 1 }],
+        [Match.ref("a"), { name: "a", complete: false, order: 2 }],
+      ]),
     },
   },
   {
     name: "keeps the order when moving to the same index",
-    before: { todos: [...three], displayCompleted: true },
+    before: { entities: new Map(three), displayCompleted: true },
     args: { id: entity(2), toIndex: 1 },
     after: {
-      todos: [
-        { id: Match.anyNumber, name: "a", complete: false },
-        { id: Match.anyNumber, name: "b", complete: false },
-        { id: Match.anyNumber, name: "c", complete: false },
-      ],
+      entities: new Map([
+        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
+        [Match.ref("b"), { name: "b", complete: false, order: 1 }],
+        [Match.ref("c"), { name: "c", complete: false, order: 2 }],
+      ]),
     },
   },
 ];

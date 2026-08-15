@@ -2,47 +2,48 @@
 import type { State } from "./state.js";
 import type { Todo } from "../todo/todo.js";
 import type { Derivation } from "./conformance-case.js";
-import { Match } from "@adobe/data-testing";
-// The todos the user should see, in display order: all of them when
-// `displayCompleted`, otherwise only the incomplete ones.
+// The todos the user should see, in display order (ascending `order`): all of them
+// when `displayCompleted`, otherwise only the incomplete ones. Yields id-less
+// values — identity is the `entities` key, so the visible list compares by content.
 export const visibleTodos = (
-  state: Pick<State, "todos" | "displayCompleted">,
+  state: Pick<State, "entities" | "displayCompleted">,
 ): readonly Todo[] =>
-  state.displayCompleted
-    ? state.todos
-    : state.todos.filter((todo) => !todo.complete);
+  [...state.entities.values()]
+    .filter((todo) => state.displayCompleted || !todo.complete)
+    .sort((a, b) => a.order - b.order);
 
-// Spec-owned cases, shared with the ecs `visibleTodos` computed. A derivation
-// case is `{ input, value }`; `value` leaves ids open (`Match.anyNumber`) and its order
-// is significant (display order).
+// Spec-owned cases, shared with the ecs `visibleTodos` computed (an entity-id-list
+// computed the runner hydrates through `toData` into these id-less values). A
+// derivation case is `{ input, value }`; `input` is keyed by PLAIN spec-ids;
+// `value` is id-less content in significant display order.
 export const cases: Derivation<typeof visibleTodos> = [
   {
     name: "hides completed todos unless the completed view is on",
     input: {
-      todos: [
-        { id: 1, name: "a", complete: false },
-        { id: 2, name: "b", complete: true },
-        { id: 3, name: "c", complete: false },
-      ],
+      entities: new Map([
+        [1, { name: "a", complete: false, order: 0 }],
+        [2, { name: "b", complete: true, order: 1 }],
+        [3, { name: "c", complete: false, order: 2 }],
+      ]),
       displayCompleted: false,
     },
     value: [
-      { id: Match.anyNumber, name: "a", complete: false },
-      { id: Match.anyNumber, name: "c", complete: false },
+      { name: "a", complete: false, order: 0 },
+      { name: "c", complete: false, order: 2 },
     ],
   },
   {
     name: "shows every todo when the completed view is on",
     input: {
-      todos: [
-        { id: 1, name: "a", complete: false },
-        { id: 2, name: "b", complete: true },
-      ],
+      entities: new Map([
+        [1, { name: "a", complete: false, order: 0 }],
+        [2, { name: "b", complete: true, order: 1 }],
+      ]),
       displayCompleted: true,
     },
     value: [
-      { id: Match.anyNumber, name: "a", complete: false },
-      { id: Match.anyNumber, name: "b", complete: true },
+      { name: "a", complete: false, order: 0 },
+      { name: "b", complete: true, order: 1 },
     ],
   },
 ];

@@ -134,10 +134,10 @@ const systemDatabasePlugin = Database.Plugin.create({
         }
         if (!hasFrog) return;
 
-        const hazards = new Set<Hazard>();
+        const entities = new Map<number, Hazard>();
         for (const arch of db.store.queryArchetypes(["kind", "lane", "x", "width", "velocity"])) {
           for (let i = 0; i < arch.rowCount; i++) {
-            hazards.add({
+            entities.set(arch.columns.id.get(i), {
               kind: arch.columns.kind.get(i),
               lane: arch.columns.lane.get(i),
               x: arch.columns.x.get(i),
@@ -149,7 +149,7 @@ const systemDatabasePlugin = Database.Plugin.create({
 
         const outcome = State.frogOutcome({
           lanes: resources.lanes,
-          hazards,
+          entities,
           frog: { x: frogX, y: frogY },
           width: resources.width,
         });

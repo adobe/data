@@ -1,9 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Vec2 } from "@adobe/data/math";
+import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
-import type { Asteroid } from "../asteroid/asteroid.js";
+import { Asteroid } from "../asteroid/asteroid.js";
 import { Size } from "../size/size.js";
 import { Motion } from "../motion/motion.js";
 import { RandomService } from "../../services/random-service/random-service.js";
@@ -28,29 +29,31 @@ const asteroidsFor = (wave: number): number => 3 + wave;
  * asteroids remain (draws nothing, returns the same reference).
  */
 export const spawnRandomWave = (
-  state: Pick<State, "asteroids" | "wave" | "bounds">,
+  state: Pick<State, "entities" | "wave" | "bounds">,
   { random }: Pick<Services, "random">,
-): Pick<State, "asteroids" | "wave"> => {
-  if (state.asteroids.size > 0) {
-    return { asteroids: state.asteroids, wave: state.wave };
+): Pick<State, "entities" | "wave"> => {
+  const hasAsteroid = [...state.entities.values()].some((v) => Asteroid.is(v));
+  if (hasAsteroid) {
+    return { entities: state.entities, wave: state.wave };
   }
   const wave = state.wave + 1;
   const count = asteroidsFor(wave);
   const center = Vec2.scale(state.bounds, 0.5);
   const ring = Math.min(state.bounds[0], state.bounds[1]) * 0.4;
-  const asteroids: Asteroid[] = [];
+  const entities = new Map(state.entities);
+  let nextId = Math.max(0, ...state.entities.keys()) + 1;
   for (let i = 0; i < count; i++) {
     const angle = (Math.PI * 2 * i) / count;
     const outward = Motion.rotate([1, 0], angle);
     const tangent = Motion.rotate([1, 0], angle + Math.PI / 2);
     const speed = waveSpeed * (0.5 + random.next());
-    asteroids.push({
+    entities.set(nextId++, {
       position: Vec2.add(center, Vec2.scale(outward, ring)),
       velocity: Vec2.scale(tangent, speed),
       size: Size.largest,
     });
   }
-  return { wave, asteroids: new Set(asteroids) };
+  return { wave, entities };
 };
 
 // Spec-owned cases, shared with the ecs `spawnRandomWave` transaction. Each case
@@ -70,16 +73,16 @@ const randoms = [0, 0.5, 0.25, 0.75];
 export const cases: Conformance<typeof spawnRandomWave> = [
   {
     name: "spawns a randomized wave (jittered drift speeds) when the field is clear",
-    before: { ...field, asteroids: new Set(), wave: 0 },
+    before: { ...field, entities: new Map(), wave: 0 },
     args: { random: RandomService.createFake(randoms) },
     after: {
       ...field,
       wave: 1,
-      asteroids: new Set([
-        { position: [180, 100], velocity: [0, 30], size: "large" },
-        { position: [100, 180], velocity: [-60, 0], size: "large" },
-        { position: [20, 100], velocity: [0, -45], size: "large" },
-        { position: [100, 20], velocity: [75, 0], size: "large" },
+      entities: new Map([
+        [Match.ref("a1"), { position: [180, 100], velocity: [0, 30], size: "large" }],
+        [Match.ref("a2"), { position: [100, 180], velocity: [-60, 0], size: "large" }],
+        [Match.ref("a3"), { position: [20, 100], velocity: [0, -45], size: "large" }],
+        [Match.ref("a4"), { position: [100, 20], velocity: [75, 0], size: "large" }],
       ]),
     },
   },
@@ -88,16 +91,16 @@ export const cases: Conformance<typeof spawnRandomWave> = [
     before: {
       ...field,
       wave: 1,
-      asteroids: new Set([
-        { position: [10, 10], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [1, { position: [10, 10], velocity: [0, 0], size: "large" }],
       ]),
     },
     args: { random: RandomService.createFake(randoms) },
     after: {
       ...field,
       wave: 1,
-      asteroids: new Set([
-        { position: [10, 10], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [Match.ref("a"), { position: [10, 10], velocity: [0, 0], size: "large" }],
       ]),
     },
   },

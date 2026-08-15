@@ -14,8 +14,9 @@
 // the per-frame systems' combined effect equals `State.step(before, dt)` exactly
 // (hop is covered by the transaction conformance). Then drive one headless frame
 // and assert `toState ≡ after`. Each case also asserts `State.step ≡ after` first,
-// keeping the shared case honest. The hazard bag is a `ReadonlySet`, so the
-// comparator matches it order-independently.
+// keeping the shared case honest. The hazards live in the identity-keyed
+// `entities` `ReadonlyMap`, so the comparator matches them order-independently (the
+// ecs mints its own ids the `after` refs leave open).
 import { describe, it } from "vitest";
 import { Match } from "@adobe/data-testing";
 import { State } from "../../../data/state/state.js";

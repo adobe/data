@@ -13,7 +13,9 @@ const lanes: readonly Lane[] = [
 ];
 
 const board = (hazards: readonly Hazard[], x: number, y: number): StateType => ({
-  width: 5, height: 4, lanes, hazards: new Set(hazards), frog: { x, y }, lives: 3, score: 0, status: "playing",
+  width: 5, height: 4, lanes,
+  entities: new Map(hazards.map((hazard, index) => [index + 1, hazard])),
+  frog: { x, y }, lives: 3, score: 0, status: "playing",
 });
 
 const car: Hazard = { kind: "car", lane: 1, x: 2, width: 1, velocity: 1 };

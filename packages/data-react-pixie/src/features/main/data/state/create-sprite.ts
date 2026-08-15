@@ -5,84 +5,93 @@ import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data-testing";
 
-const nextSpriteId = (state: Pick<State, "sprites">): number =>
-  [...state.sprites].reduce((max, sprite) => Math.max(max, sprite.id), 0) + 1;
-
-// Append a sprite to the scene. Returns only the field it writes (`sprites`).
+// Append a sprite to the scene. The spec mints the id (the map key); the value
+// carries none. Returns only the field it writes (`entities`).
 export const createSprite = (
-  state: Pick<State, "sprites">,
+  state: Pick<State, "entities">,
   input: {
     readonly position: Vec2;
     readonly rotation?: number;
     readonly kind: SpriteKind;
   },
-): Pick<State, "sprites"> => ({
-  sprites: new Set(state.sprites).add({
-    id: nextSpriteId(state),
-    position: input.position,
-    rotation: input.rotation ?? 0,
-    kind: input.kind,
-    hovered: false,
-    active: false,
-  }),
-});
+): Pick<State, "entities"> => {
+  const id = Math.max(0, ...state.entities.keys()) + 1;
+  return {
+    entities: new Map(state.entities).set(id, {
+      position: input.position,
+      rotation: input.rotation ?? 0,
+      kind: input.kind,
+      hovered: false,
+      active: false,
+    }),
+  };
+};
 
 // Spec-owned cases, shared with the ecs `createSprite` transaction. A sprite is
-// appended (minted id left open as `anyNumber` — the ecs assigns its own) with
-// rotation defaulting to 0 and hovered/active to false; existing sprites are
-// untouched. `before` is a delta over `State.create()`; `after` is the writes patch.
+// appended with rotation defaulting to 0 and hovered/active to false; existing
+// sprites are untouched. `before` is a delta over `State.create()`; `after` is
+// the writes patch — map keys are `Match.ref` (a DISTINCT label per entry) since
+// the ecs mints its own ids.
 export const cases: Conformance<typeof createSprite> = [
   {
     name: "appends the first sprite to an empty scene",
     before: {},
     args: { position: [100, 100], kind: "bunny" },
     after: {
-      sprites: new Set([
-        {
-          id: Match.anyNumber,
-          position: [100, 100],
-          rotation: 0,
-          kind: "bunny",
-          hovered: false,
-          active: false,
-        },
+      entities: new Map([
+        [
+          Match.ref("a"),
+          {
+            position: [100, 100],
+            rotation: 0,
+            kind: "bunny",
+            hovered: false,
+            active: false,
+          },
+        ],
       ]),
     },
   },
   {
     name: "appends a fox with the next id and an explicit rotation",
     before: {
-      sprites: new Set([
-        {
-          id: 1,
-          position: [100, 100],
-          rotation: 0,
-          kind: "bunny",
-          hovered: false,
-          active: false,
-        },
+      entities: new Map([
+        [
+          1,
+          {
+            position: [100, 100],
+            rotation: 0,
+            kind: "bunny",
+            hovered: false,
+            active: false,
+          },
+        ],
       ]),
       filter: "sepia",
     },
     args: { position: [300, 200], rotation: 1, kind: "fox" },
     after: {
-      sprites: new Set([
-        {
-          id: Match.anyNumber,
-          position: [100, 100],
-          rotation: 0,
-          kind: "bunny",
-          hovered: false,
-          active: false,
-        },
-        {
-          id: Match.anyNumber,
-          position: [300, 200],
-          rotation: 1,
-          kind: "fox",
-          hovered: false,
-          active: false,
-        },
+      entities: new Map([
+        [
+          Match.ref("a"),
+          {
+            position: [100, 100],
+            rotation: 0,
+            kind: "bunny",
+            hovered: false,
+            active: false,
+          },
+        ],
+        [
+          Match.ref("b"),
+          {
+            position: [300, 200],
+            rotation: 1,
+            kind: "fox",
+            hovered: false,
+            active: false,
+          },
+        ],
       ]),
     },
   },

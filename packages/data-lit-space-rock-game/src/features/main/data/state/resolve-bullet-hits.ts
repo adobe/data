@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Vec2 } from "@adobe/data/math";
+import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
@@ -18,22 +19,29 @@ import { Collision } from "../collision/collision.js";
 // asteroid. Asteroids are treated as stationary at their current position: they
 // drift ~1px/frame, negligible against the bullet's sweep.
 export const resolveBulletHits = (
-  state: Pick<State, "bullets" | "asteroids" | "score">,
+  state: Pick<State, "entities" | "score">,
   dt: number,
-): Pick<State, "bullets" | "asteroids" | "score"> => {
-  const asteroids: Asteroid[] = [...state.asteroids];
-  // Children spawned this pass are collected separately and appended only after
-  // every bullet has resolved — a bullet may hit an asteroid that existed at the
-  // start of the pass, never one that a split just created this same frame.
+): Pick<State, "entities" | "score"> => {
+  const entities = new Map(state.entities);
+  // The asteroids that existed at the start of the pass, with their ids — a
+  // bullet may hit one of these, never a split child created this same frame.
+  const asteroids: [number, Asteroid][] = [];
+  const bullets: [number, Bullet][] = [];
+  for (const [id, value] of state.entities) {
+    if (Bullet.is(value)) bullets.push([id, value]);
+    else asteroids.push([id, value]);
+  }
+  // Children spawned this pass are collected separately and inserted only after
+  // every bullet has resolved, each under a freshly minted id.
   const spawned: Asteroid[] = [];
-  const survivors: Bullet[] = [];
+  let nextId = Math.max(0, ...state.entities.keys()) + 1;
   let score = state.score;
-  for (const bullet of state.bullets) {
+  for (const [bulletId, bullet] of bullets) {
     const prev = Vec2.subtract(
       bullet.position,
       Vec2.scale(bullet.velocity, dt),
     );
-    const hit = asteroids.findIndex((a) =>
+    const hit = asteroids.findIndex(([, a]) =>
       Collision.segmentCircleOverlap(
         prev,
         bullet.position,
@@ -42,18 +50,18 @@ export const resolveBulletHits = (
       ),
     );
     if (hit < 0) {
-      survivors.push(bullet);
       continue;
     }
-    const [asteroid] = asteroids.splice(hit, 1);
+    const [[asteroidId, asteroid]] = asteroids.splice(hit, 1);
+    entities.delete(bulletId);
+    entities.delete(asteroidId);
     score += Asteroid.score(asteroid);
     spawned.push(...Asteroid.split(asteroid));
   }
-  return {
-    bullets: new Set(survivors),
-    asteroids: new Set([...asteroids, ...spawned]),
-    score,
-  };
+  for (const child of spawned) {
+    entities.set(nextId++, child);
+  }
+  return { entities, score };
 };
 
 // Spec-owned cases, shared with the ecs `hitAsteroid` transaction (dispatched
@@ -72,19 +80,18 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     name: "destroys bullet + asteroid, scores, and spawns split children (large → 2 medium)",
     before: {
       ...field,
-      bullets: new Set([{ position: [50, 50], velocity: [0, 0], age: 0 }]),
-      asteroids: new Set([
-        { position: [50, 50], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [1, { position: [50, 50], velocity: [0, 0], age: 0 }],
+        [2, { position: [50, 50], velocity: [0, 0], size: "large" }],
       ]),
       score: 0,
     },
     args: 1 / 60,
     after: {
       ...field,
-      bullets: new Set(),
-      asteroids: new Set([
-        { position: [50, 50], velocity: [0, 0], size: "medium" },
-        { position: [50, 50], velocity: [0, 0], size: "medium" },
+      entities: new Map([
+        [Match.ref("m1"), { position: [50, 50], velocity: [0, 0], size: "medium" }],
+        [Match.ref("m2"), { position: [50, 50], velocity: [0, 0], size: "medium" }],
       ]),
       score: 20,
     },
@@ -93,19 +100,18 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     name: "medium splits into two small",
     before: {
       ...field,
-      bullets: new Set([{ position: [50, 50], velocity: [0, 0], age: 0 }]),
-      asteroids: new Set([
-        { position: [50, 50], velocity: [0, 0], size: "medium" },
+      entities: new Map([
+        [1, { position: [50, 50], velocity: [0, 0], age: 0 }],
+        [2, { position: [50, 50], velocity: [0, 0], size: "medium" }],
       ]),
       score: 5,
     },
     args: 1 / 60,
     after: {
       ...field,
-      bullets: new Set(),
-      asteroids: new Set([
-        { position: [50, 50], velocity: [0, 0], size: "small" },
-        { position: [50, 50], velocity: [0, 0], size: "small" },
+      entities: new Map([
+        [Match.ref("s1"), { position: [50, 50], velocity: [0, 0], size: "small" }],
+        [Match.ref("s2"), { position: [50, 50], velocity: [0, 0], size: "small" }],
       ]),
       score: 55,
     },
@@ -114,31 +120,31 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     name: "the smallest tier is destroyed outright — no children",
     before: {
       ...field,
-      bullets: new Set([{ position: [50, 50], velocity: [0, 0], age: 0 }]),
-      asteroids: new Set([
-        { position: [50, 50], velocity: [0, 0], size: "small" },
+      entities: new Map([
+        [1, { position: [50, 50], velocity: [0, 0], age: 0 }],
+        [2, { position: [50, 50], velocity: [0, 0], size: "small" }],
       ]),
       score: 0,
     },
     args: 1 / 60,
-    after: { ...field, bullets: new Set(), asteroids: new Set(), score: 100 },
+    after: { ...field, entities: new Map(), score: 100 },
   },
   {
     name: "a bullet that hits nothing is left untouched",
     before: {
       ...field,
-      bullets: new Set([{ position: [10, 10], velocity: [0, 0], age: 0 }]),
-      asteroids: new Set([
-        { position: [500, 500], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [1, { position: [10, 10], velocity: [0, 0], age: 0 }],
+        [2, { position: [500, 500], velocity: [0, 0], size: "large" }],
       ]),
       score: 7,
     },
     args: 1 / 60,
     after: {
       ...field,
-      bullets: new Set([{ position: [10, 10], velocity: [0, 0], age: 0 }]),
-      asteroids: new Set([
-        { position: [500, 500], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [Match.ref("b"), { position: [10, 10], velocity: [0, 0], age: 0 }],
+        [Match.ref("a"), { position: [500, 500], velocity: [0, 0], size: "large" }],
       ]),
       score: 7,
     },
@@ -147,21 +153,20 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     name: "only the overlapping asteroid is hit; distant ones remain",
     before: {
       ...field,
-      bullets: new Set([{ position: [50, 50], velocity: [0, 0], age: 0 }]),
-      asteroids: new Set([
-        { position: [50, 50], velocity: [0, 0], size: "large" },
-        { position: [500, 500], velocity: [0, 0], size: "small" },
+      entities: new Map([
+        [1, { position: [50, 50], velocity: [0, 0], age: 0 }],
+        [2, { position: [50, 50], velocity: [0, 0], size: "large" }],
+        [3, { position: [500, 500], velocity: [0, 0], size: "small" }],
       ]),
       score: 0,
     },
     args: 1 / 60,
     after: {
       ...field,
-      bullets: new Set(),
-      asteroids: new Set([
-        { position: [50, 50], velocity: [0, 0], size: "medium" },
-        { position: [50, 50], velocity: [0, 0], size: "medium" },
-        { position: [500, 500], velocity: [0, 0], size: "small" },
+      entities: new Map([
+        [Match.ref("m1"), { position: [50, 50], velocity: [0, 0], size: "medium" }],
+        [Match.ref("m2"), { position: [50, 50], velocity: [0, 0], size: "medium" }],
+        [Match.ref("s"), { position: [500, 500], velocity: [0, 0], size: "small" }],
       ]),
       score: 20,
     },
@@ -170,29 +175,25 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     name: "two bullets each destroy their own asteroid",
     before: {
       ...field,
-      bullets: new Set([
-        { position: [50, 50], velocity: [0, 0], age: 0 },
-        { position: [500, 500], velocity: [0, 0], age: 0 },
-      ]),
-      asteroids: new Set([
-        { position: [50, 50], velocity: [0, 0], size: "small" },
-        { position: [500, 500], velocity: [0, 0], size: "small" },
+      entities: new Map([
+        [1, { position: [50, 50], velocity: [0, 0], age: 0 }],
+        [2, { position: [500, 500], velocity: [0, 0], age: 0 }],
+        [3, { position: [50, 50], velocity: [0, 0], size: "small" }],
+        [4, { position: [500, 500], velocity: [0, 0], size: "small" }],
       ]),
       score: 0,
     },
     args: 1 / 60,
-    after: { ...field, bullets: new Set(), asteroids: new Set(), score: 200 },
+    after: { ...field, entities: new Map(), score: 200 },
   },
   {
     name: "split children are not hittable by another bullet in the same pass",
     before: {
       ...field,
-      bullets: new Set([
-        { position: [50, 50], velocity: [0, 0], age: 0 },
-        { position: [50, 50], velocity: [0, 0], age: 0 },
-      ]),
-      asteroids: new Set([
-        { position: [50, 50], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [1, { position: [50, 50], velocity: [0, 0], age: 0 }],
+        [2, { position: [50, 50], velocity: [0, 0], age: 0 }],
+        [3, { position: [50, 50], velocity: [0, 0], size: "large" }],
       ]),
       score: 0,
     },
@@ -202,10 +203,10 @@ export const cases: Conformance<typeof resolveBulletHits> = [
       // One bullet destroys the large (→ 2 medium). The second finds no original
       // target — the large is gone and its children, spawned this same pass, are
       // not yet hittable — so it survives.
-      bullets: new Set([{ position: [50, 50], velocity: [0, 0], age: 0 }]),
-      asteroids: new Set([
-        { position: [50, 50], velocity: [0, 0], size: "medium" },
-        { position: [50, 50], velocity: [0, 0], size: "medium" },
+      entities: new Map([
+        [Match.ref("b"), { position: [50, 50], velocity: [0, 0], age: 0 }],
+        [Match.ref("m1"), { position: [50, 50], velocity: [0, 0], size: "medium" }],
+        [Match.ref("m2"), { position: [50, 50], velocity: [0, 0], size: "medium" }],
       ]),
       score: 20,
     },
@@ -214,19 +215,18 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     name: "boundary: distance exactly equal to the radius sum still overlaps",
     before: {
       ...field,
-      bullets: new Set([{ position: [0, 0], velocity: [0, 0], age: 0 }]),
-      asteroids: new Set([
-        { position: [42, 0], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [1, { position: [0, 0], velocity: [0, 0], age: 0 }],
+        [2, { position: [42, 0], velocity: [0, 0], size: "large" }],
       ]),
       score: 0,
     },
     args: 1 / 60,
     after: {
       ...field,
-      bullets: new Set(),
-      asteroids: new Set([
-        { position: [42, 0], velocity: [0, 0], size: "medium" },
-        { position: [42, 0], velocity: [0, 0], size: "medium" },
+      entities: new Map([
+        [Match.ref("m1"), { position: [42, 0], velocity: [0, 0], size: "medium" }],
+        [Match.ref("m2"), { position: [42, 0], velocity: [0, 0], size: "medium" }],
       ]),
       score: 20,
     },
@@ -239,19 +239,18 @@ export const cases: Conformance<typeof resolveBulletHits> = [
       // Both endpoints are 25px from the medium at [25,0] — outside the 22px radius
       // sum, so a point test misses. The travelled segment crosses [25,0], so a
       // swept test hits.
-      bullets: new Set([{ position: [0, 0], velocity: [-3000, 0], age: 0 }]),
-      asteroids: new Set([
-        { position: [25, 0], velocity: [0, 0], size: "medium" },
+      entities: new Map([
+        [1, { position: [0, 0], velocity: [-3000, 0], age: 0 }],
+        [2, { position: [25, 0], velocity: [0, 0], size: "medium" }],
       ]),
       score: 0,
     },
     args: 1 / 60,
     after: {
       ...field,
-      bullets: new Set(),
-      asteroids: new Set([
-        { position: [25, 0], velocity: [0, 0], size: "small" },
-        { position: [25, 0], velocity: [0, 0], size: "small" },
+      entities: new Map([
+        [Match.ref("s1"), { position: [25, 0], velocity: [0, 0], size: "small" }],
+        [Match.ref("s2"), { position: [25, 0], velocity: [0, 0], size: "small" }],
       ]),
       score: 50,
     },

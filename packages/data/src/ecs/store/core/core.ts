@@ -3,7 +3,7 @@
 import { Entity } from "../../entity/entity.js";
 import { Archetype, ReadonlyArchetype } from "../../archetype/archetype.js";
 import { Schema } from "../../../schema/index.js";
-import { RequiredComponents } from "../../required-components.js";
+import { RequiredComponents, IdComponent } from "../../required-components.js";
 import { StringKeyof } from "../../../types/index.js";
 import { Components } from "../components.js";
 import { OptionalComponents } from "../../optional-components.js";
@@ -15,7 +15,7 @@ import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 // stays a real column (see the Archetype interface) but is never part of a read.
 export type EntityValues<C> = { readonly [K in StringKeyof<C & OptionalComponents>]: (C & OptionalComponents)[K] }
 export type EntityReadValues<C> = { readonly [K in StringKeyof<C & OptionalComponents> as string extends K ? never : K]?: (C & OptionalComponents)[K] }
-export type EntityUpdateValues<C> = Partial<Omit<C, "id">>;
+export type EntityUpdateValues<C> = Partial<Omit<C, IdComponent>>;
 
 export type ArchetypeQueryOptions<C extends object, PK extends string = never> = {
     exclude?: readonly StringKeyof<C & RequiredComponents & OptionalComponents>[];

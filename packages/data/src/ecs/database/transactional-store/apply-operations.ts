@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Store } from "../../store/index.js";
+import { ID } from "../../required-components.js";
 import { TransactionWriteOperation } from "./transactional-store.js";
 import { StringKeyof } from "../../../types/types.js";
 
@@ -21,7 +22,7 @@ export const applyOperations = (
     for (const operation of operations) {
         switch (operation.type) {
             case "insert": {
-                const componentNames = ["id", ...Object.keys(operation.values)] as StringKeyof<any>[];
+                const componentNames = [ID, ...Object.keys(operation.values)] as StringKeyof<any>[];
                 const archetype = store.ensureArchetype(componentNames);
                 archetype.insert(operation.values as never);
                 break;

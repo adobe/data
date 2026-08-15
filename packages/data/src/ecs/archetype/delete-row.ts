@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import * as TABLE from "../../table/index.js";
 import { Archetype } from "./archetype.js";
+import { ID } from "../required-components.js";
 import { EntityLocationTable } from "../entity-location-table/entity-location-table.js";
 import { Entity } from "../entity/entity.js";
 
@@ -15,7 +16,7 @@ import { Entity } from "../entity/entity.js";
 export const deleteRow = <C>(archetype: Archetype<C>, row: number, entityLocationTable: EntityLocationTable): Entity | undefined => {
     const movedARowToFillHole = TABLE.deleteRow(archetype, row);
     if (movedARowToFillHole) {
-        const movedId = archetype.columns.id.get(row);
+        const movedId = archetype.columns[ID].get(row);
         entityLocationTable.update(movedId, { archetype: archetype.id, row });
         return movedId;
     }

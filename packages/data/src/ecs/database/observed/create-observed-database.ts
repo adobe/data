@@ -14,6 +14,7 @@ import { observeSelectEntities } from "../observe-select-entities.js";
 import { createDerive } from "../observe-derive.js";
 import { createTransactionalStore } from "../transactional-store/create-transactional-store.js";
 import { Entity } from "../../entity/entity.js";
+import { ID } from "../../required-components.js";
 import { EntityReadValues, EntityUpdateValues } from "../../store/core/index.js";
 import { ObservedDatabase } from "./observed-database.js";
 
@@ -117,7 +118,7 @@ export function createObservedDatabase<
 
     const resourceArchetypeComponents = (resource: string): StringKeyof<C>[] => {
         const schema = (store.componentSchemas as any)[resource];
-        const names: StringKeyof<C>[] = ["id" as StringKeyof<C>, resource as unknown as StringKeyof<C>];
+        const names: StringKeyof<C>[] = [ID as StringKeyof<C>, resource as unknown as StringKeyof<C>];
         if (schema?.nonPersistent) names.push("nonPersistent" as StringKeyof<C>);
         if (schema?.nonShared) names.push("nonShared" as StringKeyof<C>);
         return names;
@@ -126,7 +127,7 @@ export function createObservedDatabase<
     const observeResource = Object.fromEntries(
         Object.entries(store.resources).map(([resource]) => {
             const archetype = store.ensureArchetype(resourceArchetypeComponents(resource));
-            const resourceId = archetype.columns.id.get(0);
+            const resourceId = archetype.columns[ID].get(0);
             return [resource, Observe.withMap(observeEntity(resourceId), (values) => (values as any)?.[resource] ?? null)];
         })
     ) as { [K in StringKeyof<R>]: Observe<R[K]>; };
@@ -200,7 +201,7 @@ export function createObservedDatabase<
             (observe as any).resources = Object.fromEntries(
                 Object.entries(store.resources).map(([resource]) => {
                     const archetype = store.ensureArchetype(resourceArchetypeComponents(resource));
-                    const resourceId = archetype.columns.id.get(0);
+                    const resourceId = archetype.columns[ID].get(0);
                     return [resource, Observe.withMap(observeEntity(resourceId), (values) => (values as any)?.[resource] ?? null)];
                 })
             );

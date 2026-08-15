@@ -2,7 +2,7 @@
 
 import { ComponentSchemas } from "../../component-schemas.js";
 import { StringKeyof } from "../../../types/types.js";
-import { RequiredComponents } from "../../required-components.js";
+import { RequiredComponents, ID, RESERVED_COMPONENT_NAMES } from "../../required-components.js";
 import { Store } from "../store.js";
 import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 import { Schema } from "../../../schema/index.js";
@@ -101,7 +101,7 @@ export function createStore<
         if (required.length === 0) return;
         const archetypes = core.queryArchetypes(required as readonly StringKeyof<C>[]);
         for (const archetype of archetypes) {
-            const idCol = archetype.columns.id;
+            const idCol = archetype.columns[ID];
             for (let row = 0; row < archetype.rowCount; row++) {
                 const values: Record<string, unknown> = {};
                 for (const c of required) {
@@ -258,6 +258,10 @@ export function createStore<
         } = schema;
         // components: existing must be identical if present
         for (const [name, newComponentSchema] of Object.entries(schemaComponents)) {
+            // Reserved built-ins (id / nonPersistent / nonShared) can't be redefined.
+            if (RESERVED_COMPONENT_NAMES.includes(name)) {
+                throw new Error(`Component name "${name}" is reserved by the ECS and cannot be defined.`);
+            }
             if (name in componentAndResourceSchemas) {
                 if (componentAndResourceSchemas[name as keyof typeof componentAndResourceSchemas] !== newComponentSchema) {
                     throw new Error(`Component schema for "${name}" must be identical when extending.`);

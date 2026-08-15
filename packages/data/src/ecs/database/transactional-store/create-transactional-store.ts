@@ -3,6 +3,7 @@ import { Archetype, ArchetypeId, EntityInsertValues } from "../../archetype/inde
 import { ResourceComponents } from "../../store/resource-components.js";
 import { Store } from "../../store/index.js";
 import { Entity } from "../../entity/entity.js";
+import { ID } from "../../required-components.js";
 import { EntityUpdateValues } from "../../store/core/index.js";
 import { TransactionalStore, TransactionResult, TransactionWriteOperation } from "./transactional-store.js";
 import { StringKeyof } from "../../../types/types.js";
@@ -154,7 +155,7 @@ export function createTransactionalStore<
             throw new Error(`Entity not found: ${entity}`);
         }
 
-        const { id: _ignore, ...oldValuesWithoutId } = oldValues as any;
+        const { [ID]: _ignore, ...oldValuesWithoutId } = oldValues as any;
         for (const key in oldValuesWithoutId) {
             changed.components.add(key);
         }
@@ -171,7 +172,7 @@ export function createTransactionalStore<
 
     const resourceComponentNames = (name: string): StringKeyof<C>[] => {
         const schema = (store.componentSchemas as any)[name];
-        const names = ["id", name] as StringKeyof<C>[];
+        const names = [ID, name] as StringKeyof<C>[];
         if (schema?.nonPersistent) names.push("nonPersistent" as StringKeyof<C>);
         if (schema?.nonShared) names.push("nonShared" as StringKeyof<C>);
         return names;
@@ -182,7 +183,7 @@ export function createTransactionalStore<
         const resourceId = name as keyof C;
         const componentNames = resourceComponentNames(name);
         const archetype = store.ensureArchetype(componentNames);
-        const entityId = archetype.columns.id.get(0);
+        const entityId = archetype.columns[ID].get(0);
         Object.defineProperty(resources, name, {
             get: Object.getOwnPropertyDescriptor(store.resources, name)!.get,
             set: (newValue) => {
@@ -290,7 +291,7 @@ export function createTransactionalStore<
                     const resourceId = name as keyof C;
                     const componentNames = resourceComponentNames(name);
                     const archetype = store.ensureArchetype(componentNames);
-                    const entityId = archetype.columns.id.get(0);
+                    const entityId = archetype.columns[ID].get(0);
                     Object.defineProperty(resources, name, {
                         get: Object.getOwnPropertyDescriptor(store.resources, name)!.get,
                         set: (newValue: any) => {

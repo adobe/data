@@ -3,7 +3,7 @@
 import { selectRows } from "../../../table/select-rows.js";
 import { compare } from "../../../functions/compare.js";
 import { StringKeyof } from "../../../types/types.js";
-import { RequiredComponents } from "../../required-components.js";
+import { RequiredComponents, ID } from "../../required-components.js";
 import { Entity } from "../../entity/entity.js";
 import { EntitySelectOptions } from "../entity-select-options.js";
 import { Core } from "./core.js";
@@ -31,7 +31,7 @@ export const selectEntities = <
         const entities = new Array<Entity>(length);
         let index = 0;
         for (const archetype of archetypes) {
-            const idTypedArray = archetype.columns.id.getTypedArray();
+            const idTypedArray = archetype.columns[ID].getTypedArray();
             for (let i = 0; i < archetype.rowCount; i++) {
                 entities[index++] = idTypedArray[i];
             }
@@ -41,7 +41,7 @@ export const selectEntities = <
     if (options?.where && !options.order) {
         const entities = new Array<Entity>();
         for (const archetype of archetypes) {
-            const idTypedArray = archetype.columns.id.getTypedArray();
+            const idTypedArray = archetype.columns[ID].getTypedArray();
             for (const row of selectRows<Pick<C & RequiredComponents & OptionalComponents, Include>>(archetype as any, options.where)) {
                 entities.push(idTypedArray[row]);
             }
@@ -94,7 +94,7 @@ export const selectEntities = <
         if (sortKeys.length === 0) {
             const ids: Entity[] = [];
             for (const archetype of archs) {
-                const idTypedArray = archetype.columns.id.getTypedArray();
+                const idTypedArray = archetype.columns[ID].getTypedArray();
                 for (const row of selectRows<Pick<C & RequiredComponents & OptionalComponents, Include>>(archetype as any, options.where)) {
                     ids.push(idTypedArray[row]);
                 }
@@ -103,7 +103,7 @@ export const selectEntities = <
         }
         const rows: { id: Entity; [k: string]: Comparable }[] = [];
         for (const archetype of archs) {
-            const idTypedArray = archetype.columns.id.getTypedArray();
+            const idTypedArray = archetype.columns[ID].getTypedArray();
             for (const row of selectRows<Pick<C & RequiredComponents & OptionalComponents, Include>>(archetype as any, options.where)) {
                 const value: { id: Entity; [k: string]: Comparable } = { id: idTypedArray[row] };
                 for (const key of sortKeys) value[key] = archetype.columns[key]!.get(row) as Comparable;

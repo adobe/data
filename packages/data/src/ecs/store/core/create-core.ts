@@ -10,7 +10,7 @@ import { Table, addRow, updateRow } from "../../../table/index.js";
 // public `@adobe/data/table` surface, so it is imported from the file directly.
 import { getRowData } from "../../../table/get-row-data.js";
 import { Archetype, ReadonlyArchetype } from "../../archetype/archetype.js";
-import { RequiredComponents } from "../../required-components.js";
+import { RequiredComponents, ID, RESERVED_COMPONENT_NAMES } from "../../required-components.js";
 import { Entity } from "../../entity/entity.js";
 import { QUADRANT_COUNT, isPersistentQuadrant, quadrantFor, quadrantOf } from "../../entity/persistence-sharing.js";
 import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
@@ -75,8 +75,17 @@ export function createCore<NC extends ComponentSchemas>(
 ): Core<Simplify<OptionalComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> }>, PartitionKeysOf<NC>> {
     type C = RequiredComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> };
 
+    // Reserved names (`id`, `nonPersistent`, `nonShared`) are the ECS's own
+    // built-ins; a user schema defining one would silently clobber it, so reject
+    // it loudly instead.
+    for (const name of Object.keys(newComponentSchemas)) {
+        if (RESERVED_COMPONENT_NAMES.includes(name)) {
+            throw new Error(`Component name "${name}" is reserved by the ECS and cannot be defined.`);
+        }
+    }
+
     const componentSchemas: { readonly [K in StringKeyof<C & RequiredComponents & OptionalComponents>]: Schema } = {
-        id: Entity.schema,
+        [ID]: Entity.schema,
         nonPersistent: True.schema,
         // Built-in sharing tag, mirror of nonPersistent. Together they place an
         // archetype's entities into one of four quadrants (persistence × sharing);
@@ -170,7 +179,7 @@ export function createCore<NC extends ComponentSchemas>(
         // and the schema loop skips it, so a restore resolves the same archetype a
         // fresh `ensureArchetype([...])` would.
         const namesArr = Array.from(componentNames);
-        const sorted = namesArr.filter((n) => n !== "id").sort();
+        const sorted = namesArr.filter((n) => n !== ID).sort();
         const partitionNames = partitionNamesIn(sorted);
         for (const n of partitionNames) {
             if (partitionValues?.[n] === undefined) {
@@ -185,11 +194,11 @@ export function createCore<NC extends ComponentSchemas>(
         // Every archetype carries the implicit `id` column. Seed the schema with it
         // structurally — this is the id column's definition, not a component the
         // caller asked for.
-        const archetypeComponentSchemas: Record<string, Schema> = { id: componentSchemas.id };
+        const archetypeComponentSchemas: Record<string, Schema> = { [ID]: componentSchemas[ID] };
         let isNonPersistent = false;
         let isNonShared = false;
         for (const comp of namesArr) {
-            if (comp === "id") continue;
+            if (comp === ID) continue;
             if (comp === "nonPersistent") isNonPersistent = true;
             if (comp === "nonShared") isNonShared = true;
             const base = componentSchemas[comp as StringKeyof<typeof componentSchemas>];
@@ -257,7 +266,7 @@ export function createCore<NC extends ComponentSchemas>(
     ): Record<string, unknown> => {
         const values: Record<string, unknown> = {};
         for (const name in archetype.columns) {
-            if (name === "id") continue;
+            if (name === ID) continue;
             values[name] = archetype.columns[name]!.get(row);
         }
         return values;
@@ -438,7 +447,7 @@ export function createCore<NC extends ComponentSchemas>(
     const nonPersistentComponents = (): Set<string> => {
         const names = new Set<string>();
         for (const name in componentSchemas) {
-            if (name === "id" || name === "nonPersistent" || name === "nonShared") continue;
+            if (name === ID || name === "nonPersistent" || name === "nonShared") continue;
             if ((componentSchemas as Record<string, Schema>)[name]?.nonPersistent === true) names.add(name);
         }
         return names;
@@ -477,7 +486,7 @@ export function createCore<NC extends ComponentSchemas>(
                 if (present.length === 0) continue;
                 const removal = Object.fromEntries(present.map((n) => [n, undefined])) as EntityUpdateValues<C>;
                 while (archetype.rowCount > 0) {
-                    updateEntity(archetype.columns.id!.get(0), removal);
+                    updateEntity(archetype.columns[ID]!.get(0), removal);
                 }
             }
         }

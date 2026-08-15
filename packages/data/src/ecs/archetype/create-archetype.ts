@@ -3,6 +3,7 @@
 import { Schema } from "../../schema/index.js";
 import * as TABLE from "../../table/index.js";
 import { Archetype, EntityInsertValues } from "./archetype.js";
+import { ID, IdComponent } from "../required-components.js";
 import { EntityLocationTable } from "../entity-location-table/entity-location-table.js";
 import { Entity } from "../entity/entity.js";
 import { StringKeyof } from "../../types/types.js";
@@ -91,7 +92,7 @@ const buildSpecializedInsert = (
     const componentParamValues: TypedBuffer<any>[] = [];
     const sets: string[] = [];
     for (const name of componentNames) {
-        if (name === "id") continue;
+        if (name === ID) continue;
         const local = `_${name}`;
         componentParamNames.push(local);
         componentParamValues.push(columns[name]);
@@ -142,7 +143,7 @@ ${sets.join("\n")}
         archetypeId,
         ensureCapacity,
         entityLocationTable,
-        columns.id as TypedBuffer<number>,
+        columns[ID] as TypedBuffer<number>,
         ...componentParamValues,
     );
 };
@@ -158,21 +159,21 @@ const buildGenericInsert = (
     return (archetype: any, rowData: any) => {
         const row = TABLE.addRow(archetype, rowData);
         const entity = entityLocationTable.create({ archetype: archetypeId, row });
-        archetype.columns.id.set(row, entity);
+        archetype.columns[ID].set(row, entity);
         return entity;
     };
 };
 
-export const createArchetype = <C extends { id: typeof Entity.schema }>(
+export const createArchetype = <C extends Record<IdComponent, typeof Entity.schema>>(
     components: C,
     id: number,
     entityLocationTable: EntityLocationTable,
-): Archetype<Omit<{ [K in keyof C]: Schema.ToType<C[K]> }, "id">> => {
+): Archetype<Omit<{ [K in keyof C]: Schema.ToType<C[K]> }, IdComponent>> => {
     // The archetype's public COMPONENT set excludes `id`: id is the entity's
     // identity, a column but never a component value. (`table.columns` and the
     // runtime `componentSet` still carry id — required for swap-remove and
     // serialization — but that is asserted below where the types are narrowed.)
-    type PublicComponents = Omit<{ [K in keyof C]: Schema.ToType<C[K]> }, "id">;
+    type PublicComponents = Omit<{ [K in keyof C]: Schema.ToType<C[K]> }, IdComponent>;
     const table = TABLE.createTable(components);
     const componentSet = new Set(Object.keys(components));
 

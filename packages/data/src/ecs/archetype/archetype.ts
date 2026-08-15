@@ -1,12 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { RequiredComponents } from "../required-components.js";
+import { RequiredComponents, IdComponent } from "../required-components.js";
 import { Entity } from "../entity/entity.js";
 import { Table, ReadonlyTable } from "../../table/index.js";
 import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";
 import { Exact, StringKeyof } from "../../types/types.js";
 
-export type EntityInsertValues<C> = Omit<C, "id">;
+export type EntityInsertValues<C> = Omit<C, IdComponent>;
 export type ArchetypeId = number;
 
 /**
@@ -84,8 +84,8 @@ export namespace Archetype {
 // via the `columns` position (typed `C & RequiredComponents`), but `id` is never
 // part of the component row.
 export type FromArchetype<T> =
-    T extends ReadonlyArchetype<infer C> ? { readonly [K in keyof Omit<C, "id">]: C[K] } :
-    T extends Archetype<infer C> ? { readonly [K in keyof Omit<C, "id">]: C[K] } :
+    T extends ReadonlyArchetype<infer C> ? { readonly [K in keyof Omit<C, IdComponent>]: C[K] } :
+    T extends Archetype<infer C> ? { readonly [K in keyof Omit<C, IdComponent>]: C[K] } :
     never;
 
 // compile time type tests.
@@ -94,7 +94,7 @@ type TestFromReadonlyArchetype = Assert<Equal<FromArchetype<ReadonlyArchetype<{ 
 type TestFromArchetype = Assert<Equal<FromArchetype<Archetype<{ a: number, b: string }>>, { readonly a: number, readonly b: string }>>;
 // …but it remains a real, typed column so swap-remove / manual traversal can read
 // `columns.id` directly: `id` is present in `columns` even though it is not in `C`.
-type TestIdColumnStillTyped = Assert<"id" extends keyof Archetype<{ a: number }>["columns"] ? true : false>;
+type TestIdColumnStillTyped = Assert<IdComponent extends keyof Archetype<{ a: number }>["columns"] ? true : false>;
 
 // Compile-time tests for Exact in insert method
 {

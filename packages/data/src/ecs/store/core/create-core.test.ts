@@ -177,6 +177,12 @@ export function createCoreTestSuite(
             expect(core.ensureArchetype(["position"])).toBe(archetype);
         });
 
+        it("throws when a schema defines a reserved component name", () => {
+            for (const reserved of ["id", "nonPersistent", "nonShared"]) {
+                expect(() => factory({ [reserved]: positionSchema } as any)).toThrow(/reserved/);
+            }
+        });
+
         it("should locate entities correctly", () => {
             const core = factory({
                 position: positionSchema,

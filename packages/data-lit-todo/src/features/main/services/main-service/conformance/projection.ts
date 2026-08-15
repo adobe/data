@@ -13,7 +13,8 @@ const toData = (store: CoreDatabase.Store, entity: Entity): Todo => {
   const row = store.read(entity, store.archetypes.Todo);
   if (row === null)
     throw new Error("conformance projection: expected a todo entity");
-  return { id: row.id, name: row.name, complete: row.complete };
+  // `id` is the entity itself (reads no longer echo it back as a component).
+  return { id: entity, name: row.name, complete: row.complete };
 };
 
 // The test-only ecs↔`State` projection, passed to `Conformance.runFeature`.

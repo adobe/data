@@ -72,13 +72,9 @@ export function createStore<
     // re-reads the full record to recompute the key. Seeding goes through
     // `seedIndexFromArchetypes` instead (see below).
     const indexRegistry = createIndexRegistry(
-        (entity) => {
-            const values = core.read(entity);
-            if (!values) return null;
-            // Strip `id` — it is never a useful index key.
-            const { id: _id, ...rest } = values as { id: Entity } & Record<string, unknown>;
-            return rest;
-        },
+        // `core.read` already excludes `id` (the identity is never a useful index
+        // key), so the read record is handed to the registry as-is.
+        (entity) => core.read(entity) as Record<string, unknown> | null,
         // Resolve an `archetype`-scoped index to that archetype's declared
         // component set (archetypes are registered before indexes in `extend`).
         (archetypeName) => (archetypeComponentNames as Record<string, readonly string[]>)[archetypeName],
@@ -177,7 +173,8 @@ export function createStore<
         const resourceId = name as StringKeyof<C>;
         const isNonPersistent = resourceSchema.nonPersistent;
         const isNonShared = resourceSchema.nonShared;
-        const componentNames: StringKeyof<C>[] = ["id" as StringKeyof<C>, resourceId];
+        // `id` is implicit (added by resolveArchetype); name only real components.
+        const componentNames: StringKeyof<C>[] = [resourceId];
         if (isNonPersistent) componentNames.push("nonPersistent" as StringKeyof<C>);
         if (isNonShared) componentNames.push("nonShared" as StringKeyof<C>);
         const archetype = core.ensureArchetype(componentNames);
@@ -300,7 +297,8 @@ export function createStore<
             archetypeComponentNames[name as keyof typeof archetypeComponentNames] = newComponents as any;
             // Insert is already index-maintaining (decorated at creation), and a
             // partitioned archetype resolves to a Router — both surfaced directly.
-            (archetypes as any)[name] = core.ensureArchetype(["id", ...(newComponents as any)]);
+            // `id` is implicit (added by resolveArchetype); pass only real components.
+            (archetypes as any)[name] = core.ensureArchetype([...(newComponents as any)]);
         }
 
         // indexes: registry enforces (===)-or-throw on same name and

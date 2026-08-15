@@ -30,16 +30,16 @@ function _transactionContextDiscrimination() {
                 t.archetypes.Mob.insert({ position: 1, health: 100 });
 
                 // ensureArchetype on `t` discriminates just like on the store.
-                const router = t.ensureArchetype(["id", "cell", "position"]);
+                const router = t.ensureArchetype(["cell", "position"]);
                 router.insert({ cell: 1, position: 2 });
                 // @ts-expect-error - a partition family (Router) has no columns
                 router.columns;
 
-                const concrete = t.ensureArchetype(["id", "cell", "position"], { cell: 7 });
+                const concrete = t.ensureArchetype(["cell", "position"], { cell: 7 });
                 concrete.columns;
 
                 // @ts-expect-error - partition value must match the component type (cell is number)
-                t.ensureArchetype(["id", "cell", "position"], { cell: "nope" });
+                t.ensureArchetype(["cell", "position"], { cell: "nope" });
             },
         },
     });

@@ -10,7 +10,6 @@ import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { Assert } from "../../../types/assert.js";
 import { Equal } from "../../../types/equal.js";
 import { ReadonlyArchetype } from "../../archetype/archetype.js";
-import { RequiredComponents } from "../../required-components.js";
 
 export type DatabaseSchema<
     CS extends ComponentSchemas,
@@ -40,11 +39,11 @@ type CheckDatabaseFromSchema = DatabaseFromSchema<DatabaseSchema<{
     readonly createDynamicParticle: (t: any, args: { particle: boolean, velocity: number }) => void;
 }>>;
 declare const testDatabase: CheckDatabaseFromSchema;
-type CheckDynamicParticle = Assert<Equal<typeof testDatabase.archetypes.DynamicParticle, ReadonlyArchetype<RequiredComponents & {
+type CheckDynamicParticle = Assert<Equal<typeof testDatabase.archetypes.DynamicParticle, ReadonlyArchetype<{
     particle: boolean;
     velocity: number;
 }>>>;
-type CheckParticle = Assert<Equal<typeof testDatabase.archetypes.Particle, ReadonlyArchetype<RequiredComponents & {
+type CheckParticle = Assert<Equal<typeof testDatabase.archetypes.Particle, ReadonlyArchetype<{
     particle: boolean;
 }>>>;
 type CheckCreateParticle = Assert<Equal<typeof testDatabase.transactions.createParticle, {

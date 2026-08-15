@@ -12,7 +12,8 @@ const toData = (store: CoreDatabase.Store, entity: Entity): Sprite => {
   if (row === null)
     throw new Error("conformance projection: expected a sprite entity");
   return {
-    id: row.id,
+    // `id` is the entity itself (reads no longer echo it back as a component).
+    id: entity,
     position: row.position,
     rotation: row.rotation,
     kind: row.kind,

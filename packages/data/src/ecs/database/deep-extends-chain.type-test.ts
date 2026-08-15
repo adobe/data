@@ -408,8 +408,8 @@ type HasStringIndex<T> = string extends keyof T ? true : false;
 import type { ReadonlyArchetype } from "../archetype/archetype.js";
 import type { RequiredComponents } from "../required-components.js";
 
+// `id` is not a component value, so it is absent from these archetype rows.
 type District = Readonly<{
-    id: Entity;
     districtType: string;
     zoning: string;
     districtLocked: boolean;
@@ -417,14 +417,13 @@ type District = Readonly<{
 }>;
 
 type Building = Readonly<{
-    id: Entity;
     buildingType: string;
     parentDistrict: Entity;
     positionX: number;
 }>;
 
 interface CityService {
-    read(entity: Entity): Readonly<Partial<District & Building> & { id: Entity }> | null;
+    read(entity: Entity): Readonly<Partial<District & Building>> | null;
     read(entity: Entity, archetype: ReadonlyArchetype<District>): District | null;
     read(entity: Entity, archetype: ReadonlyArchetype<Building>): Building | null;
 }

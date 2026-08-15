@@ -39,10 +39,10 @@ declare const db: MainService;
 const archetypes: MainService["archetypes"] = db.archetypes;
 void archetypes;
 
-// 2. `RowOf` extracts the full structural row, including the implicit `id`.
+// 2. `RowOf` extracts the archetype's component row. `id` is NOT a component and
+//    is absent from the row (it remains an implicit column, not a value).
 type TrackRow = Database.Archetype.RowOf<MainService, "Track">;
 type CheckRow = Assert<Equal<TrackRow, {
-    readonly id: Entity;
     readonly trackKind: string;
     readonly editingMode: string;
     readonly muted: boolean;

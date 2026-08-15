@@ -99,18 +99,18 @@ describe("Store partition integration", () => {
 
     it("store.ensureArchetype routes (no value) and resolves concrete (with value)", () => {
         const store = makeStore();
-        const router = store.ensureArchetype(["id", "cell", "name"]);
+        const router = store.ensureArchetype(["cell", "name"]);
         expect("columns" in router).toBe(false);
         router.insert({ cell: 5, name: "x" });
 
-        const concrete = store.ensureArchetype(["id", "cell", "name"], { cell: 5 });
+        const concrete = store.ensureArchetype(["cell", "name"], { cell: 5 });
         expect(concrete.columns).toBeDefined();
         expect(concrete.rowCount).toBe(1);
     });
 
     it("index find works when inserting via the concrete-child path too", () => {
         const store = makeStore();
-        const concrete = store.ensureArchetype(["id", "cell", "name"], { cell: 9 });
+        const concrete = store.ensureArchetype(["cell", "name"], { cell: 9 });
         const e = concrete.insert({ cell: 9, name: "zed" });
         expect(store.indexes.byName.get({ name: "zed" })).toBe(e);
     });

@@ -33,7 +33,7 @@ describe("createStore", () => {
             }, resources: {}, archetypes: {} });
 
             // Create entities in a single archetype
-            const archetype = store.ensureArchetype(["id", "position", "health"]);
+            const archetype = store.ensureArchetype(["position", "health"]);
             const entity1 = archetype.insert({
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 }
@@ -59,7 +59,7 @@ describe("createStore", () => {
             }, resources: {}, archetypes: {} });
 
             // Create entities in different archetypes
-            const positionOnlyArchetype = store.ensureArchetype(["id", "position"]);
+            const positionOnlyArchetype = store.ensureArchetype(["position"]);
             const entity1 = positionOnlyArchetype.insert({
                 position: { x: 1, y: 2, z: 3 }
             });
@@ -67,18 +67,18 @@ describe("createStore", () => {
                 position: { x: 4, y: 5, z: 6 }
             });
 
-            const healthOnlyArchetype = store.ensureArchetype(["id", "health"]);
+            const healthOnlyArchetype = store.ensureArchetype(["health"]);
             const entity3 = healthOnlyArchetype.insert({
                 health: { current: 100, max: 100 }
             });
 
-            const positionHealthArchetype = store.ensureArchetype(["id", "position", "health"]);
+            const positionHealthArchetype = store.ensureArchetype(["position", "health"]);
             const entity4 = positionHealthArchetype.insert({
                 position: { x: 0, y: 0, z: 0 },
                 health: { current: 50, max: 100 }
             });
 
-            const velocityArchetype = store.ensureArchetype(["id", "velocity"]);
+            const velocityArchetype = store.ensureArchetype(["velocity"]);
             const entity5 = velocityArchetype.insert({
                 velocity: { x: 1, y: 0, z: 0 }
             });
@@ -119,12 +119,12 @@ describe("createStore", () => {
             }, resources: {}, archetypes: {} });
 
             // Create entities in different archetypes
-            const positionOnlyArchetype = store.ensureArchetype(["id", "position"]);
+            const positionOnlyArchetype = store.ensureArchetype(["position"]);
             const entity1 = positionOnlyArchetype.insert({
                 position: { x: 1, y: 2, z: 3 }
             });
 
-            const positionHealthArchetype = store.ensureArchetype(["id", "position", "health"]);
+            const positionHealthArchetype = store.ensureArchetype(["position", "health"]);
             const entity2 = positionHealthArchetype.insert({
                 position: { x: 0, y: 0, z: 0 },
                 health: { current: 50, max: 100 }
@@ -144,7 +144,7 @@ describe("createStore", () => {
             }, resources: {}, archetypes: {} });
 
             // Create entity with only position
-            const archetype = store.ensureArchetype(["id", "position"]);
+            const archetype = store.ensureArchetype(["position"]);
             archetype.insert({ position: { x: 1, y: 2, z: 3 } });
 
             // Select entities with health (should be empty)
@@ -161,14 +161,14 @@ describe("createStore", () => {
             }, resources: {}, archetypes: {} });
 
             // Create entities across many different archetypes
-            const archetype1 = store.ensureArchetype(["id", "position"]);
+            const archetype1 = store.ensureArchetype(["position"]);
             const entity1 = archetype1.insert({ position: { x: 1, y: 2, z: 3 } });
             const entity2 = archetype1.insert({ position: { x: 4, y: 5, z: 6 } });
 
-            const archetype2 = store.ensureArchetype(["id", "health"]);
+            const archetype2 = store.ensureArchetype(["health"]);
             const entity3 = archetype2.insert({ health: { current: 100, max: 100 } });
 
-            const archetype3 = store.ensureArchetype(["id", "position", "health"]);
+            const archetype3 = store.ensureArchetype(["position", "health"]);
             const entity4 = archetype3.insert({
                 position: { x: 0, y: 0, z: 0 },
                 health: { current: 50, max: 100 }
@@ -178,16 +178,16 @@ describe("createStore", () => {
                 health: { current: 75, max: 100 }
             });
 
-            const archetype4 = store.ensureArchetype(["id", "name"]);
+            const archetype4 = store.ensureArchetype(["name"]);
             const entity6 = archetype4.insert({ name: "Player1" });
 
-            const archetype5 = store.ensureArchetype(["id", "position", "name"]);
+            const archetype5 = store.ensureArchetype(["position", "name"]);
             const entity7 = archetype5.insert({
                 position: { x: 100, y: 200, z: 300 },
                 name: "Player2"
             });
 
-            const archetype6 = store.ensureArchetype(["id", "position", "health", "name"]);
+            const archetype6 = store.ensureArchetype(["position", "health", "name"]);
             const entity8 = archetype6.insert({
                 position: { x: 500, y: 600, z: 700 },
                 health: { current: 25, max: 100 },
@@ -237,14 +237,14 @@ describe("createStore", () => {
             }, resources: {}, archetypes: {} });
 
             // Create entities in different archetypes
-            const archetype1 = store.ensureArchetype(["id", "position"]);
+            const archetype1 = store.ensureArchetype(["position"]);
             const entity1 = archetype1.insert({ position: { x: 1, y: 2, z: 3 } });
             const entity2 = archetype1.insert({ position: { x: 4, y: 5, z: 6 } });
 
-            const archetype2 = store.ensureArchetype(["id", "health"]);
+            const archetype2 = store.ensureArchetype(["health"]);
             const entity3 = archetype2.insert({ health: { current: 100, max: 100 } });
 
-            const archetype3 = store.ensureArchetype(["id", "position", "health"]);
+            const archetype3 = store.ensureArchetype(["position", "health"]);
             const entity4 = archetype3.insert({
                 position: { x: 0, y: 0, z: 0 },
                 health: { current: 50, max: 100 }
@@ -280,7 +280,7 @@ describe("createStore", () => {
             }, archetypes: {} });
 
             // Create some entities
-            const archetype = store.ensureArchetype(["id", "position"]);
+            const archetype = store.ensureArchetype(["position"]);
             const entity = archetype.insert({ position: { x: 1, y: 2, z: 3 } });
 
             // Select entities with time component (should include the resource entity)
@@ -544,7 +544,7 @@ describe("createStore", () => {
 
             // Create entity with current timestamp
             const now = Date.now();
-            const archetype = store.ensureArchetype(["id", "timestamp"]);
+            const archetype = store.ensureArchetype(["timestamp"]);
             const entity = archetype.insert({ timestamp: now });
 
             // Query for the entity
@@ -571,7 +571,7 @@ describe("createStore", () => {
                 }, archetypes: {} });
 
             // Add some entities
-            const archetype = store.ensureArchetype(["id", "position", "health"]);
+            const archetype = store.ensureArchetype(["position", "health"]);
             const entity1 = archetype.insert({
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 }
@@ -606,12 +606,10 @@ describe("createStore", () => {
             const restoredData1 = newStore.read(restoredEntities[0]);
             const restoredData2 = newStore.read(restoredEntities[1]);
             expect(restoredData1).toEqual({
-                id: restoredEntities[0],
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 }
             });
             expect(restoredData2).toEqual({
-                id: restoredEntities[1],
                 position: { x: 4, y: 5, z: 6 },
                 health: { current: 50, max: 100 }
             });
@@ -734,7 +732,7 @@ describe("createStore", () => {
             // the load. fromData must clear it — the non-persistent quadrants are
             // never serialized, so a load resets them exactly as reset() would.
             const target = makeStore();
-            const selectionArchetype = target.ensureArchetype(["id", "selection", "nonPersistent"]);
+            const selectionArchetype = target.ensureArchetype(["selection", "nonPersistent"]);
             const selectionEntity = selectionArchetype.insert({ selection: true, nonPersistent: true });
             expect(target.read(selectionEntity)).not.toBeNull();
 
@@ -755,12 +753,12 @@ describe("createStore", () => {
             const store = makeStore();
 
             // Ad-hoc nonPersistent entity archetype created FIRST → lower id.
-            const selectionArchetype = store.ensureArchetype(["id", "selection", "nonPersistent"]);
+            const selectionArchetype = store.ensureArchetype(["selection", "nonPersistent"]);
             selectionArchetype.insert({ selection: true, nonPersistent: true });
 
             // Persistent entity archetype created AFTER → higher id, referenced
             // by the persistent entity-location table by that id.
-            const positionArchetype = store.ensureArchetype(["id", "position"]);
+            const positionArchetype = store.ensureArchetype(["position"]);
             const positionEntity = positionArchetype.insert({ position: 42 });
 
             const serializedData = store.toData({ copy: true });
@@ -771,12 +769,12 @@ describe("createStore", () => {
             // The persistent entity must still resolve to the right archetype
             // after reload — it would not if the nonPersistent archetype's slot
             // were dropped and later ids shifted down.
-            expect(newStore.read(positionEntity)).toEqual({ id: positionEntity, position: 42 });
+            expect(newStore.read(positionEntity)).toEqual({ position: 42 });
         });
 
         it("stamps a version and skips (warns, does not throw) snapshots of an incompatible or legacy format", () => {
             const store = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
-            const entity = store.ensureArchetype(["id", "position"]).insert({ position: { x: 1, y: 2, z: 3 } });
+            const entity = store.ensureArchetype(["position"]).insert({ position: { x: 1, y: 2, z: 3 } });
             const snapshot: any = store.toData({ copy: true });
             expect(snapshot.version).toBe(ECS_SNAPSHOT_VERSION);
 
@@ -798,7 +796,7 @@ describe("createStore", () => {
                 // The correctly-versioned snapshot loads normally.
                 const target = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
                 target.fromData(snapshot);
-                expect(target.read(entity)).toEqual({ id: entity, position: { x: 1, y: 2, z: 3 } });
+                expect(target.read(entity)).toEqual({ position: { x: 1, y: 2, z: 3 } });
             } finally {
                 warn.mockRestore();
             }
@@ -807,7 +805,7 @@ describe("createStore", () => {
         it("toData(true) detaches the snapshot from later store mutation; toData() references live buffers", () => {
             const makePopulatedStore = () => {
                 const store = createStore({ components: { health: healthSchema }, resources: {}, archetypes: {} });
-                const archetype = store.ensureArchetype(["id", "health"]);
+                const archetype = store.ensureArchetype(["health"]);
                 const entity = archetype.insert({ health: { current: 100, max: 100 } });
                 return { store, entity };
             };
@@ -841,7 +839,7 @@ describe("createStore", () => {
                 }, archetypes: {} });
 
             // Add some entities and update resource
-            const archetype = originalStore.ensureArchetype(["id", "position"]);
+            const archetype = originalStore.ensureArchetype(["position"]);
             archetype.insert({ position: { x: 1, y: 2, z: 3 } });
             originalStore.resources.time = { delta: 0.033, elapsed: 1.5 };
 
@@ -893,7 +891,7 @@ describe("createStore", () => {
                 }, archetypes: {} });
 
             // Add entities and update resources
-            const archetype = originalStore.ensureArchetype(["id", "position"]);
+            const archetype = originalStore.ensureArchetype(["position"]);
             const entity = archetype.insert({ position: { x: 1, y: 2, z: 3 } });
             originalStore.resources.time = { delta: 0.033, elapsed: 1.5 };
             originalStore.resources.config = { debug: true, volume: 0.5 };
@@ -925,7 +923,6 @@ describe("createStore", () => {
             expect(restoredEntities).toHaveLength(1);
             const restoredData = newStore.read(restoredEntities[0]);
             expect(restoredData).toEqual({
-                id: restoredEntities[0],
                 position: { x: 1, y: 2, z: 3 }
             });
         });
@@ -995,7 +992,7 @@ describe("createStore", () => {
             store.resources.complex = updatedComplex;
 
             // Add some entities
-            const archetype = store.ensureArchetype(["id", "position"]);
+            const archetype = store.ensureArchetype(["position"]);
             archetype.insert({ position: { x: 1, y: 2, z: 3 } });
 
             // Serialize and deserialize
@@ -1025,7 +1022,7 @@ describe("createStore", () => {
                 }, archetypes: {} });
 
             // Add entities and update resource
-            const archetype = store.ensureArchetype(["id", "position"]);
+            const archetype = store.ensureArchetype(["position"]);
             archetype.insert({ position: { x: 1, y: 2, z: 3 } });
             store.resources.time = { delta: 0.033, elapsed: 1.5 };
 
@@ -1045,7 +1042,6 @@ describe("createStore", () => {
             expect(restoredEntities).toHaveLength(1);
             const restoredData = newStore.read(restoredEntities[0]);
             expect(restoredData).toEqual({
-                id: restoredEntities[0],
                 position: { x: 1, y: 2, z: 3 }
             });
 

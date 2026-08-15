@@ -3,7 +3,12 @@
 import { Schema } from "../../../schema/index.js";
 import { createEntityLocationTable } from "../../entity-location-table/index.js";
 import * as ARCHETYPE from "../../archetype/index.js";
-import { Table, getRowData, addRow, updateRow } from "../../../table/index.js";
+import { Table, addRow, updateRow } from "../../../table/index.js";
+// getRowData returns the WHOLE row (incl. the internal `id` column); it is only
+// used here for the archetype-migration copy that must carry id into the new
+// row. Public reads use `readRowExcludingId` below. It is not part of the
+// public `@adobe/data/table` surface, so it is imported from the file directly.
+import { getRowData } from "../../../table/get-row-data.js";
 import { Archetype, ReadonlyArchetype } from "../../archetype/archetype.js";
 import { RequiredComponents } from "../../required-components.js";
 import { Entity } from "../../entity/entity.js";
@@ -116,14 +121,14 @@ export function createCore<NC extends ComponentSchemas>(
     };
 
     const queryArchetypes = <
-        Include extends StringKeyof<C & RequiredComponents & OptionalComponents>,
+        Include extends StringKeyof<C & OptionalComponents>,
     >(
         include: readonly Include[] | ReadonlySet<string>,
         options?: ArchetypeQueryOptions<C>
-    ): readonly Archetype<RequiredComponents & Pick<C & OptionalComponents, Include>>[] => {
+    ): readonly Archetype<Pick<C & OptionalComponents, Include>>[] => {
         const includeArray = Array.from(include);
         const where = options?.where as Record<string, unknown> | undefined;
-        const results: Archetype<RequiredComponents & Pick<C & OptionalComponents, Include>>[] = [];
+        const results: Archetype<Pick<C & OptionalComponents, Include>>[] = [];
         for (const archetype of archetypes) {
             const hasAllRequired = includeArray.every(comp => archetype.columns[comp] !== undefined);
             const hasNoExcluded = !options?.exclude || options.exclude.every(comp => archetype.columns[comp] === undefined);
@@ -141,7 +146,7 @@ export function createCore<NC extends ComponentSchemas>(
                 }
             }
             if (hasAllRequired && hasNoExcluded && matchesWhere) {
-                results.push(archetype as unknown as Archetype<RequiredComponents & Pick<C & OptionalComponents, Include>>);
+                results.push(archetype as unknown as Archetype<Pick<C & OptionalComponents, Include>>);
             }
         }
         return results;
@@ -157,8 +162,15 @@ export function createCore<NC extends ComponentSchemas>(
         componentNames: readonly string[] | ReadonlySet<string>,
         partitionValues?: Record<string, unknown>,
     ): Archetype<any> => {
+        // `id` is never a declared component — callers name only real components,
+        // and the public `ensureArchetype` type rejects "id". The id COLUMN is
+        // added structurally below (to the schema map), never to this name list or
+        // the identity key. `id` can still appear in `componentNames` when a
+        // snapshot restore replays the serialized component set; the key filters it
+        // and the schema loop skips it, so a restore resolves the same archetype a
+        // fresh `ensureArchetype([...])` would.
         const namesArr = Array.from(componentNames);
-        const sorted = namesArr.slice().sort();
+        const sorted = namesArr.filter((n) => n !== "id").sort();
         const partitionNames = partitionNamesIn(sorted);
         for (const n of partitionNames) {
             if (partitionValues?.[n] === undefined) {
@@ -170,21 +182,20 @@ export function createCore<NC extends ComponentSchemas>(
         if (existing) return existing;
 
         const id = archetypes.length;
-        const archetypeComponentSchemas: Record<string, Schema> = {};
-        let hasId = false;
+        // Every archetype carries the implicit `id` column. Seed the schema with it
+        // structurally — this is the id column's definition, not a component the
+        // caller asked for.
+        const archetypeComponentSchemas: Record<string, Schema> = { id: componentSchemas.id };
         let isNonPersistent = false;
         let isNonShared = false;
         for (const comp of namesArr) {
-            if (comp === "id") hasId = true;
+            if (comp === "id") continue;
             if (comp === "nonPersistent") isNonPersistent = true;
             if (comp === "nonShared") isNonShared = true;
             const base = componentSchemas[comp as StringKeyof<typeof componentSchemas>];
             archetypeComponentSchemas[comp] = isPartition(comp)
                 ? { ...base, const: partitionValues![comp] }
                 : base;
-        }
-        if (!hasId) {
-            throw new Error("id is required");
         }
         const archetype = ARCHETYPE.createArchetype(
             archetypeComponentSchemas as any,
@@ -235,6 +246,23 @@ export function createCore<NC extends ComponentSchemas>(
         return getLocationTable(entity).locate(entity);
     }
 
+    // Build an entity's value record, excluding the always-present `id` column.
+    // `read(entity)` is handed the id already, so echoing it back is redundant —
+    // and `id` is the entity's identity (the key), not one of its component
+    // values. Single forward pass over the columns (never add-then-delete), so
+    // this stays as cheap as a full-row copy minus one field on this hot path.
+    const readRowExcludingId = (
+        archetype: { columns: { readonly [k: string]: { get(row: number): unknown } } },
+        row: number,
+    ): Record<string, unknown> => {
+        const values: Record<string, unknown> = {};
+        for (const name in archetype.columns) {
+            if (name === "id") continue;
+            values[name] = archetype.columns[name]!.get(row);
+        }
+        return values;
+    }
+
     const readEntity = (
         entity: Entity,
         archetypeOrComponents?: ReadonlyArchetype<any> | Archetype<any> | readonly string[]
@@ -264,7 +292,9 @@ export function createCore<NC extends ComponentSchemas>(
         if (archetypeArg && location.archetype !== archetypeArg.id && !archetype.components.isSupersetOf(archetypeArg.components)) {
             return null;
         }
-        return getRowData(archetype, location.row);
+        // Full read (and the archetype-gated read): return the entity's component
+        // values WITHOUT `id` (see readRowExcludingId).
+        return readRowExcludingId(archetype, location.row);
     }
 
     const deleteEntity = (entity: Entity): Entity | undefined => {

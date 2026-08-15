@@ -47,7 +47,6 @@ describe("Database.create from plugin", () => {
 
         const entityData = database.read(entity);
         expect(entityData).toEqual({
-            id: entity,
             position: { x: 1, y: 2, z: 3 },
         });
 
@@ -140,7 +139,6 @@ describe("Database.create from plugin", () => {
 
         const movingEntityData = extendedDatabase.read(movingEntity);
         expect(movingEntityData).toEqual({
-            id: movingEntity,
             position: { x: 10, y: 20, z: 30 },
             velocity: { x: 1, y: 2, z: 3 },
         });

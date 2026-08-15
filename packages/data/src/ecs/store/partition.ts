@@ -2,7 +2,6 @@
 
 import { StringKeyof } from "../../types/types.js";
 import { ComponentSchemas } from "../component-schemas.js";
-import { RequiredComponents } from "../required-components.js";
 import { Archetype } from "../archetype/archetype.js";
 
 /**
@@ -51,7 +50,7 @@ export type HasPartitionKey<Keys extends string, PK extends string> =
  * caller). `Has` is a *naked* type parameter so a `boolean` (from `PK = any`)
  * distributes to `Archetype.Router<C> | Concrete`.
  */
-export type ArchetypeOrRouter<Has extends boolean, C extends RequiredComponents, Concrete> =
+export type ArchetypeOrRouter<Has extends boolean, C, Concrete> =
     Has extends true ? Archetype.Router<C> : Concrete;
 
 /**
@@ -68,7 +67,7 @@ export type ArchetypeOrRouter<Has extends boolean, C extends RequiredComponents,
  * share it); only dense column access requires narrowing to `Archetype`.
  */
 export type EnsureArchetypeResult<
-    C extends RequiredComponents,
+    C,
     Keys extends string,
     PK extends string,
     ValueProvided extends boolean,
@@ -85,7 +84,7 @@ export type EnsureArchetypeResult<
  * widens to a union — the discrimination is exact per declared name.
  */
 export type StoreArchetypeHandle<
-    C extends RequiredComponents,
+    C,
     Keys extends string,
     PK extends string,
 > = HasPartitionKey<Keys, PK> extends true ? Archetype.Router<C> : Archetype<C>;

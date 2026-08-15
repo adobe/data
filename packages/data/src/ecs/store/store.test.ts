@@ -140,13 +140,13 @@ describe("Store.Schema.create", () => {
         it("should merge archetypes from dependencies", () => {
             const baseSchema = Store.Schema.create({
                 archetypes: {
-                    BaseEntity: ["id"] as any
+                    BaseEntity: [] as any
                 }
             });
 
             const extendedSchema = Store.Schema.create({
                 archetypes: {
-                    ExtendedEntity: ["id", "name"] as any
+                    ExtendedEntity: ["name"] as any
                 }
             }, [baseSchema]);
 

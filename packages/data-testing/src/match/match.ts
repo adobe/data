@@ -20,8 +20,7 @@ export interface MatchOptions {
 // labels can never bind the same actual (a bijection). This checks that ecs ids
 // line up structurally — e.g. a `selectedId` points at the entity a case means —
 // even though the ecs assigns ids from its own space. For an id a case does not
-// care about, simply omit it (a numeric `id` the expected side does not mention is
-// ignored — see `matchesWith`), or use `anyNumber` to assert only that one exists.
+// want to pin to a specific number, use `anyNumber` to assert only that one exists.
 const REF = Symbol.for("@adobe/data-testing:ref");
 export const ref = (label: string): { readonly [REF]: string } => ({ [REF]: label });
 const isRef = (value: unknown): value is { readonly [REF]: string } =>
@@ -120,23 +119,15 @@ const matchesWith = (
       return false;
     const eo = expected as Record<string, unknown>;
     const ao = actual as Record<string, unknown>;
-    // A numeric `id` the case does not mention is an ecs-allocated identity a case
-    // cannot predict — ignore it so entity content compares without pinning ids. A
-    // case that DOES care pins it explicitly (`id: ref(...)` / `anyNumber`), which
-    // puts `id` on the expected side and takes it through the normal path below.
-    const ignoreId = !("id" in eo) && typeof ao.id === "number";
-    const expectedKeys = Object.keys(eo);
-    const actualKeys = ignoreId ? Object.keys(ao).filter((k) => k !== "id") : Object.keys(ao);
-    if (expectedKeys.length !== actualKeys.length) return false;
-    return expectedKeys.every((key) => matchesWith(ao[key], eo[key], options, bindings));
+    if (Object.keys(eo).length !== Object.keys(ao).length) return false;
+    return Object.keys(eo).every((key) => matchesWith(ao[key], eo[key], options, bindings));
   }
   return Object.is(actual, expected);
 };
 
 // Tolerant structural comparison: honors asymmetric matchers and `ref`
-// correspondence on the expected side, absorbs float noise, compares arrays in
-// order and Sets/Maps order-independently, and ignores an ecs-allocated numeric
-// `id` a case does not pin. Pure and framework-agnostic — `assert` wraps it for a
-// throwing test assertion.
+// correspondence on the expected side, absorbs float noise, and compares arrays in
+// order and Sets/Maps order-independently. Pure and framework-agnostic — `assert`
+// wraps it for a throwing test assertion.
 export const matches = (actual: unknown, expected: unknown, options: MatchOptions = {}): boolean =>
   matchesWith(actual, expected, options, new Map());

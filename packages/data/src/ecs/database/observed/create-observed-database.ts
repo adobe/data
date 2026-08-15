@@ -13,7 +13,6 @@ import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 import { observeSelectEntities } from "../observe-select-entities.js";
 import { createDerive } from "../observe-derive.js";
 import { createTransactionalStore } from "../transactional-store/create-transactional-store.js";
-import { RequiredComponents } from "../../required-components.js";
 import { Entity } from "../../entity/entity.js";
 import { EntityReadValues, EntityUpdateValues } from "../../store/core/index.js";
 import { ObservedDatabase } from "./observed-database.js";
@@ -92,7 +91,7 @@ export function createObservedDatabase<
         return result;
     };
 
-    const observeEntity = <T extends RequiredComponents>(entity: Entity, minArchetype?: ReadonlyArchetype<T> | Archetype<T>) => (observer: (values: EntityReadValues<C> | null) => void) => {
+    const observeEntity = <T>(entity: Entity, minArchetype?: ReadonlyArchetype<T> | Archetype<T>) => (observer: (values: EntityReadValues<C> | null) => void) => {
         if (minArchetype) {
             const originalObserver = observer;
             observer = (values) => {
@@ -153,12 +152,14 @@ export function createObservedDatabase<
             changedComponents: new Set(componentObservers.keys()),
             changedArchetypes: new Set(archetypeObservers.keys()),
             changedEntities: new Map([...entityObservers.keys()].map((entity) => {
+                // `store.read` already excludes `id`, so the read record IS the
+                // full component set to report as changed. The read shape
+                // (optional, readonly) and EntityUpdateValues (Partial<Omit<…,id>>)
+                // are computed differently, so bridge through `unknown`.
                 const values = store.read(entity);
-                let updateValues: EntityUpdateValues<C> | null = null;
-                if (values) {
-                    const { id, ...restValues } = values;
-                    updateValues = restValues as EntityUpdateValues<C>;
-                }
+                const updateValues: EntityUpdateValues<C> | null = values
+                    ? values as unknown as EntityUpdateValues<C>
+                    : null;
                 return [
                     entity,
                     updateValues

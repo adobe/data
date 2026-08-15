@@ -34,7 +34,11 @@ export const resolveBulletHits = (
   // Children spawned this pass are collected separately and inserted only after
   // every bullet has resolved, each under a freshly minted id.
   const spawned: Asteroid[] = [];
-  let nextId = Math.max(0, ...state.entities.keys()) + 1;
+  // Running max (not `Math.max(...keys)`, which would blow the argument stack for
+  // a large entity set) to mint ids above every existing one.
+  let maxId = 0;
+  for (const id of state.entities.keys()) if (id > maxId) maxId = id;
+  let nextId = maxId + 1;
   let score = state.score;
   for (const [bulletId, bullet] of bullets) {
     const prev = Vec2.subtract(

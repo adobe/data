@@ -276,6 +276,12 @@ export function createStore<
         // resources: existing must be identical if present
         const newResourceNames: string[] = [];
         for (const [name, newResourceSchema] of Object.entries(schemaResources)) {
+            // Reserved built-ins (id / nonPersistent / nonShared) can't be redefined
+            // as resources either — otherwise a reserved-named resource would clobber
+            // the built-in quadrant marker / identity column in the shared schema map.
+            if (RESERVED_COMPONENT_NAMES.includes(name)) {
+                throw new Error(`Resource name "${name}" is reserved by the ECS and cannot be defined.`);
+            }
             if (name in resourceSchemas) {
                 if (resourceSchemas[name as keyof typeof resourceSchemas] !== newResourceSchema) {
                     throw new Error(`Resource schema for "${name}" must be identical when extending.`);

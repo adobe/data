@@ -14,6 +14,28 @@ describe("createStore", () => {
         createStore({ components: componentSchemas, resources: {}, archetypes: {} }) as any
     );
 
+    describe("reserved names", () => {
+        it("throws when a schema defines a reserved component name", () => {
+            for (const reserved of ["id", "nonPersistent", "nonShared"]) {
+                expect(() =>
+                    createStore({ components: { [reserved]: positionSchema }, resources: {}, archetypes: {} } as any),
+                ).toThrow(/reserved/);
+            }
+        });
+
+        it("throws when a schema defines a reserved resource name", () => {
+            for (const reserved of ["id", "nonPersistent", "nonShared"]) {
+                expect(() =>
+                    createStore({
+                        components: {},
+                        resources: { [reserved]: { default: { x: 0, y: 0, z: 0 } } },
+                        archetypes: {},
+                    } as any),
+                ).toThrow(/reserved/);
+            }
+        });
+    });
+
     // Select function tests
     describe("Select functionality", () => {
         const velocitySchema = {

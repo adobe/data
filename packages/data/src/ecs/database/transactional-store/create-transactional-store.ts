@@ -155,8 +155,9 @@ export function createTransactionalStore<
             throw new Error(`Entity not found: ${entity}`);
         }
 
-        const { [ID]: _ignore, ...oldValuesWithoutId } = oldValues as any;
-        for (const key in oldValuesWithoutId) {
+        // `store.read` already excludes the identity column, so `oldValues` carries
+        // only the entity's components — exactly what the undo `insert` restores.
+        for (const key in oldValues) {
             changed.components.add(key);
         }
 
@@ -166,7 +167,10 @@ export function createTransactionalStore<
             changed.moves.add(swapped);
         }
         redoOperations.push({ type: "delete", entity });
-        undoOperationsInReverseOrder.push({ type: "insert", values: oldValuesWithoutId });
+        // A live entity carries every component its archetype requires, so the
+        // id-excluded read values form a complete insert payload — a runtime
+        // invariant the checker can't derive from the all-optional read type.
+        undoOperationsInReverseOrder.push({ type: "insert", values: oldValues as unknown as EntityInsertValues<C> });
         return swapped;
     };
 

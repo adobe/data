@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Schema } from "@adobe/data/schema";
-import { ref } from "../match/match.js";
+import { ref, isRef, isMatcher } from "../match/match.js";
 
 // The store's schema map (`componentSchemas`) holds every component AND resource
 // schema by name, so a State field — a singleton resource or an entity component —
@@ -8,14 +8,9 @@ import { ref } from "../match/match.js";
 // store's finite-keyed map satisfies it; a runner constrains its `Store` to this.
 export type SchemaSource = { readonly componentSchemas: object };
 
-const REF = Symbol.for("@adobe/data-testing:ref");
-
 // Already an open matcher (a `ref`, `anyNumber`, vitest `expect.any`) — refify must
 // not touch it, so a case may still hand-author a matcher where it wants one.
-const isRefOrMatcher = (value: unknown): boolean =>
-  typeof value === "object" &&
-  value !== null &&
-  (REF in value || typeof (value as { asymmetricMatch?: unknown }).asymmetricMatch === "function");
+const isRefOrMatcher = (value: unknown): boolean => isRef(value) || isMatcher(value);
 
 // Replace an entity-reference number with a `ref` keyed by its own spec-id, so two
 // occurrences of the same spec-id (an entity's map key and another entity's field

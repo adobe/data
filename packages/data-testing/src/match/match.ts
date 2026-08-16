@@ -28,13 +28,18 @@ const REF = Symbol.for("@adobe/data-testing:ref");
 // are distinct keys (a shared matcher like `anyNumber` would collapse duplicate map
 // keys); same-label occurrences still assert the same actual id (correspondence).
 export const ref = <T = number>(label: string): T => ({ [REF]: label }) as unknown as T;
-const isRef = (value: unknown): value is { readonly [REF]: string } =>
+
+// The single owner of the `ref` contract — `refify` and `assert` reuse these
+// instead of re-deriving the symbol, so there is one place the marker is defined.
+export const isRef = (value: unknown): value is { readonly [REF]: string } =>
   typeof value === "object" && value !== null && REF in value;
+// The `ref` label, or `undefined` if `value` is not a `ref` — for rendering.
+export const refLabel = (value: unknown): string | undefined => (isRef(value) ? value[REF] : undefined);
 
 // An asymmetric matcher (this module's `anyNumber`/`anyString`, or vitest's
 // `expect.any(...)`): honored on the EXPECTED side so a case asserts a shape it
 // does not pin. Recognised structurally, so no test framework is imported.
-const isMatcher = (value: unknown): value is { asymmetricMatch(actual: unknown): boolean } =>
+export const isMatcher = (value: unknown): value is { asymmetricMatch(actual: unknown): boolean } =>
   typeof value === "object" &&
   value !== null &&
   typeof (value as { asymmetricMatch?: unknown }).asymmetricMatch === "function";

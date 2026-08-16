@@ -23,7 +23,7 @@ const three = new Map([
 // as the PLAIN spec-id of the referenced todo; conformance compares
 // it to the ecs (which mints its own ids) up to an id-bijection, so the reference
 // lines up with the same entity's map key on both sides with no author bookkeeping.
-export const cases = Conformance.cases(selectTodo, { args: { type: "object", properties: { id: Entity.schema }, required: ["id"] } },
+export const cases = Conformance.cases(selectTodo, { args: { type: "object", properties: { id: Entity.schema } } },
   {
     name: "selects an existing todo",
     before: { entities: three },

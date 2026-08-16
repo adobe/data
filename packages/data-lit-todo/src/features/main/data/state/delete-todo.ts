@@ -33,7 +33,7 @@ const three: readonly (readonly [number, Todo])[] = [
 // the seed map); `after` lists the surviving entities with plain spec-id
 // keys. The addressed todo is removed; an unknown id is a no-op. The transition
 // logs `todoDeleted`.
-export const cases = Conformance.cases(deleteTodo, { args: { type: "object", properties: { id: Entity.schema }, required: ["id"] } },
+export const cases = Conformance.cases(deleteTodo, { args: { type: "object", properties: { id: Entity.schema } } },
   {
     name: "removes a middle todo",
     before: { entities: new Map(three) },

@@ -186,7 +186,7 @@ features never touch these drivers directly.
 
 An entity-addressed transition declares an `args` schema in the builder options and
 writes the id **plain**: `Conformance.cases(fn, { args: { type: "object", properties:
-{ id: Entity.schema }, required: ["id"] } }, { …, args: { id: 2 }, … })`. The runner
+{ id: Entity.schema } } }, { …, args: { id: 2 }, … })`. The runner
 finds each `Entity.schema`-marked arg field and resolves the plain spec-id to the
 **seeded entity** via the id→entity map `fromState` returns (turned into a `resolve`
 by `Conformance.resolver` — no feature writes `resolve` by hand); the pure side reads

@@ -257,7 +257,7 @@ export const cases = Conformance.cases(createTodo,
   references are detected from the store's schemas; an **arg** has none, so a transition
   that addresses an entity by id gives `Conformance.cases` a leading options object whose
   `args` schema marks the reference fields:
-  `Conformance.cases(fn, { args: { type: "object", properties: { id: Entity.schema }, required: ["id"] } }, …cases)`.
+  `Conformance.cases(fn, { args: { type: "object", properties: { id: Entity.schema } } }, …cases)`.
   The case then writes the id **plain** — `args: { id: 2 }` — and the runner resolves each
   `Entity.schema`-marked field to the seeded entity (via the `fromState` seed map) on the
   ECS side, while the pure side reads the plain spec-id directly. Describe **only** the

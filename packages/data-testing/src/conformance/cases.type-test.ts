@@ -14,7 +14,9 @@ const noArgs = (_s: Pick<State, "selected">): Pick<State, "selected"> => ({ sele
 // A schema whose ToType is assignable-from the args type — accepted.
 export const good = cases(
   reparent,
-  { args: { type: "object", properties: { id: Entity.schema, count: { type: "integer" } }, required: ["id", "count"] } },
+  // No `required`: the args type `{ id, count }` is still assignable to the schema's
+  // `ToType` (`{ id?, count? }`), and a marked field is detected regardless.
+  { args: { type: "object", properties: { id: Entity.schema, count: { type: "integer" } } } },
   { name: "ok", before: {}, args: { id: 1, count: 2 }, after: { selected: 1 } },
 );
 // Options form carries the schema on the value.
@@ -26,6 +28,6 @@ const _isArray: readonly unknown[] = noArgsCases;
 
 // A schema that DIVERGES from the signature (id typed as string) must be rejected:
 // `Schema.ToType<args>.id` is `string`, but the transition's `args.id` is `number`.
-const badArgs = { type: "object", properties: { id: { type: "string" }, count: { type: "integer" } }, required: ["id", "count"] } as const;
+const badArgs = { type: "object", properties: { id: { type: "string" }, count: { type: "integer" } } } as const;
 // @ts-expect-error — args type is not assignable to Schema.ToType<args>
 export const bad = cases(reparent, { args: badArgs }, { name: "bad", before: {}, args: { id: 1, count: 2 }, after: { selected: 1 } });

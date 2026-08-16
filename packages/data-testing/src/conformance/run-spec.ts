@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
 import { adaptArgs } from "./entity-ref.js";
+import { refifyState } from "./refify.js";
 import { recordArgServices, expectEffects } from "./record-effects.js";
 import type { DerivationCase, Effects } from "./types.js";
 
@@ -20,6 +21,13 @@ export interface SpecRunConfig {
   // Passed through to `matches` (float tolerance). Ordered vs. unordered is now
   // carried by the value's type — `Array` positional, `Set`/`Map` order-independent.
   readonly match?: MatchOptions;
+  // Component/resource schemas, for a feature whose entity VALUES carry reference
+  // fields (an `asset`/`parent` id). Only then does the pure comparison need them —
+  // to refify those fields for the id-bijection. Entity map KEYS are refified with
+  // no schema (an id by construction), so a feature of self-contained values omits
+  // this. `runFeature` does not thread it; a feature with reference fields calls
+  // `runSpec` directly with its `MainService.Store`'s `componentSchemas`.
+  readonly schemas?: object;
   // Override the `describe` label per module (default `State.<fnName>`).
   readonly label?: (path: string, fnName: string | undefined) => string;
 }
@@ -121,9 +129,12 @@ export const runSpec = (config: SpecRunConfig): void => {
             ...(tc.before as Record<string, unknown>),
           };
           const result = (await suite.fn(before, args)) as Record<string, unknown>;
+          // The pure transform mints its own spec-ids, so compare up to an
+          // id-bijection too: refify the expected's entity map keys (and reference
+          // fields, when `schemas` is given) into `ref`s.
           assert(
             { ...before, ...result },
-            { ...before, ...(tc.after as Record<string, unknown>) },
+            refifyState({ ...before, ...(tc.after as Record<string, unknown>) }, { componentSchemas: config.schemas ?? {} }),
             config.match,
           );
           expectEffects(calls, tc.effects);

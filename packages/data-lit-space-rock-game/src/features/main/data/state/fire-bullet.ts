@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
@@ -37,7 +36,7 @@ export const cases: Conformance<typeof fireBullet> = [
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
       entities: new Map([
-        [Match.ref("fired"), { position: [112, 100], velocity: [400, 0], age: 0 }],
+        [1, { position: [112, 100], velocity: [400, 0], age: 0 }],
       ]),
     },
   },
@@ -53,7 +52,7 @@ export const cases: Conformance<typeof fireBullet> = [
       ...field,
       ship: { position: [100, 100], velocity: [10, 20], rotation: 0 },
       entities: new Map([
-        [Match.ref("fired"), { position: [112, 100], velocity: [410, 20], age: 0 }],
+        [1, { position: [112, 100], velocity: [410, 20], age: 0 }],
       ]),
     },
   },
@@ -69,8 +68,8 @@ export const cases: Conformance<typeof fireBullet> = [
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
       entities: new Map([
-        [Match.ref("existing"), { position: [0, 0], velocity: [1, 0], age: 0.2 }],
-        [Match.ref("fired"), { position: [112, 100], velocity: [400, 0], age: 0 }],
+        [1, { position: [0, 0], velocity: [1, 0], age: 0.2 }],
+        [2, { position: [112, 100], velocity: [400, 0], age: 0 }],
       ]),
     },
   },
@@ -86,7 +85,7 @@ export const cases: Conformance<typeof fireBullet> = [
       ...field,
       ship: { position: [100, 100], velocity: [0, 0], rotation: -Math.PI / 2 },
       entities: new Map([
-        [Match.ref("fired"), { position: [100, 88], velocity: [0, -400], age: 0 }],
+        [1, { position: [100, 88], velocity: [0, -400], age: 0 }],
       ]),
     },
   },

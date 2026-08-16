@@ -5,6 +5,7 @@ import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
 import { adaptArgs } from "./entity-ref.js";
 import { discoverTransitions, discoverOps } from "./discover.js";
+import { refifyState, type SchemaSource } from "./refify.js";
 import { resolver } from "./resolve.js";
 
 // Discover transitions (the `data/state` glob) and the ecs transactions (a facet
@@ -35,7 +36,7 @@ export interface TransactionRunConfig<Store, State> {
 
 // The single conformance test for every ecs transaction, proving
 // `toState(apply(fromState(before), args)) ≡ after` for each shared case.
-export function runTransactions<Store, State>(config: TransactionRunConfig<Store, State>): void {
+export function runTransactions<Store extends SchemaSource, State>(config: TransactionRunConfig<Store, State>): void {
   const transitions = discoverTransitions(config.transitions);
   for (const [name, transaction] of discoverOps(config.transactions)) {
     const paired = transitions.get(name);
@@ -49,8 +50,14 @@ export function runTransactions<Store, State>(config: TransactionRunConfig<Store
           const resolve = resolver(config.fromState(store, before));
           config.seedContext?.(store, before, testCase.args);
           (transaction as (s: Store, a?: unknown) => void)(store, adaptArgs(testCase.args, resolve));
-          // `after` is a writes patch — compare `toState` against it merged over `before`.
-          assert(config.toState(store), { ...(before as object), ...(testCase.after as object) }, config.match);
+          // `after` is a writes patch — compare `toState` against it merged over
+          // `before`. Refify turns the case's spec-ids into `ref`s so the compare is
+          // up to an id-bijection (the ecs mints its own ids).
+          assert(
+            config.toState(store),
+            refifyState({ ...(before as object), ...(testCase.after as object) }, store),
+            config.match,
+          );
         });
       }
     });

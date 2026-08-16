@@ -2,7 +2,6 @@
 import type { State } from "./state.js";
 import type { Todo } from "../todo/todo.js";
 import { entity, type Conformance } from "./conformance-case.js";
-import { Match } from "@adobe/data-testing";
 /**
  * Moves the todo with the given id to `toIndex` within the display order,
  * preserving the relative order of every other todo, then recomputes every
@@ -41,7 +40,7 @@ const three: readonly (readonly [number, Todo])[] = [
 // Spec-owned cases, shared with the ecs `dragTodo` transaction (its final drop is
 // the same move — `finalIndex` is `toIndex`, followed by `normalizeOrder`).
 // `before` is a delta over `State.create()` keyed by PLAIN spec-ids; `after` lists
-// the entities with distinct `Match.ref` keys and their RECOMPUTED contiguous
+// the entities with plain spec-id keys and their RECOMPUTED contiguous
 // `order`. Every case keeps all todos incomplete with `displayCompleted` true, so
 // the visible list `dragTodo` indexes equals the full list. The unknown-id no-op is
 // exercised only by the pure transform — `dragTodo` has no such guard.
@@ -52,9 +51,9 @@ export const cases: Conformance<typeof reorderTodo> = [
     args: { id: entity(1), toIndex: 2 },
     after: {
       entities: new Map([
-        [Match.ref("b"), { name: "b", complete: false, order: 0 }],
-        [Match.ref("c"), { name: "c", complete: false, order: 1 }],
-        [Match.ref("a"), { name: "a", complete: false, order: 2 }],
+        [1, { name: "b", complete: false, order: 0 }],
+        [2, { name: "c", complete: false, order: 1 }],
+        [3, { name: "a", complete: false, order: 2 }],
       ]),
     },
   },
@@ -64,9 +63,9 @@ export const cases: Conformance<typeof reorderTodo> = [
     args: { id: entity(3), toIndex: 0 },
     after: {
       entities: new Map([
-        [Match.ref("c"), { name: "c", complete: false, order: 0 }],
-        [Match.ref("a"), { name: "a", complete: false, order: 1 }],
-        [Match.ref("b"), { name: "b", complete: false, order: 2 }],
+        [1, { name: "c", complete: false, order: 0 }],
+        [2, { name: "a", complete: false, order: 1 }],
+        [3, { name: "b", complete: false, order: 2 }],
       ]),
     },
   },
@@ -76,9 +75,9 @@ export const cases: Conformance<typeof reorderTodo> = [
     args: { id: entity(1), toIndex: 99 },
     after: {
       entities: new Map([
-        [Match.ref("b"), { name: "b", complete: false, order: 0 }],
-        [Match.ref("c"), { name: "c", complete: false, order: 1 }],
-        [Match.ref("a"), { name: "a", complete: false, order: 2 }],
+        [1, { name: "b", complete: false, order: 0 }],
+        [2, { name: "c", complete: false, order: 1 }],
+        [3, { name: "a", complete: false, order: 2 }],
       ]),
     },
   },
@@ -88,9 +87,9 @@ export const cases: Conformance<typeof reorderTodo> = [
     args: { id: entity(2), toIndex: 1 },
     after: {
       entities: new Map([
-        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
-        [Match.ref("b"), { name: "b", complete: false, order: 1 }],
-        [Match.ref("c"), { name: "c", complete: false, order: 2 }],
+        [1, { name: "a", complete: false, order: 0 }],
+        [2, { name: "b", complete: false, order: 1 }],
+        [3, { name: "c", complete: false, order: 2 }],
       ]),
     },
   },

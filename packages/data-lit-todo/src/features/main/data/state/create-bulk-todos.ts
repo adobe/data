@@ -4,7 +4,6 @@ import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { appendTodo } from "./append-todo.js";
-import { Match } from "@adobe/data-testing";
 /** Adds numbered placeholder todos for demos and performance testing. Reads and
  * writes the entities — an `{ entities }` patch. */
 export const createBulkTodos = (
@@ -25,7 +24,7 @@ export const createBulkTodos = (
 
 // Spec-owned cases, shared with the ecs `createBulkTodos` transaction. `before`
 // is a delta over `State.create()` (plain spec-id keys); `after` lists only the
-// written entities with distinct `Match.ref` keys. `count` (floored, clamped at 0)
+// written entities with plain spec-id keys. `count` (floored, clamped at 0)
 // numbered todos are appended; the transition logs `bulkTodosCreated` with the raw
 // count (as the action does), even on a no-op.
 export const cases: Conformance<typeof createBulkTodos> = [
@@ -35,9 +34,9 @@ export const cases: Conformance<typeof createBulkTodos> = [
     args: { count: 3, analytics: AnalyticsService.createFake() },
     after: {
       entities: new Map([
-        [Match.ref("a"), { name: "Todo 0", complete: false, order: 0 }],
-        [Match.ref("b"), { name: "Todo 1", complete: false, order: 1 }],
-        [Match.ref("c"), { name: "Todo 2", complete: false, order: 2 }],
+        [1, { name: "Todo 0", complete: false, order: 0 }],
+        [2, { name: "Todo 1", complete: false, order: 1 }],
+        [3, { name: "Todo 2", complete: false, order: 2 }],
       ]),
     },
     effects: { analytics: [["bulkTodosCreated", { count: 3 }]] },
@@ -50,9 +49,9 @@ export const cases: Conformance<typeof createBulkTodos> = [
     args: { count: 2, analytics: AnalyticsService.createFake() },
     after: {
       entities: new Map([
-        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
-        [Match.ref("b"), { name: "Todo 1", complete: false, order: 1 }],
-        [Match.ref("c"), { name: "Todo 2", complete: false, order: 2 }],
+        [1, { name: "a", complete: false, order: 0 }],
+        [2, { name: "Todo 1", complete: false, order: 1 }],
+        [3, { name: "Todo 2", complete: false, order: 2 }],
       ]),
     },
     effects: { analytics: [["bulkTodosCreated", { count: 2 }]] },
@@ -63,8 +62,8 @@ export const cases: Conformance<typeof createBulkTodos> = [
     args: { count: 2.9, analytics: AnalyticsService.createFake() },
     after: {
       entities: new Map([
-        [Match.ref("a"), { name: "Todo 0", complete: false, order: 0 }],
-        [Match.ref("b"), { name: "Todo 1", complete: false, order: 1 }],
+        [1, { name: "Todo 0", complete: false, order: 0 }],
+        [2, { name: "Todo 1", complete: false, order: 1 }],
       ]),
     },
     effects: { analytics: [["bulkTodosCreated", { count: 2.9 }]] },
@@ -78,7 +77,7 @@ export const cases: Conformance<typeof createBulkTodos> = [
     args: { count: 0, analytics: AnalyticsService.createFake() },
     after: {
       entities: new Map([
-        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
+        [1, { name: "a", complete: false, order: 0 }],
       ]),
     },
     effects: { analytics: [["bulkTodosCreated", { count: 0 }]] },

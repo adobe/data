@@ -4,7 +4,6 @@ import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
 import type { Todo } from "../todo/todo.js";
 import { entity, type Conformance } from "./conformance-case.js";
-import { Match } from "@adobe/data-testing";
 
 // Reads the entities, writes the entities — an `{ entities }` patch — dropping the
 // addressed id; also logs `todoDeleted`. Surviving todos keep their `order` (the
@@ -30,7 +29,7 @@ const three: readonly (readonly [number, Todo])[] = [
 
 // Spec-owned cases, shared with the ecs `deleteTodo` transaction. `before` is a
 // delta over `State.create()` keyed by PLAIN spec-ids (so `entity(2)` resolves via
-// the seed map); `after` lists the surviving entities with distinct `Match.ref`
+// the seed map); `after` lists the surviving entities with plain spec-id
 // keys. The addressed todo is removed; an unknown id is a no-op. The transition
 // logs `todoDeleted`.
 export const cases: Conformance<typeof deleteTodo> = [
@@ -40,8 +39,8 @@ export const cases: Conformance<typeof deleteTodo> = [
     args: { id: entity(2), analytics: AnalyticsService.createFake() },
     after: {
       entities: new Map([
-        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
-        [Match.ref("c"), { name: "c", complete: false, order: 2 }],
+        [1, { name: "a", complete: false, order: 0 }],
+        [2, { name: "c", complete: false, order: 2 }],
       ]),
     },
     effects: { analytics: [["todoDeleted"]] },
@@ -52,8 +51,8 @@ export const cases: Conformance<typeof deleteTodo> = [
     args: { id: entity(1), analytics: AnalyticsService.createFake() },
     after: {
       entities: new Map([
-        [Match.ref("b"), { name: "b", complete: true, order: 1 }],
-        [Match.ref("c"), { name: "c", complete: false, order: 2 }],
+        [1, { name: "b", complete: true, order: 1 }],
+        [2, { name: "c", complete: false, order: 2 }],
       ]),
     },
     effects: { analytics: [["todoDeleted"]] },
@@ -64,9 +63,9 @@ export const cases: Conformance<typeof deleteTodo> = [
     args: { id: entity(99), analytics: AnalyticsService.createFake() },
     after: {
       entities: new Map([
-        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
-        [Match.ref("b"), { name: "b", complete: true, order: 1 }],
-        [Match.ref("c"), { name: "c", complete: false, order: 2 }],
+        [1, { name: "a", complete: false, order: 0 }],
+        [2, { name: "b", complete: true, order: 1 }],
+        [3, { name: "c", complete: false, order: 2 }],
       ]),
     },
     effects: { analytics: [["todoDeleted"]] },

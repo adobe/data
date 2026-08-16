@@ -37,10 +37,11 @@ installing `@adobe/data` never pulls in a `vitest` peer dependency):
 
 - **`Match`** — the tolerant, matcher-aware value comparison: `matches(actual,
   expected, options?)` and its throwing wrapper `assert(...)`, plus the matchers
-  `Match.anyNumber` / `Match.anyString` / `Match.ref(label)`, and the collection
-  builder `Match.refMap(values)` (an identity-keyed `ReadonlyMap<number, V>` of
-  id-less values with distinct open keys — the standard way to author a `samples`
-  entry or a created-entity `after`; see `../../../data/state.md`). Options are
+  `Match.anyNumber` / `Match.anyString` for minted scalars a case does not pin (and
+  `Match.ref(label)` for a rare explicit correspondence the schema can't express).
+  **Entity ids need no matcher**: a case writes plain spec-ids for map keys and
+  reference fields, and the runner compares up to an id-bijection (below), so `samples`
+  and `after` are ordinary `new Map([[1, value], …])` — no key labelling. Options are
   `{ tolerance?: number }` — numbers snap to `tolerance` (default `0.01`) to absorb
   F32↔f64 / trig noise. **Ordering is carried by the value's type**: a
   `ReadonlyArray` compares **in order**, a `ReadonlySet` / `ReadonlyMap`
@@ -202,25 +203,32 @@ op is infra, and a thin **same-named** op (todo's `reorderTodo` action, space-ro
 `createInitial` transaction) gives the transition something to pair with. Do **not**
 reintroduce a per-item adapter to bridge a name mismatch — add the same-named op.
 
-## Ordering, tolerance, `ref`
+## Ordering, tolerance, the id-bijection
 
 Ordering is carried by the value's **type**, not a match option — `ReadonlyArray`
 positional, `ReadonlySet` / `ReadonlyMap` order-independent (the rule and its
 rationale live in `../../../data-modelling.md`). What's specific to writing
 conformance cases:
 
-- **Entity identity is the `State.entities` key, not a value field.** Entity values
-  carry no `id`, so there is nothing to omit or ignore — content compares directly.
-  The map key is a spec-domain id the runner resolves to the allocated ECS entity via
-  `resolver`; assert a *reference* between entities with `Match.ref` (below).
+- **The spec and the ECS mint different id sets, so comparison is up to an
+  id-bijection — automatically.** The runner reads the store's `componentSchemas`
+  (which also carry the resource schemas) and finds every entity reference: an
+  `entities` map **key** (an id by construction) and any field whose schema is
+  `Entity.schema` (`schema.entity === true`), recursing into bundled object schemas so
+  a `placement: { parent, order }` reference is found. It replaces each spec-id there
+  with a correspondence variable and solves a one-to-one matching against the ECS's
+  ids. So a case **writes plain spec-ids** for keys and reference fields, and a key and
+  every field naming it line up on one actual id with no author bookkeeping — this is
+  what retired `Match.ref` / `Match.refMap` for keys, and it is what makes a
+  cross-reference between entities (an `asset`, a `parent`) compare correctly at all.
+- **Entity values carry no `id`** — identity is the key — so entity content compares
+  directly, with nothing to omit.
 - **Float noise** is absorbed by the default `tolerance` (`0.01`), threaded through
   `match?: { tolerance }`; raise it only when a case needs a looser grid.
-- **`Match.ref(label)`** on the expected side asserts id *correspondence* for a
-  referential feature — a reference that must line up with the entity it points at
-  (a `selectedId` → a specific todo). Put `ref("t")` on both the reference **and**
-  that entity's `id`; the labels form a bijection over the actual ids.
-  `Match.anyNumber` / `anyString` leave an id a case doesn't pin fully open. `ref`
-  correspondence holds even across a `ReadonlySet` boundary.
+- **A minted scalar** a case does not pin — a timestamp, a random draw — uses
+  `Match.anyNumber` / `Match.anyString`. `Match.ref(label)` remains for the rare
+  explicit correspondence a schema can't express, but a schema-marked reference is the
+  default and should cover entity ids.
 
 ## Recording side effects — built in, no Proxy
 

@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
@@ -45,7 +44,7 @@ export const cases: Conformance<typeof stepAsteroids> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("a"), { position: [40, 10], velocity: [30, 0], size: Size.largest }],
+        [1, { position: [40, 10], velocity: [30, 0], size: Size.largest }],
       ]),
     },
   },
@@ -61,7 +60,7 @@ export const cases: Conformance<typeof stepAsteroids> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("a"), { position: [30, 30], velocity: [50, 50], size: Size.largest }],
+        [1, { position: [30, 30], velocity: [50, 50], size: Size.largest }],
       ]),
     },
   },
@@ -77,7 +76,7 @@ export const cases: Conformance<typeof stepAsteroids> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("a"), { position: [60, 10], velocity: [-50, 0], size: "medium" }],
+        [1, { position: [60, 10], velocity: [-50, 0], size: "medium" }],
       ]),
     },
   },
@@ -94,8 +93,8 @@ export const cases: Conformance<typeof stepAsteroids> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("a1"), { position: [20, 10], velocity: [10, 0], size: "large" }],
-        [Match.ref("a2"), { position: [20, 30], velocity: [0, 10], size: "small" }],
+        [1, { position: [20, 10], velocity: [10, 0], size: "large" }],
+        [2, { position: [20, 30], velocity: [0, 10], size: "small" }],
       ]),
     },
   },

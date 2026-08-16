@@ -2,7 +2,6 @@
 import type { Sprite } from "../sprite/sprite.js";
 import type { State } from "./state.js";
 import { entity, type Conformance } from "./conformance-case.js";
-import { Match } from "@adobe/data-testing";
 
 // Flip the addressed sprite's `active` flag. Writes only `entities`.
 export const toggleSpriteActive = (
@@ -28,7 +27,7 @@ const activeFox: Sprite = {
 
 // Spec-owned cases, shared with the ecs `toggleSpriteActive` transaction. `before`
 // keys are plain spec-ids the `args` address via `entity()`; `after` keys are
-// `Match.ref` distinct labels (the ecs mints its own ids).
+// plain spec-ids (the ecs mints its own; compared up to an id-bijection).
 export const cases: Conformance<typeof toggleSpriteActive> = [
   {
     name: "toggles a sprite from inactive to active",
@@ -36,8 +35,8 @@ export const cases: Conformance<typeof toggleSpriteActive> = [
     args: { id: entity(1) },
     after: {
       entities: new Map([
-        [Match.ref("a"), { ...bunny, active: true }],
-        [Match.ref("b"), activeFox],
+        [1, { ...bunny, active: true }],
+        [2, activeFox],
       ]),
     },
   },
@@ -47,8 +46,8 @@ export const cases: Conformance<typeof toggleSpriteActive> = [
     args: { id: entity(2) },
     after: {
       entities: new Map([
-        [Match.ref("a"), bunny],
-        [Match.ref("b"), { ...activeFox, active: false }],
+        [1, bunny],
+        [2, { ...activeFox, active: false }],
       ]),
     },
   },
@@ -58,8 +57,8 @@ export const cases: Conformance<typeof toggleSpriteActive> = [
     args: { id: entity(99) },
     after: {
       entities: new Map([
-        [Match.ref("a"), bunny],
-        [Match.ref("b"), activeFox],
+        [1, bunny],
+        [2, activeFox],
       ]),
     },
   },

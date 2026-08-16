@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Vec2 } from "@adobe/data/math";
-import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
@@ -94,8 +93,8 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("m1"), { position: [50, 50], velocity: [0, 0], size: "medium" }],
-        [Match.ref("m2"), { position: [50, 50], velocity: [0, 0], size: "medium" }],
+        [1, { position: [50, 50], velocity: [0, 0], size: "medium" }],
+        [2, { position: [50, 50], velocity: [0, 0], size: "medium" }],
       ]),
       score: 20,
     },
@@ -114,8 +113,8 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("s1"), { position: [50, 50], velocity: [0, 0], size: "small" }],
-        [Match.ref("s2"), { position: [50, 50], velocity: [0, 0], size: "small" }],
+        [1, { position: [50, 50], velocity: [0, 0], size: "small" }],
+        [2, { position: [50, 50], velocity: [0, 0], size: "small" }],
       ]),
       score: 55,
     },
@@ -147,8 +146,8 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("b"), { position: [10, 10], velocity: [0, 0], age: 0 }],
-        [Match.ref("a"), { position: [500, 500], velocity: [0, 0], size: "large" }],
+        [1, { position: [10, 10], velocity: [0, 0], age: 0 }],
+        [2, { position: [500, 500], velocity: [0, 0], size: "large" }],
       ]),
       score: 7,
     },
@@ -168,9 +167,9 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("m1"), { position: [50, 50], velocity: [0, 0], size: "medium" }],
-        [Match.ref("m2"), { position: [50, 50], velocity: [0, 0], size: "medium" }],
-        [Match.ref("s"), { position: [500, 500], velocity: [0, 0], size: "small" }],
+        [1, { position: [50, 50], velocity: [0, 0], size: "medium" }],
+        [2, { position: [50, 50], velocity: [0, 0], size: "medium" }],
+        [3, { position: [500, 500], velocity: [0, 0], size: "small" }],
       ]),
       score: 20,
     },
@@ -208,9 +207,9 @@ export const cases: Conformance<typeof resolveBulletHits> = [
       // target — the large is gone and its children, spawned this same pass, are
       // not yet hittable — so it survives.
       entities: new Map([
-        [Match.ref("b"), { position: [50, 50], velocity: [0, 0], age: 0 }],
-        [Match.ref("m1"), { position: [50, 50], velocity: [0, 0], size: "medium" }],
-        [Match.ref("m2"), { position: [50, 50], velocity: [0, 0], size: "medium" }],
+        [1, { position: [50, 50], velocity: [0, 0], age: 0 }],
+        [2, { position: [50, 50], velocity: [0, 0], size: "medium" }],
+        [3, { position: [50, 50], velocity: [0, 0], size: "medium" }],
       ]),
       score: 20,
     },
@@ -229,8 +228,8 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("m1"), { position: [42, 0], velocity: [0, 0], size: "medium" }],
-        [Match.ref("m2"), { position: [42, 0], velocity: [0, 0], size: "medium" }],
+        [1, { position: [42, 0], velocity: [0, 0], size: "medium" }],
+        [2, { position: [42, 0], velocity: [0, 0], size: "medium" }],
       ]),
       score: 20,
     },
@@ -253,8 +252,8 @@ export const cases: Conformance<typeof resolveBulletHits> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("s1"), { position: [25, 0], velocity: [0, 0], size: "small" }],
-        [Match.ref("s2"), { position: [25, 0], velocity: [0, 0], size: "small" }],
+        [1, { position: [25, 0], velocity: [0, 0], size: "small" }],
+        [2, { position: [25, 0], velocity: [0, 0], size: "small" }],
       ]),
       score: 50,
     },

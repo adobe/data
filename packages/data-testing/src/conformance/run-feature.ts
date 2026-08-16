@@ -7,6 +7,7 @@ import type { MatchOptions } from "../match/match.js";
 import { runTransactions } from "./run-transactions.js";
 import { runActions } from "./run-actions.js";
 import { runComputeds } from "./run-computeds.js";
+import { refifyState, type SchemaSource } from "./refify.js";
 
 // The feature's ecs↔`State` projection — the one genuinely feature-specific piece.
 export interface Projection<Store, State> {
@@ -56,7 +57,7 @@ export interface FeatureRunConfig<State, StoreT, Db extends { store: StoreT }> {
 // `create-plugin.ts`), so this reads the ops directly off it.
 type PluginFacets = { transactions: Record<string, unknown>; actions: Record<string, unknown>; computed: Record<string, unknown> };
 
-export function runFeature<State, StoreT, Db extends { store: StoreT }>(
+export function runFeature<State, StoreT extends SchemaSource, Db extends { store: StoreT }>(
   config: FeatureRunConfig<State, StoreT, Db>,
 ): void {
   const initial = config.state.create();
@@ -64,7 +65,7 @@ export function runFeature<State, StoreT, Db extends { store: StoreT }>(
   const facets = config.plugin as unknown as PluginFacets;
   // A plugin carries the schema facets, so `Store.create` / `Database.create`
   // accept it; the resulting store/db is the projection's `StoreT`/`Db`.
-  const makeStore = (): StoreT => Store.create(config.plugin as never) as StoreT;
+  const makeStore = (): StoreT => Store.create(config.plugin as never) as unknown as StoreT;
 
   runTransactions<StoreT, State>({
     createStore: makeStore,
@@ -109,7 +110,7 @@ export function runFeature<State, StoreT, Db extends { store: StoreT }>(
         it(`sample ${index}`, () => {
           const store = makeStore();
           fromState(store, sample);
-          assert(toState(store), sample, config.match);
+          assert(toState(store), refifyState(sample, store), config.match);
         });
       });
     });

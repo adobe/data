@@ -49,9 +49,13 @@ single source of truth, not a downstream comparison flag:
   references is `ReadonlySet<number>` (a set of ids), and an unordered entity
   *query result* is `ReadonlySet<number>`.
 - **`ReadonlyMap<K, V>`** — a keyed lookup. This is how **identity-keyed entities**
-  are modelled: `entities: ReadonlyMap<number, EntityValue>` — the `number` id is the
-  key, and the value carries **no `id` of its own** (identity is the key, never a
-  field). Also used for deterministic-key lookups (an enum, a name, a stable string).
+  are modelled: `entities: ReadonlyMap<number, EntityValue>` — the id is the key, and
+  the value carries **no `id` of its own** (identity is the key, never a field). The key
+  may be a plain `number` or the ECS `Entity` type (a branded `number`) — reusing
+  `Entity`, and reference bundles like `CoeditingRelations.OrderedChild`, is allowed:
+  they are plain value types, not ECS machinery, and keep the spec aligned with the ECS
+  (see `features/data/state.md`). Also used for deterministic-key lookups (an enum, a
+  name, a stable string).
 
 **Entities are keyed, never id-bearing values.** An entity's identity is its map
 key, so entity value types (`Todo`, `Bullet`) have no `id` field, and there is no

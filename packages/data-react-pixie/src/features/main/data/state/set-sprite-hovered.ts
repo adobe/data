@@ -2,7 +2,6 @@
 import type { Sprite } from "../sprite/sprite.js";
 import type { State } from "./state.js";
 import { entity, type Conformance } from "./conformance-case.js";
-import { Match } from "@adobe/data-testing";
 
 // Set the addressed sprite's `hovered` flag. Writes only `entities`.
 export const setSpriteHovered = (
@@ -28,7 +27,7 @@ const fox: Sprite = {
 
 // Spec-owned cases, shared with the ecs `setSpriteHovered` transaction. `before`
 // keys are plain spec-ids the `args` address via `entity(1)`; `after` keys are
-// `Match.ref` distinct labels (the ecs mints its own ids).
+// plain spec-ids (the ecs mints its own; compared up to an id-bijection).
 export const cases: Conformance<typeof setSpriteHovered> = [
   {
     name: "sets hovered true on the addressed sprite only",
@@ -36,8 +35,8 @@ export const cases: Conformance<typeof setSpriteHovered> = [
     args: { id: entity(1), hovered: true },
     after: {
       entities: new Map([
-        [Match.ref("a"), { ...bunny, hovered: true }],
-        [Match.ref("b"), fox],
+        [1, { ...bunny, hovered: true }],
+        [2, fox],
       ]),
     },
   },
@@ -47,8 +46,8 @@ export const cases: Conformance<typeof setSpriteHovered> = [
     args: { id: entity(99), hovered: true },
     after: {
       entities: new Map([
-        [Match.ref("a"), bunny],
-        [Match.ref("b"), fox],
+        [1, bunny],
+        [2, fox],
       ]),
     },
   },

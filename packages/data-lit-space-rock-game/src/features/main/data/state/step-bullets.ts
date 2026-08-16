@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
@@ -49,7 +48,7 @@ export const cases: Conformance<typeof stepBullets> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("b"), { position: [20, 50], velocity: [100, 0], age: 0.1 }],
+        [1, { position: [20, 50], velocity: [100, 0], age: 0.1 }],
       ]),
     },
   },
@@ -63,7 +62,7 @@ export const cases: Conformance<typeof stepBullets> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("b"), { position: [5, 50], velocity: [100, 0], age: 0.1 }],
+        [1, { position: [5, 50], velocity: [100, 0], age: 0.1 }],
       ]),
     },
   },
@@ -88,7 +87,7 @@ export const cases: Conformance<typeof stepBullets> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("b"), { position: [10, 50], velocity: [0, 0], age: 1.1 }],
+        [1, { position: [10, 50], velocity: [0, 0], age: 1.1 }],
       ]),
     },
   },
@@ -105,7 +104,7 @@ export const cases: Conformance<typeof stepBullets> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("b"), { position: [20, 50], velocity: [100, 0], age: 0.1 }],
+        [1, { position: [20, 50], velocity: [100, 0], age: 0.1 }],
       ]),
     },
   },

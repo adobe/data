@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Vec2 } from "@adobe/data/math";
-import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
@@ -57,7 +56,7 @@ export const cases: Conformance<typeof resolveShipHits> = [
       ...field,
       ship: respawned,
       entities: new Map([
-        [Match.ref("a"), { position: [10, 10], velocity: [0, 0], size: "large" }],
+        [1, { position: [10, 10], velocity: [0, 0], size: "large" }],
       ]),
       lives: 2,
     },
@@ -77,7 +76,7 @@ export const cases: Conformance<typeof resolveShipHits> = [
       ...field,
       ship: { position: [10, 10], velocity: [0, 0], rotation: 0 },
       entities: new Map([
-        [Match.ref("a"), { position: [500, 500], velocity: [0, 0], size: "large" }],
+        [1, { position: [500, 500], velocity: [0, 0], size: "large" }],
       ]),
       lives: 3,
     },
@@ -97,7 +96,7 @@ export const cases: Conformance<typeof resolveShipHits> = [
       ...field,
       ship: respawned,
       entities: new Map([
-        [Match.ref("a"), { position: [10, 10], velocity: [0, 0], size: "large" }],
+        [1, { position: [10, 10], velocity: [0, 0], size: "large" }],
       ]),
       lives: 0,
     },
@@ -117,7 +116,7 @@ export const cases: Conformance<typeof resolveShipHits> = [
       ...field,
       ship: respawned,
       entities: new Map([
-        [Match.ref("a"), { position: [52, 0], velocity: [0, 0], size: "large" }],
+        [1, { position: [52, 0], velocity: [0, 0], size: "large" }],
       ]),
       lives: 2,
     },

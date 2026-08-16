@@ -5,6 +5,7 @@ import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
 import { adaptArgs } from "./entity-ref.js";
 import { discoverTransitions, discoverOps } from "./discover.js";
+import { refifyState, type SchemaSource } from "./refify.js";
 import { splitAndRecordServices, expectEffects } from "./record-effects.js";
 import { resolver } from "./resolve.js";
 
@@ -32,7 +33,7 @@ export interface ActionRunConfig<Db, Store, State> {
 
 // The single conformance test for every ecs action: each transition's cases run
 // against its same-named action, asserting state and the declared effects.
-export function runActions<Db, Store, State>(config: ActionRunConfig<Db, Store, State>): void {
+export function runActions<Db, Store extends SchemaSource, State>(config: ActionRunConfig<Db, Store, State>): void {
   const transitions = discoverTransitions(config.transitions);
   for (const [name, action] of discoverOps(config.actions)) {
     const paired = transitions.get(name);
@@ -47,8 +48,15 @@ export function runActions<Db, Store, State>(config: ActionRunConfig<Db, Store, 
           const resolve = resolver(config.fromState(config.store(db), before));
           config.seedContext?.(db, before, testCase.args);
           await (action as (d: Db, a?: unknown) => Promise<void> | void)(db, adaptArgs(input, resolve));
-          // `after` is a writes patch — compare `toState` against it merged over `before`.
-          assert(config.toState(config.store(db)), { ...(before as object), ...(testCase.after as object) }, config.match);
+          // `after` is a writes patch — compare `toState` against it merged over
+          // `before`, refifying the case's spec-ids so the compare is up to an
+          // id-bijection.
+          const store = config.store(db);
+          assert(
+            config.toState(store),
+            refifyState({ ...(before as object), ...(testCase.after as object) }, store),
+            config.match,
+          );
           expectEffects(calls, testCase.effects as never);
         });
       }

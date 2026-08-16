@@ -3,7 +3,6 @@ import { AnalyticsService } from "../../services/analytics-service/analytics-ser
 import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
-import { Match } from "@adobe/data-testing";
 
 // Reads `displayCompleted`, writes `displayCompleted` — a `{ displayCompleted }`
 // patch — flipping the flag; also logs `displayCompletedToggled`.
@@ -35,10 +34,10 @@ export const cases: Conformance<typeof toggleDisplayCompleted> = [
     },
     args: { analytics: AnalyticsService.createFake() },
     // Only `displayCompleted` is written; the carried-through entity is restated
-    // with a `Match.ref` key so the round-trip's ecs-minted id stays open.
+    // with a plain spec-id; the round-trip compares up to an id-bijection.
     after: {
       entities: new Map([
-        [Match.ref("a"), { name: "a", complete: true, order: 0 }],
+        [1, { name: "a", complete: true, order: 0 }],
       ]),
       displayCompleted: false,
     },

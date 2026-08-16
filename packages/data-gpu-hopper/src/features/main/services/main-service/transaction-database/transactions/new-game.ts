@@ -23,7 +23,7 @@ export const newGame = (t: CoreDatabase.Store) => {
   t.resources.lanes = initial.lanes;
 
   t.archetypes.Frog.insert({ x: initial.frog.x, y: initial.frog.y });
-  for (const hazard of initial.hazards) {
+  for (const hazard of initial.entities.values()) {
     t.archetypes.Hazard.insert(hazard);
   }
 };

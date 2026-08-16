@@ -30,7 +30,7 @@ export const observeSelectEntities = <C extends object>(store: ReadonlyStore<C, 
             // `include`, so the archetype carries every column the predicate reads.
             // `store.locate` only types the base `id` column, so assert the fuller table
             // shape the predicate expects (narrower than `as any`).
-            const matchesFilter = (archetype: ReadonlyArchetype<RequiredComponents>, row: number) =>
+            const matchesFilter = (archetype: ReadonlyArchetype, row: number) =>
                 rowPredicate(archetype as Parameters<typeof rowPredicate>[0], row);
 
             // Whether an archetype qualifies for this query — its components are a
@@ -41,7 +41,7 @@ export const observeSelectEntities = <C extends object>(store: ReadonlyStore<C, 
             // O(|include|) superset scan: each archetype is classified at most once per
             // subscription, and archetypes created later are classified on first sight.
             const archetypeQualifies = new Map<ArchetypeId, boolean>();
-            const qualifies = (archetype: ReadonlyArchetype<RequiredComponents>): boolean => {
+            const qualifies = (archetype: ReadonlyArchetype): boolean => {
                 let verdict = archetypeQualifies.get(archetype.id);
                 if (verdict === undefined) {
                     verdict = archetype.components.isSupersetOf(includeSet)

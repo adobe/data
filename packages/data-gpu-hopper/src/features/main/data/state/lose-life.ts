@@ -24,7 +24,7 @@ const base: Omit<State, "lives" | "status" | "frog"> = {
   width: 5,
   height: 3,
   lanes: [],
-  hazards: new Set(),
+  entities: new Map(),
   score: 0,
 };
 

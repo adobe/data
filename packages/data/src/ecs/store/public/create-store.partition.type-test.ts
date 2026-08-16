@@ -43,22 +43,22 @@ function _archetypesMap() {
 // store.ensureArchetype(keys, values?) — discriminated
 function _ensureArchetype() {
     // Partition key present, no value → Router (insert only).
-    const router = store.ensureArchetype(["id", "cell", "position"]);
+    const router = store.ensureArchetype(["cell", "position"]);
     router.insert({ cell: 1, position: 2 });
     // @ts-expect-error - a partition family (Router) has no columns
     router.columns;
 
     // Partition value supplied → concrete Archetype (dense access).
-    const concrete = store.ensureArchetype(["id", "cell", "position"], { cell: 7 });
+    const concrete = store.ensureArchetype(["cell", "position"], { cell: 7 });
     concrete.columns;
     concrete.rowCount;
 
     // No partition component in the set → concrete Archetype.
-    const plain = store.ensureArchetype(["id", "position"]);
+    const plain = store.ensureArchetype(["position"]);
     plain.columns;
 
     // @ts-expect-error - partition value must match the component's type (cell is number)
-    store.ensureArchetype(["id", "cell", "position"], { cell: "nope" });
+    store.ensureArchetype(["cell", "position"], { cell: "nope" });
 }
 
 // queryArchetypes where — keyed to partition components only

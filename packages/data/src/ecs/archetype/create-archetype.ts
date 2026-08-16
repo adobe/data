@@ -2,8 +2,8 @@
 
 import { Schema } from "../../schema/index.js";
 import * as TABLE from "../../table/index.js";
-import { Archetype } from "./archetype.js";
-import { RequiredComponents } from "../required-components.js";
+import { Archetype, EntityInsertValues } from "./archetype.js";
+import { ID, IdComponent } from "../required-components.js";
 import { EntityLocationTable } from "../entity-location-table/entity-location-table.js";
 import { Entity } from "../entity/entity.js";
 import { StringKeyof } from "../../types/types.js";
@@ -92,7 +92,7 @@ const buildSpecializedInsert = (
     const componentParamValues: TypedBuffer<any>[] = [];
     const sets: string[] = [];
     for (const name of componentNames) {
-        if (name === "id") continue;
+        if (name === ID) continue;
         const local = `_${name}`;
         componentParamNames.push(local);
         componentParamValues.push(columns[name]);
@@ -143,7 +143,7 @@ ${sets.join("\n")}
         archetypeId,
         ensureCapacity,
         entityLocationTable,
-        columns.id as TypedBuffer<number>,
+        columns[ID] as TypedBuffer<number>,
         ...componentParamValues,
     );
 };
@@ -159,16 +159,21 @@ const buildGenericInsert = (
     return (archetype: any, rowData: any) => {
         const row = TABLE.addRow(archetype, rowData);
         const entity = entityLocationTable.create({ archetype: archetypeId, row });
-        archetype.columns.id.set(row, entity);
+        archetype.columns[ID].set(row, entity);
         return entity;
     };
 };
 
-export const createArchetype = <C extends { id: typeof Entity.schema }>(
+export const createArchetype = <C extends Record<IdComponent, typeof Entity.schema>>(
     components: C,
     id: number,
     entityLocationTable: EntityLocationTable,
-): Archetype<RequiredComponents & { [K in keyof C]: Schema.ToType<C[K]> }> => {
+): Archetype<Omit<{ [K in keyof C]: Schema.ToType<C[K]> }, IdComponent>> => {
+    // The archetype's public COMPONENT set excludes `id`: id is the entity's
+    // identity, a column but never a component value. (`table.columns` and the
+    // runtime `componentSet` still carry id — required for swap-remove and
+    // serialization — but that is asserted below where the types are narrowed.)
+    type PublicComponents = Omit<{ [K in keyof C]: Schema.ToType<C[K]> }, IdComponent>;
     const table = TABLE.createTable(components);
     const componentSet = new Set(Object.keys(components));
 
@@ -181,7 +186,7 @@ export const createArchetype = <C extends { id: typeof Entity.schema }>(
             buildGenericInsert(id, entityLocationTable);
     };
 
-    const createEntity = (rowData: Omit<{ [K in keyof C]: Schema.ToType<C[K]> }, "id">): Entity => {
+    const createEntity = (rowData: EntityInsertValues<PublicComponents>): Entity => {
         // archetype is closure-captured here. By the time createEntity
         // actually runs the const has been initialized.
         return insertImpl(archetype as any, rowData);
@@ -190,7 +195,9 @@ export const createArchetype = <C extends { id: typeof Entity.schema }>(
     const archetype = {
         id,
         ...table,
-        components: componentSet as Set<StringKeyof<C>>,
+        // Runtime invariant the compiler can't see: `componentSet` DOES contain
+        // "id", but id is not a public component, so it is typed without id.
+        components: componentSet as Set<StringKeyof<PublicComponents>>,
         insert: createEntity,
         toData: (copy = false, omit?: ReadonlySet<string>) => ({
             columns: Object.fromEntries(
@@ -221,7 +228,13 @@ export const createArchetype = <C extends { id: typeof Entity.schema }>(
             refreshInsertImpl();
             // component set cannot be changed by this as the archetype components should be the same.
         }
-    } as const satisfies Archetype<{ [K in keyof C]: Schema.ToType<C[K]> }> as Archetype<RequiredComponents & { [K in keyof C]: Schema.ToType<C[K]> }>;
+        // Runtime invariant the compiler can't reduce: the `id` column is
+        // `TypedBuffer<Schema.ToType<C["id"]>>`, which IS `TypedBuffer<Entity>`
+        // (the input requires `C["id"] = typeof Entity.schema`). TS leaves
+        // `ToType<C["id"]>` deferred for a generic `C`, so it can't prove that
+        // column matches `RequiredComponents["id"]`. Every other member matches
+        // structurally; assert the whole once here.
+    } as const as unknown as Archetype<PublicComponents>;
 
     // Initial build, after `archetype` is in scope so the specialized
     // insert closes over the right columns.

@@ -41,21 +41,32 @@ function record(m: unknown) {
 A collection's type states whether its order is meaningful — the model is the
 single source of truth, not a downstream comparison flag:
 
-- **`ReadonlyArray<T>`** — order is meaningful. A display list rendered in sequence,
-  a drag-reorderable list, a positional tuple (`Vec2 = readonly [number, number]`).
-- **`ReadonlySet<T>`** — an unordered bag. Entities materialised in nondeterministic
-  order, a membership set. Use this for **identity-keyed** collections: the element
-  carries its own `id`, so a `ReadonlySet<Entity>` replaces any
-  `ReadonlyMap<id, Entity>`.
-- **`ReadonlyMap<K, V>`** — a keyed lookup whose **keys are meaningful/deterministic**
-  (an enum, a name, a stable string). Not for identity keys (those are Sets).
+- **`ReadonlyArray<T>`** — order is meaningful. A display list of scalar values, a
+  positional tuple (`Vec2 = readonly [number, number]`), or an **ordered query
+  result of entity ids** (`ReadonlyArray<number>`, sorted by an `order` component —
+  see below). Not for the entity *store* itself.
+- **`ReadonlySet<T>`** — an unordered bag / membership set. A set of entity
+  references is `ReadonlySet<number>` (a set of ids), and an unordered entity
+  *query result* is `ReadonlySet<number>`.
+- **`ReadonlyMap<K, V>`** — a keyed lookup. This is how **identity-keyed entities**
+  are modelled: `entities: ReadonlyMap<number, EntityValue>` — the `number` id is the
+  key, and the value carries **no `id` of its own** (identity is the key, never a
+  field). Also used for deterministic-key lookups (an enum, a name, a stable string).
+
+**Entities are keyed, never id-bearing values.** An entity's identity is its map
+key, so entity value types (`Todo`, `Bullet`) have no `id` field, and there is no
+`ReadonlySet<T>`/`ReadonlyArray<T>` *of entity values* — the single
+`ReadonlyMap<number, …>` store is the only home for entities, and queries return
+their **ids** (`ReadonlySet<number>` unordered, `ReadonlyArray<number>` ordered).
+See `features/data/state.md` for the full `State` shape.
 
 These are first-class `Data` (see `features/data/index.md`) — serialize a
 Set/Map-bearing value with `Data.stringify` / `Data.parse` (plain `JSON.stringify`
 cannot represent them), and `equals` compares them faithfully. Conformance mirrors
 the semantics: `ReadonlyArray` compares positionally, `ReadonlySet` / `ReadonlyMap`
-order-independently, and a numeric `id` is ignored (the ECS allocates it) — so there
-is no separate "unordered" declaration when writing conformance cases.
+order-independently. Entity identity is the map key (resolved to the allocated ECS
+entity during conformance); the id is never a value field, so there is nothing to
+"ignore" when comparing entity content.
 
 ## Shape of keyed collections
 

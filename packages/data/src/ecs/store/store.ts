@@ -50,8 +50,8 @@ export interface ReadonlyStore<
     readonly resources: { readonly [K in StringKeyof<R>]: R[K] };
     readonly archetypes: { readonly [K in StringKeyof<A>]: ArchetypeOrRouter<
         HasPartitionKey<A[K][number], PK>,
-        RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] },
-        ReadonlyArchetype<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }>
+        { [Col in A[K][number]]: (C & OptionalComponents)[Col] },
+        ReadonlyArchetype<{ [Col in A[K][number]]: (C & OptionalComponents)[Col] }>
     > }
     readonly indexes: { readonly [K in keyof IX]: Index.Handle<C, IX[K]> };
 }
@@ -83,8 +83,8 @@ export interface Store<
     readonly resources: { -readonly [K in StringKeyof<R>]: R[K] };
     readonly archetypes: { -readonly [K in StringKeyof<A>]: ArchetypeOrRouter<
         HasPartitionKey<A[K][number], PK>,
-        RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] },
-        Archetype<RequiredComponents & { [Col in A[K][number]]: (C & RequiredComponents & OptionalComponents)[Col] }>
+        { [Col in A[K][number]]: (C & OptionalComponents)[Col] },
+        Archetype<{ [Col in A[K][number]]: (C & OptionalComponents)[Col] }>
     > }
     /**
      * Index handles keyed by user-chosen name. Returned handles are the
@@ -104,7 +104,7 @@ export namespace Store {
     export type Components<S extends Store> = S extends Store<infer C, infer R, infer A> ? C : never;
     export type Resources<S extends Store> = S extends Store<any, infer R, any> ? R : never;
     export type Archetypes<S extends Store> = S extends Store<any, any, infer A> ? A : never;
-    export type EntityValues<S extends Store<any, any, any>, K extends S extends Store<any, any, infer A> ? StringKeyof<A> : never> = Simplify<Parameters<S["archetypes"][K]["insert"]>[0] & RequiredComponents>;
+    export type EntityValues<S extends Store<any, any, any>, K extends S extends Store<any, any, infer A> ? StringKeyof<A> : never> = Simplify<Parameters<S["archetypes"][K]["insert"]>[0]>;
     export type InsertValues<S extends Store<any, any, any>, K extends S extends Store<any, any, infer A> ? StringKeyof<A> : never> = Parameters<S["archetypes"][K]["insert"]>[0];
 
     export type Schema<
@@ -221,8 +221,8 @@ export namespace Store {
 }
 
 type Foo = Store<{ a: number, b: string }, {}, { one: ["a", "b"] }>
+// `id` is no longer part of an archetype's entity values — only its components.
 type CheckEntityValues = Assert<Equal<Store.EntityValues<Foo, "one">, {
-    id: number;
     a: number;
     b: string;
 }>>;
@@ -243,11 +243,11 @@ type CheckStoreFromSchema = Store.FromSchema<Store.Schema<{
 }, {}>>;
 declare const testStore: CheckStoreFromSchema;
 type A = typeof testStore.archetypes.DynamicParticle;
-type CheckDynamicParticle = Assert<Equal<typeof testStore.archetypes.DynamicParticle, Archetype<RequiredComponents & {
+type CheckDynamicParticle = Assert<Equal<typeof testStore.archetypes.DynamicParticle, Archetype<{
     particle: boolean;
     velocity: number;
 }>>>;
-type CheckParticle = Assert<Equal<typeof testStore.archetypes.Particle, Archetype<RequiredComponents & {
+type CheckParticle = Assert<Equal<typeof testStore.archetypes.Particle, Archetype<{
     particle: boolean;
 }>>>;
 
@@ -257,10 +257,10 @@ const checkRowSchema = {
     components: { particle: { type: "boolean" }, velocity: { type: "number" } },
     archetypes: { Particle: ["particle"], DynamicParticle: ["particle", "velocity"] },
 } as const;
-type CheckSchemaRowDynamic = Assert<Equal<ArchetypeRowOf<typeof checkRowSchema, "DynamicParticle">, RequiredComponents & {
+type CheckSchemaRowDynamic = Assert<Equal<ArchetypeRowOf<typeof checkRowSchema, "DynamicParticle">, {
     readonly particle: boolean;
     readonly velocity: number;
 }>>;
-type CheckSchemaRowParticle = Assert<Equal<ArchetypeRowOf<typeof checkRowSchema, "Particle">, RequiredComponents & {
+type CheckSchemaRowParticle = Assert<Equal<ArchetypeRowOf<typeof checkRowSchema, "Particle">, {
     readonly particle: boolean;
 }>>;

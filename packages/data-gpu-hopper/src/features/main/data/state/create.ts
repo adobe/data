@@ -23,7 +23,7 @@ const lanes: readonly Lane[] = [
 
 // Two hazards per moving lane, evenly spaced, with direction and speed varying
 // by lane. Cars are one cell wide; logs are wider so the frog can ride them.
-const hazards: ReadonlySet<Hazard> = new Set([
+const hazardList: readonly Hazard[] = [
   { kind: "car", lane: 1, x: 0, width: 1, velocity: 1.5 },
   { kind: "car", lane: 1, x: 5, width: 1, velocity: 1.5 },
   { kind: "car", lane: 2, x: 2, width: 1, velocity: -2 },
@@ -36,14 +36,18 @@ const hazards: ReadonlySet<Hazard> = new Set([
   { kind: "log", lane: 6, x: 7, width: 2, velocity: -1 },
   { kind: "log", lane: 7, x: 1, width: 3, velocity: 2 },
   { kind: "log", lane: 7, x: 6, width: 3, velocity: 2 },
-]);
+];
+
+// Each hazard is a per-entity ECS entity; the spec mints its own numeric ids (the
+// map keys). The values are id-less — identity is the key.
+const entities: ReadonlyMap<number, Hazard> = new Map(hazardList.map((hazard, index) => [index + 1, hazard]));
 
 // The initial, full game state: frog at the bottom, three lives, nothing scored.
 export const create = (): State => ({
   width,
   height,
   lanes,
-  hazards,
+  entities,
   frog: startPosition({ width }),
   lives: 3,
   score: 0,

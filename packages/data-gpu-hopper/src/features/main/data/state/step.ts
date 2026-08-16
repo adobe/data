@@ -1,4 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Match } from "@adobe/data-testing";
 import { Hazard } from "../hazard/hazard.js";
 import { LaneKind } from "../lane-kind/lane-kind.js";
 import { Outcome } from "../outcome/outcome.js";
@@ -13,19 +14,19 @@ import { loseLife } from "./lose-life.js";
 
 // The slice `step` writes. Every branch supplies all five keys; a composer layers
 // the outcome sub-patch (`winGoal` / `loseLife`) over the movement fields.
-type StepPatch = Pick<State, "hazards" | "frog" | "score" | "status" | "lives">;
+type StepPatch = Pick<State, "entities" | "frog" | "score" | "status" | "lives">;
 
 // Advance the simulation by `dt` seconds: scroll the hazards, carry the frog if
 // it is riding a log, then resolve its fate — score a win, or on a fatal outcome
 // spend a life and respawn (or end the game once the last life is gone). A no-op
 // once the game has ended, keeping it idempotent.
 export const step = (
-  state: Pick<State, "hazards" | "frog" | "lanes" | "width" | "status" | "score" | "lives">,
+  state: Pick<State, "entities" | "frog" | "lanes" | "width" | "status" | "score" | "lives">,
   dt: number,
 ): StepPatch => {
   if (!GameStatus.isPlaying(state.status)) {
     return {
-      hazards: state.hazards,
+      entities: state.entities,
       frog: state.frog,
       score: state.score,
       status: state.status,
@@ -33,7 +34,10 @@ export const step = (
     };
   }
 
-  const hazards = new Set([...state.hazards].map((hazard) => Hazard.advance(hazard, dt, state.width)));
+  // Advance every hazard, preserving its identity (the map key). Values are id-less.
+  const entities = new Map(
+    [...state.entities].map(([id, hazard]) => [id, Hazard.advance(hazard, dt, state.width)] as const),
+  );
   const lane = laneAt(state, state.frog.y);
 
   // Ride a log: on a carrying lane, the log the frog is standing on drags it
@@ -41,7 +45,7 @@ export const step = (
   // log the frog was actually on this frame.
   const carrier =
     lane && LaneKind.coveredOutcome[lane.kind] === "ride"
-      ? [...state.hazards].find(
+      ? [...state.entities.values()].find(
           (hazard) => hazard.lane === state.frog.y && Hazard.covers(hazard, state.frog.x),
         )
       : undefined;
@@ -49,12 +53,12 @@ export const step = (
     ? { x: state.frog.x + carrier.velocity * dt, y: state.frog.y }
     : state.frog;
 
-  // The moved world (full read slice + updated hazards/frog), fed to the outcome
+  // The moved world (full read slice + updated entities/frog), fed to the outcome
   // derivation and the winGoal / loseLife sub-transitions.
-  const moved = { ...state, hazards, frog };
+  const moved = { ...state, entities, frog };
   // The movement-only patch the outcome sub-patch layers over.
   const movedPatch: StepPatch = {
-    hazards,
+    entities,
     frog,
     score: state.score,
     status: state.status,
@@ -89,58 +93,58 @@ const riverLanes: readonly Lane[] = [
 export const cases: Conformance<typeof step> = [
   { name: "scrolls hazards while the frog rests on grass",
     before: { width: 5, height: 3, lanes: roadLanes,
-      hazards: new Set([{ kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]),
+      entities: new Map([[1, { kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]]),
       frog: { x: 2, y: 0 }, lives: 3, score: 0, status: "playing" },
     args: 1,
-    after: { hazards: new Set([{ kind: "car", lane: 1, x: 1, width: 1, velocity: 1 }]),
+    after: { entities: new Map([[Match.ref("hazard"), { kind: "car", lane: 1, x: 1, width: 1, velocity: 1 }]]),
       frog: { x: 2, y: 0 }, lives: 3, score: 0, status: "playing" } },
   { name: "a car reaching the frog costs a life and respawns it",
     before: { width: 5, height: 3, lanes: roadLanes,
-      hazards: new Set([{ kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]),
+      entities: new Map([[1, { kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]]),
       frog: { x: 1, y: 1 }, lives: 3, score: 0, status: "playing" },
     args: 1,
-    after: { hazards: new Set([{ kind: "car", lane: 1, x: 1, width: 1, velocity: 1 }]),
+    after: { entities: new Map([[Match.ref("hazard"), { kind: "car", lane: 1, x: 1, width: 1, velocity: 1 }]]),
       frog: { x: 2, y: 0 }, lives: 2, score: 0, status: "playing" } },
   { name: "a car hit on the last life ends the game",
     before: { width: 5, height: 3, lanes: roadLanes,
-      hazards: new Set([{ kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]),
+      entities: new Map([[1, { kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]]),
       frog: { x: 1, y: 1 }, lives: 1, score: 0, status: "playing" },
     args: 1,
-    after: { hazards: new Set([{ kind: "car", lane: 1, x: 1, width: 1, velocity: 1 }]),
+    after: { entities: new Map([[Match.ref("hazard"), { kind: "car", lane: 1, x: 1, width: 1, velocity: 1 }]]),
       frog: { x: 1, y: 1 }, lives: 0, score: 0, status: "gameOver" } },
   { name: "open water with no log under the frog drowns it",
     before: { width: 5, height: 3, lanes: riverLanes,
-      hazards: new Set([{ kind: "log", lane: 1, x: 3, width: 1, velocity: 0 }]),
+      entities: new Map([[1, { kind: "log", lane: 1, x: 3, width: 1, velocity: 0 }]]),
       frog: { x: 1, y: 1 }, lives: 3, score: 0, status: "playing" },
     args: 1,
-    after: { hazards: new Set([{ kind: "log", lane: 1, x: 3, width: 1, velocity: 0 }]),
+    after: { entities: new Map([[Match.ref("hazard"), { kind: "log", lane: 1, x: 3, width: 1, velocity: 0 }]]),
       frog: { x: 2, y: 0 }, lives: 2, score: 0, status: "playing" } },
   { name: "a log carries the frog along and keeps it safe",
     before: { width: 5, height: 3, lanes: riverLanes,
-      hazards: new Set([{ kind: "log", lane: 1, x: 0, width: 3, velocity: 1 }]),
+      entities: new Map([[1, { kind: "log", lane: 1, x: 0, width: 3, velocity: 1 }]]),
       frog: { x: 1, y: 1 }, lives: 3, score: 0, status: "playing" },
     args: 1,
-    after: { hazards: new Set([{ kind: "log", lane: 1, x: 1, width: 3, velocity: 1 }]),
+    after: { entities: new Map([[Match.ref("hazard"), { kind: "log", lane: 1, x: 1, width: 3, velocity: 1 }]]),
       frog: { x: 2, y: 1 }, lives: 3, score: 0, status: "playing" } },
   { name: "a log carrying the frog past the edge drowns it",
     before: { width: 5, height: 3, lanes: riverLanes,
-      hazards: new Set([{ kind: "log", lane: 1, x: 3, width: 2, velocity: 2 }]),
+      entities: new Map([[1, { kind: "log", lane: 1, x: 3, width: 2, velocity: 2 }]]),
       frog: { x: 4, y: 1 }, lives: 3, score: 0, status: "playing" },
     args: 1,
-    after: { hazards: new Set([{ kind: "log", lane: 1, x: 0, width: 2, velocity: 2 }]),
+    after: { entities: new Map([[Match.ref("hazard"), { kind: "log", lane: 1, x: 0, width: 2, velocity: 2 }]]),
       frog: { x: 2, y: 0 }, lives: 2, score: 0, status: "playing" } },
   { name: "reaching the goal scores and wins",
     before: { width: 5, height: 3, lanes: roadLanes,
-      hazards: new Set([{ kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]),
+      entities: new Map([[1, { kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]]),
       frog: { x: 2, y: 2 }, lives: 3, score: 0, status: "playing" },
     args: 1,
-    after: { hazards: new Set([{ kind: "car", lane: 1, x: 1, width: 1, velocity: 1 }]),
+    after: { entities: new Map([[Match.ref("hazard"), { kind: "car", lane: 1, x: 1, width: 1, velocity: 1 }]]),
       frog: { x: 2, y: 2 }, lives: 3, score: 1, status: "won" } },
   { name: "does nothing once the game is over",
     before: { width: 5, height: 3, lanes: roadLanes,
-      hazards: new Set([{ kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]),
+      entities: new Map([[1, { kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]]),
       frog: { x: 2, y: 0 }, lives: 0, score: 0, status: "gameOver" },
     args: 1,
-    after: { hazards: new Set([{ kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]),
+    after: { entities: new Map([[Match.ref("hazard"), { kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]]),
       frog: { x: 2, y: 0 }, lives: 0, score: 0, status: "gameOver" } },
 ];

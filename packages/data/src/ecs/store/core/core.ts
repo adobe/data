@@ -3,16 +3,19 @@
 import { Entity } from "../../entity/entity.js";
 import { Archetype, ReadonlyArchetype } from "../../archetype/archetype.js";
 import { Schema } from "../../../schema/index.js";
-import { RequiredComponents } from "../../required-components.js";
+import { RequiredComponents, IdComponent } from "../../required-components.js";
 import { StringKeyof } from "../../../types/index.js";
 import { Components } from "../components.js";
 import { OptionalComponents } from "../../optional-components.js";
 import { HasPartitionKey } from "../partition.js";
 import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 
-export type EntityValues<C> = { readonly [K in (RequiredComponents & StringKeyof<C & OptionalComponents>)]: (C & OptionalComponents)[K] }
-export type EntityReadValues<C> = RequiredComponents & { readonly [K in StringKeyof<C & OptionalComponents> as string extends K ? never : K]?: (C & OptionalComponents)[K] }
-export type EntityUpdateValues<C> = Partial<Omit<C, "id">>;
+// Entity value shapes deliberately EXCLUDE `id`: the id is the entity's identity
+// (the key you already hold when reading), not one of its component values. It
+// stays a real column (see the Archetype interface) but is never part of a read.
+export type EntityValues<C> = { readonly [K in StringKeyof<C & OptionalComponents>]: (C & OptionalComponents)[K] }
+export type EntityReadValues<C> = { readonly [K in StringKeyof<C & OptionalComponents> as string extends K ? never : K]?: (C & OptionalComponents)[K] }
+export type EntityUpdateValues<C> = Partial<Omit<C, IdComponent>>;
 
 export type ArchetypeQueryOptions<C extends object, PK extends string = never> = {
     exclude?: readonly StringKeyof<C & RequiredComponents & OptionalComponents>[];
@@ -32,25 +35,25 @@ export interface ReadonlyCore<
     readonly componentSchemas: { readonly [K in StringKeyof<C & RequiredComponents & OptionalComponents>]: Schema };
 
     queryArchetypes<
-        Include extends StringKeyof<C & RequiredComponents & OptionalComponents>,
+        Include extends StringKeyof<C & OptionalComponents>,
     >(
         include: readonly Include[] | ReadonlySet<string>,
         options?: ArchetypeQueryOptions<C, PK>
-    ): readonly ReadonlyArchetype<RequiredComponents & Pick<C & RequiredComponents & OptionalComponents, Include>>[];
+    ): readonly ReadonlyArchetype<Pick<C & OptionalComponents, Include>>[];
     // No partition value → a concrete ReadonlyArchetype unless the key set
     // includes a partition component, in which case a Router (write-only).
-    ensureArchetype<const CC extends StringKeyof<C & RequiredComponents & OptionalComponents>>(
+    ensureArchetype<const CC extends StringKeyof<C & OptionalComponents>>(
         components: readonly CC[] | ReadonlySet<CC>,
     ): HasPartitionKey<CC, PK> extends true
-        ? Archetype.Router<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>
-        : ReadonlyArchetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>;
+        ? Archetype.Router<{ [K in CC]: (C & OptionalComponents)[K] }>
+        : ReadonlyArchetype<{ [K in CC]: (C & OptionalComponents)[K] }>;
     // Partition value(s) supplied → the concrete value-child, always.
-    ensureArchetype<const CC extends StringKeyof<C & RequiredComponents & OptionalComponents>>(
+    ensureArchetype<const CC extends StringKeyof<C & OptionalComponents>>(
         components: readonly CC[] | ReadonlySet<CC>,
-        partitionValues: { readonly [K in Extract<CC, PK>]: (C & RequiredComponents & OptionalComponents)[K] },
-    ): ReadonlyArchetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>;
+        partitionValues: { readonly [K in Extract<CC, PK>]: (C & OptionalComponents)[K] },
+    ): ReadonlyArchetype<{ [K in CC]: (C & OptionalComponents)[K] }>;
 
-    locate: (entity: Entity) => { archetype: ReadonlyArchetype<RequiredComponents>, row: number } | null;
+    locate: (entity: Entity) => { archetype: ReadonlyArchetype, row: number } | null;
     /**
      * Read exactly the components of `archetype`. A membership GATE: returns
      * `null` unless the entity is a superset of `archetype`. The result is
@@ -58,7 +61,7 @@ export interface ReadonlyCore<
      * `archetype` off the result is a compile error (use a wider archetype, the
      * component-list overload, or `read(entity)`).
      */
-    read<T extends RequiredComponents>(entity: Entity, archetype: ReadonlyArchetype<T> | Archetype<T>): Readonly<T> | null;
+    read<T>(entity: Entity, archetype: ReadonlyArchetype<T> | Archetype<T>): Readonly<T> | null;
     /**
      * Read a chosen subset of an entity's components.
      *
@@ -69,8 +72,9 @@ export interface ReadonlyCore<
      *
      * Prefer this over `read(entity)` when only a few fields are needed: it
      * names the exact components touched, so `db.derive` can scope its
-     * recompute to just those fields instead of the whole entity. `id` is
-     * always readable; the element type is inferred as a literal union.
+     * recompute to just those fields instead of the whole entity. `id` is not a
+     * readable component (you already hold it); the element type is inferred as
+     * a literal union.
      */
     read<const K extends StringKeyof<EntityReadValues<C>>>(entity: Entity, components: readonly K[]): Readonly<Pick<EntityReadValues<C>, K>> | null;
     read(entity: Entity): EntityReadValues<C> | null;
@@ -95,21 +99,21 @@ export interface Core<
     PK extends string = never,
 > extends ReadonlyCore<C, PK> {
     queryArchetypes<
-        Include extends StringKeyof<C & RequiredComponents & OptionalComponents>,
+        Include extends StringKeyof<C & OptionalComponents>,
     >(
         include: readonly Include[] | ReadonlySet<string>,
         options?: ArchetypeQueryOptions<C, PK>
-    ): readonly Archetype<RequiredComponents & Pick<C & RequiredComponents & OptionalComponents, Include>>[];
-    ensureArchetype<const CC extends StringKeyof<C & RequiredComponents & OptionalComponents>>(
+    ): readonly Archetype<Pick<C & OptionalComponents, Include>>[];
+    ensureArchetype<const CC extends StringKeyof<C & OptionalComponents>>(
         components: readonly CC[] | ReadonlySet<CC>,
     ): HasPartitionKey<CC, PK> extends true
-        ? Archetype.Router<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>
-        : Archetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>;
-    ensureArchetype<const CC extends StringKeyof<C & RequiredComponents & OptionalComponents>>(
+        ? Archetype.Router<{ [K in CC]: (C & OptionalComponents)[K] }>
+        : Archetype<{ [K in CC]: (C & OptionalComponents)[K] }>;
+    ensureArchetype<const CC extends StringKeyof<C & OptionalComponents>>(
         components: readonly CC[] | ReadonlySet<CC>,
-        partitionValues: { readonly [K in Extract<CC, PK>]: (C & RequiredComponents & OptionalComponents)[K] },
-    ): Archetype<RequiredComponents & { [K in CC]: (C & RequiredComponents & OptionalComponents)[K] }>;
-    locate: (entity: Entity) => { archetype: Archetype<RequiredComponents>, row: number } | null;
+        partitionValues: { readonly [K in Extract<CC, PK>]: (C & OptionalComponents)[K] },
+    ): Archetype<{ [K in CC]: (C & OptionalComponents)[K] }>;
+    locate: (entity: Entity) => { archetype: Archetype, row: number } | null;
     /**
      * Deletes the entity. Returns the entity that was swap-moved into the
      * vacated row (a relocation side effect), or `undefined` when the deleted

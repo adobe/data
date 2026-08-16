@@ -58,7 +58,7 @@ describe("createTransactionalStore", () => {
 
         const result = store.execute((transactionStore) => {
             // Create an entity
-            const archetype = transactionStore.ensureArchetype(["id", "position"]);
+            const archetype = transactionStore.ensureArchetype(["position"]);
             const entity = archetype.insert({ position: { x: 1, y: 2, z: 3 } });
 
             // Update the entity
@@ -89,7 +89,7 @@ describe("createTransactionalStore", () => {
         // Create initial entity in a transaction
         let entity: number = -1;
         store.execute((transactionStore) => {
-            const archetype = transactionStore.ensureArchetype(["id", "position"]);
+            const archetype = transactionStore.ensureArchetype(["position"]);
             entity = archetype.insert({ position: { x: 1, y: 2, z: 3 } });
         });
 
@@ -123,7 +123,7 @@ describe("createTransactionalStore", () => {
 
         let entity: number = -1;
         store.execute((t) => {
-            entity = t.ensureArchetype(["id", "position"]).insert({ position: { x: 1, y: 2, z: 3 } });
+            entity = t.ensureArchetype(["position"]).insert({ position: { x: 1, y: 2, z: 3 } });
         });
 
         // A transaction that ADDs the `health` column then throws must roll back
@@ -137,7 +137,7 @@ describe("createTransactionalStore", () => {
 
         const finalData = store.read(entity);
         expect(finalData?.health).toBeUndefined();
-        expect(finalData).toEqual({ id: entity, position: { x: 1, y: 2, z: 3 } });
+        expect(finalData).toEqual({ position: { x: 1, y: 2, z: 3 } });
     });
 
     it("should combine multiple updates to the same entity", () => {
@@ -150,7 +150,7 @@ describe("createTransactionalStore", () => {
         const store = createTransactionalStore(baseStore);
 
         const result = store.execute((transactionStore) => {
-            const archetype = transactionStore.ensureArchetype(["id", "position", "health"]);
+            const archetype = transactionStore.ensureArchetype(["position", "health"]);
             const entity = archetype.insert({
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 }
@@ -185,8 +185,8 @@ describe("createTransactionalStore", () => {
 
         const result = store.execute((transactionStore) => {
             // Create entities in different archetypes
-            const posArchetype = transactionStore.ensureArchetype(["id", "position"]);
-            const healthArchetype = transactionStore.ensureArchetype(["id", "health"]);
+            const posArchetype = transactionStore.ensureArchetype(["position"]);
+            const healthArchetype = transactionStore.ensureArchetype(["health"]);
 
             const entity1 = posArchetype.insert({ position: { x: 1, y: 2, z: 3 } });
             const entity2 = healthArchetype.insert({ health: { current: 100, max: 100 } });
@@ -217,12 +217,12 @@ describe("createTransactionalStore", () => {
         expect(store.execute).toBeDefined();
 
         // Verify we can use the store normally for read operations
-        const archetypes = store.queryArchetypes(["id"]);
+        const archetypes = store.queryArchetypes([]);
         expect(archetypes.length).toBeGreaterThan(0);
 
         // Verify we can create entities through actions
         store.execute((transactionStore) => {
-            const archetype = transactionStore.ensureArchetype(["id", "position"]);
+            const archetype = transactionStore.ensureArchetype(["position"]);
             const entity = archetype.insert({ position: { x: 1, y: 2, z: 3 } });
             expect(store.read(entity)).toBeDefined();
         });
@@ -239,7 +239,7 @@ describe("createTransactionalStore", () => {
 
         // Execute a regular transaction (non-transient)
         const regularResult = store.execute((t) => {
-            const archetype = t.ensureArchetype(["id", "position"]);
+            const archetype = t.ensureArchetype(["position"]);
             archetype.insert({ position: { x: 1, y: 2, z: 3 } });
         });
 
@@ -247,7 +247,7 @@ describe("createTransactionalStore", () => {
 
         // Execute an intermediate transaction
         const transientResult = store.execute((t) => {
-            const archetype = t.ensureArchetype(["id", "position"]);
+            const archetype = t.ensureArchetype(["position"]);
             archetype.insert({ position: { x: 10, y: 20, z: 30 } });
         }, { intermediate: true });
 
@@ -282,7 +282,7 @@ describe("createTransactionalStore", () => {
         const store = createTransactionalStore(baseStore);
 
         const result = store.execute((transactionStore) => {
-            const archetype = transactionStore.ensureArchetype(["id", "position", "health"]);
+            const archetype = transactionStore.ensureArchetype(["position", "health"]);
             const entity = archetype.insert({
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 }
@@ -317,7 +317,7 @@ describe("createTransactionalStore", () => {
         // First create an entity
         let entity: number;
         store.execute((transactionStore) => {
-            const archetype = transactionStore.ensureArchetype(["id", "position", "health"]);
+            const archetype = transactionStore.ensureArchetype(["position", "health"]);
             entity = archetype.insert({
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 }
@@ -344,7 +344,7 @@ describe("createTransactionalStore", () => {
         // First create an entity
         let entity: number;
         store.execute((transactionStore) => {
-            const archetype = transactionStore.ensureArchetype(["id", "position", "health"]);
+            const archetype = transactionStore.ensureArchetype(["position", "health"]);
             entity = archetype.insert({
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 }
@@ -373,7 +373,7 @@ describe("createTransactionalStore", () => {
         // First create an entity with multiple components
         let entity: number;
         store.execute((transactionStore) => {
-            const archetype = transactionStore.ensureArchetype(["id", "position", "health"]);
+            const archetype = transactionStore.ensureArchetype(["position", "health"]);
             entity = archetype.insert({
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 }
@@ -403,7 +403,7 @@ describe("createTransactionalStore", () => {
         // First create an entity
         let entity: number;
         store.execute((transactionStore) => {
-            const archetype = transactionStore.ensureArchetype(["id", "position", "health"]);
+            const archetype = transactionStore.ensureArchetype(["position", "health"]);
             entity = archetype.insert({
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 }
@@ -434,7 +434,7 @@ describe("createTransactionalStore", () => {
 
         let entity: number;
         store.execute((transactionStore) => {
-            const archetype = transactionStore.ensureArchetype(["id", "position", "health"]);
+            const archetype = transactionStore.ensureArchetype(["position", "health"]);
             entity = archetype.insert({
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 }
@@ -461,7 +461,7 @@ describe("createTransactionalStore", () => {
         const store = createTransactionalStore(baseStore);
 
         const result = store.execute((transactionStore) => {
-            const archetype = transactionStore.ensureArchetype(["id", "position", "health"]);
+            const archetype = transactionStore.ensureArchetype(["position", "health"]);
             const entity = archetype.insert({
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 }
@@ -493,7 +493,7 @@ describe("createTransactionalStore", () => {
         const store = createTransactionalStore(baseStore);
 
         const result = store.execute((transactionStore) => {
-            const archetype = transactionStore.ensureArchetype(["id", "position", "health"]);
+            const archetype = transactionStore.ensureArchetype(["position", "health"]);
 
             // Create first entity
             const entity1 = archetype.insert({
@@ -538,11 +538,11 @@ describe("createTransactionalStore", () => {
         const store = createTransactionalStore(baseStore);
 
         // Get the archetype before any inserts
-        const archetype = baseStore.ensureArchetype(["id", "position"]);
+        const archetype = baseStore.ensureArchetype(["position"]);
         const initialRows = archetype.rowCount;
 
         store.execute((transactionStore) => {
-            const transactionArchetype = transactionStore.ensureArchetype(["id", "position"]);
+            const transactionArchetype = transactionStore.ensureArchetype(["position"]);
 
             // First insert - rows should be incremented
             const entity1 = transactionArchetype.insert({
@@ -587,7 +587,7 @@ describe("createTransactionalStore", () => {
             }));
 
             const result = store.execute(t => {
-                const archetype = t.ensureArchetype(["id", "position", "nonPersistent"]);
+                const archetype = t.ensureArchetype(["position", "nonPersistent"]);
                 const entity = archetype.insert({ position: { x: 1, y: 2, z: 3 }, nonPersistent: true });
                 expect(Entity.isNonPersistent(entity)).toBe(true);
             });
@@ -603,7 +603,7 @@ describe("createTransactionalStore", () => {
             }));
 
             const result = store.execute(t => {
-                const archetype = t.ensureArchetype(["id", "position"]);
+                const archetype = t.ensureArchetype(["position"]);
                 archetype.insert({ position: { x: 1, y: 2, z: 3 } });
             });
 
@@ -618,10 +618,10 @@ describe("createTransactionalStore", () => {
             }));
 
             const result = store.execute(t => {
-                const persistent = t.ensureArchetype(["id", "position"]);
+                const persistent = t.ensureArchetype(["position"]);
                 persistent.insert({ position: { x: 1, y: 2, z: 3 } });
 
-                const nonPersistent = t.ensureArchetype(["id", "position", "nonPersistent"]);
+                const nonPersistent = t.ensureArchetype(["position", "nonPersistent"]);
                 nonPersistent.insert({ position: { x: 4, y: 5, z: 6 }, nonPersistent: true });
             });
 
@@ -654,11 +654,11 @@ describe("createTransactionalStore", () => {
                 archetypes: {}
             });
 
-            const cursorArchetype = (baseStore as any).ensureArchetype(["id", "cursor", "nonPersistent"]);
+            const cursorArchetype = (baseStore as any).ensureArchetype(["cursor", "nonPersistent"]);
             const cursorEntityId = cursorArchetype.columns.id.get(0);
             expect(Entity.isNonPersistent(cursorEntityId)).toBe(true);
 
-            const scoreArchetype = (baseStore as any).ensureArchetype(["id", "score"]);
+            const scoreArchetype = (baseStore as any).ensureArchetype(["score"]);
             const scoreEntityId = scoreArchetype.columns.id.get(0);
             expect(Entity.isNonPersistent(scoreEntityId)).toBe(false);
         });
@@ -718,7 +718,7 @@ describe("createTransactionalStore", () => {
 
             let entity: number;
             store.execute(t => {
-                const archetype = t.ensureArchetype(["id", "position", "nonPersistent"]);
+                const archetype = t.ensureArchetype(["position", "nonPersistent"]);
                 entity = archetype.insert({ position: { x: 1, y: 2, z: 3 }, nonPersistent: true });
             });
 
@@ -738,7 +738,7 @@ describe("createTransactionalStore", () => {
 
             let entity: number;
             store.execute(t => {
-                const archetype = t.ensureArchetype(["id", "position", "nonPersistent"]);
+                const archetype = t.ensureArchetype(["position", "nonPersistent"]);
                 entity = archetype.insert({ position: { x: 1, y: 2, z: 3 }, nonPersistent: true });
             });
 
@@ -758,7 +758,7 @@ describe("createTransactionalStore", () => {
 
             let entity: number;
             const first = store.execute(t => {
-                const archetype = t.ensureArchetype(["id", "position", "nonPersistent"]);
+                const archetype = t.ensureArchetype(["position", "nonPersistent"]);
                 entity = archetype.insert({ position: { x: 1, y: 2, z: 3 }, nonPersistent: true });
             });
 
@@ -781,12 +781,12 @@ describe("createTransactionalStore", () => {
             }));
 
             const nonPersistentResult = store.execute(t => {
-                const archetype = t.ensureArchetype(["id", "position", "nonPersistent"]);
+                const archetype = t.ensureArchetype(["position", "nonPersistent"]);
                 archetype.insert({ position: { x: 1, y: 2, z: 3 }, nonPersistent: true });
             });
 
             const persistentResult = store.execute(t => {
-                const archetype = t.ensureArchetype(["id", "position"]);
+                const archetype = t.ensureArchetype(["position"]);
                 archetype.insert({ position: { x: 4, y: 5, z: 6 } });
             });
 
@@ -811,7 +811,7 @@ describe("createTransactionalStore", () => {
             // Insert an entity that has the health column.
             let entity: Entity = 0 as Entity;
             store.execute(t => {
-                const archetype = t.ensureArchetype(["id", "position", "health"]);
+                const archetype = t.ensureArchetype(["position", "health"]);
                 entity = archetype.insert({
                     position: { x: 1, y: 2, z: 3 },
                     health: { current: 100, max: 100 },
@@ -853,7 +853,7 @@ describe("createTransactionalStore", () => {
             const store = make();
             let a: Entity, b: Entity, c: Entity;
             store.execute((t) => {
-                const ar = t.ensureArchetype(["id", "value"]);
+                const ar = t.ensureArchetype(["value"]);
                 a = ar.insert({ value: 1 });
                 b = ar.insert({ value: 2 });
                 c = ar.insert({ value: 3 });
@@ -868,7 +868,7 @@ describe("createTransactionalStore", () => {
             const store = make();
             let b: Entity;
             store.execute((t) => {
-                const ar = t.ensureArchetype(["id", "value"]);
+                const ar = t.ensureArchetype(["value"]);
                 ar.insert({ value: 1 });
                 b = ar.insert({ value: 2 });
             });
@@ -880,11 +880,11 @@ describe("createTransactionalStore", () => {
             const store = make();
             let x: Entity, y: Entity;
             store.execute((t) => {
-                const ar = t.ensureArchetype(["id", "value"]);
+                const ar = t.ensureArchetype(["value"]);
                 x = ar.insert({ value: 1 });
                 y = ar.insert({ value: 2 });
             });
-            // Adding `tag` migrates x out of ["id","value"]; its vacated row 0
+            // Adding `tag` migrates x out of ["value"]; its vacated row 0
             // is backfilled by y (the last row of the old archetype).
             const result = store.execute((t) => { t.update(x!, { tag: 9 }); });
             expect(result.relocatedEntities.has(x!)).toBe(true);
@@ -895,7 +895,7 @@ describe("createTransactionalStore", () => {
             const store = make();
             let x: Entity;
             store.execute((t) => {
-                x = t.ensureArchetype(["id", "value"]).insert({ value: 1 });
+                x = t.ensureArchetype(["value"]).insert({ value: 1 });
             });
             const result = store.execute((t) => { t.update(x!, { value: 5 }); });
             expect(result.relocatedEntities.size).toBe(0);

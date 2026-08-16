@@ -15,18 +15,89 @@ State Specification is authoritative and the ECS conforms to it. A feature witho
 this rule does not apply — see `../index.md`, Two modes.
 
 ```ts
-// state.ts — the aggregate + the transition/derivation namespace.
-export type State = { readonly todos: readonly Todo[]; readonly displayCompleted: boolean };
+// data/todo/todo.ts — an entity value type: plain readonly data, NO id.
+export type Todo = { readonly name: string; readonly complete: boolean; readonly order: number };
+export * as Todo from "./public.js";
+
+// data/todo/is.ts — a structural type guard, re-exported so it reads as `Todo.is`.
+// `"k" in v` narrows `v` so each field reads without a cast.
+export const is = (v: unknown): v is Todo =>
+  typeof v === "object" && v !== null &&
+  "name" in v && typeof v.name === "string" &&
+  "complete" in v && typeof v.complete === "boolean" &&
+  "order" in v && typeof v.order === "number";
+
+// data/state/state.ts — singletons + one identity-keyed entity map.
+export type State = {
+  readonly displayCompleted: boolean;            // a SINGLETON → an ECS resource of the same name
+  readonly entities: ReadonlyMap<number, Todo>;  // ALL entities, keyed by id; the value has no id
+};
 export * as State from "./public.js";
 ```
 
-Every **state-based** feature owns a `State` (a scalar `{ playing: boolean }`, or
-`{}` when there is none). An ECS-based feature has no `State` at all.
+Every **state-based** feature owns a `State`. An ECS-based feature has none.
 
-**A `State` field's collection type carries its ordering** — see
-`../../data-modelling.md` (Collection ordering is carried by the type). `todos`
-above is a `ReadonlyArray` because todo order is a user-visible, reorderable fact;
-an unordered entity bag (bullets, sprites) is a `ReadonlySet`.
+## The standard `State` shape
+
+A `State` has two kinds of field:
+
+- **Singletons** — every non-`entities` field (`displayCompleted`, a `score`, a
+  `board`). Each becomes an ECS **resource** of the same name (see
+  `../services/main-service/resources.md`).
+- **`entities`** — a single `ReadonlyMap<number, EntityValue>` holding *every* entity,
+  keyed by a numeric id, where `EntityValue` is the union of the feature's entity value
+  types (`Todo`, or `Bullet | Asteroid`). Omit `entities` entirely for a feature with
+  no entities (`tictactoe`, `dashboard`) — it is then all singletons.
+
+This maps 1:1 to the ECS with **zero dependency on it** — the key is a plain `number`,
+never the ECS `Entity`, so `data/` provably cannot reach ECS machinery. Singletons ↔
+resources; each `entities` value ↔ one entity whose **component set is the value's own
+keys**, so `fromState` inserts a value into the archetype named by `Object.keys(value)`
+and `toState` reads every entity back into the map. Identity lives in the key, never a
+field — see `../../data-modelling.md` (Entities are keyed, never id-bearing values).
+
+### Entity value types — structural, id-less, one `is` guard each
+
+Each entity type is its own `data/<type>/` namespace (`data/index.md`): a plain
+readonly type with **no `id`** plus a structural `is` guard (`is.ts`, re-exported so it
+reads `Todo.is`). A **sub-archetype** is an intersection — `Bar = Foo & { baz }` — and
+its guard **composes the base guard**: `Bar.is` calls `Foo.is(v)` first, then checks the
+added fields (`"baz" in v && typeof v.baz === "boolean"`). So `Bar.is ⟹ Foo.is` by
+construction.
+
+**Model structurally, like the ECS — no tags by default.** ECS systems match purely on
+structure (a mover runs on anything with `position` + `velocity`, regardless of
+"kind"), and `State` mirrors that:
+
+- **A property name means one thing feature-wide.** No two entity types may declare the
+  same property name with a different type/semantics — that is what lets every property
+  collapse to exactly one ECS component and keeps structural matching sound.
+- **No marker / `kind` / tag field unless a genuine modelling need demands it.** Prefer
+  discriminating on the presence of real components; add a tag only when structure alone
+  cannot express the distinction.
+
+### Querying entities — `State.getXEntities`, returning ids
+
+Entity queries are `state/` derivations that return entity **ids** (look the value up
+with `state.entities.get(id)`), mirroring the ECS `select`. Perf is irrelevant here
+(full-map scan + guard); the ECS realises them as archetype queries.
+
+- **Unordered** → `ReadonlySet<number>`: keys whose value passes the guard. It is a
+  **superset** match — `getFooEntities` (via `Foo.is`) also includes `Bar` entities,
+  just as `queryArchetypes(["…Foo's cols"])` returns the `Foo` *and* `Bar` archetypes.
+- **Ordered** → `ReadonlyArray<number>`: the matching ids sorted by an explicit `order`
+  component, exactly like an ECS `select(cols, { order })`. Order is **never** carried
+  by the `entities` map (it is identity-keyed / unordered); a meaningful order is a
+  component on the value and the derivation returns the sorted ids.
+
+```ts
+// data/state/get-todos.ts — an ordered membership derivation returning ids
+export const getTodos = (state: State): readonly number[] =>
+  [...state.entities]
+    .filter(([, v]) => Todo.is(v))
+    .sort(([, a], [, b]) => a.order - b.order)
+    .map(([id]) => id);
+```
 
 **`State` has a standard shape.** Two exports are conventional and drive
 conformance:
@@ -106,21 +177,28 @@ export const entity = ConformanceApi.entity;
 ```ts
 // create-todo.ts
 import { Match } from "@adobe/data-testing";
-import type { Conformance } from "./conformance-case.js"; // the thin per-feature alias above
-import type { Services } from "../../services/services.js"; // the feature's service map
+import type { Conformance } from "./conformance-case.js";      // the thin per-feature alias above
+import type { Services } from "../../services/services.js";    // the feature's service map
 export const createTodo = (
-    state: Pick<State, "todos">,
-    { name, complete, analytics }: { name: string; complete?: boolean } & Pick<Services, "analytics">,
-): Pick<State, "todos"> => {
+    state: Pick<State, "entities">,
+    { name, analytics }: { name: string } & Pick<Services, "analytics">,
+): Pick<State, "entities"> => {
     analytics.todoCreated({ name });
-    return { todos: [...state.todos, { name, complete: complete ?? false }] }; // writes patch only
+    // The spec mints the id (the map key) and the order; the value carries neither an id
+    // nor anything the ECS allocates — identity is the key.
+    const id = Math.max(0, ...state.entities.keys()) + 1;
+    const order = state.entities.size;
+    return { entities: new Map(state.entities).set(id, { name, complete: false, order }) };
 };
 
 export const cases: Conformance<typeof createTodo> = [
-    { name: "appends the first todo",
-      before: {},                       // empty delta — the default State.create()
+    { name: "adds the first todo",
+      before: {},                       // empty delta — the default State.create() (empty entities)
       args: { name: "a", analytics: AnalyticsService.createFake() },
-      after: { todos: [{ id: Match.anyNumber, name: "a", complete: false }] }, // only the changed field
+      // The map key is an id the ECS mints — use `Match.ref("label")` (a DISTINCT
+      // label per entity). The value is id-less so content compares directly. (Maps
+      // compare entry-wise / order-independently — see conformance.md.)
+      after: { entities: new Map([[Match.ref("a"), { name: "a", complete: false, order: 0 }]]) },
       effects: { analytics: [["todoCreated", { name: "a" }]] } },
 ];
 ```
@@ -155,12 +233,17 @@ export const cases: Conformance<typeof createTodo> = [
   overrides the default wholesale.)
 - **`after` leaves minted values open** with the shared matchers `Match.anyNumber`
   / `Match.anyString`, imported from `@adobe/data-testing` — there is **no**
-  per-feature `matchers.ts` anymore. An entity's own numeric `id` is **ignored by
-  default** (the ECS allocates it from its own id-space), so a case simply **omits
-  `id`** and the entity's content still compares — no `id: Match.anyNumber` needed.
-  (Reach for `id: Match.anyNumber` only when the type makes `id` required and a
-  literal would otherwise pin it.) Match by content, not by the value you don't
-  control. `Match` is framework-agnostic and
+  per-feature `matchers.ts` anymore. An entity's identity is the `entities` map **key**,
+  not a value field, so entity content compares directly with nothing to ignore. The
+  key is an ECS-minted id, so use **`Match.ref("label")` with a DISTINCT label per map
+  entry** (`[Match.ref("a"), value]`) — `ref` returns a fresh object so distinct labels
+  are distinct keys, and its injective binding both keeps entities distinct and lets an
+  entity **correlate** with a reference elsewhere in the case (reuse the label, e.g. a
+  `selectedId: Match.ref("a")` singleton). Do **not** use `Match.anyNumber` as a map key
+  — it is a shared singleton, so two entries keyed by it collapse to one. `entity(specId)`
+  is for **`args`** (it resolves via the seed map), **not** `after` keys — a case's `after`
+  entities may be freshly created, with no seed mapping. Match by content, not by a value
+  you don't control. `Match` is framework-agnostic and
   honors any asymmetric matcher, so vitest's `expect.stringContaining(...)` interops
   on the expected side too. When an id must **line up in two places** within one
   comparison — a `selectedId` that points at a specific todo, say — use
@@ -168,12 +251,32 @@ export const cases: Conformance<typeof createTodo> = [
   not a pinned value, so the two occurrences of the label must resolve to the same
   actual id and two labels can't collide. `anyNumber`/`anyString` are for an id a
   case does not pin at all; `ref` for one that must be consistent across the case.
-- **Entity-addressed cases use `entity(specId)`.** A transition that addresses an
-  entity by id writes it as `args: { id: entity(2) }` — `entity` imported from the
-  feature's `conformance-case.ts` (re-exported from `@adobe/data-testing`). It types
-  as the id it stands for (like `Match.anyNumber`), so it slots into the transform's
-  own arg type. `runSpec` unwraps it to the plain data-id for the pure side; the ECS
-  runners resolve it to the seeded entity (see `conformance.md`).
+- **Entity-addressed cases use `entity(specId)` in `args`.** A transition that
+  addresses an entity by id writes it as `args: { id: entity(2) }` — `entity` imported
+  from the feature's `conformance-case.ts` (re-exported from `@adobe/data-testing`). It
+  types as the id it stands for, so it slots into the transform's own arg type. `runSpec`
+  unwraps it to the plain data-id for the pure side; the ECS runners resolve it (via the
+  `fromState` seed map) to the seeded entity (see `conformance.md`).
+- **The `entities` map key convention across a case, in one place:**
+  - **`before`** (the seed): **plain spec-id numbers** (`new Map([[1, …], [2, …]])`).
+    `fromState` seeds from these and returns the `spec-id → entity` map, so `args:
+    { id: entity(1) }` resolves to the entity seeded for `1`.
+  - **`after`** (the expectation, compared against the ECS by content): **`Match.ref`
+    with a distinct label per entry** (`[[Match.ref("a"), …], [Match.ref("b"), …]]`) —
+    the ECS mints its own ids, so keys must be open; `ref` is a fresh object (distinct
+    keys don't collapse) and injective (entities stay distinct, and a label reused in a
+    singleton reference correlates). Never `entity(specId)` here — a case's `after` may
+    hold freshly created entities with no seed mapping.
+  - **`samples`** (round-tripped `toState ∘ fromState`): same as `after` — open,
+    distinct keys against ECS-minted ids.
+  - **Building the open-keyed map — `Match.refMap(values)`.** When the entries come
+    from a list rather than hand-authored labels (a `samples` entry, a case `after`
+    whose entities you don't cross-reference), don't hand-roll the `Match.ref` keys:
+    `Match.refMap(iterableOfValues)` returns a `ReadonlyMap<number, V>` keyed by
+    process-unique open `ref`s — the standard way to build an identity-keyed collection
+    for comparison. Reach for a **hand-written `Match.ref(label)`** only when a key must
+    **correspond** to a reference elsewhere in the same case (a `selectedId`), where the
+    shared label is the whole point.
 - No per-transform test. The single **`spec.test.ts`** is one call —
   `Conformance.runSpec({ state: State, transitions })` importing `transitions`
   from the test-only `./transitions.js` (above) — that auto-discovers every module
@@ -220,8 +323,10 @@ state change and the service calls.
 ## Derivations — `(state) => value`, cases `{ input, value }`
 
 Pure selectors that **compose the aggregate** — a value drawn from **two or more
-`State` fields** (`visibleTodos` from `todos` + `displayCompleted`;
-`currentPlayer` from `board` + `firstPlayer`). A value computed from a **single**
+`State` fields** (`visibleTodos` from `entities` + `displayCompleted`;
+`currentPlayer` from `board` + `firstPlayer`). An entity query like `visibleTodos`
+returns entity **ids** (`ReadonlyArray<number>` / `ReadonlySet<number>`), never the
+values (look those up in `entities`). A value computed from a **single**
 `State` field is that field's own type math and lives on its `data/<type>`
 namespace (`winner`/`status` from `board` → `data/board-state`), tested there —
 **not** in `state/`. A feature may therefore have zero `state/` derivations.

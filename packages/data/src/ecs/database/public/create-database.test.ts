@@ -821,11 +821,9 @@ describe("createDatabase", () => {
             const restoredData1 = newStore.read(restoredEntities[0]);
             const restoredData2 = newStore.read(restoredEntities[1]);
             expect(restoredData1).toEqual({
-                id: restoredEntities[0],
                 position: { x: 1, y: 2, z: 3 }
             });
             expect(restoredData2).toEqual({
-                id: restoredEntities[1],
                 position: { x: 4, y: 5, z: 6 },
                 health: { current: 100, max: 100 },
                 name: "TestEntity"
@@ -890,7 +888,6 @@ describe("createDatabase", () => {
 
             const entityData = newStore.read(entity);
             expect(entityData).toEqual({
-                id: entity,
                 position: { x: 1, y: 2, z: 3 }
             });
 

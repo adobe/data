@@ -370,7 +370,7 @@ describe("createUndoRedoService", () => {
 
         const after = database.read(entity);
         expect(after?.name).toBeUndefined();
-        expect(after).toEqual({ id: entity, position: { x: 1, y: 2, z: 3 } });
+        expect(after).toEqual({ position: { x: 1, y: 2, z: 3 } });
 
         // Redo re-adds the column, and a second undo must remove it again —
         // the recorded op must not be consumed/emptied by the first replay.
@@ -378,6 +378,6 @@ describe("createUndoRedoService", () => {
         expect(database.read(entity)?.name).toBe("hello");
         undoRedo.undo();
         expect(database.read(entity)?.name).toBeUndefined();
-        expect(database.read(entity)).toEqual({ id: entity, position: { x: 1, y: 2, z: 3 } });
+        expect(database.read(entity)).toEqual({ position: { x: 1, y: 2, z: 3 } });
     });
 }); 

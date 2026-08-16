@@ -57,13 +57,13 @@ export function createCoreTestSuite(
             });
 
             // Create entities with different component combinations
-            const archetype1 = core.ensureArchetype(["id", "position"]);
+            const archetype1 = core.ensureArchetype(["position"]);
             const entity1 = archetype1.insert({ position: { x: 1, y: 2, z: 3 } });
 
-            const archetype2 = core.ensureArchetype(["id", "health"]);
+            const archetype2 = core.ensureArchetype(["health"]);
             const entity2 = archetype2.insert({ health: { current: 100, max: 100 } });
 
-            const archetype3 = core.ensureArchetype(["id", "position", "health"]);
+            const archetype3 = core.ensureArchetype(["position", "health"]);
             const entity3 = archetype3.insert({
                 position: { x: 0, y: 0, z: 0 },
                 health: { current: 50, max: 100 }
@@ -95,13 +95,13 @@ export function createCoreTestSuite(
             });
 
             // Create entities with different component combinations
-            const archetype1 = core.ensureArchetype(["id", "position"]);
+            const archetype1 = core.ensureArchetype(["position"]);
             const entity1 = archetype1.insert({ position: { x: 1, y: 2, z: 3 } });
 
-            const archetype2 = core.ensureArchetype(["id", "health"]);
+            const archetype2 = core.ensureArchetype(["health"]);
             const entity2 = archetype2.insert({ health: { current: 100, max: 100 } });
 
-            const archetype3 = core.ensureArchetype(["id", "position", "health"]);
+            const archetype3 = core.ensureArchetype(["position", "health"]);
             const entity3 = archetype3.insert({
                 position: { x: 0, y: 0, z: 0 },
                 health: { current: 50, max: 100 }
@@ -122,10 +122,10 @@ export function createCoreTestSuite(
             });
 
             // Create archetypes with different component combinations
-            const positionOnly = core.ensureArchetype(["id", "position"]);
-            const positionHealth = core.ensureArchetype(["id", "position", "health"]);
-            const positionName = core.ensureArchetype(["id", "position", "name"]);
-            const positionHealthName = core.ensureArchetype(["id", "position", "health", "name"]);
+            const positionOnly = core.ensureArchetype(["position"]);
+            const positionHealth = core.ensureArchetype(["position", "health"]);
+            const positionName = core.ensureArchetype(["position", "name"]);
+            const positionHealthName = core.ensureArchetype(["position", "health", "name"]);
 
             // Query for position but exclude both health and name
             // Should only return archetype with position only (neither health nor name)
@@ -146,32 +146,41 @@ export function createCoreTestSuite(
             });
 
             // First call should create new archetype
-            const archetype1 = core.ensureArchetype(["id", "position"]);
+            const archetype1 = core.ensureArchetype(["position"]);
             expect(archetype1).toBeDefined();
             expect(archetype1.components.has("id")).toBe(true);
             expect(archetype1.components.has("position")).toBe(true);
             expect((archetype1.components as Set<string>).has("health")).toBe(false);
 
             // Second call with same components should return same archetype
-            const archetype2 = core.ensureArchetype(["id", "position"]);
+            const archetype2 = core.ensureArchetype(["position"]);
             expect(archetype2).toBe(archetype1);
 
             // Different components should create new archetype
-            const archetype3 = core.ensureArchetype(["id", "health"]);
+            const archetype3 = core.ensureArchetype(["health"]);
             expect(archetype3).not.toBe(archetype1);
             expect(archetype3.components.has("id")).toBe(true);
             expect(archetype3.components.has("health")).toBe(true);
             expect(archetype3.components.has("position")).toBe(false);
         });
 
-        it("should throw error when ensuring archetype without id", () => {
+        it("adds the implicit id column without naming id as a component", () => {
             const core = factory({
                 position: positionSchema,
             });
 
-            expect(() => {
-                core.ensureArchetype(["position"]);
-            }).toThrow("id is required");
+            // `id` is never named by callers; it is always present as a column,
+            // but not as a declared component.
+            const archetype = core.ensureArchetype(["position"]);
+            expect(archetype.columns.id).toBeDefined();
+            // Resolving the same component set returns the very same archetype.
+            expect(core.ensureArchetype(["position"])).toBe(archetype);
+        });
+
+        it("throws when a schema defines a reserved component name", () => {
+            for (const reserved of ["id", "nonPersistent", "nonShared"]) {
+                expect(() => factory({ [reserved]: positionSchema } as any)).toThrow(/reserved/);
+            }
         });
 
         it("should locate entities correctly", () => {
@@ -179,7 +188,7 @@ export function createCoreTestSuite(
                 position: positionSchema,
             });
 
-            const archetype = core.ensureArchetype(["id", "position"]);
+            const archetype = core.ensureArchetype(["position"]);
             const entity = archetype.insert({ position: { x: 1, y: 2, z: 3 } });
 
             const location = core.locate(entity);
@@ -202,12 +211,13 @@ export function createCoreTestSuite(
                 position: positionSchema,
             });
 
-            const archetype = core.ensureArchetype(["id", "position"]);
+            const archetype = core.ensureArchetype(["position"]);
             const entity = archetype.insert({ position: { x: 1, y: 2, z: 3 } });
 
             const data = core.read(entity);
             expect(data).not.toBeNull();
-            expect(data?.id).toBe(entity);
+            // `id` is the entity's identity, not a component value: reads never include it.
+            expect(data).not.toHaveProperty("id");
             expect(data?.position).toEqual({ x: 1, y: 2, z: 3 });
         });
 
@@ -234,7 +244,7 @@ export function createCoreTestSuite(
                 position: positionSchema,
             });
 
-            const archetype = core.ensureArchetype(["id", "position"]);
+            const archetype = core.ensureArchetype(["position"]);
             const entity = archetype.insert({ position: { x: 1, y: 2, z: 3 } });
 
             // Verify entity exists
@@ -264,7 +274,7 @@ export function createCoreTestSuite(
                 position: positionSchema,
             });
 
-            const archetype = core.ensureArchetype(["id", "position"]);
+            const archetype = core.ensureArchetype(["position"]);
             const entity = archetype.insert({ position: { x: 1, y: 2, z: 3 } });
 
             // Update position
@@ -281,7 +291,7 @@ export function createCoreTestSuite(
                 health: healthSchema,
             });
 
-            const archetype1 = core.ensureArchetype(["id", "position"]);
+            const archetype1 = core.ensureArchetype(["position"]);
             const entity = archetype1.insert({ position: { x: 1, y: 2, z: 3 } });
 
             // Add health component
@@ -303,7 +313,7 @@ export function createCoreTestSuite(
                 health: healthSchema,
             });
 
-            const archetype1 = core.ensureArchetype(["id", "position", "health"]);
+            const archetype1 = core.ensureArchetype(["position", "health"]);
             const entity = archetype1.insert({
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 }
@@ -338,7 +348,7 @@ export function createCoreTestSuite(
                 health: healthSchema,
             });
 
-            const archetype = core.ensureArchetype(["id", "position", "health"]);
+            const archetype = core.ensureArchetype(["position", "health"]);
             const entity = archetype.insert({
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 }
@@ -361,7 +371,7 @@ export function createCoreTestSuite(
                 health: healthSchema,
             });
 
-            const archetype1 = core.ensureArchetype(["id", "position"]);
+            const archetype1 = core.ensureArchetype(["position"]);
             const entity = archetype1.insert({ position: { x: 1, y: 2, z: 3 } });
 
             // Add health and update position
@@ -380,7 +390,7 @@ export function createCoreTestSuite(
                 position: positionSchema,
             });
 
-            const archetype = core.ensureArchetype(["id", "position"]);
+            const archetype = core.ensureArchetype(["position"]);
             const entity1 = archetype.insert({ position: { x: 1, y: 2, z: 3 } });
             const entity2 = archetype.insert({ position: { x: 4, y: 5, z: 6 } });
 
@@ -401,7 +411,7 @@ export function createCoreTestSuite(
                 position: positionSchema,
             });
 
-            const archetype = core.ensureArchetype(["id", "position"]);
+            const archetype = core.ensureArchetype(["position"]);
             const entity = archetype.insert({ position: { x: 1, y: 2, z: 3 } });
 
             // Update with empty object
@@ -417,7 +427,7 @@ export function createCoreTestSuite(
                 position: positionSchema,
             });
 
-            const archetype = core.ensureArchetype(["id", "position"]);
+            const archetype = core.ensureArchetype(["position"]);
             const entities: Entity[] = [];
 
             // Create many entities
@@ -453,7 +463,7 @@ export function createCoreTestSuite(
                 health: healthSchema,
             });
 
-            const ephemeralPositionTable = core.ensureArchetype(["id", "position", "nonPersistent"]);
+            const ephemeralPositionTable = core.ensureArchetype(["position", "nonPersistent"]);
             const writeId = ephemeralPositionTable.insert({ position: { x: 1, y: 2, z: 3 }, nonPersistent: true });
             expect(Entity.isNonPersistent(writeId)).toBe(true);
 
@@ -473,7 +483,7 @@ export function createCoreTestSuite(
                 health: healthSchema,
             });
 
-            const ephemeralPositionTable = core.ensureArchetype(["id", "position", "nonPersistent"]);
+            const ephemeralPositionTable = core.ensureArchetype(["position", "nonPersistent"]);
             const writeId = ephemeralPositionTable.insert({ position: { x: 1, y: 2, z: 3 }, nonPersistent: true });
 
             expect(() => {
@@ -494,12 +504,11 @@ export function createCoreTestSuite(
                     health: healthSchema,
                 });
 
-                const positionArchetype = core.ensureArchetype(["id", "position"]);
+                const positionArchetype = core.ensureArchetype(["position"]);
                 const entity = positionArchetype.insert({ position: { x: 1, y: 2, z: 3 } });
 
                 const data = core.read(entity, positionArchetype);
                 expect(data).not.toBeNull();
-                expect((data as any)?.id).toBe(entity);
                 expect((data as any)?.position).toEqual({ x: 1, y: 2, z: 3 });
             });
 
@@ -508,7 +517,7 @@ export function createCoreTestSuite(
                     position: positionSchema,
                 });
 
-                const archetype = core.ensureArchetype(["id", "position"]);
+                const archetype = core.ensureArchetype(["position"]);
                 const data = core.read(999 as Entity, archetype);
                 expect(data).toBeNull();
             });
@@ -520,11 +529,11 @@ export function createCoreTestSuite(
                 });
 
                 // Create entity with only position
-                const positionArchetype = core.ensureArchetype(["id", "position"]);
+                const positionArchetype = core.ensureArchetype(["position"]);
                 const entity = positionArchetype.insert({ position: { x: 1, y: 2, z: 3 } });
 
                 // Try to read from health archetype
-                const healthArchetype = core.ensureArchetype(["id", "health"]);
+                const healthArchetype = core.ensureArchetype(["health"]);
                 const data = core.read(entity, healthArchetype);
                 expect(data).toBeNull();
             });
@@ -536,17 +545,16 @@ export function createCoreTestSuite(
                 });
 
                 // Create entity with both position and health
-                const fullArchetype = core.ensureArchetype(["id", "position", "health"]);
+                const fullArchetype = core.ensureArchetype(["position", "health"]);
                 const entity = fullArchetype.insert({
                     position: { x: 1, y: 2, z: 3 },
                     health: { current: 100, max: 100 }
                 });
 
                 // Should be able to read from position-only archetype
-                const positionArchetype = core.ensureArchetype(["id", "position"]);
+                const positionArchetype = core.ensureArchetype(["position"]);
                 const data = core.read(entity, positionArchetype);
                 expect(data).not.toBeNull();
-                expect((data as any)?.id).toBe(entity);
                 expect((data as any)?.position).toEqual({ x: 1, y: 2, z: 3 });
             });
 
@@ -558,14 +566,14 @@ export function createCoreTestSuite(
                 });
 
                 // Create entity with position and health
-                const positionHealthArchetype = core.ensureArchetype(["id", "position", "health"]);
+                const positionHealthArchetype = core.ensureArchetype(["position", "health"]);
                 const entity = positionHealthArchetype.insert({
                     position: { x: 1, y: 2, z: 3 },
                     health: { current: 100, max: 100 }
                 });
 
                 // Try to read from name archetype
-                const nameArchetype = core.ensureArchetype(["id", "name"]);
+                const nameArchetype = core.ensureArchetype(["name"]);
                 const data = core.read(entity, nameArchetype);
                 expect(data).toBeNull();
             });
@@ -576,7 +584,7 @@ export function createCoreTestSuite(
                     health: healthSchema,
                 });
 
-                const positionArchetype = core.ensureArchetype(["id", "position"]);
+                const positionArchetype = core.ensureArchetype(["position"]);
                 const entity = positionArchetype.insert({ position: { x: 1, y: 2, z: 3 } });
 
                 // Update position
@@ -592,7 +600,7 @@ export function createCoreTestSuite(
                     position: positionSchema,
                 });
 
-                const archetype = core.ensureArchetype(["id", "position"]);
+                const archetype = core.ensureArchetype(["position"]);
                 const entity = archetype.insert({ position: { x: 1, y: 2, z: 3 } });
 
                 // Verify entity exists
@@ -610,7 +618,7 @@ export function createCoreTestSuite(
                     position: positionSchema,
                 });
 
-                const archetype = core.ensureArchetype(["id", "position"]);
+                const archetype = core.ensureArchetype(["position"]);
                 const entity1 = archetype.insert({ position: { x: 1, y: 2, z: 3 } });
                 const entity2 = archetype.insert({ position: { x: 4, y: 5, z: 6 } });
 
@@ -628,7 +636,7 @@ export function createCoreTestSuite(
                     position: positionSchema,
                 });
 
-                const archetype = core.ensureArchetype(["id", "position"]);
+                const archetype = core.ensureArchetype(["position"]);
                 const data = core.read(-1, archetype);
                 expect(data).toBeNull();
             });
@@ -641,8 +649,8 @@ export function createCoreTestSuite(
                     health: healthSchema,
                 });
 
-                const archetype1 = core.ensureArchetype(["id", "position"]);
-                const archetype2 = core.ensureArchetype(["id", "health"]);
+                const archetype1 = core.ensureArchetype(["position"]);
+                const archetype2 = core.ensureArchetype(["health"]);
 
                 // Add entities to both archetypes
                 const entity1 = archetype1.insert({ position: { x: 1, y: 2, z: 3 } });
@@ -678,7 +686,7 @@ export function createCoreTestSuite(
                     position: positionSchema,
                 });
 
-                const archetype = core.ensureArchetype(["id", "position"]);
+                const archetype = core.ensureArchetype(["position"]);
                 const entity1 = archetype.insert({ position: { x: 10, y: 20, z: 30 } });
                 const entity2 = archetype.insert({ position: { x: 40, y: 50, z: 60 } });
                 const entity3 = archetype.insert({ position: { x: 70, y: 80, z: 90 } });
@@ -698,7 +706,7 @@ export function createCoreTestSuite(
                     position: positionSchema,
                 });
 
-                const archetype = core.ensureArchetype(["id", "position"]);
+                const archetype = core.ensureArchetype(["position"]);
 
                 // Add many entities
                 const ids: Entity[] = [];
@@ -733,7 +741,7 @@ export function createCoreTestSuite(
                     position: positionSchema,
                 });
 
-                const archetype = core.ensureArchetype(["id", "position"]);
+                const archetype = core.ensureArchetype(["position"]);
 
                 expect(() => core.compact()).not.toThrow();
                 expect(archetype.rowCount).toBe(0);
@@ -745,7 +753,7 @@ export function createCoreTestSuite(
                     position: positionSchema,
                 });
 
-                const archetype = core.ensureArchetype(["id", "position"]);
+                const archetype = core.ensureArchetype(["position"]);
                 archetype.insert({ position: { x: 1, y: 2, z: 3 } });
                 archetype.insert({ position: { x: 4, y: 5, z: 6 } });
 
@@ -764,7 +772,7 @@ export function createCoreTestSuite(
                 position: positionSchema,
             });
 
-            const ephemeralArchetype = core.ensureArchetype(["id", "position", "nonPersistent"]);
+            const ephemeralArchetype = core.ensureArchetype(["position", "nonPersistent"]);
             const ephemeralEntity = ephemeralArchetype.insert({ 
                 position: { x: 1, y: 2, z: 3 }, 
                 nonPersistent: true 
@@ -790,7 +798,7 @@ export function createCoreTestSuite(
             });
 
             // Create an nonPersistent entity with just position
-            const ephemeralArchetype1 = core.ensureArchetype(["id", "position", "nonPersistent"]);
+            const ephemeralArchetype1 = core.ensureArchetype(["position", "nonPersistent"]);
             const ephemeralEntity = ephemeralArchetype1.insert({ 
                 position: { x: 1, y: 2, z: 3 }, 
                 nonPersistent: true 
@@ -816,10 +824,10 @@ export function createCoreTestSuite(
 
         it("partitions entities into four disjoint quadrants by persistence × sharing", () => {
             const core = factory({ position: positionSchema });
-            const doc = core.ensureArchetype(["id", "position"]).insert({ position: { x: 0, y: 0, z: 0 } });
-            const settings = core.ensureArchetype(["id", "position", "nonShared"]).insert({ position: { x: 0, y: 0, z: 0 }, nonShared: true });
-            const presence = core.ensureArchetype(["id", "position", "nonPersistent"]).insert({ position: { x: 0, y: 0, z: 0 }, nonPersistent: true });
-            const session = core.ensureArchetype(["id", "position", "nonPersistent", "nonShared"]).insert({ position: { x: 0, y: 0, z: 0 }, nonPersistent: true, nonShared: true });
+            const doc = core.ensureArchetype(["position"]).insert({ position: { x: 0, y: 0, z: 0 } });
+            const settings = core.ensureArchetype(["position", "nonShared"]).insert({ position: { x: 0, y: 0, z: 0 }, nonShared: true });
+            const presence = core.ensureArchetype(["position", "nonPersistent"]).insert({ position: { x: 0, y: 0, z: 0 }, nonPersistent: true });
+            const session = core.ensureArchetype(["position", "nonPersistent", "nonShared"]).insert({ position: { x: 0, y: 0, z: 0 }, nonPersistent: true, nonShared: true });
 
             expect(Entity.isPersistent(doc) && Entity.isShared(doc)).toBe(true);
             expect(Entity.isPersistent(settings) && Entity.isNonShared(settings)).toBe(true);
@@ -832,9 +840,9 @@ export function createCoreTestSuite(
 
         it("serializes persistent quadrants and resets non-persistent ones on load", () => {
             const core = factory({ position: positionSchema });
-            const doc = core.ensureArchetype(["id", "position"]).insert({ position: { x: 1, y: 0, z: 0 } });
-            const settings = core.ensureArchetype(["id", "position", "nonShared"]).insert({ position: { x: 2, y: 0, z: 0 }, nonShared: true });
-            core.ensureArchetype(["id", "position", "nonPersistent"]).insert({ position: { x: 3, y: 0, z: 0 }, nonPersistent: true });
+            const doc = core.ensureArchetype(["position"]).insert({ position: { x: 1, y: 0, z: 0 } });
+            const settings = core.ensureArchetype(["position", "nonShared"]).insert({ position: { x: 2, y: 0, z: 0 }, nonShared: true });
+            core.ensureArchetype(["position", "nonPersistent"]).insert({ position: { x: 3, y: 0, z: 0 }, nonPersistent: true });
 
             const data = core.toData();
 
@@ -845,19 +853,19 @@ export function createCoreTestSuite(
             expect(restored.read(doc)?.position).toEqual({ x: 1, y: 0, z: 0 });
             expect(restored.read(settings)?.position).toEqual({ x: 2, y: 0, z: 0 });
             // presence (non-persistent) is not serialized: its archetype loads empty.
-            expect(restored.ensureArchetype(["id", "position", "nonPersistent"]).rowCount).toBe(0);
+            expect(restored.ensureArchetype(["position", "nonPersistent"]).rowCount).toBe(0);
         });
 
         it("should throw when trying to update nonShared component", () => {
             const core = factory({ position: positionSchema });
-            const entity = core.ensureArchetype(["id", "position", "nonShared"]).insert({ position: { x: 0, y: 0, z: 0 }, nonShared: true });
+            const entity = core.ensureArchetype(["position", "nonShared"]).insert({ position: { x: 0, y: 0, z: 0 }, nonShared: true });
             expect(() => core.update(entity, { nonShared: true } as never)).toThrow("Cannot update nonShared component");
         });
 
         it("scopes toData/fromData to selected persistent quadrants", () => {
             const core = factory({ position: positionSchema });
-            const doc = core.ensureArchetype(["id", "position"]).insert({ position: { x: 1, y: 0, z: 0 } });
-            const settings = core.ensureArchetype(["id", "position", "nonShared"]).insert({ position: { x: 2, y: 0, z: 0 }, nonShared: true });
+            const doc = core.ensureArchetype(["position"]).insert({ position: { x: 1, y: 0, z: 0 } });
+            const settings = core.ensureArchetype(["position", "nonShared"]).insert({ position: { x: 2, y: 0, z: 0 }, nonShared: true });
 
             // One scoped snapshot per persistent quadrant.
             const docData = core.toData({ scope: { shared: true } });
@@ -889,7 +897,7 @@ export function createCoreTestSuite(
             const make = () => factory({ position: positionSchema, cache: cacheSchema, derived: derivedSchema });
 
             const core = make();
-            const e = core.ensureArchetype(["id", "position", "cache", "derived"]).insert({
+            const e = core.ensureArchetype(["position", "cache", "derived"]).insert({
                 position: { x: 1, y: 2, z: 3 }, cache: 99, derived: 42,
             });
 
@@ -922,7 +930,7 @@ export function createCoreTestSuite(
             const make = () => factory({ position: positionSchema, gpuRef: gpuRefSchema, maybe: maybeSchema, counter: counterSchema });
 
             const core = make();
-            const e = core.ensureArchetype(["id", "position", "gpuRef", "maybe", "counter"]).insert({
+            const e = core.ensureArchetype(["position", "gpuRef", "maybe", "counter"]).insert({
                 position: { x: 1, y: 2, z: 3 }, gpuRef: 12345, maybe: 999, counter: 99,
             });
 

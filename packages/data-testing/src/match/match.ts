@@ -20,12 +20,29 @@ export interface MatchOptions {
 // labels can never bind the same actual (a bijection). This checks that ecs ids
 // line up structurally — e.g. a `selectedId` points at the entity a case means —
 // even though the ecs assigns ids from its own space. For an id a case does not
-// care about, simply omit it (a numeric `id` the expected side does not mention is
-// ignored — see `matchesWith`), or use `anyNumber` to assert only that one exists.
+// want to pin to a specific number, use `anyNumber` to assert only that one exists.
 const REF = Symbol.for("@adobe/data-testing:ref");
-export const ref = (label: string): { readonly [REF]: string } => ({ [REF]: label });
+// Typed as the value it stands in for (defaulting to `number`, the common entity-id
+// case), like `anyNumber`, so it slots into a pinned `number` position — including a
+// `ReadonlyMap<number, …>` KEY. Each call returns a fresh object, so distinct labels
+// are distinct keys (a shared matcher like `anyNumber` would collapse duplicate map
+// keys); same-label occurrences still assert the same actual id (correspondence).
+export const ref = <T = number>(label: string): T => ({ [REF]: label }) as unknown as T;
 const isRef = (value: unknown): value is { readonly [REF]: string } =>
   typeof value === "object" && value !== null && REF in value;
+
+// Build the EXPECTED side of an identity-keyed entity collection — a
+// `ReadonlyMap<number, V>` of id-less values whose keys are DISTINCT open `ref`s.
+// This is the common shape of a `samples` entry or a case `after` whose entities
+// were freshly created: the ecs mints the real ids, so each key must be an open,
+// injective matcher rather than a pinned number, and two entries must not share a
+// matcher (a shared `anyNumber` would collapse to one map key). Each value gets its
+// own process-unique label, so refMap maps never collide with each other or with a
+// case's own hand-authored `ref` labels. Use `ref(label)` by hand only when a key
+// must CORRESPOND to a reference elsewhere in the same comparison (a `selectedId`).
+let refMapCounter = 0;
+export const refMap = <V>(values: Iterable<V>): ReadonlyMap<number, V> =>
+  new Map([...values].map((value): [number, V] => [ref(`@refMap-${refMapCounter++}`), value]));
 
 // An asymmetric matcher (this module's `anyNumber`/`anyString`, or vitest's
 // `expect.any(...)`): honored on the EXPECTED side so a case asserts a shape it
@@ -120,23 +137,15 @@ const matchesWith = (
       return false;
     const eo = expected as Record<string, unknown>;
     const ao = actual as Record<string, unknown>;
-    // A numeric `id` the case does not mention is an ecs-allocated identity a case
-    // cannot predict — ignore it so entity content compares without pinning ids. A
-    // case that DOES care pins it explicitly (`id: ref(...)` / `anyNumber`), which
-    // puts `id` on the expected side and takes it through the normal path below.
-    const ignoreId = !("id" in eo) && typeof ao.id === "number";
-    const expectedKeys = Object.keys(eo);
-    const actualKeys = ignoreId ? Object.keys(ao).filter((k) => k !== "id") : Object.keys(ao);
-    if (expectedKeys.length !== actualKeys.length) return false;
-    return expectedKeys.every((key) => matchesWith(ao[key], eo[key], options, bindings));
+    if (Object.keys(eo).length !== Object.keys(ao).length) return false;
+    return Object.keys(eo).every((key) => matchesWith(ao[key], eo[key], options, bindings));
   }
   return Object.is(actual, expected);
 };
 
 // Tolerant structural comparison: honors asymmetric matchers and `ref`
-// correspondence on the expected side, absorbs float noise, compares arrays in
-// order and Sets/Maps order-independently, and ignores an ecs-allocated numeric
-// `id` a case does not pin. Pure and framework-agnostic — `assert` wraps it for a
-// throwing test assertion.
+// correspondence on the expected side, absorbs float noise, and compares arrays in
+// order and Sets/Maps order-independently. Pure and framework-agnostic — `assert`
+// wraps it for a throwing test assertion.
 export const matches = (actual: unknown, expected: unknown, options: MatchOptions = {}): boolean =>
   matchesWith(actual, expected, options, new Map());

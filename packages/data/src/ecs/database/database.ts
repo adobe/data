@@ -155,7 +155,7 @@ export interface Database<
         result: TransactionResult<C> | undefined;
         intent: "commit" | "intermediate" | "cancel";
     }>;
-    entity<T extends RequiredComponents>(id: Entity, minArchetype?: ReadonlyArchetype<T> | Archetype<T>): Observe<Readonly<T> & EntityReadValues<C> | null>;
+    entity<T>(id: Entity, minArchetype?: ReadonlyArchetype<T> | Archetype<T>): Observe<Readonly<T> & EntityReadValues<C> | null>;
     entity(id: Entity): Observe<EntityReadValues<C> | null>;
     archetype(id: ArchetypeId): Observe<void>;
     select<

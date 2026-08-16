@@ -9,9 +9,9 @@ import { projection } from "./projection.js";
 // transactions/actions off `MainService.plugin`, seeds each case's `before` (a
 // delta) over `State.create()`, and round-trips `State.samples` through the
 // projection. `transitions` (the discovered `{ fn, cases }` modules) is shared with
-// spec.test. The entity bags the ecs materialises in nondeterministic row order
-// (`bullets`, `asteroids`) are typed `ReadonlySet`, so the comparator matches them
-// order-independently. There is no `computedPlugin` — space-rock has no `state/`
+// spec.test. The entities the ecs materialises in nondeterministic row order live in
+// one `entities: ReadonlyMap<number, Bullet | Asteroid>`, so the comparator matches
+// them order-independently. There is no `computedPlugin` — space-rock has no `state/`
 // derivations.
 Conformance.runFeature({
   state: State,

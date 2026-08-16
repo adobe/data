@@ -1,12 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { RequiredComponents } from "../required-components.js";
+import { RequiredComponents, IdComponent } from "../required-components.js";
 import { Entity } from "../entity/entity.js";
 import { Table, ReadonlyTable } from "../../table/index.js";
 import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";
 import { Exact, StringKeyof } from "../../types/types.js";
 
-export type EntityInsertValues<C> = Omit<C, "id">;
+export type EntityInsertValues<C> = Omit<C, IdComponent>;
 export type ArchetypeId = number;
 
 /**
@@ -24,7 +24,15 @@ interface BaseArchetype {
     readonly id: ArchetypeId;
     readonly components: ReadonlySet<string>;
 }
-export interface ReadonlyArchetype<C extends RequiredComponents> extends BaseArchetype, ReadonlyTable<C> {
+
+// `C` is the archetype's *component* set and deliberately excludes the entity
+// `id`. The id is the entity's identity (the key), not one of its component
+// values, so it never appears in `C`, in `FromArchetype`, or in any full read.
+// It remains a real, always-present COLUMN: the interfaces below re-inject it
+// into `columns` (via `C & RequiredComponents`) so swap-remove and manual
+// per-row traversal can still read `archetype.columns.id.get(row)` directly,
+// which is required and must stay fast.
+export interface ReadonlyArchetype<C = {}> extends BaseArchetype, ReadonlyTable<C & RequiredComponents> {
     readonly components: ComponentSet<StringKeyof<C>>;
     /**
      * Serialize the archetype. When `copy` is true each column buffer is
@@ -39,7 +47,7 @@ export interface ReadonlyArchetype<C extends RequiredComponents> extends BaseArc
     toData: (copy?: boolean, omit?: ReadonlySet<string>) => unknown
 }
 
-export interface Archetype<C extends RequiredComponents = RequiredComponents> extends BaseArchetype, Table<C> {
+export interface Archetype<C = {}> extends BaseArchetype, Table<C & RequiredComponents> {
     readonly components: ComponentSet<StringKeyof<C>>;
     insert: <T extends EntityInsertValues<C>>(rowData: Exact<EntityInsertValues<C>, T>) => Entity;
     /** See {@link ReadonlyArchetype.toData}. */
@@ -66,24 +74,31 @@ export namespace Archetype {
      * component) therefore still permits `.insert` with no narrowing — only dense
      * column access requires having resolved to a concrete {@link Archetype}.
      */
-    export interface Router<C extends RequiredComponents = RequiredComponents> {
+    export interface Router<C = {}> {
         readonly components: ComponentSet<StringKeyof<C>>;
         insert: <T extends EntityInsertValues<C>>(rowData: Exact<EntityInsertValues<C>, T>) => Entity;
     }
 }
 
+// `id` is stripped explicitly: inferring `C` from an archetype can pull `id` in
+// via the `columns` position (typed `C & RequiredComponents`), but `id` is never
+// part of the component row.
 export type FromArchetype<T> =
-    T extends ReadonlyArchetype<infer C> ? { readonly [K in keyof C]: C[K] } :
-    T extends Archetype<infer C> ? { readonly [K in keyof C]: C[K] } :
+    T extends ReadonlyArchetype<infer C> ? { readonly [K in keyof Omit<C, IdComponent>]: C[K] } :
+    T extends Archetype<infer C> ? { readonly [K in keyof Omit<C, IdComponent>]: C[K] } :
     never;
 
 // compile time type tests.
-type TestFromReadonlyArchetype = Assert<Equal<FromArchetype<ReadonlyArchetype<{ id: number, a: number, b: string }>>, { readonly id: number, readonly a: number, readonly b: string }>>;
-type TestFromArchetype = Assert<Equal<FromArchetype<Archetype<{ id: number, a: number, b: string }>>, { readonly id: number, readonly a: number, readonly b: string }>>;
+// `id` is not a component: it is absent from `C` and therefore from FromArchetype…
+type TestFromReadonlyArchetype = Assert<Equal<FromArchetype<ReadonlyArchetype<{ a: number, b: string }>>, { readonly a: number, readonly b: string }>>;
+type TestFromArchetype = Assert<Equal<FromArchetype<Archetype<{ a: number, b: string }>>, { readonly a: number, readonly b: string }>>;
+// …but it remains a real, typed column so swap-remove / manual traversal can read
+// `columns.id` directly: `id` is present in `columns` even though it is not in `C`.
+type TestIdColumnStillTyped = Assert<IdComponent extends keyof Archetype<{ a: number }>["columns"] ? true : false>;
 
 // Compile-time tests for Exact in insert method
 {
-    type TestArchetype = Archetype<{ id: Entity, position: [number, number, number], color: [number, number, number, number] }>;
+    type TestArchetype = Archetype<{ position: [number, number, number], color: [number, number, number, number] }>;
     type TestInsertValid = { position: [number, number, number], color: [number, number, number, number] };
     type TestInsertExtra = { position: [number, number, number], color: [number, number, number, number], extra: string };
 

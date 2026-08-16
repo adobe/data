@@ -17,7 +17,7 @@ export const toggleDisplayCompleted = (
 
 // Spec-owned cases, shared with the ecs `toggleDisplayCompleted` transaction.
 // `before` is a delta over `State.create()`; `after` lists only the written
-// `displayCompleted`. Only the flag flips; todos are untouched; the transition
+// `displayCompleted`. Only the flag flips; entities are untouched; the transition
 // logs `displayCompletedToggled` (as the action does).
 export const cases: Conformance<typeof toggleDisplayCompleted> = [
   {
@@ -30,15 +30,16 @@ export const cases: Conformance<typeof toggleDisplayCompleted> = [
   {
     name: "turns the completed view off, leaving todos intact",
     before: {
-      todos: [{ id: 1, name: "a", complete: true }],
+      entities: new Map([[1, { name: "a", complete: true, order: 0 }]]),
       displayCompleted: true,
     },
     args: { analytics: AnalyticsService.createFake() },
-    // Only `displayCompleted` is written, but the carried-through todo holds an
-    // ecs-minted id, so it is restated with `Match.anyNumber` to bridge the
-    // seeded data id (1) and the id the ecs assigns on the round-trip.
+    // Only `displayCompleted` is written; the carried-through entity is restated
+    // with a `Match.ref` key so the round-trip's ecs-minted id stays open.
     after: {
-      todos: [{ id: Match.anyNumber, name: "a", complete: true }],
+      entities: new Map([
+        [Match.ref("a"), { name: "a", complete: true, order: 0 }],
+      ]),
       displayCompleted: false,
     },
     effects: { analytics: [["displayCompletedToggled"]] },

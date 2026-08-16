@@ -375,7 +375,6 @@ describe("createObservedDatabase", () => {
             const unsubscribe = observed.observe.entity(entity, observed.archetypes.Position)(observer);
 
             expect(observer).toHaveBeenCalledWith(expect.objectContaining({
-                id: entity,
                 position: { x: 1, y: 2, z: 3 },
             }));
 
@@ -394,7 +393,6 @@ describe("createObservedDatabase", () => {
             const unsubscribe = observed.observe.entity(entity, observed.archetypes.Position)(observer);
 
             expect(observer).toHaveBeenCalledWith(expect.objectContaining({
-                id: entity,
                 position: { x: 1, y: 2, z: 3 },
             }));
 
@@ -448,7 +446,6 @@ describe("createObservedDatabase", () => {
             });
 
             expect(observer).toHaveBeenCalledWith(expect.objectContaining({
-                id: entity,
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 },
             }));
@@ -468,7 +465,6 @@ describe("createObservedDatabase", () => {
             const unsubscribe = observed.observe.entity(entity, observed.archetypes.PositionHealth)(observer);
 
             expect(observer).toHaveBeenCalledWith(expect.objectContaining({
-                id: entity,
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 },
             }));
@@ -495,7 +491,6 @@ describe("createObservedDatabase", () => {
             const unsubscribe = observed.observe.entity(entity, observed.archetypes.PositionHealth)(observer);
 
             expect(observer).toHaveBeenCalledWith(expect.objectContaining({
-                id: entity,
                 position: { x: 1, y: 2, z: 3 },
             }));
 
@@ -542,15 +537,12 @@ describe("createObservedDatabase", () => {
             const unsubscribeFull = observed.observe.entity(entity, observed.archetypes.PositionHealth)(fullObserver);
 
             expect(positionObserver).toHaveBeenCalledWith(expect.objectContaining({
-                id: entity,
                 position: { x: 1, y: 2, z: 3 },
             }));
             expect(healthObserver).toHaveBeenCalledWith(expect.objectContaining({
-                id: entity,
                 health: { current: 100, max: 100 },
             }));
             expect(fullObserver).toHaveBeenCalledWith(expect.objectContaining({
-                id: entity,
                 position: { x: 1, y: 2, z: 3 },
                 health: { current: 100, max: 100 },
             }));
@@ -561,7 +553,6 @@ describe("createObservedDatabase", () => {
             });
 
             expect(positionObserver).toHaveBeenCalledWith(expect.objectContaining({
-                id: entity,
                 position: { x: 1, y: 2, z: 3 },
             }));
             expect(healthObserver).toHaveBeenCalledWith(null);
@@ -721,7 +712,6 @@ describe("createObservedDatabase", () => {
 
         expect(newObserver).toHaveBeenCalledTimes(1);
         expect(newObserver.mock.calls[0][0]).toEqual({
-            id: newEntity,
             position: { x: 1, y: 2, z: 3 },
         });
 
@@ -772,7 +762,6 @@ describe("createObservedDatabase", () => {
         // Verify that new components can be read back
         const entityData = observed.read(entity);
         expect(entityData).toEqual({
-            id: entity,
             position: { x: 1, y: 2, z: 3 },
             velocity: { vx: 0.1, vy: 0.2, vz: 0.3 },
         });
@@ -787,7 +776,6 @@ describe("createObservedDatabase", () => {
 
         const movingEntityData = observed.read(movingEntity);
         expect(movingEntityData).toEqual({
-            id: movingEntity,
             position: { x: 10, y: 20, z: 30 },
             velocity: { vx: 1, vy: 2, vz: 3 },
         });

@@ -3,7 +3,6 @@
 import { Assert } from "../../../types/assert.js";
 import { Equal } from "../../../types/equal.js";
 import { ReadonlyArchetype } from "../../archetype/archetype.js";
-import { RequiredComponents } from "../../required-components.js";
 import type { AsyncArgsProvider } from "../../store/transaction-functions.js";
 import { DatabaseFromSchema } from "./database-schema.js";
 import { createDatabaseSchema } from "./create-database-schema.js";
@@ -35,11 +34,11 @@ const databaseSchema = createDatabaseSchema(
 
 type CheckDatabaseFromSchema = DatabaseFromSchema<typeof databaseSchema>;
 declare const testDatabase: CheckDatabaseFromSchema;
-type CheckDynamicParticle = Assert<Equal<typeof testDatabase.archetypes.DynamicParticle, ReadonlyArchetype<RequiredComponents & {
+type CheckDynamicParticle = Assert<Equal<typeof testDatabase.archetypes.DynamicParticle, ReadonlyArchetype<{
     particle: boolean;
     velocity: number;
 }>>>;
-type CheckParticle = Assert<Equal<typeof testDatabase.archetypes.Particle, ReadonlyArchetype<RequiredComponents & {
+type CheckParticle = Assert<Equal<typeof testDatabase.archetypes.Particle, ReadonlyArchetype<{
     particle: boolean;
 }>>>;
 type CheckCreateParticle = Assert<Equal<typeof testDatabase.transactions.createParticle, {

@@ -1,11 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-// A single todo entity in the logical application State. The array position in
-// `State.todos` is its display order; the ECS materialises that ordering with
-// an `order` component (an implementation detail absent from the spec).
+// A single todo entity value in the logical application State — plain readonly
+// data with NO id: identity is the key of `State.entities`, never a field. The
+// `order` component carries the display order (the ECS materialises it the same
+// way), so entity values compare by content across the spec↔ecs boundary.
 export type Todo = {
-  readonly id: number;
   readonly name: string;
   readonly complete: boolean;
+  readonly order: number;
 };
 export * as Todo from "./public.js";

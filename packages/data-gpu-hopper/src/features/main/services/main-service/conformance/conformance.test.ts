@@ -9,8 +9,9 @@ import { projection } from "./projection.js";
 // transaction on `MainService.plugin` (hop / winGoal / loseLife / newGame) with its
 // same-named `data/state` transition, seeds each case's `before` over
 // `State.create()`, and round-trips `State.samples` through the projection. The
-// hazard bag is a `ReadonlySet`, so the comparator matches it order-independently
-// (the ecs materialises it in nondeterministic row order). `step` has no
+// hazards live in the identity-keyed `entities` `ReadonlyMap`, so the comparator
+// matches them order-independently (the ecs materialises them in nondeterministic
+// row order, and mints its own ids the `after`/`samples` refs leave open). `step` has no
 // transaction — the per-frame system loop conforms it in
 // `system-database/tick-loop.test.ts` (see systems.md) — so it is simply skipped
 // here. Hopper has no derivations, so no `computedPlugin`.

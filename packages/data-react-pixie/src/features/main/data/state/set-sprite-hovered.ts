@@ -4,47 +4,51 @@ import type { State } from "./state.js";
 import { entity, type Conformance } from "./conformance-case.js";
 import { Match } from "@adobe/data-testing";
 
-// Set the addressed sprite's `hovered` flag. Writes only `sprites`.
+// Set the addressed sprite's `hovered` flag. Writes only `entities`.
 export const setSpriteHovered = (
-  state: Pick<State, "sprites">,
+  state: Pick<State, "entities">,
   input: { readonly id: number; readonly hovered: boolean },
-): Pick<State, "sprites"> => ({
-  sprites: new Set(
-    [...state.sprites].map((sprite) =>
-      sprite.id === input.id ? { ...sprite, hovered: input.hovered } : sprite,
-    ),
-  ),
-});
+): Pick<State, "entities"> => {
+  const sprite = state.entities.get(input.id);
+  if (sprite === undefined) return { entities: state.entities };
+  return {
+    entities: new Map(state.entities).set(input.id, {
+      ...sprite,
+      hovered: input.hovered,
+    }),
+  };
+};
 
 const bunny: Sprite = {
-  id: 1, position: [100, 100], rotation: 0, kind: "bunny", hovered: false, active: false,
+  position: [100, 100], rotation: 0, kind: "bunny", hovered: false, active: false,
 };
 const fox: Sprite = {
-  id: 2, position: [300, 200], rotation: 1, kind: "fox", hovered: false, active: false,
+  position: [300, 200], rotation: 1, kind: "fox", hovered: false, active: false,
 };
 
 // Spec-owned cases, shared with the ecs `setSpriteHovered` transaction. `before`
-// ids address the sprite (`entity(1)`); `after` ids are left open (`anyNumber`).
+// keys are plain spec-ids the `args` address via `entity(1)`; `after` keys are
+// `Match.ref` distinct labels (the ecs mints its own ids).
 export const cases: Conformance<typeof setSpriteHovered> = [
   {
     name: "sets hovered true on the addressed sprite only",
-    before: { sprites: new Set([bunny, fox]) },
+    before: { entities: new Map([[1, bunny], [2, fox]]) },
     args: { id: entity(1), hovered: true },
     after: {
-      sprites: new Set([
-        { ...bunny, id: Match.anyNumber, hovered: true },
-        { ...fox, id: Match.anyNumber },
+      entities: new Map([
+        [Match.ref("a"), { ...bunny, hovered: true }],
+        [Match.ref("b"), fox],
       ]),
     },
   },
   {
     name: "is a no-op for an unknown id",
-    before: { sprites: new Set([bunny, fox]) },
+    before: { entities: new Map([[1, bunny], [2, fox]]) },
     args: { id: entity(99), hovered: true },
     after: {
-      sprites: new Set([
-        { ...bunny, id: Match.anyNumber },
-        { ...fox, id: Match.anyNumber },
+      entities: new Map([
+        [Match.ref("a"), bunny],
+        [Match.ref("b"), fox],
       ]),
     },
   },

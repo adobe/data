@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { State } from "../../../../data/state/state.js";
+import { Bullet } from "../../../../data/bullet/bullet.js";
 import type { CoreDatabase } from "../../core-database/core-database.js";
 import { clearEntities } from "./clear-entities.js";
 
@@ -14,7 +15,10 @@ export const newGame = (t: CoreDatabase.Store): void => {
   t.resources.lives = initial.lives;
   t.resources.wave = initial.wave;
   t.archetypes.Ship.insert(initial.ship);
-  for (const asteroid of initial.asteroids) {
-    t.archetypes.Asteroid.insert(asteroid);
+  // Insert each entity into its archetype by its structural guard (createInitial
+  // spawns only asteroids, but this mirrors the projection's fromState).
+  for (const value of initial.entities.values()) {
+    if (Bullet.is(value)) t.archetypes.Bullet.insert(value);
+    else t.archetypes.Asteroid.insert(value);
   }
 };

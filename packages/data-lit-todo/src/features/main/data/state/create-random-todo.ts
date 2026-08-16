@@ -10,17 +10,17 @@ import { Match } from "@adobe/data-testing";
  * Async, service-injected transition: brackets the slow name generation with
  * analytics timing, then appends the todo via the shared {@link appendTodo} (so
  * it does NOT fire `todoCreated` — it logs its own `randomTodoAdded`). Reads and
- * writes the todos — a `{ todos }` patch. Awaiting an async port makes it
- * `Promise<Pick<State, "todos">>`, but it stays deterministic given its injected
- * services — which is how it is unit-tested.
+ * writes the entities — an `{ entities }` patch. Awaiting an async port makes it
+ * `Promise<Pick<State, "entities">>`, but it stays deterministic given its
+ * injected services — which is how it is unit-tested.
  */
 export const createRandomTodo = async (
-  state: Pick<State, "todos">,
+  state: Pick<State, "entities">,
   {
     nameGenerator,
     analytics,
   }: Pick<Services, "nameGenerator" | "analytics">,
-): Promise<Pick<State, "todos">> => {
+): Promise<Pick<State, "entities">> => {
   const timing = await analytics.randomTodoRequested();
   const name = await nameGenerator.generateName();
   const next = appendTodo(state, { name });
@@ -29,13 +29,13 @@ export const createRandomTodo = async (
 };
 
 // Spec-owned cases. `before` is a delta over `State.create()`; `after` lists only
-// the written todos. Each injects deterministic doubles with the exact responses
-// it needs and authors `after` + `effects` against those self-owned values (the
-// name it schedules, the fixed `{ startedAt: 0 }` timing the analytics double
-// resolves). The value-returning reads (`randomTodoRequested`, `generateName`)
-// are still calls on `analytics`, so — analytics being a declared service — its
-// full call sequence is listed; `nameGenerator` is not declared, so its read is
-// ignored.
+// the written entities with a distinct `Match.ref` key. Each injects deterministic
+// doubles with the exact responses it needs and authors `after` + `effects` against
+// those self-owned values (the name it schedules, the fixed `{ startedAt: 0 }`
+// timing the analytics double resolves). The value-returning reads
+// (`randomTodoRequested`, `generateName`) are still calls on `analytics`, so — it
+// being a declared service — its full call sequence is listed; `nameGenerator` is
+// not declared, so its read is ignored.
 export const cases: Conformance<typeof createRandomTodo> = [
   {
     name: "names the new todo from the generator and logs the timed add",
@@ -45,13 +45,9 @@ export const cases: Conformance<typeof createRandomTodo> = [
       analytics: AnalyticsService.createFake(),
     },
     after: {
-      todos: [
-        {
-          id: Match.anyNumber,
-          name: "random task",
-          complete: false,
-        },
-      ],
+      entities: new Map([
+        [Match.ref("a"), { name: "random task", complete: false, order: 0 }],
+      ]),
     },
     effects: {
       analytics: [
@@ -74,7 +70,9 @@ export const cases: Conformance<typeof createRandomTodo> = [
       analytics: AnalyticsService.createFake(),
     },
     after: {
-      todos: [{ id: Match.anyNumber, name: "only name", complete: false }],
+      entities: new Map([
+        [Match.ref("a"), { name: "only name", complete: false, order: 0 }],
+      ]),
     },
     effects: {
       analytics: [

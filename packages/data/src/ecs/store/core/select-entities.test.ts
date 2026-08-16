@@ -28,13 +28,13 @@ describe("selectEntities", () => {
     });
 
     // Create multiple archetypes with different component combinations
-    const positionArchetype = core.ensureArchetype(["id", "position"]);
-    const healthArchetype = core.ensureArchetype(["id", "health"]);
-    const nameArchetype = core.ensureArchetype(["id", "name"]);
-    const positionHealthArchetype = core.ensureArchetype(["id", "position", "health"]);
-    const positionNameArchetype = core.ensureArchetype(["id", "position", "name"]);
-    const healthNameArchetype = core.ensureArchetype(["id", "health", "name"]);
-    const fullArchetype = core.ensureArchetype(["id", "position", "health", "name", "score", "active"]);
+    const positionArchetype = core.ensureArchetype(["position"]);
+    const healthArchetype = core.ensureArchetype(["health"]);
+    const nameArchetype = core.ensureArchetype(["name"]);
+    const positionHealthArchetype = core.ensureArchetype(["position", "health"]);
+    const positionNameArchetype = core.ensureArchetype(["position", "name"]);
+    const healthNameArchetype = core.ensureArchetype(["health", "name"]);
+    const fullArchetype = core.ensureArchetype(["position", "health", "name", "score", "active"]);
 
     // Create test entities across different archetypes
     const entities = {
@@ -382,7 +382,7 @@ describe("selectEntities", () => {
     describe("Performance characteristics", () => {
         it("should handle large number of entities efficiently", () => {
             // Create additional entities to test performance
-            const largeArchetype = core.ensureArchetype(["id", "score"]);
+            const largeArchetype = core.ensureArchetype(["score"]);
             const largeEntities: number[] = [];
 
             for (let i = 0; i < 100; i++) {

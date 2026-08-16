@@ -37,14 +37,18 @@ installing `@adobe/data` never pulls in a `vitest` peer dependency):
 
 - **`Match`** — the tolerant, matcher-aware value comparison: `matches(actual,
   expected, options?)` and its throwing wrapper `assert(...)`, plus the matchers
-  `Match.anyNumber` / `Match.anyString` / `Match.ref(label)`. Options are
+  `Match.anyNumber` / `Match.anyString` / `Match.ref(label)`, and the collection
+  builder `Match.refMap(values)` (an identity-keyed `ReadonlyMap<number, V>` of
+  id-less values with distinct open keys — the standard way to author a `samples`
+  entry or a created-entity `after`; see `../../../data/state.md`). Options are
   `{ tolerance?: number }` — numbers snap to `tolerance` (default `0.01`) to absorb
   F32↔f64 / trig noise. **Ordering is carried by the value's type**: a
   `ReadonlyArray` compares **in order**, a `ReadonlySet` / `ReadonlyMap`
-  **order-independently** — there is no `unordered` option. A numeric `id` a case
-  does not mention is **ignored** (the ECS allocates it), so entity content compares
-  without pinning ids. Framework-agnostic: it honors any asymmetric matcher, so
-  vitest's `expect.any(...)` interops.
+  **order-independently** — there is no `unordered` option. Entity identity is the
+  key of `State.entities` (a `ReadonlyMap<number, …>`), resolved to the allocated ECS
+  entity via `resolver` (below); entity *values* carry no `id`, so there is no id to
+  ignore when comparing content. Framework-agnostic: it honors any asymmetric matcher,
+  so vitest's `expect.any(...)` interops.
 - **`Conformance`** — the case types (`Case`, `Cases`, `DerivationCase`,
   `DerivationCases`, `Effects`, `ServiceCall`), the `entity(specId)` identity
   marker, the id `resolver(map)`, the whole-feature driver **`runFeature`**, the
@@ -144,10 +148,10 @@ Conformance.runFeature({
 `data-lit-tictactoe` is the zero-config call (no `computedPlugin`, no `hydrate`,
 no `match`, no `ops` — moves are board-index addressed, so no `entity()`
 markers). `data-lit-todo` adds `hydrate: ["visibleTodos"]` and `entity()` markers.
-`data-lit-space-rock-game` models its entity bags (`bullets`, `asteroids`) as
-`ReadonlySet` on `State`, so they compare order-independently by type — no `match`
-option (its per-frame transitions are conformed by the systems tick loop, not here — see
-`systems.md`).
+`data-lit-space-rock-game` holds its `bullet` / `asteroid` entities in the single
+`entities: ReadonlyMap<number, Bullet | Asteroid>`, keyed by id, so they compare
+order-independently by the map — no `match` option (its per-frame transitions are
+conformed by the systems tick loop, not here — see `systems.md`).
 
 ## The pure spec — `data/state/spec.test.ts`
 
@@ -205,9 +209,10 @@ positional, `ReadonlySet` / `ReadonlyMap` order-independent (the rule and its
 rationale live in `../../../data-modelling.md`). What's specific to writing
 conformance cases:
 
-- **A numeric `id` is ignored unless a case pins it.** The ECS allocates entity ids
-  from its own space, so a case omits `id` and the entity's content still compares.
-  Pin it only to assert a reference (below).
+- **Entity identity is the `State.entities` key, not a value field.** Entity values
+  carry no `id`, so there is nothing to omit or ignore — content compares directly.
+  The map key is a spec-domain id the runner resolves to the allocated ECS entity via
+  `resolver`; assert a *reference* between entities with `Match.ref` (below).
 - **Float noise** is absorbed by the default `tolerance` (`0.01`), threaded through
   `match?: { tolerance }`; raise it only when a case needs a looser grid.
 - **`Match.ref(label)`** on the expected side asserts id *correspondence* for a

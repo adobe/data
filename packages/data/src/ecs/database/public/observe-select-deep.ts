@@ -115,6 +115,17 @@ const createObserveSelectDeep = <
 /**
  * Deeply observe entity data for an archetype query.
  *
+ * ⚠️ NOT FOR PRODUCTION USE. This has poor runtime performance by construction:
+ * it attaches a separate per-entity observer to every matched entity, rebuilds a
+ * fresh data object on every change, and deep-`equals` compares to dedupe. Cost
+ * scales with the size of the result set times the churn rate. It exists for
+ * debugging and ad-hoc inspection only — reach for `db.observe.select` (entity
+ * ids + membership changes) and read components on demand in real code.
+ *
+ * The result rows include `id` deliberately: unlike `read(entity)` (where you
+ * already hold the id), these are otherwise-anonymous query results, so `id` is
+ * the only thing identifying which entity each row is.
+ *
  * Unlike `db.observe.select` (which returns entity IDs and only triggers on
  * set membership changes), `observeSelectDeep` returns full typed entity data
  * and re-emits whenever ANY included component value changes on any matched entity.

@@ -8,7 +8,6 @@ import { StringKeyof } from "../../../types/types.js";
 import { ReadonlyStore, Store } from "../../store/index.js";
 import { Observe } from "../../../observe/index.js";
 import { TransactionResult } from "../transactional-store/index.js";
-import { RequiredComponents } from "../../required-components.js";
 import { Entity } from "../../entity/entity.js";
 import { EntityReadValues } from "../../store/core/index.js";
 import { Database } from "../database.js";
@@ -24,7 +23,7 @@ export interface ObservedDatabase<
         readonly components: { readonly [K in StringKeyof<C>]: Observe<void> };
         readonly resources: { readonly [K in StringKeyof<R>]: Observe<R[K]> };
         readonly transactions: Observe<TransactionResult<C>>;
-        entity<T extends RequiredComponents>(id: Entity, minArchetype?: ReadonlyArchetype<T> | Archetype<T>): Observe<Readonly<T> & EntityReadValues<C> | null>;
+        entity<T>(id: Entity, minArchetype?: ReadonlyArchetype<T> | Archetype<T>): Observe<Readonly<T> & EntityReadValues<C> | null>;
         entity(id: Entity): Observe<EntityReadValues<C> | null>;
         archetype(id: ArchetypeId): Observe<void>;
         select<

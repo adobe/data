@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect } from "vitest";
-import { matches, ref, anyNumber, anyString } from "./public.js";
+import { matches, ref, refMap, anyNumber, anyString } from "./public.js";
 
 describe("Match.matches", () => {
   it("compares plain structures deeply", () => {
@@ -23,17 +23,13 @@ describe("Match.matches", () => {
     expect(matches(7, expect.any(Number))).toBe(true);
   });
 
-  it("ignores a numeric id a case does not mention, honors one it pins", () => {
-    // Omitted → the ecs-allocated id is not compared.
-    expect(matches({ id: 7, name: "a" }, { name: "a" })).toBe(true);
-    expect(matches({ id: 7, name: "a" }, { name: "b" })).toBe(false);
-    // Present → compared like any field (so a case can still pin it).
+  it("treats id like any other property", () => {
+    // An id a case cares about is pinned and compared like any field.
     expect(matches({ id: 7 }, { id: 7 })).toBe(true);
     expect(matches({ id: 7 }, { id: 8 })).toBe(false);
-    // Only the `id` key is special; another extra key still fails.
+    // An unmentioned id is an extra key and fails, exactly like any extra key.
+    expect(matches({ id: 7, name: "a" }, { name: "a" })).toBe(false);
     expect(matches({ extra: 1, name: "a" }, { name: "a" })).toBe(false);
-    // Only a NUMERIC id is auto-ignored.
-    expect(matches({ id: "x", name: "a" }, { name: "a" })).toBe(false);
   });
 
   it("compares arrays in order, Sets and Maps order-independently", () => {
@@ -44,9 +40,9 @@ describe("Match.matches", () => {
     expect(matches(new Set([1, 2]), new Set([1, 2, 3]))).toBe(false);
     expect(matches(new Set([1, 2]), [1, 2])).toBe(false); // Set ≠ Array
 
-    // Set of entities: content pairs order-independently, ids ignored.
+    // Set of entities: content pairs order-independently.
     expect(
-      matches(new Set([{ id: 1, x: 1 }, { id: 2, x: 2 }]), new Set([{ x: 2 }, { x: 1 }])),
+      matches(new Set([{ x: 1 }, { x: 2 }]), new Set([{ x: 2 }, { x: 1 }])),
     ).toBe(true);
 
     // Map entries pair by (meaningful) key regardless of insertion order.
@@ -79,13 +75,39 @@ describe("Match.matches", () => {
       const actual = { sel: 100, items: new Set([{ id: 100, x: 1 }, { id: 200, x: 2 }]) };
       const expected = {
         sel: ref("a"),
-        items: new Set([{ id: ref("a"), x: 1 }, { x: 2 }]),
+        items: new Set([{ id: ref("a"), x: 1 }, { id: anyNumber, x: 2 }]),
       };
       expect(matches(actual, expected)).toBe(true);
 
       // `sel` points at an id no item carries → no consistent pairing exists.
       const dangling = { sel: 999, items: new Set([{ id: 100, x: 1 }, { id: 200, x: 2 }]) };
       expect(matches(dangling, expected)).toBe(false);
+    });
+  });
+
+  describe("refMap", () => {
+    it("matches an identity-keyed entity collection regardless of the actual ids", () => {
+      const actual = new Map([
+        [10, { name: "a" }],
+        [20, { name: "b" }],
+      ]);
+      // Same values, ecs-minted keys — refMap leaves the keys open.
+      expect(matches(actual, refMap([{ name: "a" }, { name: "b" }]))).toBe(true);
+      // A value mismatch still fails.
+      expect(matches(actual, refMap([{ name: "a" }, { name: "c" }]))).toBe(false);
+      // Cardinality mismatch fails.
+      expect(matches(actual, refMap([{ name: "a" }]))).toBe(false);
+    });
+
+    it("keys are distinct — entries never collapse the way a shared matcher would", () => {
+      const actual = new Map([
+        [1, { v: 1 }],
+        [2, { v: 1 }],
+      ]);
+      // Two equal values in two entries: refMap keeps two entries (distinct keys),
+      // so both must pair. A single shared `anyNumber` key would collapse to one.
+      expect(matches(actual, refMap([{ v: 1 }, { v: 1 }]))).toBe(true);
+      expect(matches(new Map([[1, { v: 1 }]]), refMap([{ v: 1 }, { v: 1 }]))).toBe(false);
     });
   });
 });

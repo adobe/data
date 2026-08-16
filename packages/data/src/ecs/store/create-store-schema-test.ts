@@ -2,7 +2,7 @@
 
 import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";
-import { Archetype, RequiredComponents } from "../index.js";
+import { Archetype } from "../index.js";
 import { Store } from "./store.js";
 
 const storeSchema = Store.Schema.create({
@@ -21,10 +21,10 @@ const storeSchema = Store.Schema.create({
 })
 
 type TestStore = Store.FromSchema<typeof storeSchema>;
-type CheckParticle = Assert<Equal<TestStore["archetypes"]["Particle"], Archetype<RequiredComponents & {
+type CheckParticle = Assert<Equal<TestStore["archetypes"]["Particle"], Archetype<{
     particle: boolean;
 }>>>;
-type CheckDynamicParticle = Assert<Equal<TestStore["archetypes"]["DynamicParticle"], Archetype<RequiredComponents & {
+type CheckDynamicParticle = Assert<Equal<TestStore["archetypes"]["DynamicParticle"], Archetype<{
     particle: boolean;
     velocity: number;
 }>>>;

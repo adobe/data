@@ -1,4 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
 import type { Conformance } from "./conformance-case.js";
 import { Input } from "../input/input.js";
@@ -69,9 +70,8 @@ export const cases: Conformance<typeof step> = [
     before: {
       bounds: [200, 200],
       ship: { position: [190, 100], velocity: [30, 0], rotation: 0 },
-      bullets: new Set(),
-      asteroids: new Set([
-        { position: [190, 180], velocity: [30, 30], size: "large" },
+      entities: new Map([
+        [1, { position: [190, 180], velocity: [30, 30], size: "large" }],
       ]),
       score: 0,
       lives: 3,
@@ -81,9 +81,8 @@ export const cases: Conformance<typeof step> = [
     after: {
       bounds: [200, 200],
       ship: { position: [20, 100], velocity: [30, 0], rotation: 0 },
-      bullets: new Set(),
-      asteroids: new Set([
-        { position: [20, 10], velocity: [30, 30], size: "large" },
+      entities: new Map([
+        [Match.ref("a"), { position: [20, 10], velocity: [30, 30], size: "large" }],
       ]),
       score: 0,
       lives: 3,
@@ -95,9 +94,8 @@ export const cases: Conformance<typeof step> = [
     before: {
       bounds: [400, 400],
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
-      bullets: new Set(),
-      asteroids: new Set([
-        { position: [350, 350], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [1, { position: [350, 350], velocity: [0, 0], size: "large" }],
       ]),
       score: 0,
       lives: 3,
@@ -111,9 +109,9 @@ export const cases: Conformance<typeof step> = [
     after: {
       bounds: [400, 400],
       ship: { position: [100, 100], velocity: [0, 0], rotation: 0 },
-      bullets: new Set([{ position: [152, 100], velocity: [400, 0], age: 0.1 }]),
-      asteroids: new Set([
-        { position: [350, 350], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [Match.ref("b"), { position: [152, 100], velocity: [400, 0], age: 0.1 }],
+        [Match.ref("a"), { position: [350, 350], velocity: [0, 0], size: "large" }],
       ]),
       score: 0,
       lives: 3,
@@ -125,9 +123,9 @@ export const cases: Conformance<typeof step> = [
     before: {
       bounds: [800, 600],
       ship: { position: [700, 500], velocity: [0, 0], rotation: 0 },
-      bullets: new Set([{ position: [100, 100], velocity: [0, 0], age: 0 }]),
-      asteroids: new Set([
-        { position: [100, 100], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [1, { position: [100, 100], velocity: [0, 0], age: 0 }],
+        [2, { position: [100, 100], velocity: [0, 0], size: "large" }],
       ]),
       score: 0,
       lives: 3,
@@ -137,10 +135,9 @@ export const cases: Conformance<typeof step> = [
     after: {
       bounds: [800, 600],
       ship: { position: [700, 500], velocity: [0, 0], rotation: 0 },
-      bullets: new Set(),
-      asteroids: new Set([
-        { position: [100, 100], velocity: [0, 0], size: "medium" },
-        { position: [100, 100], velocity: [0, 0], size: "medium" },
+      entities: new Map([
+        [Match.ref("m1"), { position: [100, 100], velocity: [0, 0], size: "medium" }],
+        [Match.ref("m2"), { position: [100, 100], velocity: [0, 0], size: "medium" }],
       ]),
       score: 20,
       lives: 3,
@@ -152,9 +149,8 @@ export const cases: Conformance<typeof step> = [
     before: {
       bounds: [200, 200],
       ship: Ship.spawn([100, 100]),
-      bullets: new Set(),
-      asteroids: new Set([
-        { position: [100, 100], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [1, { position: [100, 100], velocity: [0, 0], size: "large" }],
       ]),
       score: 0,
       lives: 3,
@@ -164,9 +160,8 @@ export const cases: Conformance<typeof step> = [
     after: {
       bounds: [200, 200],
       ship: Ship.spawn([100, 100]),
-      bullets: new Set(),
-      asteroids: new Set([
-        { position: [100, 100], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [Match.ref("a"), { position: [100, 100], velocity: [0, 0], size: "large" }],
       ]),
       score: 0,
       lives: 2,
@@ -178,9 +173,9 @@ export const cases: Conformance<typeof step> = [
     before: {
       bounds: [200, 200],
       ship: { position: [50, 50], velocity: [10, 0], rotation: 0 },
-      bullets: new Set([{ position: [60, 60], velocity: [0, 0], age: 0.5 }]),
-      asteroids: new Set([
-        { position: [100, 100], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [1, { position: [60, 60], velocity: [0, 0], age: 0.5 }],
+        [2, { position: [100, 100], velocity: [0, 0], size: "large" }],
       ]),
       score: 40,
       lives: 0,
@@ -194,9 +189,9 @@ export const cases: Conformance<typeof step> = [
     after: {
       bounds: [200, 200],
       ship: { position: [50, 50], velocity: [10, 0], rotation: 0 },
-      bullets: new Set([{ position: [60, 60], velocity: [0, 0], age: 0.5 }]),
-      asteroids: new Set([
-        { position: [100, 100], velocity: [0, 0], size: "large" },
+      entities: new Map([
+        [Match.ref("b"), { position: [60, 60], velocity: [0, 0], age: 0.5 }],
+        [Match.ref("a"), { position: [100, 100], velocity: [0, 0], size: "large" }],
       ]),
       score: 40,
       lives: 0,

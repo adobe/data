@@ -3,7 +3,6 @@ import type { StringKeyof } from "../../types/types.js";
 import type { FromSchemas } from "../../schema/from-schemas.js";
 import type { ComponentSchemas } from "../component-schemas.js";
 import type { ArchetypeComponents } from "./archetype-components.js";
-import type { RequiredComponents } from "../required-components.js";
 import type { OptionalComponents } from "../optional-components.js";
 import type { ReadonlyArchetype } from "../archetype/archetype.js";
 
@@ -16,9 +15,9 @@ export type ArchetypeSchema = {
 export type ArchetypeRowOf<
     S extends ArchetypeSchema,
     K extends StringKeyof<S["archetypes"]>,
-> = RequiredComponents & {
+> = {
     readonly [Col in S["archetypes"][K][number]]:
-        (FromSchemas<S["components"]> & RequiredComponents & OptionalComponents)[Col]
+        (FromSchemas<S["components"]> & OptionalComponents)[Col]
 };
 
 export type ArchetypeHandleOf<

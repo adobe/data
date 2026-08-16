@@ -1,2 +1,2 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-export {};
+export { is } from "./is.js";

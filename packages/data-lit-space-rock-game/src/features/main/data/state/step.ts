@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { Input } from "../input/input.js";
 import { Ship } from "../ship/ship.js";
 import { stepShip } from "./step-ship.js";
@@ -63,7 +63,7 @@ export const step = (
 // exact. NONE clears the field, so `random` is never drawn (a fresh double per
 // case satisfies the signature without affecting the outcome); the randomized
 // refill is conformed out-of-band via the `spawnRandomWave` transaction.
-export const cases: Conformance<typeof step> = [
+export const cases = Conformance.cases(step,
   {
     name: "advances and wraps every body (movement)",
     before: {
@@ -197,4 +197,4 @@ export const cases: Conformance<typeof step> = [
       wave: 2,
     },
   },
-];
+);

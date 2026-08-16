@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Entity } from "@adobe/data/ecs";
 import type { State } from "./state.js";
 import type { Todo } from "../todo/todo.js";
-import { entity, type Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 /**
  * Moves the todo with the given id to `toIndex` within the display order,
  * preserving the relative order of every other todo, then recomputes every
@@ -36,7 +37,6 @@ const three: readonly (readonly [number, Todo])[] = [
   [2, { name: "b", complete: false, order: 1 }],
   [3, { name: "c", complete: false, order: 2 }],
 ];
-
 // Spec-owned cases, shared with the ecs `dragTodo` transaction (its final drop is
 // the same move — `finalIndex` is `toIndex`, followed by `normalizeOrder`).
 // `before` is a delta over `State.create()` keyed by PLAIN spec-ids; `after` lists
@@ -44,11 +44,11 @@ const three: readonly (readonly [number, Todo])[] = [
 // `order`. Every case keeps all todos incomplete with `displayCompleted` true, so
 // the visible list `dragTodo` indexes equals the full list. The unknown-id no-op is
 // exercised only by the pure transform — `dragTodo` has no such guard.
-export const cases: Conformance<typeof reorderTodo> = [
+export const cases = Conformance.cases(reorderTodo, { args: { type: "object", properties: { id: Entity.schema }, required: ["id"] } },
   {
     name: "moves the first todo to the end",
     before: { entities: new Map(three), displayCompleted: true },
-    args: { id: entity(1), toIndex: 2 },
+    args: { id: 1, toIndex: 2 },
     after: {
       entities: new Map([
         [1, { name: "b", complete: false, order: 0 }],
@@ -60,7 +60,7 @@ export const cases: Conformance<typeof reorderTodo> = [
   {
     name: "moves the last todo to the front",
     before: { entities: new Map(three), displayCompleted: true },
-    args: { id: entity(3), toIndex: 0 },
+    args: { id: 3, toIndex: 0 },
     after: {
       entities: new Map([
         [1, { name: "c", complete: false, order: 0 }],
@@ -72,7 +72,7 @@ export const cases: Conformance<typeof reorderTodo> = [
   {
     name: "clamps an out-of-range index to the end",
     before: { entities: new Map(three), displayCompleted: true },
-    args: { id: entity(1), toIndex: 99 },
+    args: { id: 1, toIndex: 99 },
     after: {
       entities: new Map([
         [1, { name: "b", complete: false, order: 0 }],
@@ -84,7 +84,7 @@ export const cases: Conformance<typeof reorderTodo> = [
   {
     name: "keeps the order when moving to the same index",
     before: { entities: new Map(three), displayCompleted: true },
-    args: { id: entity(2), toIndex: 1 },
+    args: { id: 2, toIndex: 1 },
     after: {
       entities: new Map([
         [1, { name: "a", complete: false, order: 0 }],
@@ -93,4 +93,4 @@ export const cases: Conformance<typeof reorderTodo> = [
       ]),
     },
   },
-];
+);

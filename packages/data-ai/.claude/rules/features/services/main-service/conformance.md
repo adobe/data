@@ -50,8 +50,8 @@ installing `@adobe/data` never pulls in a `vitest` peer dependency):
   ignore when comparing content. Framework-agnostic: it honors any asymmetric matcher,
   so vitest's `expect.any(...)` interops.
 - **`Conformance`** — the case types (`Case`, `Cases`, `DerivationCase`,
-  `DerivationCases`, `Effects`, `ServiceCall`), the `entity(specId)` identity
-  marker, the id `resolver(map)`, the whole-feature driver **`runFeature`**, the
+  `DerivationCases`, `Effects`, `ServiceCall`), the `casesBuilder` (a feature's
+  `Conformance.cases`), `assertState` for custom harnesses, the whole-feature driver **`runFeature`**, the
   pure-spec driver **`runSpec`**, and the lower-level per-surface drivers
   `runTransactions` / `runActions` / `runComputeds` (internals of `runFeature`,
   exported for the escape hatch below). Auto-pairing (transition ⇄ op by name),
@@ -167,8 +167,8 @@ Conformance.runSpec({ state: State, transitions });
 It discovers every file exporting `cases`, enforces the two-exports rule, and
 dispatches on case shape (transition → state + effects, derivation →
 `fn(input) ≡ value`), seeding each case's `before`/`input` as a delta over
-`State.create()`. Unwraps any `entity(specId)` arg marker to its plain data-id for
-the pure side.
+`State.create()`. On the ECS side it resolves the reference args a case's `args`
+schema marks; the pure side reads them plain.
 
 ## The exception — a per-surface `userId`, via the lower-level runners
 
@@ -182,17 +182,21 @@ action db. `runFeature` has no place to thread two different `seedContext`s, so
 this feature drops to the lower level. This is the escape hatch — ordinary
 features never touch these drivers directly.
 
-## Identity — the `entity(specId)` marker
+## Identity — the `args` schema
 
-An entity-addressed transition writes its addressed id as `args: { id: entity(2) }`
-— import `entity`, re-exported from the feature's `data/state/conformance-case.ts`.
-`runSpec` unwraps it to the plain data-id; the ECS runner resolves it to the
+An entity-addressed transition declares an `args` schema in the builder options and
+writes the id **plain**: `Conformance.cases(fn, { args: { type: "object", properties:
+{ id: Entity.schema }, required: ["id"] } }, { …, args: { id: 2 }, … })`. The runner
+finds each `Entity.schema`-marked arg field and resolves the plain spec-id to the
 **seeded entity** via the id→entity map `fromState` returns (turned into a `resolve`
-by `Conformance.resolver` — no feature writes `resolve` by hand). Two conventions
-make the wiring vanish: the ECS op takes the entity **under the transition's own arg
-key** (`{ id }`, same-shape args, no reshape), and `fromState` returns the
-`ReadonlyMap<Id, Entity>` id→entity map (or `void` for an index-addressed / singleton
-feature, whose ids then resolve to `Entity.none`). `data-lit-todo` is the reference.
+by `Conformance.resolver` — no feature writes `resolve` by hand); the pure side reads
+the spec-id as-is. Two conventions make the wiring vanish: the ECS op takes the entity
+**under the transition's own arg key** (`{ id }`, same-shape args, no reshape), and
+`fromState` returns the `ReadonlyMap<Id, Entity>` id→entity map (or `void` for an
+index-addressed / singleton feature, whose ids then resolve to `Entity.none`).
+`data-lit-todo` is the reference. Describe only the reference fields — services and
+non-id args are omitted, and the args type must be assignable to the schema's
+`Schema.ToType` so it cannot drift from the signature.
 
 ## Name-parity — add a same-named op, never a per-item adapter
 

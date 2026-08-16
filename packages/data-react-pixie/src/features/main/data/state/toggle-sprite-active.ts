@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Entity } from "@adobe/data/ecs";
 import type { Sprite } from "../sprite/sprite.js";
 import type { State } from "./state.js";
-import { entity, type Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 
 // Flip the addressed sprite's `active` flag. Writes only `entities`.
 export const toggleSpriteActive = (
@@ -26,13 +27,13 @@ const activeFox: Sprite = {
 };
 
 // Spec-owned cases, shared with the ecs `toggleSpriteActive` transaction. `before`
-// keys are plain spec-ids the `args` address via `entity()`; `after` keys are
+// keys are plain spec-ids the `args` address by id (the `args` schema marks `id` as a reference); `after` keys are
 // plain spec-ids (the ecs mints its own; compared up to an id-bijection).
-export const cases: Conformance<typeof toggleSpriteActive> = [
+export const cases = Conformance.cases(toggleSpriteActive, { args: { type: "object", properties: { id: Entity.schema }, required: ["id"] } },
   {
     name: "toggles a sprite from inactive to active",
     before: { entities: new Map([[1, bunny], [2, activeFox]]) },
-    args: { id: entity(1) },
+    args: { id: 1 },
     after: {
       entities: new Map([
         [1, { ...bunny, active: true }],
@@ -43,7 +44,7 @@ export const cases: Conformance<typeof toggleSpriteActive> = [
   {
     name: "toggles a sprite from active to inactive",
     before: { entities: new Map([[1, bunny], [2, activeFox]]) },
-    args: { id: entity(2) },
+    args: { id: 2 },
     after: {
       entities: new Map([
         [1, bunny],
@@ -54,7 +55,7 @@ export const cases: Conformance<typeof toggleSpriteActive> = [
   {
     name: "is a no-op for an unknown id",
     before: { entities: new Map([[1, bunny], [2, activeFox]]) },
-    args: { id: entity(99) },
+    args: { id: 99 },
     after: {
       entities: new Map([
         [1, bunny],
@@ -62,4 +63,4 @@ export const cases: Conformance<typeof toggleSpriteActive> = [
       ]),
     },
   },
-];
+);

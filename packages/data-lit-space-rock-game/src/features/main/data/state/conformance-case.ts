@@ -1,13 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Conformance as ConformanceApi } from "@adobe/data-testing";
+import { Conformance as ConformanceApi } from "@adobe/data-testing";
 import type { State } from "./state.js";
 
-// The conformance case types for this feature — the shared `@adobe/data-testing`
-// machinery with `State` bound once, so a transform authors `Conformance<typeof fn>`
-// and a derivation `Derivation<typeof fn>` (args/input/value read from the
-// function's own signature). This tiny file is the only per-feature conformance
-// type declaration; everything else lives in `@adobe/data-testing`.
-export type Conformance<F extends (...args: never[]) => unknown> =
-  ConformanceApi.Cases<State, F>;
+// The per-feature conformance surface — the shared `@adobe/data-testing` machinery
+// with `State` bound once. `Conformance.cases(fn, [options,] ...cases)` declares a
+// transform's cases (the case types come from `fn`); a derivation authors
+// `Derivation<typeof fn>`. This tiny file is the only per-feature conformance
+// declaration; everything else lives in `@adobe/data-testing`.
+export const Conformance = { cases: ConformanceApi.casesBuilder<State>() };
 export type Derivation<F extends (...args: never[]) => unknown> =
   ConformanceApi.DerivationCases<F>;

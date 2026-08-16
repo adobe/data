@@ -2,7 +2,7 @@
 import { Direction } from "../direction/direction.js";
 import { GameStatus } from "../game-status/game-status.js";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 
 const clamp = (value: number, max: number): number => Math.max(0, Math.min(max, value));
 
@@ -37,7 +37,7 @@ const base: Omit<State, "frog"> = {
 
 // Spec-owned cases, shared with the ecs `hop` transaction. `before` overrides the
 // default with a small test board; `after` is the writes patch (`frog` only).
-export const cases: Conformance<typeof hop> = [
+export const cases = Conformance.cases(hop,
   { name: "hops up toward the goal",
     before: { ...base, frog: { x: 2, y: 0 } }, args: "up", after: { frog: { x: 2, y: 1 } } },
   { name: "hops down toward the start",
@@ -61,4 +61,4 @@ export const cases: Conformance<typeof hop> = [
   { name: "ignores input once the game is over",
     before: { ...base, status: "gameOver", frog: { x: 2, y: 1 } }, args: "up",
     after: { frog: { x: 2, y: 1 } } },
-];
+);

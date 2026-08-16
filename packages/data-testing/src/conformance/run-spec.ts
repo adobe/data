@@ -3,7 +3,6 @@ import { describe, it } from "vitest";
 import { Database, Store } from "@adobe/data/ecs";
 import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
-import { adaptArgs } from "./entity-ref.js";
 import { expectAfter } from "./expect-after.js";
 import type { SchemaSource } from "./refify.js";
 import { recordArgServices, expectEffects } from "./record-effects.js";
@@ -85,7 +84,10 @@ export const runSpec = (config: SpecRunConfig): void => {
       suites.push({ kind: "invalid", path, label, exportNames });
       continue;
     }
-    const cases = module["cases"] as readonly unknown[];
+    // `cases` is either a plain array or the builder's `{ args, cases }` options
+    // form; the pure side ignores the `args` schema (spec-ids need no resolution).
+    const rawCases = module["cases"];
+    const cases = Array.isArray(rawCases) ? rawCases : ((rawCases as { cases?: readonly unknown[] })?.cases ?? []);
     // Empty `cases: []` is not a suite (and would open a Vitest describe with no
     // tests, which fails even when this file has other suites).
     if (cases.length === 0) continue;
@@ -129,9 +131,9 @@ export const runSpec = (config: SpecRunConfig): void => {
           readonly effects?: Effects<Record<string, unknown>>;
         };
         it(tc.name, async () => {
-          // Unwrap `entity(specId)` markers to their data-id for the pure spec, then
-          // wrap injected services so their calls are recorded.
-          const { args, calls } = recordArgServices(adaptArgs(tc.args));
+          // The pure spec reads args as authored — plain spec-ids that already match
+          // the state keys, no resolution. Just wrap injected services to record calls.
+          const { args, calls } = recordArgServices(tc.args);
           // Case `before` is a delta over the feature default; `after` a writes patch.
           const before = {
             ...(config.state?.create() ?? {}),

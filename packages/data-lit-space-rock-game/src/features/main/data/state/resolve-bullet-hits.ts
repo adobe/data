@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Vec2 } from "@adobe/data/math";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
 import { Bullet } from "../bullet/bullet.js";
 import { Asteroid } from "../asteroid/asteroid.js";
@@ -78,7 +78,7 @@ export const resolveBulletHits = (
 // broad phase need not match the spec's order — collections compare as multisets).
 const field = { ...create(), bounds: [800, 600] as [number, number] };
 
-export const cases: Conformance<typeof resolveBulletHits> = [
+export const cases = Conformance.cases(resolveBulletHits,
   {
     name: "destroys bullet + asteroid, scores, and spawns split children (large → 2 medium)",
     before: {
@@ -258,4 +258,4 @@ export const cases: Conformance<typeof resolveBulletHits> = [
       score: 50,
     },
   },
-];
+);

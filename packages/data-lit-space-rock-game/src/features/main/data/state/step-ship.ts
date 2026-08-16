@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
 import { Ship } from "../ship/ship.js";
 import { Input } from "../input/input.js";
@@ -32,7 +32,7 @@ export const stepShip = (
 const field = { ...create(), bounds: [100, 100] as [number, number] };
 const idle: Input = { turn: 0, thrust: false, fire: false };
 
-export const cases: Conformance<typeof stepShip> = [
+export const cases = Conformance.cases(stepShip,
   {
     name: "turns right by a positive turn input",
     before: {
@@ -119,4 +119,4 @@ export const cases: Conformance<typeof stepShip> = [
       ship: { position: [50, 50], velocity: [200, 0], rotation: 0 },
     },
   },
-];
+);

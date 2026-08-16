@@ -2,7 +2,7 @@
 import { BoardState } from "../board-state/board-state.js";
 import { PlayMoveArgs } from "../play-move-args/play-move-args.js";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 
 // Place the current player's mark into `index`. Reads the board + first player,
 // writes the board — a `{ board }` patch. Illegal moves (out of bounds, occupied,
@@ -31,7 +31,7 @@ export const playMove = (
 // only what the move writes — the board. Covers a legal placement, turn alternation
 // by move count, a winning placement, and the three rejections (occupied, out of
 // bounds, already won) that leave the board as-is.
-export const cases: Conformance<typeof playMove> = [
+export const cases = Conformance.cases(playMove,
   {
     name: "places the first player's mark into an empty cell",
     before: {},
@@ -68,4 +68,4 @@ export const cases: Conformance<typeof playMove> = [
     args: { index: 4 },
     after: { board: "XXX      " },
   },
-];
+);

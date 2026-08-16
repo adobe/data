@@ -152,7 +152,7 @@ and `.test.ts`.
 fixtures the pure `spec.test.ts` **and** the ecs `runFeature` call both reuse
 (driving transaction / action / computed conformance) — the transform's contract
 expressed as data, not a per-file test — so they belong
-beside the thing they specify, and `Conformance<typeof fn>` binds them to the
+beside the thing they specify, and `Conformance.cases(fn, …)` binds them to the
 signature so they can't drift. Kept inert (no `describe`; one aggregator runs
 them) they also sidestep the double execution vitest triggers when a single file
 both exports cases and runs its own `describe`. Coverage is then enforced
@@ -172,18 +172,16 @@ transform/derivation files can write a one-parameter type:
 // data/state/conformance-case.ts — the only per-feature conformance declaration
 import { Conformance as ConformanceApi } from "@adobe/data-testing";
 import type { State } from "./state.js";
-export type Conformance<F extends (...args: never[]) => unknown> = ConformanceApi.Cases<State, F>;
+// `Conformance.cases(fn, [options,] ...cases)` declares a transform's cases — the
+// case types (args, before/after) come from `fn`. A derivation authors `Derivation<typeof fn>`.
+export const Conformance = { cases: ConformanceApi.casesBuilder<State>() };
 export type Derivation<F extends (...args: never[]) => unknown> = ConformanceApi.DerivationCases<F>;
 export type Effects<Args> = ConformanceApi.Effects<Args>;
-// The entity-reference marker for identity-addressed case args, re-exported so
-// cases import it beside `Conformance`: `args: { id: entity(2) }`.
-export const entity = ConformanceApi.entity;
 ```
 
 ```ts
 // create-todo.ts
-import { Match } from "@adobe/data-testing";
-import type { Conformance } from "./conformance-case.js";      // the thin per-feature alias above
+import { Conformance } from "./conformance-case.js";           // the thin per-feature alias above
 import type { Services } from "../../services/services.js";    // the feature's service map
 export const createTodo = (
     state: Pick<State, "entities">,
@@ -197,7 +195,7 @@ export const createTodo = (
     return { entities: new Map(state.entities).set(id, { name, complete: false, order }) };
 };
 
-export const cases: Conformance<typeof createTodo> = [
+export const cases = Conformance.cases(createTodo,
     { name: "adds the first todo",
       before: {},                       // empty delta — the default State.create() (empty entities)
       args: { name: "a", analytics: AnalyticsService.createFake() },
@@ -207,7 +205,7 @@ export const cases: Conformance<typeof createTodo> = [
       // order-independently — see conformance.md.)
       after: { entities: new Map([[1, { name: "a", complete: false, order: 0 }]]) },
       effects: { analytics: [["todoCreated", { name: "a" }]] } },
-];
+);
 ```
 
 - **Signature** `(state: Pick<State, …reads>, args) => Pick<State, …writes>` — a
@@ -215,8 +213,8 @@ export const cases: Conformance<typeof createTodo> = [
   transition **reads**; the return is *only the fields it **writes***. **No
   `<T> => T` generic, no `...state` spread** in the return — return the patch and
   let the runner merge it. **All non-state inputs go in the single `args` object**
-  (`Conformance<typeof fn>` reads `Parameters[1]`) — bundle a `dt`, an injected
-  service, etc. into it, never as a third positional. A transition that takes
+  (the case's `args` type is read from `fn`'s `Parameters[1]`) — bundle a `dt`, an
+  injected service, etc. into it, never as a third positional. A transition that takes
   **no** args omits `args` from each case entirely (the shared `Case` type makes
   `args` optional exactly then). **Guard no-ops by returning an empty patch `{}`**
   (or the unchanged slice), never throw.
@@ -229,9 +227,9 @@ export const cases: Conformance<typeof createTodo> = [
   any barrel member) in a top-level `cases` literal dead-locks the import cycle.
   Import the concrete helper directly (`import { create } from "./create.js"`) or
   inline full-`State` literals.
-- **`Conformance<typeof fn>`** (the alias above) derives the case `args` type from
-  the function's own signature — author it once, and cases can't drift from what
-  the function accepts. **`before` is a delta over `State.create()`** — list only
+- **`Conformance.cases(fn, ...cases)`** (the builder above) derives each case's
+  types from `fn`'s own signature — pass the transition function and cases can't drift
+  from what it accepts. **`before` is a delta over `State.create()`** — list only
   the fields this case sets differently from the default; **`after` is the writes
   patch** — only the fields the transition changes. The runner seeds
   `{ ...State.create(), ...before }` and compares against
@@ -255,18 +253,22 @@ export const cases: Conformance<typeof createTodo> = [
   framework-agnostic, so vitest's `expect.stringContaining(...)` interops on the expected
   side too. (The id-correspondence solver is now internal — the runner generates it from
   the schema-marked spec-ids; there is no case-facing `ref`/`refMap` matcher anymore.)
-- **Entity-addressed cases use `entity(specId)` in `args`.** State references are
-  detected from the store's schemas; an **arg** has no schema, so a transition that
-  addresses an entity by id marks it `args: { id: entity(2) }` — `entity` imported from
-  the feature's `conformance-case.ts` (re-exported from `@adobe/data-testing`). It types
-  as the id it stands for, so it slots into the transform's own arg type. `runSpec`
-  unwraps it to the plain data-id for the pure side; the ECS runners resolve it (via the
-  `fromState` seed map) to the seeded entity (see `conformance.md`). This is the args-side
-  analog of the `Entity.schema` mark the runner reads on state.
+- **Entity-addressed cases pass an `args` schema in the builder options.** State
+  references are detected from the store's schemas; an **arg** has none, so a transition
+  that addresses an entity by id gives `Conformance.cases` a leading options object whose
+  `args` schema marks the reference fields:
+  `Conformance.cases(fn, { args: { type: "object", properties: { id: Entity.schema }, required: ["id"] } }, …cases)`.
+  The case then writes the id **plain** — `args: { id: 2 }` — and the runner resolves each
+  `Entity.schema`-marked field to the seeded entity (via the `fromState` seed map) on the
+  ECS side, while the pure side reads the plain spec-id directly. Describe **only** the
+  reference fields (services and non-id args are omitted); the args type must be assignable
+  to the schema's `Schema.ToType`, so the schema can't drift from the signature (the builder
+  fails to type-check otherwise). This is the args-side analog of the `Entity.schema` mark
+  the runner reads on state.
 - **The `entities` map key convention across a case, in one place:**
   - **`before`** (the seed): **plain spec-id numbers** (`new Map([[1, …], [2, …]])`).
-    `fromState` seeds from these and returns the `spec-id → entity` map, so `args:
-    { id: entity(1) }` resolves to the entity seeded for `1`.
+    `fromState` seeds from these and returns the `spec-id → entity` map, so a case's
+    `args: { id: 1 }` resolves to the entity seeded for `1`.
   - **`after`** (the expectation, compared against the ECS): **plain spec-id numbers**,
     distinct per entry, and reference fields hold the spec-id they point at. The runner
     refifies them and compares up to an id-bijection, so the ECS's own ids need not match.

@@ -2,7 +2,7 @@
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
 import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { appendTodo } from "./append-todo.js";
 
 // Reads the entities, writes the entities — an `{ entities }` patch — by
@@ -27,7 +27,7 @@ export const createTodo = (
 // map is keyed by PLAIN spec-id numbers. `after` lists only what the transition
 // writes — the entities — keyed by plain spec-ids (the ecs mints its own ids; conformance compares
 // up to an id-bijection; values are id-less and compare by content). `complete` defaults to false; it logs `todoCreated`.
-export const cases: Conformance<typeof createTodo> = [
+export const cases = Conformance.cases(createTodo,
   {
     name: "appends the first todo to an empty list",
     before: {},
@@ -78,4 +78,4 @@ export const cases: Conformance<typeof createTodo> = [
     },
     effects: { analytics: [["todoCreated", { name: "d" }]] },
   },
-];
+);

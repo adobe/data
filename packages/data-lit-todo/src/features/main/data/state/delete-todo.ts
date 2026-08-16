@@ -1,9 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Entity } from "@adobe/data/ecs";
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
 import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
 import type { Todo } from "../todo/todo.js";
-import { entity, type Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 
 // Reads the entities, writes the entities — an `{ entities }` patch — dropping the
 // addressed id; also logs `todoDeleted`. Surviving todos keep their `order` (the
@@ -28,15 +29,15 @@ const three: readonly (readonly [number, Todo])[] = [
 ];
 
 // Spec-owned cases, shared with the ecs `deleteTodo` transaction. `before` is a
-// delta over `State.create()` keyed by PLAIN spec-ids (so `entity(2)` resolves via
+// delta over `State.create()` keyed by PLAIN spec-ids (so `2` resolves via
 // the seed map); `after` lists the surviving entities with plain spec-id
 // keys. The addressed todo is removed; an unknown id is a no-op. The transition
 // logs `todoDeleted`.
-export const cases: Conformance<typeof deleteTodo> = [
+export const cases = Conformance.cases(deleteTodo, { args: { type: "object", properties: { id: Entity.schema }, required: ["id"] } },
   {
     name: "removes a middle todo",
     before: { entities: new Map(three) },
-    args: { id: entity(2), analytics: AnalyticsService.createFake() },
+    args: { id: 2, analytics: AnalyticsService.createFake() },
     after: {
       entities: new Map([
         [1, { name: "a", complete: false, order: 0 }],
@@ -48,7 +49,7 @@ export const cases: Conformance<typeof deleteTodo> = [
   {
     name: "removes the first todo",
     before: { entities: new Map(three), displayCompleted: true },
-    args: { id: entity(1), analytics: AnalyticsService.createFake() },
+    args: { id: 1, analytics: AnalyticsService.createFake() },
     after: {
       entities: new Map([
         [1, { name: "b", complete: true, order: 1 }],
@@ -60,7 +61,7 @@ export const cases: Conformance<typeof deleteTodo> = [
   {
     name: "is a no-op for an unknown id but still logs the delete",
     before: { entities: new Map(three) },
-    args: { id: entity(99), analytics: AnalyticsService.createFake() },
+    args: { id: 99, analytics: AnalyticsService.createFake() },
     after: {
       entities: new Map([
         [1, { name: "a", complete: false, order: 0 }],
@@ -70,4 +71,4 @@ export const cases: Conformance<typeof deleteTodo> = [
     },
     effects: { analytics: [["todoDeleted"]] },
   },
-];
+);

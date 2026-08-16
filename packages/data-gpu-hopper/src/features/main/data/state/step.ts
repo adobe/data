@@ -5,7 +5,7 @@ import { Outcome } from "../outcome/outcome.js";
 import { GameStatus } from "../game-status/game-status.js";
 import type { Lane } from "../lane/lane.js";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { laneAt } from "./lane-at.js";
 import { frogOutcome } from "./frog-outcome.js";
 import { winGoal } from "./win-goal.js";
@@ -89,7 +89,7 @@ const riverLanes: readonly Lane[] = [
 // hazards scrolling while the frog stays safe, a car hit (life lost + respawn), the
 // final-life game over, drowning over open water, riding a log, being carried off
 // the board edge (with a wrapping log), reaching the goal, and the game-over no-op.
-export const cases: Conformance<typeof step> = [
+export const cases = Conformance.cases(step,
   { name: "scrolls hazards while the frog rests on grass",
     before: { width: 5, height: 3, lanes: roadLanes,
       entities: new Map([[1, { kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]]),
@@ -146,4 +146,4 @@ export const cases: Conformance<typeof step> = [
     args: 1,
     after: { entities: new Map([[1, { kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]]),
       frog: { x: 2, y: 0 }, lives: 0, score: 0, status: "gameOver" } },
-];
+);

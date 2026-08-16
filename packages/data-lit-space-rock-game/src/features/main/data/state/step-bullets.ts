@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
 import { Bullet } from "../bullet/bullet.js";
 import { Motion } from "../motion/motion.js";
@@ -37,7 +37,7 @@ export const stepBullets = (
 // under it, mixed drop, and the empty list.
 const field = { ...create(), bounds: [100, 100] as [number, number] };
 
-export const cases: Conformance<typeof stepBullets> = [
+export const cases = Conformance.cases(stepBullets,
   {
     name: "moves and ages a live bullet",
     before: {
@@ -114,4 +114,4 @@ export const cases: Conformance<typeof stepBullets> = [
     args: 0.1,
     after: { ...field, entities: new Map() },
   },
-];
+);

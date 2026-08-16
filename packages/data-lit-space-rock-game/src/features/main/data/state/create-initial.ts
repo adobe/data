@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Vec2 } from "@adobe/data/math";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { Ship } from "../ship/ship.js";
 import { spawnWave } from "./spawn-wave.js";
 
@@ -46,7 +46,7 @@ const dirty: State = {
   wave: 7,
 };
 
-export const cases: Conformance<typeof createInitial> = [
+export const cases = Conformance.cases(createInitial,
   {
     name: "starts a fresh 200×200 game: centred ship, first wave, reset counters",
     before: dirty,
@@ -83,4 +83,4 @@ export const cases: Conformance<typeof createInitial> = [
       wave: 1,
     },
   },
-];
+);

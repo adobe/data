@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Vec2 } from "@adobe/data/math";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
 import { Asteroid } from "../asteroid/asteroid.js";
 import { Size } from "../size/size.js";
@@ -52,7 +52,7 @@ export const spawnWave = (
 // count is asteroidsFor(1)=4, so the ring lands on the four clean quadrant angles.
 const field = { ...create(), bounds: [200, 200] as [number, number] };
 
-export const cases: Conformance<typeof spawnWave> = [
+export const cases = Conformance.cases(spawnWave,
   {
     name: "spawns the next wave of large asteroids when the field is clear",
     before: { ...field, entities: new Map(), wave: 0 },
@@ -86,4 +86,4 @@ export const cases: Conformance<typeof spawnWave> = [
       ]),
     },
   },
-];
+);

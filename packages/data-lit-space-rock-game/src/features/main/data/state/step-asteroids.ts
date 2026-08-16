@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
 import { Asteroid } from "../asteroid/asteroid.js";
 import { Motion } from "../motion/motion.js";
@@ -31,7 +31,7 @@ export const stepAsteroids = (
 // constant velocity, so `after` is exact.
 const field = { ...create(), bounds: [100, 100] as [number, number] };
 
-export const cases: Conformance<typeof stepAsteroids> = [
+export const cases = Conformance.cases(stepAsteroids,
   {
     name: "drifts an asteroid by its velocity",
     before: {
@@ -104,4 +104,4 @@ export const cases: Conformance<typeof stepAsteroids> = [
     args: 1,
     after: { ...field, entities: new Map() },
   },
-];
+);

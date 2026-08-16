@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
 import { Bullet } from "../bullet/bullet.js";
 import { Ship } from "../ship/ship.js";
@@ -23,7 +23,7 @@ export const fireBullet = (
 // rotation −π/2 → facing [0,−1] (up). The existing bullets pass through untouched.
 const field = { ...create(), bounds: [800, 600] as [number, number] };
 
-export const cases: Conformance<typeof fireBullet> = [
+export const cases = Conformance.cases(fireBullet,
   {
     name: "fires from a ship facing +x at rest",
     before: {
@@ -89,4 +89,4 @@ export const cases: Conformance<typeof fireBullet> = [
       ]),
     },
   },
-];
+);

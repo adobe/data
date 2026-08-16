@@ -2,7 +2,7 @@
 import type { Vec2 } from "@adobe/data/math";
 import type { SpriteKind } from "../sprite-kind/sprite-kind.js";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 
 // Append a sprite to the scene. The spec mints the id (the map key); the value
 // carries none. Returns only the field it writes (`entities`).
@@ -31,7 +31,7 @@ export const createSprite = (
 // sprites are untouched. `before` is a delta over `State.create()`; `after` is
 // the writes patch — map keys are plain spec-ids (the ecs mints its own; conformance
 // compares up to an id-bijection).
-export const cases: Conformance<typeof createSprite> = [
+export const cases = Conformance.cases(createSprite,
   {
     name: "appends the first sprite to an empty scene",
     before: {},
@@ -94,4 +94,4 @@ export const cases: Conformance<typeof createSprite> = [
       ]),
     },
   },
-];
+);

@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Sprite } from "../sprite/sprite.js";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 
 // Advance one animation frame: every sprite rotates by `delta * 0.1` radians.
 // `delta` is the frame time step, supplied by the caller (the render loop).
@@ -27,7 +27,7 @@ const fox: Sprite = {
 
 // Spec-owned cases, shared with the ecs `tick` transaction. Every sprite's
 // rotation advances by delta * 0.1; `after` keys are plain spec-ids (compared up to an id-bijection).
-export const cases: Conformance<typeof tick> = [
+export const cases = Conformance.cases(tick,
   {
     name: "advances every sprite's rotation by delta * 0.1",
     before: { entities: new Map([[1, bunny], [2, fox]]) },
@@ -45,4 +45,4 @@ export const cases: Conformance<typeof tick> = [
     args: { delta: 5 },
     after: { entities: new Map<number, Sprite>() },
   },
-];
+);

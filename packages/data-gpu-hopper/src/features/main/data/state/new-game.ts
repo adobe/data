@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
 
 // A "new game" TRANSITION: it deliberately **ignores** the prior `state` and
@@ -15,7 +15,7 @@ export const newGame = (_state: State): State => create();
 // status all differ) so the reset is proven total. `after` is just the initial game
 // (`create()`): its hazard-entity keys are plain spec-ids that conformance compares
 // up to an id-bijection, so the ecs is free to mint its own.
-export const cases: Conformance<typeof newGame> = [
+export const cases = Conformance.cases(newGame,
   {
     name: "resets a mid-game store to the initial game",
     before: {
@@ -34,4 +34,4 @@ export const cases: Conformance<typeof newGame> = [
     },
     after: create(),
   },
-];
+);

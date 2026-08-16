@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Entity } from "@adobe/data/ecs";
 import type { Sprite } from "../sprite/sprite.js";
 import type { State } from "./state.js";
-import { entity, type Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 
 // Set the addressed sprite's `active` flag. Writes only `entities`.
 export const setSpriteActive = (
@@ -26,13 +27,13 @@ const fox: Sprite = {
 };
 
 // Spec-owned cases, shared with the ecs `setSpriteActive` transaction. `before`
-// keys are plain spec-ids the `args` address via `entity(2)`; `after` keys are
+// keys are plain spec-ids the `args` address via `2`; `after` keys are
 // plain spec-ids (the ecs mints its own; compared up to an id-bijection).
-export const cases: Conformance<typeof setSpriteActive> = [
+export const cases = Conformance.cases(setSpriteActive, { args: { type: "object", properties: { id: Entity.schema }, required: ["id"] } },
   {
     name: "sets active true on the addressed sprite only",
     before: { entities: new Map([[1, bunny], [2, fox]]) },
-    args: { id: entity(2), active: true },
+    args: { id: 2, active: true },
     after: {
       entities: new Map([
         [1, bunny],
@@ -43,7 +44,7 @@ export const cases: Conformance<typeof setSpriteActive> = [
   {
     name: "is a no-op for an unknown id",
     before: { entities: new Map([[1, bunny], [2, fox]]) },
-    args: { id: entity(99), active: true },
+    args: { id: 99, active: true },
     after: {
       entities: new Map([
         [1, bunny],
@@ -51,4 +52,4 @@ export const cases: Conformance<typeof setSpriteActive> = [
       ]),
     },
   },
-];
+);

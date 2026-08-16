@@ -2,7 +2,7 @@
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
 import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { appendTodo } from "./append-todo.js";
 /** Adds numbered placeholder todos for demos and performance testing. Reads and
  * writes the entities — an `{ entities }` patch. */
@@ -27,7 +27,7 @@ export const createBulkTodos = (
 // written entities with plain spec-id keys. `count` (floored, clamped at 0)
 // numbered todos are appended; the transition logs `bulkTodosCreated` with the raw
 // count (as the action does), even on a no-op.
-export const cases: Conformance<typeof createBulkTodos> = [
+export const cases = Conformance.cases(createBulkTodos,
   {
     name: "appends count numbered todos to an empty list",
     before: {},
@@ -82,4 +82,4 @@ export const cases: Conformance<typeof createBulkTodos> = [
     },
     effects: { analytics: [["bulkTodosCreated", { count: 0 }]] },
   },
-];
+);

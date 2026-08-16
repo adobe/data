@@ -228,4 +228,29 @@ describe("observeSelectDeep", () => {
         unobserve1();
         unobserve2();
     });
+
+    test("keeps the entity id when the include set carries the id column", async () => {
+        // An archetype's runtime `components` set still contains the "id" column even
+        // though reads omit id. Passing it directly as `include` (as consumers do)
+        // must not let the copy loop overwrite each row's `id` with the read's
+        // (absent) id — the row's `id` must stay the entity.
+        const db = createTestDb();
+        const e1 = db.transactions.createMoving({ position: 10, velocity: 5 });
+        const e2 = db.transactions.createMoving({ position: 20, velocity: 15 });
+
+        const observer = vi.fn();
+        const unobserve = observeSelectDeep(db, db.archetypes.Moving.components)(observer);
+
+        await assert({
+            given: "an include set that carries the id column",
+            should: "emit rows whose id is the entity, not undefined",
+            actual: observer.mock.calls[0][0],
+            expected: [
+                { id: e1, position: 10, velocity: 5 },
+                { id: e2, position: 20, velocity: 15 },
+            ],
+        });
+
+        unobserve();
+    });
 });

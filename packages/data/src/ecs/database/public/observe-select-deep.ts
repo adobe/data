@@ -3,7 +3,7 @@
 import { Observe } from "../../../observe/index.js";
 import { equals } from "../../../equals.js";
 import { StringKeyof } from "../../../types/types.js";
-import { RequiredComponents } from "../../required-components.js";
+import { ID, RequiredComponents } from "../../required-components.js";
 import { Components } from "../../store/components.js";
 import { EntitySelectOptions } from "../../store/entity-select-options.js";
 import { Entity } from "../../entity/entity.js";
@@ -53,10 +53,16 @@ const createObserveSelectDeep = <
       entity: Entity,
       values: Record<string, unknown>,
     ): EntityData<C, Include> => {
-      const data: Record<string, unknown> = { id: entity };
+      const data: Record<string, unknown> = {};
       for (const key of includeKeys) {
+        // `includeKeys` carries the archetype's runtime component set, which still
+        // includes the "id" column even though reads omit it. Skip it here and set
+        // `id` from `entity` below, or the loop would overwrite id with
+        // `values["id"]` (undefined) and hand callers id-less rows.
+        if (key === ID) continue;
         data[key] = values[key];
       }
+      data[ID] = entity;
       return data as EntityData<C, Include>;
     };
 

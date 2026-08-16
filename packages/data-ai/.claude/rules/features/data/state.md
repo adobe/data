@@ -267,8 +267,16 @@ export const cases: Conformance<typeof createTodo> = [
     keys don't collapse) and injective (entities stay distinct, and a label reused in a
     singleton reference correlates). Never `entity(specId)` here — a case's `after` may
     hold freshly created entities with no seed mapping.
-  - **`samples`** (round-tripped `toState ∘ fromState`): same as `after` — **`Match.ref`
-    distinct labels** (they compare against ECS-minted ids).
+  - **`samples`** (round-tripped `toState ∘ fromState`): same as `after` — open,
+    distinct keys against ECS-minted ids.
+  - **Building the open-keyed map — `Match.refMap(values)`.** When the entries come
+    from a list rather than hand-authored labels (a `samples` entry, a case `after`
+    whose entities you don't cross-reference), don't hand-roll the `Match.ref` keys:
+    `Match.refMap(iterableOfValues)` returns a `ReadonlyMap<number, V>` keyed by
+    process-unique open `ref`s — the standard way to build an identity-keyed collection
+    for comparison. Reach for a **hand-written `Match.ref(label)`** only when a key must
+    **correspond** to a reference elsewhere in the same case (a `selectedId`), where the
+    shared label is the whole point.
 - No per-transform test. The single **`spec.test.ts`** is one call —
   `Conformance.runSpec({ state: State, transitions })` importing `transitions`
   from the test-only `./transitions.js` (above) — that auto-discovers every module

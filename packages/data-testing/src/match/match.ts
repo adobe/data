@@ -31,6 +31,19 @@ export const ref = <T = number>(label: string): T => ({ [REF]: label }) as unkno
 const isRef = (value: unknown): value is { readonly [REF]: string } =>
   typeof value === "object" && value !== null && REF in value;
 
+// Build the EXPECTED side of an identity-keyed entity collection — a
+// `ReadonlyMap<number, V>` of id-less values whose keys are DISTINCT open `ref`s.
+// This is the common shape of a `samples` entry or a case `after` whose entities
+// were freshly created: the ecs mints the real ids, so each key must be an open,
+// injective matcher rather than a pinned number, and two entries must not share a
+// matcher (a shared `anyNumber` would collapse to one map key). Each value gets its
+// own process-unique label, so refMap maps never collide with each other or with a
+// case's own hand-authored `ref` labels. Use `ref(label)` by hand only when a key
+// must CORRESPOND to a reference elsewhere in the same comparison (a `selectedId`).
+let refMapCounter = 0;
+export const refMap = <V>(values: Iterable<V>): ReadonlyMap<number, V> =>
+  new Map([...values].map((value): [number, V] => [ref(`@refMap-${refMapCounter++}`), value]));
+
 // An asymmetric matcher (this module's `anyNumber`/`anyString`, or vitest's
 // `expect.any(...)`): honored on the EXPECTED side so a case asserts a shape it
 // does not pin. Recognised structurally, so no test framework is imported.

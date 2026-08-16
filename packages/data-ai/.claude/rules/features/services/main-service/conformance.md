@@ -37,7 +37,10 @@ installing `@adobe/data` never pulls in a `vitest` peer dependency):
 
 - **`Match`** — the tolerant, matcher-aware value comparison: `matches(actual,
   expected, options?)` and its throwing wrapper `assert(...)`, plus the matchers
-  `Match.anyNumber` / `Match.anyString` / `Match.ref(label)`. Options are
+  `Match.anyNumber` / `Match.anyString` / `Match.ref(label)`, and the collection
+  builder `Match.refMap(values)` (an identity-keyed `ReadonlyMap<number, V>` of
+  id-less values with distinct open keys — the standard way to author a `samples`
+  entry or a created-entity `after`; see `../../../data/state.md`). Options are
   `{ tolerance?: number }` — numbers snap to `tolerance` (default `0.01`) to absorb
   F32↔f64 / trig noise. **Ordering is carried by the value's type**: a
   `ReadonlyArray` compares **in order**, a `ReadonlySet` / `ReadonlyMap`

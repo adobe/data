@@ -15,10 +15,11 @@
 // (hop is covered by the transaction conformance). Then drive one headless frame
 // and assert `toState ≡ after`. Each case also asserts `State.step ≡ after` first,
 // keeping the shared case honest. The hazards live in the identity-keyed
-// `entities` `ReadonlyMap`, so the comparator matches them order-independently (the
-// ecs mints its own ids the `after` refs leave open).
+// `entities` `ReadonlyMap`, so `assertState` matches them order-independently and up
+// to an id-bijection (the ecs, and the pure spawn, mint their own ids — the case's
+// plain spec-ids need only correspond).
 import { describe, it } from "vitest";
-import { Match } from "@adobe/data-testing";
+import { Conformance } from "@adobe/data-testing";
 import { State } from "../../../data/state/state.js";
 import { cases } from "../../../data/state/step.js";
 import { createSystemDatabase } from "../conformance/create-system-database.js";
@@ -31,16 +32,17 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
       const dt = testCase.args;
       // A case `before` is a delta over the feature default and `after` a writes
       // patch (`Case.before`/`after` are `Partial<State>`), so materialise the full
-      // seed and the full expected state the same way the runners do.
+      // seed and the full expected state the same way the runners do. `db.store`
+      // supplies the schemas `assertState` reads to compare up to an id-bijection.
       const before = { ...State.create(), ...testCase.before };
       const expected = { ...before, ...testCase.after };
-      Match.assert({ ...before, ...State.step(before, dt) }, expected);
-
       const db = createSystemDatabase();
+      Conformance.assertState({ ...before, ...State.step(before, dt) }, expected, db.store);
+
       projection.fromState(db.store, before);
       db.store.resources.frameDelta = dt;
       driveFrame(db);
-      Match.assert(projection.toState(db.store), expected);
+      Conformance.assertState(projection.toState(db.store), expected, db.store);
     });
   }
 });

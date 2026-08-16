@@ -1,11 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it } from "vitest";
 import type { Entity } from "@adobe/data/ecs";
-import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
 import { adaptArgs } from "./entity-ref.js";
 import { discoverTransitions, discoverOps } from "./discover.js";
-import { refifyState, type SchemaSource } from "./refify.js";
+import { expectAfter } from "./expect-after.js";
+import type { SchemaSource } from "./refify.js";
 import { splitAndRecordServices, expectEffects } from "./record-effects.js";
 import { resolver } from "./resolve.js";
 
@@ -48,15 +48,9 @@ export function runActions<Db, Store extends SchemaSource, State>(config: Action
           const resolve = resolver(config.fromState(config.store(db), before));
           config.seedContext?.(db, before, testCase.args);
           await (action as (d: Db, a?: unknown) => Promise<void> | void)(db, adaptArgs(input, resolve));
-          // `after` is a writes patch — compare `toState` against it merged over
-          // `before`, refifying the case's spec-ids so the compare is up to an
-          // id-bijection.
+          // `after` is a writes patch, compared up to an id-bijection.
           const store = config.store(db);
-          assert(
-            config.toState(store),
-            refifyState({ ...(before as object), ...(testCase.after as object) }, store),
-            config.match,
-          );
+          expectAfter(config.toState(store), before as object, testCase.after as object, store, config.match);
           expectEffects(calls, testCase.effects as never);
         });
       }

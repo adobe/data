@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect } from "vitest";
-import { matches, ref, anyNumber, anyString } from "./public.js";
+import { matches, ref } from "./match.js";
+import { anyNumber, anyString } from "./public.js";
 
 describe("Match.matches", () => {
   it("compares plain structures deeply", () => {

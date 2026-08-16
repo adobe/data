@@ -2,12 +2,12 @@
 import { describe, it } from "vitest";
 import { Database, Store } from "@adobe/data/ecs";
 import type { Entity } from "@adobe/data/ecs";
-import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
 import { runTransactions } from "./run-transactions.js";
 import { runActions } from "./run-actions.js";
 import { runComputeds } from "./run-computeds.js";
-import { refifyState, type SchemaSource } from "./refify.js";
+import { expectAfter } from "./expect-after.js";
+import type { SchemaSource } from "./refify.js";
 
 // The feature's ecs↔`State` projection — the one genuinely feature-specific piece.
 export interface Projection<Store, State> {
@@ -110,7 +110,9 @@ export function runFeature<State, StoreT extends SchemaSource, Db extends { stor
         it(`sample ${index}`, () => {
           const store = makeStore();
           fromState(store, sample);
-          assert(toState(store), refifyState(sample, store), config.match);
+          // A full-state round-trip: the whole sample is the expectation (no delta),
+          // compared up to an id-bijection.
+          expectAfter(toState(store), {}, sample as object, store, config.match);
         });
       });
     });

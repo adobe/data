@@ -253,9 +253,8 @@ export const cases: Conformance<typeof createTodo> = [
   a case does not want to pin — a generated timestamp, a random value — still use
   `Match.anyNumber` / `Match.anyString` (imported from `@adobe/data-testing`); `Match` is
   framework-agnostic, so vitest's `expect.stringContaining(...)` interops on the expected
-  side too. (`Match.ref(label)` still exists for the rare case that needs an *explicitly
-  labelled* correspondence the schema can't express, but a schema-marked reference should
-  cover it.)
+  side too. (The id-correspondence solver is now internal — the runner generates it from
+  the schema-marked spec-ids; there is no case-facing `ref`/`refMap` matcher anymore.)
 - **Entity-addressed cases use `entity(specId)` in `args`.** State references are
   detected from the store's schemas; an **arg** has no schema, so a transition that
   addresses an entity by id marks it `args: { id: entity(2) }` — `entity` imported from

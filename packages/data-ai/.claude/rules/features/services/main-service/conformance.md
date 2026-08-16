@@ -37,8 +37,7 @@ installing `@adobe/data` never pulls in a `vitest` peer dependency):
 
 - **`Match`** — the tolerant, matcher-aware value comparison: `matches(actual,
   expected, options?)` and its throwing wrapper `assert(...)`, plus the matchers
-  `Match.anyNumber` / `Match.anyString` for minted scalars a case does not pin (and
-  `Match.ref(label)` for a rare explicit correspondence the schema can't express).
+  `Match.anyNumber` / `Match.anyString` for minted scalars a case does not pin.
   **Entity ids need no matcher**: a case writes plain spec-ids for map keys and
   reference fields, and the runner compares up to an id-bijection (below), so `samples`
   and `after` are ordinary `new Map([[1, value], …])` — no key labelling. Options are
@@ -226,9 +225,8 @@ conformance cases:
 - **Float noise** is absorbed by the default `tolerance` (`0.01`), threaded through
   `match?: { tolerance }`; raise it only when a case needs a looser grid.
 - **A minted scalar** a case does not pin — a timestamp, a random draw — uses
-  `Match.anyNumber` / `Match.anyString`. `Match.ref(label)` remains for the rare
-  explicit correspondence a schema can't express, but a schema-marked reference is the
-  default and should cover entity ids.
+  `Match.anyNumber` / `Match.anyString`. Entity-id correspondence needs no matcher: the
+  runner derives it from the schema-marked spec-ids (the solver is internal).
 
 ## Recording side effects — built in, no Proxy
 

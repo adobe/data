@@ -1,11 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it } from "vitest";
 import type { Entity } from "@adobe/data/ecs";
-import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
 import { adaptArgs } from "./entity-ref.js";
 import { discoverTransitions, discoverOps } from "./discover.js";
-import { refifyState, type SchemaSource } from "./refify.js";
+import { expectAfter } from "./expect-after.js";
+import type { SchemaSource } from "./refify.js";
 import { resolver } from "./resolve.js";
 
 // Discover transitions (the `data/state` glob) and the ecs transactions (a facet
@@ -50,14 +50,9 @@ export function runTransactions<Store extends SchemaSource, State>(config: Trans
           const resolve = resolver(config.fromState(store, before));
           config.seedContext?.(store, before, testCase.args);
           (transaction as (s: Store, a?: unknown) => void)(store, adaptArgs(testCase.args, resolve));
-          // `after` is a writes patch — compare `toState` against it merged over
-          // `before`. Refify turns the case's spec-ids into `ref`s so the compare is
-          // up to an id-bijection (the ecs mints its own ids).
-          assert(
-            config.toState(store),
-            refifyState({ ...(before as object), ...(testCase.after as object) }, store),
-            config.match,
-          );
+          // `after` is a writes patch, compared up to an id-bijection (the ecs mints
+          // its own ids).
+          expectAfter(config.toState(store), before as object, testCase.after as object, store, config.match);
         });
       }
     });

@@ -1,8 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it } from "vitest";
+import { Database, Store } from "@adobe/data/ecs";
 import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
-import { adaptArgs } from "./entity-ref.js";
+import { expectAfter } from "./expect-after.js";
+import type { SchemaSource } from "./refify.js";
 import { recordArgServices, expectEffects } from "./record-effects.js";
 import type { DerivationCase, Effects } from "./types.js";
 
@@ -20,6 +22,14 @@ export interface SpecRunConfig {
   // Passed through to `matches` (float tolerance). Ordered vs. unordered is now
   // carried by the value's type — `Array` positional, `Set`/`Map` order-independent.
   readonly match?: MatchOptions;
+  // The feature plugin, ONLY needed when entity VALUES (or singletons) carry
+  // reference fields (an `asset`/`parent`/`selected` id): the pure transform mints
+  // its own spec-ids, so a reference to a minted entity must compare up to the same
+  // id-bijection as the ecs side. Given it, `runSpec` reads the plugin's component +
+  // resource schemas (via a throwaway store) to find those reference fields — exactly
+  // as `runFeature` does from its store. Omit it for a feature of self-contained
+  // values: entity map KEYS refify with no schema (an id by construction).
+  readonly plugin?: Database.Plugin;
   // Override the `describe` label per module (default `State.<fnName>`).
   readonly label?: (path: string, fnName: string | undefined) => string;
 }
@@ -53,6 +63,12 @@ type Suite = InvalidSuite | CasesSuite;
 // "No test suite found" — so we register a single no-op so empty discovery is a
 // valid outcome, not an error.
 export const runSpec = (config: SpecRunConfig): void => {
+  // Reference fields are found from schemas; without a plugin only map keys (an id
+  // by construction) refify. A throwaway store surfaces the plugin's component +
+  // resource schemas, exactly the source `runFeature`'s runners read.
+  const schemaSource: SchemaSource = config.plugin
+    ? { componentSchemas: Store.create(config.plugin as never).componentSchemas }
+    : { componentSchemas: {} };
   const suites: Suite[] = [];
   for (const [path, module] of Object.entries(config.transitions)) {
     const exportNames = Object.keys(module);
@@ -68,7 +84,10 @@ export const runSpec = (config: SpecRunConfig): void => {
       suites.push({ kind: "invalid", path, label, exportNames });
       continue;
     }
-    const cases = module["cases"] as readonly unknown[];
+    // `cases` is either a plain array or the builder's `{ args, cases }` options
+    // form; the pure side ignores the `args` schema (spec-ids need no resolution).
+    const rawCases = module["cases"];
+    const cases = Array.isArray(rawCases) ? rawCases : ((rawCases as { cases?: readonly unknown[] })?.cases ?? []);
     // Empty `cases: []` is not a suite (and would open a Vitest describe with no
     // tests, which fails even when this file has other suites).
     if (cases.length === 0) continue;
@@ -112,20 +131,19 @@ export const runSpec = (config: SpecRunConfig): void => {
           readonly effects?: Effects<Record<string, unknown>>;
         };
         it(tc.name, async () => {
-          // Unwrap `entity(specId)` markers to their data-id for the pure spec, then
-          // wrap injected services so their calls are recorded.
-          const { args, calls } = recordArgServices(adaptArgs(tc.args));
+          // The pure spec reads args as authored — plain spec-ids that already match
+          // the state keys, no resolution. Just wrap injected services to record calls.
+          const { args, calls } = recordArgServices(tc.args);
           // Case `before` is a delta over the feature default; `after` a writes patch.
           const before = {
             ...(config.state?.create() ?? {}),
             ...(tc.before as Record<string, unknown>),
           };
           const result = (await suite.fn(before, args)) as Record<string, unknown>;
-          assert(
-            { ...before, ...result },
-            { ...before, ...(tc.after as Record<string, unknown>) },
-            config.match,
-          );
+          // The pure transform mints its own spec-ids, so compare up to an
+          // id-bijection too (entity map keys always; reference fields when a
+          // `plugin` gave the schemas).
+          expectAfter({ ...before, ...result }, before, tc.after as Record<string, unknown>, schemaSource, config.match);
           expectEffects(calls, tc.effects);
         });
       }

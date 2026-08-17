@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Entity } from "@adobe/data/ecs";
+import { Entity } from "@adobe/data/ecs";
 import type { State } from "../../../data/state/state.js";
 import type { Todo } from "../../../data/todo/todo.js";
 import type { CoreDatabase } from "../core-database/core-database.js";
@@ -41,7 +41,7 @@ export const projection = {
       }
     }
     store.resources.displayCompleted = state.displayCompleted;
-    return new Map(
+    const seeded = new Map(
       [...state.entities].map(([specId, todo]) => [
         specId,
         store.archetypes.Todo.insert({
@@ -54,6 +54,11 @@ export const projection = {
         }),
       ]),
     );
+    // Resolve the `selectedTodo` REFERENCE (a spec-id) to the entity just seeded for
+    // it — the ecs mints its own ids, so the resource must hold the ecs id, not the
+    // spec-id. An unresolved reference (or none) collapses to `Entity.none`.
+    store.resources.selectedTodo = seeded.get(state.selectedTodo) ?? Entity.none;
+    return seeded;
   },
   toState: (store: CoreDatabase.Store): State => ({
     displayCompleted: store.resources.displayCompleted,
@@ -62,6 +67,7 @@ export const projection = {
         .select(store.archetypes.Todo.components, { order: { order: true } })
         .map((entity) => [entity, toData(store, entity)]),
     ),
+    selectedTodo: store.resources.selectedTodo,
   }),
   toData,
 };

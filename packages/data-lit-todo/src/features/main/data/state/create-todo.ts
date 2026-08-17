@@ -2,9 +2,8 @@
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
 import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { appendTodo } from "./append-todo.js";
-import { Match } from "@adobe/data-testing";
 
 // Reads the entities, writes the entities — an `{ entities }` patch — by
 // delegating to the shared `appendTodo`; also logs `todoCreated`.
@@ -26,17 +25,16 @@ export const createTodo = (
 // Spec-owned cases, shared with the ecs `createTodo` transaction. `before` is a
 // delta over `State.create()` (empty entities, completed hidden); the `before`
 // map is keyed by PLAIN spec-id numbers. `after` lists only what the transition
-// writes — the entities — keyed by `Match.ref` with a DISTINCT label per entry
-// (the ecs mints its own ids, so keys stay open; values are id-less and compare by
-// content). `complete` defaults to false; it logs `todoCreated`.
-export const cases: Conformance<typeof createTodo> = [
+// writes — the entities — keyed by plain spec-ids (the ecs mints its own ids; conformance compares
+// up to an id-bijection; values are id-less and compare by content). `complete` defaults to false; it logs `todoCreated`.
+export const cases = Conformance.cases(createTodo,
   {
     name: "appends the first todo to an empty list",
     before: {},
     args: { name: "a", analytics: AnalyticsService.createFake() },
     after: {
       entities: new Map([
-        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
+        [1, { name: "a", complete: false, order: 0 }],
       ]),
     },
     effects: { analytics: [["todoCreated", { name: "a" }]] },
@@ -53,8 +51,8 @@ export const cases: Conformance<typeof createTodo> = [
     },
     after: {
       entities: new Map([
-        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
-        [Match.ref("b"), { name: "b", complete: true, order: 1 }],
+        [1, { name: "a", complete: false, order: 0 }],
+        [2, { name: "b", complete: true, order: 1 }],
       ]),
     },
     effects: { analytics: [["todoCreated", { name: "b" }]] },
@@ -72,12 +70,12 @@ export const cases: Conformance<typeof createTodo> = [
     args: { name: "d", analytics: AnalyticsService.createFake() },
     after: {
       entities: new Map([
-        [Match.ref("a"), { name: "a", complete: false, order: 0 }],
-        [Match.ref("b"), { name: "b", complete: true, order: 1 }],
-        [Match.ref("c"), { name: "c", complete: false, order: 2 }],
-        [Match.ref("d"), { name: "d", complete: false, order: 3 }],
+        [1, { name: "a", complete: false, order: 0 }],
+        [2, { name: "b", complete: true, order: 1 }],
+        [3, { name: "c", complete: false, order: 2 }],
+        [4, { name: "d", complete: false, order: 3 }],
       ]),
     },
     effects: { analytics: [["todoCreated", { name: "d" }]] },
   },
-];
+);

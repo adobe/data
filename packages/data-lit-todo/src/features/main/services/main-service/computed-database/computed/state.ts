@@ -27,6 +27,7 @@ export const state = cached((db: IndexDatabase) =>
         ]),
       ),
       displayCompleted: read.resources.displayCompleted,
+      selectedTodo: read.resources.selectedTodo,
     };
   })),
 );

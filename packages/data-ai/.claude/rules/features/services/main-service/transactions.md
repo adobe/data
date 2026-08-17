@@ -45,7 +45,7 @@ export const playMove = (t: CoreDatabase.Store, { index }: PlayMoveArgs) => {
   (state only; service effects are asserted through the action). There is **no**
   `define`/`conforms` adapter and **no** `covers` guard. A transaction taking
   **entity ids** takes them under the transition's own arg key (`{ id }`); the runner
-  resolves each `entity(specId)` marker via the id→entity map `fromState` returns. A
+  resolves each id the case's `args` schema marks via the id→entity map `fromState` returns. A
   transaction with **no same-named transition** is infrastructure (`setInput`,
   `setBounds`) or the drag UI op (`dragTodo`) or system-dispatched — it is simply
   **skipped**, no guard needed. Don't add a per-item adapter for a renamed op; add a

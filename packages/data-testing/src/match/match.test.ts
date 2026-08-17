@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect } from "vitest";
-import { matches, ref, refMap, anyNumber, anyString } from "./public.js";
+import { matches, ref } from "./match.js";
+import { anyNumber, anyString } from "./public.js";
 
 describe("Match.matches", () => {
   it("compares plain structures deeply", () => {
@@ -82,32 +83,6 @@ describe("Match.matches", () => {
       // `sel` points at an id no item carries → no consistent pairing exists.
       const dangling = { sel: 999, items: new Set([{ id: 100, x: 1 }, { id: 200, x: 2 }]) };
       expect(matches(dangling, expected)).toBe(false);
-    });
-  });
-
-  describe("refMap", () => {
-    it("matches an identity-keyed entity collection regardless of the actual ids", () => {
-      const actual = new Map([
-        [10, { name: "a" }],
-        [20, { name: "b" }],
-      ]);
-      // Same values, ecs-minted keys — refMap leaves the keys open.
-      expect(matches(actual, refMap([{ name: "a" }, { name: "b" }]))).toBe(true);
-      // A value mismatch still fails.
-      expect(matches(actual, refMap([{ name: "a" }, { name: "c" }]))).toBe(false);
-      // Cardinality mismatch fails.
-      expect(matches(actual, refMap([{ name: "a" }]))).toBe(false);
-    });
-
-    it("keys are distinct — entries never collapse the way a shared matcher would", () => {
-      const actual = new Map([
-        [1, { v: 1 }],
-        [2, { v: 1 }],
-      ]);
-      // Two equal values in two entries: refMap keeps two entries (distinct keys),
-      // so both must pair. A single shared `anyNumber` key would collapse to one.
-      expect(matches(actual, refMap([{ v: 1 }, { v: 1 }]))).toBe(true);
-      expect(matches(new Map([[1, { v: 1 }]]), refMap([{ v: 1 }, { v: 1 }]))).toBe(false);
     });
   });
 });

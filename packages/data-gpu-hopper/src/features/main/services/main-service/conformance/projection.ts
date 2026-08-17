@@ -16,7 +16,7 @@ const readFrog = (store: CoreDatabase.Store): Frog => {
 };
 
 // Read every hazard entity back into the identity-keyed `entities` map. The key is
-// the allocated ecs entity id (the runner leaves it open via `Match.ref`); the
+// the allocated ecs entity id (conformance compares it up to an id-bijection); the
 // value is id-less.
 const readEntities = (store: CoreDatabase.Store): Map<number, Hazard> => {
   const entities = new Map<number, Hazard>();

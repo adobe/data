@@ -1,18 +1,19 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it } from "vitest";
 import type { Entity } from "@adobe/data/ecs";
-import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
-import { adaptArgs } from "./entity-ref.js";
 import { discoverTransitions, discoverOps } from "./discover.js";
+import { expectAfter } from "./expect-after.js";
+import type { SchemaSource } from "./refify.js";
+import { resolveArgs } from "./resolve-args.js";
 import { resolver } from "./resolve.js";
 
 // Discover transitions (the `data/state` glob) and the ecs transactions (a facet
 // barrel or a directory glob), pair them by name, and conform each — no per-item
 // wiring. A transaction with no same-named transition is infrastructure (e.g.
 // `setInput`) or system-dispatched and is skipped; a transition realized by an
-// action is conformed there. Entity-addressed args carry a `Conformance.entity`
-// marker the runner resolves; a transaction ignores any injected-service arg (its
+// action is conformed there. Entity-addressed args are resolved via the case list's
+// `args` schema (its `Entity.schema` fields); a transaction ignores any injected-service arg (its
 // effects are asserted through the action).
 export interface TransactionRunConfig<Store, State> {
   readonly createStore: () => Store;
@@ -35,7 +36,7 @@ export interface TransactionRunConfig<Store, State> {
 
 // The single conformance test for every ecs transaction, proving
 // `toState(apply(fromState(before), args)) ≡ after` for each shared case.
-export function runTransactions<Store, State>(config: TransactionRunConfig<Store, State>): void {
+export function runTransactions<Store extends SchemaSource, State>(config: TransactionRunConfig<Store, State>): void {
   const transitions = discoverTransitions(config.transitions);
   for (const [name, transaction] of discoverOps(config.transactions)) {
     const paired = transitions.get(name);
@@ -48,9 +49,13 @@ export function runTransactions<Store, State>(config: TransactionRunConfig<Store
           const store = config.createStore();
           const resolve = resolver(config.fromState(store, before));
           config.seedContext?.(store, before, testCase.args);
-          (transaction as (s: Store, a?: unknown) => void)(store, adaptArgs(testCase.args, resolve));
-          // `after` is a writes patch — compare `toState` against it merged over `before`.
-          assert(config.toState(store), { ...(before as object), ...(testCase.after as object) }, config.match);
+          // Resolve entity-reference args (the fields the case's `args` schema marks)
+          // to the seeded entities; a transition with no such schema passes through.
+          const args = resolveArgs(testCase.args, paired.argsSchema, resolve);
+          (transaction as (s: Store, a?: unknown) => void)(store, args);
+          // `after` is a writes patch, compared up to an id-bijection (the ecs mints
+          // its own ids).
+          expectAfter(config.toState(store), before as object, testCase.after as object, store, config.match);
         });
       }
     });

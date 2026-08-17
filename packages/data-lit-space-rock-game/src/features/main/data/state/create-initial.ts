@@ -1,8 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Vec2 } from "@adobe/data/math";
-import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { Ship } from "../ship/ship.js";
 import { spawnWave } from "./spawn-wave.js";
 
@@ -47,7 +46,7 @@ const dirty: State = {
   wave: 7,
 };
 
-export const cases: Conformance<typeof createInitial> = [
+export const cases = Conformance.cases(createInitial,
   {
     name: "starts a fresh 200×200 game: centred ship, first wave, reset counters",
     before: dirty,
@@ -56,10 +55,10 @@ export const cases: Conformance<typeof createInitial> = [
       bounds: [200, 200],
       ship: { position: [100, 100], velocity: [0, 0], rotation: -Math.PI / 2 },
       entities: new Map([
-        [Match.ref("a1"), { position: [180, 100], velocity: [0, 60], size: "large" }],
-        [Match.ref("a2"), { position: [100, 180], velocity: [-60, 0], size: "large" }],
-        [Match.ref("a3"), { position: [20, 100], velocity: [0, -60], size: "large" }],
-        [Match.ref("a4"), { position: [100, 20], velocity: [60, 0], size: "large" }],
+        [1, { position: [180, 100], velocity: [0, 60], size: "large" }],
+        [2, { position: [100, 180], velocity: [-60, 0], size: "large" }],
+        [3, { position: [20, 100], velocity: [0, -60], size: "large" }],
+        [4, { position: [100, 20], velocity: [60, 0], size: "large" }],
       ]),
       score: 0,
       lives: 3,
@@ -74,14 +73,14 @@ export const cases: Conformance<typeof createInitial> = [
       bounds: [400, 400],
       ship: { position: [200, 200], velocity: [0, 0], rotation: -Math.PI / 2 },
       entities: new Map([
-        [Match.ref("a1"), { position: [360, 200], velocity: [0, 60], size: "large" }],
-        [Match.ref("a2"), { position: [200, 360], velocity: [-60, 0], size: "large" }],
-        [Match.ref("a3"), { position: [40, 200], velocity: [0, -60], size: "large" }],
-        [Match.ref("a4"), { position: [200, 40], velocity: [60, 0], size: "large" }],
+        [1, { position: [360, 200], velocity: [0, 60], size: "large" }],
+        [2, { position: [200, 360], velocity: [-60, 0], size: "large" }],
+        [3, { position: [40, 200], velocity: [0, -60], size: "large" }],
+        [4, { position: [200, 40], velocity: [60, 0], size: "large" }],
       ]),
       score: 0,
       lives: 3,
       wave: 1,
     },
   },
-];
+);

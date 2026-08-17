@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
 import { Bullet } from "../bullet/bullet.js";
 import { Motion } from "../motion/motion.js";
@@ -38,7 +37,7 @@ export const stepBullets = (
 // under it, mixed drop, and the empty list.
 const field = { ...create(), bounds: [100, 100] as [number, number] };
 
-export const cases: Conformance<typeof stepBullets> = [
+export const cases = Conformance.cases(stepBullets,
   {
     name: "moves and ages a live bullet",
     before: {
@@ -49,7 +48,7 @@ export const cases: Conformance<typeof stepBullets> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("b"), { position: [20, 50], velocity: [100, 0], age: 0.1 }],
+        [1, { position: [20, 50], velocity: [100, 0], age: 0.1 }],
       ]),
     },
   },
@@ -63,7 +62,7 @@ export const cases: Conformance<typeof stepBullets> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("b"), { position: [5, 50], velocity: [100, 0], age: 0.1 }],
+        [1, { position: [5, 50], velocity: [100, 0], age: 0.1 }],
       ]),
     },
   },
@@ -88,7 +87,7 @@ export const cases: Conformance<typeof stepBullets> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("b"), { position: [10, 50], velocity: [0, 0], age: 1.1 }],
+        [1, { position: [10, 50], velocity: [0, 0], age: 1.1 }],
       ]),
     },
   },
@@ -105,7 +104,7 @@ export const cases: Conformance<typeof stepBullets> = [
     after: {
       ...field,
       entities: new Map([
-        [Match.ref("b"), { position: [20, 50], velocity: [100, 0], age: 0.1 }],
+        [1, { position: [20, 50], velocity: [100, 0], age: 0.1 }],
       ]),
     },
   },
@@ -115,4 +114,4 @@ export const cases: Conformance<typeof stepBullets> = [
     args: 0.1,
     after: { ...field, entities: new Map() },
   },
-];
+);

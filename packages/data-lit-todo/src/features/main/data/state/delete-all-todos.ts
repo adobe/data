@@ -3,7 +3,7 @@ import { AnalyticsService } from "../../services/analytics-service/analytics-ser
 import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
 import type { Todo } from "../todo/todo.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 
 // Reads the entities, writes the entities — an `{ entities }` patch — clearing
 // them; `displayCompleted` is untouched. Logs `allTodosCleared`.
@@ -19,7 +19,7 @@ export const deleteAllTodos = (
 // a delta over `State.create()`; `after` lists only the written entities (empty).
 // Every todo is removed and `displayCompleted` is untouched; the transition logs
 // `allTodosCleared` (as the action does).
-export const cases: Conformance<typeof deleteAllTodos> = [
+export const cases = Conformance.cases(deleteAllTodos,
   {
     name: "empties a populated list, preserving displayCompleted",
     before: {
@@ -41,4 +41,4 @@ export const cases: Conformance<typeof deleteAllTodos> = [
     after: { entities: new Map<number, Todo>() },
     effects: { analytics: [["allTodosCleared"]] },
   },
-];
+);

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { ECS_SNAPSHOT_VERSION, Entity, ID, serializedEntityLocationTables, type Archetype, type EntityLocationEntry } from "@adobe/data/ecs";
+import { ECS_SNAPSHOT_VERSION, Entity, Store, serializedEntityLocationTables, type Archetype, type EntityLocationEntry } from "@adobe/data/ecs";
 import { createColumnEncoder } from "../encoder/create-column-encoder.js";
 import {
     decodeJournalSnapshot,
@@ -133,7 +133,7 @@ export const createIncrementalPersistenceService = async (
             // Skip the implicit `id` column — entity ids are recovered
             // from the per-quadrant entity-location files, so storing them
             // again per archetype row would be redundant.
-            if (component === ID) continue;
+            if (component === Store.ID) continue;
             // Skip nonPersistent-schema components — their values are never
             // saved; on load they're reset to default or the component is
             // stripped (see store.reconstructNonPersistentColumns).
@@ -146,7 +146,7 @@ export const createIncrementalPersistenceService = async (
 
         const componentIds = new Map<string, number>();
         for (const component of archetype.components) {
-            if (component === ID || isNonPersistentComponent(component)) continue;
+            if (component === Store.ID || isNonPersistentComponent(component)) continue;
             componentIds.set(component, internComponent(component));
         }
 
@@ -670,7 +670,7 @@ export const createIncrementalPersistenceService = async (
             const colMan = aMan.columns[componentName]!;
             // The implicit `id` column is reconstructed from the entity
             // location table on a separate pass below.
-            if (colMan.component === ID) continue;
+            if (colMan.component === Store.ID) continue;
             await restoreColumn(aMan, colMan, liveArchetype);
         }
 
@@ -932,7 +932,7 @@ export const createIncrementalPersistenceService = async (
         if (entry.componentId === 0) return;
         const componentName = manifest.components[entry.componentId];
         if (componentName === undefined) return;
-        if (componentName === ID) return;
+        if (componentName === Store.ID) return;
 
         const colMan = aMan.columns[componentName];
         if (colMan === undefined) return;

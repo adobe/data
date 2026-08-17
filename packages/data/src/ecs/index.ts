@@ -5,7 +5,8 @@ export { type EntityLocationTable } from "./entity-location-table/entity-locatio
 export { serializedEntityLocationTables, type EntityLocationEntry } from "./entity-location-table/serialized-entity-location-tables.js";
 export { type PersistenceScope, type ToDataOptions } from "./persistence-scope.js";
 export * from "./archetype/index.js";
-export * from "./required-components.js";
+// `ID` (the id column name) is exposed namespaced as `Store.ID`, not flat here.
+export { type IdComponent, type RequiredComponents, RESERVED_COMPONENT_NAMES } from "./required-components.js";
 export * from "./optional-components.js";
 export { type Components } from "./store/components.js";
 export { type ResourceComponents } from "./store/resource-components.js";

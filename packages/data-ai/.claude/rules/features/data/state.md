@@ -49,12 +49,18 @@ A `State` has two kinds of field:
   types (`Todo`, or `Bullet | Asteroid`). Omit `entities` entirely for a feature with
   no entities (`tictactoe`, `dashboard`) — it is then all singletons.
 
-This maps 1:1 to the ECS with **zero dependency on it** — the key is a plain `number`,
-never the ECS `Entity`, so `data/` provably cannot reach ECS machinery. Singletons ↔
-resources; each `entities` value ↔ one entity whose **component set is the value's own
-keys**, so `fromState` inserts a value into the archetype named by `Object.keys(value)`
-and `toState` reads every entity back into the map. Identity lives in the key, never a
-field — see `../../data-modelling.md` (Entities are keyed, never id-bearing values).
+This maps 1:1 to the ECS. `State` must not depend on ECS *machinery* (a store, a
+transaction, an index) — but it **may reuse ECS-related value types**: the key can be
+the `Entity` type (it is just a branded `number`), and a reference/hierarchy bundle can
+reuse a shared value type like `CoeditingRelations.OrderedChild` (`{ parent, order }`).
+Those are plain serializable data, not ECS behaviour, and reusing them keeps the spec
+and the ECS in lockstep — the same `Entity.schema` that types an id here is what
+conformance walks to compare the two up to an id-bijection (see `conformance.md`).
+Singletons ↔ resources; each `entities` value ↔ one entity whose **component set is the
+value's own keys**, so `fromState` inserts a value into the archetype named by
+`Object.keys(value)` and `toState` reads every entity back into the map. Identity lives
+in the key, never a field — see `../../data-modelling.md` (Entities are keyed, never
+id-bearing values).
 
 ### Entity value types — structural, id-less, one `is` guard each
 
@@ -146,7 +152,7 @@ and `.test.ts`.
 fixtures the pure `spec.test.ts` **and** the ecs `runFeature` call both reuse
 (driving transaction / action / computed conformance) — the transform's contract
 expressed as data, not a per-file test — so they belong
-beside the thing they specify, and `Conformance<typeof fn>` binds them to the
+beside the thing they specify, and `Conformance.cases(fn, …)` binds them to the
 signature so they can't drift. Kept inert (no `describe`; one aggregator runs
 them) they also sidestep the double execution vitest triggers when a single file
 both exports cases and runs its own `describe`. Coverage is then enforced
@@ -166,18 +172,16 @@ transform/derivation files can write a one-parameter type:
 // data/state/conformance-case.ts — the only per-feature conformance declaration
 import { Conformance as ConformanceApi } from "@adobe/data-testing";
 import type { State } from "./state.js";
-export type Conformance<F extends (...args: never[]) => unknown> = ConformanceApi.Cases<State, F>;
+// `Conformance.cases(fn, [options,] ...cases)` declares a transform's cases — the
+// case types (args, before/after) come from `fn`. A derivation authors `Derivation<typeof fn>`.
+export const Conformance = { cases: ConformanceApi.casesBuilder<State>() };
 export type Derivation<F extends (...args: never[]) => unknown> = ConformanceApi.DerivationCases<F>;
 export type Effects<Args> = ConformanceApi.Effects<Args>;
-// The entity-reference marker for identity-addressed case args, re-exported so
-// cases import it beside `Conformance`: `args: { id: entity(2) }`.
-export const entity = ConformanceApi.entity;
 ```
 
 ```ts
 // create-todo.ts
-import { Match } from "@adobe/data-testing";
-import type { Conformance } from "./conformance-case.js";      // the thin per-feature alias above
+import { Conformance } from "./conformance-case.js";           // the thin per-feature alias above
 import type { Services } from "../../services/services.js";    // the feature's service map
 export const createTodo = (
     state: Pick<State, "entities">,
@@ -191,16 +195,17 @@ export const createTodo = (
     return { entities: new Map(state.entities).set(id, { name, complete: false, order }) };
 };
 
-export const cases: Conformance<typeof createTodo> = [
+export const cases = Conformance.cases(createTodo,
     { name: "adds the first todo",
       before: {},                       // empty delta — the default State.create() (empty entities)
       args: { name: "a", analytics: AnalyticsService.createFake() },
-      // The map key is an id the ECS mints — use `Match.ref("label")` (a DISTINCT
-      // label per entity). The value is id-less so content compares directly. (Maps
-      // compare entry-wise / order-independently — see conformance.md.)
-      after: { entities: new Map([[Match.ref("a"), { name: "a", complete: false, order: 0 }]]) },
+      // The map key is a PLAIN spec-id you choose (1). The ECS mints its own id, so
+      // conformance compares up to an id-bijection — the key need only be distinct.
+      // The value is id-less so content compares directly. (Maps compare entry-wise /
+      // order-independently — see conformance.md.)
+      after: { entities: new Map([[1, { name: "a", complete: false, order: 0 }]]) },
       effects: { analytics: [["todoCreated", { name: "a" }]] } },
-];
+);
 ```
 
 - **Signature** `(state: Pick<State, …reads>, args) => Pick<State, …writes>` — a
@@ -208,8 +213,8 @@ export const cases: Conformance<typeof createTodo> = [
   transition **reads**; the return is *only the fields it **writes***. **No
   `<T> => T` generic, no `...state` spread** in the return — return the patch and
   let the runner merge it. **All non-state inputs go in the single `args` object**
-  (`Conformance<typeof fn>` reads `Parameters[1]`) — bundle a `dt`, an injected
-  service, etc. into it, never as a third positional. A transition that takes
+  (the case's `args` type is read from `fn`'s `Parameters[1]`) — bundle a `dt`, an
+  injected service, etc. into it, never as a third positional. A transition that takes
   **no** args omits `args` from each case entirely (the shared `Case` type makes
   `args` optional exactly then). **Guard no-ops by returning an empty patch `{}`**
   (or the unchanged slice), never throw.
@@ -222,61 +227,56 @@ export const cases: Conformance<typeof createTodo> = [
   any barrel member) in a top-level `cases` literal dead-locks the import cycle.
   Import the concrete helper directly (`import { create } from "./create.js"`) or
   inline full-`State` literals.
-- **`Conformance<typeof fn>`** (the alias above) derives the case `args` type from
-  the function's own signature — author it once, and cases can't drift from what
-  the function accepts. **`before` is a delta over `State.create()`** — list only
+- **`Conformance.cases(fn, ...cases)`** (the builder above) derives each case's
+  types from `fn`'s own signature — pass the transition function and cases can't drift
+  from what it accepts. **`before` is a delta over `State.create()`** — list only
   the fields this case sets differently from the default; **`after` is the writes
   patch** — only the fields the transition changes. The runner seeds
   `{ ...State.create(), ...before }` and compares against
   `{ ...State.create(), ...before, ...after }`, so any field a case doesn't mention
   is the default and stays unchanged. (A full `before`/`after` still works — it just
   overrides the default wholesale.)
-- **`after` leaves minted values open** with the shared matchers `Match.anyNumber`
-  / `Match.anyString`, imported from `@adobe/data-testing` — there is **no**
-  per-feature `matchers.ts` anymore. An entity's identity is the `entities` map **key**,
-  not a value field, so entity content compares directly with nothing to ignore. The
-  key is an ECS-minted id, so use **`Match.ref("label")` with a DISTINCT label per map
-  entry** (`[Match.ref("a"), value]`) — `ref` returns a fresh object so distinct labels
-  are distinct keys, and its injective binding both keeps entities distinct and lets an
-  entity **correlate** with a reference elsewhere in the case (reuse the label, e.g. a
-  `selectedId: Match.ref("a")` singleton). Do **not** use `Match.anyNumber` as a map key
-  — it is a shared singleton, so two entries keyed by it collapse to one. `entity(specId)`
-  is for **`args`** (it resolves via the seed map), **not** `after` keys — a case's `after`
-  entities may be freshly created, with no seed mapping. Match by content, not by a value
-  you don't control. `Match` is framework-agnostic and
-  honors any asymmetric matcher, so vitest's `expect.stringContaining(...)` interops
-  on the expected side too. When an id must **line up in two places** within one
-  comparison — a `selectedId` that points at a specific todo, say — use
-  `Match.ref(label)`: it asserts id *correspondence* (a bijection up to renaming),
-  not a pinned value, so the two occurrences of the label must resolve to the same
-  actual id and two labels can't collide. `anyNumber`/`anyString` are for an id a
-  case does not pin at all; `ref` for one that must be consistent across the case.
-- **Entity-addressed cases use `entity(specId)` in `args`.** A transition that
-  addresses an entity by id writes it as `args: { id: entity(2) }` — `entity` imported
-  from the feature's `conformance-case.ts` (re-exported from `@adobe/data-testing`). It
-  types as the id it stands for, so it slots into the transform's own arg type. `runSpec`
-  unwraps it to the plain data-id for the pure side; the ECS runners resolve it (via the
-  `fromState` seed map) to the seeded entity (see `conformance.md`).
+- **`after` uses PLAIN spec-ids everywhere — no hand-authored key matchers.** An
+  entity's identity is the `entities` map **key**, not a value field, so entity content
+  compares directly. The ECS mints its **own** ids (a different set from the spec's), so
+  conformance compares the two **up to an id-bijection**: the runner reads the store's
+  schemas, finds every entity reference (a map key, and any field whose schema is
+  `Entity.schema` — recursing into a bundle like `{ parent, order }`), and matches the
+  case's spec-ids to the ECS's ids one-to-one. So a case author writes ordinary numbers
+  — `[[1, value], [2, value]]` — and **a reference field just holds the id it points at**
+  (`{ asset: 2 }`, `placement: { parent: 1, … }`). The bijection makes a key and every
+  field that names it line up on one actual id automatically — this is what killed the
+  old `Match.ref` / `Match.refMap` key-labelling (no more distinct-label bookkeeping,
+  and cross-references between entities finally compare correctly). For a **minted scalar**
+  a case does not want to pin — a generated timestamp, a random value — still use
+  `Match.anyNumber` / `Match.anyString` (imported from `@adobe/data-testing`); `Match` is
+  framework-agnostic, so vitest's `expect.stringContaining(...)` interops on the expected
+  side too. (The id-correspondence solver is now internal — the runner generates it from
+  the schema-marked spec-ids; there is no case-facing `ref`/`refMap` matcher anymore.)
+- **Entity-addressed cases pass an `args` schema in the builder options.** State
+  references are detected from the store's schemas; an **arg** has none, so a transition
+  that addresses an entity by id gives `Conformance.cases` a leading options object whose
+  `args` schema marks the reference fields:
+  `Conformance.cases(fn, { args: { type: "object", properties: { id: Entity.schema } } }, …cases)`.
+  The case then writes the id **plain** — `args: { id: 2 }` — and the runner resolves each
+  `Entity.schema`-marked field to the seeded entity (via the `fromState` seed map) on the
+  ECS side, while the pure side reads the plain spec-id directly. Describe **only** the
+  reference fields (services and non-id args are omitted); the args type must be assignable
+  to the schema's `Schema.ToType`, so the schema can't drift from the signature (the builder
+  fails to type-check otherwise). This is the args-side analog of the `Entity.schema` mark
+  the runner reads on state.
 - **The `entities` map key convention across a case, in one place:**
   - **`before`** (the seed): **plain spec-id numbers** (`new Map([[1, …], [2, …]])`).
-    `fromState` seeds from these and returns the `spec-id → entity` map, so `args:
-    { id: entity(1) }` resolves to the entity seeded for `1`.
-  - **`after`** (the expectation, compared against the ECS by content): **`Match.ref`
-    with a distinct label per entry** (`[[Match.ref("a"), …], [Match.ref("b"), …]]`) —
-    the ECS mints its own ids, so keys must be open; `ref` is a fresh object (distinct
-    keys don't collapse) and injective (entities stay distinct, and a label reused in a
-    singleton reference correlates). Never `entity(specId)` here — a case's `after` may
-    hold freshly created entities with no seed mapping.
-  - **`samples`** (round-tripped `toState ∘ fromState`): same as `after` — open,
-    distinct keys against ECS-minted ids.
-  - **Building the open-keyed map — `Match.refMap(values)`.** When the entries come
-    from a list rather than hand-authored labels (a `samples` entry, a case `after`
-    whose entities you don't cross-reference), don't hand-roll the `Match.ref` keys:
-    `Match.refMap(iterableOfValues)` returns a `ReadonlyMap<number, V>` keyed by
-    process-unique open `ref`s — the standard way to build an identity-keyed collection
-    for comparison. Reach for a **hand-written `Match.ref(label)`** only when a key must
-    **correspond** to a reference elsewhere in the same case (a `selectedId`), where the
-    shared label is the whole point.
+    `fromState` seeds from these and returns the `spec-id → entity` map, so a case's
+    `args: { id: 1 }` resolves to the entity seeded for `1`.
+  - **`after`** (the expectation, compared against the ECS): **plain spec-id numbers**,
+    distinct per entry, and reference fields hold the spec-id they point at. The runner
+    refifies them and compares up to an id-bijection, so the ECS's own ids need not match.
+    You may reuse the same spec-ids as `before` for entities that persist (it reads
+    clearly), but any distinct numbers work — the comparison is by content + reference
+    structure, never by the literal id.
+  - **`samples`** (round-tripped `toState ∘ fromState`): same as `after` — plain spec-id
+    keys, compared up to a bijection against the ECS-minted ids.
 - No per-transform test. The single **`spec.test.ts`** is one call —
   `Conformance.runSpec({ state: State, transitions })` importing `transitions`
   from the test-only `./transitions.js` (above) — that auto-discovers every module

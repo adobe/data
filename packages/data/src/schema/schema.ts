@@ -38,6 +38,13 @@ export interface Schema {
   // coarse spatial broad-phase wants. See the archetype `Router` return of
   // `ensureArchetype` and the partition `where` filter on `queryArchetypes`.
   partition?: boolean;
+  // Marks an integer schema as an ECS entity reference (the id of another entity),
+  // not a plain number. `Entity.schema` sets it; every component/resource/arg that
+  // holds an entity id reuses that schema and so inherits the mark. Conformance
+  // testing walks schemas for this flag to know which numbers are ids — so it can
+  // compare a State spec to its ECS implementation up to an id-bijection (the two
+  // mint different id sets) without the case author hand-labelling every reference.
+  entity?: boolean;
   mutable?: boolean; // defaults to false
   default?: any;
   precision?: 1 | 2;

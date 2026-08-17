@@ -27,7 +27,7 @@ import { Ship } from "../../../data/ship/ship.js";
 import { Asteroid } from "../../../data/asteroid/asteroid.js";
 import { Input } from "../../../data/input/input.js";
 import { cases } from "../../../data/state/step.js";
-import { Match } from "@adobe/data-testing";
+import { Conformance } from "@adobe/data-testing";
 import { createSystemDatabase } from "../conformance/create-system-database.js";
 import { projection } from "../conformance/projection.js";
 import { driveFrame } from "../conformance/drive-frame.js";
@@ -38,17 +38,19 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
       const { dt, input } = testCase.args;
       // A case `before` is a delta over the feature default (`Case.before` is
       // `Partial<State>`), so materialise the full seed the same way the runners do.
+      // `db.store` supplies the schemas `assertState` reads to compare up to an
+      // id-bijection (a tick spawns split children, so keys differ on both sides).
       const before = { ...State.create(), ...testCase.before };
+      const db = createSystemDatabase();
       // The co-located case carries its own inert `random` double (no case clears
       // the field, so it is never drawn), so drive the oracle with the case args.
-      Match.assert(State.step(before, testCase.args), testCase.after);
+      Conformance.assertState(State.step(before, testCase.args), testCase.after, db.store);
 
-      const db = createSystemDatabase();
       projection.fromState(db.store, before);
       db.store.resources.frameDelta = dt;
       db.transactions.setInput(input);
       driveFrame(db);
-      Match.assert(projection.toState(db.store), testCase.after);
+      Conformance.assertState(projection.toState(db.store), testCase.after, db.store);
     });
   }
 

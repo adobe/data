@@ -1,8 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Vec2 } from "@adobe/data/math";
-import { Match } from "@adobe/data-testing";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { create } from "./create.js";
 import { Asteroid } from "../asteroid/asteroid.js";
 import { Size } from "../size/size.js";
@@ -70,7 +69,7 @@ export const spawnRandomWave = (
 const field = { ...create(), bounds: [200, 200] as [number, number] };
 const randoms = [0, 0.5, 0.25, 0.75];
 
-export const cases: Conformance<typeof spawnRandomWave> = [
+export const cases = Conformance.cases(spawnRandomWave,
   {
     name: "spawns a randomized wave (jittered drift speeds) when the field is clear",
     before: { ...field, entities: new Map(), wave: 0 },
@@ -79,10 +78,10 @@ export const cases: Conformance<typeof spawnRandomWave> = [
       ...field,
       wave: 1,
       entities: new Map([
-        [Match.ref("a1"), { position: [180, 100], velocity: [0, 30], size: "large" }],
-        [Match.ref("a2"), { position: [100, 180], velocity: [-60, 0], size: "large" }],
-        [Match.ref("a3"), { position: [20, 100], velocity: [0, -45], size: "large" }],
-        [Match.ref("a4"), { position: [100, 20], velocity: [75, 0], size: "large" }],
+        [1, { position: [180, 100], velocity: [0, 30], size: "large" }],
+        [2, { position: [100, 180], velocity: [-60, 0], size: "large" }],
+        [3, { position: [20, 100], velocity: [0, -45], size: "large" }],
+        [4, { position: [100, 20], velocity: [75, 0], size: "large" }],
       ]),
     },
   },
@@ -100,8 +99,8 @@ export const cases: Conformance<typeof spawnRandomWave> = [
       ...field,
       wave: 1,
       entities: new Map([
-        [Match.ref("a"), { position: [10, 10], velocity: [0, 0], size: "large" }],
+        [1, { position: [10, 10], velocity: [0, 0], size: "large" }],
       ]),
     },
   },
-];
+);

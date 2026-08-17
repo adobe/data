@@ -37,10 +37,10 @@ installing `@adobe/data` never pulls in a `vitest` peer dependency):
 
 - **`Match`** — the tolerant, matcher-aware value comparison: `matches(actual,
   expected, options?)` and its throwing wrapper `assert(...)`, plus the matchers
-  `Match.anyNumber` / `Match.anyString` / `Match.ref(label)`, and the collection
-  builder `Match.refMap(values)` (an identity-keyed `ReadonlyMap<number, V>` of
-  id-less values with distinct open keys — the standard way to author a `samples`
-  entry or a created-entity `after`; see `../../../data/state.md`). Options are
+  `Match.anyNumber` / `Match.anyString` for minted scalars a case does not pin.
+  **Entity ids need no matcher**: a case writes plain spec-ids for map keys and
+  reference fields, and the runner compares up to an id-bijection (below), so `samples`
+  and `after` are ordinary `new Map([[1, value], …])` — no key labelling. Options are
   `{ tolerance?: number }` — numbers snap to `tolerance` (default `0.01`) to absorb
   F32↔f64 / trig noise. **Ordering is carried by the value's type**: a
   `ReadonlyArray` compares **in order**, a `ReadonlySet` / `ReadonlyMap`
@@ -50,8 +50,8 @@ installing `@adobe/data` never pulls in a `vitest` peer dependency):
   ignore when comparing content. Framework-agnostic: it honors any asymmetric matcher,
   so vitest's `expect.any(...)` interops.
 - **`Conformance`** — the case types (`Case`, `Cases`, `DerivationCase`,
-  `DerivationCases`, `Effects`, `ServiceCall`), the `entity(specId)` identity
-  marker, the id `resolver(map)`, the whole-feature driver **`runFeature`**, the
+  `DerivationCases`, `Effects`, `ServiceCall`), the `casesBuilder` (a feature's
+  `Conformance.cases`), `assertState` for custom harnesses, the whole-feature driver **`runFeature`**, the
   pure-spec driver **`runSpec`**, and the lower-level per-surface drivers
   `runTransactions` / `runActions` / `runComputeds` (internals of `runFeature`,
   exported for the escape hatch below). Auto-pairing (transition ⇄ op by name),
@@ -167,8 +167,8 @@ Conformance.runSpec({ state: State, transitions });
 It discovers every file exporting `cases`, enforces the two-exports rule, and
 dispatches on case shape (transition → state + effects, derivation →
 `fn(input) ≡ value`), seeding each case's `before`/`input` as a delta over
-`State.create()`. Unwraps any `entity(specId)` arg marker to its plain data-id for
-the pure side.
+`State.create()`. On the ECS side it resolves the reference args a case's `args`
+schema marks; the pure side reads them plain.
 
 ## The exception — a per-surface `userId`, via the lower-level runners
 
@@ -182,17 +182,21 @@ action db. `runFeature` has no place to thread two different `seedContext`s, so
 this feature drops to the lower level. This is the escape hatch — ordinary
 features never touch these drivers directly.
 
-## Identity — the `entity(specId)` marker
+## Identity — the `args` schema
 
-An entity-addressed transition writes its addressed id as `args: { id: entity(2) }`
-— import `entity`, re-exported from the feature's `data/state/conformance-case.ts`.
-`runSpec` unwraps it to the plain data-id; the ECS runner resolves it to the
+An entity-addressed transition declares an `args` schema in the builder options and
+writes the id **plain**: `Conformance.cases(fn, { args: { type: "object", properties:
+{ id: Entity.schema } } }, { …, args: { id: 2 }, … })`. The runner
+finds each `Entity.schema`-marked arg field and resolves the plain spec-id to the
 **seeded entity** via the id→entity map `fromState` returns (turned into a `resolve`
-by `Conformance.resolver` — no feature writes `resolve` by hand). Two conventions
-make the wiring vanish: the ECS op takes the entity **under the transition's own arg
-key** (`{ id }`, same-shape args, no reshape), and `fromState` returns the
-`ReadonlyMap<Id, Entity>` id→entity map (or `void` for an index-addressed / singleton
-feature, whose ids then resolve to `Entity.none`). `data-lit-todo` is the reference.
+by `Conformance.resolver` — no feature writes `resolve` by hand); the pure side reads
+the spec-id as-is. Two conventions make the wiring vanish: the ECS op takes the entity
+**under the transition's own arg key** (`{ id }`, same-shape args, no reshape), and
+`fromState` returns the `ReadonlyMap<Id, Entity>` id→entity map (or `void` for an
+index-addressed / singleton feature, whose ids then resolve to `Entity.none`).
+`data-lit-todo` is the reference. Describe only the reference fields — services and
+non-id args are omitted, and the args type must be assignable to the schema's
+`Schema.ToType` so it cannot drift from the signature.
 
 ## Name-parity — add a same-named op, never a per-item adapter
 
@@ -202,25 +206,31 @@ op is infra, and a thin **same-named** op (todo's `reorderTodo` action, space-ro
 `createInitial` transaction) gives the transition something to pair with. Do **not**
 reintroduce a per-item adapter to bridge a name mismatch — add the same-named op.
 
-## Ordering, tolerance, `ref`
+## Ordering, tolerance, the id-bijection
 
 Ordering is carried by the value's **type**, not a match option — `ReadonlyArray`
 positional, `ReadonlySet` / `ReadonlyMap` order-independent (the rule and its
 rationale live in `../../../data-modelling.md`). What's specific to writing
 conformance cases:
 
-- **Entity identity is the `State.entities` key, not a value field.** Entity values
-  carry no `id`, so there is nothing to omit or ignore — content compares directly.
-  The map key is a spec-domain id the runner resolves to the allocated ECS entity via
-  `resolver`; assert a *reference* between entities with `Match.ref` (below).
+- **The spec and the ECS mint different id sets, so comparison is up to an
+  id-bijection — automatically.** The runner reads the store's `componentSchemas`
+  (which also carry the resource schemas) and finds every entity reference: an
+  `entities` map **key** (an id by construction) and any field whose schema is
+  `Entity.schema` (`schema.entity === true`), recursing into bundled object schemas so
+  a `placement: { parent, order }` reference is found. It replaces each spec-id there
+  with a correspondence variable and solves a one-to-one matching against the ECS's
+  ids. So a case **writes plain spec-ids** for keys and reference fields, and a key and
+  every field naming it line up on one actual id with no author bookkeeping — this is
+  what retired `Match.ref` / `Match.refMap` for keys, and it is what makes a
+  cross-reference between entities (an `asset`, a `parent`) compare correctly at all.
+- **Entity values carry no `id`** — identity is the key — so entity content compares
+  directly, with nothing to omit.
 - **Float noise** is absorbed by the default `tolerance` (`0.01`), threaded through
   `match?: { tolerance }`; raise it only when a case needs a looser grid.
-- **`Match.ref(label)`** on the expected side asserts id *correspondence* for a
-  referential feature — a reference that must line up with the entity it points at
-  (a `selectedId` → a specific todo). Put `ref("t")` on both the reference **and**
-  that entity's `id`; the labels form a bijection over the actual ids.
-  `Match.anyNumber` / `anyString` leave an id a case doesn't pin fully open. `ref`
-  correspondence holds even across a `ReadonlySet` boundary.
+- **A minted scalar** a case does not pin — a timestamp, a random draw — uses
+  `Match.anyNumber` / `Match.anyString`. Entity-id correspondence needs no matcher: the
+  runner derives it from the schema-marked spec-ids (the solver is internal).
 
 ## Recording side effects — built in, no Proxy
 

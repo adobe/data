@@ -6,8 +6,7 @@
 // what runtime contract makes it sound.
 
 import type { Archetype, Database, ReadonlyArchetype } from "@adobe/data/ecs";
-import { ID } from "@adobe/data/ecs";
-import type { Store } from "@adobe/data/ecs";
+import { Store } from "@adobe/data/ecs";
 import type { TypedBuffer } from "@adobe/data/typed-buffer";
 
 /**
@@ -71,5 +70,5 @@ export const getColumn = (
 export const getIdColumn = (
     archetype: ReadonlyArchetype<any>,
 ): TypedBuffer<number> | undefined => {
-    return getColumn(archetype, ID) as TypedBuffer<number> | undefined;
+    return getColumn(archetype, Store.ID) as TypedBuffer<number> | undefined;
 };

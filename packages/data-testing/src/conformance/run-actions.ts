@@ -1,10 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it } from "vitest";
 import type { Entity } from "@adobe/data/ecs";
-import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
-import { adaptArgs } from "./entity-ref.js";
 import { discoverTransitions, discoverOps } from "./discover.js";
+import { expectAfter } from "./expect-after.js";
+import type { SchemaSource } from "./refify.js";
+import { resolveArgs } from "./resolve-args.js";
 import { splitAndRecordServices, expectEffects } from "./record-effects.js";
 import { resolver } from "./resolve.js";
 
@@ -12,7 +13,7 @@ import { resolver } from "./resolve.js";
 // pair by name, and conform each — no per-item wiring. The action is the app-facing
 // seam: its injected services come from `db.services` (the case's service args
 // become recording overrides via `makeDb`), and its plain args are the case args
-// with service fields removed and `entity(specId)` markers resolved. Both the
+// with service fields removed and the `args`-schema entity fields resolved. Both the
 // resulting state and the declared `effects` are asserted. An action with no
 // same-named transition (e.g. a streaming port) is skipped.
 export interface ActionRunConfig<Db, Store, State> {
@@ -32,7 +33,7 @@ export interface ActionRunConfig<Db, Store, State> {
 
 // The single conformance test for every ecs action: each transition's cases run
 // against its same-named action, asserting state and the declared effects.
-export function runActions<Db, Store, State>(config: ActionRunConfig<Db, Store, State>): void {
+export function runActions<Db, Store extends SchemaSource, State>(config: ActionRunConfig<Db, Store, State>): void {
   const transitions = discoverTransitions(config.transitions);
   for (const [name, action] of discoverOps(config.actions)) {
     const paired = transitions.get(name);
@@ -46,9 +47,13 @@ export function runActions<Db, Store, State>(config: ActionRunConfig<Db, Store, 
           const db = config.makeDb(services);
           const resolve = resolver(config.fromState(config.store(db), before));
           config.seedContext?.(db, before, testCase.args);
-          await (action as (d: Db, a?: unknown) => Promise<void> | void)(db, adaptArgs(input, resolve));
-          // `after` is a writes patch — compare `toState` against it merged over `before`.
-          assert(config.toState(config.store(db)), { ...(before as object), ...(testCase.after as object) }, config.match);
+          // Resolve entity-reference args (the fields the case's `args` schema marks)
+          // to the seeded entities; a transition with no such schema passes through.
+          const args = resolveArgs(input, paired.argsSchema, resolve);
+          await (action as (d: Db, a?: unknown) => Promise<void> | void)(db, args);
+          // `after` is a writes patch, compared up to an id-bijection.
+          const store = config.store(db);
+          expectAfter(config.toState(store), before as object, testCase.after as object, store, config.match);
           expectEffects(calls, testCase.effects as never);
         });
       }

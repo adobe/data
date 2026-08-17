@@ -3,9 +3,8 @@ import { NameGeneratorService } from "../../services/name-generator-service/name
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
 import type { Services } from "../../services/services.js";
 import type { State } from "./state.js";
-import type { Conformance } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 import { appendTodo } from "./append-todo.js";
-import { Match } from "@adobe/data-testing";
 /**
  * Async, service-injected transition: brackets the slow name generation with
  * analytics timing, then appends the todo via the shared {@link appendTodo} (so
@@ -29,14 +28,14 @@ export const createRandomTodo = async (
 };
 
 // Spec-owned cases. `before` is a delta over `State.create()`; `after` lists only
-// the written entities with a distinct `Match.ref` key. Each injects deterministic
+// the written entities with plain spec-id keys. Each injects deterministic
 // doubles with the exact responses it needs and authors `after` + `effects` against
 // those self-owned values (the name it schedules, the fixed `{ startedAt: 0 }`
 // timing the analytics double resolves). The value-returning reads
 // (`randomTodoRequested`, `generateName`) are still calls on `analytics`, so — it
 // being a declared service — its full call sequence is listed; `nameGenerator` is
 // not declared, so its read is ignored.
-export const cases: Conformance<typeof createRandomTodo> = [
+export const cases = Conformance.cases(createRandomTodo,
   {
     name: "names the new todo from the generator and logs the timed add",
     before: {},
@@ -46,7 +45,7 @@ export const cases: Conformance<typeof createRandomTodo> = [
     },
     after: {
       entities: new Map([
-        [Match.ref("a"), { name: "random task", complete: false, order: 0 }],
+        [1, { name: "random task", complete: false, order: 0 }],
       ]),
     },
     effects: {
@@ -71,7 +70,7 @@ export const cases: Conformance<typeof createRandomTodo> = [
     },
     after: {
       entities: new Map([
-        [Match.ref("a"), { name: "only name", complete: false, order: 0 }],
+        [1, { name: "only name", complete: false, order: 0 }],
       ]),
     },
     effects: {
@@ -81,4 +80,4 @@ export const cases: Conformance<typeof createRandomTodo> = [
       ],
     },
   },
-];
+);

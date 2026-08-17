@@ -54,7 +54,7 @@ export const projection = {
   // tail→head so each delete is from the tail (no hole-fill shift). Every entity
   // carries `position`, so one query covers all three archetypes. Row shapes equal
   // their `data/` types (no stored broad-phase column), so each value inserts
-  // directly. Space-rock is not id-addressed (no `entity()` markers in cases), so
+  // directly. Space-rock is not id-addressed (no case declares an `args` schema), so
   // `fromState` returns `void`.
   fromState: (store: CoreDatabase.Store, state: State): void => {
     for (const arch of store.queryArchetypes(["position"])) {

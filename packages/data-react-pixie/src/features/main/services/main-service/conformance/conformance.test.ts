@@ -7,8 +7,8 @@ import { projection } from "./projection.js";
 
 // The whole ecs conformance for this feature in one call: `runFeature` pulls the
 // transactions/actions off `MainService.plugin`, seeds each case's `before` (a
-// delta) over `State.create()`, resolves each entity-addressed case's `entity()`
-// markers through the `fromState` id map, and round-trips `State.samples` through
+// delta) over `State.create()`, resolves each entity-addressed case's reference
+// args (its `args` schema fields) through the `fromState` id map, and round-trips `State.samples` through
 // the projection. `transitions` (the discovered `{ fn, cases }` modules) is shared
 // with spec.test. This feature has no derivations, so no `computedPlugin`.
 Conformance.runFeature({

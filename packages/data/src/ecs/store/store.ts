@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { RequiredComponents } from "../required-components.js";
+import { RequiredComponents, ID as idColumnName } from "../required-components.js";
 import { ResourceComponents } from "./resource-components.js";
 import { Core, ReadonlyCore } from "./core/core.js";
 import { Entity } from "../entity/entity.js";
@@ -218,6 +218,15 @@ export namespace Store {
     }
 
     export const create = createStore;
+
+    /**
+     * The reserved component name for an entity's identity column (`"id"`). Every
+     * archetype carries it; it is the entity's key, never a component value. This is
+     * the public, namespaced handle — `Store.ID` — for the id column name (the
+     * definition lives in `required-components.ts`, which the store internals import
+     * directly to avoid a cycle).
+     */
+    export const ID = idColumnName;
 }
 
 type Foo = Store<{ a: number, b: string }, {}, { one: ["a", "b"] }>

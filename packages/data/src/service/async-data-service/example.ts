@@ -52,13 +52,13 @@ type _ValidateUserService = Assert<AsyncDataService.IsValid<UserService>>;
  * Create a lazy-loading wrapper for UserService
  * The real service is only loaded when first accessed
  */
-export const createLazyUserService = AsyncDataService.createLazy(
-  async (): Promise<UserService> => {
+export const createLazyUserService = AsyncDataService.createLazy({
+  load: async (): Promise<UserService> => {
     // In real code, import the actual service implementation
     // e.g., return import('./user-service-impl.js').then(m => m.createUserService())
     throw new Error('Example only - service implementation not provided');
   },
-  {
+  properties: {
     currentUser: 'observe',
     allUsers: 'observe',
     selectUserById: 'fn:observe',
@@ -66,7 +66,7 @@ export const createLazyUserService = AsyncDataService.createLazy(
     updateUser: 'fn:promise',
     clearCache: 'fn:void'
   }
-);
+});
 
 // ============================================================================
 // WITH CONSTRUCTOR ARGS
@@ -88,16 +88,16 @@ type _ValidateConfigurableUserService = Assert<AsyncDataService.IsValid<Configur
 /**
  * Create a lazy-loading wrapper with constructor arguments
  */
-export const createLazyConfigurableUserService = AsyncDataService.createLazy(
-  async (args: UserServiceConfig): Promise<ConfigurableUserService> => {
+export const createLazyConfigurableUserService = AsyncDataService.createLazy({
+  load: async (args: UserServiceConfig): Promise<ConfigurableUserService> => {
     // In real code, import and create the service with args
     // e.g., return import('./configurable-impl.js').then(m => m.createService(args))
     console.log('Service config:', args);
     throw new Error('Example only - service implementation not provided');
   },
-  {
+  properties: {
     config: "observe",
     currentUser: "observe",
     fetchUser: "fn:promise"
   }
-);
+});

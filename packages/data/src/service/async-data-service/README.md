@@ -5,6 +5,7 @@ Utilities for working with asynchronous data services.
 ## Overview
 
 AsyncDataServices are services that only contain:
+
 - `Observe<Data>` properties
 - Functions that accept only `Data` arguments and return:
   - `Observe<Data>`
@@ -38,19 +39,19 @@ interface MyService extends Service {
 type Check = Assert<AsyncDataService.IsValid<MyService>>;
 ```
 
-### `AsyncDataService.createLazy(load, properties)`
+### `AsyncDataService.createLazy({ load, properties, preload? })`
 
-Creates a lazy-loading wrapper factory for a service. Returns a factory function that creates service instances. The real service is only loaded when first accessed. TypeScript automatically infers service and argument types.
+Creates a lazy-loading wrapper factory for a service. Returns a factory function that creates service instances. The real service is only loaded when first accessed (or, with `preload: true`, at browser idle). TypeScript automatically infers service and argument types.
 
 ```typescript
 // Define the factory
-const createLazyService = AsyncDataService.createLazy(
-  () => import('./my-service').then(m => m.createService()),
-  {
+const createLazyService = AsyncDataService.createLazy({
+  load: () => import('./my-service').then(m => m.createService()),
+  properties: {
     data: 'observe',
     fetchData: 'fn:promise'
   }
-);
+});
 
 // Create instances
 const service = createLazyService();
@@ -59,15 +60,16 @@ const service = createLazyService();
 **With Constructor Args:**
 
 ```typescript
-const createLazyService = AsyncDataService.createLazy(
-  (config: Config) => import('./my-service').then(m => m.createService(config)),
-  { data: 'observe', fetch: 'fn:promise' }
-);
+const createLazyService = AsyncDataService.createLazy({
+  load: (config: Config) => import('./my-service').then(m => m.createService(config)),
+  properties: { data: 'observe', fetch: 'fn:promise' }
+});
 
 const service = createLazyService({ apiUrl: '...' });
 ```
 
 **Features:**
+
 - ✅ Full type inference (no generic type parameters needed)
 - ✅ Lazy loading on first property access
 - ✅ Call queuing for functions (all calls execute in order after load)

@@ -1,6 +1,6 @@
 {
   "name": "@adobe/data-lit",
-  "version": "0.9.104",
+  "version": "0.10.0",
   "description": "Adobe data Lit bindings - hooks, elements, decorators",
   "type": "module",
   "private": false,

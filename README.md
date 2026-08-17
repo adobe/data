@@ -1,4 +1,5 @@
 # @adobe/data
+
 Adobe Data Oriented Programming Library
 
 ## Documentation
@@ -116,6 +117,7 @@ For our purposes, `Data` is immutable `JSON` (de)serializable objects and primit
 ### Why immutable Data?
 
 We prefer Data because it is easy to:
+
 - serialize
 - deserialize
 - inspect
@@ -124,14 +126,15 @@ We prefer Data because it is easy to:
 - validate
 
 We prefer immutable Data because it is easy to:
+
 - reason about
 - avoid side effects
 - avoid defensive copying
 - use for pure function arguments and return values
 - use with concurrency
 - memoize results
-    - use as cache key (stringified)
-    - use as cache value
+  - use as cache key (stringified)
+  - use as cache value
 
 ### What is Data Oriented Design?
 
@@ -191,10 +194,11 @@ export type Unobserve = () => void;
 ```
 
 An Observable can be thought of sort of like a Promise but with a few important differences.
+
 - A Promise only yields a single value, an Observable yields a sequence of values.
 - A Promise can reject with an error, an Observable can not. (It could yield type `MyResult | MyError` though.)
 - A Promise can only resolve asynchronously, an Observable *may* yield an initial result synchronously.
-    - An Observable is allowed to call the Callback callback function immediately upon observation if it has a value.
+  - An Observable is allowed to call the Callback callback function immediately upon observation if it has a value.
 - A Promise begins executing immediately, an Observable may lazily wait for a first observer before taking any action.
 - An Observable can be unobserved.
 
@@ -260,6 +264,7 @@ The `BlobStore` interface and corresponding `blobStore` exported instance provid
 
 `BlobRef`s have a number of advantages over directly using blobs.
 `BlobRef`s are:
+
 - small json objects
 - deterministic for each `Blob` based on mime type and content.
 - suitable for persistence to locations with limited size.
@@ -302,3 +307,46 @@ Sanders Mertens covers this thoroughly in his ECS FAQ:
 [https://github.com/SanderMertens/ecs-faq?tab=readme-ov-file#what-is-ecs](https://github.com/SanderMertens/ecs-faq?tab=readme-ov-file#what-is-ecs)
 
 In addition to the standard Entity, Component, and System definitions, we also use the term **Resource** — a global singleton value defined on the ECS itself, not attached to any specific entity.
+
+## Corporate contributors
+
+If your primary GitHub account is a corporate / Enterprise Managed User (EMU) account, it may be unable to fork or push to public repositories like this one. The fix is to contribute from a separate personal GitHub identity on the same machine, using SSH host aliases so each identity uses its own key.
+
+**Problem:** one machine, multiple GitHub identities (e.g. corporate vs. personal), needing a different SSH key per identity — but `git@github.com` only supports one key per config entry.
+
+**Solution:** define extra `Host` aliases in `~/.ssh/config` that all point at the real `github.com`, each pinned to a different key with `IdentitiesOnly yes`:
+
+```sshconfig
+# Default identity (e.g. your corporate account)
+Host github.com
+  HostName github.com
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_ed25519
+  IdentitiesOnly yes
+
+# Alternate identity (e.g. your personal account)
+Host github.com-personal
+  HostName github.com
+  AddKeysToAgent yes
+  UseKeychain yes
+  IdentityFile ~/.ssh/id_ed25519_personal
+  IdentitiesOnly yes
+```
+
+Then pick the identity by swapping the host in the remote URL:
+
+```sh
+git@github.com-personal:adobe/data.git   # uses the personal-account key
+git@github.com:adobe/data.git            # uses the default key
+```
+
+`IdentitiesOnly yes` is required — without it, `ssh-agent` may offer the wrong key first and authenticate against the wrong account.
+
+**Setup:**
+
+1. Generate a separate SSH key per GitHub identity and add each public key to the corresponding GitHub account.
+2. Add one host-alias block per non-default identity to `~/.ssh/config`, as above.
+3. For any repo that should use a non-default identity, set its remote to the aliased host (`git remote set-url origin git@github.com-personal:adobe/data.git`), and set that repo's local `user.email` to the matching account.
+
+The `-personal` suffix is just an arbitrary alias name — any label works as long as `HostName` maps it back to `github.com`.

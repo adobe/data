@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { State } from "./state.js";
 import type { Todo } from "../todo/todo.js";
-import type { Derivation } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 // The todos the user should see, in display order (ascending `order`): all of them
 // when `displayCompleted`, otherwise only the incomplete ones. Yields id-less
 // values — identity is the `entities` key, so the visible list compares by content.
@@ -16,7 +16,7 @@ export const visibleTodos = (
 // computed the runner hydrates through `toData` into these id-less values). A
 // derivation case is `{ input, value }`; `input` is keyed by PLAIN spec-ids;
 // `value` is id-less content in significant display order.
-export const cases: Derivation<typeof visibleTodos> = [
+export const cases = Conformance.derivations(visibleTodos,
   {
     name: "hides completed todos unless the completed view is on",
     input: {
@@ -46,4 +46,4 @@ export const cases: Derivation<typeof visibleTodos> = [
       { name: "b", complete: true, order: 1 },
     ],
   },
-];
+);

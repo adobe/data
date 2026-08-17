@@ -13,20 +13,24 @@ Conformance.runSpec({
   transitions: {
     "./increment.ts": {
       increment,
-      cases: [
-        {
-          name: "adds the delta over State.create()",
-          before: {},
-          args: { by: 2 },
-          after: { n: 2 },
-        },
-        {
-          name: "honors a non-default before delta",
-          before: { n: 10 },
-          args: { by: 1 },
-          after: { n: 11 },
-        },
-      ],
+      // A module's `cases` export is the builder envelope `{ cases }` (bare arrays are
+      // no longer valid); build it directly so run-spec reads the same shape.
+      cases: {
+        cases: [
+          {
+            name: "adds the delta over State.create()",
+            before: {},
+            args: { by: 2 },
+            after: { n: 2 },
+          },
+          {
+            name: "honors a non-default before delta",
+            before: { n: 10 },
+            args: { by: 1 },
+            after: { n: 11 },
+          },
+        ],
+      },
     },
   },
 });

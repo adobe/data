@@ -2,7 +2,7 @@
 import { BoardState } from "../board-state/board-state.js";
 import type { PlayerMark } from "../player-mark/player-mark.js";
 import type { State } from "./state.js";
-import type { Derivation } from "./conformance-case.js";
+import { Conformance } from "./conformance-case.js";
 
 // Whose turn it is: composes TWO `State` fields — the board (move count) and the
 // `firstPlayer` — so it is a `state/` derivation, not single-field board math
@@ -15,7 +15,7 @@ export const currentPlayer = (
 
 // Spec-owned cases, shared with the ecs `currentPlayer` computed. A derivation
 // case is `{ input, value }`; `input` is a full `State`, `value` the mark to move.
-export const cases: Derivation<typeof currentPlayer> = [
+export const cases = Conformance.derivations(currentPlayer,
   {
     name: "the first player moves on an empty board",
     input: {
@@ -48,4 +48,4 @@ export const cases: Derivation<typeof currentPlayer> = [
     },
     value: "X",
   },
-];
+);

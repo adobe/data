@@ -9,10 +9,9 @@ export interface Discovered {
   readonly argsSchema?: Schema;
 }
 
-// A `cases` export is either a plain array (no args schema) or the builder's
-// options form `{ args, cases }`. Normalize to a `{ list, argsSchema }` pair.
+// Every `cases` export is the builder envelope `{ args?, cases }` (a bare array is no
+// longer valid). Read the list and optional schema off it — one shape, no branch.
 const normalizeCases = (raw: unknown): { list: readonly unknown[]; argsSchema?: Schema } => {
-  if (Array.isArray(raw)) return { list: raw };
   if (raw !== null && typeof raw === "object" && Array.isArray((raw as { cases?: unknown }).cases)) {
     const { cases, args } = raw as { cases: readonly unknown[]; args?: Schema };
     return { list: cases, argsSchema: args };

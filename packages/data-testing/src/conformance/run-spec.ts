@@ -84,10 +84,9 @@ export const runSpec = (config: SpecRunConfig): void => {
       suites.push({ kind: "invalid", path, label, exportNames });
       continue;
     }
-    // `cases` is either a plain array or the builder's `{ args, cases }` options
-    // form; the pure side ignores the `args` schema (spec-ids need no resolution).
-    const rawCases = module["cases"];
-    const cases = Array.isArray(rawCases) ? rawCases : ((rawCases as { cases?: readonly unknown[] })?.cases ?? []);
+    // `cases` is the builder envelope `{ args?, cases }`; the pure side ignores the
+    // `args` schema (spec-ids need no resolution) and reads the list.
+    const cases = (module["cases"] as { cases?: readonly unknown[] })?.cases ?? [];
     // Empty `cases: []` is not a suite (and would open a Vitest describe with no
     // tests, which fails even when this file has other suites).
     if (cases.length === 0) continue;

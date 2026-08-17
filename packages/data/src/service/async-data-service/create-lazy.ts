@@ -30,12 +30,12 @@ type InferService<F> =
     ? S extends Service ? S : never
     : never;
 
-// Extract Args type from load function  
-type InferArgs<F> = 
-  F extends () => Promise<any> 
-    ? void 
-    : F extends (args: infer A) => Promise<any> 
-      ? A 
+// Extract Args type from load function
+type InferArgs<F> =
+  F extends () => Promise<any>
+    ? void
+    : F extends (args: infer A) => Promise<any>
+      ? A
       : never;
 
 // ============================================================================
@@ -44,47 +44,54 @@ type InferArgs<F> =
 
 /**
  * Creates a lazy-loading wrapper factory for an AsyncDataService.
- * The real service is only loaded when the first property is accessed.
+ * By default the real service is only loaded when the first property is accessed.
  * All calls are queued and executed in order once the service loads.
- * 
- * @param load - Function that loads and returns the real service (may accept args)
- * @param properties - Object describing how to wrap each service property
+ *
+ * @param params - `load` returns the real service (may accept args); `properties` describes how to
+ *   wrap each service property; `preload` (default false) warms the service at browser idle instead
+ *   of waiting for the first property access.
  * @returns A factory function that creates lazy service instances
- * 
+ *
  * TypeScript will enforce:
  * - All service properties must be declared in properties object
  * - Each descriptor must match the actual property type
  * - Clear errors indicate what is missing or wrong
- * 
+ *
  * @example
  * ```typescript
  * // Service with no args
- * const createLazySimple = createLazy(
- *   () => import('./simple').then(m => m.create()),
- *   { data: 'observe', fetch: 'fn:promise' }
- * );
+ * const createLazySimple = createLazy({
+ *   load: () => import('./simple').then(m => m.create()),
+ *   properties: { data: 'observe', fetch: 'fn:promise' }
+ * });
  * const service = createLazySimple();
- * 
- * // Service with args
- * const createLazyConfig = createLazy(
- *   (config: Config) => import('./service').then(m => m.create(config)),
- *   { data: 'observe', fetch: 'fn:promise' }
- * );
+ *
+ * // Service with args, warmed at browser idle
+ * const createLazyConfig = createLazy({
+ *   load: (config: Config) => import('./service').then(m => m.create(config)),
+ *   properties: { data: 'observe', fetch: 'fn:promise' },
+ *   preload: true
+ * });
  * const service = createLazyConfig({ apiUrl: '...' });
  * ```
  */
 export function createLazy<
   LoadFn extends (...args: any[]) => Promise<Service>
 >(
-  load: LoadFn,
-  properties: {
-    [K in Exclude<keyof InferService<LoadFn>, keyof Service>]: 
-      PropertyDescriptor<InferService<LoadFn>[K]>
+  params: {
+    load: LoadFn,
+    properties: {
+      [K in Exclude<keyof InferService<LoadFn>, keyof Service>]:
+        PropertyDescriptor<InferService<LoadFn>[K]>
+    },
+    preload?: boolean
   }
-): InferArgs<LoadFn> extends void 
+): InferArgs<LoadFn> extends void
   ? () => InferService<LoadFn>
   : (args: InferArgs<LoadFn>) => InferService<LoadFn> {
-  
+
+  const { load, properties, preload } = params;
+
   // Return factory function that creates lazy service instances
   return ((...factoryArgs: any[]) => {
     type ServiceType = InferService<LoadFn>;
@@ -108,7 +115,14 @@ export function createLazy<
       
       return loadPromise!;
     };
-    
+
+    // When preload is set, warm the service at browser idle instead of waiting for the first
+    // property touch; ensureLoading memoizes, so it dedupes with that first touch.
+    if (preload) {
+      const idle = (globalThis as { requestIdleCallback?: (callback: () => void) => void }).requestIdleCallback;
+      if (typeof idle === 'function') idle(() => { void ensureLoading(); });
+    }
+
     // Build lazy service object
     const lazyService: any = {
       serviceName: 'lazy-service',

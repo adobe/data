@@ -33,7 +33,7 @@ import { projection } from "../conformance/projection.js";
 import { driveFrame } from "../conformance/drive-frame.js";
 
 describe("ECS system tick loop conforms to State.step (one frame = one step)", () => {
-  for (const testCase of cases) {
+  for (const testCase of cases.cases) {
     it(testCase.name, () => {
       const { dt, input } = testCase.args;
       // A case `before` is a delta over the feature default (`Case.before` is

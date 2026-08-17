@@ -17,9 +17,10 @@ export * as Conformance from "./conformance/public.js";
 export type {
   Case,
   Cases,
-  CasesWithOptions,
+  CasesResult,
   DerivationCase,
   DerivationCases,
+  DerivationsResult,
   Effects,
   ServiceCall,
 } from "./conformance/public.js";

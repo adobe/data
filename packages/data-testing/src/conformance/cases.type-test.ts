@@ -1,10 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-// Type-level checks for the `cases` builder's args-schema pin.
+// Type-level checks for the `cases` builder's args-schema pin and its uniform envelope.
 import { Entity } from "@adobe/data/ecs";
-import { casesBuilder } from "./cases.js";
+import { casesBuilder, derivationsBuilder } from "./cases.js";
 
 type State = { readonly entities: ReadonlyMap<number, { readonly name: string }>; readonly selected: number };
 const cases = casesBuilder<State>();
+const derivations = derivationsBuilder();
 
 const reparent = (_s: Pick<State, "selected">, args: { readonly id: number; readonly count: number }): Pick<State, "selected"> => ({
   selected: args.id,
@@ -19,12 +20,18 @@ export const good = cases(
   { args: { type: "object", properties: { id: Entity.schema, count: { type: "integer" } } } },
   { name: "ok", before: {}, args: { id: 1, count: 2 }, after: { selected: 1 } },
 );
-// Options form carries the schema on the value.
+// Both forms emit the SAME envelope `{ args?, cases }` — never a bare array.
+const _hasArgs: (typeof good)["args"] = good.args;
 const _hasCases: (typeof good)["cases"] = good.cases;
 
-// The no-args overload returns a bare array.
-export const noArgsCases = cases(noArgs, { name: "n", before: {}, after: { selected: 0 } });
-const _isArray: readonly unknown[] = noArgsCases;
+// The no-args overload emits the same envelope (no bare array).
+export const noArgsResult = cases(noArgs, { name: "n", before: {}, after: { selected: 0 } });
+const _noArgsCases: readonly unknown[] = noArgsResult.cases;
+
+// A derivation emits `{ cases }` through the parallel builder.
+const derive = (_s: State): number => _s.selected;
+export const derived = derivations(derive, { name: "d", input: { entities: new Map(), selected: 0 }, value: 0 });
+const _derivedCases: readonly unknown[] = derived.cases;
 
 // A schema that DIVERGES from the signature (id typed as string) must be rejected:
 // `Schema.ToType<args>.id` is `string`, but the transition's `args.id` is `number`.

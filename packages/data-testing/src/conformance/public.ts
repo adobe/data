@@ -1,6 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 export type { Case, Cases, DerivationCase, DerivationCases, Effects, ServiceCall } from "./types.js";
-export { casesBuilder, type CasesBuilder, type CasesWithOptions } from "./cases.js";
+export {
+  casesBuilder,
+  derivationsBuilder,
+  type CasesBuilder,
+  type CasesResult,
+  type DerivationsBuilder,
+  type DerivationsResult,
+} from "./cases.js";
 export { runSpec, type SpecRunConfig } from "./run-spec.js";
 export { runTransactions, type TransactionRunConfig } from "./run-transactions.js";
 export { runActions, type ActionRunConfig } from "./run-actions.js";

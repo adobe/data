@@ -70,6 +70,7 @@ literal, it is a function and does not belong in `constants.ts`.
 - **`export namespace <TypeName> { ... }`** — Use `export * as <TypeName> from "./public.js"` instead.
 - **Prefixing function files with the type name** (e.g., `vec2-add.ts`) — Use `add.ts`; the folder provides context.
 - **Importing from `public.js` or `-schema.js`** outside the type folder — Consumers must import only from `<type-name>/<type-name>.ts`.
+- **A generic `functions/` folder for helpers** — a helper lives on the namespace of the type it most closely relates to (or, for a single caller, as a private declaration in that caller); never a typeless `functions/` bucket.
 
 ## Consumers
 

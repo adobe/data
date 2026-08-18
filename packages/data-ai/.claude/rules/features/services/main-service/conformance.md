@@ -18,15 +18,12 @@ them against the ECS. This folder holds only the *feature-specific projection*
 `conformance/` (the zero-config example) and `data-lit-todo` (entity markers +
 `hydrate`); `data-lit-space-rock-game` for the entity-bag / real-time variant.
 
-**The projection helpers — `fromState`, `toState`, and the
-`toData(store, entity)` reader — are strictly for conformance tests and MUST
-NEVER run in production code, ever.** `fromState`/`toState` rewrite the whole
-store out-of-band; runtime code reads through observables/indexes and writes
-through transactions. (This conformance `toData(store, entity)` reader is
-unrelated to the library's `db.toData()` store-serialization method, which *is*
-a normal runtime API — the collision is only in the name.) Likewise
-`Match.matches` / `Match.assert` are comparison helpers for `*.test.ts` only —
-never a runtime branch.
+**The projection helpers (`fromState`, `toState`, `toData(store, entity)`) and
+`Match.matches` / `Match.assert` are test-only — never a production/runtime branch.**
+`fromState`/`toState` rewrite the whole store out-of-band; runtime code reads through
+observables/indexes and writes through transactions. (The conformance
+`toData(store, entity)` reader is unrelated to the library's runtime `db.toData()`
+store-serialization method — same name only.)
 
 ## What `@adobe/data-testing` gives you
 

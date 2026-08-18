@@ -148,25 +148,18 @@ export const add = ({ x: x1, y: y1 }: Point, { x: x2, y: y2 }: Point): Point => 
 This pattern is ONLY allowed if there is only a single value export and every other export is just a type.
 As soon as there is more than one value type it MUST be promoted to the full namespace pattern.
 
-Example:
+Example — a type merged with one value export and any number of type-only members:
 
-    // core-database.ts
+    // window/window.ts
+    const value = createWindow();
 
-    const coreDatabasePlugin = Database.Plugin.create({
-        components,
-        resources,
-        archetypes,
-    });
+    export type Window = typeof value;
 
-    export type CoreDatabase = Database.Plugin.ToDatabase<typeof coreDatabasePlugin>;
-
-    export namespace CoreDatabase {
-        export const plugin = coreDatabasePlugin;
-        export type Store = Database.Plugin.ToStore<typeof coreDatabasePlugin>;
-        // Component-name union and a component-key tuple (an archetype's defining shape / a
-        // select|count query's key list). Derive from `components` (the leaf) — NOT from a
-        // plugin-derived `Store.Components<...>`: the plugin is built from `archetypes`, so that
-        // is circular the moment `Archetype` is used to `satisfies`-check those archetypes.
-        export type Component = Extract<keyof typeof components, string>;
-        export type Archetype = readonly Component[];
+    export namespace Window {
+        export const instance = value;   // the sole value export
+        export type Size = { width: number; height: number };
     }
+
+The canonical use is a feature's `core-database.ts` / layered `*-database.ts` (a
+`plugin` value plus `Store` / `Index` / `Component` / `Archetype` types) — see
+`features/services/main-service/core-database.md`.

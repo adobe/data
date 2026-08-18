@@ -46,9 +46,9 @@ export const archetypes = Database.archetypes(components, {
 });
 ```
 
-`CoreDatabase.Archetype` (= `readonly Component[]`, see `global/namespace.md`) is the type of a
-component-key tuple — use it to `satisfies`-check shared bases here and every `count` / `select` query
-key downstream.
+`CoreDatabase.Archetype` (= `readonly Component[]`, defined in `core-database.ts` — see
+`core-database.md`) is the type of a component-key tuple; use it to `satisfies`-check shared bases here
+and every `count` / `select` query key downstream.
 
 `count(archetypes.Layer.components)` then spans every layer kind, current and
 future — DRY and correct by construction. Prefer it to a bare `["placement"]`

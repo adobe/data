@@ -1,6 +1,6 @@
 ---
 paths:
-  - '**/features/*/services/main-service/**/services/**/*.ts'
+  - '**/features/*/services/main-service/service-database/services/**/*.ts'
 ---
 
 # database/services/ — database-bound service factories

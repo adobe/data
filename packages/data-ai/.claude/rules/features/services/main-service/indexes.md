@@ -1,6 +1,6 @@
 ---
 paths:
-  - '**/features/*/services/main-service/**/indexes/**/*.ts'
+  - '**/features/*/services/main-service/index-database/indexes/**/*.ts'
 ---
 
 # database/indexes/ — ECS indexes

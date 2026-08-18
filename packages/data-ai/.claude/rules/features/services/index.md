@@ -1,6 +1,7 @@
 ---
 paths:
-  - '**/features/*/services/**/*.ts'
+  - '**/features/*/services/services.ts'
+  - '**/features/*/services/*-service/**/*.ts'
 ---
 
 # services/ — the feature's services

@@ -1,6 +1,7 @@
 ---
 paths:
-  - '**/features/*/services/main-service/**/*.ts'
+  - '**/features/*/services/main-service/main-service.ts'
+  - '**/features/*/services/main-service/*-database/*-database.ts'
 ---
 
 # services/main-service/ — the feature service (ECS implementation)

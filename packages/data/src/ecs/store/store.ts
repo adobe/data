@@ -106,6 +106,17 @@ export interface Store<
     readonly indexes: { readonly [K in keyof IX]: Index.Handle<C, IX[K]> };
     /** Wipe all entities and reset resources to plugin defaults. O(num_archetypes + num_resources). */
     reset(): void;
+    /**
+     * Conform the store's DATA to a target schema: `keep` is the set of
+     * component + resource names to retain (the ECS built-ins are always kept).
+     * Every other component is stripped from every entity — an entity keeping at
+     * least one component migrates to its reduced archetype; an all-foreign
+     * entity (including a foreign resource singleton) is removed. Prunes data
+     * only: the emptied foreign archetypes and their unused schemas are shed on
+     * the next `fromData`, not by an in-place structural rebuild. Prefer
+     * `Database.pruneToPluginSchema` to derive `keep` from a plugin.
+     */
+    pruneToSchema(keep: ReadonlySet<string>): void;
     fromData(data: unknown, scope?: PersistenceScope): void
     extend<S extends Store.Schema>(schema: S): S extends Store.Schema<infer XC, infer XR, infer XA, infer XIX> ? Store<C & FromSchemas<XC>, R & FromSchemas<XR>, A & XA, IX & XIX, PK | PartitionKeysOf<XC>> : never;
 }

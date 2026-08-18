@@ -196,6 +196,21 @@ export function createObservedDatabase<
             store.fromData(data, scope);
             notifyAllObserversStoreReloaded();
         },
+        pruneToSchema: (keep: ReadonlySet<string>) => {
+            transactionalStore.pruneToSchema(keep);
+            // Prune can drop components/resources, so rebuild the observable maps
+            // (mirror of extend) and notify — pruned entities/resources are a
+            // whole-store reload from every observer's point of view.
+            (observe as any).components = mapEntries(store.componentSchemas, ([component]) => addToMapSet(component, componentObservers));
+            (observe as any).resources = Object.fromEntries(
+                Object.entries(store.resources).map(([resource]) => {
+                    const archetype = store.ensureArchetype(resourceArchetypeComponents(resource));
+                    const resourceId = archetype.columns[ID].get(0);
+                    return [resource, Observe.withMap(observeEntity(resourceId), (values) => (values as any)?.[resource] ?? null)];
+                })
+            );
+            notifyAllObserversStoreReloaded();
+        },
         extend: (plugin: any) => {
             transactionalStore.extend(plugin);
             // Rebuild observe.components and observe.resources so new components/resources from extend are observable

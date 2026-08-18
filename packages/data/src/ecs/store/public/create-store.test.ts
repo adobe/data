@@ -823,6 +823,38 @@ describe("createStore", () => {
             expect(v2.read(entity)).toEqual({ health: { current: 100, max: 100 } });
         });
 
+        it("remaps entities across a schema change that REMOVES an archetype (recreated by identity) and shifts surviving ids", () => {
+            // v1: three populated archetypes created in a fixed order, so their
+            // ids are a@0, x@1, b@2 — and the location table stores those ids.
+            const v1 = createStore({
+                components: { a: positionSchema, x: positionSchema, b: positionSchema },
+                resources: {},
+                archetypes: {},
+            });
+            const eA = v1.ensureArchetype(["a"]).insert({ a: { x: 1, y: 1, z: 1 } });
+            const eX = v1.ensureArchetype(["x"]).insert({ x: { x: 2, y: 2, z: 2 } });
+            const eB = v1.ensureArchetype(["b"]).insert({ b: { x: 3, y: 3, z: 3 } });
+            const snapshot = v1.toData({ copy: true });
+
+            // v2 DROPS the `x` component/archetype and pre-creates A(id0), B(id1).
+            // On load: `a` resolves to id0 (aligned); `b` (saved at pos 2) resolves
+            // to id1 — a shift; and `x`, unknown to v2 but populated in the
+            // snapshot, is recreated by identity (schema adopted from the snapshot)
+            // at id2 — another shift. The location table must remap all three.
+            const v2 = createStore({
+                components: { a: positionSchema, b: positionSchema },
+                resources: {},
+                archetypes: { A: ["a"], B: ["b"] },
+            });
+            v2.fromData(snapshot);
+
+            expect(v2.read(eA)).toEqual({ a: { x: 1, y: 1, z: 1 } });
+            expect(v2.read(eB)).toEqual({ b: { x: 3, y: 3, z: 3 } });
+            // The entity in the dropped archetype survives (unknown-but-populated),
+            // recreated by identity rather than corrupted or lost.
+            expect(v2.read(eX)).toEqual({ x: { x: 2, y: 2, z: 2 } });
+        });
+
         it("stamps a version and skips (warns, does not throw) snapshots of an incompatible or legacy format", () => {
             const store = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
             const entity = store.ensureArchetype(["position"]).insert({ position: { x: 1, y: 2, z: 3 } });
@@ -1105,6 +1137,161 @@ describe("createStore", () => {
         const store = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
         const extended = store.extend({ components: {}, resources: {}, archetypes: {} });
         expect(extended).toBe(store);
+    });
+
+    describe("fromData sheds empty structural residue", () => {
+        const num = { type: "number", default: 0 } as const satisfies Schema;
+
+        it("does not recreate an empty archetype, nor adopt a schema no restored data uses", () => {
+            const source = createStore({ components: { a: num, ghost: num }, resources: {}, archetypes: {} });
+            const eA = source.ensureArchetype(["a"]).insert({ a: 1 });
+            // An empty archetype (created, never populated) + its schema — the exact
+            // residue a prior prune, or a since-removed feature, leaves behind.
+            source.ensureArchetype(["ghost"]);
+            const snap = source.toData({ copy: true }) as {
+                componentSchemas: Record<string, unknown>;
+                archetypesData: readonly { componentNames: readonly string[] }[];
+            };
+            // Sanity: the source snapshot really does carry the empty ghost residue.
+            expect("ghost" in snap.componentSchemas).toBe(true);
+            expect(snap.archetypesData.some((x) => x.componentNames.includes("ghost"))).toBe(true);
+
+            // Loading it (even into a store that also declares ghost) neither
+            // recreates the empty archetype nor keeps the unused schema.
+            const target = createStore({ components: { a: num }, resources: {}, archetypes: {} });
+            target.fromData(snap);
+            expect(target.read(eA)).toEqual({ a: 1 });
+            const reserialized = target.toData({ copy: true }) as {
+                componentSchemas: Record<string, unknown>;
+                archetypesData: readonly { componentNames: readonly string[] }[];
+            };
+            expect("ghost" in reserialized.componentSchemas).toBe(false);
+            expect(reserialized.archetypesData.some((x) => x.componentNames.includes("ghost"))).toBe(false);
+        });
+
+        it("preserves an unknown component that still carries data (lossless) — only empty structure is shed", () => {
+            const source = createStore({ components: { a: num, b: num }, resources: {}, archetypes: {} });
+            const e = source.ensureArchetype(["a", "b"]).insert({ a: 1, b: 2 });
+            const snap = source.toData({ copy: true });
+
+            // `target` doesn't declare `b`, but the snapshot's `b` data is populated,
+            // so it must survive the load untouched (unknown-but-populated ⇒ kept).
+            const target = createStore({ components: { a: num }, resources: {}, archetypes: {} });
+            target.fromData(snap);
+            expect(target.read(e)).toEqual({ a: 1, b: 2 });
+            const re = target.toData({ copy: true }) as { componentSchemas: Record<string, unknown> };
+            expect("b" in re.componentSchemas).toBe(true);
+        });
+
+        it("does not let a snapshot schema override the loading store's own declared schema", () => {
+            const source = createStore({
+                components: { a: { type: "number", default: 0 } as const satisfies Schema },
+                resources: {}, archetypes: {},
+            });
+            const e = source.ensureArchetype(["a"]).insert({ a: 5 });
+            const snap = source.toData({ copy: true });
+
+            const targetSchema = { type: "number", default: 99 } as const satisfies Schema;
+            const target = createStore({ components: { a: targetSchema }, resources: {}, archetypes: {} });
+            target.fromData(snap);
+            // The live schema stays the target's (default 99), not the snapshot's (0).
+            expect((target.componentSchemas as Record<string, { default?: number }>).a!.default).toBe(99);
+            // Data still restores through the declared schema.
+            expect(target.read(e)).toEqual({ a: 5 });
+        });
+    });
+
+    describe("pruneToSchema (data prune + deferred structural shed)", () => {
+        const num = { type: "number", default: 0 } as const satisfies Schema;
+
+        const makeFullStore = () =>
+            createStore({
+                components: { a: num, b: num, c: num },
+                resources: {
+                    keptRes: { default: 0 as number },
+                    foreignRes: { default: 0 as number },
+                },
+                archetypes: { AB: ["a", "b"], ABC: ["a", "b", "c"], COnly: ["c"] },
+            });
+
+        it("strips foreign component data, deletes only-foreign entities, drops foreign resources, and leaves zero foreign trace in toData", () => {
+            const store = makeFullStore();
+            const eAB = store.archetypes.AB.insert({ a: 1, b: 2 });
+            const eABC = store.archetypes.ABC.insert({ a: 3, b: 4, c: 5 });
+            const eCOnly = store.archetypes.COnly.insert({ c: 9 });
+            store.resources.keptRes = 7;
+            store.resources.foreignRes = 99;
+
+            // Keep set = the "target schema": declared components + resources.
+            store.pruneToSchema(new Set(["a", "b", "keptRes"]));
+
+            // Declared entity untouched; mixed entity keeps declared data, loses c;
+            // an entity whose every component is foreign is removed entirely.
+            expect(store.read(eAB)).toEqual({ a: 1, b: 2 });
+            expect(store.read(eABC)).toEqual({ a: 3, b: 4 });
+            expect(store.read(eCOnly)).toBeNull();
+
+            // Declared resource preserved; foreign resource gone (value + accessor).
+            expect(store.resources.keptRes).toBe(7);
+            expect((store.resources as Record<string, unknown>).foreignRes).toBeUndefined();
+
+            // The foreign entity DATA is gone immediately. The empty foreign
+            // archetypes / unused schemas may still be present as inert residue in
+            // this store's own snapshot — by design they are shed on the next load,
+            // not by an in-place structural rebuild.
+            const prunedSnap = store.toData({ copy: true });
+
+            // Loading the pruned document into a store that declares only the target
+            // schema sheds the empty foreign archetypes and unused foreign schemas:
+            // the reloaded, re-serialized document carries zero foreign trace, while
+            // entity ids and declared data survive.
+            const target = createStore({
+                components: { a: num, b: num },
+                resources: { keptRes: { default: 0 as number } },
+                archetypes: { AB: ["a", "b"] },
+            });
+            target.fromData(prunedSnap);
+            expect(target.read(eAB)).toEqual({ a: 1, b: 2 });
+            expect(target.read(eABC)).toEqual({ a: 3, b: 4 });
+            expect(target.resources.keptRes).toBe(7);
+
+            const reserialized = target.toData({ copy: true }) as {
+                componentSchemas: Record<string, unknown>;
+                archetypesData: readonly { componentNames: readonly string[] }[];
+            };
+            expect("c" in reserialized.componentSchemas).toBe(false);
+            expect("foreignRes" in reserialized.componentSchemas).toBe(false);
+            for (const arch of reserialized.archetypesData) {
+                expect(arch.componentNames).not.toContain("c");
+                expect(arch.componentNames).not.toContain("foreignRes");
+            }
+        });
+
+        it("releases the backing column memory of every archetype it empties (rowCapacity -> 0)", () => {
+            const store = makeFullStore();
+            const abc = store.archetypes.ABC; // emptied via migration (a,b kept, c stripped)
+            const cOnly = store.archetypes.COnly; // emptied via delete (all-foreign)
+            // Insert past the initial capacity of 16 so the buffers actually grew.
+            for (let i = 0; i < 20; i++) abc.insert({ a: i, b: i, c: i });
+            for (let i = 0; i < 20; i++) cOnly.insert({ c: i });
+            expect(abc.rowCapacity).toBeGreaterThanOrEqual(20);
+            expect(cOnly.rowCapacity).toBeGreaterThanOrEqual(20);
+
+            store.pruneToSchema(new Set(["a", "b", "keptRes"]));
+
+            // Both foreign archetypes linger empty in the live store (shed on next
+            // load), but must not retain their now-dead backing buffers.
+            expect(abc.rowCount).toBe(0);
+            expect(abc.rowCapacity).toBe(0);
+            for (const name of abc.components) {
+                expect(abc.columns[name as keyof typeof abc.columns]!.capacity).toBe(0);
+            }
+            expect(cOnly.rowCount).toBe(0);
+            expect(cOnly.rowCapacity).toBe(0);
+            for (const name of cOnly.components) {
+                expect(cOnly.columns[name as keyof typeof cOnly.columns]!.capacity).toBe(0);
+            }
+        });
     });
 
 }); 

@@ -162,6 +162,22 @@ function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined
             strategy.onReset();
             observedDatabase.reset();
         },
+        pruneToPluginSchema: (plugin: Database.Plugin) => {
+            // The keep-set is the plugin's declared component + resource names
+            // (already flattened across imports/extends at plugin creation). The
+            // ECS built-ins are always kept by the store. Any in-flight transient
+            // is invalidated by the structural change, so clear the strategy's
+            // pending buffer, exactly as reset() does.
+            const keep = new Set<string>([
+                ...Object.keys(plugin.components ?? {}),
+                ...Object.keys(plugin.resources ?? {}),
+            ]);
+            strategy.onReset();
+            observedDatabase.pruneToSchema(keep);
+            // Same instance, retyped to the target plugin's schema at the type
+            // level (see Database.pruneToPluginSchema).
+            return partialDatabase;
+        },
         toData,
         fromData,
         transactions,

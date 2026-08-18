@@ -46,6 +46,9 @@ export interface TransactionalStore<
     >;
 
     transactionStore: Store<C, R, A, IX, PK>;
+
+    /** See {@link Store.pruneToSchema}. Also syncs the transactional resource wrapper. */
+    pruneToSchema(keep: ReadonlySet<string>): void;
 }
 
 export type TransactionInsertOperation<C> = {

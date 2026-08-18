@@ -259,6 +259,68 @@ export function createStore<
         return swapped;
     };
 
+    // Conform the store's DATA to a target schema (the set of component +
+    // resource names to keep). Every component not in `keep` (the ECS built-ins
+    // id/nonPersistent/nonShared are always kept) is stripped from every entity:
+    // an entity that still has a kept component migrates to its reduced
+    // archetype; an entity whose every component is foreign is removed entirely
+    // (this also removes foreign resource singletons). Index maintenance rides
+    // the normal update/delete paths.
+    //
+    // This prunes DATA only. The now-empty foreign archetypes and their (unused)
+    // component schemas are intentionally left in place — they carry nothing and
+    // are shed on the next `fromData` (which skips empty archetypes and adopts
+    // only schemas that restored data uses), so no structural rebuild / id
+    // renumber is needed here.
+    const isReservedName = (name: string): boolean =>
+        name === ID || name === "nonPersistent" || name === "nonShared";
+    const pruneToSchema = (keep: ReadonlySet<string>): void => {
+        for (const archetype of core.queryArchetypes([] as StringKeyof<C>[])) {
+            const foreign: string[] = [];
+            let hasKeptComponent = false;
+            for (const name of archetype.components) {
+                if (isReservedName(name)) continue;
+                if (keep.has(name)) hasKeptComponent = true;
+                else foreign.push(name);
+            }
+            if (foreign.length === 0) continue;
+            const idColumn = archetype.columns[ID]!;
+            if (hasKeptComponent) {
+                // Strip the foreign components, migrating each entity into its
+                // reduced, all-declared archetype. Reading row 0 each pass follows
+                // the swap-remove as rows collapse. A FRESH removal object per pass
+                // is required: core.update deletes the `undefined` keys from the
+                // object it is handed (to reuse it as the migrated row's data), so
+                // a shared object would empty out after the first entity and the
+                // loop would never make progress.
+                while (archetype.rowCount > 0) {
+                    const removal = Object.fromEntries(foreign.map((n) => [n, undefined])) as any;
+                    updateEntity(idColumn.get(0), removal);
+                }
+            } else {
+                // Nothing of this entity survives the target schema → remove it.
+                while (archetype.rowCount > 0) deleteEntity(idColumn.get(0));
+            }
+            // The archetype is now empty. It lingers (shed on the next load), so
+            // release its backing column buffers rather than retain the dead
+            // allocation. A later insert re-grows from zero on demand.
+            for (const name in archetype.columns) {
+                (archetype.columns as Record<string, { capacity: number }>)[name]!.capacity = 0;
+            }
+            archetype.rowCapacity = 0;
+        }
+        // Retire foreign resources: the singleton entity was deleted above; drop
+        // the resource so it is neither re-initialized (reset/extend) nor read
+        // through a now-dangling accessor. Foreign component *schemas* are left in
+        // the maps so this snapshot stays internally consistent; they are shed on
+        // the next load.
+        for (const name of Object.keys(resourceSchemas)) {
+            if (keep.has(name)) continue;
+            delete (resourceSchemas as Record<string, unknown>)[name];
+            delete (resources as Record<string, unknown>)[name];
+        }
+    };
+
     const extend = (schema: Store.Schema<any, any, any>) => {
         const {
             components: schemaComponents = {},
@@ -345,6 +407,7 @@ export function createStore<
         ...core,
         update: updateEntity,
         delete: deleteEntity,
+        pruneToSchema,
         resources,
         select,
         count,

@@ -1,6 +1,6 @@
 ---
 paths:
-  - '**/features/*/services/main-service/**/conformance/**/*.ts'
+  - '**/features/*/services/main-service/conformance/**/*.ts'
 ---
 
 # services/main-service/conformance/ — keeping the ECS honest against the spec

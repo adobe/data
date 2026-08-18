@@ -1,6 +1,6 @@
 ---
 paths:
-  - '**/features/*/services/main-service/**/actions/**/*.ts'
+  - '**/features/*/services/main-service/action-database/actions/**/*.ts'
 ---
 
 # services/main-service/actions/ — async orchestration

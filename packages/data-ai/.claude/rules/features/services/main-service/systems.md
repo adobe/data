@@ -1,7 +1,6 @@
 ---
 paths:
-  - '**/features/*/services/main-service/**/systems/**/*.ts'
-  - '**/systems/*.ts'
+  - '**/features/*/services/main-service/system-database/**/*.ts'
 ---
 
 # database/systems/ — the real-time tick loop

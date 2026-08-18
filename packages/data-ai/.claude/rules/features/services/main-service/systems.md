@@ -65,8 +65,12 @@ const plugin = Database.Plugin.create({
   HUD) are notified. Reserve direct `db.store` writes for the hot per-row paths
   (movement, aging) that run on every entity every frame and shouldn't pay
   per-entity transaction overhead.
-- **Optimize for execution speed in systems** if there are multiple items, then make sure we are using efficient store queries and reading/writing minimal data columns. If this is not hot path, then the simplified data functions can be used, but in hot paths we only consider data functions to be specification. (ie: only use them if it's clearly not a hot path or you cannot write anything more performant by directly using ecs store) 
-- **The step math may live in `data/`.** but only for non-hot path
+- **Optimize hot paths for speed.** With many entities, query with efficient
+  `queryArchetypes` and read/write minimal columns directly; avoid intermediate
+  allocations. On a hot path treat `data/` step functions as **spec only** — use
+  them when the path isn't hot or you can't beat them by writing the store
+  directly; off hot paths, reuse them freely. (Only transactions are observable —
+  direct store writes fire no observers.)
 - **Iterate archetypes per `archetypes.md`.** Express selection with
   `queryArchetypes(include, { exclude })`; when a system destroys/migrates rows
   (bullets expiring, entities dying) iterate **tail → head** so hole-fills don't
@@ -94,11 +98,8 @@ const plugin = Database.Plugin.create({
   and advanced this same tick), you can't advance *all* bodies in one system
   before the spawn — split that entity's advance out so it runs *after* the spawn,
   alongside the step that owns it.
-- Games or simulations with immediate mode rendering may want to store a session
-  resource of the canvas and render to it within a system. @adobe/data-gpu provides
-  example patterns for doing this.
-- All simulation systems should be optimized for performance.
-  Avoid allocating intermediate objects if possible; read/write columns directly if hot-path. You can use transactions if needed, for instance if we are writing non hot path things which we have other things observing. (Only transactions are observable, not direct writes)
+- Immediate-mode rendering: store the canvas in a session resource and render to
+  it inside a system (see @adobe/data-gpu for patterns).
 
 ## Driving the loop — the scheduler
 

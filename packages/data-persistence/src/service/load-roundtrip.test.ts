@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Database } from "@adobe/data/ecs";
 import { F32, Vec3 } from "@adobe/data/math";
+import type { Schema } from "@adobe/data/schema";
 import { describe, expect, it } from "vitest";
 import { createMemoryBackend } from "../backend/memory-backend.js";
 import { createWorkerPersistenceService } from "./create-worker-persistence-service.js";
@@ -252,6 +253,84 @@ describe("WorkerPersistenceService.load (round-trip)", () => {
                 mass: i * 0.5,
             });
         }
+        await svcB.dispose();
+    });
+
+    it("BUG: corrupts entity reads when the reloading plugin declares a new archetype ahead of an existing one", async () => {
+        const backend = createMemoryBackend();
+
+        // v1: a single archetype "Particle" -> claims manifest/live id 0.
+        const pluginV1 = Database.Plugin.create({
+            components: { position: Vec3.schema, velocity: Vec3.schema, mass: F32.schema },
+            archetypes: { Particle: ["position", "velocity", "mass"] },
+            transactions: {
+                spawn(t, args: { x: number; y: number; z: number; mass: number }) {
+                    return t.archetypes.Particle.insert({
+                        position: [args.x, args.y, args.z],
+                        velocity: [0, 0, 0],
+                        mass: args.mass,
+                    });
+                },
+            },
+        });
+
+        const dbA = Database.create(pluginV1);
+        const svcA = await createWorkerPersistenceService({
+            database: dbA,
+            backend,
+            checkpoint: { everyNTransactions: 0, idleMs: 0 },
+        });
+        const e = dbA.transactions.spawn({ x: 1, y: 2, z: 3, mass: 10 });
+        await svcA.flush();
+        await svcA.checkpoint();
+        await svcA.dispose();
+
+        // v2: schema evolves by adding a new archetype "Tag", declared BEFORE
+        // "Particle" in the plugin's archetypes object. Store.extend() creates
+        // archetypes in declaration order before load() ever runs, so on the
+        // fresh v2 database "Tag" claims id 0 and "Particle" is pushed to id
+        // 1 -- one slot later than the id recorded in the v1 checkpoint.
+        const tagSchema = { type: "boolean", default: false } satisfies Schema;
+        const pluginV2 = Database.Plugin.create({
+            components: { position: Vec3.schema, velocity: Vec3.schema, mass: F32.schema, tag: tagSchema },
+            archetypes: {
+                Tag: ["tag"],
+                Particle: ["position", "velocity", "mass"],
+            },
+            transactions: {
+                spawn(t, args: { x: number; y: number; z: number; mass: number }) {
+                    return t.archetypes.Particle.insert({
+                        position: [args.x, args.y, args.z],
+                        velocity: [0, 0, 0],
+                        mass: args.mass,
+                    });
+                },
+            },
+        });
+
+        const dbB = Database.create(pluginV2);
+        const svcB = await createWorkerPersistenceService({
+            database: dbB,
+            backend,
+            checkpoint: { everyNTransactions: 0, idleMs: 0 },
+        });
+        await svcB.load();
+
+        // The entity-location file on disk still says "archetype 0" (Particle's
+        // OLD id), but archetype 0 in dbB is now Tag. The entity must still
+        // read back as the particle it was saved as.
+        const view = dbB.read(e!) as
+            | { position: ArrayLike<number>; velocity: ArrayLike<number>; mass: number }
+            | null;
+        expect(view).not.toBeNull();
+        if (view === null) return;
+        // Corrupted state resolves the entity into "Tag" (no position column)
+        // instead of "Particle" -- assert the field directly so the failure
+        // reads as "position is undefined" rather than an iteration crash.
+        expect(view.position).toBeDefined();
+        expect(Array.from(view.position)).toEqual([1, 2, 3]);
+        expect(Array.from(view.velocity)).toEqual([0, 0, 0]);
+        expect(view.mass).toBe(10);
         await svcB.dispose();
     });
 });

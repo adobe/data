@@ -794,6 +794,35 @@ describe("createStore", () => {
             expect(newStore.read(positionEntity)).toEqual({ position: 42 });
         });
 
+        it("BUG: corrupts entity reads when a schema-declared archetype is added ahead of an existing one", () => {
+            // v1: a single named archetype "A", declared alone -> gets id 0.
+            const v1 = createStore({
+                components: { health: healthSchema },
+                resources: {},
+                archetypes: { A: ["health"] },
+            });
+            const entity = v1.archetypes.A.insert({ health: { current: 100, max: 100 } });
+            const snapshot = v1.toData({ copy: true });
+
+            // v2: schema evolves by adding a new archetype "B" declared BEFORE
+            // "A" in the schema object. createStore's own extend() pre-creates
+            // archetypes for every schema-declared entry (in declaration order)
+            // before fromData ever runs, so on the fresh v2 store, B claims id 0
+            // and A is pushed to id 1 -- one slot later than it occupied when
+            // the snapshot was taken.
+            const v2 = createStore({
+                components: { name: nameSchema, health: healthSchema },
+                resources: {},
+                archetypes: { B: ["name"], A: ["health"] },
+            });
+            v2.fromData(snapshot);
+
+            // The entity's location table entry still says "archetype 0" (A's
+            // OLD position), but archetype 0 in v2 is now B, not A. The entity
+            // must still read back as itself.
+            expect(v2.read(entity)).toEqual({ health: { current: 100, max: 100 } });
+        });
+
         it("stamps a version and skips (warns, does not throw) snapshots of an incompatible or legacy format", () => {
             const store = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
             const entity = store.ensureArchetype(["position"]).insert({ position: { x: 1, y: 2, z: 3 } });

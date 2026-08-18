@@ -823,6 +823,38 @@ describe("createStore", () => {
             expect(v2.read(entity)).toEqual({ health: { current: 100, max: 100 } });
         });
 
+        it("remaps entities across a schema change that REMOVES an archetype (recreated by identity) and shifts surviving ids", () => {
+            // v1: three populated archetypes created in a fixed order, so their
+            // ids are a@0, x@1, b@2 — and the location table stores those ids.
+            const v1 = createStore({
+                components: { a: positionSchema, x: positionSchema, b: positionSchema },
+                resources: {},
+                archetypes: {},
+            });
+            const eA = v1.ensureArchetype(["a"]).insert({ a: { x: 1, y: 1, z: 1 } });
+            const eX = v1.ensureArchetype(["x"]).insert({ x: { x: 2, y: 2, z: 2 } });
+            const eB = v1.ensureArchetype(["b"]).insert({ b: { x: 3, y: 3, z: 3 } });
+            const snapshot = v1.toData({ copy: true });
+
+            // v2 DROPS the `x` component/archetype and pre-creates A(id0), B(id1).
+            // On load: `a` resolves to id0 (aligned); `b` (saved at pos 2) resolves
+            // to id1 — a shift; and `x`, unknown to v2 but populated in the
+            // snapshot, is recreated by identity (schema adopted from the snapshot)
+            // at id2 — another shift. The location table must remap all three.
+            const v2 = createStore({
+                components: { a: positionSchema, b: positionSchema },
+                resources: {},
+                archetypes: { A: ["a"], B: ["b"] },
+            });
+            v2.fromData(snapshot);
+
+            expect(v2.read(eA)).toEqual({ a: { x: 1, y: 1, z: 1 } });
+            expect(v2.read(eB)).toEqual({ b: { x: 3, y: 3, z: 3 } });
+            // The entity in the dropped archetype survives (unknown-but-populated),
+            // recreated by identity rather than corrupted or lost.
+            expect(v2.read(eX)).toEqual({ x: { x: 2, y: 2, z: 2 } });
+        });
+
         it("stamps a version and skips (warns, does not throw) snapshots of an incompatible or legacy format", () => {
             const store = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
             const entity = store.ensureArchetype(["position"]).insert({ position: { x: 1, y: 2, z: 3 } });
@@ -1232,6 +1264,32 @@ describe("createStore", () => {
             for (const arch of reserialized.archetypesData) {
                 expect(arch.componentNames).not.toContain("c");
                 expect(arch.componentNames).not.toContain("foreignRes");
+            }
+        });
+
+        it("releases the backing column memory of every archetype it empties (rowCapacity -> 0)", () => {
+            const store = makeFullStore();
+            const abc = store.archetypes.ABC; // emptied via migration (a,b kept, c stripped)
+            const cOnly = store.archetypes.COnly; // emptied via delete (all-foreign)
+            // Insert past the initial capacity of 16 so the buffers actually grew.
+            for (let i = 0; i < 20; i++) abc.insert({ a: i, b: i, c: i });
+            for (let i = 0; i < 20; i++) cOnly.insert({ c: i });
+            expect(abc.rowCapacity).toBeGreaterThanOrEqual(20);
+            expect(cOnly.rowCapacity).toBeGreaterThanOrEqual(20);
+
+            store.pruneToSchema(new Set(["a", "b", "keptRes"]));
+
+            // Both foreign archetypes linger empty in the live store (shed on next
+            // load), but must not retain their now-dead backing buffers.
+            expect(abc.rowCount).toBe(0);
+            expect(abc.rowCapacity).toBe(0);
+            for (const name of abc.components) {
+                expect(abc.columns[name as keyof typeof abc.columns]!.capacity).toBe(0);
+            }
+            expect(cOnly.rowCount).toBe(0);
+            expect(cOnly.rowCapacity).toBe(0);
+            for (const name of cOnly.components) {
+                expect(cOnly.columns[name as keyof typeof cOnly.columns]!.capacity).toBe(0);
             }
         });
     });

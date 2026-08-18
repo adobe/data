@@ -288,13 +288,26 @@ export function createStore<
             if (hasKeptComponent) {
                 // Strip the foreign components, migrating each entity into its
                 // reduced, all-declared archetype. Reading row 0 each pass follows
-                // the swap-remove as rows collapse.
-                const removal = Object.fromEntries(foreign.map((n) => [n, undefined])) as any;
-                while (archetype.rowCount > 0) updateEntity(idColumn.get(0), removal);
+                // the swap-remove as rows collapse. A FRESH removal object per pass
+                // is required: core.update deletes the `undefined` keys from the
+                // object it is handed (to reuse it as the migrated row's data), so
+                // a shared object would empty out after the first entity and the
+                // loop would never make progress.
+                while (archetype.rowCount > 0) {
+                    const removal = Object.fromEntries(foreign.map((n) => [n, undefined])) as any;
+                    updateEntity(idColumn.get(0), removal);
+                }
             } else {
                 // Nothing of this entity survives the target schema → remove it.
                 while (archetype.rowCount > 0) deleteEntity(idColumn.get(0));
             }
+            // The archetype is now empty. It lingers (shed on the next load), so
+            // release its backing column buffers rather than retain the dead
+            // allocation. A later insert re-grows from zero on demand.
+            for (const name in archetype.columns) {
+                (archetype.columns as Record<string, { capacity: number }>)[name]!.capacity = 0;
+            }
+            archetype.rowCapacity = 0;
         }
         // Retire foreign resources: the singleton entity was deleted above; drop
         // the resource so it is neither re-initialized (reset/extend) nor read

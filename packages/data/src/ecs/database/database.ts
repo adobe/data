@@ -285,8 +285,13 @@ export interface Database<
    * skips empty archetypes and adopts only schemas the restored data uses), so
    * no snapshot round-trip carries them forever. Call when quiescent (no
    * in-flight transient); any pending transient is cleared, as with `reset`.
+   *
+   * Returns the same database instance retyped to the target plugin's schema
+   * (`Database.FromPlugin<P>`), so a wider database narrows to the pruned schema
+   * at the type level. Foreign behavior (transactions/systems the original
+   * plugin declared) still exists at runtime but is no longer in the type.
    */
-  pruneToPluginSchema(plugin: Database.Plugin): void
+  pruneToPluginSchema<P extends Database.Plugin>(plugin: P): Database.FromPlugin<P>
   extend<P extends Database.Plugin>(plugin: P): Database<
     C & FromSchemas<RemoveIndex<P['components']>>,
     R & FromSchemas<RemoveIndex<P['resources']>>,

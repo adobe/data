@@ -174,6 +174,9 @@ function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined
             ]);
             strategy.onReset();
             observedDatabase.pruneToSchema(keep);
+            // Same instance, retyped to the target plugin's schema at the type
+            // level (see Database.pruneToPluginSchema).
+            return partialDatabase;
         },
         toData,
         fromData,

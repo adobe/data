@@ -991,7 +991,12 @@ export const createIncrementalPersistenceService = async (
                 if (idColumn === undefined) continue;
                 const entity = Entity.toEntity(slot, quadrant);
                 idColumn.set(rowIndex, entity);
-                locations.push({ entity, archetype: archetypeId, row: rowIndex });
+                // `archetypeId` is the id this session's on-disk manifest
+                // recorded at the time of the last checkpoint/journal entry —
+                // it can differ from `liveArchetype.id` if the plugin's
+                // archetype declarations changed shape since. Persist the
+                // resolved live id, not the stale on-disk one.
+                locations.push({ entity, archetype: liveArchetype.id, row: rowIndex });
             }
         }
 

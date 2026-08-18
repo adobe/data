@@ -113,3 +113,33 @@ const createLocalIndexEntityLocationTable = (initialCapacity: number = 16): Enti
         }
     };
 }
+
+/**
+ * Return a copy of a serialized location-table snapshot (the shape `toData`
+ * produces) with every entry's stored archetype id translated through
+ * `archetypeIdMap` (`archetypeIdMap[oldId] ?? oldId`).
+ *
+ * A serialized archetype id is a dense array index captured at save time; the
+ * archetype occupying that index can differ by the time of restore — a schema
+ * change may have added, removed, or reordered an archetype — so the raw id is
+ * not stable across a save/load boundary. Free-list markers (negative archetype
+ * slots), `freeListHead`, `nextIndex`, and `capacity` are preserved exactly, so
+ * the restored table allocates ids identically to the source. The remap is
+ * applied to a fresh buffer (never in place): the input may reference the live
+ * buffer of the store that produced it.
+ */
+export const remapSerializedArchetypeIds = (
+    data: unknown,
+    archetypeIdMap: readonly number[],
+): unknown => {
+    // Runtime invariant: `data` is a snapshot produced by this module's `toData`.
+    const table = data as { entities: Int32Array; freeListHead: number; nextIndex: number; capacity: number };
+    const src = table.entities;
+    const entities = new Int32Array(src.length);
+    for (let i = 0; i < src.length; i += 2) {
+        const archetype = src[i]!;
+        entities[i] = archetype < 0 ? archetype : (archetypeIdMap[archetype] ?? archetype);
+        entities[i + 1] = src[i + 1]!;
+    }
+    return { ...table, entities };
+};

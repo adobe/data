@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Schema } from "../../../schema/index.js";
-import { createEntityLocationTable } from "../../entity-location-table/index.js";
+import { createEntityLocationTable, remapSerializedArchetypeIds } from "../../entity-location-table/index.js";
 import * as ARCHETYPE from "../../archetype/index.js";
 import { Table, addRow, updateRow } from "../../../table/index.js";
 // getRowData returns the WHOLE row (incl. the internal `id` column); it is only
@@ -568,26 +568,43 @@ export function createCore<NC extends ComponentSchemas>(
                     }
                 }
             }
-            for (const quadrant of scopeQuadrants(scope)) {
-                const restored = data.entityLocationTables[quadrant];
-                // Restore the quadrant's table, or reset it if the snapshot
-                // carried no entities for it.
-                if (restored !== undefined) {
-                    locationTables[quadrant]!.fromData(restored);
-                } else {
-                    locationTables[quadrant]!.reset();
-                }
-            }
+            // Resolve every persisted archetype BEFORE touching the location
+            // tables. resolveArchetype is identity-keyed (component names +
+            // partition values), not position-keyed, so a persisted
+            // archetype's array position at save time (its serialized id)
+            // can resolve to a *different* live id now — e.g. a schema
+            // change added, removed, or reordered an archetype relative to
+            // this one. `archetypeIdMap[oldId]` is that archetype's current
+            // id; the location tables restore through it below so a stale
+            // save-time id never lands in the live table.
+            const archetypeIdMap: number[] = [];
             const restoredArchetypes: Archetype<any>[] = [];
             for (const { componentNames, partitionValues, data: archetypeData } of data.archetypesData) {
-                // Recreating the archetype reserves its id and leaves it empty
-                // (keeping ids aligned); only in-scope entries carry data to
-                // restore. resolveArchetype (not the public ensureArchetype) so a
+                // resolveArchetype (not the public ensureArchetype) so a
                 // partition archetype restores as its concrete value-child.
                 const archetype = resolveArchetype(componentNames, partitionValues);
+                archetypeIdMap.push(archetype.id);
                 if (archetypeData !== undefined) {
                     archetype.fromData(archetypeData);
                     restoredArchetypes.push(archetype as unknown as Archetype<any>);
+                }
+            }
+            for (const quadrant of scopeQuadrants(scope)) {
+                const restored = data.entityLocationTables[quadrant];
+                // Restore the quadrant's table, or reset it if the snapshot
+                // carried no entities for it. When any archetype resolved to a
+                // different id than its serialized position (schema change), the
+                // stored ids are translated first; with no archetypes to map
+                // (e.g. a persistence-layer table already carrying live ids) the
+                // snapshot is restored verbatim.
+                if (restored !== undefined) {
+                    locationTables[quadrant]!.fromData(
+                        archetypeIdMap.length > 0
+                            ? remapSerializedArchetypeIds(restored, archetypeIdMap)
+                            : restored,
+                    );
+                } else {
+                    locationTables[quadrant]!.reset();
                 }
             }
             // The archetypes just loaded had their nonPersistent columns omitted

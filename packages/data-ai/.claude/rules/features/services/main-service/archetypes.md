@@ -38,13 +38,17 @@ Model each state-model supertype as such a base archetype over the shared
 components (with a matching `data/` type), and build subtypes off it:
 
 ```ts
-const layer = ["placement", "name", "visible", "opacity"] as const;
+const layer = ["placement", "name", "visible", "opacity"] as const satisfies CoreDatabase.Archetype;
 export const archetypes = Database.archetypes(components, {
   Layer: layer,                         // query key; never inserted into
   ImageLayer: ["image", ...layer, "asset"],
   GroupLayer: ["group", ...layer],
 });
 ```
+
+`CoreDatabase.Archetype` (= `readonly Component[]`, see `global/namespace.md`) is the type of a
+component-key tuple — use it to `satisfies`-check shared bases here and every `count` / `select` query
+key downstream.
 
 `count(archetypes.Layer.components)` then spans every layer kind, current and
 future — DRY and correct by construction. Prefer it to a bare `["placement"]`

@@ -32,4 +32,9 @@ export namespace CoreDatabase {
   export type Store = Database.Plugin.ToStore<typeof coreDatabasePlugin>;
   /** Index-declaration type bound to this database's components. */
   export type Index = Database.Index<CoreComponents>;
+  /** A component name, and a component-key tuple (an archetype's shape / a `count`/`select`
+   *  query-key list). Derived from `components` — NOT `CoreComponents` (plugin-derived, so it
+   *  would cycle when used to `satisfies`-check the archetypes it is derived from). */
+  export type Component = Extract<keyof typeof components, string>;
+  export type Archetype = readonly Component[];
 }

@@ -163,4 +163,10 @@ Example:
     export namespace CoreDatabase {
         export const plugin = coreDatabasePlugin;
         export type Store = Database.Plugin.ToStore<typeof coreDatabasePlugin>;
+        // Component-name union and a component-key tuple (an archetype's defining shape / a
+        // select|count query's key list). Derive from `components` (the leaf) — NOT from a
+        // plugin-derived `Store.Components<...>`: the plugin is built from `archetypes`, so that
+        // is circular the moment `Archetype` is used to `satisfies`-check those archetypes.
+        export type Component = Extract<keyof typeof components, string>;
+        export type Archetype = readonly Component[];
     }

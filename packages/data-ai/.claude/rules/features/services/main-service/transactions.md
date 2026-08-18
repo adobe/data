@@ -1,6 +1,6 @@
 ---
 paths:
-  - '**/features/*/services/main-service/**/transactions/**/*.ts'
+  - '**/features/*/services/main-service/transaction-database/transactions/**/*.ts'
 ---
 
 # database/transactions/ — atomic mutations

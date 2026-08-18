@@ -1,6 +1,6 @@
 ---
 paths:
-  - '**/features/*/services/main-service/**/computed/**/*.ts'
+  - '**/features/*/services/main-service/computed-database/computed/**/*.ts'
 ---
 
 # database/computed/ — derived observable values

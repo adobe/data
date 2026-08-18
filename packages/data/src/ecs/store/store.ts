@@ -29,6 +29,17 @@ interface BaseStore<C extends object = never> {
         options?: EntitySelectOptions<C & OptionalComponents, Pick<C & RequiredComponents & OptionalComponents, Include>>
     ): readonly Entity[];
     /**
+     * Count the entities `select` would return for the same arguments — without building
+     * an entity array. With no `where` filter it sums matched archetype row counts
+     * (O(matched archetypes)); `order` is ignored (irrelevant to a count).
+     */
+    count<
+        Include extends StringKeyof<C & OptionalComponents>
+    >(
+        include: readonly Include[] | ReadonlySet<string>,
+        options?: EntitySelectOptions<C & OptionalComponents, Pick<C & RequiredComponents & OptionalComponents, Include>>
+    ): number;
+    /**
      * Serialize the store to a plain snapshot. When `copy` is true the snapshot
      * is detached from the live store (column/entity buffers are copied) so it
      * remains valid after subsequent mutations; otherwise it references live

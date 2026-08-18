@@ -179,7 +179,7 @@ const ELEMENT = "\u0000";
  * matter); `where` is a conjunction (keys sorted, values JSON-serialized);
  * `order` is a sort-priority sequence (preserved as written).
  */
-const canonicalSelectKey = <C extends object, T extends object>(
+export const canonicalSelectKey = <C extends object, T extends object>(
     include: readonly string[] | ReadonlySet<string>,
     options?: EntitySelectOptions<C, T>,
 ): string => {

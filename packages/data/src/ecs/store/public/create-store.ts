@@ -14,6 +14,7 @@ import { ResourceSchemas } from "../../resource-schemas.js";
 import { ArchetypeComponents } from "../archetype-components.js";
 import { EntitySelectOptions } from "../entity-select-options.js";
 import { selectEntities } from "../core/select-entities.js";
+import { countEntities } from "../core/count-entities.js";
 import { OptionalComponents } from "../../optional-components.js";
 import {
     createIndexRegistry,
@@ -209,6 +210,15 @@ export function createStore<
         return selectEntities<C, Include>(core, include, options);
     }
 
+    const count = <
+        Include extends StringKeyof<C & OptionalComponents>
+    >(
+        include: readonly Include[] | ReadonlySet<string>,
+        options?: EntitySelectOptions<C & OptionalComponents, Pick<C & RequiredComponents & OptionalComponents, Include>>
+    ): number => {
+        return countEntities<C, Include>(core, include, options);
+    }
+
     const archetypes = {} as any;
 
     // Decorate an archetype's `insert` in place with index maintenance. The core
@@ -337,6 +347,7 @@ export function createStore<
         delete: deleteEntity,
         resources,
         select,
+        count,
         archetypes,
         indexes: indexHandles as any,
         extend,

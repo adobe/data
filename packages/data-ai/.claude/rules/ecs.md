@@ -140,6 +140,9 @@ Synchronous, deterministic atomic mutations. Receive `store` and a payload.
 - `store.resources.x = value` — mutate resources
 - `store.get(entity, 'component')` — read component value
 - `store.select(archetype.components, { where })` — query entities
+- `store.count(archetype.components, { where })` — count entities; sums archetype row
+  counts with no entity-array allocation (reactive: `db.observe.count(...)` →
+  `Observe<number>`). Prefer over `select(...).length` for membership/count computeds.
 
 ### actions
 

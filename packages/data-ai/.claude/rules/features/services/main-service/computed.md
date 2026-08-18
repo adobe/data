@@ -46,6 +46,12 @@ Type the parameter on the lowest database layer that exposes what it
 reads. An `index.ts` barrel re-exports every computed; `computed-database.ts`
 registers it under the `computed` facet.
 
+For a computed that only needs *how many* entities match an archetype (an
+empty-state flag, a badge count), read `db.observe.count(archetype.components,
+{ where })` — an `Observe<number>` that sums archetype row counts and re-emits
+only when the count changes, allocating no entity array. Prefer it over
+`db.observe.select(...)` mapped through `.length`.
+
 **Conform a computed to its `data/state` derivation** whenever one exists. The
 derivation co-locates `{ input, value }` cases (`Derivation<typeof fn>`), and the
 feature's single `conformance/conformance.test.ts` `Conformance.runFeature({...})`

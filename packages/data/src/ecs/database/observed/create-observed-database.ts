@@ -11,6 +11,7 @@ import { Store } from "../../store/index.js";
 import { TransactionResult } from "../transactional-store/index.js";
 import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 import { observeSelectEntities } from "../observe-select-entities.js";
+import { observeCountEntities } from "../observe-count-entities.js";
 import { createDerive } from "../observe-derive.js";
 import { createTransactionalStore } from "../transactional-store/create-transactional-store.js";
 import { Entity } from "../../entity/entity.js";
@@ -146,6 +147,7 @@ export function createObservedDatabase<
         entity: observeEntity,
         archetype: observeArchetype,
         select: observeSelectEntities(transactionalStore, observeTransaction),
+        count: observeCountEntities(transactionalStore, observeTransaction),
     };
 
     const notifyAllObserversStoreReloaded = () => {

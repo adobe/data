@@ -50,6 +50,7 @@ export interface ObservedDatabase<
     ): Observe<T>;
     readonly execute: (handler: (ctx: Store<C, R, A>) => Entity | void, options?: { transient?: boolean; userId?: number | string }) => TransactionResult<C>;
     readonly reset: () => void;
+    readonly pruneToSchema: (keep: ReadonlySet<string>) => void;
     readonly toData: (options?: ToDataOptions) => unknown;
     readonly fromData: (data: unknown, scope?: PersistenceScope) => void;
     readonly extend: <

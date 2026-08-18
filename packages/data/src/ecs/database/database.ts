@@ -273,6 +273,20 @@ export interface Database<
    */
   toData(options?: { readonly scope?: PersistenceScope }): unknown
   fromData(data: unknown, scope?: PersistenceScope): void
+  /**
+   * Conform the database's DATA to a target plugin's schema, dropping every
+   * component and resource the plugin does not declare (its imports/extends are
+   * already flattened in). An entity keeping at least one declared component
+   * migrates to its reduced archetype; an entity whose every component is
+   * foreign — including a foreign resource singleton — is removed.
+   *
+   * Prunes DATA only, in place: the emptied foreign archetypes and their unused
+   * schemas are left as inert residue and shed on the next `fromData` (which
+   * skips empty archetypes and adopts only schemas the restored data uses), so
+   * no snapshot round-trip carries them forever. Call when quiescent (no
+   * in-flight transient); any pending transient is cleared, as with `reset`.
+   */
+  pruneToPluginSchema(plugin: Database.Plugin): void
   extend<P extends Database.Plugin>(plugin: P): Database<
     C & FromSchemas<RemoveIndex<P['components']>>,
     R & FromSchemas<RemoveIndex<P['resources']>>,

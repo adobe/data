@@ -194,6 +194,9 @@ export function createTransactionalStore<
                 updateEntity(entityId, { [resourceId]: newValue } as any);
             },
             enumerable: true,
+            // Configurable so pruneToSchema can drop a retired resource's accessor
+            // (mirrors the base store's resource definitions).
+            configurable: true,
         });
     }
 
@@ -281,6 +284,18 @@ export function createTransactionalStore<
         ...store,
         execute,
         transactionStore,
+        // Prune the base store, then sync the transactional resource wrapper by
+        // dropping any resource the base store no longer exposes (mirror of the
+        // additive sync in `extend`). Archetype ids are unchanged by prune, so the
+        // lazily-wrapped archetype handles stay valid.
+        pruneToSchema: (keep: ReadonlySet<string>) => {
+            store.pruneToSchema(keep);
+            for (const name of Object.keys(resources)) {
+                if (!Object.hasOwn(store.resources, name)) {
+                    delete (resources as Record<string, unknown>)[name];
+                }
+            }
+        },
         // Override extend to sync wrapped archetypes and resources after extending base store
         extend: (plugin: any) => {
             store.extend(plugin);
@@ -302,6 +317,7 @@ export function createTransactionalStore<
                             updateEntity(entityId, { [resourceId]: newValue } as any);
                         },
                         enumerable: true,
+                        configurable: true,
                     });
                 }
             }

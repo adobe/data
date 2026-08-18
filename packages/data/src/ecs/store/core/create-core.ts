@@ -552,7 +552,10 @@ export function createCore<NC extends ComponentSchemas>(
                 );
                 return;
             }
-            Object.assign(componentSchemas, data.componentSchemas);
+            // Component schemas are adopted per-restored-archetype below (not
+            // wholesale here), so a schema no restored data uses does not
+            // round-trip, and the loading store's own declared schema always
+            // wins over the snapshot's.
             // A whole-database load (no scope) also reverts the non-persistent
             // quadrants to defaults, so the loading store's pre-load transient
             // values don't leak across the load. A scoped load is surgical: it
@@ -568,26 +571,50 @@ export function createCore<NC extends ComponentSchemas>(
                     }
                 }
             }
-            // Resolve every persisted archetype BEFORE touching the location
-            // tables. resolveArchetype is identity-keyed (component names +
-            // partition values), not position-keyed, so a persisted
-            // archetype's array position at save time (its serialized id)
-            // can resolve to a *different* live id now — e.g. a schema
-            // change added, removed, or reordered an archetype relative to
-            // this one. `archetypeIdMap[oldId]` is that archetype's current
-            // id; the location tables restore through it below so a stale
+            // Resolve the persisted (non-empty) archetypes BEFORE touching the
+            // location tables. resolveArchetype is identity-keyed (component names
+            // + partition values), not position-keyed, so a persisted archetype's
+            // array position at save time (its serialized id) can resolve to a
+            // *different* live id now — e.g. a schema change added, removed, or
+            // reordered an archetype relative to this one. `archetypeIdMap[oldId]`
+            // is that archetype's current id (or a placeholder for a skipped empty
+            // one); the location tables restore through it below so a stale
             // save-time id never lands in the live table.
             const archetypeIdMap: number[] = [];
             const restoredArchetypes: Archetype<any>[] = [];
+            const snapshotSchemas = data.componentSchemas as Record<string, Schema>;
+            const liveSchemas = componentSchemas as Record<string, Schema>;
             for (const { componentNames, partitionValues, data: archetypeData } of data.archetypesData) {
+                // Skip empty archetypes. An archetype with no rows is referenced
+                // by no location-table entry, so the remap never needs its id, and
+                // recreating it would resurrect structural residue — the empty
+                // archetypes a prior `pruneToSchema` left behind, or any archetype
+                // no live data uses. A still-needed (declared) archetype is
+                // recreated on demand. The id map keeps a placeholder so later,
+                // non-empty positions still translate correctly.
+                const rowCount = archetypeData === undefined
+                    ? 0
+                    : (archetypeData as { rowCount?: number }).rowCount ?? 0;
+                if (rowCount === 0) {
+                    archetypeIdMap.push(-1);
+                    continue;
+                }
+                // Adopt component schemas ONLY for components this restored data
+                // actually carries, and only when the loading store hasn't already
+                // declared them (its own schema wins). Unknown-but-populated
+                // components are preserved losslessly; unknown-and-unused schemas
+                // simply fall away instead of round-tripping forever.
+                for (const name of componentNames) {
+                    if (!(name in liveSchemas) && snapshotSchemas[name] !== undefined) {
+                        liveSchemas[name] = snapshotSchemas[name]!;
+                    }
+                }
                 // resolveArchetype (not the public ensureArchetype) so a
                 // partition archetype restores as its concrete value-child.
                 const archetype = resolveArchetype(componentNames, partitionValues);
                 archetypeIdMap.push(archetype.id);
-                if (archetypeData !== undefined) {
-                    archetype.fromData(archetypeData);
-                    restoredArchetypes.push(archetype as unknown as Archetype<any>);
-                }
+                archetype.fromData(archetypeData);
+                restoredArchetypes.push(archetype as unknown as Archetype<any>);
             }
             for (const quadrant of scopeQuadrants(scope)) {
                 const restored = data.entityLocationTables[quadrant];

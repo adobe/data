@@ -27,41 +27,28 @@ export const archetypes = Database.archetypes(components, {
 - Archetypes are a packing / iteration convenience, **not** part of the
   serialized data model.
 
-## An archetype is a query, not just a table
+## Archetypes are queries (superset match)
 
-An archetype's component set is also a **query specification**. `queryArchetypes`
-— and the `select` / `count` built on it — return **every archetype whose columns
-are a superset** of the given set, i.e. every entity that carries *at least* those
-components. `count(archetypes.X.components)` therefore counts all entities of kind
-`X` and of every kind that extends `X`.
+A component set is a query: `queryArchetypes` (and `select` / `count` over it)
+returns every archetype that is a **superset**. So `count(archetypes.X.components)`
+counts `X` and every kind extending it — and a base archetype never inserted into
+is a first-class query, not dead weight.
 
-A consequence agents get wrong: a base archetype that **no entity is ever inserted
-into is not dead weight** — it is the canonical query for "all entities of that
-logical kind", and it matches subtypes that don't even exist yet.
-
-## Give each logical supertype its own archetype
-
-When the state model has a **logical supertype** with concrete subtypes — `Layer`
-with `ImageLayer` / `GroupLayer`, `Shape` with `Rect` / `Ellipse` — declare the
-supertype as its own archetype over the shared components (with a matching `data/`
-type), then build the subtypes off it:
+Model each state-model supertype as such a base archetype over the shared
+components (with a matching `data/` type), and build subtypes off it:
 
 ```ts
-const layer = ["placement", "name", "visible", "opacity"] as const; // shared base
+const layer = ["placement", "name", "visible", "opacity"] as const;
 export const archetypes = Database.archetypes(components, {
-  Layer: layer,                         // the supertype — a query key, never inserted into
+  Layer: layer,                         // query key; never inserted into
   ImageLayer: ["image", ...layer, "asset"],
   GroupLayer: ["group", ...layer],
 });
 ```
 
-Now `count(archetypes.Layer.components)` / `select(archetypes.Layer.components)`
-span `ImageLayer`, `GroupLayer`, and every future layer kind — correct by
-construction, no per-subtype enumeration. Prefer this named base over a bare
-component-list query (`["placement"]`): it names the concept, DRYs the subtype
-declarations, and is reusable by every query and system that operates on the whole
-supertype. Model the supertypes that matter; skip archetypes for one-off shapes
-with no shared query.
+`count(archetypes.Layer.components)` then spans every layer kind, current and
+future — DRY and correct by construction. Prefer it to a bare `["placement"]`
+query; skip a supertype archetype only when nothing queries over it.
 
 ## Drift guard against the data-type
 

@@ -33,6 +33,13 @@ export interface ObservedDatabase<
             include: readonly Include[] | ReadonlySet<string>,
             options?: any
         ): Observe<readonly Entity[]>;
+        count<
+            Include extends StringKeyof<C>,
+            T extends Include
+        >(
+            include: readonly Include[] | ReadonlySet<string>,
+            options?: any
+        ): Observe<number>;
     };
     // Internal (loose) type — the precise `Database.Read<this>` callback surface
     // is enforced at the public `Database.derive` boundary.

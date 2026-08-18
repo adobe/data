@@ -165,6 +165,18 @@ export interface Database<
       include: readonly Include[] | ReadonlySet<string>,
       options?: EntitySelectOptions<C, Pick<C & RequiredComponents, T>>
     ): Observe<readonly Entity[]>;
+    /**
+     * Reactive entity count for the same query as `observe.select` — emits a number and
+     * allocates no entity array, re-emitting only when the count changes. Prefer this over
+     * `observe.select(...).length` for membership/count-driven computeds.
+     */
+    count<
+      Include extends StringKeyof<C>,
+      T extends Include
+    >(
+      include: readonly Include[] | ReadonlySet<string>,
+      options?: EntitySelectOptions<C, Pick<C & RequiredComponents, T>>
+    ): Observe<number>;
   }
   /**
    * Reactive derivation. `compute` runs against a read-only projection of this

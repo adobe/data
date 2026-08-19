@@ -156,3 +156,91 @@ describe("Database.create versioning — scoped loads", () => {
         expect(target.resources.docRes).toBe(42);
     });
 });
+
+describe("Database.create versioning — migration shapes", () => {
+    it("a migration that drops a component removes it from the committed document", () => {
+        const plugin = Database.Plugin.create({
+            components: { a: numeric, legacy: numeric },
+            archetypes: { A: ["a"], ALegacy: ["a", "legacy"] } as const,
+            transactions: {
+                addLegacy(t, args: { a: number; legacy: number }) {
+                    return t.archetypes.ALegacy.insert(args);
+                },
+            },
+        });
+        const author = Database.create(plugin);
+        const e = author.transactions.addLegacy({ a: 5, legacy: 9 });
+        const snap = author.toData();
+
+        // Upgrade drops the `legacy` component from every entity that has it.
+        const versioning: DatabaseVersioning = (scratch) => {
+            const AL = (scratch as any).archetypes.ALegacy;
+            for (let i = AL.rowCount - 1; i >= 0; i--) {
+                (scratch as any).update(AL.columns.id.get(i), { legacy: undefined });
+            }
+            return scratch;
+        };
+        const target = Database.create(plugin, { versioning });
+        target.fromData(snap);
+
+        expect(target.read(e)).toEqual({ a: 5 }); // legacy gone
+        expect(target.select(["legacy"]).length).toBe(0);
+    });
+
+    it("preserves an unknown (app-undeclared) component populated in the document", () => {
+        // Document authored with an extra component the loading app doesn't declare.
+        const authorPlugin = Database.Plugin.create({
+            components: { a: numeric, extra: numeric },
+            archetypes: { AExtra: ["a", "extra"] } as const,
+            transactions: {
+                add(t, args: { a: number; extra: number }) {
+                    return t.archetypes.AExtra.insert(args);
+                },
+            },
+        });
+        const author = Database.create(authorPlugin);
+        const e = author.transactions.add({ a: 5, extra: 7 });
+        const snap = author.toData();
+
+        // The loading app declares only `a`; accept-all handler.
+        const appPlugin = Database.Plugin.create({
+            components: { a: numeric },
+            archetypes: { A: ["a"] } as const,
+        });
+        const target = Database.create(appPlugin, { versioning: (scratch) => scratch });
+        target.fromData(snap);
+
+        // Unknown-but-populated `extra` survives the scratch commit (lossless).
+        expect(target.read(e)).toEqual({ a: 5, extra: 7 });
+    });
+
+    it("reseeds a declared index after a versioned upgrade commit", () => {
+        const plugin = Database.Plugin.create({
+            components: { a: numeric, b: numeric },
+            archetypes: { A: ["a"], AB: ["a", "b"] } as const,
+            indexes: { byB: { key: "b" } },
+            transactions: {
+                addA(t, args: { a: number }) {
+                    return t.archetypes.A.insert(args);
+                },
+            },
+        });
+        const author = Database.create(plugin);
+        const e = author.transactions.addA({ a: 5 }); // entity in [a]
+        const snap = author.toData();
+
+        // Upgrade migrates [a] -> [a, b], where `b` is the indexed component.
+        const versioning: DatabaseVersioning = (scratch) => {
+            const A = (scratch as any).archetypes.A;
+            for (let i = A.rowCount - 1; i >= 0; i--) {
+                (scratch as any).update(A.columns.id.get(i), { b: 100 });
+            }
+            return scratch;
+        };
+        const target = Database.create(plugin, { versioning });
+        target.fromData(snap);
+
+        // The index over `b` is populated on the live database after the commit.
+        expect(target.indexes.byB.find({ b: 100 })).toContain(e);
+    });
+});

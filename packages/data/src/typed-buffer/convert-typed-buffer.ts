@@ -13,11 +13,11 @@ import { ReadonlyTypedBuffer, TypedBuffer } from "./typed-buffer.js";
  * conversion exists it **throws** — a developer error, callers that want to
  * probe first can call `createCoerceFunction` themselves and branch on `null`.
  *
- * `capacity` sizes the new buffer (default: the source's). `count` is how many
- * leading elements to actually convert (default: everything in range) — a table
- * passes its live `rowCount` so unused rows (which may hold `undefined` in an
- * array buffer) are not run through the coercer; those slots stay at the new
- * buffer's zero/default init.
+ * `options.capacity` sizes the new buffer (default: the source's).
+ * `options.count` is how many leading elements to actually convert (default:
+ * everything in range) — a table passes its live `rowCount` so unused rows
+ * (which may hold `undefined` in an array buffer) are not run through the
+ * coercer; those slots stay at the new buffer's zero/default init.
  *
  * Source values are copied by reference into the new buffer (ECS component
  * values are never mutated in place); only newly-introduced fields get their own
@@ -27,8 +27,7 @@ import { ReadonlyTypedBuffer, TypedBuffer } from "./typed-buffer.js";
 export function convertTypedBuffer(
     source: ReadonlyTypedBuffer<unknown>,
     targetSchema: Schema,
-    capacity: number = source.capacity,
-    count: number = Math.min(capacity, source.capacity),
+    options: { readonly capacity?: number; readonly count?: number } = {},
 ): TypedBuffer<unknown> {
     const coerce = createCoerceFunction(source.schema, targetSchema);
     if (coerce === null) {
@@ -36,6 +35,8 @@ export function convertTypedBuffer(
             `No automatic TypedBuffer conversion exists from ${JSON.stringify(source.schema)} to ${JSON.stringify(targetSchema)}.`,
         );
     }
+    const capacity = options.capacity ?? source.capacity;
+    const count = options.count ?? Math.min(capacity, source.capacity);
     const target = createTypedBuffer(targetSchema, capacity);
     for (let i = 0; i < count; i++) {
         target.set(i, coerce(source.get(i)));

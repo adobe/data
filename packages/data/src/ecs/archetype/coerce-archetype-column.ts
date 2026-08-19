@@ -25,7 +25,7 @@ export function coerceArchetypeColumn(
     const columns = archetype.columns as Record<string, TypedBuffer<unknown>>;
     const existing = columns[component];
     if (existing === undefined) return false;
-    const converted = convertTypedBuffer(existing, targetSchema, archetype.rowCapacity, archetype.rowCount);
+    const converted = convertTypedBuffer(existing, targetSchema, { capacity: archetype.rowCapacity, count: archetype.rowCount });
     archetype.fromData({
         columns: { ...columns, [component]: converted },
         rowCount: archetype.rowCount,

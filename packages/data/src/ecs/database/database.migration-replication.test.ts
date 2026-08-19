@@ -38,7 +38,7 @@ const makePlugin = (currentVersion: number) =>
     });
 
 // A v1 -> v2 data migration, expressed against a transaction context `t` on the
-// bare scratch (no named archetypes / resource accessors): give every [a] entity
+// bare document store (no named archetypes / resource accessors): give every [a] entity
 // a `b`, then stamp the version singleton. The `b` component must already be
 // declared on the store before this runs.
 const upgradeV1toV2Data = (t: any): void => {
@@ -80,19 +80,19 @@ describe("SAMPLE: upgrade-on-load produces a delta a peer replays to converge", 
         const v1bytes = serialize(author.toData());
 
         // Client A (v2 app) opens the v1 document. Its version handler upgrades
-        // the scratch store AND captures the migration as a delta to hand to
-        // replication, then returns the scratch to commit.
+        // the document store AND captures the migration as a delta to hand to
+        // replication, then returns the documentStore to commit.
         let migrationDelta: TransactionWriteOperation<any>[] = [];
         const versioning: DatabaseVersioning = {
             resource: "databaseVersion",
-            handle: ({ scratch, documentVersion, currentVersion }) => {
+            handle: ({ documentStore, documentVersion, currentVersion }) => {
                 if (documentVersion < currentVersion) {
                     // Declare the new component, then capture the data migration as
                     // a delta (the replicable change-set) and apply it in place.
-                    (scratch as any).extend({ components: { b: numeric }, resources: {}, archetypes: {} });
-                    migrationDelta = captureTransaction(scratch, upgradeV1toV2Data).redo;
+                    (documentStore as any).extend({ components: { b: numeric }, resources: {}, archetypes: {} });
+                    migrationDelta = captureTransaction(documentStore, upgradeV1toV2Data).redo;
                 }
-                return scratch;
+                return documentStore;
             },
         };
         const clientA = Database.create(makePlugin(2), { versioning });

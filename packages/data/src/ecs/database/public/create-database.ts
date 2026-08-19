@@ -41,17 +41,17 @@ function createAndAssignSystems(
  * The document's version is a plain **number** stored in an application-named
  * resource (`resource`), so it always round-trips with the serialized document.
  *
- * On load the snapshot is reconstructed into a fresh **scratch** store carrying
+ * On load the snapshot is reconstructed into a fresh **document store** carrying
  * the *document's own* schema — a faithful copy of the document as it was saved,
  * at whatever version it was written at. This has NO dependence on the live
- * database's schema. The library reads the document version out of that scratch
- * and the current version off the live database, and hands both — with the
- * scratch — to `handle`, a pure upgrade function that converts the document to
- * the current version and returns the store to commit, or `null` to reject:
+ * database's schema. The library reads the document version out of that document
+ * store and the current version off the live database, and hands both — with the
+ * document store — to `handle`, a pure upgrade function that converts the document
+ * to the current version and returns the store to commit, or `null` to reject:
  *
- *   - **accept** (same version): return the scratch as-is.
- *   - **upgrade** (older): transform the scratch — or build a new store — up to
- *     the current schema/version and return it. The upgrade owns the target
+ *   - **accept** (same version): return the document store as-is.
+ *   - **upgrade** (older): transform the document store — or build a new store —
+ *     up to the current schema/version and return it. The upgrade owns the target
  *     schema; it declares any new components itself (it is app code).
  *   - **reject** (newer, or otherwise unloadable): return `null`. The live
  *     database is left completely untouched — no copy, no observer
@@ -88,7 +88,7 @@ export interface DatabaseVersioning {
     /** Name of the resource holding the document's numeric version. */
     readonly resource: string;
     readonly handle: (context: {
-        readonly scratch: Store<any, any, any>;
+        readonly documentStore: Store<any, any, any>;
         readonly documentVersion: number;
         readonly currentVersion: number;
     }) => Store<any, any, any> | null;
@@ -302,15 +302,15 @@ function createEmptyDatabase(
         // so it bypasses the handler and loads directly (the original path), as
         // does a database with no handler configured.
         if (versioning && scope === undefined) {
-            // Reconstruct the document into a bare scratch store (its OWN schema,
+            // Reconstruct the document into a bare document store (its OWN schema,
             // no dependence on the live db), read the document + current versions,
             // and hand them to the pure upgrade handler. It returns the store to
             // commit or null to reject — a reject leaves the live db untouched.
-            const scratch = Store.create({ components: {}, resources: {}, archetypes: {} });
-            scratch.fromData(data);
-            const documentVersion = readVersionResource(scratch, versioning.resource);
+            const documentStore = Store.create({ components: {}, resources: {}, archetypes: {} });
+            documentStore.fromData(data);
+            const documentVersion = readVersionResource(documentStore, versioning.resource);
             const currentVersion = readVersionResource(store, versioning.resource);
-            const committed = versioning.handle({ scratch, documentVersion, currentVersion });
+            const committed = versioning.handle({ documentStore, documentVersion, currentVersion });
             if (committed === null) return; // reject: live database untouched
             // The live database is ALREADY initialized to the current-version
             // schema. We copy only the DATA for components it declares and adopt no

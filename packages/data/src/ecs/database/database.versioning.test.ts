@@ -2,9 +2,9 @@
 //
 // Tests for the pluggable load-time version handler injected via
 // `Database.create(plugin, { versioning: { resource, handle } })`. The snapshot
-// is reconstructed into a bare scratch store (the document's OWN schema); the
+// is reconstructed into a bare document store (the document's OWN schema); the
 // library reads the document + current versions and hands them, with the
-// scratch, to a pure upgrade `handle` that returns a store to commit or `null`
+// documentStore, to a pure upgrade `handle` that returns a store to commit or `null`
 // to reject. The library auto-stamps the committed version; a returned store
 // whose typed buffers are storage-incompatible with the current schema throws.
 
@@ -34,21 +34,21 @@ const makePlugin = (currentVersion: number) =>
 // same-version documents. The library stamps the version — the handler doesn't.
 const makeVersioning = (currentVersion: number): DatabaseVersioning => ({
     resource: "databaseVersion",
-    handle: ({ scratch, documentVersion }) => {
+    handle: ({ documentStore, documentVersion }) => {
         if (documentVersion > currentVersion) return null; // reject: too new
         if (documentVersion < currentVersion) {
-            (scratch as any).extend({ components: { b: numeric }, resources: {}, archetypes: {} });
-            for (const arch of (scratch as any).queryArchetypes(["a"])) {
+            (documentStore as any).extend({ components: { b: numeric }, resources: {}, archetypes: {} });
+            for (const arch of (documentStore as any).queryArchetypes(["a"])) {
                 for (let i = arch.rowCount - 1; i >= 0; i--) {
-                    (scratch as any).update(arch.columns.id.get(i), { b: 100 });
+                    (documentStore as any).update(arch.columns.id.get(i), { b: 100 });
                 }
             }
         }
-        return scratch;
+        return documentStore;
     },
 });
 
-describe("Database.create versioning (bare-scratch loader)", () => {
+describe("Database.create versioning (document-store loader)", () => {
     it("accepts a same-version document", () => {
         const source = Database.create(makePlugin(1));
         const e = source.transactions.addA({ a: 5 });
@@ -104,9 +104,9 @@ describe("Database.create versioning (bare-scratch loader)", () => {
         let seenDocumentVersion = -1;
         const versioning: DatabaseVersioning = {
             resource: "databaseVersion",
-            handle: ({ scratch, documentVersion }) => {
+            handle: ({ documentStore, documentVersion }) => {
                 seenDocumentVersion = documentVersion;
-                return scratch;
+                return documentStore;
             },
         };
         const target = Database.create(makePlugin(1), { versioning });
@@ -128,7 +128,7 @@ describe("Database.create versioning (bare-scratch loader)", () => {
         expect(target.read(e)).toEqual({ a: 7 });
     });
 
-    it("commits a different store than the scratch when the handler returns one", () => {
+    it("commits a different store than the documentStore when the handler returns one", () => {
         const source = Database.create(makePlugin(1));
         source.transactions.addA({ a: 1 });
         const snap = source.toData();
@@ -171,7 +171,7 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
         });
         // A lazy migration that forgets to shed `extra` still must not pollute the
         // current-schema database — the commit copies only declared components.
-        const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ scratch }) => scratch };
+        const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ documentStore }) => documentStore };
         const target = Database.create(appPlugin, { versioning });
         target.fromData(snap);
 
@@ -202,7 +202,7 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
             transactions: { add(t, v: number) { return t.archetypes.N.insert({ n: v }); } },
         });
         // Buggy handler: returns `n` at the old (wider) storage.
-        const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ scratch }) => scratch };
+        const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ documentStore }) => documentStore };
         const target = Database.create(v2Plugin, { versioning });
         const kept = target.transactions.add(7); // pre-existing live data
 
@@ -233,7 +233,7 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
             resources: { databaseVersion: { default: 2 } },
             archetypes: { P: ["pos"] } as const,
         });
-        const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ scratch }) => scratch };
+        const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ documentStore }) => documentStore };
         const target = Database.create(v2Plugin, { versioning });
 
         expect(() => target.fromData(snap)).toThrow(/different struct layout/);
@@ -256,7 +256,7 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
             resources: { databaseVersion: { default: 1 } },
             archetypes: { A: ["a"] } as const,
         });
-        const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ scratch }) => scratch };
+        const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ documentStore }) => documentStore };
         const target = Database.create(appPlugin, { versioning });
         target.fromData(snap);
 
@@ -293,9 +293,9 @@ describe("Database.create versioning — scoped loads bypass versioning", () => 
         const target = Database.create(scopedPlugin, {
             versioning: {
                 resource: "databaseVersion",
-                handle: ({ scratch }) => {
+                handle: ({ documentStore }) => {
                     handlerCalled = true;
-                    return scratch;
+                    return documentStore;
                 },
             },
         });
@@ -332,13 +332,13 @@ describe("Database.create versioning — migration shapes", () => {
         });
         const versioning: DatabaseVersioning = {
             resource: "databaseVersion",
-            handle: ({ scratch }) => {
-                for (const arch of (scratch as any).queryArchetypes(["legacy"])) {
+            handle: ({ documentStore }) => {
+                for (const arch of (documentStore as any).queryArchetypes(["legacy"])) {
                     for (let i = arch.rowCount - 1; i >= 0; i--) {
-                        (scratch as any).update(arch.columns.id.get(i), { legacy: undefined });
+                        (documentStore as any).update(arch.columns.id.get(i), { legacy: undefined });
                     }
                 }
-                return scratch;
+                return documentStore;
             },
         };
         const target = Database.create(appPlugin, { versioning });

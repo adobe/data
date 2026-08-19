@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from "vitest";
 import { Database } from "./database.js";
-import type { DatabaseVersioning } from "./public/create-database.js";
+import type { DatabaseVersioning } from "./public/database-versioning.js";
 import type { Schema } from "../../schema/index.js";
 
 const numeric = { type: "number", default: 0 } as const satisfies Schema;

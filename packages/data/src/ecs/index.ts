@@ -15,7 +15,6 @@ export * from "./resource-schemas.js";
 export * from "./undo-redo-service/index.js";
 export * from "./persistence-service/index.js";
 export { applyOperations } from "./database/transactional-store/apply-operations.js";
-export { captureTransaction } from "./database/capture-transaction.js";
 export * from "./plugins/index.js";
 export * from "./store/transaction-functions.js";
 

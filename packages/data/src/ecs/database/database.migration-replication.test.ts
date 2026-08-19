@@ -3,23 +3,22 @@
 // SAMPLES — the basic interactions we want to support for database upgrading +
 // replication. These read as worked examples, not just assertions:
 //
-//   1. `captureTransaction` turns an out-of-transaction store edit into a
+//   1. `TransactionResult.capture` turns an out-of-transaction store edit into a
 //      replicable delta (the same change-set a normal transaction produces).
 //   2. An upgrade-on-load handler migrates a document in place AND captures the
 //      migration as a delta; a peer that only received the delta replays it with
 //      `applyOperations` and converges — without running the migration itself.
 //
-// Core owns only the capture primitive (`captureTransaction`) and the replay
+// Core owns only the capture primitive (`TransactionResult.capture`) and the replay
 // primitive (`applyOperations`); how the delta travels between peers is entirely
 // the (external, pluggable) replication strategy's business.
 
 import { describe, it, expect } from "vitest";
 import { Database } from "./database.js";
-import { captureTransaction } from "./capture-transaction.js";
 import { applyOperations } from "./transactional-store/apply-operations.js";
 import { serialize, deserialize } from "../../functions/serialization/serialize.js";
-import type { TransactionWriteOperation } from "./transactional-store/transactional-store.js";
-import type { DatabaseVersioning } from "./public/create-database.js";
+import { TransactionResult, type TransactionWriteOperation } from "./transactional-store/transactional-store.js";
+import type { DatabaseVersioning } from "./public/database-versioning.js";
 import type { Schema } from "../../schema/index.js";
 
 const numeric = { type: "number", default: 0 } as const satisfies Schema;
@@ -52,12 +51,12 @@ const upgradeV1toV2Data = (t: any): void => {
 };
 
 describe("SAMPLE: capture an out-of-transaction edit as a replicable delta", () => {
-    it("captureTransaction mutates the store in place and returns the change-set", async () => {
+    it("TransactionResult.capture mutates the store in place and returns the change-set", async () => {
         const db = Database.create(makePlugin(1));
         const e = db.transactions.addA({ a: 1 });
 
         // Wrap the raw store, do the edit as one transaction, keep the change.
-        const delta = captureTransaction((db as any).store, (t) => {
+        const delta = TransactionResult.capture((db as any).store, (t) => {
             t.update(e, { b: 42 });
         });
 
@@ -90,7 +89,7 @@ describe("SAMPLE: upgrade-on-load produces a delta a peer replays to converge", 
                     // Declare the new component, then capture the data migration as
                     // a delta (the replicable change-set) and apply it in place.
                     (documentStore as any).extend({ components: { b: numeric }, resources: {}, archetypes: {} });
-                    migrationDelta = captureTransaction(documentStore, upgradeV1toV2Data).redo;
+                    migrationDelta = TransactionResult.capture(documentStore, upgradeV1toV2Data).redo;
                 }
                 return documentStore;
             },

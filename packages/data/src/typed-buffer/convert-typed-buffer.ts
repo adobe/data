@@ -13,22 +13,24 @@ import { ReadonlyTypedBuffer, TypedBuffer } from "./typed-buffer.js";
  * conversion exists it **throws** — a developer error, callers that want to
  * probe first can call `createCoerceFunction` themselves and branch on `null`.
  *
- * `options.capacity` sizes the new buffer (default: the source's).
- * `options.count` is how many leading elements to actually convert (default:
- * everything in range) — a table passes its live `rowCount` so unused rows
- * (which may hold `undefined` in an array buffer) are not run through the
- * coercer; those slots stay at the new buffer's zero/default init.
+ * `capacity` sizes the new buffer (default: the source's). `count` is how many
+ * leading elements to actually convert (default: everything in range) — a table
+ * passes its live `rowCount` so unused rows (which may hold `undefined` in an
+ * array buffer) are not run through the coercer; those slots stay at the new
+ * buffer's zero/default init.
  *
  * Source values are copied by reference into the new buffer (ECS component
  * values are never mutated in place); only newly-introduced fields get their own
  * cloned defaults. Width/precision loss (F64→F32, capped integers) is applied by
  * the destination buffer as coerced values are written.
  */
-export function convertTypedBuffer(
-    source: ReadonlyTypedBuffer<unknown>,
-    targetSchema: Schema,
-    options: { readonly capacity?: number; readonly count?: number } = {},
-): TypedBuffer<unknown> {
+export function convertTypedBuffer(options: {
+    readonly source: ReadonlyTypedBuffer<unknown>;
+    readonly targetSchema: Schema;
+    readonly capacity?: number;
+    readonly count?: number;
+}): TypedBuffer<unknown> {
+    const { source, targetSchema } = options;
     const coerce = createCoerceFunction(source.schema, targetSchema);
     if (coerce === null) {
         throw new Error(

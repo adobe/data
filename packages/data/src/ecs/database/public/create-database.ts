@@ -31,6 +31,29 @@ function createAndAssignSystems(
 }
 
 
+/**
+ * Pluggable database-version policy consulted on every `db.fromData(snapshot)`.
+ *
+ * The handler receives the raw `snapshot` (read whatever version marker the
+ * application persisted onto it — `core.fromData` ignores unknown top-level
+ * fields, so an app may stamp e.g. `snapshot.appVersion`) and a `load` control:
+ *
+ *   - **Don't load** (the current app pattern): inspect the version and simply
+ *     do NOT call `load` — the database is left untouched (current state kept).
+ *   - **Load as-is**: call `load()`.
+ *   - **Upgrade** (future): call `load(transform)`, where `transform(store)` runs
+ *     on the freshly-loaded raw store — the untyped surface — before indexes and
+ *     observers are re-derived, so it may add/remove components and archetypes to
+ *     migrate the snapshot in place.
+ *
+ * No migration algorithm is coupled into the database; the handler is entirely
+ * caller-supplied.
+ */
+export type DatabaseVersioningHandler = (context: {
+    readonly snapshot: unknown;
+    readonly load: (transform?: (store: Store<any, any, any>) => void) => void;
+}) => void;
+
 interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, any, any, any, any>> {
     /**
      * Optional services overrides to use.
@@ -48,6 +71,11 @@ interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, an
      *     full rollback-and-replay for multi-peer synchronisation.
      */
     concurrency?: ConcurrencyStrategyFactory;
+    /**
+     * Pluggable version policy consulted on every `db.fromData(snapshot)`. Omit
+     * for the current behavior (always load). See {@link DatabaseVersioningHandler}.
+     */
+    versioning?: DatabaseVersioningHandler;
 }
 
 export function createDatabase(): Database<{}, {}, {}, {}, never, {}, {}, {}>
@@ -61,7 +89,7 @@ export function createDatabase(
     plugin?: Database.Plugin<any, any, any, any, any, any, any, any>,
     options?: CreateDatabaseOptions<any>,
 ): any {
-    const db = createEmptyDatabase(options?.concurrency);
+    const db = createEmptyDatabase(options?.concurrency, options?.versioning);
     if (plugin === undefined) {
         return db;
     }
@@ -75,7 +103,10 @@ export function createDatabase(
  * Creates a database with empty store, no transactions, actions, services, computed, or systems.
  * All content is added via .extend(plugin). Single code path for extension.
  */
-function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined): any {
+function createEmptyDatabase(
+    concurrency: ConcurrencyStrategyFactory | undefined,
+    versioning?: DatabaseVersioningHandler,
+): any {
     const store = Store.create({
         components: {},
         resources: {},
@@ -148,8 +179,21 @@ function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined
         return data;
     };
     const fromData = (data: unknown, scope?: PersistenceScope) => {
-        observedDatabase.fromData(data, scope);
-        strategy.onAfterFromData?.();
+        // Applying the snapshot: load the data, optionally transform the raw
+        // store in place (the upgrader seam), then re-apply any concurrency
+        // transients on top of the loaded state.
+        const applyLoad = (transform?: (store: Store<any, any, any>) => void) => {
+            observedDatabase.fromData(data, scope, transform);
+            strategy.onAfterFromData?.();
+        };
+        // A version policy, when configured, decides whether/how to apply. Not
+        // calling `load` leaves the database untouched (the "don't load" option);
+        // strategy transients are then left as-is since nothing was reloaded.
+        if (versioning) {
+            versioning({ snapshot: data, load: applyLoad });
+        } else {
+            applyLoad();
+        }
     };
 
     const partialDatabase: any = {

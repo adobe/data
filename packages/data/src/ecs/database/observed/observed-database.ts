@@ -52,7 +52,7 @@ export interface ObservedDatabase<
     readonly reset: () => void;
     readonly pruneToSchema: (keep: ReadonlySet<string>) => void;
     readonly toData: (options?: ToDataOptions) => unknown;
-    readonly fromData: (data: unknown, scope?: PersistenceScope) => void;
+    readonly fromData: (data: unknown, scope?: PersistenceScope, transform?: (store: Store<C, R, A>) => void) => void;
     readonly extend: <
         P extends Database.Plugin<any, any, any, any, any>
     >(

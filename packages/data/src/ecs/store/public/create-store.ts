@@ -429,8 +429,13 @@ export function createStore<
             }
         },
         toData: (options?: ToDataOptions) => core.toData(options),
-        fromData: (data: unknown, scope?: PersistenceScope) => {
+        fromData: (data: unknown, scope?: PersistenceScope, transform?: (store: Store<C, R>) => void) => {
             core.fromData(data, scope);
+            // Load-time seam: run the caller's transform on the freshly-loaded
+            // raw store BEFORE resources are re-derived and indexes reseeded, so
+            // any components/archetypes it adds or removes are reflected by the
+            // re-sync below (an upgrader migrating the loaded snapshot in place).
+            transform?.(store);
             for (const [name, resourceSchema] of Object.entries(resourceSchemas)) {
                 ensureResourceInitialized(name, resourceSchema as any);
             }

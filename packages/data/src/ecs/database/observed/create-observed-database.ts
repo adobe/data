@@ -181,6 +181,21 @@ export function createObservedDatabase<
         notifyObservers(notifyResult);
     };
 
+    // Rebuild observe.components / observe.resources from the current store
+    // schema. Called after any operation that can change the component/resource
+    // set (extend, pruneToSchema, a load-time transform) so new members become
+    // observable and dropped ones fall away.
+    const rebuildObservableMaps = () => {
+        (observe as any).components = mapEntries(store.componentSchemas, ([component]) => addToMapSet(component, componentObservers));
+        (observe as any).resources = Object.fromEntries(
+            Object.entries(store.resources).map(([resource]) => {
+                const archetype = store.ensureArchetype(resourceArchetypeComponents(resource));
+                const resourceId = archetype.columns[ID].get(0);
+                return [resource, Observe.withMap(observeEntity(resourceId), (values) => (values as any)?.[resource] ?? null)];
+            })
+        );
+    };
+
     const observedDatabase: ObservedDatabase<C, R, A> = {
         ...rest,
         resources,
@@ -192,8 +207,13 @@ export function createObservedDatabase<
             notifyAllObserversStoreReloaded();
         },
         toData: (options?: ToDataOptions) => store.toData(options),
-        fromData: (data: unknown, scope?: PersistenceScope) => {
-            store.fromData(data, scope);
+        fromData: (data: unknown, scope?: PersistenceScope, transform?: (store: any) => void) => {
+            store.fromData(data, scope, transform);
+            // A load-time `transform` may have added/removed components or
+            // resources, so rebuild the observable maps (mirror of extend/prune)
+            // before notifying. A plain load leaves the schema unchanged, so its
+            // maps are untouched — only observers are notified.
+            if (transform) rebuildObservableMaps();
             notifyAllObserversStoreReloaded();
         },
         pruneToSchema: (keep: ReadonlySet<string>) => {
@@ -201,27 +221,14 @@ export function createObservedDatabase<
             // Prune can drop components/resources, so rebuild the observable maps
             // (mirror of extend) and notify — pruned entities/resources are a
             // whole-store reload from every observer's point of view.
-            (observe as any).components = mapEntries(store.componentSchemas, ([component]) => addToMapSet(component, componentObservers));
-            (observe as any).resources = Object.fromEntries(
-                Object.entries(store.resources).map(([resource]) => {
-                    const archetype = store.ensureArchetype(resourceArchetypeComponents(resource));
-                    const resourceId = archetype.columns[ID].get(0);
-                    return [resource, Observe.withMap(observeEntity(resourceId), (values) => (values as any)?.[resource] ?? null)];
-                })
-            );
+            rebuildObservableMaps();
             notifyAllObserversStoreReloaded();
         },
         extend: (plugin: any) => {
             transactionalStore.extend(plugin);
-            // Rebuild observe.components and observe.resources so new components/resources from extend are observable
-            (observe as any).components = mapEntries(store.componentSchemas, ([component]) => addToMapSet(component, componentObservers));
-            (observe as any).resources = Object.fromEntries(
-                Object.entries(store.resources).map(([resource]) => {
-                    const archetype = store.ensureArchetype(resourceArchetypeComponents(resource));
-                    const resourceId = archetype.columns[ID].get(0);
-                    return [resource, Observe.withMap(observeEntity(resourceId), (values) => (values as any)?.[resource] ?? null)];
-                })
-            );
+            // Rebuild observe.components / observe.resources so new members from
+            // extend are observable.
+            rebuildObservableMaps();
             notifyAllObserversStoreReloaded();
             return observedDatabase as any;
         },

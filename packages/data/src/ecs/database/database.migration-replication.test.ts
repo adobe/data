@@ -37,13 +37,18 @@ const makePlugin = (currentVersion: number) =>
         },
     });
 
-// A v1 -> v2 upgrade: give every [a] entity a `b`, then stamp the version.
-const upgradeV1toV2 = (t: any): void => {
-    const A = t.archetypes.A;
-    for (let i = A.rowCount - 1; i >= 0; i--) {
-        t.update(A.columns.id.get(i), { b: 100 });
+// A v1 -> v2 data migration, expressed against a transaction context `t` on the
+// bare scratch (no named archetypes / resource accessors): give every [a] entity
+// a `b`, then stamp the version singleton. The `b` component must already be
+// declared on the store before this runs.
+const upgradeV1toV2Data = (t: any): void => {
+    for (const arch of t.queryArchetypes(["a"])) {
+        for (let i = arch.rowCount - 1; i >= 0; i--) {
+            t.update(arch.columns.id.get(i), { b: 100 });
+        }
     }
-    t.resources.databaseVersion = 2;
+    const vArch = t.queryArchetypes(["databaseVersion"])[0];
+    t.update(vArch.columns.id.get(0), { databaseVersion: 2 });
 };
 
 describe("SAMPLE: capture an out-of-transaction edit as a replicable delta", () => {
@@ -78,12 +83,17 @@ describe("SAMPLE: upgrade-on-load produces a delta a peer replays to converge", 
         // the scratch store AND captures the migration as a delta to hand to
         // replication, then returns the scratch to commit.
         let migrationDelta: TransactionWriteOperation<any>[] = [];
-        const versioning: DatabaseVersioning = (scratch) => {
-            const documentVersion = (scratch.resources as Record<string, number>).databaseVersion;
-            if (documentVersion < 2) {
-                migrationDelta = captureTransaction(scratch, upgradeV1toV2).redo;
-            }
-            return scratch;
+        const versioning: DatabaseVersioning = {
+            resource: "databaseVersion",
+            handle: ({ scratch, documentVersion, currentVersion }) => {
+                if (documentVersion < currentVersion) {
+                    // Declare the new component, then capture the data migration as
+                    // a delta (the replicable change-set) and apply it in place.
+                    (scratch as any).extend({ components: { b: numeric }, resources: {}, archetypes: {} });
+                    migrationDelta = captureTransaction(scratch, upgradeV1toV2Data).redo;
+                }
+                return scratch;
+            },
         };
         const clientA = Database.create(makePlugin(2), { versioning });
         clientA.fromData(deserialize(v1bytes));

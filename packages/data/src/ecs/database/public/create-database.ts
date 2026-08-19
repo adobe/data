@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { ReadonlyStore, Store } from "../../store/index.js";
+import { equals } from "../../../equals.js";
 import { Database, FromServiceFactories } from "../database.js";
 import { PersistenceScope } from "../../persistence-scope.js";
 import { calculateSystemOrder } from "../calculate-system-order.js";
@@ -32,42 +33,49 @@ function createAndAssignSystems(
 
 
 /**
- * Pluggable load-time version/migration handler, consulted on every
+ * Pluggable load-time version/migration policy, consulted on every
  * `db.fromData(snapshot)` when configured on `Database.create`.
  *
- * The snapshot is loaded into a fresh **scratch** store, which this function is
- * handed. The scratch is empty of data and carries the *live database's* current
- * **declared schema** — the components/resources/archetypes this database was
- * built from (NOT its data, and NOT the snapshot's schema). That gives a
- * migration the app's declared components to work with (e.g. to add a `b` column
- * an old document lacks). The snapshot's data — and any components it carries
- * that the app does not declare — are then loaded into that scratch (unknown-but-
- * populated components are adopted), so the handler sees the document's contents
- * on top of the app's schema.
+ * The document's version is a plain **number** stored in an application-named
+ * resource (`resource`), so it always round-trips with the serialized document.
  *
- * The handler may inspect the document — the version is a plain **number** in an
- * application-named resource, so read it from `scratch.resources.<name>` — and
- * then, at its discretion:
+ * On load the snapshot is reconstructed into a fresh **scratch** store carrying
+ * the *document's own* schema — a faithful copy of the document as it was saved,
+ * at whatever version it was written at. This has NO dependence on the live
+ * database's schema. The library reads the document version out of that scratch
+ * and the current version off the live database, and hands both — with the
+ * scratch — to `handle`, a pure upgrade function that converts the document to
+ * the current version and returns the store to commit, or `null` to reject:
  *
- *   - **accept**: return a store to commit into the database. Whether the
- *     returned store is the passed-in `scratch` (mutated or not) or a different
- *     `Store` it built is entirely up to the handler — mutating and returning a
- *     new store are orthogonal choices.
- *   - **upgrade**: migrate the scratch (or build a new store) to the current
- *     schema/version and return it.
- *   - **reject**: return `null`. The database is left completely untouched — no
- *     copy, no observer notifications — so a rejected load never disturbs a
- *     live/populated database.
+ *   - **accept** (same version): return the scratch as-is.
+ *   - **upgrade** (older): transform the scratch — or build a new store — up to
+ *     the current schema/version and return it. The upgrade owns the target
+ *     schema; it declares any new components itself (it is app code).
+ *   - **reject** (newer, or otherwise unloadable): return `null`. The live
+ *     database is left completely untouched — no copy, no observer
+ *     notifications — so a rejected load never disturbs a live/populated db.
  *
- * On accept, the committed store's contents are loaded into the database via the
- * normal `fromData` schema reconciliation (declared-schema-wins, unknown-but-
- * populated components adopted, empty archetypes shed); the returned store's
- * schemas must be compatible with any already present in the database.
+ * The returned store's component schemas are **strictly validated** against the
+ * live database's before committing: every component it declares (other than the
+ * version resource, whose default legitimately varies by version) must exist in
+ * the current schema and be structurally equivalent. A mismatch — e.g. an old
+ * component schema left un-upgraded — **throws**, because that is a developer
+ * error the migration is responsible for, not a runtime condition. Rejection of
+ * a document is data (`null`); a broken migration is a thrown developer error.
  *
- * Errors are reported as data (a `null` return), never thrown. No migration
- * algorithm is coupled into the database; the handler is entirely caller-supplied.
+ * On accept the committed store's contents load into the database via the normal
+ * `fromData` reconciliation. No migration algorithm is coupled into the database;
+ * `handle` is entirely caller-supplied.
  */
-export type DatabaseVersioning = (scratch: Store<any, any, any>) => Store<any, any, any> | null;
+export interface DatabaseVersioning {
+    /** Name of the resource holding the document's numeric version. */
+    readonly resource: string;
+    readonly handle: (context: {
+        readonly scratch: Store<any, any, any>;
+        readonly documentVersion: number;
+        readonly currentVersion: number;
+    }) => Store<any, any, any> | null;
+}
 
 interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, any, any, any, any>> {
     /**
@@ -194,44 +202,71 @@ function createEmptyDatabase(
         strategy.onAfterToData();
         return data;
     };
-    // A fresh, data-empty store carrying the LIVE database's current declared
-    // schema (replayed from the same plugins) — not its data, and not the
-    // snapshot's schema. Used to stage a versioned load in isolation so the
-    // migration has the app's declared components available without touching the
-    // live store; the snapshot's data loads into this scratch afterward.
-    const buildScratchStore = () => {
-        const scratch = Store.create({ components: {}, resources: {}, archetypes: {} });
-        for (const plugin of extendedPlugins) {
-            // Only the schema (components/resources/archetypes) is needed to stage
-            // and migrate a document; indexes are derived and reseeded when the
-            // committed store loads into the live database, so building them on the
-            // throwaway scratch would just be maintained-then-discarded work.
-            scratch.extend({
-                components: (plugin.components ?? {}) as any,
-                resources: (plugin.resources ?? {}) as any,
-                archetypes: (plugin.archetypes ?? {}) as any,
-            });
+    // Read a numeric version resource from a store WITHOUT relying on the
+    // resource accessor — a snapshot-reconstructed store carries the version as a
+    // plain singleton component (resource-ness is not serialized), so read it
+    // straight off that singleton's column. Absent ⇒ 0 (a pre-versioning legacy
+    // document).
+    const readVersionResource = (s: Store<any, any, any>, name: string): number => {
+        const archetype = s.queryArchetypes([name] as never[])[0];
+        return archetype ? Number((archetype.columns as Record<string, { get(i: number): unknown }>)[name]!.get(0)) : 0;
+    };
+
+    // A migration must return a store already at the current schema. Enforce it:
+    // every component the returned store actually CARRIES DATA for (i.e. appears
+    // in a non-empty archetype — inert leftover schemas are shed on commit and
+    // never reach the live db) must exist in the live database's schema AND be
+    // structurally equivalent. The version resource is exempt: its default
+    // legitimately varies by version. A mismatch is a developer error in the
+    // migration — thrown, per adobe/data's rule that throws are for developer
+    // mistakes, not runtime conditions (a rejected *document* is data: the `null`
+    // return above).
+    const assertReturnedSchemaMatchesCurrent = (committed: Store<any, any, any>, versionResource: string) => {
+        const current = store.componentSchemas as Record<string, unknown>;
+        const returned = committed.componentSchemas as Record<string, unknown>;
+        const carried = new Set<string>();
+        for (const archetype of committed.queryArchetypes([] as never[])) {
+            if (archetype.rowCount === 0) continue;
+            for (const name of archetype.components) carried.add(name);
         }
-        return scratch;
+        for (const name of carried) {
+            if (name === "id" || name === "nonPersistent" || name === "nonShared" || name === versionResource) continue;
+            if (!(name in current)) {
+                throw new Error(
+                    `Database version handler returned a store carrying data for component "${name}", which the current database schema does not declare. ` +
+                    `A migration must produce a store matching the current schema.`,
+                );
+            }
+            if (!equals(returned[name], current[name])) {
+                throw new Error(
+                    `Database version handler returned component "${name}" with a schema that is not structurally equivalent to the current database's. ` +
+                    `A migration must bring every component up to the current schema (this one appears to be from an older version).`,
+                );
+            }
+        }
     };
 
     const fromData = (data: unknown, scope?: PersistenceScope) => {
         // With no version handler, load directly (single pass) — the original
-        // path. With one, stage the snapshot into a scratch store, let the
-        // handler migrate/inspect it and return the store to commit (or null to
-        // reject). Only a non-null return touches the live database; a reject
-        // leaves it completely untouched (no copy, no observer notifications).
+        // path. With one, reconstruct the document into a bare scratch store (its
+        // OWN schema, no dependence on the live db), read the document + current
+        // versions, and hand them to the pure upgrade handler. It returns the
+        // store to commit (validated against the current schema) or null to
+        // reject — a reject leaves the live database completely untouched.
         if (versioning) {
-            const scratch = buildScratchStore();
+            const scratch = Store.create({ components: {}, resources: {}, archetypes: {} });
             scratch.fromData(data, scope);
-            const committed = versioning(scratch);
+            const documentVersion = readVersionResource(scratch, versioning.resource);
+            const currentVersion = readVersionResource(store, versioning.resource);
+            const committed = versioning.handle({ scratch, documentVersion, currentVersion });
             if (committed === null) return; // reject: live database untouched
-            // Commit via normal fromData schema reconciliation. copy:false hands
-            // the scratch's live buffers over structurally (the scratch is then
-            // discarded), so this is a structural adoption, not a deep copy. The
+            assertReturnedSchemaMatchesCurrent(committed, versioning.resource);
+            // Commit via normal fromData reconciliation. copy:false hands the
+            // returned store's live buffers over structurally (it is discarded
+            // right after), so this is a structural adoption, not a deep copy. The
             // same `scope` is passed to toData AND fromData so a scoped load stays
-            // scope-matched — otherwise the whole scratch (incl. out-of-scope
-            // default quadrants) would overwrite the live store's other quadrants.
+            // scope-matched — otherwise the whole store (incl. out-of-scope default
+            // quadrants) would overwrite the live store's other quadrants.
             observedDatabase.fromData(committed.toData({ copy: false, scope }), scope);
         } else {
             observedDatabase.fromData(data, scope);

@@ -191,11 +191,14 @@ function createEmptyDatabase(
     const buildScratchStore = () => {
         const scratch = Store.create({ components: {}, resources: {}, archetypes: {} });
         for (const plugin of extendedPlugins) {
+            // Only the schema (components/resources/archetypes) is needed to stage
+            // and migrate a document; indexes are derived and reseeded when the
+            // committed store loads into the live database, so building them on the
+            // throwaway scratch would just be maintained-then-discarded work.
             scratch.extend({
                 components: (plugin.components ?? {}) as any,
                 resources: (plugin.resources ?? {}) as any,
                 archetypes: (plugin.archetypes ?? {}) as any,
-                indexes: (plugin.indexes ?? {}) as any,
             });
         }
         return scratch;
@@ -214,8 +217,11 @@ function createEmptyDatabase(
             if (committed === null) return; // reject: live database untouched
             // Commit via normal fromData schema reconciliation. copy:false hands
             // the scratch's live buffers over structurally (the scratch is then
-            // discarded), so this is a structural adoption, not a deep copy.
-            observedDatabase.fromData(committed.toData({ copy: false }), scope);
+            // discarded), so this is a structural adoption, not a deep copy. The
+            // same `scope` is passed to toData AND fromData so a scoped load stays
+            // scope-matched — otherwise the whole scratch (incl. out-of-scope
+            // default quadrants) would overwrite the live store's other quadrants.
+            observedDatabase.fromData(committed.toData({ copy: false, scope }), scope);
         } else {
             observedDatabase.fromData(data, scope);
         }

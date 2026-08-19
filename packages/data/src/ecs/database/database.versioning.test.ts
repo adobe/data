@@ -98,4 +98,61 @@ describe("Database.create versioning (scratch-store loader)", () => {
 
         expect(target.read(e)).toEqual({ a: 7 });
     });
+
+    it("commits a different store than the scratch when the handler returns one", () => {
+        const source = Database.create(makePlugin(1));
+        source.transactions.addA({ a: 1 });
+        const snap = source.toData();
+
+        // Handler ignores the staged scratch and commits a store it built itself.
+        const versioning: DatabaseVersioning = () => {
+            const fresh = Database.create(makePlugin(1));
+            fresh.transactions.addA({ a: 999 });
+            return (fresh as any).store;
+        };
+        const target = Database.create(makePlugin(1), { versioning });
+        target.fromData(snap);
+
+        // The committed data is the freshly-built store's, not the snapshot's.
+        expect(target.select(["a"]).map((x) => target.read(x)?.a)).toEqual([999]);
+    });
+});
+
+// A settings/document split so a scoped load exercises quadrant isolation.
+const scopedPlugin = Database.Plugin.create({
+    components: {},
+    resources: {
+        docRes: { default: 0 as number }, // shared (document) quadrant
+        settingRes: { default: 1 as number, nonShared: true }, // non-shared (settings) quadrant
+    },
+    archetypes: {},
+    transactions: {
+        setDoc(t, v: number) {
+            t.resources.docRes = v;
+        },
+        setSetting(t, v: number) {
+            t.resources.settingRes = v;
+        },
+    },
+});
+
+describe("Database.create versioning — scoped loads", () => {
+    it("a scoped versioned load leaves out-of-scope quadrants untouched (regression)", () => {
+        // Author a settings-only (non-shared) document.
+        const author = Database.create(scopedPlugin);
+        author.transactions.setSetting(5);
+        const settingsDoc = author.toData({ scope: { nonShared: true } });
+
+        // Target already holds shared-quadrant state; accept-all version handler.
+        const target = Database.create(scopedPlugin, { versioning: (scratch) => scratch });
+        target.transactions.setDoc(42);
+
+        target.fromData(settingsDoc, { nonShared: true });
+
+        // The settings quadrant loaded; the shared quadrant is preserved — not
+        // clobbered by the scratch's out-of-scope defaults (docRes would be 0 if
+        // the commit serialized the whole scratch instead of the scoped quadrant).
+        expect(target.resources.settingRes).toBe(5);
+        expect(target.resources.docRes).toBe(42);
+    });
 });

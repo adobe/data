@@ -80,8 +80,10 @@ describe("SAMPLE: upgrade-on-load produces a delta a peer replays to converge", 
         const versioning: DatabaseVersioning = {
             resource: "databaseVersion",
             handle: ({ documentVersion, currentVersion, store }) => {
-                if (documentVersion >= currentVersion) return;
-                migrationDelta = captureTransaction(store, upgradeV1toV2).redo;
+                if (documentVersion < currentVersion) {
+                    migrationDelta = captureTransaction(store, upgradeV1toV2).redo;
+                }
+                return true;
             },
         };
         const clientA = Database.create(makePlugin(2), { versioning });

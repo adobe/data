@@ -272,7 +272,13 @@ export interface Database<
    * it because they only asserted the snapshot was truthy, never round-tripped it.
    */
   toData(options?: { readonly scope?: PersistenceScope }): unknown
-  fromData(data: unknown, scope?: PersistenceScope): void
+  /**
+   * Load a snapshot, returning whether it was accepted (never thrown). Without a
+   * version policy this is always `true`; with one configured on
+   * `Database.create`, a rejected document returns `false` (see the `versioning`
+   * option).
+   */
+  fromData(data: unknown, scope?: PersistenceScope): boolean
   /**
    * Conform the database's DATA to a target plugin's schema, dropping every
    * component and resource the plugin does not declare (its imports/extends are

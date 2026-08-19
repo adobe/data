@@ -37,15 +37,17 @@ function createAndAssignSystems(
  * The document's version is a plain **number** stored in an application-named
  * resource (so it is always present in a serialized document and round-trips
  * with it). `fromData` is destructive regardless of the outcome, so the snapshot
- * is always applied first; the handler then reconciles the loaded document:
+ * is always applied first; the handler then reconciles the loaded document and
+ * returns a boolean — `false` rejects the load (reported as data, never thrown):
  *
- *   - `documentVersion === currentVersion` → do nothing (accept as-is).
+ *   - `documentVersion === currentVersion` → return `true` (accept as-is).
  *   - `documentVersion  <  currentVersion` → migrate `store` in place to bring
  *     it up to `currentVersion` (the upgrader — add/remove components/archetypes
- *     on the raw store; the re-sync that follows picks the changes up).
- *   - `documentVersion  >  currentVersion` → `throw` to reject (a newer document
- *     an older app cannot read). The caller treats the throw as a failed load
- *     and discards the database.
+ *     on the raw store; the re-sync that follows picks the changes up), return
+ *     `true`.
+ *   - `documentVersion  >  currentVersion` → return `false` to reject (a newer
+ *     document an older app cannot read). The load already happened (it is
+ *     destructive), so the caller discards or resets the db.
  *
  * No migration algorithm is coupled into the database; `handle` is entirely
  * caller-supplied.
@@ -58,11 +60,12 @@ export interface DatabaseVersioning {
      * carries its own version in the same resource.
      */
     readonly resource: string;
+    /** Return `true` to accept the loaded document, `false` to reject it. */
     readonly handle: (context: {
         readonly documentVersion: number;
         readonly currentVersion: number;
         readonly store: Store<any, any, any>;
-    }) => void;
+    }) => boolean;
 }
 
 interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, any, any, any, any>> {
@@ -190,23 +193,26 @@ function createEmptyDatabase(
         strategy.onAfterToData();
         return data;
     };
-    const fromData = (data: unknown, scope?: PersistenceScope) => {
+    const fromData = (data: unknown, scope?: PersistenceScope): boolean => {
         // When a version policy is configured, reconcile the loaded document
         // against the app's current version. `currentVersion` is the version
         // resource's value BEFORE the load (the plugin default); the snapshot is
         // then applied, and `handle` runs on the loaded store — before indexes /
         // observers are re-derived — reading the loaded `documentVersion` and
-        // migrating in place (or throwing to reject a too-new document).
+        // migrating in place, then returning whether the document was accepted
+        // (false = rejected; reported as data, never thrown).
+        let accepted = true;
         if (versioning) {
             const currentVersion = Number((store.resources as Record<string, unknown>)[versioning.resource]);
             observedDatabase.fromData(data, scope, (loaded) => {
                 const documentVersion = Number((loaded.resources as Record<string, unknown>)[versioning.resource]);
-                versioning.handle({ documentVersion, currentVersion, store: loaded });
+                accepted = versioning.handle({ documentVersion, currentVersion, store: loaded });
             });
         } else {
             observedDatabase.fromData(data, scope);
         }
         strategy.onAfterFromData?.();
+        return accepted;
     };
 
     const partialDatabase: any = {

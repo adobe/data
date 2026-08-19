@@ -52,7 +52,7 @@ const upgradeV1toV2Data = (t: any): void => {
 };
 
 describe("SAMPLE: capture an out-of-transaction edit as a replicable delta", () => {
-    it("captureTransaction mutates the store in place and returns the change-set", () => {
+    it("captureTransaction mutates the store in place and returns the change-set", async () => {
         const db = Database.create(makePlugin(1));
         const e = db.transactions.addA({ a: 1 });
 
@@ -71,7 +71,7 @@ describe("SAMPLE: capture an out-of-transaction edit as a replicable delta", () 
 });
 
 describe("SAMPLE: upgrade-on-load produces a delta a peer replays to converge", () => {
-    it("client A upgrades + captures; client B replays the delta and matches", () => {
+    it("client A upgrades + captures; client B replays the delta and matches", async () => {
         // A document authored by a v1 app, persisted to bytes. Each client
         // deserializes its OWN copy (as a real client loads from storage/network),
         // so an in-place migration on one never touches another's snapshot.
@@ -96,7 +96,7 @@ describe("SAMPLE: upgrade-on-load produces a delta a peer replays to converge", 
             },
         };
         const clientA = Database.create(makePlugin(2), { versioning });
-        clientA.fromData(deserialize(v1bytes));
+        await clientA.fromData(deserialize(v1bytes));
 
         expect(clientA.read(e)).toEqual({ a: 5, b: 100 });
         expect(clientA.resources.databaseVersion).toBe(2);
@@ -106,7 +106,7 @@ describe("SAMPLE: upgrade-on-load produces a delta a peer replays to converge", 
         // delta from A (not the migration code). It loads the doc unmigrated,
         // then replays the delta and converges to A's state.
         const clientB = Database.create(makePlugin(2));
-        clientB.fromData(deserialize(v1bytes));
+        await clientB.fromData(deserialize(v1bytes));
         expect(clientB.read(e)).toEqual({ a: 5 }); // not yet upgraded
         expect(clientB.resources.databaseVersion).toBe(1);
 

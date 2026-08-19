@@ -82,6 +82,11 @@ function createAndAssignSystems(
  * (partial quadrant, e.g. a settings sync) bypasses the handler and loads
  * directly — a partial load does not carry the whole document's version.
  *
+ * `handle` may be **async** (return a `Promise`): `db.fromData` is async and awaits
+ * it, so a migration can `await import("./upgrader")` to pull in migration code
+ * only when a document actually needs upgrading — a rare event — rather than
+ * bundling it into the startup path.
+ *
  * No migration algorithm is coupled into the database; `handle` is caller-supplied.
  */
 export interface DatabaseVersioning {
@@ -91,7 +96,7 @@ export interface DatabaseVersioning {
         readonly documentStore: Store<any, any, any>;
         readonly documentVersion: number;
         readonly currentVersion: number;
-    }) => Store<any, any, any> | null;
+    }) => Store<any, any, any> | null | Promise<Store<any, any, any> | null>;
 }
 
 interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, any, any, any, any>> {
@@ -296,7 +301,7 @@ function createEmptyDatabase(
         }
     };
 
-    const fromData = (data: unknown, scope?: PersistenceScope) => {
+    const fromData = async (data: unknown, scope?: PersistenceScope): Promise<void> => {
         // Versioning applies only to whole-document (unscoped) loads. A scoped
         // load is a partial quadrant that does not carry the document's version,
         // so it bypasses the handler and loads directly (the original path), as
@@ -304,13 +309,15 @@ function createEmptyDatabase(
         if (versioning && scope === undefined) {
             // Reconstruct the document into a bare document store (its OWN schema,
             // no dependence on the live db), read the document + current versions,
-            // and hand them to the pure upgrade handler. It returns the store to
-            // commit or null to reject — a reject leaves the live db untouched.
+            // and hand them to the (possibly async) upgrade handler. `handle` may
+            // await — e.g. `import("./upgrader")` to load migration code only when
+            // a document actually needs upgrading. It returns the store to commit
+            // or null to reject — a reject leaves the live db untouched.
             const documentStore = Store.create({ components: {}, resources: {}, archetypes: {} });
             documentStore.fromData(data);
             const documentVersion = readVersionResource(documentStore, versioning.resource);
             const currentVersion = readVersionResource(store, versioning.resource);
-            const committed = versioning.handle({ documentStore, documentVersion, currentVersion });
+            const committed = await versioning.handle({ documentStore, documentVersion, currentVersion });
             if (committed === null) return; // reject: live database untouched
             // The live database is ALREADY initialized to the current-version
             // schema. We copy only the DATA for components it declares and adopt no

@@ -49,19 +49,19 @@ const makeVersioning = (currentVersion: number): DatabaseVersioning => ({
 });
 
 describe("Database.create versioning (document-store loader)", () => {
-    it("accepts a same-version document", () => {
+    it("accepts a same-version document", async () => {
         const source = Database.create(makePlugin(1));
         const e = source.transactions.addA({ a: 5 });
         const snap = source.toData();
 
         const target = Database.create(makePlugin(1), { versioning: makeVersioning(1) });
-        target.fromData(snap);
+        await target.fromData(snap);
 
         expect(target.read(e)).toEqual({ a: 5 });
         expect(target.resources.databaseVersion).toBe(1);
     });
 
-    it("rejects a newer document non-destructively — the live database is untouched", () => {
+    it("rejects a newer document non-destructively — the live database is untouched", async () => {
         const source = Database.create(makePlugin(2)); // document saved at v2
         source.transactions.addA({ a: 5 });
         const snap = source.toData();
@@ -69,27 +69,27 @@ describe("Database.create versioning (document-store loader)", () => {
         const target = Database.create(makePlugin(1), { versioning: makeVersioning(1) });
         const kept = target.transactions.addA({ a: 99 });
 
-        target.fromData(snap); // documentVersion 2 > currentVersion 1 → null
+        await target.fromData(snap); // documentVersion 2 > currentVersion 1 → null
 
         expect(target.select(["a"])).toEqual([kept]);
         expect(target.read(kept)).toEqual({ a: 99 });
         expect(target.resources.databaseVersion).toBe(1);
     });
 
-    it("upgrades an older document (adds a component) and the library stamps the current version", () => {
+    it("upgrades an older document (adds a component) and the library stamps the current version", async () => {
         const source = Database.create(makePlugin(1)); // document at v1
         const e = source.transactions.addA({ a: 5 }); // entity in [a]
         const snap = source.toData();
 
         const target = Database.create(makePlugin(2), { versioning: makeVersioning(2) }); // app at v2
-        target.fromData(snap);
+        await target.fromData(snap);
 
         expect(target.read(e)).toEqual({ a: 5, b: 100 });
         expect(target.select(["b"])).toContain(e);
         expect(target.resources.databaseVersion).toBe(2); // auto-stamped
     });
 
-    it("treats a pre-versioning document (no version resource) as documentVersion 0", () => {
+    it("treats a pre-versioning document (no version resource) as documentVersion 0", async () => {
         // A document authored before the app had a version resource at all.
         const legacyPlugin = Database.Plugin.create({
             components: { a: numeric },
@@ -110,25 +110,25 @@ describe("Database.create versioning (document-store loader)", () => {
             },
         };
         const target = Database.create(makePlugin(1), { versioning });
-        target.fromData(snap);
+        await target.fromData(snap);
 
         expect(seenDocumentVersion).toBe(0); // absent version ⇒ 0
         expect(target.read(e)).toEqual({ a: 5 });
         expect(target.resources.databaseVersion).toBe(1); // lands at current version
     });
 
-    it("with no versioning option, fromData loads directly as before", () => {
+    it("with no versioning option, fromData loads directly as before", async () => {
         const source = Database.create(makePlugin(1));
         const e = source.transactions.addA({ a: 7 });
         const snap = source.toData();
 
         const target = Database.create(makePlugin(1));
-        target.fromData(snap);
+        await target.fromData(snap);
 
         expect(target.read(e)).toEqual({ a: 7 });
     });
 
-    it("commits a different store than the documentStore when the handler returns one", () => {
+    it("commits a different store than the documentStore when the handler returns one", async () => {
         const source = Database.create(makePlugin(1));
         source.transactions.addA({ a: 1 });
         const snap = source.toData();
@@ -142,14 +142,14 @@ describe("Database.create versioning (document-store loader)", () => {
             },
         };
         const target = Database.create(makePlugin(1), { versioning });
-        target.fromData(snap);
+        await target.fromData(snap);
 
         expect(target.select(["a"]).map((x) => target.read(x)?.a)).toEqual([999]);
     });
 });
 
 describe("Database.create versioning — typed-buffer compatibility", () => {
-    it("drops a foreign (app-undeclared) component on commit — adopts no schema", () => {
+    it("drops a foreign (app-undeclared) component on commit — adopts no schema", async () => {
         const authorPlugin = Database.Plugin.create({
             components: { a: numeric, extra: numeric },
             resources: { databaseVersion: { default: 1 } },
@@ -173,13 +173,13 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
         // current-schema database — the commit copies only declared components.
         const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ documentStore }) => documentStore };
         const target = Database.create(appPlugin, { versioning });
-        target.fromData(snap);
+        await target.fromData(snap);
 
         expect(target.read(e)).toEqual({ a: 5 }); // `extra` dropped, not adopted
         expect(target.componentSchemas).not.toHaveProperty("extra"); // no schema adopted
     });
 
-    it("throws when a returned component has an incompatible storage layout (e.g. F64→F32)", () => {
+    it("throws when a returned component has an incompatible storage layout (e.g. F64→F32)", async () => {
         // v1 stores `n` as a full-precision number (Float64, 8 bytes); v2 as a
         // single-precision number (Float32, 4 bytes) — a real storage change, the
         // moral equivalent of a U16→U32 widening.
@@ -206,13 +206,13 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
         const target = Database.create(v2Plugin, { versioning });
         const kept = target.transactions.add(7); // pre-existing live data
 
-        expect(() => target.fromData(snap)).toThrow(/incompatible storage layout/);
+        await expect(target.fromData(snap)).rejects.toThrow(/incompatible storage layout/);
         // The throw precedes the commit — the live database is untouched.
         expect(target.select(["n"])).toEqual([kept]);
         expect(target.read(kept)).toEqual({ n: 7 });
     });
 
-    it("throws when a value-type (struct) component is the same size but a different layout", () => {
+    it("throws when a value-type (struct) component is the same size but a different layout", async () => {
         // Both are 8-byte structs of two f32 fields, but the fields are reordered
         // (x@0,y@4 vs y@0,x@4) — same size, incompatible binary layout.
         const f32 = { type: "number", precision: 1, default: 0 } as const satisfies Schema;
@@ -236,10 +236,10 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
         const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ documentStore }) => documentStore };
         const target = Database.create(v2Plugin, { versioning });
 
-        expect(() => target.fromData(snap)).toThrow(/different struct layout/);
+        await expect(target.fromData(snap)).rejects.toThrow(/different struct layout/);
     });
 
-    it("allows a component whose only difference is its default (not a storage change)", () => {
+    it("allows a component whose only difference is its default (not a storage change)", async () => {
         const authorPlugin = Database.Plugin.create({
             components: { a: { type: "number", default: 0 } as const satisfies Schema },
             resources: { databaseVersion: { default: 1 } },
@@ -258,7 +258,7 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
         });
         const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ documentStore }) => documentStore };
         const target = Database.create(appPlugin, { versioning });
-        target.fromData(snap);
+        await target.fromData(snap);
 
         expect(target.read(e)).toEqual({ a: 5 });
     });
@@ -284,7 +284,7 @@ const scopedPlugin = Database.Plugin.create({
 });
 
 describe("Database.create versioning — scoped loads bypass versioning", () => {
-    it("a scoped load bypasses the handler and loads directly, isolating quadrants", () => {
+    it("a scoped load bypasses the handler and loads directly, isolating quadrants", async () => {
         const author = Database.create(scopedPlugin);
         author.transactions.setSetting(5);
         const settingsDoc = author.toData({ scope: { nonShared: true } });
@@ -301,7 +301,7 @@ describe("Database.create versioning — scoped loads bypass versioning", () => 
         });
         target.transactions.setDoc(42);
 
-        target.fromData(settingsDoc, { nonShared: true });
+        await target.fromData(settingsDoc, { nonShared: true });
 
         expect(handlerCalled).toBe(false); // scoped ⇒ versioning bypassed
         expect(target.resources.settingRes).toBe(5); // settings quadrant loaded
@@ -310,7 +310,7 @@ describe("Database.create versioning — scoped loads bypass versioning", () => 
 });
 
 describe("Database.create versioning — migration shapes", () => {
-    it("a migration that drops a component removes it from the committed document", () => {
+    it("a migration that drops a component removes it from the committed document", async () => {
         const authorPlugin = Database.Plugin.create({
             components: { a: numeric, legacy: numeric },
             resources: { databaseVersion: { default: 1 } },
@@ -342,13 +342,13 @@ describe("Database.create versioning — migration shapes", () => {
             },
         };
         const target = Database.create(appPlugin, { versioning });
-        target.fromData(snap);
+        await target.fromData(snap);
 
         expect(target.read(e)).toEqual({ a: 5 });
         expect((target as any).select(["legacy"]).length).toBe(0);
     });
 
-    it("reseeds a declared index on the live database after a versioned upgrade commit", () => {
+    it("reseeds a declared index on the live database after a versioned upgrade commit", async () => {
         const author = Database.create(
             Database.Plugin.create({
                 components: { a: numeric },
@@ -376,7 +376,7 @@ describe("Database.create versioning — migration shapes", () => {
             },
         });
         const target = Database.create(v2Plugin, { versioning: makeVersioning(2) });
-        target.fromData(snap);
+        await target.fromData(snap);
 
         expect(target.indexes.byB.find({ b: 100 })).toContain(e);
     });

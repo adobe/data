@@ -89,6 +89,34 @@ describe("Database.create versioning (bare-scratch loader)", () => {
         expect(target.resources.databaseVersion).toBe(2); // auto-stamped
     });
 
+    it("treats a pre-versioning document (no version resource) as documentVersion 0", () => {
+        // A document authored before the app had a version resource at all.
+        const legacyPlugin = Database.Plugin.create({
+            components: { a: numeric },
+            resources: {}, // no databaseVersion
+            archetypes: { A: ["a"] } as const,
+            transactions: { addA(t, args: { a: number }) { return t.archetypes.A.insert(args); } },
+        });
+        const author = Database.create(legacyPlugin);
+        const e = author.transactions.addA({ a: 5 });
+        const snap = author.toData();
+
+        let seenDocumentVersion = -1;
+        const versioning: DatabaseVersioning = {
+            resource: "databaseVersion",
+            handle: ({ scratch, documentVersion }) => {
+                seenDocumentVersion = documentVersion;
+                return scratch;
+            },
+        };
+        const target = Database.create(makePlugin(1), { versioning });
+        target.fromData(snap);
+
+        expect(seenDocumentVersion).toBe(0); // absent version ⇒ 0
+        expect(target.read(e)).toEqual({ a: 5 });
+        expect(target.resources.databaseVersion).toBe(1); // lands at current version
+    });
+
     it("with no versioning option, fromData loads directly as before", () => {
         const source = Database.create(makePlugin(1));
         const e = source.transactions.addA({ a: 7 });
@@ -121,7 +149,7 @@ describe("Database.create versioning (bare-scratch loader)", () => {
 });
 
 describe("Database.create versioning — typed-buffer compatibility", () => {
-    it("preserves an unknown (app-undeclared) component populated in the document", () => {
+    it("drops a foreign (app-undeclared) component on commit — adopts no schema", () => {
         const authorPlugin = Database.Plugin.create({
             components: { a: numeric, extra: numeric },
             resources: { databaseVersion: { default: 1 } },
@@ -141,12 +169,14 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
             resources: { databaseVersion: { default: 1 } },
             archetypes: { A: ["a"] } as const,
         });
+        // A lazy migration that forgets to shed `extra` still must not pollute the
+        // current-schema database — the commit copies only declared components.
         const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ scratch }) => scratch };
         const target = Database.create(appPlugin, { versioning });
         target.fromData(snap);
 
-        // Unknown-but-populated `extra` is adopted, not rejected.
-        expect(target.read(e)).toEqual({ a: 5, extra: 7 });
+        expect(target.read(e)).toEqual({ a: 5 }); // `extra` dropped, not adopted
+        expect(target.componentSchemas).not.toHaveProperty("extra"); // no schema adopted
     });
 
     it("throws when a returned component has an incompatible storage layout (e.g. F64→F32)", () => {
@@ -169,12 +199,17 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
             components: { n: nV2 },
             resources: { databaseVersion: { default: 2 } },
             archetypes: { N: ["n"] } as const,
+            transactions: { add(t, v: number) { return t.archetypes.N.insert({ n: v }); } },
         });
         // Buggy handler: returns `n` at the old (wider) storage.
         const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ scratch }) => scratch };
         const target = Database.create(v2Plugin, { versioning });
+        const kept = target.transactions.add(7); // pre-existing live data
 
-        expect(() => target.fromData(snap)).toThrow(/incompatible storage layout|\bn\b/);
+        expect(() => target.fromData(snap)).toThrow(/incompatible storage layout/);
+        // The throw precedes the commit — the live database is untouched.
+        expect(target.select(["n"])).toEqual([kept]);
+        expect(target.read(kept)).toEqual({ n: 7 });
     });
 
     it("allows a component whose only difference is its default (not a storage change)", () => {

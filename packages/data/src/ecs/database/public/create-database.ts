@@ -56,22 +56,24 @@ function createAndAssignSystems(
  *     database is left completely untouched — no copy, no observer
  *     notifications — so a rejected load never disturbs a live/populated db.
  *
- * Before committing, the returned store's **typed-buffer storage** is validated
- * against the live database's: for every component both declare (a component the
- * app doesn't declare is fine — it's adopted as unknown-but-populated), the
- * buffer type and per-element byte size must match. This catches a genuine
- * corruption bug — e.g. a component that changed U16→U32, or an object whose
- * layout grew — that a structural `copy:false` adoption would silently mis-read.
- * Cosmetic schema differences (a changed `default`, min/max, description) are NOT
- * checked; enforce those in the handler if the app wants them. An incompatible
- * buffer **throws**, because that is a developer error in the migration, not a
- * runtime condition. Rejecting a *document* is data (`null`); a broken
- * *migration* is a thrown developer error.
+ * The commit adopts **no schema** from the returned store. The live database is
+ * already initialized to the current-version schema, so only the DATA for
+ * components it declares is copied in; any foreign component the migration left
+ * behind is dropped (the returned store is conformed to the current schema before
+ * the copy). For every current-schema component the returned store carries, its
+ * **typed-buffer storage** (buffer type + per-element byte size) must match the
+ * live db's — a mismatch (e.g. a number that changed U16→U32 / F64→F32, or a
+ * struct whose element size changed) would let the cheap `copy:false` structural
+ * adoption mis-read the buffer, so it **throws**. The check is deliberately
+ * narrow: it does not diff full schemas — cosmetic differences (`default`,
+ * min/max, description) and same-size struct-layout changes are the migration's
+ * responsibility. Rejecting a *document* is data (`null`); a broken *migration* is
+ * a thrown developer error.
  *
  * On a successful load the library stamps the committed document's version
  * resource to `currentVersion` automatically (it already knows how to read it),
- * so the handler need not; then the store's contents load in via the normal
- * `fromData` reconciliation.
+ * so the handler need not; then the data copies in via the normal `fromData`
+ * reconciliation.
  *
  * Versioning applies only to whole-document loads. A *scoped* `fromData`
  * (partial quadrant, e.g. a settings sync) bypasses the handler and loads
@@ -236,24 +238,31 @@ function createEmptyDatabase(
     };
 
     // Validate that the returned store's typed buffers are STORAGE-compatible
-    // with the live database's, for every component both declare — the check that
-    // matters for the `copy:false` structural adoption on commit. A component the
-    // current schema doesn't declare is fine (adopted as unknown-but-populated);
-    // only a shared component with a different buffer type / element size (e.g.
-    // U16→U32, or an object whose layout grew) is a corruption bug. Cosmetic
-    // schema differences (default, min/max, …) are deliberately NOT checked. An
-    // incompatible buffer is a developer error in the migration → thrown (a
-    // rejected *document* is data: the `null` return above).
+    // with the live database's, for every current-schema component the returned
+    // store carries data for — the check that matters for the `copy:false`
+    // structural adoption on commit, which binds those buffers into the live db by
+    // reference. A mismatch in buffer `type` or per-element byte size (e.g. a
+    // number that changed U16→U32 / F64→F32, or a struct whose element size
+    // changed) would let the live db mis-read the adopted buffer, so it throws.
+    // The check is deliberately narrow: it does NOT diff full schemas — cosmetic
+    // differences (default, min/max, …) and same-size struct-layout changes are a
+    // migration's own responsibility, not the library's. An incompatible buffer is
+    // a developer error in the migration → thrown (a rejected *document* is data:
+    // the `null` return above).
     const assertReturnedBuffersCompatible = (committed: Store<any, any, any>) => {
+        // `componentSchemas` is a plain string-keyed schema map at runtime; widen
+        // off its readonly index signature to index it by dynamic name.
         const current = store.componentSchemas as Record<string, Schema>;
         const checked = new Set<string>();
         for (const archetype of committed.queryArchetypes([] as never[])) {
             if (archetype.rowCount === 0) continue;
+            // Columns are typed buffers; the store is `any`-parameterized here so
+            // name-index them through the readonly typed-buffer shape.
             const columns = archetype.columns as Record<string, ReadonlyTypedBuffer<unknown>>;
             for (const name of archetype.components) {
                 if (name === "id" || name === "nonPersistent" || name === "nonShared" || checked.has(name)) continue;
                 checked.add(name);
-                if (!(name in current)) continue; // undeclared ⇒ adopted, not "incompatible"
+                if (!(name in current)) continue; // foreign component — dropped on commit, not adopted
                 const returned = columns[name]!;
                 const expected = createTypedBuffer(current[name]!, 1);
                 if (returned.type !== expected.type || returned.typedArrayElementSizeInBytes !== expected.typedArrayElementSizeInBytes) {
@@ -283,13 +292,20 @@ function createEmptyDatabase(
             const currentVersion = readVersionResource(store, versioning.resource);
             const committed = versioning.handle({ scratch, documentVersion, currentVersion });
             if (committed === null) return; // reject: live database untouched
+            // The live database is ALREADY initialized to the current-version
+            // schema. We copy only the DATA for components it declares and adopt no
+            // schema from the returned store — so conform the returned store's data
+            // to the current schema first, dropping any foreign component the
+            // migration left behind (`componentSchemas` keys are the components +
+            // resource singletons the live db declares).
+            committed.pruneToSchema(new Set(Object.keys(store.componentSchemas)));
             // The load succeeded → stamp the committed document to the current
             // version (the library owns reading it, so it owns writing it too).
             writeVersionResource(committed, versioning.resource, currentVersion);
             assertReturnedBuffersCompatible(committed);
-            // Commit via normal fromData reconciliation. copy:false hands the
-            // returned store's live buffers over structurally (it is discarded
-            // right after), so this is a structural adoption, not a deep copy.
+            // Commit into the live db. copy:false hands the (now schema-conformed)
+            // store's buffers over structurally — it is discarded right after — so
+            // this is a cheap structural adoption of the data, not a deep copy.
             observedDatabase.fromData(committed.toData({ copy: false }));
         } else {
             observedDatabase.fromData(data, scope);

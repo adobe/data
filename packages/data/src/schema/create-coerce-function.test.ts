@@ -76,10 +76,29 @@ describe("createCoerceFunction — objects", () => {
         expect(fn({ x: 1, y: 2 })).toEqual({ x: 1, y: 2, z: 9 });
     });
 
-    it("is not convertible when a new field has no default", () => {
+    it("requires a default for a new field of a numeric STRUCT (every field is packed)", () => {
+        // f32 properties pack as a struct → a missing field would be NaN, so a
+        // new field without a default makes the conversion impossible.
         expect(createCoerceFunction(
             { type: "object", properties: { x: f32 } },
             { type: "object", properties: { x: f32, z: f32 } },
+        )).toBeNull();
+    });
+
+    it("omits a new NON-required field with no default on a plain object", () => {
+        // f64 properties do not pack as a struct → a plain object may simply lack
+        // an optional field, so this is convertible and the field is left off.
+        const fn = coercer(
+            { type: "object", properties: { a: num } },
+            { type: "object", properties: { a: num, b: num } },
+        );
+        expect(fn({ a: 1 })).toEqual({ a: 1 });
+    });
+
+    it("still requires a default for a new REQUIRED field on a plain object", () => {
+        expect(createCoerceFunction(
+            { type: "object", properties: { a: num } },
+            { type: "object", properties: { a: num, b: num }, required: ["b"] },
         )).toBeNull();
     });
 
@@ -111,9 +130,11 @@ describe("createCoerceFunction — objects", () => {
     });
 
     it("is not convertible when an existing sub-field cannot be converted", () => {
+        // Nested numeric struct gains a defaultless field ⇒ the sub-conversion,
+        // and therefore the whole conversion, is impossible.
         expect(createCoerceFunction(
-            { type: "object", properties: { p: { type: "object", properties: { a: num } } } },
-            { type: "object", properties: { p: { type: "object", properties: { a: num, b: f32 } } } },
+            { type: "object", properties: { p: { type: "object", properties: { x: f32 } } } },
+            { type: "object", properties: { p: { type: "object", properties: { x: f32, y: f32 } } } },
         )).toBeNull();
     });
 });

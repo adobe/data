@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Schema } from "./schema.js";
+import { getStructLayout } from "../typed-buffer/structs/get-struct-layout.js";
 
 /**
  * Build a reusable value converter from an `input` schema to an `output` schema,
@@ -130,8 +131,14 @@ function objectCoercer(
 ): null | ((value: unknown) => unknown) {
     const outProps = output.properties ?? {};
     const inProps = input.properties ?? {};
-    // Precompute, per output property, how to produce its value: either coerce
-    // the matching input property or supply a fixed default for a new property.
+    // A numeric struct packs EVERY property into fixed storage — a missing field
+    // reads as NaN — so all of its fields are effectively required. A plain
+    // object may legitimately lack a non-required property.
+    const packsAsStruct = getStructLayout(output, false) !== null;
+    const required = new Set(output.required ?? []);
+    // Precompute, per PRODUCED output property, how to build its value: either
+    // coerce the matching input property or supply a fixed default. A new
+    // non-required plain-object field with no default is simply not produced.
     const fields: [key: string, produce: (source: Record<string, unknown>) => unknown][] = [];
     for (const key of Object.keys(outProps)) {
         const outSchema = outProps[key]!;
@@ -140,11 +147,15 @@ function objectCoercer(
             const sub = createCoerceFunction(inSchema, outSchema);
             if (sub === null) return null; // an existing field cannot be converted
             fields.push([key, (source) => sub(source[key])]);
-        } else {
-            const def = defaultValue(outSchema);
-            if (def === NO_DEFAULT) return null; // new field with no default ⇒ not convertible
-            fields.push([key, () => cloneDefault(def)]);
+            continue;
         }
+        const def = defaultValue(outSchema);
+        if (def !== NO_DEFAULT) {
+            fields.push([key, () => cloneDefault(def)]);
+        } else if (packsAsStruct || required.has(key)) {
+            return null; // a mandatory new field with no default ⇒ not convertible
+        }
+        // else: optional plain-object field, no default ⇒ omit it entirely.
     }
     return (value) => {
         const source = value as Record<string, unknown>;

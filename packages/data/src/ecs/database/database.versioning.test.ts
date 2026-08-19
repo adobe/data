@@ -1,95 +1,92 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 //
-// Prototype tests for the pluggable database-version handler injected via
-// `Database.create(plugin, { versioning })`. The handler intercepts every
-// `db.fromData(snapshot)` and decides whether/how to apply it — covering the
-// current "don't load on mismatch" pattern and the future in-place upgrader.
+// Prototype tests for the pluggable database-version policy injected via
+// `Database.create(plugin, { versioning })`. The document's version is a numeric
+// resource that round-trips with the snapshot; on load the handler reconciles
+// the loaded `documentVersion` against the app's `currentVersion` and may accept
+// (no-op), migrate the store in place (upgrade), or throw (reject).
 
 import { describe, it, expect } from "vitest";
 import { Database } from "./database.js";
-import type { DatabaseVersioningHandler } from "./public/create-database.js";
+import type { DatabaseVersioning } from "./public/create-database.js";
 import type { Schema } from "../../schema/index.js";
 
 const numeric = { type: "number", default: 0 } as const satisfies Schema;
 
-const plugin = Database.Plugin.create({
-    components: { a: numeric, b: numeric },
-    archetypes: { A: ["a"], AB: ["a", "b"] } as const,
-    indexes: { byB: { key: "b" } },
-    transactions: {
-        addA(t, args: { a: number }) {
-            return t.archetypes.A.insert(args);
+// One plugin per app version; they differ only in the version resource's default
+// (= the app's current version). Every saved document carries that value.
+const makePlugin = (currentVersion: number) =>
+    Database.Plugin.create({
+        components: { a: numeric, b: numeric },
+        resources: { databaseVersion: { default: currentVersion } },
+        archetypes: { A: ["a"], AB: ["a", "b"] } as const,
+        transactions: {
+            addA(t, args: { a: number }) {
+                return t.archetypes.A.insert(args);
+            },
         },
-    },
-});
-
-// The app persists its version as an extra field on the snapshot; core.fromData
-// ignores unknown top-level fields, so it round-trips harmlessly.
-const rejectUnlessV1: DatabaseVersioningHandler = ({ snapshot, load }) => {
-    if ((snapshot as { appVersion?: number }).appVersion === 1) load();
-};
-
-describe("Database.create versioning handler", () => {
-    it("does not load when the handler withholds `load` (version mismatch keeps current state)", () => {
-        const source = Database.create(plugin);
-        source.transactions.addA({ a: 5 });
-        const snap = source.toData() as Record<string, unknown>;
-        snap.appVersion = 2; // saved by a newer app
-
-        const target = Database.create(plugin, { versioning: rejectUnlessV1 });
-        const kept = target.transactions.addA({ a: 99 });
-
-        target.fromData(snap); // appVersion 2 !== 1 → handler never calls load
-
-        // The database is untouched: its own entity survives, the snapshot's does not.
-        expect(target.select(["a"]).length).toBe(1);
-        expect(target.read(kept)).toEqual({ a: 99 });
     });
 
-    it("loads normally when the handler calls `load` (version matches)", () => {
-        const source = Database.create(plugin);
-        const e = source.transactions.addA({ a: 5 });
-        const snap = source.toData() as Record<string, unknown>;
-        snap.appVersion = 1;
+// A handler that upgrades v1 documents (add component `b` to every [a] entity),
+// accepts same-version documents, and rejects newer ones.
+const versioning: DatabaseVersioning = {
+    resource: "databaseVersion",
+    handle: ({ documentVersion, currentVersion, store }) => {
+        if (documentVersion > currentVersion) {
+            throw new Error(`document v${documentVersion} is newer than app v${currentVersion}`);
+        }
+        if (documentVersion < currentVersion) {
+            const A = (store as any).archetypes.A;
+            for (let i = A.rowCount - 1; i >= 0; i--) {
+                (store as any).update(A.columns.id.get(i), { b: 100 });
+            }
+            (store as any).resources.databaseVersion = currentVersion; // stamp upgraded
+        }
+    },
+};
 
-        const target = Database.create(plugin, { versioning: rejectUnlessV1 });
+describe("Database.create versioning (numeric version resource)", () => {
+    it("accepts a same-version document unchanged", () => {
+        const source = Database.create(makePlugin(1));
+        const e = source.transactions.addA({ a: 5 });
+        const snap = source.toData();
+
+        const target = Database.create(makePlugin(1), { versioning });
         target.fromData(snap);
 
         expect(target.read(e)).toEqual({ a: 5 });
+        expect(target.resources.databaseVersion).toBe(1);
     });
 
-    it("upgrades in place: a load-time transform migrating entities (adding a component) does not break the database", () => {
-        const source = Database.create(plugin);
-        const e = source.transactions.addA({ a: 5 }); // entity in archetype [a]
+    it("rejects (throws) a document newer than the app", () => {
+        const source = Database.create(makePlugin(2)); // document saved at v2
+        source.transactions.addA({ a: 5 });
         const snap = source.toData();
 
-        // Upgrader: on load, migrate every [a] entity to [a,b] on the raw store.
-        const upgrade: DatabaseVersioningHandler = ({ load }) => {
-            load((store) => {
-                const A = (store as any).archetypes.A;
-                // Reverse iterate: every row migrates out, so tail-first avoids shifts.
-                for (let i = A.rowCount - 1; i >= 0; i--) {
-                    (store as any).update(A.columns.id.get(i), { b: 100 });
-                }
-            });
-        };
-
-        const target = Database.create(plugin, { versioning: upgrade });
-        target.fromData(snap);
-
-        // Entity migrated to [a,b]; both the archetype query and the index that
-        // covers `b` (reseeded after the transform) reflect the added component.
-        expect(target.read(e)).toEqual({ a: 5, b: 100 });
-        expect(target.select(["b"])).toContain(e);
-        expect(target.indexes.byB.find({ b: 100 })).toContain(e);
+        const target = Database.create(makePlugin(1), { versioning }); // app at v1
+        expect(() => target.fromData(snap)).toThrow(/newer/);
     });
 
-    it("with no versioning handler, fromData loads as before", () => {
-        const source = Database.create(plugin);
+    it("upgrades an older document in place (adds a component) and stamps the current version", () => {
+        const source = Database.create(makePlugin(1)); // document at v1
+        const e = source.transactions.addA({ a: 5 }); // entity in [a]
+        const snap = source.toData();
+
+        const target = Database.create(makePlugin(2), { versioning }); // app at v2
+        target.fromData(snap);
+
+        // v1 -> v2 migration ran: entity now in [a,b], version stamped current.
+        expect(target.read(e)).toEqual({ a: 5, b: 100 });
+        expect(target.select(["b"])).toContain(e);
+        expect(target.resources.databaseVersion).toBe(2);
+    });
+
+    it("with no versioning option, fromData loads as before", () => {
+        const source = Database.create(makePlugin(1));
         const e = source.transactions.addA({ a: 7 });
         const snap = source.toData();
 
-        const target = Database.create(plugin);
+        const target = Database.create(makePlugin(1));
         target.fromData(snap);
 
         expect(target.read(e)).toEqual({ a: 7 });

@@ -34,25 +34,36 @@ function createAndAssignSystems(
 /**
  * Pluggable database-version policy consulted on every `db.fromData(snapshot)`.
  *
- * The handler receives the raw `snapshot` (read whatever version marker the
- * application persisted onto it — `core.fromData` ignores unknown top-level
- * fields, so an app may stamp e.g. `snapshot.appVersion`) and a `load` control:
+ * The document's version is a plain **number** stored in an application-named
+ * resource (so it is always present in a serialized document and round-trips
+ * with it). `fromData` is destructive regardless of the outcome, so the snapshot
+ * is always applied first; the handler then reconciles the loaded document:
  *
- *   - **Don't load** (the current app pattern): inspect the version and simply
- *     do NOT call `load` — the database is left untouched (current state kept).
- *   - **Load as-is**: call `load()`.
- *   - **Upgrade** (future): call `load(transform)`, where `transform(store)` runs
- *     on the freshly-loaded raw store — the untyped surface — before indexes and
- *     observers are re-derived, so it may add/remove components and archetypes to
- *     migrate the snapshot in place.
+ *   - `documentVersion === currentVersion` → do nothing (accept as-is).
+ *   - `documentVersion  <  currentVersion` → migrate `store` in place to bring
+ *     it up to `currentVersion` (the upgrader — add/remove components/archetypes
+ *     on the raw store; the re-sync that follows picks the changes up).
+ *   - `documentVersion  >  currentVersion` → `throw` to reject (a newer document
+ *     an older app cannot read). The caller treats the throw as a failed load
+ *     and discards the database.
  *
- * No migration algorithm is coupled into the database; the handler is entirely
+ * No migration algorithm is coupled into the database; `handle` is entirely
  * caller-supplied.
  */
-export type DatabaseVersioningHandler = (context: {
-    readonly snapshot: unknown;
-    readonly load: (transform?: (store: Store<any, any, any>) => void) => void;
-}) => void;
+export interface DatabaseVersioning {
+    /**
+     * Name of the resource holding the document's numeric version. It must be
+     * declared on the plugin (with its default set to the app's current
+     * version), so `currentVersion` is that default and every saved document
+     * carries its own version in the same resource.
+     */
+    readonly resource: string;
+    readonly handle: (context: {
+        readonly documentVersion: number;
+        readonly currentVersion: number;
+        readonly store: Store<any, any, any>;
+    }) => void;
+}
 
 interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, any, any, any, any>> {
     /**
@@ -73,9 +84,10 @@ interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, an
     concurrency?: ConcurrencyStrategyFactory;
     /**
      * Pluggable version policy consulted on every `db.fromData(snapshot)`. Omit
-     * for the current behavior (always load). See {@link DatabaseVersioningHandler}.
+     * for the current behavior (always load, no reconciliation). See
+     * {@link DatabaseVersioning}.
      */
-    versioning?: DatabaseVersioningHandler;
+    versioning?: DatabaseVersioning;
 }
 
 export function createDatabase(): Database<{}, {}, {}, {}, never, {}, {}, {}>
@@ -105,7 +117,7 @@ export function createDatabase(
  */
 function createEmptyDatabase(
     concurrency: ConcurrencyStrategyFactory | undefined,
-    versioning?: DatabaseVersioningHandler,
+    versioning?: DatabaseVersioning,
 ): any {
     const store = Store.create({
         components: {},
@@ -179,21 +191,22 @@ function createEmptyDatabase(
         return data;
     };
     const fromData = (data: unknown, scope?: PersistenceScope) => {
-        // Applying the snapshot: load the data, optionally transform the raw
-        // store in place (the upgrader seam), then re-apply any concurrency
-        // transients on top of the loaded state.
-        const applyLoad = (transform?: (store: Store<any, any, any>) => void) => {
-            observedDatabase.fromData(data, scope, transform);
-            strategy.onAfterFromData?.();
-        };
-        // A version policy, when configured, decides whether/how to apply. Not
-        // calling `load` leaves the database untouched (the "don't load" option);
-        // strategy transients are then left as-is since nothing was reloaded.
+        // When a version policy is configured, reconcile the loaded document
+        // against the app's current version. `currentVersion` is the version
+        // resource's value BEFORE the load (the plugin default); the snapshot is
+        // then applied, and `handle` runs on the loaded store — before indexes /
+        // observers are re-derived — reading the loaded `documentVersion` and
+        // migrating in place (or throwing to reject a too-new document).
         if (versioning) {
-            versioning({ snapshot: data, load: applyLoad });
+            const currentVersion = Number((store.resources as Record<string, unknown>)[versioning.resource]);
+            observedDatabase.fromData(data, scope, (loaded) => {
+                const documentVersion = Number((loaded.resources as Record<string, unknown>)[versioning.resource]);
+                versioning.handle({ documentVersion, currentVersion, store: loaded });
+            });
         } else {
-            applyLoad();
+            observedDatabase.fromData(data, scope);
         }
+        strategy.onAfterFromData?.();
     };
 
     const partialDatabase: any = {

@@ -5,13 +5,12 @@
 // is reconstructed into a bare scratch store (the document's OWN schema); the
 // library reads the document + current versions and hands them, with the
 // scratch, to a pure upgrade `handle` that returns a store to commit or `null`
-// to reject. The returned store's schema is strictly validated against the
-// current database's (a mismatch throws — a developer error).
+// to reject. The library auto-stamps the committed version; a returned store
+// whose typed buffers are storage-incompatible with the current schema throws.
 
 import { describe, it, expect } from "vitest";
 import { Database } from "./database.js";
 import type { DatabaseVersioning } from "./public/create-database.js";
-import type { Store } from "../store/store.js";
 import type { Schema } from "../../schema/index.js";
 
 const numeric = { type: "number", default: 0 } as const satisfies Schema;
@@ -30,16 +29,9 @@ const makePlugin = (currentVersion: number) =>
         },
     });
 
-// A bare reconstruction has no resource accessor, so read/write the version via
-// its raw singleton — exactly the "verbose technique" the library uses.
-const stampVersion = (s: Store<any, any, any>, name: string, v: number) => {
-    const arch = (s as any).queryArchetypes([name])[0];
-    (s as any).update(arch.columns.id.get(0), { [name]: v });
-};
-
 // Handler for an app at `currentVersion`: rejects newer documents (null),
-// upgrades older ones (declare `b`, add it to every `a` entity, stamp the
-// version), and accepts same-version documents (return the scratch).
+// upgrades older ones (declare `b`, add it to every `a` entity), and accepts
+// same-version documents. The library stamps the version — the handler doesn't.
 const makeVersioning = (currentVersion: number): DatabaseVersioning => ({
     resource: "databaseVersion",
     handle: ({ scratch, documentVersion }) => {
@@ -51,7 +43,6 @@ const makeVersioning = (currentVersion: number): DatabaseVersioning => ({
                     (scratch as any).update(arch.columns.id.get(i), { b: 100 });
                 }
             }
-            stampVersion(scratch, "databaseVersion", currentVersion);
         }
         return scratch;
     },
@@ -85,7 +76,7 @@ describe("Database.create versioning (bare-scratch loader)", () => {
         expect(target.resources.databaseVersion).toBe(1);
     });
 
-    it("upgrades an older document (adds a component) and stamps the current version", () => {
+    it("upgrades an older document (adds a component) and the library stamps the current version", () => {
         const source = Database.create(makePlugin(1)); // document at v1
         const e = source.transactions.addA({ a: 5 }); // entity in [a]
         const snap = source.toData();
@@ -95,7 +86,7 @@ describe("Database.create versioning (bare-scratch loader)", () => {
 
         expect(target.read(e)).toEqual({ a: 5, b: 100 });
         expect(target.select(["b"])).toContain(e);
-        expect(target.resources.databaseVersion).toBe(2);
+        expect(target.resources.databaseVersion).toBe(2); // auto-stamped
     });
 
     it("with no versioning option, fromData loads directly as before", () => {
@@ -114,8 +105,6 @@ describe("Database.create versioning (bare-scratch loader)", () => {
         source.transactions.addA({ a: 1 });
         const snap = source.toData();
 
-        // Handler ignores the scratch and commits a store it built itself (already
-        // at the current schema, so it passes strict validation).
         const versioning: DatabaseVersioning = {
             resource: "databaseVersion",
             handle: () => {
@@ -131,10 +120,8 @@ describe("Database.create versioning (bare-scratch loader)", () => {
     });
 });
 
-describe("Database.create versioning — strict schema validation", () => {
-    it("throws when the returned store declares a component the current database does not", () => {
-        // Document carries an `extra` component the loading app doesn't declare;
-        // an accept-all handler returns the scratch with `extra` still present.
+describe("Database.create versioning — typed-buffer compatibility", () => {
+    it("preserves an unknown (app-undeclared) component populated in the document", () => {
         const authorPlugin = Database.Plugin.create({
             components: { a: numeric, extra: numeric },
             resources: { databaseVersion: { default: 1 } },
@@ -146,7 +133,7 @@ describe("Database.create versioning — strict schema validation", () => {
             },
         });
         const author = Database.create(authorPlugin);
-        author.transactions.add({ a: 5, extra: 7 });
+        const e = author.transactions.add({ a: 5, extra: 7 });
         const snap = author.toData();
 
         const appPlugin = Database.Plugin.create({
@@ -156,36 +143,62 @@ describe("Database.create versioning — strict schema validation", () => {
         });
         const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ scratch }) => scratch };
         const target = Database.create(appPlugin, { versioning });
+        target.fromData(snap);
 
-        expect(() => target.fromData(snap)).toThrow(/does not|extra/);
+        // Unknown-but-populated `extra` is adopted, not rejected.
+        expect(target.read(e)).toEqual({ a: 5, extra: 7 });
     });
 
-    it("throws when the returned store keeps an old, structurally-different schema for a shared component", () => {
-        // v1 document stores `pos` as { x, y }; v2 app stores { x, y, z }. A
-        // migration that returns the document un-transformed leaves `pos` at the
-        // old schema — a developer error.
-        const posV1 = { type: "object", properties: { x: numeric, y: numeric } } as const satisfies Schema;
-        const posV2 = { type: "object", properties: { x: numeric, y: numeric, z: numeric } } as const satisfies Schema;
+    it("throws when a returned component has an incompatible storage layout (e.g. F64→F32)", () => {
+        // v1 stores `n` as a full-precision number (Float64, 8 bytes); v2 as a
+        // single-precision number (Float32, 4 bytes) — a real storage change, the
+        // moral equivalent of a U16→U32 widening.
+        const nV1 = { type: "number", default: 0 } as const satisfies Schema;
+        const nV2 = { type: "number", precision: 1, default: 0 } as const satisfies Schema;
         const v1Plugin = Database.Plugin.create({
-            components: { pos: posV1 },
+            components: { n: nV1 },
             resources: { databaseVersion: { default: 1 } },
-            archetypes: { P: ["pos"] } as const,
-            transactions: { add(t, p: { x: number; y: number }) { return t.archetypes.P.insert({ pos: p }); } },
+            archetypes: { N: ["n"] } as const,
+            transactions: { add(t, v: number) { return t.archetypes.N.insert({ n: v }); } },
         });
         const author = Database.create(v1Plugin);
-        author.transactions.add({ x: 1, y: 2 });
+        author.transactions.add(1);
         const snap = author.toData();
 
         const v2Plugin = Database.Plugin.create({
-            components: { pos: posV2 },
+            components: { n: nV2 },
             resources: { databaseVersion: { default: 2 } },
-            archetypes: { P: ["pos"] } as const,
+            archetypes: { N: ["n"] } as const,
         });
-        // Buggy handler: returns the scratch without upgrading `pos`.
+        // Buggy handler: returns `n` at the old (wider) storage.
         const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ scratch }) => scratch };
         const target = Database.create(v2Plugin, { versioning });
 
-        expect(() => target.fromData(snap)).toThrow(/structurally equivalent|pos/);
+        expect(() => target.fromData(snap)).toThrow(/incompatible storage layout|\bn\b/);
+    });
+
+    it("allows a component whose only difference is its default (not a storage change)", () => {
+        const authorPlugin = Database.Plugin.create({
+            components: { a: { type: "number", default: 0 } as const satisfies Schema },
+            resources: { databaseVersion: { default: 1 } },
+            archetypes: { A: ["a"] } as const,
+            transactions: { add(t, v: number) { return t.archetypes.A.insert({ a: v }); } },
+        });
+        const author = Database.create(authorPlugin);
+        const e = author.transactions.add(5);
+        const snap = author.toData();
+
+        // Same storage (both Float64), only the default changed — no throw.
+        const appPlugin = Database.Plugin.create({
+            components: { a: { type: "number", default: 99 } as const satisfies Schema },
+            resources: { databaseVersion: { default: 1 } },
+            archetypes: { A: ["a"] } as const,
+        });
+        const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ scratch }) => scratch };
+        const target = Database.create(appPlugin, { versioning });
+        target.fromData(snap);
+
+        expect(target.read(e)).toEqual({ a: 5 });
     });
 });
 
@@ -208,21 +221,29 @@ const scopedPlugin = Database.Plugin.create({
     },
 });
 
-describe("Database.create versioning — scoped loads", () => {
-    it("a scoped versioned load leaves out-of-scope quadrants untouched (regression)", () => {
+describe("Database.create versioning — scoped loads bypass versioning", () => {
+    it("a scoped load bypasses the handler and loads directly, isolating quadrants", () => {
         const author = Database.create(scopedPlugin);
         author.transactions.setSetting(5);
         const settingsDoc = author.toData({ scope: { nonShared: true } });
 
+        let handlerCalled = false;
         const target = Database.create(scopedPlugin, {
-            versioning: { resource: "databaseVersion", handle: ({ scratch }) => scratch },
+            versioning: {
+                resource: "databaseVersion",
+                handle: ({ scratch }) => {
+                    handlerCalled = true;
+                    return scratch;
+                },
+            },
         });
         target.transactions.setDoc(42);
 
         target.fromData(settingsDoc, { nonShared: true });
 
-        expect(target.resources.settingRes).toBe(5);
-        expect(target.resources.docRes).toBe(42);
+        expect(handlerCalled).toBe(false); // scoped ⇒ versioning bypassed
+        expect(target.resources.settingRes).toBe(5); // settings quadrant loaded
+        expect(target.resources.docRes).toBe(42); // document quadrant untouched
     });
 });
 
@@ -242,9 +263,6 @@ describe("Database.create versioning — migration shapes", () => {
         const e = author.transactions.add({ a: 5, legacy: 9 });
         const snap = author.toData();
 
-        // App v2 removed `legacy`; the migration drops it from every entity. The
-        // now-inert `legacy` schema is not validated (no data carries it) and is
-        // shed on commit.
         const appPlugin = Database.Plugin.create({
             components: { a: numeric },
             resources: { databaseVersion: { default: 2 } },
@@ -258,7 +276,6 @@ describe("Database.create versioning — migration shapes", () => {
                         (scratch as any).update(arch.columns.id.get(i), { legacy: undefined });
                     }
                 }
-                stampVersion(scratch, "databaseVersion", 2);
                 return scratch;
             },
         };
@@ -266,13 +283,10 @@ describe("Database.create versioning — migration shapes", () => {
         target.fromData(snap);
 
         expect(target.read(e)).toEqual({ a: 5 });
-        // `legacy` isn't a declared component of the v2 app (that's the point) —
-        // query it structurally to confirm no entity carries it.
         expect((target as any).select(["legacy"]).length).toBe(0);
     });
 
     it("reseeds a declared index on the live database after a versioned upgrade commit", () => {
-        // v1 document: entity in [a], no b, version 1.
         const author = Database.create(
             Database.Plugin.create({
                 components: { a: numeric },
@@ -288,7 +302,6 @@ describe("Database.create versioning — migration shapes", () => {
         const e = author.transactions.addA({ a: 5 });
         const snap = author.toData();
 
-        // App v2 declares an index on the added component `b`.
         const v2Plugin = Database.Plugin.create({
             components: { a: numeric, b: numeric },
             resources: { databaseVersion: { default: 2 } },

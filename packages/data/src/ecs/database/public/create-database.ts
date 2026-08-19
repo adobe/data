@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { ReadonlyStore, Store } from "../../store/index.js";
-import { equals } from "../../../equals.js";
+import { createTypedBuffer, ReadonlyTypedBuffer } from "../../../typed-buffer/index.js";
+import type { Schema } from "../../../schema/index.js";
 import { Database, FromServiceFactories } from "../database.js";
 import { PersistenceScope } from "../../persistence-scope.js";
 import { calculateSystemOrder } from "../calculate-system-order.js";
@@ -55,17 +56,28 @@ function createAndAssignSystems(
  *     database is left completely untouched — no copy, no observer
  *     notifications — so a rejected load never disturbs a live/populated db.
  *
- * The returned store's component schemas are **strictly validated** against the
- * live database's before committing: every component it declares (other than the
- * version resource, whose default legitimately varies by version) must exist in
- * the current schema and be structurally equivalent. A mismatch — e.g. an old
- * component schema left un-upgraded — **throws**, because that is a developer
- * error the migration is responsible for, not a runtime condition. Rejection of
- * a document is data (`null`); a broken migration is a thrown developer error.
+ * Before committing, the returned store's **typed-buffer storage** is validated
+ * against the live database's: for every component both declare (a component the
+ * app doesn't declare is fine — it's adopted as unknown-but-populated), the
+ * buffer type and per-element byte size must match. This catches a genuine
+ * corruption bug — e.g. a component that changed U16→U32, or an object whose
+ * layout grew — that a structural `copy:false` adoption would silently mis-read.
+ * Cosmetic schema differences (a changed `default`, min/max, description) are NOT
+ * checked; enforce those in the handler if the app wants them. An incompatible
+ * buffer **throws**, because that is a developer error in the migration, not a
+ * runtime condition. Rejecting a *document* is data (`null`); a broken
+ * *migration* is a thrown developer error.
  *
- * On accept the committed store's contents load into the database via the normal
- * `fromData` reconciliation. No migration algorithm is coupled into the database;
- * `handle` is entirely caller-supplied.
+ * On a successful load the library stamps the committed document's version
+ * resource to `currentVersion` automatically (it already knows how to read it),
+ * so the handler need not; then the store's contents load in via the normal
+ * `fromData` reconciliation.
+ *
+ * Versioning applies only to whole-document loads. A *scoped* `fromData`
+ * (partial quadrant, e.g. a settings sync) bypasses the handler and loads
+ * directly — a partial load does not carry the whole document's version.
+ *
+ * No migration algorithm is coupled into the database; `handle` is caller-supplied.
  */
 export interface DatabaseVersioning {
     /** Name of the resource holding the document's numeric version. */
@@ -202,72 +214,83 @@ function createEmptyDatabase(
         strategy.onAfterToData();
         return data;
     };
-    // Read a numeric version resource from a store WITHOUT relying on the
-    // resource accessor — a snapshot-reconstructed store carries the version as a
-    // plain singleton component (resource-ness is not serialized), so read it
-    // straight off that singleton's column. Absent ⇒ 0 (a pre-versioning legacy
-    // document).
+    // The version resource's singleton archetype in a store, or undefined when
+    // the store carries no version (a pre-versioning legacy document). A
+    // reconstructed store has no resource accessor, so the version is reached via
+    // its raw singleton component.
+    const versionSingleton = (s: Store<any, any, any>, name: string) =>
+        s.queryArchetypes([name] as never[]).find((a) => a.rowCount > 0);
+
+    // Read the numeric version off a store (absent ⇒ 0, a legacy document).
     const readVersionResource = (s: Store<any, any, any>, name: string): number => {
-        const archetype = s.queryArchetypes([name] as never[])[0];
+        const archetype = versionSingleton(s, name);
         return archetype ? Number((archetype.columns as Record<string, { get(i: number): unknown }>)[name]!.get(0)) : 0;
     };
 
-    // A migration must return a store already at the current schema. Enforce it:
-    // every component the returned store actually CARRIES DATA for (i.e. appears
-    // in a non-empty archetype — inert leftover schemas are shed on commit and
-    // never reach the live db) must exist in the live database's schema AND be
-    // structurally equivalent. The version resource is exempt: its default
-    // legitimately varies by version. A mismatch is a developer error in the
-    // migration — thrown, per adobe/data's rule that throws are for developer
-    // mistakes, not runtime conditions (a rejected *document* is data: the `null`
-    // return above).
-    const assertReturnedSchemaMatchesCurrent = (committed: Store<any, any, any>, versionResource: string) => {
-        const current = store.componentSchemas as Record<string, unknown>;
-        const returned = committed.componentSchemas as Record<string, unknown>;
-        const carried = new Set<string>();
+    // Stamp a store's version resource to `value` (no-op if it carries none).
+    const writeVersionResource = (s: Store<any, any, any>, name: string, value: number) => {
+        const archetype = versionSingleton(s, name);
+        if (!archetype) return;
+        const id = (archetype.columns as Record<string, { get(i: number): number }>)["id"]!.get(0);
+        s.update(id, { [name]: value } as never);
+    };
+
+    // Validate that the returned store's typed buffers are STORAGE-compatible
+    // with the live database's, for every component both declare — the check that
+    // matters for the `copy:false` structural adoption on commit. A component the
+    // current schema doesn't declare is fine (adopted as unknown-but-populated);
+    // only a shared component with a different buffer type / element size (e.g.
+    // U16→U32, or an object whose layout grew) is a corruption bug. Cosmetic
+    // schema differences (default, min/max, …) are deliberately NOT checked. An
+    // incompatible buffer is a developer error in the migration → thrown (a
+    // rejected *document* is data: the `null` return above).
+    const assertReturnedBuffersCompatible = (committed: Store<any, any, any>) => {
+        const current = store.componentSchemas as Record<string, Schema>;
+        const checked = new Set<string>();
         for (const archetype of committed.queryArchetypes([] as never[])) {
             if (archetype.rowCount === 0) continue;
-            for (const name of archetype.components) carried.add(name);
-        }
-        for (const name of carried) {
-            if (name === "id" || name === "nonPersistent" || name === "nonShared" || name === versionResource) continue;
-            if (!(name in current)) {
-                throw new Error(
-                    `Database version handler returned a store carrying data for component "${name}", which the current database schema does not declare. ` +
-                    `A migration must produce a store matching the current schema.`,
-                );
-            }
-            if (!equals(returned[name], current[name])) {
-                throw new Error(
-                    `Database version handler returned component "${name}" with a schema that is not structurally equivalent to the current database's. ` +
-                    `A migration must bring every component up to the current schema (this one appears to be from an older version).`,
-                );
+            const columns = archetype.columns as Record<string, ReadonlyTypedBuffer<unknown>>;
+            for (const name of archetype.components) {
+                if (name === "id" || name === "nonPersistent" || name === "nonShared" || checked.has(name)) continue;
+                checked.add(name);
+                if (!(name in current)) continue; // undeclared ⇒ adopted, not "incompatible"
+                const returned = columns[name]!;
+                const expected = createTypedBuffer(current[name]!, 1);
+                if (returned.type !== expected.type || returned.typedArrayElementSizeInBytes !== expected.typedArrayElementSizeInBytes) {
+                    throw new Error(
+                        `Database version handler returned component "${name}" with an incompatible storage layout ` +
+                        `(${returned.type} ${returned.typedArrayElementSizeInBytes}B vs the current ${expected.type} ${expected.typedArrayElementSizeInBytes}B). ` +
+                        `A migration must convert it to the current representation.`,
+                    );
+                }
             }
         }
     };
 
     const fromData = (data: unknown, scope?: PersistenceScope) => {
-        // With no version handler, load directly (single pass) — the original
-        // path. With one, reconstruct the document into a bare scratch store (its
-        // OWN schema, no dependence on the live db), read the document + current
-        // versions, and hand them to the pure upgrade handler. It returns the
-        // store to commit (validated against the current schema) or null to
-        // reject — a reject leaves the live database completely untouched.
-        if (versioning) {
+        // Versioning applies only to whole-document (unscoped) loads. A scoped
+        // load is a partial quadrant that does not carry the document's version,
+        // so it bypasses the handler and loads directly (the original path), as
+        // does a database with no handler configured.
+        if (versioning && scope === undefined) {
+            // Reconstruct the document into a bare scratch store (its OWN schema,
+            // no dependence on the live db), read the document + current versions,
+            // and hand them to the pure upgrade handler. It returns the store to
+            // commit or null to reject — a reject leaves the live db untouched.
             const scratch = Store.create({ components: {}, resources: {}, archetypes: {} });
-            scratch.fromData(data, scope);
+            scratch.fromData(data);
             const documentVersion = readVersionResource(scratch, versioning.resource);
             const currentVersion = readVersionResource(store, versioning.resource);
             const committed = versioning.handle({ scratch, documentVersion, currentVersion });
             if (committed === null) return; // reject: live database untouched
-            assertReturnedSchemaMatchesCurrent(committed, versioning.resource);
+            // The load succeeded → stamp the committed document to the current
+            // version (the library owns reading it, so it owns writing it too).
+            writeVersionResource(committed, versioning.resource, currentVersion);
+            assertReturnedBuffersCompatible(committed);
             // Commit via normal fromData reconciliation. copy:false hands the
             // returned store's live buffers over structurally (it is discarded
-            // right after), so this is a structural adoption, not a deep copy. The
-            // same `scope` is passed to toData AND fromData so a scoped load stays
-            // scope-matched — otherwise the whole store (incl. out-of-scope default
-            // quadrants) would overwrite the live store's other quadrants.
-            observedDatabase.fromData(committed.toData({ copy: false, scope }), scope);
+            // right after), so this is a structural adoption, not a deep copy.
+            observedDatabase.fromData(committed.toData({ copy: false }));
         } else {
             observedDatabase.fromData(data, scope);
         }

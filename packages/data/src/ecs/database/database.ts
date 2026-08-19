@@ -272,7 +272,13 @@ export interface Database<
    * it because they only asserted the snapshot was truthy, never round-tripped it.
    */
   toData(options?: { readonly scope?: PersistenceScope }): unknown
-  fromData(data: unknown, scope?: PersistenceScope): void
+  /**
+   * Load a snapshot. Async because a configured version handler may be async
+   * (e.g. it lazy-`import()`s migration code); with no handler it still resolves
+   * after the synchronous load completes. `toData` stays synchronous — only the
+   * load path can await a handler.
+   */
+  fromData(data: unknown, scope?: PersistenceScope): Promise<void>
   /**
    * Conform the database's DATA to a target plugin's schema, dropping every
    * component and resource the plugin does not declare (its imports/extends are

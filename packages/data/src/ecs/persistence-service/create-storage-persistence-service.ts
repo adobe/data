@@ -29,7 +29,7 @@ export const createStoragePersistenceService = async (options: {
         load: async (fileId = defaultFileId) => {
             const data = await deserializeFromStorage(fileId, storage);
             if (data) {
-                database.fromData(data, scope);
+                await database.fromData(data, scope);
             }
         }
     }

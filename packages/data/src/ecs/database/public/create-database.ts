@@ -1,6 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { ReadonlyStore, Store } from "../../store/index.js";
+import { createTypedBuffer, ReadonlyTypedBuffer, structBufferType } from "../../../typed-buffer/index.js";
+import { getStructLayout } from "../../../typed-buffer/structs/get-struct-layout.js";
+import type { Schema } from "../../../schema/index.js";
 import { Database, FromServiceFactories } from "../database.js";
 import { PersistenceScope } from "../../persistence-scope.js";
 import { calculateSystemOrder } from "../calculate-system-order.js";
@@ -8,6 +11,7 @@ import { createTransactionDispatcher } from "./create-transaction-dispatcher.js"
 import { observeSelectEntities } from "../observe-select-entities.js";
 import { observeIndexEntities } from "../observe-index-entities.js";
 import { createObservedDatabase } from "../observed/create-observed-database.js";
+import type { DatabaseVersioning } from "./database-versioning.js";
 import { createImmediateConcurrency } from "../concurrency/immediate-concurrency.js";
 import type { ConcurrencyStrategy, ConcurrencyStrategyFactory } from "../concurrency/concurrency-strategy.js";
 import type { Entity } from "../../entity/entity.js";
@@ -48,6 +52,12 @@ interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, an
      *     full rollback-and-replay for multi-peer synchronisation.
      */
     concurrency?: ConcurrencyStrategyFactory;
+    /**
+     * Pluggable version policy consulted on every `db.fromData(snapshot)`. Omit
+     * for the current behavior (always load, no reconciliation). See
+     * {@link DatabaseVersioning}.
+     */
+    versioning?: DatabaseVersioning;
 }
 
 export function createDatabase(): Database<{}, {}, {}, {}, never, {}, {}, {}>
@@ -61,7 +71,7 @@ export function createDatabase(
     plugin?: Database.Plugin<any, any, any, any, any, any, any, any>,
     options?: CreateDatabaseOptions<any>,
 ): any {
-    const db = createEmptyDatabase(options?.concurrency);
+    const db = createEmptyDatabase({ concurrency: options?.concurrency, versioning: options?.versioning });
     if (plugin === undefined) {
         return db;
     }
@@ -75,7 +85,10 @@ export function createDatabase(
  * Creates a database with empty store, no transactions, actions, services, computed, or systems.
  * All content is added via .extend(plugin). Single code path for extension.
  */
-function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined): any {
+function createEmptyDatabase({ concurrency, versioning }: {
+    concurrency: ConcurrencyStrategyFactory | undefined,
+    versioning?: DatabaseVersioning,
+}): any {
     const store = Store.create({
         components: {},
         resources: {},
@@ -147,8 +160,119 @@ function createEmptyDatabase(concurrency: ConcurrencyStrategyFactory | undefined
         strategy.onAfterToData();
         return data;
     };
-    const fromData = (data: unknown, scope?: PersistenceScope) => {
-        observedDatabase.fromData(data, scope);
+    // The version resource's singleton archetype in a store, or undefined when
+    // the store carries no version (a pre-versioning legacy document). A
+    // reconstructed store has no resource accessor, so the version is reached via
+    // its raw singleton component.
+    const versionSingleton = (s: Store<any, any, any>, name: string) =>
+        s.queryArchetypes([name] as never[]).find((a) => a.rowCount > 0);
+
+    // Read the numeric version off a store (absent ⇒ 0, a legacy document).
+    const readVersionResource = (s: Store<any, any, any>, name: string): number => {
+        const archetype = versionSingleton(s, name);
+        return archetype ? Number((archetype.columns as Record<string, { get(i: number): unknown }>)[name]!.get(0)) : 0;
+    };
+
+    // Stamp a store's version resource to `value` (no-op if it carries none).
+    const writeVersionResource = (s: Store<any, any, any>, name: string, value: number) => {
+        const archetype = versionSingleton(s, name);
+        if (!archetype) return;
+        const id = (archetype.columns as Record<string, { get(i: number): number }>)["id"]!.get(0);
+        s.update(id, { [name]: value } as never);
+    };
+
+    // Validate that the returned store's typed buffers are STORAGE-compatible
+    // with the live database's, for every current-schema component the returned
+    // store carries data for — the check that matters for the `copy:false`
+    // structural adoption on commit, which binds those buffers into the live db by
+    // reference. Two levels:
+    //   - buffer `type` + per-element byte size must match (e.g. a number that
+    //     changed U16→U32 / F64→F32, or any buffer-kind change, is rejected);
+    //   - for a **value type** (a fixed-layout `struct` buffer) the full struct
+    //     layout — field names, order, offsets and types — must match, so a
+    //     same-size field reorder / rename / retype is caught too (the live db
+    //     would otherwise mis-read the adopted binary buffer).
+    // Cosmetic schema differences (default, min/max, description) are deliberately
+    // NOT checked — those are a migration's own concern. An incompatible buffer is
+    // a developer error in the migration → thrown (a rejected *document* is data:
+    // the `null` return above).
+    const assertReturnedBuffersCompatible = (committed: Store<any, any, any>) => {
+        // `componentSchemas` is a plain string-keyed schema map at runtime; widen
+        // off its readonly index signature to index it by dynamic name.
+        const current = store.componentSchemas as Record<string, Schema>;
+        const checked = new Set<string>();
+        for (const archetype of committed.queryArchetypes([] as never[])) {
+            if (archetype.rowCount === 0) continue;
+            // Columns are typed buffers; the store is `any`-parameterized here so
+            // name-index them through the readonly typed-buffer shape.
+            const columns = archetype.columns as Record<string, ReadonlyTypedBuffer<unknown>>;
+            for (const name of archetype.components) {
+                if (name === "id" || name === "nonPersistent" || name === "nonShared" || checked.has(name)) continue;
+                checked.add(name);
+                if (!(name in current)) continue; // foreign component — dropped on commit, not adopted
+                const returned = columns[name]!;
+                const expected = createTypedBuffer(current[name]!, 1);
+                if (returned.type !== expected.type || returned.typedArrayElementSizeInBytes !== expected.typedArrayElementSizeInBytes) {
+                    throw new Error(
+                        `Database version handler returned component "${name}" with an incompatible storage layout ` +
+                        `(${returned.type} ${returned.typedArrayElementSizeInBytes}B vs the current ${expected.type} ${expected.typedArrayElementSizeInBytes}B). ` +
+                        `A migration must convert it to the current representation.`,
+                    );
+                }
+                // Value type: require identical struct layout, not just size. The
+                // resolved layout is deterministic plain data (fields in offset
+                // order), so a JSON fingerprint captures name/order/offset/type.
+                if (returned.type === structBufferType) {
+                    const returnedLayout = JSON.stringify(getStructLayout(returned.schema));
+                    const expectedLayout = JSON.stringify(getStructLayout(expected.schema));
+                    if (returnedLayout !== expectedLayout) {
+                        throw new Error(
+                            `Database version handler returned value-type component "${name}" with a different struct layout ` +
+                            `than the current schema (field names/order/offsets/types must match for a same-size struct). ` +
+                            `A migration must convert it to the current representation.`,
+                        );
+                    }
+                }
+            }
+        }
+    };
+
+    const fromData = async (data: unknown, scope?: PersistenceScope): Promise<void> => {
+        // Versioning applies only to whole-document (unscoped) loads. A scoped
+        // load is a partial quadrant that does not carry the document's version,
+        // so it bypasses the handler and loads directly (the original path), as
+        // does a database with no handler configured.
+        if (versioning && scope === undefined) {
+            // Reconstruct the document into a bare document store (its OWN schema,
+            // no dependence on the live db), read the document + current versions,
+            // and hand them to the (possibly async) upgrade handler. `handle` may
+            // await — e.g. `import("./upgrader")` to load migration code only when
+            // a document actually needs upgrading. It returns the store to commit
+            // or null to reject — a reject leaves the live db untouched.
+            const documentStore = Store.create({ components: {}, resources: {}, archetypes: {} });
+            documentStore.fromData(data);
+            const documentVersion = readVersionResource(documentStore, versioning.resource);
+            const currentVersion = readVersionResource(store, versioning.resource);
+            const committed = await versioning.handle({ documentStore, documentVersion, currentVersion });
+            if (committed === null) return; // reject: live database untouched
+            // The live database is ALREADY initialized to the current-version
+            // schema. We copy only the DATA for components it declares and adopt no
+            // schema from the returned store — so conform the returned store's data
+            // to the current schema first, dropping any foreign component the
+            // migration left behind (`componentSchemas` keys are the components +
+            // resource singletons the live db declares).
+            committed.pruneToSchema(new Set(Object.keys(store.componentSchemas)));
+            // The load succeeded → stamp the committed document to the current
+            // version (the library owns reading it, so it owns writing it too).
+            writeVersionResource(committed, versioning.resource, currentVersion);
+            assertReturnedBuffersCompatible(committed);
+            // Commit into the live db. copy:false hands the (now schema-conformed)
+            // store's buffers over structurally — it is discarded right after — so
+            // this is a cheap structural adoption of the data, not a deep copy.
+            observedDatabase.fromData(committed.toData({ copy: false }));
+        } else {
+            observedDatabase.fromData(data, scope);
+        }
         strategy.onAfterFromData?.();
     };
 

@@ -35,11 +35,19 @@ function createAndAssignSystems(
  * Pluggable load-time version/migration handler, consulted on every
  * `db.fromData(snapshot)` when configured on `Database.create`.
  *
- * The snapshot is loaded into a fresh **scratch** store (built with the same
- * schema as the database, so a migration may use the app's declared components),
- * and this function is handed that scratch store. It may inspect the document —
- * the version is a plain **number** in an application-named resource, so read it
- * from `scratch.resources.<name>` — and then, at its discretion:
+ * The snapshot is loaded into a fresh **scratch** store, which this function is
+ * handed. The scratch is empty of data and carries the *live database's* current
+ * **declared schema** — the components/resources/archetypes this database was
+ * built from (NOT its data, and NOT the snapshot's schema). That gives a
+ * migration the app's declared components to work with (e.g. to add a `b` column
+ * an old document lacks). The snapshot's data — and any components it carries
+ * that the app does not declare — are then loaded into that scratch (unknown-but-
+ * populated components are adopted), so the handler sees the document's contents
+ * on top of the app's schema.
+ *
+ * The handler may inspect the document — the version is a plain **number** in an
+ * application-named resource, so read it from `scratch.resources.<name>` — and
+ * then, at its discretion:
  *
  *   - **accept**: return a store to commit into the database. Whether the
  *     returned store is the passed-in `scratch` (mutated or not) or a different
@@ -186,8 +194,11 @@ function createEmptyDatabase(
         strategy.onAfterToData();
         return data;
     };
-    // A fresh store carrying the database's current schema (same plugins), used
-    // to stage a versioned load without touching the live store.
+    // A fresh, data-empty store carrying the LIVE database's current declared
+    // schema (replayed from the same plugins) — not its data, and not the
+    // snapshot's schema. Used to stage a versioned load in isolation so the
+    // migration has the app's declared components available without touching the
+    // live store; the snapshot's data loads into this scratch afterward.
     const buildScratchStore = () => {
         const scratch = Store.create({ components: {}, resources: {}, archetypes: {} });
         for (const plugin of extendedPlugins) {

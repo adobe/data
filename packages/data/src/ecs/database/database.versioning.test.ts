@@ -33,16 +33,16 @@ const versioning: DatabaseVersioning = {
     resource: "databaseVersion",
     handle: ({ documentVersion, currentVersion, store }) => {
         if (documentVersion > currentVersion) {
-            return false; // reject: newer document than this app understands
-        }
-        if (documentVersion < currentVersion) {
+            // Reject: a newer document than this app understands. Clear the
+            // just-loaded document back to a clean, current-version state.
+            store.reset();
+        } else if (documentVersion < currentVersion) {
             const A = (store as any).archetypes.A;
             for (let i = A.rowCount - 1; i >= 0; i--) {
                 (store as any).update(A.columns.id.get(i), { b: 100 });
             }
             (store as any).resources.databaseVersion = currentVersion; // stamp upgraded
         }
-        return true;
     },
 };
 
@@ -59,13 +59,18 @@ describe("Database.create versioning (numeric version resource)", () => {
         expect(target.resources.databaseVersion).toBe(1);
     });
 
-    it("rejects a document newer than the app (returns false)", () => {
+    it("rejects a document newer than the app by clearing to a clean current-version state", () => {
         const source = Database.create(makePlugin(2)); // document saved at v2
         source.transactions.addA({ a: 5 });
         const snap = source.toData();
 
         const target = Database.create(makePlugin(1), { versioning }); // app at v1
-        expect(target.fromData(snap)).toBe(false);
+        target.fromData(snap);
+
+        // The rejected document's data is gone and the version is back at the
+        // app's default — the database is clean, as if nothing was loaded.
+        expect(target.select(["a"]).length).toBe(0);
+        expect(target.resources.databaseVersion).toBe(1);
     });
 
     it("upgrades an older document in place (adds a component) and stamps the current version", () => {

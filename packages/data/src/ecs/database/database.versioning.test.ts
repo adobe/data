@@ -1,10 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 //
-// Prototype tests for the pluggable database-version policy injected via
-// `Database.create(plugin, { versioning })`. The document's version is a numeric
-// resource that round-trips with the snapshot; on load the handler reconciles
-// the loaded `documentVersion` against the app's `currentVersion` and may accept
-// (no-op), migrate the store in place (upgrade), or throw (reject).
+// Tests for the pluggable load-time version handler injected via
+// `Database.create(plugin, { versioning })`. The snapshot is staged into a
+// scratch store; the handler inspects the document version (a numeric resource)
+// and returns a store to commit (accept, possibly migrated) or `null` (reject,
+// leaving the live database untouched).
 
 import { describe, it, expect } from "vitest";
 import { Database } from "./database.js";
@@ -27,58 +27,59 @@ const makePlugin = (currentVersion: number) =>
         },
     });
 
-// A handler that upgrades v1 documents (add component `b` to every [a] entity),
-// accepts same-version documents, and rejects newer ones.
-const versioning: DatabaseVersioning = {
-    resource: "databaseVersion",
-    handle: ({ documentVersion, currentVersion, store }) => {
-        if (documentVersion > currentVersion) {
-            // Reject: a newer document than this app understands. Clear the
-            // just-loaded document back to a clean, current-version state.
-            store.reset();
-        } else if (documentVersion < currentVersion) {
-            const A = (store as any).archetypes.A;
-            for (let i = A.rowCount - 1; i >= 0; i--) {
-                (store as any).update(A.columns.id.get(i), { b: 100 });
-            }
-            (store as any).resources.databaseVersion = currentVersion; // stamp upgraded
+// Handler for an app at `currentVersion`: rejects newer documents (returns null),
+// upgrades v(<current) documents by adding `b` to every [a] entity and stamping
+// the version, and accepts same-version documents. Returns the (mutated) scratch.
+const makeVersioning = (currentVersion: number): DatabaseVersioning => (scratch) => {
+    const documentVersion = (scratch.resources as Record<string, number>).databaseVersion;
+    if (documentVersion > currentVersion) return null; // reject: too new to read
+    if (documentVersion < currentVersion) {
+        const A = (scratch as any).archetypes.A;
+        for (let i = A.rowCount - 1; i >= 0; i--) {
+            (scratch as any).update(A.columns.id.get(i), { b: 100 });
         }
-    },
+        (scratch as any).resources.databaseVersion = currentVersion; // stamp upgraded
+    }
+    return scratch;
 };
 
-describe("Database.create versioning (numeric version resource)", () => {
-    it("accepts a same-version document unchanged", () => {
+describe("Database.create versioning (scratch-store loader)", () => {
+    it("accepts a same-version document", () => {
         const source = Database.create(makePlugin(1));
         const e = source.transactions.addA({ a: 5 });
         const snap = source.toData();
 
-        const target = Database.create(makePlugin(1), { versioning });
+        const target = Database.create(makePlugin(1), { versioning: makeVersioning(1) });
         target.fromData(snap);
 
         expect(target.read(e)).toEqual({ a: 5 });
         expect(target.resources.databaseVersion).toBe(1);
     });
 
-    it("rejects a document newer than the app by clearing to a clean current-version state", () => {
+    it("rejects a newer document non-destructively — the live database is untouched", () => {
         const source = Database.create(makePlugin(2)); // document saved at v2
         source.transactions.addA({ a: 5 });
         const snap = source.toData();
 
-        const target = Database.create(makePlugin(1), { versioning }); // app at v1
-        target.fromData(snap);
+        // Target app at v1 already holds some state before the load.
+        const target = Database.create(makePlugin(1), { versioning: makeVersioning(1) });
+        const kept = target.transactions.addA({ a: 99 });
 
-        // The rejected document's data is gone and the version is back at the
-        // app's default — the database is clean, as if nothing was loaded.
-        expect(target.select(["a"]).length).toBe(0);
+        target.fromData(snap); // v2 > v1 → handler returns null
+
+        // Nothing from the rejected document loaded, and the pre-existing state
+        // is preserved (reject never touches the live database).
+        expect(target.select(["a"])).toEqual([kept]);
+        expect(target.read(kept)).toEqual({ a: 99 });
         expect(target.resources.databaseVersion).toBe(1);
     });
 
-    it("upgrades an older document in place (adds a component) and stamps the current version", () => {
+    it("upgrades an older document (adds a component) and stamps the current version", () => {
         const source = Database.create(makePlugin(1)); // document at v1
         const e = source.transactions.addA({ a: 5 }); // entity in [a]
         const snap = source.toData();
 
-        const target = Database.create(makePlugin(2), { versioning }); // app at v2
+        const target = Database.create(makePlugin(2), { versioning: makeVersioning(2) }); // app at v2
         target.fromData(snap);
 
         // v1 -> v2 migration ran: entity now in [a,b], version stamped current.
@@ -87,7 +88,7 @@ describe("Database.create versioning (numeric version resource)", () => {
         expect(target.resources.databaseVersion).toBe(2);
     });
 
-    it("with no versioning option, fromData loads as before", () => {
+    it("with no versioning option, fromData loads directly as before", () => {
         const source = Database.create(makePlugin(1));
         const e = source.transactions.addA({ a: 7 });
         const snap = source.toData();

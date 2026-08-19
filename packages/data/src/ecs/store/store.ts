@@ -117,14 +117,7 @@ export interface Store<
      * `Database.pruneToPluginSchema` to derive `keep` from a plugin.
      */
     pruneToSchema(keep: ReadonlySet<string>): void;
-    /**
-     * Restore from a snapshot. `transform`, when given, is the load-time seam:
-     * it runs on this (raw) store after the snapshot's data is loaded but before
-     * resources are re-derived and indexes reseeded, so components/archetypes it
-     * adds or removes are picked up by that re-sync. Used by an upgrader to
-     * migrate a loaded snapshot in place.
-     */
-    fromData(data: unknown, scope?: PersistenceScope, transform?: (store: Store<C, R, A, IX, PK>) => void): void
+    fromData(data: unknown, scope?: PersistenceScope): void
     extend<S extends Store.Schema>(schema: S): S extends Store.Schema<infer XC, infer XR, infer XA, infer XIX> ? Store<C & FromSchemas<XC>, R & FromSchemas<XR>, A & XA, IX & XIX, PK | PartitionKeysOf<XC>> : never;
 }
 

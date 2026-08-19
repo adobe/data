@@ -74,16 +74,16 @@ describe("SAMPLE: upgrade-on-load produces a delta a peer replays to converge", 
         const e = author.transactions.addA({ a: 5 });
         const v1bytes = serialize(author.toData());
 
-        // Client A (v2 app) opens the v1 document. Its version handler upgrades in
-        // place AND captures the migration as a delta to hand to replication.
+        // Client A (v2 app) opens the v1 document. Its version handler upgrades
+        // the scratch store AND captures the migration as a delta to hand to
+        // replication, then returns the scratch to commit.
         let migrationDelta: TransactionWriteOperation<any>[] = [];
-        const versioning: DatabaseVersioning = {
-            resource: "databaseVersion",
-            handle: ({ documentVersion, currentVersion, store }) => {
-                if (documentVersion < currentVersion) {
-                    migrationDelta = captureTransaction(store, upgradeV1toV2).redo;
-                }
-            },
+        const versioning: DatabaseVersioning = (scratch) => {
+            const documentVersion = (scratch.resources as Record<string, number>).databaseVersion;
+            if (documentVersion < 2) {
+                migrationDelta = captureTransaction(scratch, upgradeV1toV2).redo;
+            }
+            return scratch;
         };
         const clientA = Database.create(makePlugin(2), { versioning });
         clientA.fromData(deserialize(v1bytes));

@@ -207,13 +207,8 @@ export function createObservedDatabase<
             notifyAllObserversStoreReloaded();
         },
         toData: (options?: ToDataOptions) => store.toData(options),
-        fromData: (data: unknown, scope?: PersistenceScope, transform?: (store: any) => void) => {
-            store.fromData(data, scope, transform);
-            // A load-time `transform` may have added/removed components or
-            // resources, so rebuild the observable maps (mirror of extend/prune)
-            // before notifying. A plain load leaves the schema unchanged, so its
-            // maps are untouched — only observers are notified.
-            if (transform) rebuildObservableMaps();
+        fromData: (data: unknown, scope?: PersistenceScope) => {
+            store.fromData(data, scope);
             notifyAllObserversStoreReloaded();
         },
         pruneToSchema: (keep: ReadonlySet<string>) => {

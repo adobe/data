@@ -212,6 +212,33 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
         expect(target.read(kept)).toEqual({ n: 7 });
     });
 
+    it("throws when a value-type (struct) component is the same size but a different layout", () => {
+        // Both are 8-byte structs of two f32 fields, but the fields are reordered
+        // (x@0,y@4 vs y@0,x@4) — same size, incompatible binary layout.
+        const f32 = { type: "number", precision: 1, default: 0 } as const satisfies Schema;
+        const posV1 = { type: "object", properties: { x: f32, y: f32 } } as const satisfies Schema;
+        const posV2 = { type: "object", properties: { y: f32, x: f32 } } as const satisfies Schema;
+        const v1Plugin = Database.Plugin.create({
+            components: { pos: posV1 },
+            resources: { databaseVersion: { default: 1 } },
+            archetypes: { P: ["pos"] } as const,
+            transactions: { add(t, p: { x: number; y: number }) { return t.archetypes.P.insert({ pos: p }); } },
+        });
+        const author = Database.create(v1Plugin);
+        author.transactions.add({ x: 1, y: 2 });
+        const snap = author.toData();
+
+        const v2Plugin = Database.Plugin.create({
+            components: { pos: posV2 },
+            resources: { databaseVersion: { default: 2 } },
+            archetypes: { P: ["pos"] } as const,
+        });
+        const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ scratch }) => scratch };
+        const target = Database.create(v2Plugin, { versioning });
+
+        expect(() => target.fromData(snap)).toThrow(/different struct layout/);
+    });
+
     it("allows a component whose only difference is its default (not a storage change)", () => {
         const authorPlugin = Database.Plugin.create({
             components: { a: { type: "number", default: 0 } as const satisfies Schema },

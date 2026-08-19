@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { ReadonlyStore, Store } from "../../store/index.js";
-import { createTypedBuffer, ReadonlyTypedBuffer } from "../../../typed-buffer/index.js";
+import { createTypedBuffer, ReadonlyTypedBuffer, structBufferType } from "../../../typed-buffer/index.js";
+import { getStructLayout } from "../../../typed-buffer/structs/get-struct-layout.js";
 import type { Schema } from "../../../schema/index.js";
 import { Database, FromServiceFactories } from "../database.js";
 import { PersistenceScope } from "../../persistence-scope.js";
@@ -61,14 +62,16 @@ function createAndAssignSystems(
  * components it declares is copied in; any foreign component the migration left
  * behind is dropped (the returned store is conformed to the current schema before
  * the copy). For every current-schema component the returned store carries, its
- * **typed-buffer storage** (buffer type + per-element byte size) must match the
- * live db's — a mismatch (e.g. a number that changed U16→U32 / F64→F32, or a
- * struct whose element size changed) would let the cheap `copy:false` structural
- * adoption mis-read the buffer, so it **throws**. The check is deliberately
- * narrow: it does not diff full schemas — cosmetic differences (`default`,
- * min/max, description) and same-size struct-layout changes are the migration's
- * responsibility. Rejecting a *document* is data (`null`); a broken *migration* is
- * a thrown developer error.
+ * **typed-buffer storage** must match the live db's — a mismatch would let the
+ * cheap `copy:false` structural adoption mis-read the buffer, so it **throws**:
+ *   - buffer type + per-element byte size (a number that changed U16→U32 / F64→F32,
+ *     or any change of buffer kind);
+ *   - for a **value type** (a fixed-layout `struct`), the full struct layout —
+ *     field names, order, offsets and types — so a same-size field reorder /
+ *     rename / retype is caught too.
+ * Cosmetic schema differences (`default`, min/max, description) are deliberately
+ * NOT checked — those are the migration's responsibility. Rejecting a *document*
+ * is data (`null`); a broken *migration* is a thrown developer error.
  *
  * On a successful load the library stamps the committed document's version
  * resource to `currentVersion` automatically (it already knows how to read it),
@@ -241,12 +244,15 @@ function createEmptyDatabase(
     // with the live database's, for every current-schema component the returned
     // store carries data for — the check that matters for the `copy:false`
     // structural adoption on commit, which binds those buffers into the live db by
-    // reference. A mismatch in buffer `type` or per-element byte size (e.g. a
-    // number that changed U16→U32 / F64→F32, or a struct whose element size
-    // changed) would let the live db mis-read the adopted buffer, so it throws.
-    // The check is deliberately narrow: it does NOT diff full schemas — cosmetic
-    // differences (default, min/max, …) and same-size struct-layout changes are a
-    // migration's own responsibility, not the library's. An incompatible buffer is
+    // reference. Two levels:
+    //   - buffer `type` + per-element byte size must match (e.g. a number that
+    //     changed U16→U32 / F64→F32, or any buffer-kind change, is rejected);
+    //   - for a **value type** (a fixed-layout `struct` buffer) the full struct
+    //     layout — field names, order, offsets and types — must match, so a
+    //     same-size field reorder / rename / retype is caught too (the live db
+    //     would otherwise mis-read the adopted binary buffer).
+    // Cosmetic schema differences (default, min/max, description) are deliberately
+    // NOT checked — those are a migration's own concern. An incompatible buffer is
     // a developer error in the migration → thrown (a rejected *document* is data:
     // the `null` return above).
     const assertReturnedBuffersCompatible = (committed: Store<any, any, any>) => {
@@ -271,6 +277,20 @@ function createEmptyDatabase(
                         `(${returned.type} ${returned.typedArrayElementSizeInBytes}B vs the current ${expected.type} ${expected.typedArrayElementSizeInBytes}B). ` +
                         `A migration must convert it to the current representation.`,
                     );
+                }
+                // Value type: require identical struct layout, not just size. The
+                // resolved layout is deterministic plain data (fields in offset
+                // order), so a JSON fingerprint captures name/order/offset/type.
+                if (returned.type === structBufferType) {
+                    const returnedLayout = JSON.stringify(getStructLayout(returned.schema));
+                    const expectedLayout = JSON.stringify(getStructLayout(expected.schema));
+                    if (returnedLayout !== expectedLayout) {
+                        throw new Error(
+                            `Database version handler returned value-type component "${name}" with a different struct layout ` +
+                            `than the current schema (field names/order/offsets/types must match for a same-size struct). ` +
+                            `A migration must convert it to the current representation.`,
+                        );
+                    }
                 }
             }
         }

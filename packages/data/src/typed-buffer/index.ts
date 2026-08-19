@@ -2,6 +2,7 @@
 
 export * from './typed-buffer.js';
 export * from './create-typed-buffer.js';
+export * from './convert-typed-buffer.js';
 export * from './create-struct-buffer.js';
 export * from './structs/index.js';
 export { copyToGPUBuffer } from './copy-to-gpu-buffer.js';

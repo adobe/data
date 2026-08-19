@@ -7,4 +7,5 @@ export * from "./to-type.js";
 export * from "./from-object-properties.js";
 export * from "./from-archetype.js";
 export * from "./from-struct-properties.js";
+export * from "./create-coerce-function.js";
 

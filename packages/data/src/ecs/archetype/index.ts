@@ -2,3 +2,4 @@
 export * from "./archetype.js";
 export * from "./create-archetype.js";
 export * from "./delete-row.js";
+export * from "./coerce-archetype-column.js";

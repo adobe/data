@@ -27,7 +27,7 @@ const fox: Sprite = {
 
 // Spec-owned cases, shared with the ecs `tick` transaction. Every sprite's
 // rotation advances by delta * 0.1; `after` keys are plain spec-ids (compared up to an id-bijection).
-export const cases = Conformance.cases(tick,
+export const cases = /*@__PURE__*/ Conformance.cases(tick,
   {
     name: "advances every sprite's rotation by delta * 0.1",
     before: { entities: new Map([[1, bunny], [2, fox]]) },

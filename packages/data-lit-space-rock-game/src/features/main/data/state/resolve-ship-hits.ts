@@ -40,7 +40,7 @@ export const resolveShipHits = (
 const field = { ...create(), bounds: [200, 200] as [number, number] };
 const respawned = Ship.spawn([100, 100]);
 
-export const cases = Conformance.cases(resolveShipHits,
+export const cases = /*@__PURE__*/ Conformance.cases(resolveShipHits,
   {
     name: "an asteroid on the ship costs a life and respawns it at centre",
     before: {

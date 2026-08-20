@@ -195,7 +195,7 @@ export const createTodo = (
     return { entities: new Map(state.entities).set(id, { name, complete: false, order }) };
 };
 
-export const cases = Conformance.cases(createTodo,
+export const cases = /*@__PURE__*/ Conformance.cases(createTodo,
     { name: "adds the first todo",
       before: {},                       // empty delta — the default State.create() (empty entities)
       args: { name: "a", analytics: AnalyticsService.createFake() },
@@ -227,6 +227,22 @@ export const cases = Conformance.cases(createTodo,
   any barrel member) in a top-level `cases` literal dead-locks the import cycle.
   Import the concrete helper directly (`import { create } from "./create.js"`) or
   inline full-`State` literals.
+- **Always write the call as `/*@__PURE__*/ Conformance.cases(fn, …)`** (same for
+  `Conformance.derivations`) — the annotation is not optional style, it is what
+  makes the co-location safe. `@adobe/data-testing`'s `sideEffects: false` only
+  lets a bundler drop an unused *import* of the package; `Conformance.cases(fn,
+  …)` is still an ordinary function call happening in *this* file, and an
+  unannotated call is conservatively kept even when the `cases` export it
+  initializes is never read — because the transition function `fn` is legitimately
+  used elsewhere, this module is very much reachable, so the unused `cases` const
+  is the only thing tree-shaking has to remove, and it can't without the hint.
+  Verified against this repo's actual Vite/Rollup production build: a transition
+  whose `cases` call lacked the annotation shipped the full case-fixture data
+  (and the builder's inlined logic) into the bundle; adding `/*@__PURE__*/`
+  removed it completely while leaving the transition function itself intact. A
+  linter/codemod catching a bare `Conformance.cases(`/`Conformance.derivations(`
+  call (missing the leading comment) in a `data/state/*.ts` file would catch this
+  by construction — worth adding if these calls keep getting hand-authored.
 - **`Conformance.cases(fn, ...cases)`** (the builder above) derives each case's
   types from `fn`'s own signature — pass the transition function and cases can't drift
   from what it accepts. **`before` is a delta over `State.create()`** — list only

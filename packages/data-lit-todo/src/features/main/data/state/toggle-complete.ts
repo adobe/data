@@ -36,7 +36,7 @@ const two: readonly (readonly [number, Todo])[] = [
 // entities with plain spec-id keys. Only the addressed todo's `complete`
 // flips; an unknown id is a no-op. The transition logs `todoToggled`
 // unconditionally (as the action does).
-export const cases = Conformance.cases(toggleComplete, { args: { type: "object", properties: { id: Entity.schema } } },
+export const cases = /*@__PURE__*/ Conformance.cases(toggleComplete, { args: { type: "object", properties: { id: Entity.schema } } },
   {
     name: "marks an incomplete todo complete",
     before: { entities: new Map(two) },

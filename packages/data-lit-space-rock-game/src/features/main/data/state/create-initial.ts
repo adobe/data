@@ -46,7 +46,7 @@ const dirty: State = {
   wave: 7,
 };
 
-export const cases = Conformance.cases(createInitial,
+export const cases = /*@__PURE__*/ Conformance.cases(createInitial,
   {
     name: "starts a fresh 200×200 game: centred ship, first wave, reset counters",
     before: dirty,

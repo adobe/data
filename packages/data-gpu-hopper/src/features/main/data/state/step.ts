@@ -89,7 +89,7 @@ const riverLanes: readonly Lane[] = [
 // hazards scrolling while the frog stays safe, a car hit (life lost + respawn), the
 // final-life game over, drowning over open water, riding a log, being carried off
 // the board edge (with a wrapping log), reaching the goal, and the game-over no-op.
-export const cases = Conformance.cases(step,
+export const cases = /*@__PURE__*/ Conformance.cases(step,
   { name: "scrolls hazards while the frog rests on grass",
     before: { width: 5, height: 3, lanes: roadLanes,
       entities: new Map([[1, { kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]]),

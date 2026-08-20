@@ -10,7 +10,7 @@ export const setFilter = (
 ): Pick<State, "filter"> => ({ filter: input.filter });
 
 // Spec-owned cases, shared with the ecs `setFilter` transaction.
-export const cases = Conformance.cases(setFilter,
+export const cases = /*@__PURE__*/ Conformance.cases(setFilter,
   {
     name: "sets the filter from none to sepia",
     before: {},

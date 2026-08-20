@@ -23,7 +23,7 @@ const base: Omit<State, "score" | "status"> = {
 };
 
 // Spec-owned cases, shared with the ecs `winGoal` transaction.
-export const cases = Conformance.cases(winGoal,
+export const cases = /*@__PURE__*/ Conformance.cases(winGoal,
   { name: "scores the goal and wins",
     before: { ...base, score: 2, status: "playing" }, after: { score: 3, status: "won" } },
   { name: "ignores a finished game (no-op)",

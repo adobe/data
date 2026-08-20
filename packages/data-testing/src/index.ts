@@ -4,7 +4,16 @@
 //   Match       — tolerant, matcher-aware value comparison (framework-agnostic).
 //   Conformance — the case types, effect recording, id resolution, and the
 //                 spec/transaction/action/computed runner drivers.
-// Import only from `*.test.ts`; `sideEffects: false` keeps it out of app builds.
+// Import only from `*.test.ts`. `sideEffects: false` lets a bundler drop an
+// unused *import* of this package, but a co-located `Conformance.cases(fn, …)` /
+// `Conformance.derivations(fn, …)` call in a transform file is still a plain
+// function call — an unannotated call is kept even when its result (the `cases`
+// export) is never read. Every call site MUST be written
+// `/*@__PURE__*/ Conformance.cases(...)` (see `data/state.md`), or the case
+// fixtures — and this package's builder code — ship in the production bundle
+// of any app that actually calls the transition. Verified against a Vite/Rollup
+// production build: without the annotation the case data is retained; with it,
+// gone.
 export * as Match from "./match/public.js";
 export * as Conformance from "./conformance/public.js";
 

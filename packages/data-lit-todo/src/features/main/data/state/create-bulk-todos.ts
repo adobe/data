@@ -27,7 +27,7 @@ export const createBulkTodos = (
 // written entities with plain spec-id keys. `count` (floored, clamped at 0)
 // numbered todos are appended; the transition logs `bulkTodosCreated` with the raw
 // count (as the action does), even on a no-op.
-export const cases = Conformance.cases(createBulkTodos,
+export const cases = /*@__PURE__*/ Conformance.cases(createBulkTodos,
   {
     name: "appends count numbered todos to an empty list",
     before: {},

@@ -63,7 +63,7 @@ export const step = (
 // exact. NONE clears the field, so `random` is never drawn (a fresh double per
 // case satisfies the signature without affecting the outcome); the randomized
 // refill is conformed out-of-band via the `spawnRandomWave` transaction.
-export const cases = Conformance.cases(step,
+export const cases = /*@__PURE__*/ Conformance.cases(step,
   {
     name: "advances and wraps every body (movement)",
     before: {

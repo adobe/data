@@ -35,7 +35,7 @@ export const createRandomTodo = async (
 // (`randomTodoRequested`, `generateName`) are still calls on `analytics`, so — it
 // being a declared service — its full call sequence is listed; `nameGenerator` is
 // not declared, so its read is ignored.
-export const cases = Conformance.cases(createRandomTodo,
+export const cases = /*@__PURE__*/ Conformance.cases(createRandomTodo,
   {
     name: "names the new todo from the generator and logs the timed add",
     before: {},

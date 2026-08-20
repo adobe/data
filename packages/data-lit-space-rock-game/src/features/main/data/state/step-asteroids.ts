@@ -31,7 +31,7 @@ export const stepAsteroids = (
 // constant velocity, so `after` is exact.
 const field = { ...create(), bounds: [100, 100] as [number, number] };
 
-export const cases = Conformance.cases(stepAsteroids,
+export const cases = /*@__PURE__*/ Conformance.cases(stepAsteroids,
   {
     name: "drifts an asteroid by its velocity",
     before: {

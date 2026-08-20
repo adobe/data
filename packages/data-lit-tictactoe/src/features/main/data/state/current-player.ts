@@ -15,7 +15,7 @@ export const currentPlayer = (
 
 // Spec-owned cases, shared with the ecs `currentPlayer` computed. A derivation
 // case is `{ input, value }`; `input` is a full `State`, `value` the mark to move.
-export const cases = Conformance.derivations(currentPlayer,
+export const cases = /*@__PURE__*/ Conformance.derivations(currentPlayer,
   {
     name: "the first player moves on an empty board",
     input: {

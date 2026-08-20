@@ -96,21 +96,32 @@ function buildRecipe(drifts: Drift[], length: number): string {
         for (const d of here) {
             const value = d.next === null ? "null" : JSON.stringify(d.next);
             const tag =
-                d.kind === "added" ? "add" : d.kind === "removed" ? "remove" : d.kind === "auto" ? "modify (auto-convertible)" : "MODIFY (BREAKING — needs a handler)";
+                d.kind === "added" ? "add" :
+                d.kind === "removed" ? "remove — ⚠ DROPS DATA" :
+                d.kind === "auto" ? "modify (auto-convertible)" :
+                "MODIFY (BREAKING — needs a handler)";
             lines.push(`    ${JSON.stringify(d.name)}: ${value},   // ${tag}`);
         }
         lines.push(`  }`);
     }
 
     lines.push(``);
+    const removed = drifts.filter((d) => d.kind === "removed");
+    if (removed.length > 0) {
+        lines.push(
+            `⚠ ${removed.length} removal(s): recording \`null\` drops the data. If it must be preserved, ` +
+            `add a handler that reads it (it is staged) and writes it elsewhere BEFORE this entry removes it: ` +
+            removed.map((d) => `${d.namespace} "${d.name}"`).join(", ") + ".",
+        );
+    }
     if (breaking.length === 0) {
-        lines.push(`All changes are auto-convertible — record the merge-patch above with NO handler.`);
+        lines.push(`All modifications are auto-convertible — record the merge-patch above with NO handler.`);
     } else {
         lines.push(
-            `${breaking.length} change(s) are NOT auto-convertible and REQUIRE a handler on the new entry:`,
+            `${breaking.length} modification(s) are NOT auto-convertible and REQUIRE a handler on the new entry:`,
         );
         for (const d of breaking) {
-            lines.push(`  - ${d.namespace} "${d.name}" — add handler logic that migrates it to the new schema.`);
+            lines.push(`  - ${d.namespace} "${d.name}" — remapStoreComponent(store, "${d.name}", <new schema>, old => <new value>).`);
         }
         lines.push(`The handler runs against the store staged to version ${length}, and may read any component.`);
     }

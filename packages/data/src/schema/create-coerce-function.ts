@@ -68,7 +68,10 @@ export function createCoerceFunction(
             return arrayCoercer(input, output);
         }
         default:
-            return null;
+            // Untyped/opaque schemas (e.g. `{ default: x }` with no `type`) back a
+            // generic array buffer holding arbitrary JSON, so a value of one fits
+            // another — pass it through unchanged.
+            return inKind === "unknown" ? identity : null;
     }
 }
 

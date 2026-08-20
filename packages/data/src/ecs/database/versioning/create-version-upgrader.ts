@@ -14,19 +14,17 @@ import type { VersionEntry } from "./version-entry.js";
  *   1. rejects a document newer than this app (`d > currentVersion`);
  *   2. walks `d → currentVersion`, and for each entry with a `handler` stages the
  *      whole store to that version's folded schema (so the handler sees a known
- *      input) then runs it — additive/minor steps carry no handler and are skipped;
- *   3. normalizes the store to the current folded schema.
+ *      input) then runs it — additive/minor steps carry no handler and are skipped.
  *
- * The result already matches the current schema, so the database's commit-time
- * compatibility check passes; that check remains a backstop for a handler that
- * fails to produce the current shape.
+ * The database's commit path then auto-normalizes every remaining additive/minor
+ * change to the current schema, so a purely additive/minor upgrade needs the
+ * handler to do nothing at all.
  */
 export function createVersionUpgrader(
     entries: readonly VersionEntry[],
     options: { readonly resource: string },
 ): DatabaseVersioning {
     const currentVersion = entries.length;
-    const currentSchemas = foldSchemas(entries, currentVersion);
     return {
         resource: options.resource,
         handle: async ({ documentStore, documentVersion }) => {
@@ -38,8 +36,7 @@ export function createVersionUpgrader(
                     await entry.handler(documentStore);
                 }
             }
-            conformStoreToSchemas(documentStore, currentSchemas); // normalize to current
-            return documentStore;
+            return documentStore; // the commit path normalizes to current
         },
     };
 }

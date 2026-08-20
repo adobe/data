@@ -179,10 +179,10 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
         expect(target.componentSchemas).not.toHaveProperty("extra"); // no schema adopted
     });
 
-    it("throws when a returned component has an incompatible storage layout (e.g. F64→F32)", async () => {
-        // v1 stores `n` as a full-precision number (Float64, 8 bytes); v2 as a
-        // single-precision number (Float32, 4 bytes) — a real storage change, the
-        // moral equivalent of a U16→U32 widening.
+    it("auto-heals a storage change on commit (F64 document → F32 current)", async () => {
+        // v1 stored `n` as Float64; v2 as Float32. The handler returns it as-is;
+        // the commit path auto-converts it to the current storage (precision loss),
+        // rather than rejecting.
         const nV1 = { type: "number", default: 0 } as const satisfies Schema;
         const nV2 = { type: "number", precision: 1, default: 0 } as const satisfies Schema;
         const v1Plugin = Database.Plugin.create({
@@ -192,29 +192,22 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
             transactions: { add(t, v: number) { return t.archetypes.N.insert({ n: v }); } },
         });
         const author = Database.create(v1Plugin);
-        author.transactions.add(1);
+        const e = author.transactions.add(1); // 1 is exact in f32
         const snap = author.toData();
 
         const v2Plugin = Database.Plugin.create({
             components: { n: nV2 },
             resources: { databaseVersion: { default: 2 } },
             archetypes: { N: ["n"] } as const,
-            transactions: { add(t, v: number) { return t.archetypes.N.insert({ n: v }); } },
         });
-        // Buggy handler: returns `n` at the old (wider) storage.
         const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ documentStore }) => documentStore };
         const target = Database.create(v2Plugin, { versioning });
-        const kept = target.transactions.add(7); // pre-existing live data
+        await target.fromData(snap);
 
-        await expect(target.fromData(snap)).rejects.toThrow(/incompatible storage layout/);
-        // The throw precedes the commit — the live database is untouched.
-        expect(target.select(["n"])).toEqual([kept]);
-        expect(target.read(kept)).toEqual({ n: 7 });
+        expect(target.read(e)).toEqual({ n: 1 }); // healed to f32, value preserved
     });
 
-    it("throws when a value-type (struct) component is the same size but a different layout", async () => {
-        // Both are 8-byte structs of two f32 fields, but the fields are reordered
-        // (x@0,y@4 vs y@0,x@4) — same size, incompatible binary layout.
+    it("auto-heals a same-size struct field reorder on commit (by field name)", async () => {
         const f32 = { type: "number", precision: 1, default: 0 } as const satisfies Schema;
         const posV1 = { type: "object", properties: { x: f32, y: f32 } } as const satisfies Schema;
         const posV2 = { type: "object", properties: { y: f32, x: f32 } } as const satisfies Schema;
@@ -225,7 +218,7 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
             transactions: { add(t, p: { x: number; y: number }) { return t.archetypes.P.insert({ pos: p }); } },
         });
         const author = Database.create(v1Plugin);
-        author.transactions.add({ x: 1, y: 2 });
+        const e = author.transactions.add({ x: 1, y: 2 });
         const snap = author.toData();
 
         const v2Plugin = Database.Plugin.create({
@@ -235,8 +228,37 @@ describe("Database.create versioning — typed-buffer compatibility", () => {
         });
         const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ documentStore }) => documentStore };
         const target = Database.create(v2Plugin, { versioning });
+        await target.fromData(snap);
 
-        await expect(target.fromData(snap)).rejects.toThrow(/different struct layout/);
+        expect(target.read(e)).toEqual({ pos: { x: 1, y: 2 } }); // fields remapped by name
+    });
+
+    it("throws (backstop) when the committed store keeps a NON-auto-convertible component", async () => {
+        // v1 `x` is a number; v2 `x` is an object. A handler that leaves it a
+        // number can't be auto-healed → the commit backstop throws, leaving the
+        // live database untouched.
+        const v1Plugin = Database.Plugin.create({
+            components: { x: { type: "number", default: 0 } as Schema },
+            resources: { databaseVersion: { default: 1 } },
+            archetypes: { X: ["x"] } as const,
+            transactions: { add(t, v: number) { return t.archetypes.X.insert({ x: v }); } },
+        });
+        const author = Database.create(v1Plugin);
+        author.transactions.add(1);
+        const snap = author.toData();
+
+        const v2Plugin = Database.Plugin.create({
+            components: { x: { type: "object", properties: { v: { type: "number", precision: 1, default: 0 } } } as Schema },
+            resources: { databaseVersion: { default: 2 } },
+            archetypes: { X: ["x"] } as const,
+            transactions: { add(t, v: { v: number }) { return t.archetypes.X.insert({ x: v }); } },
+        });
+        const versioning: DatabaseVersioning = { resource: "databaseVersion", handle: ({ documentStore }) => documentStore };
+        const target = Database.create(v2Plugin, { versioning });
+        const kept = target.transactions.add({ v: 9 });
+
+        await expect(target.fromData(snap)).rejects.toThrow(/not automatically convertible/);
+        expect(target.select(["x"])).toEqual([kept]); // live db untouched
     });
 
     it("allows a component whose only difference is its default (not a storage change)", async () => {

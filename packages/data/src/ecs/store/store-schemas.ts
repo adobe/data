@@ -18,11 +18,12 @@ interface SchemaCarryingStore {
 }
 
 /**
- * Split a store's declared schemas into `components` and `resources`, excluding
- * the built-ins (`id`, `nonPersistent`, `nonShared`). Resources are singleton
- * components internally, so this separates them back out by name. Use it to feed
- * the current schema to {@link assertVersionsMatchSchema} — e.g.
- * `assertVersionsMatchSchema({ entries, ...storeSchemas(db.store), … })`.
+ * Split a store's PERSISTENT declared schemas into `components` and `resources`,
+ * excluding the built-ins (`id`, `nonPersistent`, `nonShared`) and anything marked
+ * `nonPersistent` (it never round-trips, so versioning ignores it). Resources are
+ * singleton components internally, so this separates them back out by name. Use it
+ * to feed the current schema to {@link assertVersionsMatchSchema} — e.g.
+ * `assertVersionsMatchSchema({ entries, ...storeSchemas(db), … })`.
  */
 export function storeSchemas(store: SchemaCarryingStore): StoreSchemas {
     const all = store.componentSchemas as Record<string, Schema>;
@@ -31,6 +32,7 @@ export function storeSchemas(store: SchemaCarryingStore): StoreSchemas {
     const resources: Record<string, Schema> = {};
     for (const name of Object.keys(all)) {
         if (reserved.has(name)) continue;
+        if (all[name]!.nonPersistent) continue; // never persisted → not versioned
         if (resourceNames.has(name)) resources[name] = all[name]!;
         else components[name] = all[name]!;
     }

@@ -35,7 +35,8 @@ The `global/` rules (`namespace.md`, `cohesion.md`, `type-casts.md`,
 `paths:` globs (`**/*.ts` etc.) apply everywhere, by design, so the folder name
 makes that explicit. Alongside `features/`, the remaining rules-root `.md` files
 hold the other **cross-cutting** patterns the feature rules reference —
-`data-modelling.md`, `archetypes.md` (row iteration), `plugin-modelling.md`, and
+`data-modelling.md`, `archetypes.md` (row iteration), `plugin-modelling.md`,
+`versioning.md` (schema history & upgrade-on-load), and
 the UI file rules (`element.md`, `lazy-element.md`, `presentation.md`). They live
 here so the bundle is self-contained; this repo symlinks them into its own
 `.claude/rules/` (as it does `features/`).

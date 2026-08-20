@@ -21,7 +21,7 @@ type Drift = {
  *
  * `components`/`resources` are the app's current persistent schemas (inject the
  * plugin's, minus the built-ins). Pass `currentVersion` to also assert the
- * stamped version resource default equals `entries.length`.
+ * stamped version resource default equals `entries.length - 1` (the current version).
  *
  * On drift the message classifies every change as auto-convertible (record a
  * merge-patch, no handler) or breaking (record a patch AND a handler), and prints

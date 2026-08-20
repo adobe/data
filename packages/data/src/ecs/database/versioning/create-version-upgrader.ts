@@ -62,18 +62,28 @@ export function createVersionUpgrader(
     if (primary === undefined) {
         throw new Error("createVersionUpgrader: at least one of { document, settings } version resources is required.");
     }
+    const primaryQuadrant: Quadrant = resources.document !== undefined ? "document" : "settings";
     // The distinct configured resource names, for reading/stamping every quadrant.
     const configured = [...new Set([resources.document, resources.settings].filter((r): r is string => r !== undefined))];
 
-    // The version resource that governs the handler at version `i` — the resource
-    // for its (single) quadrant, or the primary when the handler changes no schema.
-    const resourceForHandler = (i: number): string => {
-        const quads = changedQuadrants(entries, i);
-        const quadrant = [...quads][0];
-        const resource = quadrant === undefined ? undefined : byQuadrant[quadrant];
-        if (resource === undefined) return primary; // no schema change (or quadrant not configured) → primary
-        return resource;
-    };
+    // The quadrant a handler belongs to — its single changed quadrant, or the
+    // primary quadrant when the handler changes no schema (a data-only migration).
+    // A cross-quadrant handler is rejected by the guard, not here.
+    const quadrantForHandler = (i: number): Quadrant => [...changedQuadrants(entries, i)][0] ?? primaryQuadrant;
+
+    // Every handler's quadrant must have a configured version resource, else its
+    // stamp can't be read/advanced — a setup error we surface eagerly rather than
+    // silently mis-gating it to another quadrant's stamp.
+    for (let i = 1; i <= currentVersion; i++) {
+        if (entries[i]!.handler === undefined) continue;
+        const quadrant = quadrantForHandler(i);
+        if (byQuadrant[quadrant] === undefined) {
+            throw new Error(
+                `createVersionUpgrader: the version ${i} handler upgrades the ${quadrant} quadrant, but no version ` +
+                `resource is configured for it. Pass it in createVersionUpgrader(versions, { document, settings }).`,
+            );
+        }
+    }
 
     return {
         resource: primary,
@@ -85,12 +95,11 @@ export function createVersionUpgrader(
             for (let i = 1; i <= currentVersion; i++) {
                 const entry = entries[i]!;
                 if (!entry.handler) continue; // additive/minor: the commit path normalizes it
-                const resource = resourceForHandler(i);
-                if (stamped.get(resource)! >= i) continue; // this quadrant already at/past version i
-                const quads = changedQuadrants(entries, i);
-                const quadrant = [...quads][0];
-                // Stage ONLY this handler's quadrant to the version-(i-1) shape; other
-                // quadrants may be at a different version and must not be conformed here.
+                const quadrant = quadrantForHandler(i);
+                if (stamped.get(byQuadrant[quadrant]!)! >= i) continue; // this quadrant already at/past version i
+                // Stage ONLY this handler's quadrant to the version-(i-1) shape; another
+                // quadrant may be at a different (possibly ahead) version and must not be
+                // conformed here — that would down-convert and corrupt or throw.
                 conformStoreToSchemas(documentStore, pickQuadrant(stagingSchemas(entries, i), quadrant));
                 await entry.handler(documentStore);
             }
@@ -100,10 +109,9 @@ export function createVersionUpgrader(
     };
 }
 
-// Keep only the schemas in `quadrant` (undefined ⇒ keep all — a handler that
-// changes no schema stages the whole store to the previous version).
-function pickQuadrant(schemas: VersionSchemas, quadrant: Quadrant | undefined): VersionSchemas {
-    if (quadrant === undefined) return schemas;
+// Keep only the schemas belonging to `quadrant`, so staging never touches (and
+// so never down-converts) a schema in another, possibly-ahead, quadrant.
+function pickQuadrant(schemas: VersionSchemas, quadrant: Quadrant): VersionSchemas {
     const keep = (map: Readonly<Record<string, Schema>>): Record<string, Schema> => {
         const out: Record<string, Schema> = {};
         for (const name of Object.keys(map)) {

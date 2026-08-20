@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { DatabaseVersioning } from "../public/database-versioning.js";
-import { foldSchemas } from "./fold-schemas.js";
+import { stagingSchemas } from "./fold-schemas.js";
 import { conformStoreToSchemas } from "./conform-store-to-schemas.js";
 import type { VersionEntry } from "./version-entry.js";
 
@@ -20,20 +20,38 @@ import type { VersionEntry } from "./version-entry.js";
  * The database's commit path then auto-normalizes every remaining additive/minor
  * change to the current schema, so a purely additive/minor upgrade needs the
  * handler to do nothing at all.
+ *
+ * A document NEWER than this app (`documentVersion > currentVersion`) is rejected
+ * non-destructively (the live db is left untouched). Rejection is not a throw —
+ * pass `onDocumentTooNew` to observe it (e.g. to prompt the user to update),
+ * since `db.fromData` resolves either way.
+ *
+ * You MUST also add the {@link assertVersionsMatchSchema} guard test — nothing at
+ * runtime ties `entries` to the plugin schema, so without it a drift surfaces
+ * only as a load-time throw (or, for untyped schemas, silently).
  */
 export function createVersionUpgrader(
     entries: readonly VersionEntry[],
-    options: { readonly resource: string },
+    options: {
+        readonly resource: string;
+        /** Called (instead of throwing) when a document is newer than this app,
+         *  just before the non-destructive reject. Wire it to your "please update"
+         *  UI. `db.fromData` still resolves with the live database unchanged. */
+        readonly onDocumentTooNew?: (info: { readonly documentVersion: number; readonly currentVersion: number }) => void;
+    },
 ): DatabaseVersioning {
     const currentVersion = entries.length - 1;
     return {
         resource: options.resource,
         handle: async ({ documentStore, documentVersion }) => {
-            if (documentVersion > currentVersion) return null; // document newer than this app → reject
+            if (documentVersion > currentVersion) {
+                options.onDocumentTooNew?.({ documentVersion, currentVersion });
+                return null; // document newer than this app → reject (live db untouched)
+            }
             for (let i = documentVersion + 1; i <= currentVersion; i++) {
                 const entry = entries[i]!;
                 if (entry.handler) {
-                    conformStoreToSchemas(documentStore, foldSchemas(entries, i - 1)); // stage to version i-1 (input)
+                    conformStoreToSchemas(documentStore, stagingSchemas(entries, i)); // stage to the version-i handler input
                     await entry.handler(documentStore);
                 }
             }

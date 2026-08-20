@@ -27,6 +27,31 @@ export function foldSchemas(entries: readonly VersionEntry[], version: number = 
     return { components, resources };
 }
 
+/**
+ * The schema to stage the store to BEFORE running the version-`i` handler: the
+ * previous version's schema (`fold(i-1)` — old shapes for the components the
+ * handler reads/transforms, and the to-be-removed ones still present) PLUS the
+ * components/resources NEWLY introduced at version `i` (so the handler can write
+ * into them, e.g. to preserve a value out of a component it is about to remove).
+ * A component CHANGED at version `i` keeps its old (`i-1`) shape here.
+ */
+export function stagingSchemas(entries: readonly VersionEntry[], i: number): VersionSchemas {
+    const prev = foldSchemas(entries, i - 1);
+    const cur = foldSchemas(entries, i);
+    return {
+        components: withNewKeys(prev.components, cur.components),
+        resources: withNewKeys(prev.resources, cur.resources),
+    };
+}
+
+function withNewKeys(prev: Readonly<Record<string, Schema>>, cur: Readonly<Record<string, Schema>>): Record<string, Schema> {
+    const result: Record<string, Schema> = { ...prev };
+    for (const name of Object.keys(cur)) {
+        if (!(name in result)) result[name] = cur[name]!;
+    }
+    return result;
+}
+
 // A schema-level replace/remove — NOT a deep merge: each entry's value replaces
 // the whole schema (null removes it), so a shape change leaves no stale keys.
 function apply(schemas: Record<string, Schema>, changes: SchemaChanges | undefined): void {

@@ -120,7 +120,7 @@ function buildRecipe(drifts: Drift[], length: number): string {
     if (removed.length > 0) {
         lines.push(
             `⚠ ${removed.length} removal(s): recording \`null\` drops the data. If it must be preserved, ` +
-            `add a handler that reads it (it is staged) and writes it elsewhere BEFORE this entry removes it: ` +
+            `add a handler that reads it (still present while the handler runs) and writes it elsewhere — it is dropped when the load commits: ` +
             removed.map((d) => `${d.namespace} "${d.name}"`).join(", ") + ".",
         );
     }

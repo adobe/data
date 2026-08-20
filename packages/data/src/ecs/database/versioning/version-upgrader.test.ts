@@ -191,9 +191,10 @@ describe("every upgrade handler is tested", () => {
         });
     });
 
-    it("throws when a handler has no test case", async () => {
-        // versions has a handler at version 4; omit its case → coverage failure.
-        await expect(testUpgradeHandlers(versions, {})).rejects.toThrow(
+    it("throws SYNCHRONOUSLY when a handler has no test case (so a non-awaited call still fails)", () => {
+        // versions has a handler at version 4; omit its case → coverage failure,
+        // raised synchronously by the coverage check before any async work.
+        expect(() => testUpgradeHandlers(versions, {})).toThrow(
             /Version 4 has an upgrade handler but no test case/,
         );
     });

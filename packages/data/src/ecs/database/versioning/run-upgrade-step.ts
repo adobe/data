@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Store } from "../../store/index.js";
-import { foldSchemas } from "./fold-schemas.js";
+import { foldSchemas, stagingSchemas } from "./fold-schemas.js";
 import { conformStoreToSchemas } from "./conform-store-to-schemas.js";
 import type { VersionEntry } from "./version-entry.js";
 
@@ -27,6 +27,6 @@ export async function runUpgradeStep(
     index: number,
     store: Store<any, any, any>,
 ): Promise<void> {
-    conformStoreToSchemas(store, foldSchemas(entries, index - 1));
+    conformStoreToSchemas(store, stagingSchemas(entries, index));
     await entries[index]!.handler?.(store);
 }

@@ -13,6 +13,9 @@ import { replaceArchetypeColumn } from "./replace-archetype-column.js";
  * This is the MANUAL sibling of `coerceArchetypeColumn`: use it for a change that
  * is not automatically convertible (a type change, an enum-value remap, a
  * rename's data move), where you supply the old→new value function yourself.
+ *
+ * `remap`'s second argument is the archetype-local ROW index (not a stable entity
+ * id) — use it only for per-row bookkeeping, not as an entity reference.
  */
 export function remapArchetypeColumn(
     archetype: Archetype<any>,

@@ -71,6 +71,40 @@ export function assertVersionsMatchSchema(input: {
         );
     }
 
+    // Every versioned schema must declare a real type (a JSON schema), not just a
+    // bare default. Only session values (excluded above) may be untyped — e.g. a
+    // GPU buffer that can't be schema-typed. A real type is what lets a change be
+    // detected; an untyped `{ default }` hides shape changes.
+    const versioned = collectVersioned(folded, input.components, input.resources, input.versionResource);
+    const untyped = versioned.filter((s) => !hasDeclaredType(s.schema)).map((s) => `${s.namespace} "${s.name}"`);
+    if (untyped.length > 0) {
+        throw new Error(
+            `Versioned schema(s) must declare a type — ${untyped.join(", ")} are untyped. Give each a real JSON ` +
+            `schema (\`type\`/\`enum\`/\`const\`) so changes are detectable. Only SESSION values (nonPersistent AND ` +
+            `nonShared, e.g. a GPU buffer) may be untyped, and those are not versioned.`,
+        );
+    }
+
+    // A default must be fully DESCRIBED by its schema — it cannot carry structure
+    // the schema doesn't declare (that structure would evolve undetected).
+    const badDefault = versioned.map((s) => defaultProblem(s.namespace, s.name, s.schema)).find((m) => m !== null);
+    if (badDefault) throw new Error(badDefault);
+
+    // A handler must touch a SINGLE quadrant. Persisted quadrants can be saved to
+    // different backends (cloud document vs local settings), so when one is loaded
+    // the other's data is absent — a cross-quadrant handler would read nothing.
+    for (let i = 0; i < input.entries.length; i++) {
+        if (input.entries[i]!.handler === undefined) continue;
+        const quads = handlerQuadrants(input.entries, i);
+        if (quads.size > 1) {
+            throw new Error(
+                `The version ${i} handler changes schemas across multiple quadrants (${[...quads].join(", ")}). ` +
+                `A handler must be quadrant-local — in split persistence the other quadrant's data is not present ` +
+                `when one quadrant loads. Split version ${i} into one entry per quadrant, each with its own handler.`,
+            );
+        }
+    }
+
     const drifts = [
         ...diff("components", folded.components, input.components),
         ...diff("resources", without(folded.resources, input.versionResource), without(input.resources, input.versionResource)),
@@ -84,6 +118,104 @@ function sessionNames(namespace: string, schemas: Readonly<Record<string, Schema
     return Object.keys(schemas)
         .filter((name) => isSessionSchema(schemas[name]!))
         .map((name) => `${namespace} "${name}"`);
+}
+
+// Every versioned schema (recorded + current), minus the version resource.
+function collectVersioned(
+    folded: { components: Readonly<Record<string, Schema>>; resources: Readonly<Record<string, Schema>> },
+    components: Readonly<Record<string, Schema>>,
+    resources: Readonly<Record<string, Schema>>,
+    versionResource: string | undefined,
+): { namespace: string; name: string; schema: Schema }[] {
+    const out: { namespace: string; name: string; schema: Schema }[] = [];
+    const add = (namespace: string, map: Readonly<Record<string, Schema>>) => {
+        for (const name of Object.keys(map)) {
+            if (namespace === "resources" && name === versionResource) continue;
+            out.push({ namespace, name, schema: map[name]! });
+        }
+    };
+    add("components", folded.components);
+    add("resources", folded.resources);
+    add("components", components);
+    add("resources", resources);
+    return out;
+}
+
+// A real JSON schema declares a type (or an enum / const). A bare `{ default }`
+// does not — it carries no shape the versioner can diff.
+function hasDeclaredType(schema: Schema): boolean {
+    return schema.type !== undefined || schema.enum !== undefined || schema.const !== undefined;
+}
+
+function defaultProblem(namespace: string, name: string, schema: Schema): string | null {
+    if (schema.default === undefined) return null;
+    if (defaultViolatesSchema(schema, schema.default)) {
+        return (
+            `The default for ${namespace} "${name}" is not fully described by its schema — it has a type mismatch or ` +
+            `carries structure the schema does not declare. Widen the schema to describe the whole value, or trim the default.`
+        );
+    }
+    return null;
+}
+
+// True when `value` is NOT fully described by `schema` — a type mismatch, or (for
+// objects/arrays) structure beyond what the schema declares.
+function defaultViolatesSchema(schema: Schema, value: unknown): boolean {
+    if (schema.const !== undefined) return value !== schema.const;
+    if (schema.enum !== undefined) return !schema.enum.includes(value);
+    switch (schema.type) {
+        case "number":
+        case "integer":
+            return typeof value !== "number";
+        case "boolean":
+            return typeof value !== "boolean";
+        case "string":
+            return typeof value !== "string";
+        case "object": {
+            if (value === null || typeof value !== "object" || Array.isArray(value)) return true;
+            const props = schema.properties ?? {};
+            for (const key of Object.keys(value)) {
+                if (!(key in props)) return true; // extra key the schema doesn't declare
+                if (defaultViolatesSchema(props[key]!, (value as Record<string, unknown>)[key])) return true;
+            }
+            return false;
+        }
+        case "array": {
+            if (!Array.isArray(value)) return true;
+            const items = schema.items;
+            if (!items) return value.length > 0; // no item schema → any element is undeclared
+            return value.some((v) => defaultViolatesSchema(items, v));
+        }
+        default:
+            return false; // untyped is rejected earlier; nothing to check here
+    }
+}
+
+type Quadrant = "document" | "settings" | "shared-transient" | "session";
+
+function quadrantOf(schema: Schema): Quadrant {
+    const persistent = schema.nonPersistent !== true;
+    const shared = schema.nonShared !== true;
+    return persistent ? (shared ? "document" : "settings") : shared ? "shared-transient" : "session";
+}
+
+// The set of quadrants the version-`i` entry's changed schemas belong to.
+function handlerQuadrants(entries: readonly VersionEntry[], i: number): Set<Quadrant> {
+    const cur = foldSchemas(entries, i);
+    const prev = foldSchemas(entries, i - 1);
+    const quads = new Set<Quadrant>();
+    const scan = (namespace: "components" | "resources") => {
+        const changes = entries[i]!.changes[namespace];
+        if (!changes) return;
+        for (const name of Object.keys(changes)) {
+            // A removed component (null) is gauged by its pre-removal schema.
+            const schema = changes[name] === null ? prev[namespace][name] : cur[namespace][name];
+            if (schema) quads.add(quadrantOf(schema));
+        }
+    };
+    scan("components");
+    scan("resources");
+    return quads;
 }
 
 function without(schemas: Readonly<Record<string, Schema>>, name: string | undefined): Readonly<Record<string, Schema>> {

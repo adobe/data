@@ -27,7 +27,7 @@ const health = { type: "object", properties: { current: f32, max: f32 } } as con
 // ─── the version history (this is the whole authoring surface) ──────────────
 const versions: readonly VersionEntry[] = [
     // version 0 — initial schema.
-    { version: 0, changes: { components: { hp: f32, score: f32 }, resources: { turn: { default: 0 } } } },
+    { version: 0, changes: { components: { hp: f32, score: f32 }, resources: { turn: { type: "integer", default: 0 } } } },
 
     // version 1 — ADDITIVE component. No handler, no conversion: old entities just lack it.
     { version: 1, changes: { components: { mana: f32 } } },
@@ -36,7 +36,7 @@ const versions: readonly VersionEntry[] = [
     { version: 2, changes: { components: { score: { type: "number", precision: 1, default: 0, maximum: 100 } } } },
 
     // version 3 — ADDITIVE resource. Materialized at its default when an old document loads.
-    { version: 3, changes: { resources: { difficulty: { default: "normal" } } } },
+    { version: 3, changes: { resources: { difficulty: { type: "string", default: "normal" } } } },
 
     // version 4 — MAJOR: `hp` goes number → { current, max }. Not auto-convertible, so a
     // handler is required; `remapStoreComponent` is the tool for it.
@@ -50,7 +50,7 @@ const versions: readonly VersionEntry[] = [
 // The current app plugin. Its schema MUST equal fold(versions) — the guard proves it.
 const plugin = Database.Plugin.create({
     components: { hp: health, score: { type: "number", precision: 1, default: 0, maximum: 100 } as Schema, mana: f32 },
-    resources: { turn: { default: 0 }, difficulty: { default: "normal" }, databaseVersion: { default: versions.length - 1 } },
+    resources: { turn: { type: "integer", default: 0 }, difficulty: { type: "string", default: "normal" }, databaseVersion: { default: versions.length - 1 } },
     archetypes: { Player: ["hp", "score", "mana"] } as const,
     transactions: {
         spawn(t, args: { hp: { current: number; max: number }; score: number; mana: number }) {
@@ -65,7 +65,7 @@ const upgrader = () => createVersionUpgrader(versions, { resource: "databaseVers
 const v0Document = () => {
     const v0 = Database.Plugin.create({
         components: { hp: f32, score: f32 },
-        resources: { turn: { default: 0 }, databaseVersion: { default: 0 } },
+        resources: { turn: { type: "integer", default: 0 }, databaseVersion: { default: 0 } },
         archetypes: { Being: ["hp", "score"] } as const,
         transactions: { spawn(t, a: { hp: number; score: number }) { return t.archetypes.Being.insert(a); } },
     });
@@ -135,6 +135,43 @@ describe("the version guard", () => {
         expect(() =>
             assertVersionsMatchSchema({ entries: misnumbered, components: {}, resources: {} }),
         ).toThrow(/index 1 has version 5, but must be 1/);
+    });
+
+    it("rejects an untyped versioned schema (only session values may be untyped)", () => {
+        const opaque = { default: 5 } as Schema; // no type → not a real schema
+        const entries: VersionEntry[] = [{ version: 0, changes: { resources: { opaque } } }];
+        expect(() =>
+            assertVersionsMatchSchema({ entries, components: {}, resources: { opaque } }),
+        ).toThrow(/must declare a type/);
+    });
+
+    it("rejects a default that carries structure its schema does not declare", () => {
+        const s = { type: "object", properties: { a: { type: "number" } }, default: { a: 1, b: 2 } } as Schema; // `b` undeclared
+        const entries: VersionEntry[] = [{ version: 0, changes: { components: { obj: s } } }];
+        expect(() =>
+            assertVersionsMatchSchema({ entries, components: { obj: s }, resources: {} }),
+        ).toThrow(/not fully described/);
+    });
+
+    it("rejects a handler that changes schemas across more than one quadrant (red), accepts single-quadrant (green)", () => {
+        const doc = { type: "number", precision: 1, default: 0 } as Schema; // document quadrant
+        const setting = { type: "number", precision: 1, default: 0, nonShared: true } as Schema; // settings quadrant
+        // RED: the v1 handler touches both `a` (document) and `b` (settings).
+        const crossQuadrant: VersionEntry[] = [
+            { version: 0, changes: { components: { a: doc, b: setting } } },
+            { version: 1, changes: { components: { a: doc, b: setting } }, handler: () => {} },
+        ];
+        expect(() =>
+            assertVersionsMatchSchema({ entries: crossQuadrant, components: { a: doc, b: setting }, resources: {} }),
+        ).toThrow(/multiple quadrants/);
+        // GREEN: the handler touches only `a` (document).
+        const oneQuadrant: VersionEntry[] = [
+            { version: 0, changes: { components: { a: doc, b: setting } } },
+            { version: 1, changes: { components: { a: doc } }, handler: () => {} },
+        ];
+        expect(() =>
+            assertVersionsMatchSchema({ entries: oneQuadrant, components: { a: doc, b: setting }, resources: {} }),
+        ).not.toThrow();
     });
 });
 

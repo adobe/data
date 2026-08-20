@@ -42,6 +42,14 @@ run the tests, and the failing test prints the exact fix to apply.**
    inside the entry's `handler`, and add a test case (rule 6).
 5. **Removing a component drops its data.** If the data still matters, migrate it in a
    handler BEFORE the removal entry.
+6. **Versioned schemas must be REAL** — declare a `type` (or `enum`/`const`), and the
+   `default` must be fully described by that schema (no extra keys/structure). Only
+   SESSION values (`nonPersistent` AND `nonShared`, e.g. a GPU buffer) may be untyped,
+   and those are never versioned — leave them out of the history entirely.
+7. **A handler touches ONE quadrant.** Persisted quadrants (shared+persistent = the
+   cloud document; nonShared+persistent = local settings) can be saved separately, so
+   when one loads the other's data is absent. A handler that changes schemas in more
+   than one quadrant fails the guard — split it into one version per quadrant.
 
 ## When a schema change makes a test fail — the fix is in the error
 

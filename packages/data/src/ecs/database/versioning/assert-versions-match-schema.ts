@@ -3,6 +3,7 @@
 import type { Schema } from "../../../schema/index.js";
 import { createCoerceFunction } from "../../../schema/create-coerce-function.js";
 import { equals } from "../../../equals.js";
+import { isSessionSchema } from "../../store/index.js";
 import { foldSchemas } from "./fold-schemas.js";
 import type { VersionEntry } from "./version-entry.js";
 
@@ -55,6 +56,21 @@ export function assertVersionsMatchSchema(input: {
     }
 
     const folded = foldSchemas(input.entries);
+
+    // The session quadrant (neither persistent nor shared) is never versioned, so
+    // it must not appear in the history at all.
+    const sessionOffenders = [
+        ...sessionNames("components", folded.components),
+        ...sessionNames("resources", folded.resources),
+    ];
+    if (sessionOffenders.length > 0) {
+        throw new Error(
+            `The version history records session-quadrant schema(s) — ${sessionOffenders.join(", ")}. ` +
+            `Session state (nonPersistent AND nonShared) is transient and is not versioned; remove it from the ` +
+            `version entries. Only persistent or shared components/resources belong in the history.`,
+        );
+    }
+
     const drifts = [
         ...diff("components", folded.components, input.components),
         ...diff("resources", without(folded.resources, input.versionResource), without(input.resources, input.versionResource)),
@@ -62,6 +78,12 @@ export function assertVersionsMatchSchema(input: {
     if (drifts.length === 0) return;
 
     throw new Error(buildRecipe(drifts, input.entries.length));
+}
+
+function sessionNames(namespace: string, schemas: Readonly<Record<string, Schema>>): string[] {
+    return Object.keys(schemas)
+        .filter((name) => isSessionSchema(schemas[name]!))
+        .map((name) => `${namespace} "${name}"`);
 }
 
 function without(schemas: Readonly<Record<string, Schema>>, name: string | undefined): Readonly<Record<string, Schema>> {

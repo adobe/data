@@ -150,8 +150,9 @@ describe("createVersionUpgrader — on-load upgrade", () => {
     it("walks a version-0 document to version 4: additive + minor auto-heal, the version-4 handler remaps hp", async () => {
         const { doc, entity } = v0Document();
         const app = Database.create(plugin, { versioning: upgrader() });
-        await app.fromData(doc);
+        const result = await app.fromData(doc);
 
+        expect(result).toEqual({ loaded: true });
         expect(app.read(entity)).toEqual({ hp: { current: 80, max: 80 }, score: 50 }); // hp remapped; no mana (old entity)
         expect(app.resources.difficulty).toBe("normal"); // additive resource materialized
         expect(app.resources.databaseVersion).toBe(4); // stamped current
@@ -169,8 +170,39 @@ describe("createVersionUpgrader — on-load upgrade", () => {
         future.transactions.spawn({ hp: { current: 1, max: 1 } });
         const app = Database.create(plugin, { versioning: upgrader() });
         const kept = app.transactions.spawn({ hp: { current: 5, max: 5 }, score: 5, mana: 5 });
-        await app.fromData(future.toData());
+        const result = await app.fromData(future.toData()); // documentVersion 9 > currentVersion 4
+
+        expect(result).toEqual({ loaded: false, documentVersion: 9, currentVersion: 4 }); // observable reject
         expect(app.select(["hp"])).toEqual([kept]); // untouched
+    });
+});
+
+// ─── the session quadrant (neither persistent nor shared) is never versioned ──
+describe("session-quadrant schemas are excluded from versioning", () => {
+    const session = { type: "number", precision: 1, default: 0, nonPersistent: true, nonShared: true } as const satisfies Schema;
+
+    it("storeSchemas omits session schemas (keeps persistent/shared ones)", () => {
+        const db = Database.create(
+            Database.Plugin.create({
+                components: { keep: f32, ephemeral: session },
+                resources: { sharedButTransient: { type: "integer", default: 0, nonShared: false } },
+                archetypes: {},
+            }),
+        );
+        const s = storeSchemas(db);
+        expect(s.components).toHaveProperty("keep");
+        expect(s.components).not.toHaveProperty("ephemeral"); // session → excluded
+    });
+
+    it("the guard REJECTS a session schema recorded in the history (red/green)", () => {
+        // RED: a version entry carrying a session-quadrant schema.
+        const bad: VersionEntry[] = [{ version: 0, changes: { components: { gpuBuffer: session } } }];
+        expect(() => assertVersionsMatchSchema({ entries: bad, components: {}, resources: {} })).toThrow(
+            /session-quadrant/,
+        );
+        // GREEN: drop it from the history and the guard is satisfied.
+        const good: VersionEntry[] = [{ version: 0, changes: { components: {} } }];
+        expect(() => assertVersionsMatchSchema({ entries: good, components: {}, resources: {} })).not.toThrow();
     });
 });
 

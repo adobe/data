@@ -23,8 +23,8 @@ import type { VersionEntry } from "./version-entry.js";
  *
  * A document NEWER than this app (`documentVersion > currentVersion`) is rejected
  * non-destructively (the live db is left untouched). Rejection is not a throw —
- * pass `onDocumentTooNew` to observe it (e.g. to prompt the user to update),
- * since `db.fromData` resolves either way.
+ * `db.fromData` resolves with `{ loaded: false, documentVersion, currentVersion }`
+ * so the caller can react (e.g. prompt the user to update).
  *
  * You MUST also add the {@link assertVersionsMatchSchema} guard test — nothing at
  * runtime ties `entries` to the plugin schema, so without it a drift surfaces
@@ -32,20 +32,13 @@ import type { VersionEntry } from "./version-entry.js";
  */
 export function createVersionUpgrader(
     entries: readonly VersionEntry[],
-    options: {
-        readonly resource: string;
-        /** Called (instead of throwing) when a document is newer than this app,
-         *  just before the non-destructive reject. Wire it to your "please update"
-         *  UI. `db.fromData` still resolves with the live database unchanged. */
-        readonly onDocumentTooNew?: (info: { readonly documentVersion: number; readonly currentVersion: number }) => void;
-    },
+    options: { readonly resource: string },
 ): DatabaseVersioning {
     const currentVersion = entries.length - 1;
     return {
         resource: options.resource,
         handle: async ({ documentStore, documentVersion }) => {
             if (documentVersion > currentVersion) {
-                options.onDocumentTooNew?.({ documentVersion, currentVersion });
                 return null; // document newer than this app → reject (live db untouched)
             }
             for (let i = documentVersion + 1; i <= currentVersion; i++) {

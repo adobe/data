@@ -2,7 +2,7 @@
 
 import { ReadonlyStore, Store } from "../../store/index.js";
 import type { Schema } from "../../../schema/index.js";
-import { Database, FromServiceFactories } from "../database.js";
+import { Database, FromServiceFactories, FromDataResult } from "../database.js";
 import { PersistenceScope } from "../../persistence-scope.js";
 import { calculateSystemOrder } from "../calculate-system-order.js";
 import { createTransactionDispatcher } from "./create-transaction-dispatcher.js";
@@ -182,7 +182,7 @@ function createEmptyDatabase({ concurrency, versioning }: {
     };
 
 
-    const fromData = async (data: unknown, scope?: PersistenceScope): Promise<void> => {
+    const fromData = async (data: unknown, scope?: PersistenceScope): Promise<FromDataResult> => {
         // Versioning applies only to whole-document (unscoped) loads. A scoped
         // load is a partial quadrant that does not carry the document's version,
         // so it bypasses the handler and loads directly (the original path), as
@@ -199,7 +199,10 @@ function createEmptyDatabase({ concurrency, versioning }: {
             const documentVersion = readVersionResource(documentStore, versioning.resource);
             const currentVersion = readVersionResource(store, versioning.resource);
             const committed = await versioning.handle({ documentStore, documentVersion, currentVersion });
-            if (committed === null) return; // reject: live database untouched
+            if (committed === null) {
+                // Refused (e.g. document newer than this app) — live db untouched.
+                return { loaded: false, documentVersion, currentVersion };
+            }
             // The live database is ALREADY initialized to the current-version
             // schema. We copy only the DATA for components it declares and adopt no
             // schema from the returned store — so conform the returned store's data
@@ -222,6 +225,7 @@ function createEmptyDatabase({ concurrency, versioning }: {
             observedDatabase.fromData(data, scope);
         }
         strategy.onAfterFromData?.();
+        return { loaded: true };
     };
 
     const partialDatabase: any = {

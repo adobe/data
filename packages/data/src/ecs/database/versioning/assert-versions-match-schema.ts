@@ -37,6 +37,16 @@ export function assertVersionsMatchSchema(input: {
     readonly versionResource?: string;
     readonly currentVersion?: number;
 }): void {
+    for (let i = 0; i < input.entries.length; i++) {
+        const expected = i + 1;
+        if (input.entries[i]!.version !== expected) {
+            throw new Error(
+                `Version history entry at index ${i} has version ${input.entries[i]!.version}, but must be ${expected} ` +
+                `(each entry's version = its index + 1).`,
+            );
+        }
+    }
+
     if (input.currentVersion !== undefined && input.currentVersion !== input.entries.length) {
         throw new Error(
             `Version mismatch: the stamped current version is ${input.currentVersion} but the history has ` +

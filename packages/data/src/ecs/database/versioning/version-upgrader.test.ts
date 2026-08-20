@@ -28,20 +28,21 @@ const health = { type: "object", properties: { current: f32, max: f32 } } as con
 // ─── the version history (this is the whole authoring surface) ──────────────
 const versions: readonly VersionEntry[] = [
     // v1 — initial schema.
-    { changes: { components: { hp: f32, score: f32 }, resources: { turn: { default: 0 } } } },
+    { version: 1, changes: { components: { hp: f32, score: f32 }, resources: { turn: { default: 0 } } } },
 
     // v2 — ADDITIVE component. No handler, no conversion: old entities just lack it.
-    { changes: { components: { mana: f32 } } },
+    { version: 2, changes: { components: { mana: f32 } } },
 
     // v3 — MINOR: `score` gains a cap. Auto-clamped on load; no handler.
-    { changes: { components: { score: { type: "number", precision: 1, default: 0, maximum: 100 } } } },
+    { version: 3, changes: { components: { score: { type: "number", precision: 1, default: 0, maximum: 100 } } } },
 
     // v4 — ADDITIVE resource. Materialized at its default when an old document loads.
-    { changes: { resources: { difficulty: { default: "normal" } } } },
+    { version: 4, changes: { resources: { difficulty: { default: "normal" } } } },
 
     // v5 — MAJOR: `hp` goes number → { current, max }. Not auto-convertible, so a
     // handler is required; `remapStoreComponent` is the tool for it.
     {
+        version: 5,
         changes: { components: { hp: health } },
         handler: (store) => remapStoreComponent(store, "hp", health, (old: number) => ({ current: old, max: old })),
     },
@@ -125,6 +126,16 @@ describe("the version guard", () => {
         expect(() =>
             assertVersionsMatchSchema({ entries: versions, components: {}, resources: {}, currentVersion: 99 }),
         ).toThrow(/Set the version resource default to 5/);
+    });
+
+    it("fails when an entry's version does not equal its index + 1", () => {
+        const misnumbered: VersionEntry[] = [
+            { version: 1, changes: {} },
+            { version: 5, changes: {} }, // index 1 must be version 2
+        ];
+        expect(() =>
+            assertVersionsMatchSchema({ entries: misnumbered, components: {}, resources: {} }),
+        ).toThrow(/index 1 has version 5, but must be 2/);
     });
 });
 

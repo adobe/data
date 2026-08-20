@@ -29,6 +29,12 @@ export type SchemaChanges = Readonly<Record<string, Schema | null>>;
  * conversion handles them.
  */
 export type VersionEntry = {
+    /**
+     * The version this entry produces — must equal its `index + 1` (so the last
+     * entry's `version` is `currentVersion`). Redundant with position, but makes a
+     * long history scannable; the guard test verifies it matches the index.
+     */
+    readonly version: number;
     readonly changes: {
         readonly components?: SchemaChanges;
         readonly resources?: SchemaChanges;

@@ -3,8 +3,8 @@
 import type { Schema } from "../../../schema/index.js";
 import { createCoerceFunction } from "../../../schema/create-coerce-function.js";
 import { equals } from "../../../equals.js";
-import { isSessionSchema } from "../../store/index.js";
-import { foldSchemas } from "./fold-schemas.js";
+import { isTransientSchema } from "../../store/index.js";
+import { foldSchemas, changedQuadrants } from "./fold-schemas.js";
 import type { VersionEntry } from "./version-entry.js";
 
 type Drift = {
@@ -32,12 +32,19 @@ export function assertVersionsMatchSchema(input: {
     readonly entries: readonly VersionEntry[];
     readonly components: Readonly<Record<string, Schema>>;
     readonly resources: Readonly<Record<string, Schema>>;
-    /** Name of the version resource, excluded from the diff — its default IS the
-     *  version number, so it changes every version by construction and is not
-     *  tracked in the history. */
-    readonly versionResource?: string;
+    /** Name(s) of the version resource(s), excluded from the diff — a stamp's
+     *  default IS the version number, so it changes every version by construction
+     *  and is not tracked in the history. Pass an array for per-quadrant stamps. */
+    readonly versionResource?: string | readonly string[];
     readonly currentVersion?: number;
 }): void {
+    const versionResources = new Set(
+        input.versionResource === undefined
+            ? []
+            : typeof input.versionResource === "string"
+              ? [input.versionResource]
+              : input.versionResource,
+    );
     for (let i = 0; i < input.entries.length; i++) {
         if (input.entries[i]!.version !== i) {
             throw new Error(
@@ -59,15 +66,15 @@ export function assertVersionsMatchSchema(input: {
 
     // The session quadrant (neither persistent nor shared) is never versioned, so
     // it must not appear in the history at all.
-    const sessionOffenders = [
-        ...sessionNames("components", folded.components),
-        ...sessionNames("resources", folded.resources),
+    const transientOffenders = [
+        ...transientNames("components", folded.components),
+        ...transientNames("resources", folded.resources),
     ];
-    if (sessionOffenders.length > 0) {
+    if (transientOffenders.length > 0) {
         throw new Error(
-            `The version history records session-quadrant schema(s) — ${sessionOffenders.join(", ")}. ` +
-            `Session state (nonPersistent AND nonShared) is transient and is not versioned; remove it from the ` +
-            `version entries. Only persistent or shared components/resources belong in the history.`,
+            `The version history records non-persistent schema(s) — ${transientOffenders.join(", ")}. ` +
+            `Non-persistent state is never saved, so it is not versioned; remove it from the version entries. ` +
+            `Only persisted (document / settings) components and resources belong in the history.`,
         );
     }
 
@@ -75,13 +82,13 @@ export function assertVersionsMatchSchema(input: {
     // bare default. Only session values (excluded above) may be untyped — e.g. a
     // GPU buffer that can't be schema-typed. A real type is what lets a change be
     // detected; an untyped `{ default }` hides shape changes.
-    const versioned = collectVersioned(folded, input.components, input.resources, input.versionResource);
+    const versioned = collectVersioned(folded, input.components, input.resources, versionResources);
     const untyped = versioned.filter((s) => !hasDeclaredType(s.schema)).map((s) => `${s.namespace} "${s.name}"`);
     if (untyped.length > 0) {
         throw new Error(
             `Versioned schema(s) must declare a type — ${untyped.join(", ")} are untyped. Give each a real JSON ` +
-            `schema (\`type\`/\`enum\`/\`const\`) so changes are detectable. Only SESSION values (nonPersistent AND ` +
-            `nonShared, e.g. a GPU buffer) may be untyped, and those are not versioned.`,
+            `schema (\`type\`/\`enum\`/\`const\`) so changes are detectable. Only NON-PERSISTENT values (e.g. a GPU ` +
+            `buffer) may be untyped, and those are not versioned.`,
         );
     }
 
@@ -95,7 +102,7 @@ export function assertVersionsMatchSchema(input: {
     // the other's data is absent — a cross-quadrant handler would read nothing.
     for (let i = 0; i < input.entries.length; i++) {
         if (input.entries[i]!.handler === undefined) continue;
-        const quads = handlerQuadrants(input.entries, i);
+        const quads = changedQuadrants(input.entries, i);
         if (quads.size > 1) {
             throw new Error(
                 `The version ${i} handler changes schemas across multiple quadrants (${[...quads].join(", ")}). ` +
@@ -107,16 +114,16 @@ export function assertVersionsMatchSchema(input: {
 
     const drifts = [
         ...diff("components", folded.components, input.components),
-        ...diff("resources", without(folded.resources, input.versionResource), without(input.resources, input.versionResource)),
+        ...diff("resources", withoutNames(folded.resources, versionResources), withoutNames(input.resources, versionResources)),
     ];
     if (drifts.length === 0) return;
 
     throw new Error(buildRecipe(drifts, input.entries.length));
 }
 
-function sessionNames(namespace: string, schemas: Readonly<Record<string, Schema>>): string[] {
+function transientNames(namespace: string, schemas: Readonly<Record<string, Schema>>): string[] {
     return Object.keys(schemas)
-        .filter((name) => isSessionSchema(schemas[name]!))
+        .filter((name) => isTransientSchema(schemas[name]!))
         .map((name) => `${namespace} "${name}"`);
 }
 
@@ -125,12 +132,12 @@ function collectVersioned(
     folded: { components: Readonly<Record<string, Schema>>; resources: Readonly<Record<string, Schema>> },
     components: Readonly<Record<string, Schema>>,
     resources: Readonly<Record<string, Schema>>,
-    versionResource: string | undefined,
+    versionResources: ReadonlySet<string>,
 ): { namespace: string; name: string; schema: Schema }[] {
     const out: { namespace: string; name: string; schema: Schema }[] = [];
     const add = (namespace: string, map: Readonly<Record<string, Schema>>) => {
         for (const name of Object.keys(map)) {
-            if (namespace === "resources" && name === versionResource) continue;
+            if (namespace === "resources" && versionResources.has(name)) continue;
             out.push({ namespace, name, schema: map[name]! });
         }
     };
@@ -191,36 +198,12 @@ function defaultViolatesSchema(schema: Schema, value: unknown): boolean {
     }
 }
 
-type Quadrant = "document" | "settings" | "shared-transient" | "session";
-
-function quadrantOf(schema: Schema): Quadrant {
-    const persistent = schema.nonPersistent !== true;
-    const shared = schema.nonShared !== true;
-    return persistent ? (shared ? "document" : "settings") : shared ? "shared-transient" : "session";
-}
-
-// The set of quadrants the version-`i` entry's changed schemas belong to.
-function handlerQuadrants(entries: readonly VersionEntry[], i: number): Set<Quadrant> {
-    const cur = foldSchemas(entries, i);
-    const prev = foldSchemas(entries, i - 1);
-    const quads = new Set<Quadrant>();
-    const scan = (namespace: "components" | "resources") => {
-        const changes = entries[i]!.changes[namespace];
-        if (!changes) return;
-        for (const name of Object.keys(changes)) {
-            // A removed component (null) is gauged by its pre-removal schema.
-            const schema = changes[name] === null ? prev[namespace][name] : cur[namespace][name];
-            if (schema) quads.add(quadrantOf(schema));
-        }
-    };
-    scan("components");
-    scan("resources");
-    return quads;
-}
-
-function without(schemas: Readonly<Record<string, Schema>>, name: string | undefined): Readonly<Record<string, Schema>> {
-    if (name === undefined || !(name in schemas)) return schemas;
-    const { [name]: _omit, ...rest } = schemas;
+function withoutNames(schemas: Readonly<Record<string, Schema>>, names: ReadonlySet<string>): Readonly<Record<string, Schema>> {
+    if (names.size === 0) return schemas;
+    const rest: Record<string, Schema> = {};
+    for (const name of Object.keys(schemas)) {
+        if (!names.has(name)) rest[name] = schemas[name]!;
+    }
     return rest;
 }
 

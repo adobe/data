@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Schema } from "../../../schema/index.js";
+import { quadrantOf, type Quadrant } from "../../store/index.js";
 import type { SchemaChanges, VersionEntry } from "./version-entry.js";
 
 export type VersionSchemas = {
@@ -42,6 +43,28 @@ export function stagingSchemas(entries: readonly VersionEntry[], i: number): Ver
         components: withNewKeys(prev.components, cur.components),
         resources: withNewKeys(prev.resources, cur.resources),
     };
+}
+
+/**
+ * The set of quadrants the version-`i` entry's changed schemas touch. A removed
+ * component (null) is gauged by its pre-removal schema. Used to enforce (and
+ * drive) one-quadrant-per-handler.
+ */
+export function changedQuadrants(entries: readonly VersionEntry[], i: number): Set<Quadrant> {
+    const cur = foldSchemas(entries, i);
+    const prev = foldSchemas(entries, i - 1);
+    const quads = new Set<Quadrant>();
+    const scan = (namespace: "components" | "resources") => {
+        const changes = entries[i]!.changes[namespace];
+        if (!changes) return;
+        for (const name of Object.keys(changes)) {
+            const schema = changes[name] === null ? prev[namespace][name] : cur[namespace][name];
+            if (schema) quads.add(quadrantOf(schema));
+        }
+    };
+    scan("components");
+    scan("resources");
+    return quads;
 }
 
 function withNewKeys(prev: Readonly<Record<string, Schema>>, cur: Readonly<Record<string, Schema>>): Record<string, Schema> {

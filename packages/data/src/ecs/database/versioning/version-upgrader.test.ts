@@ -59,7 +59,7 @@ const plugin = Database.Plugin.create({
     },
 });
 
-const upgrader = () => createVersionUpgrader(versions, { resource: "databaseVersion" });
+const upgrader = () => createVersionUpgrader(versions, { document: "databaseVersion" });
 
 // A version-0 document authored by an old build (hp is a plain number, no mana/difficulty).
 const v0Document = () => {
@@ -214,28 +214,30 @@ describe("createVersionUpgrader — on-load upgrade", () => {
     });
 });
 
-// ─── the session quadrant (neither persistent nor shared) is never versioned ──
-describe("session-quadrant schemas are excluded from versioning", () => {
-    const session = { type: "number", precision: 1, default: 0, nonPersistent: true, nonShared: true } as const satisfies Schema;
+// ─── only PERSISTED state is versioned; non-persistent is excluded entirely ──
+describe("non-persistent schemas are excluded from versioning", () => {
+    const session = { type: "number", precision: 1, default: 0, nonPersistent: true, nonShared: true } as const satisfies Schema; // session
+    const sharedTransient = { type: "number", precision: 1, default: 0, nonPersistent: true } as const satisfies Schema; // shared + nonPersistent
 
-    it("storeSchemas omits session schemas (keeps persistent/shared ones)", () => {
+    it("storeSchemas omits ALL non-persistent schemas (session AND shared-transient)", () => {
         const db = Database.create(
             Database.Plugin.create({
-                components: { keep: f32, ephemeral: session },
-                resources: { sharedButTransient: { type: "integer", default: 0, nonShared: false } },
+                components: { keep: f32, ephemeral: session, live: sharedTransient },
+                resources: {},
                 archetypes: {},
             }),
         );
         const s = storeSchemas(db);
         expect(s.components).toHaveProperty("keep");
         expect(s.components).not.toHaveProperty("ephemeral"); // session → excluded
+        expect(s.components).not.toHaveProperty("live"); // shared-transient → also excluded (never persisted)
     });
 
-    it("the guard REJECTS a session schema recorded in the history (red/green)", () => {
-        // RED: a version entry carrying a session-quadrant schema.
-        const bad: VersionEntry[] = [{ version: 0, changes: { components: { gpuBuffer: session } } }];
+    it("the guard REJECTS a non-persistent schema recorded in the history (red/green)", () => {
+        // RED: a version entry carrying a non-persistent (shared-transient) schema.
+        const bad: VersionEntry[] = [{ version: 0, changes: { components: { gpuBuffer: sharedTransient } } }];
         expect(() => assertVersionsMatchSchema({ entries: bad, components: {}, resources: {} })).toThrow(
-            /session-quadrant/,
+            /non-persistent/,
         );
         // GREEN: drop it from the history and the guard is satisfied.
         const good: VersionEntry[] = [{ version: 0, changes: { components: {} } }];

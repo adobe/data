@@ -24,8 +24,11 @@ run the tests, and the failing test prints the exact fix to apply.**
   automatically convertible.
 - A `databaseVersion` (or similarly named) **integer resource** on the plugin, `default`
   set to `currentVersion`. Stamped into the document; excluded from the history itself.
-- **`createVersionUpgrader(versions, { resource: "databaseVersion" })`** passed as
-  `Database.create(plugin, { versioning })`.
+- **`createVersionUpgrader(versions, { document: "databaseVersion" })`** passed as
+  `Database.create(plugin, { versioning })`. The option maps each PERSISTED quadrant to
+  its version resource — `{ document, settings }`. Give `settings` its own integer
+  resource only if you save the settings quadrant separately (see rule 7); most apps
+  version just the `document` quadrant and pass `{ document: "databaseVersion" }`.
 - Two co-located guard tests in `versions.test.ts` (see below).
 
 ## Rules — do not violate
@@ -47,9 +50,12 @@ run the tests, and the failing test prints the exact fix to apply.**
    SESSION values (`nonPersistent` AND `nonShared`, e.g. a GPU buffer) may be untyped,
    and those are never versioned — leave them out of the history entirely.
 7. **A handler touches ONE quadrant.** Persisted quadrants (shared+persistent = the
-   cloud document; nonShared+persistent = local settings) can be saved separately, so
-   when one loads the other's data is absent. A handler that changes schemas in more
-   than one quadrant fails the guard — split it into one version per quadrant.
+   cloud document; nonShared+persistent = local settings) can be saved separately and
+   drift to DIFFERENT versions. On load they are merged into one store and the upgrader
+   replays EACH quadrant from its own stamp — so a handler that changes schemas in more
+   than one quadrant fails the guard (when one quadrant is behind, staging its handler
+   must not touch the other). Split it into one version per quadrant, and give each
+   versioned quadrant its own resource in `createVersionUpgrader(versions, { document, settings })`.
 
 ## When a schema change makes a test fail — the fix is in the error
 

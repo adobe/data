@@ -11,14 +11,30 @@ export type StoreSchemas = {
 const reserved = new Set(RESERVED_COMPONENT_NAMES);
 
 /**
- * A schema in the "session" quadrant — neither persistent NOR shared
- * (`nonPersistent && nonShared`). Session state is transient and local (GPU
- * buffers, live drag offsets, …); it never persists and never replicates, so
- * versioning ignores it entirely — it is filtered out of the current schema and
- * rejected from a version history.
+ * A non-persistent schema (`nonPersistent === true`). The version table exists to
+ * upgrade PERSISTED blobs on load, so non-persistent state — the session quadrant
+ * (also nonShared) AND the shared-transient quadrant — is never versioned: there
+ * is no saved blob to migrate. (Shared-transient shape agreement between live
+ * peers is a co-edit COMPATIBILITY concern, a separate axis, not an upgrade one.)
+ * It is filtered out of the current schema and rejected from a version history.
  */
-export function isSessionSchema(schema: Schema): boolean {
-    return schema.nonPersistent === true && schema.nonShared === true;
+export function isTransientSchema(schema: Schema): boolean {
+    return schema.nonPersistent === true;
+}
+
+/** The four quadrants of state, by (persistent?, shared?). */
+export type Quadrant = "document" | "settings" | "shared-transient" | "session";
+
+/**
+ * Which quadrant a schema belongs to, from its `nonPersistent`/`nonShared` flags:
+ * `document` (persistent+shared), `settings` (persistent+nonShared),
+ * `shared-transient` (nonPersistent+shared), `session` (nonPersistent+nonShared).
+ * Only the two PERSISTED quadrants are versioned.
+ */
+export function quadrantOf(schema: Schema): Quadrant {
+    const persistent = schema.nonPersistent !== true;
+    const shared = schema.nonShared !== true;
+    return persistent ? (shared ? "document" : "settings") : shared ? "shared-transient" : "session";
 }
 
 // Structural view of the store bits this reads — avoids the generic-method
@@ -29,13 +45,12 @@ interface SchemaCarryingStore {
 }
 
 /**
- * Split a store's VERSIONED declared schemas into `components` and `resources`,
- * excluding the built-ins (`id`, `nonPersistent`, `nonShared`) and the session
- * quadrant ({@link isSessionSchema} — neither persistent nor shared). Everything
- * that is persistent OR shared is kept. Resources are singleton components
- * internally, so this separates them back out by name. Use it to feed the current
- * schema to {@link assertVersionsMatchSchema} — e.g.
- * `assertVersionsMatchSchema({ entries, ...storeSchemas(db), … })`.
+ * Split a store's VERSIONED declared schemas into `components` and `resources` —
+ * the PERSISTED ones, excluding the built-ins (`id`, `nonPersistent`, `nonShared`)
+ * and anything {@link isTransientSchema} (never saved → nothing to upgrade).
+ * Resources are singleton components internally, so this separates them back out
+ * by name. Use it to feed the current schema to {@link assertVersionsMatchSchema} —
+ * e.g. `assertVersionsMatchSchema({ entries, ...storeSchemas(db), … })`.
  */
 export function storeSchemas(store: SchemaCarryingStore): StoreSchemas {
     const all = store.componentSchemas as Record<string, Schema>;
@@ -44,7 +59,7 @@ export function storeSchemas(store: SchemaCarryingStore): StoreSchemas {
     const resources: Record<string, Schema> = {};
     for (const name of Object.keys(all)) {
         if (reserved.has(name)) continue;
-        if (isSessionSchema(all[name]!)) continue; // session quadrant → not versioned
+        if (isTransientSchema(all[name]!)) continue; // non-persistent → not versioned
         if (resourceNames.has(name)) resources[name] = all[name]!;
         else components[name] = all[name]!;
     }

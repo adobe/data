@@ -3,7 +3,7 @@
 import type { Schema } from "../../../schema/index.js";
 import { createCoerceFunction } from "../../../schema/create-coerce-function.js";
 import { equals } from "../../../equals.js";
-import { coerceStoreComponent, isSessionSchema } from "../../store/index.js";
+import { coerceStoreComponent, isTransientSchema } from "../../store/index.js";
 import type { Store } from "../../store/index.js";
 import type { VersionSchemas } from "./fold-schemas.js";
 
@@ -41,7 +41,7 @@ function coerceExisting(
     const stored = store.componentSchemas as Record<string, Schema>;
     for (const name of Object.keys(schemas)) {
         const to = schemas[name]!;
-        if (isSessionSchema(to)) continue; // session quadrant is never versioned/conformed
+        if (isTransientSchema(to)) continue; // non-persistent state is never versioned/conformed
         const from = stored[name];
         if (from === undefined) {
             absentOut[name] = to;

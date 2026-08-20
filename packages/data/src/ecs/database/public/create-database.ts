@@ -11,6 +11,7 @@ import { observeIndexEntities } from "../observe-index-entities.js";
 import { createObservedDatabase } from "../observed/create-observed-database.js";
 import { storeSchemas } from "../../store/index.js";
 import { conformStoreToSchemas } from "../versioning/conform-store-to-schemas.js";
+import { readVersionResource, writeVersionResource } from "../versioning/version-resource.js";
 import type { DatabaseVersioning } from "./database-versioning.js";
 import { createImmediateConcurrency } from "../concurrency/immediate-concurrency.js";
 import type { ConcurrencyStrategy, ConcurrencyStrategyFactory } from "../concurrency/concurrency-strategy.js";
@@ -160,28 +161,6 @@ function createEmptyDatabase({ concurrency, versioning }: {
         strategy.onAfterToData();
         return data;
     };
-    // The version resource's singleton archetype in a store, or undefined when
-    // the store carries no version (a pre-versioning legacy document). A
-    // reconstructed store has no resource accessor, so the version is reached via
-    // its raw singleton component.
-    const versionSingleton = (s: Store<any, any, any>, name: string) =>
-        s.queryArchetypes([name] as never[]).find((a) => a.rowCount > 0);
-
-    // Read the numeric version off a store (absent ⇒ 0, a legacy document).
-    const readVersionResource = (s: Store<any, any, any>, name: string): number => {
-        const archetype = versionSingleton(s, name);
-        return archetype ? Number((archetype.columns as Record<string, { get(i: number): unknown }>)[name]!.get(0)) : 0;
-    };
-
-    // Stamp a store's version resource to `value` (no-op if it carries none).
-    const writeVersionResource = (s: Store<any, any, any>, name: string, value: number) => {
-        const archetype = versionSingleton(s, name);
-        if (!archetype) return;
-        const id = (archetype.columns as Record<string, { get(i: number): number }>)["id"]!.get(0);
-        s.update(id, { [name]: value } as never);
-    };
-
-
     const fromData = async (data: unknown, scope?: PersistenceScope): Promise<FromDataResult> => {
         // Versioning applies only to whole-document (unscoped) loads. A scoped
         // load is a partial quadrant that does not carry the document's version,

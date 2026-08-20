@@ -1,30 +1,51 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
+import type { Schema } from "../../../schema/index.js";
+import { quadrantOf, type Quadrant } from "../../store/index.js";
 import type { DatabaseVersioning } from "../public/database-versioning.js";
-import { stagingSchemas } from "./fold-schemas.js";
+import { stagingSchemas, changedQuadrants, type VersionSchemas } from "./fold-schemas.js";
 import { conformStoreToSchemas } from "./conform-store-to-schemas.js";
+import { readVersionResource, writeVersionResource } from "./version-resource.js";
 import type { VersionEntry } from "./version-entry.js";
+
+/**
+ * Maps each PERSISTED quadrant to the version resource that stamps it. Only the
+ * two persisted quadrants are versioned: `document` (shared+persistent, e.g. a
+ * cloud document) and `settings` (nonShared+persistent, e.g. local settings).
+ * At least one must be given. Two persisted blobs can be saved to different
+ * backends and drift to DIFFERENT versions, so each carries its own stamp.
+ */
+export interface VersionResources {
+    readonly document?: string;
+    readonly settings?: string;
+}
 
 /**
  * Build a {@link DatabaseVersioning} from an ordered version history, for
  * `Database.create(plugin, { versioning: createVersionUpgrader(entries, …) })`.
  *
  * `currentVersion = entries.length - 1` and the current schema is `foldSchemas(entries)`.
- * On load of a version-`d` document the handler:
- *   1. rejects a document newer than this app (`d > currentVersion`);
- *   2. applies `entries[d+1 … currentVersion]`, and for each with a `handler` stages
- *      the whole store to the PREVIOUS version's folded schema (so the handler sees
- *      a known input) then runs it — additive/minor steps carry no handler and are
- *      skipped.
+ * Each entry's `handler` (when present) touches exactly ONE persisted quadrant
+ * (the guard enforces it), so each quadrant advances INDEPENDENTLY from its own
+ * stamped version. The two persisted blobs (document + settings) may be merged
+ * into one store before load and arrive at DIFFERENT versions; the upgrader reads
+ * each quadrant's stamp and replays only that quadrant's handlers, from its own
+ * version up to current:
+ *   1. read every configured quadrant's stamp off the store (absent ⇒ 0, legacy);
+ *   2. reject (`null`) if ANY quadrant is newer than this app — a load can never
+ *      down-convert a blob a newer client wrote;
+ *   3. for each version with a handler, if that handler's quadrant is behind, stage
+ *      ONLY that quadrant's schemas to the previous version (so the other quadrant,
+ *      possibly already ahead, is left untouched) and run the handler;
+ *   4. stamp every configured quadrant's resource to current.
  *
  * The database's commit path then auto-normalizes every remaining additive/minor
- * change to the current schema, so a purely additive/minor upgrade needs the
- * handler to do nothing at all.
+ * change to the CURRENT schema (never down-converts), so a purely additive/minor
+ * upgrade needs no handler at all.
  *
- * A document NEWER than this app (`documentVersion > currentVersion`) is rejected
- * non-destructively (the live db is left untouched). Rejection is not a throw —
- * `db.fromData` resolves with `{ loaded: false, documentVersion, currentVersion }`
- * so the caller can react (e.g. prompt the user to update).
+ * A blob NEWER than this app is rejected non-destructively (the live db is left
+ * untouched). Rejection is not a throw — `db.fromData` resolves with
+ * `{ loaded: false, … }` so the caller can react (e.g. prompt the user to update).
  *
  * You MUST also add the {@link assertVersionsMatchSchema} guard test — nothing at
  * runtime ties `entries` to the plugin schema, so without it a drift surfaces
@@ -32,23 +53,63 @@ import type { VersionEntry } from "./version-entry.js";
  */
 export function createVersionUpgrader(
     entries: readonly VersionEntry[],
-    options: { readonly resource: string },
+    resources: VersionResources,
 ): DatabaseVersioning {
     const currentVersion = entries.length - 1;
+    const byQuadrant = resources as Readonly<Record<Quadrant, string | undefined>>;
+    // The primary resource (for the seam's read/stamp) — document if present.
+    const primary = resources.document ?? resources.settings;
+    if (primary === undefined) {
+        throw new Error("createVersionUpgrader: at least one of { document, settings } version resources is required.");
+    }
+    // The distinct configured resource names, for reading/stamping every quadrant.
+    const configured = [...new Set([resources.document, resources.settings].filter((r): r is string => r !== undefined))];
+
+    // The version resource that governs the handler at version `i` — the resource
+    // for its (single) quadrant, or the primary when the handler changes no schema.
+    const resourceForHandler = (i: number): string => {
+        const quads = changedQuadrants(entries, i);
+        const quadrant = [...quads][0];
+        const resource = quadrant === undefined ? undefined : byQuadrant[quadrant];
+        if (resource === undefined) return primary; // no schema change (or quadrant not configured) → primary
+        return resource;
+    };
+
     return {
-        resource: options.resource,
-        handle: async ({ documentStore, documentVersion }) => {
-            if (documentVersion > currentVersion) {
-                return null; // document newer than this app → reject (live db untouched)
+        resource: primary,
+        handle: async ({ documentStore }) => {
+            const stamped = new Map(configured.map((r) => [r, readVersionResource(documentStore, r)] as const));
+            for (const version of stamped.values()) {
+                if (version > currentVersion) return null; // a quadrant newer than this app → reject
             }
-            for (let i = documentVersion + 1; i <= currentVersion; i++) {
+            for (let i = 1; i <= currentVersion; i++) {
                 const entry = entries[i]!;
-                if (entry.handler) {
-                    conformStoreToSchemas(documentStore, stagingSchemas(entries, i)); // stage to the version-i handler input
-                    await entry.handler(documentStore);
-                }
+                if (!entry.handler) continue; // additive/minor: the commit path normalizes it
+                const resource = resourceForHandler(i);
+                if (stamped.get(resource)! >= i) continue; // this quadrant already at/past version i
+                const quads = changedQuadrants(entries, i);
+                const quadrant = [...quads][0];
+                // Stage ONLY this handler's quadrant to the version-(i-1) shape; other
+                // quadrants may be at a different version and must not be conformed here.
+                conformStoreToSchemas(documentStore, pickQuadrant(stagingSchemas(entries, i), quadrant));
+                await entry.handler(documentStore);
             }
+            for (const resource of configured) writeVersionResource(documentStore, resource, currentVersion);
             return documentStore; // the commit path normalizes to current
         },
     };
+}
+
+// Keep only the schemas in `quadrant` (undefined ⇒ keep all — a handler that
+// changes no schema stages the whole store to the previous version).
+function pickQuadrant(schemas: VersionSchemas, quadrant: Quadrant | undefined): VersionSchemas {
+    if (quadrant === undefined) return schemas;
+    const keep = (map: Readonly<Record<string, Schema>>): Record<string, Schema> => {
+        const out: Record<string, Schema> = {};
+        for (const name of Object.keys(map)) {
+            if (quadrantOf(map[name]!) === quadrant) out[name] = map[name]!;
+        }
+        return out;
+    };
+    return { components: keep(schemas.components), resources: keep(schemas.resources) };
 }

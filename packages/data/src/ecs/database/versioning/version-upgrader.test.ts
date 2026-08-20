@@ -18,8 +18,7 @@ import {
     foldSchemas,
     createVersionUpgrader,
     assertVersionsMatchSchema,
-    createStoreAtVersion,
-    runUpgradeStep,
+    testUpgradeHandlers,
 } from "./index.js";
 
 const f32 = { type: "number", precision: 1, default: 0 } as const satisfies Schema;
@@ -175,14 +174,27 @@ describe("createVersionUpgrader — on-load upgrade", () => {
     });
 });
 
-describe("per-major test in isolation (what an author writes for the version-4 step)", () => {
-    it("version 4 remaps hp: build at version 3, run the step, assert version 4", async () => {
-        const store = createStoreAtVersion(versions, 3); // schema at version 3 (hp is still a number)
-        const arch = store.ensureArchetype(["hp"] as never[]) as any;
-        const e = arch.insert({ hp: 42 });
+// ─── the SECOND guard test: a unit test for every handler, or it fails ──────
+describe("every upgrade handler is tested", () => {
+    it("runs a case for each handler (and fails if one is missing)", async () => {
+        await testUpgradeHandlers(versions, {
+            // version 4 is the only handler; a case is REQUIRED for it.
+            4: {
+                setup: (store) => {
+                    const arch = store.ensureArchetype(["hp"] as never[]) as any;
+                    return arch.insert({ hp: 42 }) as number;
+                },
+                expect: (store, e) => {
+                    expect((store.read(e) as Record<string, unknown> | null)?.hp).toEqual({ current: 42, max: 42 });
+                },
+            },
+        });
+    });
 
-        await runUpgradeStep(versions, 4, store); // index 4 = the major entry
-
-        expect((store.read(e) as Record<string, unknown> | null)?.hp).toEqual({ current: 42, max: 42 });
+    it("throws when a handler has no test case", async () => {
+        // versions has a handler at version 4; omit its case → coverage failure.
+        await expect(testUpgradeHandlers(versions, {})).rejects.toThrow(
+            /Version 4 has an upgrade handler but no test case/,
+        );
     });
 });

@@ -6,3 +6,4 @@ export { conformStoreToSchemas } from "./conform-store-to-schemas.js";
 export { createVersionUpgrader } from "./create-version-upgrader.js";
 export { assertVersionsMatchSchema } from "./assert-versions-match-schema.js";
 export { createStoreAtVersion, runUpgradeStep } from "./run-upgrade-step.js";
+export { testUpgradeHandlers, type UpgradeHandlerTest } from "./test-upgrade-handlers.js";

@@ -27,22 +27,22 @@ const health = { type: "object", properties: { current: f32, max: f32 } } as con
 
 // ─── the version history (this is the whole authoring surface) ──────────────
 const versions: readonly VersionEntry[] = [
-    // v1 — initial schema.
-    { version: 1, changes: { components: { hp: f32, score: f32 }, resources: { turn: { default: 0 } } } },
+    // version 0 — initial schema.
+    { version: 0, changes: { components: { hp: f32, score: f32 }, resources: { turn: { default: 0 } } } },
 
-    // v2 — ADDITIVE component. No handler, no conversion: old entities just lack it.
-    { version: 2, changes: { components: { mana: f32 } } },
+    // version 1 — ADDITIVE component. No handler, no conversion: old entities just lack it.
+    { version: 1, changes: { components: { mana: f32 } } },
 
-    // v3 — MINOR: `score` gains a cap. Auto-clamped on load; no handler.
-    { version: 3, changes: { components: { score: { type: "number", precision: 1, default: 0, maximum: 100 } } } },
+    // version 2 — MINOR: `score` gains a cap. Auto-clamped on load; no handler.
+    { version: 2, changes: { components: { score: { type: "number", precision: 1, default: 0, maximum: 100 } } } },
 
-    // v4 — ADDITIVE resource. Materialized at its default when an old document loads.
-    { version: 4, changes: { resources: { difficulty: { default: "normal" } } } },
+    // version 3 — ADDITIVE resource. Materialized at its default when an old document loads.
+    { version: 3, changes: { resources: { difficulty: { default: "normal" } } } },
 
-    // v5 — MAJOR: `hp` goes number → { current, max }. Not auto-convertible, so a
+    // version 4 — MAJOR: `hp` goes number → { current, max }. Not auto-convertible, so a
     // handler is required; `remapStoreComponent` is the tool for it.
     {
-        version: 5,
+        version: 4,
         changes: { components: { hp: health } },
         handler: (store) => remapStoreComponent(store, "hp", health, (old: number) => ({ current: old, max: old })),
     },
@@ -51,7 +51,7 @@ const versions: readonly VersionEntry[] = [
 // The current app plugin. Its schema MUST equal fold(versions) — the guard proves it.
 const plugin = Database.Plugin.create({
     components: { hp: health, score: { type: "number", precision: 1, default: 0, maximum: 100 } as Schema, mana: f32 },
-    resources: { turn: { default: 0 }, difficulty: { default: "normal" }, databaseVersion: { default: versions.length } },
+    resources: { turn: { default: 0 }, difficulty: { default: "normal" }, databaseVersion: { default: versions.length - 1 } },
     archetypes: { Player: ["hp", "score", "mana"] } as const,
     transactions: {
         spawn(t, args: { hp: { current: number; max: number }; score: number; mana: number }) {
@@ -62,15 +62,15 @@ const plugin = Database.Plugin.create({
 
 const upgrader = () => createVersionUpgrader(versions, { resource: "databaseVersion" });
 
-// A v1-era document authored by an old build (hp is a plain number, no mana/difficulty).
-const v1Document = () => {
-    const v1 = Database.Plugin.create({
+// A version-0 document authored by an old build (hp is a plain number, no mana/difficulty).
+const v0Document = () => {
+    const v0 = Database.Plugin.create({
         components: { hp: f32, score: f32 },
-        resources: { turn: { default: 0 }, databaseVersion: { default: 1 } },
+        resources: { turn: { default: 0 }, databaseVersion: { default: 0 } },
         archetypes: { Being: ["hp", "score"] } as const,
         transactions: { spawn(t, a: { hp: number; score: number }) { return t.archetypes.Being.insert(a); } },
     });
-    const db = Database.create(v1);
+    const db = Database.create(v0);
     const e = db.transactions.spawn({ hp: 80, score: 50 });
     return { doc: db.toData(), entity: e };
 };
@@ -125,37 +125,37 @@ describe("the version guard", () => {
     it("fails when the stamped version disagrees with the history length", () => {
         expect(() =>
             assertVersionsMatchSchema({ entries: versions, components: {}, resources: {}, currentVersion: 99 }),
-        ).toThrow(/Set the version resource default to 5/);
+        ).toThrow(/Set the version resource default to 4/);
     });
 
-    it("fails when an entry's version does not equal its index + 1", () => {
+    it("fails when an entry's version does not equal its index", () => {
         const misnumbered: VersionEntry[] = [
-            { version: 1, changes: {} },
-            { version: 5, changes: {} }, // index 1 must be version 2
+            { version: 0, changes: {} },
+            { version: 5, changes: {} }, // index 1 must be version 1
         ];
         expect(() =>
             assertVersionsMatchSchema({ entries: misnumbered, components: {}, resources: {} }),
-        ).toThrow(/index 1 has version 5, but must be 2/);
+        ).toThrow(/index 1 has version 5, but must be 1/);
     });
 });
 
 describe("foldSchemas", () => {
     it("reconstructs any version's schema", () => {
-        expect(Object.keys(foldSchemas(versions, 1).components).sort()).toEqual(["hp", "score"]);
-        expect(foldSchemas(versions, 2).components).toHaveProperty("mana");
+        expect(Object.keys(foldSchemas(versions, 0).components).sort()).toEqual(["hp", "score"]); // version 0 = initial
+        expect(foldSchemas(versions, 1).components).toHaveProperty("mana"); // mana added at version 1
         expect(foldSchemas(versions).resources).toHaveProperty("difficulty");
     });
 });
 
 describe("createVersionUpgrader — on-load upgrade", () => {
-    it("walks a v1 document to v5: additive + minor auto-heal, the v5 handler remaps hp", async () => {
-        const { doc, entity } = v1Document();
+    it("walks a version-0 document to version 4: additive + minor auto-heal, the version-4 handler remaps hp", async () => {
+        const { doc, entity } = v0Document();
         const app = Database.create(plugin, { versioning: upgrader() });
         await app.fromData(doc);
 
         expect(app.read(entity)).toEqual({ hp: { current: 80, max: 80 }, score: 50 }); // hp remapped; no mana (old entity)
         expect(app.resources.difficulty).toBe("normal"); // additive resource materialized
-        expect(app.resources.databaseVersion).toBe(5); // stamped current
+        expect(app.resources.databaseVersion).toBe(4); // stamped current
     });
 
     it("rejects a document newer than the app (non-destructive)", async () => {
@@ -175,13 +175,13 @@ describe("createVersionUpgrader — on-load upgrade", () => {
     });
 });
 
-describe("per-major test in isolation (what an author writes for the v5 step)", () => {
-    it("v5 remaps hp: build at v4, run the step, assert v5", async () => {
-        const store = createStoreAtVersion(versions, 4); // schema just before v5 (hp is a number)
+describe("per-major test in isolation (what an author writes for the version-4 step)", () => {
+    it("version 4 remaps hp: build at version 3, run the step, assert version 4", async () => {
+        const store = createStoreAtVersion(versions, 3); // schema at version 3 (hp is still a number)
         const arch = store.ensureArchetype(["hp"] as never[]) as any;
         const e = arch.insert({ hp: 42 });
 
-        await runUpgradeStep(versions, 4, store); // index 4 = the v5 entry
+        await runUpgradeStep(versions, 4, store); // index 4 = the major entry
 
         expect((store.read(e) as Record<string, unknown> | null)?.hp).toEqual({ current: 42, max: 42 });
     });

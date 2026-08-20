@@ -38,19 +38,19 @@ export function assertVersionsMatchSchema(input: {
     readonly currentVersion?: number;
 }): void {
     for (let i = 0; i < input.entries.length; i++) {
-        const expected = i + 1;
-        if (input.entries[i]!.version !== expected) {
+        if (input.entries[i]!.version !== i) {
             throw new Error(
-                `Version history entry at index ${i} has version ${input.entries[i]!.version}, but must be ${expected} ` +
-                `(each entry's version = its index + 1).`,
+                `Version history entry at index ${i} has version ${input.entries[i]!.version}, but must be ${i} ` +
+                `(each entry's version = its index).`,
             );
         }
     }
 
-    if (input.currentVersion !== undefined && input.currentVersion !== input.entries.length) {
+    const currentVersion = input.entries.length - 1;
+    if (input.currentVersion !== undefined && input.currentVersion !== currentVersion) {
         throw new Error(
-            `Version mismatch: the stamped current version is ${input.currentVersion} but the history has ` +
-            `${input.entries.length} entries. Set the version resource default to ${input.entries.length}.`,
+            `Version mismatch: the stamped current version is ${input.currentVersion} but the history's current ` +
+            `version is ${currentVersion} (entries.length - 1). Set the version resource default to ${currentVersion}.`,
         );
     }
 
@@ -95,7 +95,7 @@ function buildRecipe(drifts: Drift[], length: number): string {
     const breaking = drifts.filter((d) => d.kind === "breaking");
     const lines: string[] = [
         `The version history no longer matches the current schema — ${drifts.length} change(s) are unrecorded.`,
-        `Fix: append ONE new version entry with the changes below, then set the version resource default to ${length + 1}.`,
+        `Fix: append ONE new entry (version: ${length}) with the changes below, then set the version resource default to ${length}.`,
         ``,
     ];
 
@@ -133,7 +133,7 @@ function buildRecipe(drifts: Drift[], length: number): string {
         for (const d of breaking) {
             lines.push(`  - ${d.namespace} "${d.name}" — remapStoreComponent(store, "${d.name}", <new schema>, old => <new value>).`);
         }
-        lines.push(`The handler runs against the store staged to version ${length}, and may read any component.`);
+        lines.push(`The handler runs against the store staged to version ${length - 1}, and may read any component.`);
     }
     return lines.join("\n");
 }

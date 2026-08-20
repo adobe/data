@@ -9,12 +9,13 @@ import type { VersionEntry } from "./version-entry.js";
  * Build a {@link DatabaseVersioning} from an ordered version history, for
  * `Database.create(plugin, { versioning: createVersionUpgrader(entries, …) })`.
  *
- * `currentVersion = entries.length` and the current schema is `foldSchemas(entries)`.
+ * `currentVersion = entries.length - 1` and the current schema is `foldSchemas(entries)`.
  * On load of a version-`d` document the handler:
  *   1. rejects a document newer than this app (`d > currentVersion`);
- *   2. walks `d → currentVersion`, and for each entry with a `handler` stages the
- *      whole store to that version's folded schema (so the handler sees a known
- *      input) then runs it — additive/minor steps carry no handler and are skipped.
+ *   2. applies `entries[d+1 … currentVersion]`, and for each with a `handler` stages
+ *      the whole store to the PREVIOUS version's folded schema (so the handler sees
+ *      a known input) then runs it — additive/minor steps carry no handler and are
+ *      skipped.
  *
  * The database's commit path then auto-normalizes every remaining additive/minor
  * change to the current schema, so a purely additive/minor upgrade needs the
@@ -24,15 +25,15 @@ export function createVersionUpgrader(
     entries: readonly VersionEntry[],
     options: { readonly resource: string },
 ): DatabaseVersioning {
-    const currentVersion = entries.length;
+    const currentVersion = entries.length - 1;
     return {
         resource: options.resource,
         handle: async ({ documentStore, documentVersion }) => {
             if (documentVersion > currentVersion) return null; // document newer than this app → reject
-            for (let v = documentVersion; v < currentVersion; v++) {
-                const entry = entries[v]!;
+            for (let i = documentVersion + 1; i <= currentVersion; i++) {
+                const entry = entries[i]!;
                 if (entry.handler) {
-                    conformStoreToSchemas(documentStore, foldSchemas(entries, v)); // stage to version v
+                    conformStoreToSchemas(documentStore, foldSchemas(entries, i - 1)); // stage to version i-1 (input)
                     await entry.handler(documentStore);
                 }
             }

@@ -9,16 +9,17 @@ export type VersionSchemas = {
 };
 
 /**
- * Reconstruct the component + resource schemas at a given version by applying
- * every entry's changes over the empty base. `upTo` (default: all) yields the
- * schema *at* that version — `foldSchemas(entries)` is the current schema,
- * `foldSchemas(entries, v)` is the schema a version-`v` document is expected in.
+ * Reconstruct the component + resource schemas at version `version` by applying
+ * every entry's changes from `entries[0]` THROUGH `entries[version]` (inclusive).
+ * Default `version` is the current one (`entries.length - 1`), so `foldSchemas(entries)`
+ * is the current schema and `foldSchemas(entries, v)` is the schema a version-`v`
+ * document is expected in. A `version` below 0 yields the empty base.
  */
-export function foldSchemas(entries: readonly VersionEntry[], upTo: number = entries.length): VersionSchemas {
+export function foldSchemas(entries: readonly VersionEntry[], version: number = entries.length - 1): VersionSchemas {
     const components: Record<string, Schema> = {};
     const resources: Record<string, Schema> = {};
-    const end = Math.min(upTo, entries.length);
-    for (let i = 0; i < end; i++) {
+    const end = Math.min(version, entries.length - 1);
+    for (let i = 0; i <= end; i++) {
         const { changes } = entries[i]!;
         apply(components, changes.components);
         apply(resources, changes.resources);

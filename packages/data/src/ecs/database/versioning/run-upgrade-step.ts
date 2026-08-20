@@ -7,8 +7,8 @@ import type { VersionEntry } from "./version-entry.js";
 
 /**
  * A bare store whose schema is the folded schema at `version`. Use it to set up a
- * co-located per-upgrader test: build the store a major expects as input, populate
- * it, run the step, and assert the output.
+ * co-located per-upgrader test: build the store a major expects as INPUT (version
+ * `index - 1`), populate it, run the step, and assert the output.
  */
 export function createStoreAtVersion(entries: readonly VersionEntry[], version: number): Store<any, any, any> {
     const { components, resources } = foldSchemas(entries, version);
@@ -16,17 +16,17 @@ export function createStoreAtVersion(entries: readonly VersionEntry[], version: 
 }
 
 /**
- * Run a single major upgrade step in isolation: stage `store` to version `index`
- * (so the handler sees a known input for every component) then run its handler,
- * taking the store from version `index` to `index + 1`. The building block for a
- * per-upgrader unit test — construct a store at `index`, populate, `await` this,
- * then assert against the version `index + 1` schema.
+ * Run a single upgrade step in isolation: stage `store` to version `index - 1`
+ * (so the handler sees a known input for every component) then run `entries[index]`'s
+ * handler, taking the store from version `index - 1` to `index`. The building block
+ * for a per-upgrader test — construct a store at version `index - 1`, populate,
+ * `await` this, then assert against the version `index` schema.
  */
 export async function runUpgradeStep(
     entries: readonly VersionEntry[],
     index: number,
     store: Store<any, any, any>,
 ): Promise<void> {
-    conformStoreToSchemas(store, foldSchemas(entries, index));
+    conformStoreToSchemas(store, foldSchemas(entries, index - 1));
     await entries[index]!.handler?.(store);
 }

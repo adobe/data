@@ -12,10 +12,11 @@ import type { Store } from "../../store/index.js";
 export type SchemaChanges = Readonly<Record<string, Schema | null>>;
 
 /**
- * One entry in an ordered version history. `entries[i]` transforms a document
- * from version `i` to version `i + 1`; `entries[0]` builds the initial schema
- * from the empty base, so `currentVersion === entries.length` and folding every
- * entry's `changes` from `{}` reconstructs the current schema.
+ * One entry in an ordered version history. `entries[i]` IS version `i`: applying
+ * its `changes` over the previous version's schema yields version `i`, so
+ * `entries[0]` builds version 0 (the initial schema) from the empty base and
+ * `currentVersion === entries.length - 1`. Folding every entry's `changes` from
+ * `{}` reconstructs the current schema.
  *
  * Components and resources are patched separately so their namespaces stay
  * distinct (a `Schema` can't say which it is) and so a component↔resource move is
@@ -30,9 +31,9 @@ export type SchemaChanges = Readonly<Record<string, Schema | null>>;
  */
 export type VersionEntry = {
     /**
-     * The version this entry produces — must equal its `index + 1` (so the last
-     * entry's `version` is `currentVersion`). Redundant with position, but makes a
-     * long history scannable; the guard test verifies it matches the index.
+     * This entry's version — must equal its **index** (so version 0 is the initial
+     * schema and `currentVersion === entries.length - 1`). Redundant with position,
+     * but makes a long history scannable; the guard test verifies it.
      */
     readonly version: number;
     readonly changes: {

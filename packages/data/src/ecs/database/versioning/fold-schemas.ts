@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Schema } from "../../../schema/index.js";
+import { mergePatchU, type PatchU } from "../../../functions/index.js";
 import { quadrantOf, type Quadrant } from "../../store/index.js";
 import type { SchemaChanges, VersionEntry } from "./version-entry.js";
 
@@ -58,7 +59,8 @@ export function changedQuadrants(entries: readonly VersionEntry[], i: number): S
         const changes = entries[i]!.changes[namespace];
         if (!changes) return;
         for (const name of Object.keys(changes)) {
-            const schema = changes[name] === null ? prev[namespace][name] : cur[namespace][name];
+            // A deletion (value === undefined) is gauged by its pre-removal schema.
+            const schema = changes[name] === undefined ? prev[namespace][name] : cur[namespace][name];
             if (schema) quads.add(quadrantOf(schema));
         }
     };
@@ -75,13 +77,13 @@ function withNewKeys(prev: Readonly<Record<string, Schema>>, cur: Readonly<Recor
     return result;
 }
 
-// A schema-level replace/remove — NOT a deep merge: each entry's value replaces
-// the whole schema (null removes it), so a shape change leaves no stale keys.
+// Apply one namespace's JSON Merge Patch onto the folded-so-far schemas: each
+// name's patch is deep-merged onto its existing schema, and a key set to
+// `undefined` deletes it (`name: undefined` drops the whole component/resource).
 function apply(schemas: Record<string, Schema>, changes: SchemaChanges | undefined): void {
     if (changes === undefined) return;
-    for (const name of Object.keys(changes)) {
-        const schema = changes[name]!;
-        if (schema === null) delete schemas[name];
-        else schemas[name] = schema;
-    }
+    const merged = mergePatchU(schemas, changes as PatchU<Record<string, Schema>>);
+    // mergePatchU is non-mutating; copy the result back into the accumulator.
+    for (const name of Object.keys(schemas)) delete schemas[name];
+    Object.assign(schemas, merged);
 }

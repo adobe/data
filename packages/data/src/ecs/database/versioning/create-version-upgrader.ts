@@ -62,21 +62,24 @@ export function createVersionUpgrader(
     if (primary === undefined) {
         throw new Error("createVersionUpgrader: at least one of { document, settings } version resources is required.");
     }
-    const primaryQuadrant: Quadrant = resources.document !== undefined ? "document" : "settings";
     // The distinct configured resource names, for reading/stamping every quadrant.
     const configured = [...new Set([resources.document, resources.settings].filter((r): r is string => r !== undefined))];
 
-    // The quadrant a handler belongs to — its single changed quadrant, or the
-    // primary quadrant when the handler changes no schema (a data-only migration).
-    // A cross-quadrant handler is rejected by the guard, not here.
-    const quadrantForHandler = (i: number): Quadrant => [...changedQuadrants(entries, i)][0] ?? primaryQuadrant;
+    // A handler always accompanies a schema change (it exists BECAUSE a change is
+    // not auto-convertible), so its quadrant is that single changed quadrant. A
+    // cross-quadrant handler is rejected by the guard.
+    const quadrantForHandler = (i: number): Quadrant => [...changedQuadrants(entries, i)][0]!;
 
-    // Every handler's quadrant must have a configured version resource, else its
-    // stamp can't be read/advanced — a setup error we surface eagerly rather than
-    // silently mis-gating it to another quadrant's stamp.
+    // Validate every handler eagerly: it must change exactly one quadrant, and that
+    // quadrant must have a configured version resource (else its stamp can't be
+    // read/advanced). These are setup errors — surface them at construction.
     for (let i = 1; i <= currentVersion; i++) {
         if (entries[i]!.handler === undefined) continue;
-        const quadrant = quadrantForHandler(i);
+        const quadrants = changedQuadrants(entries, i);
+        if (quadrants.size === 0) {
+            throw new Error(`createVersionUpgrader: the version ${i} handler changes no schema; a handler must accompany the change it migrates.`);
+        }
+        const quadrant = [...quadrants][0]!;
         if (byQuadrant[quadrant] === undefined) {
             throw new Error(
                 `createVersionUpgrader: the version ${i} handler upgrades the ${quadrant} quadrant, but no version ` +

@@ -18,10 +18,20 @@ run the tests, and the failing test prints the exact fix to apply.**
   IS version `i`; `entries[0]` is a frozen copy of the initial schema. `currentVersion
   = versions.length - 1`.
 - **`VersionEntry`** — `{ version, changes: { components?, resources? }, handler? }`.
-  `version` MUST equal the array index. `changes` is a schema patch: `name: schema`
-  adds or REPLACES a whole schema, `name: null` removes it (components and resources
-  are separate namespaces). `handler` is present ONLY for a change that is not
-  automatically convertible.
+  `version` MUST equal the array index. `changes` is a **JSON Merge Patch** applied to
+  the folded-so-far schema — record ONLY what changes, not a restated copy:
+  - `name: { …fields… }` adds a new component/resource, or deep-merges those fields
+    onto the existing schema;
+  - a key set to **`undefined`** DELETES it — `name: undefined` drops the whole
+    component/resource; a nested `precision: undefined` drops just that field;
+  - `null` is a normal VALUE (so `default: null` sets the default), not a delete;
+    arrays/scalars replace wholesale.
+  Because it MERGES, a shape change must delete the fields that no longer apply —
+  number → object is `{ type: "object", properties: {…}, precision: undefined, default: undefined }`,
+  never a bare `{ type: "object", … }` (which would keep the old `precision`/`default`).
+  Never write empty `changes: {}` — an entry must record at least one change. Components
+  and resources are separate namespaces. `handler` is present ONLY for a change that is
+  not automatically convertible.
 - A `databaseVersion` (or similarly named) **integer resource** on the plugin, `default`
   set to `currentVersion`. Stamped into the document; excluded from the history itself.
 - **`createVersionUpgrader(versions, { document: "databaseVersion" })`** passed as
@@ -107,7 +117,8 @@ const HealthObject = { type: "object", properties: { current: { type: "number", 
 export const versions = [
   { version: 0, changes: { components: { /* …frozen… */ hp: { type: "number", precision: 1, default: 0 } } } },
   { version: 1,
-    changes: { components: { hp: HealthObject } },
+    // MERGE patch: add the object shape, DELETE the number-only fields it drops.
+    changes: { components: { hp: { type: "object", properties: HealthObject.properties, precision: undefined, default: undefined } } },
     handler: (store) => remapStoreComponent(store, "hp", HealthObject, (old: number) => ({ current: old, max: old })) },
 ];
 // resources.ts — databaseVersion default becomes 1

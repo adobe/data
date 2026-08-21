@@ -32,11 +32,12 @@ const stampVersion = (store: Store<any, any, any>, version: number): void => {
 const versions: readonly VersionEntry[] = [
     { version: 0, changes: { components: { a: f32 } } },
     { version: 1, changes: { components: { b: f32 } } },
-    { version: 2, changes: { components: { a: aObj } }, handler: (s) => remapStoreComponent(s, "a", aObj, (old: number) => ({ n: old })) },
+    { version: 2, changes: { components: { a: { type: "object", properties: { n: f32 }, precision: undefined, default: undefined } } }, handler: (s) => remapStoreComponent(s, "a", aObj, (old: number) => ({ n: old })) },
     { version: 3, changes: { resources: { bonus: { type: "integer", default: 10 } } } },
     {
         version: 4,
-        changes: { components: { a: aObj2 } },
+        changes: { components: { a: { properties: { total: f32 } } } }, // merge patch: add one property
+
         handler: (s) => {
             const bonus = getRes(s, "bonus"); // materialized during staging (added at v3)
             remapStoreComponent(s, "a", aObj2, (old: { n: number }) => ({ n: old.n, total: old.n + bonus }));
@@ -89,7 +90,7 @@ describe("removal with a preservation handler (full load path)", () => {
             { version: 0, changes: { components: { keep: f32, doomed: f32 } } },
             {
                 version: 1,
-                changes: { components: { doomed: null }, resources: { rescued: { type: "integer", default: 0 } } },
+                changes: { components: { doomed: undefined }, resources: { rescued: { type: "integer", default: 0 } } },
                 handler: (s) => {
                     let sum = 0;
                     for (const arch of s.queryArchetypes(["doomed"] as never[])) {

@@ -46,3 +46,44 @@ export function mergePatch<T>(target: T, patch: Patch<T>): T {
 
     return result as T;
 }
+
+/**
+ * A merge patch whose delete sentinel is `undefined` instead of `null`, so `null`
+ * survives as a real value. Objects are partial; setting a key to `undefined`
+ * deletes it. Arrays and scalars replace. See {@link mergePatchU}.
+ */
+export type PatchU<T> =
+    T extends readonly any[]
+        ? T // arrays replace wholesale
+        : T extends object
+        ? { [K in keyof T]?: PatchU<T[K]> } // objects are partial; a key set to `undefined` deletes it
+        : T; // scalars (incl. null) replace
+
+/**
+ * JSON Merge Patch with the delete sentinel moved from `null` to `undefined`, so
+ * `null` is a preservable value (e.g. `default: null` sets the default to null
+ * rather than deleting it). Not RFC 7396 (which is {@link mergePatch}) — `undefined`
+ * is not serializable, which is fine here because these patches are never serialized.
+ * - Objects: recursively merge; a key whose value is `undefined` is deleted.
+ * - Arrays: replaced wholesale (no element-wise merge).
+ * - Primitives (including `null`): replace.
+ * Does NOT mutate the inputs.
+ */
+export function mergePatchU<T>(target: T, patch: PatchU<T>): T {
+    // Arrays replace wholesale; primitives (incl. null) replace.
+    if (Array.isArray(patch) || patch === null || typeof patch !== "object") {
+        return patch as T;
+    }
+    // An object patch merges onto an object target; onto anything else it builds fresh.
+    const base = target !== null && typeof target === "object" && !Array.isArray(target) ? (target as Record<string, unknown>) : {};
+    const result: Record<string, unknown> = { ...base };
+    for (const key of Object.keys(patch)) {
+        const value = (patch as Record<string, unknown>)[key];
+        if (value === undefined) {
+            delete result[key]; // `undefined` deletes (the merge-patch sentinel)
+        } else {
+            result[key] = mergePatchU(base[key], value as PatchU<unknown>);
+        }
+    }
+    return result as T;
+}

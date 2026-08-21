@@ -11,7 +11,7 @@ type Drift = {
     readonly namespace: "components" | "resources";
     readonly name: string;
     readonly kind: "added" | "removed" | "auto" | "breaking";
-    readonly next: Schema | null; // the merge-patch value to record (null = removal)
+    readonly next: unknown; // the merge-patch value to record (removed ⇒ `undefined`)
 };
 
 /**
@@ -50,6 +50,18 @@ export function assertVersionsMatchSchema(input: {
             throw new Error(
                 `Version history entry at index ${i} has version ${input.entries[i]!.version}, but must be ${i} ` +
                 `(each entry's version = its index).`,
+            );
+        }
+    }
+
+    // A no-op entry ({} changes) records nothing — always an authoring mistake.
+    for (let i = 0; i < input.entries.length; i++) {
+        const { components, resources } = input.entries[i]!.changes;
+        const count = (components ? Object.keys(components).length : 0) + (resources ? Object.keys(resources).length : 0);
+        if (count === 0) {
+            throw new Error(
+                `Version history entry ${i} has empty changes ({}). Every entry must record at least one component ` +
+                `or resource change — an empty entry is a no-op; remove it (and renumber later entries).`,
             );
         }
     }
@@ -217,12 +229,13 @@ function diff(
         const from = folded[name];
         const to = current[name];
         if (from === undefined && to !== undefined) {
-            drifts.push({ namespace, name, kind: "added", next: to });
+            drifts.push({ namespace, name, kind: "added", next: to }); // add: full schema (merged onto nothing)
         } else if (from !== undefined && to === undefined) {
-            drifts.push({ namespace, name, kind: "removed", next: null });
+            drifts.push({ namespace, name, kind: "removed", next: undefined }); // `name: undefined` deletes
         } else if (from !== undefined && to !== undefined && !equals(from, to)) {
             const auto = createCoerceFunction(from, to) !== null;
-            drifts.push({ namespace, name, kind: auto ? "auto" : "breaking", next: to });
+            // Record the MINIMAL merge patch (only changed fields; `undefined` for dropped ones).
+            drifts.push({ namespace, name, kind: auto ? "auto" : "breaking", next: diffMergePatch(from, to) });
         }
     }
     return drifts;
@@ -241,11 +254,11 @@ function buildRecipe(drifts: Drift[], length: number): string {
         if (here.length === 0) continue;
         lines.push(`  changes.${ns} = {`);
         for (const d of here) {
-            const value = d.next === null ? "null" : JSON.stringify(d.next);
+            const value = d.kind === "removed" ? "undefined" : formatPatch(d.next);
             const tag =
                 d.kind === "added" ? "add" :
                 d.kind === "removed" ? "remove — ⚠ DROPS DATA" :
-                d.kind === "auto" ? "modify (auto-convertible)" :
+                d.kind === "auto" ? "modify (auto-convertible merge patch)" :
                 "MODIFY (BREAKING — needs a handler)";
             lines.push(`    ${JSON.stringify(d.name)}: ${value},   // ${tag}`);
         }
@@ -256,7 +269,7 @@ function buildRecipe(drifts: Drift[], length: number): string {
     const removed = drifts.filter((d) => d.kind === "removed");
     if (removed.length > 0) {
         lines.push(
-            `⚠ ${removed.length} removal(s): recording \`null\` drops the data. If it must be preserved, ` +
+            `⚠ ${removed.length} removal(s): recording \`undefined\` drops the data. If it must be preserved, ` +
             `add a handler that reads it (still present while the handler runs) and writes it elsewhere — it is dropped when the load commits: ` +
             removed.map((d) => `${d.namespace} "${d.name}"`).join(", ") + ".",
         );
@@ -273,4 +286,36 @@ function buildRecipe(drifts: Drift[], length: number): string {
         lines.push(`The handler runs against the store staged to version ${length - 1}, and may read any component.`);
     }
     return lines.join("\n");
+}
+
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+    return v !== null && typeof v === "object" && !Array.isArray(v);
+}
+
+// The minimal merge patch that turns `from` into `to`: changed/added keys carry
+// their new value (recursing into nested objects), dropped keys carry `undefined`.
+// A non-object-to-object (or type) change replaces wholesale.
+function diffMergePatch(from: unknown, to: unknown): unknown {
+    if (!isPlainObject(from) || !isPlainObject(to)) return to;
+    const patch: Record<string, unknown> = {};
+    for (const key of Object.keys(to)) {
+        if (!equals(from[key], to[key])) patch[key] = diffMergePatch(from[key], to[key]);
+    }
+    for (const key of Object.keys(from)) {
+        if (!(key in to)) patch[key] = undefined; // dropped field → `undefined` delete sentinel
+    }
+    return patch;
+}
+
+// Serialize a merge patch as a JS object literal — like JSON, but emitting
+// `undefined` (which JSON.stringify omits) so the printed delete sentinels are real.
+function formatPatch(v: unknown): string {
+    if (v === undefined) return "undefined";
+    if (v === null) return "null";
+    if (Array.isArray(v)) return `[${v.map(formatPatch).join(", ")}]`;
+    if (typeof v === "object") {
+        const body = Object.keys(v).map((k) => `${JSON.stringify(k)}: ${formatPatch((v as Record<string, unknown>)[k])}`).join(", ");
+        return `{ ${body} }`;
+    }
+    return JSON.stringify(v);
 }

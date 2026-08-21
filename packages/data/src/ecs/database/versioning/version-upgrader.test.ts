@@ -32,17 +32,19 @@ const versions: readonly VersionEntry[] = [
     // version 1 — ADDITIVE component. No handler, no conversion: old entities just lack it.
     { version: 1, changes: { components: { mana: f32 } } },
 
-    // version 2 — MINOR: `score` gains a cap. Auto-clamped on load; no handler.
-    { version: 2, changes: { components: { score: { type: "number", precision: 1, default: 0, maximum: 100 } } } },
+    // version 2 — MINOR: `score` gains a cap. A merge patch records ONLY the new
+    // field. Auto-clamped on load; no handler.
+    { version: 2, changes: { components: { score: { maximum: 100 } } } },
 
     // version 3 — ADDITIVE resource. Materialized at its default when an old document loads.
     { version: 3, changes: { resources: { difficulty: { type: "string", default: "normal" } } } },
 
     // version 4 — MAJOR: `hp` goes number → { current, max }. Not auto-convertible, so a
-    // handler is required; `remapStoreComponent` is the tool for it.
+    // handler is required; `remapStoreComponent` is the tool for it. The merge patch
+    // adds the object shape and DELETES the number-only fields (`precision`/`default`).
     {
         version: 4,
-        changes: { components: { hp: health } },
+        changes: { components: { hp: { type: "object", properties: { current: f32, max: f32 }, precision: undefined, default: undefined } } },
         handler: (store) => remapStoreComponent(store, "hp", health, (old: number) => ({ current: old, max: old })),
     },
 ];
@@ -119,12 +121,26 @@ describe("the version guard", () => {
         } catch (e) { message = (e as Error).message; }
         expect(message).toMatch(/BREAKING/);
         expect(message).toContain("remapStoreComponent");
+        // The recipe is a MERGE patch: it adds the object shape and prints `undefined`
+        // deletes for the number-only fields (precision/default/maximum) it drops.
+        expect(message).toContain('"type": "object"');
+        expect(message).toContain("undefined");
     });
 
     it("fails when the stamped version disagrees with the history length", () => {
         expect(() =>
             assertVersionsMatchSchema({ entries: versions, components: {}, resources: {}, currentVersion: 99 }),
         ).toThrow(/Set the version resource default to 4/);
+    });
+
+    it("rejects a no-op entry with empty changes", () => {
+        const entries: VersionEntry[] = [
+            { version: 0, changes: { components: { a: f32 } } },
+            { version: 1, changes: {} }, // records nothing — a no-op
+        ];
+        expect(() =>
+            assertVersionsMatchSchema({ entries, components: { a: f32 }, resources: {} }),
+        ).toThrow(/empty changes/);
     });
 
     it("fails when an entry's version does not equal its index", () => {
@@ -239,9 +255,9 @@ describe("non-persistent schemas are excluded from versioning", () => {
         expect(() => assertVersionsMatchSchema({ entries: bad, components: {}, resources: {} })).toThrow(
             /non-persistent/,
         );
-        // GREEN: drop it from the history and the guard is satisfied.
-        const good: VersionEntry[] = [{ version: 0, changes: { components: {} } }];
-        expect(() => assertVersionsMatchSchema({ entries: good, components: {}, resources: {} })).not.toThrow();
+        // GREEN: drop the non-persistent schema (keep a real persistent one) and the guard is satisfied.
+        const good: VersionEntry[] = [{ version: 0, changes: { components: { keep: f32 } } }];
+        expect(() => assertVersionsMatchSchema({ entries: good, components: { keep: f32 }, resources: {} })).not.toThrow();
     });
 });
 

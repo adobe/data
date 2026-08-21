@@ -1,24 +1,37 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Schema } from "../../../schema/index.js";
+import type { PatchU } from "../../../functions/index.js";
 import type { Store } from "../../store/index.js";
 
 /**
- * A patch over a schema namespace: `name: schema` adds or REPLACES that
- * component/resource's schema wholesale, `name: null` removes it. Schemas are
- * atomic values — a change replaces the whole schema, never a partial merge into
- * it — so a shape change (e.g. number → object) leaves no stale keys behind.
+ * A JSON Merge Patch over a schema namespace — it records ONLY what changes, not a
+ * restated copy of the schema. It is applied to the folded-so-far schema:
+ *   - `name: { …partial… }` adds a new component/resource (merged onto nothing) or
+ *     deep-merges the given fields onto the existing schema;
+ *   - a key set to `undefined` DELETES it — `name: undefined` removes the whole
+ *     component/resource; a nested `precision: undefined` drops just that field;
+ *   - arrays and scalars replace wholesale. `null` is a normal value (so
+ *     `default: null` sets the default to null), NOT a delete — this is the
+ *     `undefined`-sentinel merge-patch variant ({@link PatchU} / `mergePatchU`),
+ *     chosen because these patches are never serialized.
  *
- * A `null` removal takes effect when the load COMMITS (the component, being absent
- * from the current schema, is pruned) — not mid-replay. A handler that must keep a
- * removed component's data reads it (it is still present while the handler runs)
- * and writes it elsewhere; the component itself then drops on commit.
+ * Because it is a MERGE, a shape change must delete the fields that no longer
+ * apply: number → object is `{ type: "object", properties: {…}, precision: undefined,
+ * default: undefined }`, not a bare `{ type: "object", … }` (which would keep the
+ * old `precision`/`default`). The guard folds the history and prints the exact
+ * minimal patch — including the `undefined` deletes — when the schema drifts.
+ *
+ * A removal takes effect when the load COMMITS (the component, being absent from
+ * the current schema, is pruned) — not mid-replay. A handler that must keep a
+ * removed component's data reads it (still present while the handler runs) and
+ * writes it elsewhere; the component itself then drops on commit.
  *
  * Prefer TYPED schemas. An untyped/opaque schema (`{ default: x }`, no `type`/`enum`)
  * carries no shape, so the guard can only detect a change of the default's runtime
  * type — a same-typed shape change goes undetected (no handler demanded).
  */
-export type SchemaChanges = Readonly<Record<string, Schema | null>>;
+export type SchemaChanges = Readonly<Record<string, PatchU<Schema> | undefined>>;
 
 /**
  * One entry in an ordered version history. `entries[i]` IS version `i`: applying

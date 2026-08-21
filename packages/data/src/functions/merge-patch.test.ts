@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { mergePatch } from "./merge-patch.js";
+import { mergePatch, mergePatchU } from "./merge-patch.js";
 import type { Patch } from "./merge-patch.js";
 
 /**
@@ -119,5 +119,33 @@ describe("mergePatch", () => {
         const patch: Patch<T> = { a: 1, b: undefined };
         const result = mergePatch(target, patch);
         expect(result).toEqual({ a: 1, b: undefined });
+    });
+});
+
+/**
+ * The `undefined`-sentinel variant: `undefined` deletes a key, so `null` is a
+ * preserved value (the opposite of RFC 7396).
+ */
+describe("mergePatchU", () => {
+    it("deletes a key set to undefined; keeps null as a value", () => {
+        expect(mergePatchU<{ a?: number; b?: number }>({ a: 1, b: 2 }, { b: undefined })).toEqual({ a: 1 });
+        expect(mergePatchU<{ a: number | null }>({ a: 1 }, { a: null })).toEqual({ a: null });
+    });
+
+    it("deep-merges nested objects and deletes nested keys with undefined", () => {
+        const target: { a: Record<string, number> } = { a: { x: 1, y: 2 } };
+        const result = mergePatchU(target, { a: { y: undefined, z: 3 } });
+        expect(result).toEqual({ a: { x: 1, z: 3 } });
+    });
+
+    it("replaces arrays and scalars wholesale; an object patch onto a scalar builds fresh", () => {
+        expect(mergePatchU<any>({ a: [1, 2, 3] }, { a: [9] })).toEqual({ a: [9] });
+        expect(mergePatchU<any>({ a: 1 }, { a: { x: 1 } })).toEqual({ a: { x: 1 } });
+    });
+
+    it("does not mutate the target", () => {
+        const target: { a: Record<string, number> } = { a: { x: 1 } };
+        mergePatchU(target, { a: { y: 2 } });
+        expect(target).toEqual({ a: { x: 1 } });
     });
 });

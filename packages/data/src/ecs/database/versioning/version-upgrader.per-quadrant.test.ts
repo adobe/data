@@ -28,8 +28,9 @@ const themeObj = { type: "object", properties: { name: { type: "string", default
 // The two majors are in DIFFERENT quadrants, so each quadrant advances on its own.
 const versions: readonly VersionEntry[] = [
     { version: 0, changes: { components: { pos: num, theme: themeStr } } },
-    { version: 1, changes: { components: { pos: xy } }, handler: (s) => remapStoreComponent(s, "pos", xy, (old: number) => ({ x: old, y: old })) },
-    { version: 2, changes: { components: { theme: themeObj } }, handler: (s) => remapStoreComponent(s, "theme", themeObj, (old: string) => ({ name: old })) },
+    // merge patches delete the scalar-only fields the object shape no longer has.
+    { version: 1, changes: { components: { pos: { type: "object", properties: { x: num, y: num }, precision: undefined, default: undefined } } }, handler: (s) => remapStoreComponent(s, "pos", xy, (old: number) => ({ x: old, y: old })) },
+    { version: 2, changes: { components: { theme: { type: "object", properties: { name: { type: "string", default: "light" } }, default: undefined } } }, handler: (s) => remapStoreComponent(s, "theme", themeObj, (old: string) => ({ name: old })) },
 ];
 
 const upgrader = () => createVersionUpgrader(versions, { document: "databaseVersion", settings: "settingsVersion" });
@@ -124,45 +125,13 @@ describe("misconfiguration is caught eagerly", () => {
             /version 2 handler upgrades the settings quadrant/,
         );
     });
-});
 
-describe("a data-only handler (empty changes) stays scoped to its quadrant", () => {
-    // v0 base → v1 settings theme→{name} → v2 document DATA-ONLY handler (no schema
-    // change) → v3 settings {name}→{label}. A document-behind / settings-ahead load
-    // runs the empty-changes v2 handler; it must NOT stage (and down-convert) the
-    // ahead settings `theme`.
-    const themeName = { type: "object", properties: { name: { type: "string", default: "light" } }, nonShared: true } as const satisfies Schema;
-    const themeLabel = { type: "object", properties: { label: { type: "string", default: "light" } }, nonShared: true } as const satisfies Schema;
-    const dataOnly: readonly VersionEntry[] = [
-        { version: 0, changes: { components: { pos: num, theme: themeStr } } },
-        { version: 1, changes: { components: { theme: themeName } }, handler: (s) => remapStoreComponent(s, "theme", themeName, (old: string) => ({ name: old })) },
-        {
-            version: 2, // DOCUMENT data-only migration: no schema change, just repairs pos data.
-            changes: {},
-            handler: (s) => {
-                for (const arch of s.queryArchetypes(["pos"] as never[])) {
-                    const cols = arch.columns as Record<string, { get(i: number): number }>;
-                    for (let i = 0; i < arch.rowCount; i++) {
-                        s.update(cols["id"]!.get(i), { pos: cols["pos"]!.get(i) + 1 } as never);
-                    }
-                }
-            },
-        },
-        { version: 3, changes: { components: { theme: themeLabel } }, handler: (s) => remapStoreComponent(s, "theme", themeLabel, (old: { name: string }) => ({ label: old.name })) },
-    ];
-
-    it("does not down-convert the ahead settings quadrant while running a document data-only handler", async () => {
-        const up = createVersionUpgrader(dataOnly, { document: "databaseVersion", settings: "settingsVersion" });
-        // document at v0 (pos is a raw number), settings already at v3 (theme is { label }).
-        const store = mergedStore(num, themeLabel, 0, 3);
-        const posE = insertPos(store, 5);
-        const themeE = insertTheme(store, { label: "dark" });
-
-        const result = await up.handle({ documentStore: store, documentVersion: 0, currentVersion: 3 });
-
-        expect(result).not.toBeNull();
-        expect((result!.read(posE) as any)?.pos).toBe(6); // document data-only handler ran (5 → 6)
-        expect((result!.read(themeE) as any)?.theme).toEqual({ label: "dark" }); // settings NOT staged back to { name }
+    it("throws at construction for a handler with empty changes (a handler must accompany the change it migrates)", () => {
+        const empty: readonly VersionEntry[] = [
+            { version: 0, changes: { components: { pos: num } } },
+            { version: 1, changes: {}, handler: () => {} }, // handler but no schema change
+        ];
+        expect(() => createVersionUpgrader(empty, { document: "databaseVersion" })).toThrow(/changes no schema/);
     });
 });
 

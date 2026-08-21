@@ -12,7 +12,7 @@
 
 import { describe, it, expect } from "vitest";
 import type { Schema } from "../../../schema/index.js";
-import { Store, remapStoreComponent } from "../../store/index.js";
+import { Store } from "../../store/index.js";
 import { Database } from "../database.js";
 import { type VersionEntry, createVersionUpgrader, assertVersionsMatchSchema } from "./index.js";
 
@@ -29,8 +29,8 @@ const themeObj = { type: "object", properties: { name: { type: "string", default
 const versions: readonly VersionEntry[] = [
     { version: 0, changes: { components: { pos: num, theme: themeStr } } },
     // merge patches delete the scalar-only fields the object shape no longer has.
-    { version: 1, changes: { components: { pos: { type: "object", properties: { x: num, y: num }, precision: undefined, default: undefined } } }, handler: (s) => remapStoreComponent(s, "pos", xy, (old: number) => ({ x: old, y: old })) },
-    { version: 2, changes: { components: { theme: { type: "object", properties: { name: { type: "string", default: "light" } }, default: undefined } } }, handler: (s) => remapStoreComponent(s, "theme", themeObj, (old: string) => ({ name: old })) },
+    { version: 1, changes: { components: { pos: { type: "object", properties: { x: num, y: num }, precision: undefined, default: undefined } } }, handler: (s) => Store.remapComponent(s, "pos", xy, (old: number) => ({ x: old, y: old })) },
+    { version: 2, changes: { components: { theme: { type: "object", properties: { name: { type: "string", default: "light" } }, default: undefined } } }, handler: (s) => Store.remapComponent(s, "theme", themeObj, (old: string) => ({ name: old })) },
 ];
 
 const upgrader = () => createVersionUpgrader(versions, { document: "databaseVersion", settings: "settingsVersion" });
@@ -102,7 +102,7 @@ describe("independent per-quadrant upgrade (merge-then-upgrade)", () => {
         const result = await upgrader().handle({ documentStore: store, documentVersion: 2, currentVersion: 2 });
 
         expect(result).not.toBeNull();
-        // Had a handler re-run, remapStoreComponent would read the already-migrated
+        // Had a handler re-run, Store.remapComponent would read the already-migrated
         // shape (an object, not a number/string) and corrupt it — so unchanged proves gating.
         expect((result!.read(posE) as any)?.pos).toEqual({ x: 1, y: 2 });
         expect((result!.read(themeE) as any)?.theme).toEqual({ name: "dark" });

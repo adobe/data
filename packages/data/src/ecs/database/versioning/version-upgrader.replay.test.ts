@@ -7,7 +7,6 @@
 import { describe, it, expect } from "vitest";
 import type { Schema } from "../../../schema/index.js";
 import { Store } from "../../store/index.js";
-import { remapStoreComponent } from "../../store/index.js";
 import { Database } from "../database.js";
 import { type VersionEntry, createVersionUpgrader, createStoreAtVersion } from "./index.js";
 
@@ -32,7 +31,7 @@ const stampVersion = (store: Store<any, any, any>, version: number): void => {
 const versions: readonly VersionEntry[] = [
     { version: 0, changes: { components: { a: f32 } } },
     { version: 1, changes: { components: { b: f32 } } },
-    { version: 2, changes: { components: { a: { type: "object", properties: { n: f32 }, precision: undefined, default: undefined } } }, handler: (s) => remapStoreComponent(s, "a", aObj, (old: number) => ({ n: old })) },
+    { version: 2, changes: { components: { a: { type: "object", properties: { n: f32 }, precision: undefined, default: undefined } } }, handler: (s) => Store.remapComponent(s, "a", aObj, (old: number) => ({ n: old })) },
     { version: 3, changes: { resources: { bonus: { type: "integer", default: 10 } } } },
     {
         version: 4,
@@ -40,7 +39,7 @@ const versions: readonly VersionEntry[] = [
 
         handler: (s) => {
             const bonus = getRes(s, "bonus"); // materialized during staging (added at v3)
-            remapStoreComponent(s, "a", aObj2, (old: { n: number }) => ({ n: old.n, total: old.n + bonus }));
+            Store.remapComponent(s, "a", aObj2, (old: { n: number }) => ({ n: old.n, total: old.n + bonus }));
         },
     },
 ];

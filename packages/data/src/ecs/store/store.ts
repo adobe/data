@@ -17,6 +17,8 @@ import { PersistenceScope, ToDataOptions } from "../persistence-scope.js";
 import { ComponentSchemas } from "../component-schemas.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { createStore } from "./public/create-store.js";
+import { remapStoreComponent } from "./remap-store-component.js";
+import { coerceStoreComponent } from "./coerce-store-component.js";
 import { OptionalComponents } from "../optional-components.js";
 import { Index, IndexDeclarations } from "./index-types.js";
 import type { ArchetypeRowOf } from "./archetype-row.js";
@@ -240,6 +242,20 @@ export namespace Store {
     }
 
     export const create = createStore;
+
+    /**
+     * Change a component's schema across the whole store IN PLACE by mapping every
+     * value through `remap`, then adopt the target schema. The tool a MAJOR version
+     * handler reaches for when a change is too structural for automatic conversion.
+     */
+    export const remapComponent = remapStoreComponent;
+
+    /**
+     * Change a component's schema across the whole store IN PLACE by auto-converting
+     * its column in every archetype, then adopt the target schema. The building block
+     * for migrating a persisted schema forward without a full reload.
+     */
+    export const coerceComponent = coerceStoreComponent;
 
     /**
      * The reserved component name for an entity's identity column (`"id"`). Every

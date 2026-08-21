@@ -16,7 +16,7 @@ interface RemappableStore {
  *
  * This is the tool a MAJOR version handler reaches for: a change too structural
  * for automatic conversion (a number → object, an enum-value rename, splitting or
- * moving a field). For an auto-convertible change use {@link coerceStoreComponent}
+ * moving a field). For an auto-convertible change use {@link Store.coerceComponent}
  * instead — it needs no value function.
  */
 export function remapStoreComponent<From = any, To = unknown>(

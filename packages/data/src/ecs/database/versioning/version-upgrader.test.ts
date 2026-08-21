@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest";
 import type { Schema } from "../../../schema/index.js";
 import { Database } from "../database.js";
-import { remapStoreComponent, storeSchemas } from "../../store/index.js";
+import { Store, storeSchemas } from "../../store/index.js";
 import {
     type VersionEntry,
     foldSchemas,
@@ -41,12 +41,12 @@ const versions: readonly VersionEntry[] = [
     { version: 3, changes: { resources: { difficulty: { type: "string", default: "normal" } } } },
 
     // version 4 — MAJOR: `hp` goes number → { current, max }. Not auto-convertible, so a
-    // handler is required; `remapStoreComponent` is the tool for it. The merge patch
+    // handler is required; `Store.remapComponent` is the tool for it. The merge patch
     // adds the object shape and DELETES the number-only fields (`precision`/`default`).
     {
         version: 4,
         changes: { components: { hp: { type: "object", properties: { current: f32, max: f32 }, precision: undefined, default: undefined } } },
-        handler: (store) => remapStoreComponent(store, "hp", health, (old: number) => ({ current: old, max: old })),
+        handler: (store) => Store.remapComponent(store, "hp", health, (old: number) => ({ current: old, max: old })),
     },
 ];
 
@@ -121,7 +121,7 @@ describe("the version guard", () => {
             });
         } catch (e) { message = (e as Error).message; }
         expect(message).toMatch(/BREAKING/);
-        expect(message).toContain("remapStoreComponent");
+        expect(message).toContain("Store.remapComponent");
         // The recipe is a MERGE patch: it adds the object shape and prints `undefined`
         // deletes for the number-only fields (precision/default/maximum) it drops.
         expect(message).toContain('"type": "object"');

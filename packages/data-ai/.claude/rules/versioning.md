@@ -53,7 +53,7 @@ run the tests, and the failing test prints the exact fix to apply.**
 4. **Breaking changes REQUIRE a handler** — a type change, a rename, splitting/moving
    a field. The handler runs against the store staged to the previous version and
    mutates it in place to the new shape. For an ISOLATED single-component change,
-   `remapStoreComponent(store, name, newSchema, old => newValue)` does it in one call —
+   `Store.remapComponent(store, name, newSchema, old => newValue)` does it in one call —
    but it is NOT required and NOT always applicable. A migration that reads from or
    writes to SEVERAL components (a cross-component move, deriving a new component from
    others, splitting one into many) must be hand-written to your upgrade algorithm:
@@ -84,7 +84,7 @@ history. Its message is a literal recipe. To fix it:
    error names.
 3. If the error marks a change **BREAKING — needs a handler**, add a `handler` to that
    entry AND add a matching test case under `testUpgradeHandlers` (rule 6). The error
-   may point at `remapStoreComponent(...)` for an isolated single-component change, but
+   may point at `Store.remapComponent(...)` for an isolated single-component change, but
    that is only a suggestion — write whatever upgrade code the change actually needs.
 
 Do exactly what the message says; do not touch existing entries.
@@ -122,14 +122,14 @@ describe("database schema versions", () => {
 
 ```ts
 // versions.ts — append (do NOT edit version 0)
-import { remapStoreComponent } from "@adobe/data/ecs";
+import { Store } from "@adobe/data/ecs";
 const HealthObject = { type: "object", properties: { current: { type: "number", precision: 1, default: 0 }, max: { type: "number", precision: 1, default: 0 } } };
 export const versions = [
   { version: 0, changes: { components: { /* …frozen… */ hp: { type: "number", precision: 1, default: 0 } } } },
   { version: 1,
     // MERGE patch: add the object shape, DELETE the number-only fields it drops.
     changes: { components: { hp: { type: "object", properties: HealthObject.properties, precision: undefined, default: undefined } } },
-    handler: (store) => remapStoreComponent(store, "hp", HealthObject, (old: number) => ({ current: old, max: old })) },
+    handler: (store) => Store.remapComponent(store, "hp", HealthObject, (old: number) => ({ current: old, max: old })) },
 ];
 // resources.ts — databaseVersion default becomes 1
 

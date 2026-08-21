@@ -3,8 +3,8 @@
 import type { Schema } from "../../../schema/index.js";
 import { createCoerceFunction } from "../../../schema/create-coerce-function.js";
 import { equals } from "../../../equals.js";
-import { coerceStoreComponent, isTransientSchema } from "../../store/index.js";
-import type { Store } from "../../store/index.js";
+import { isTransientSchema } from "../../store/index.js";
+import { Store } from "../../store/index.js";
 import type { VersionSchemas } from "./fold-schemas.js";
 
 /**
@@ -54,6 +54,6 @@ function coerceExisting(
                 `convertible, so a version upgrade handler must produce the target shape before this point.`,
             );
         }
-        coerceStoreComponent(store, name, to);
+        Store.coerceComponent(store, name, to);
     }
 }

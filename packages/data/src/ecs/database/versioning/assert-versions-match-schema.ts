@@ -286,7 +286,7 @@ function buildRecipe(drifts: Drift[], length: number): string {
         lines.push(
             `The handler runs against the store staged to version ${length - 1} and mutates it in place; it may read/write ANY component. ` +
             `Write whatever upgrade code the change needs. For an isolated single-component change, ` +
-            `remapStoreComponent(store, name, <new schema>, old => <new value>) suffices (not required); a migration ` +
+            `Store.remapComponent(store, name, <new schema>, old => <new value>) suffices (not required); a migration ` +
             `spanning several components must be hand-written to your upgrade algorithm.`,
         );
     }

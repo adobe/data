@@ -2,7 +2,6 @@
 
 import { describe, it, expect } from "vitest";
 import { Store } from "./index.js";
-import { coerceStoreComponent } from "./coerce-store-component.js";
 import { coerceArchetypeColumn, type Archetype } from "../archetype/index.js";
 import type { Schema } from "../../schema/index.js";
 
@@ -40,7 +39,7 @@ describe("coerceArchetypeColumn — in-place column conversion on a table", () =
     });
 });
 
-describe("coerceStoreComponent — in-place schema change across the whole store", () => {
+describe("Store.coerceComponent — in-place schema change across the whole store", () => {
     it("converts the component in every archetype and adopts the new schema", () => {
         const store = Store.create({
             components: { hp: num, mana: num },
@@ -53,7 +52,7 @@ describe("coerceStoreComponent — in-place schema change across the whole store
         const e1 = A.insert({ hp: 70000 });
         const e2 = AB.insert({ hp: 90000, mana: 5 });
 
-        coerceStoreComponent(store, "hp", capped);
+        Store.coerceComponent(store, "hp", capped);
 
         // Every archetype's existing rows are clamped into the new range.
         expect(store.read(e0)).toEqual({ hp: 50 });
@@ -73,6 +72,6 @@ describe("coerceStoreComponent — in-place schema change across the whole store
     it("throws when a column cannot be automatically converted", () => {
         const store = Store.create({ components: { hp: num }, resources: {}, archetypes: { A: ["hp"] } });
         (store.archetypes.A as any).insert({ hp: 1 });
-        expect(() => coerceStoreComponent(store, "hp", vec2)).toThrow(/No automatic TypedBuffer conversion/);
+        expect(() => Store.coerceComponent(store, "hp", vec2)).toThrow(/No automatic TypedBuffer conversion/);
     });
 });

@@ -32,13 +32,14 @@ run the tests, and the failing test prints the exact fix to apply.**
   Never write empty `changes: {}` — an entry must record at least one change. Components
   and resources are separate namespaces. `handler` is present ONLY for a change that is
   not automatically convertible.
-- A `documentVersion` (or similarly named) **integer resource** on the plugin, `default`
-  set to `currentVersion`. Stamped into the document; excluded from the history itself.
-- **`createVersionUpgrader(versions, { document: "documentVersion" })`** passed as
-  `Database.create(plugin, { versioning })`. The option maps each PERSISTED quadrant to
-  its version resource — `{ document, settings }`. Give `settings` its own integer
-  resource only if you save the settings quadrant separately (see rule 7); most apps
-  version just the `document` quadrant and pass `{ document: "documentVersion" }`.
+- The version is **NOT an ECS resource** — it rides the save-format metadata. The db
+  exposes it as `db.version` (`= currentVersion`, or `0` when unversioned), stamps it into
+  every `toData` per persisted quadrant (`schemaVersions: { document, settings }`), and
+  reads it back on load. Do not declare a `documentVersion`/`version` component or resource.
+- **`createVersionUpgrader(versions)`** passed as `Database.create(plugin, { versioning })`.
+  No config — the per-quadrant saved versions come from the blob metadata. Each `handler`
+  touches exactly ONE persisted quadrant (`document` or `settings`); the upgrader replays
+  each quadrant from its own saved version up to current (see rule 7).
 - ONE co-located guard test in `versions.test.ts` calling `assertVersioning(...)` (see below).
 
 ## Rules — do not violate
@@ -70,8 +71,8 @@ run the tests, and the failing test prints the exact fix to apply.**
    drift to DIFFERENT versions. On load they are merged into one store and the upgrader
    replays EACH quadrant from its own stamp — so a handler that changes schemas in more
    than one quadrant fails the guard (when one quadrant is behind, staging its handler
-   must not touch the other). Split it into one version per quadrant, and give each
-   versioned quadrant its own resource in `createVersionUpgrader(versions, { document, settings })`.
+   must not touch the other). Split it into one version per quadrant — the upgrader reads
+   each quadrant's saved version from the blob metadata automatically.
 
 ## When a schema change makes a test fail — the fix is in the error
 
@@ -79,10 +80,9 @@ run the tests, and the failing test prints the exact fix to apply.**
 history. Its message is a literal recipe. To fix it:
 
 1. **Append one new entry** to the `versions` array with `version:` = the next index
-   and the `changes` block the error printed verbatim.
-2. **Set the `documentVersion` resource `default`** to the new `currentVersion` the
-   error names.
-3. If the error marks a change **BREAKING — needs a handler**, add a `handler` to that
+   and the `changes` block the error printed verbatim. `db.version` follows the history
+   automatically (`= versions.length - 1`) — there is no resource default to update.
+2. If the error marks a change **BREAKING — needs a handler**, add a `handler` to that
    entry AND add a matching test case under `testUpgradeHandlers` (rule 6). The error
    may point at `Store.remapComponent(...)` for an isolated single-component change, but
    that is only a suggestion — write whatever upgrade code the change actually needs.
@@ -96,16 +96,16 @@ schema (schema coverage) AND every entry with a `handler` has a passing test cas
 (handler coverage + behavior). Keep this one test.
 
 ```ts
-import { Database, assertVersioning } from "@adobe/data/ecs";
+import { Database, assertVersioning, createVersionUpgrader } from "@adobe/data/ecs";
 import { MainService } from "../main-service.js";
 import { versions } from "./versions.js";
 
 describe("database schema versions", () => {
   it("the version history is consistent (schema folds + every handler tested)", () =>
     assertVersioning({
-      database: Database.create(MainService.plugin),
+      // the version-configured db, so db.version = the history's current version
+      database: Database.create(MainService.plugin, { versioning: createVersionUpgrader(versions) }),
       entries: versions,
-      versionResource: "documentVersion", // an array for per-quadrant stamps
       handlers: {
         // Append a case per version that adds a `handler` (rule 6):
         // <version>: { setup: (store) => <populate the version-(v-1) store, return entities>,
@@ -131,13 +131,13 @@ export const versions = [
     changes: { components: { hp: { type: "object", properties: HealthObject.properties, precision: undefined, default: undefined } } },
     handler: (store) => Store.remapComponent(store, "hp", HealthObject, (old: number) => ({ current: old, max: old })) },
 ];
-// resources.ts — databaseVersion default becomes 1
+// `db.version` becomes 1 automatically (= versions.length - 1) — nothing else to set.
 
-// versions.test.ts — add the required case
-testUpgradeHandlers(versions, {
+// versions.test.ts — add the required case to the guard's `handlers`
+assertVersioning({ database: db, entries: versions, handlers: {
   1: {
     setup: (store) => store.ensureArchetype(["hp"]).insert({ hp: 42 }),
     expect: (store, e) => expect(store.read(e)?.hp).toEqual({ current: 42, max: 42 }),
   },
-});
+} });
 ```

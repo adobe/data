@@ -2,12 +2,12 @@
 //
 // WORKED EXAMPLE — what an app author writes to version a database.
 //
-// `versions` is the whole history: one entry per schema change, each recording
-// the components/resources it adds, replaces (`name: schema`) or removes
-// (`name: null`), plus a handler ONLY when a change is not automatically
-// convertible. Additive and minor changes carry NO code.
-// One co-located guard test proves the history matches the current schema, and
-// `createVersionUpgrader(versions, …)` upgrades old documents on load.
+// `versions` is the whole history: one entry per schema change, each a JSON merge
+// patch of the components/resources it changes (a key set to `undefined` deletes),
+// plus a handler ONLY when a change is not automatically convertible. Additive and
+// minor changes carry NO code. One co-located guard test proves the history matches
+// the current schema, and `createVersionUpgrader(versions)` upgrades old documents on
+// load — reading each quadrant's saved version from the blob metadata (db.version).
 
 import { describe, it, expect } from "vitest";
 import type { Schema } from "../../../schema/index.js";
@@ -53,7 +53,7 @@ const versions: readonly VersionEntry[] = [
 // The current app plugin. Its schema MUST equal fold(versions) — the guard proves it.
 const plugin = Database.Plugin.create({
     components: { hp: health, score: { type: "number", precision: 1, default: 0, maximum: 100 } as Schema, mana: f32 },
-    resources: { turn: { type: "integer", default: 0 }, difficulty: { type: "string", default: "normal" }, databaseVersion: { default: versions.length - 1 } },
+    resources: { turn: { type: "integer", default: 0 }, difficulty: { type: "string", default: "normal" } },
     archetypes: { Player: ["hp", "score", "mana"] } as const,
     transactions: {
         spawn(t, args: { hp: { current: number; max: number }; score: number; mana: number }) {
@@ -62,13 +62,14 @@ const plugin = Database.Plugin.create({
     },
 });
 
-const upgrader = () => createVersionUpgrader(versions, { document: "databaseVersion" });
+const upgrader = () => createVersionUpgrader(versions);
 
 // A version-0 document authored by an old build (hp is a plain number, no mana/difficulty).
+// The old build isn't versioned, so its toData stamps version 0 in the save metadata.
 const v0Document = () => {
     const v0 = Database.Plugin.create({
         components: { hp: f32, score: f32 },
-        resources: { turn: { type: "integer", default: 0 }, databaseVersion: { default: 0 } },
+        resources: { turn: { type: "integer", default: 0 } },
         archetypes: { Being: ["hp", "score"] } as const,
         transactions: { spawn(t, a: { hp: number; score: number }) { return t.archetypes.Being.insert(a); } },
     });
@@ -80,13 +81,12 @@ const v0Document = () => {
 // ─── the ONE guard test every versioned app writes ──────────────────────────
 describe("the version guard", () => {
     it("passes: the history folds to the current schema", () => {
-        const db = Database.create(plugin);
+        const db = Database.create(plugin, { versioning: upgrader() });
         expect(() =>
             assertVersionsMatchSchema({
                 entries: versions,
                 ...storeSchemas(db),
-                versionResource: "databaseVersion",
-                currentVersion: db.resources.databaseVersion,
+                currentVersion: db.version, // = entries.length - 1
             }),
         ).not.toThrow();
     });
@@ -100,7 +100,6 @@ describe("the version guard", () => {
                 entries: versions,
                 components: { ...schemas.components, luck: f32 }, // forgot to record `luck`
                 resources: schemas.resources,
-                versionResource: "databaseVersion",
             });
         } catch (e) { message = (e as Error).message; }
         expect(message).toContain('"luck"');
@@ -117,7 +116,6 @@ describe("the version guard", () => {
                 entries: versions,
                 components: { ...schemas.components, score: { type: "object", properties: { v: f32 } } as Schema },
                 resources: schemas.resources,
-                versionResource: "databaseVersion",
             });
         } catch (e) { message = (e as Error).message; }
         expect(message).toMatch(/BREAKING/);
@@ -128,10 +126,10 @@ describe("the version guard", () => {
         expect(message).toContain("undefined");
     });
 
-    it("fails when the stamped version disagrees with the history length", () => {
+    it("fails when the database version disagrees with the history length", () => {
         expect(() =>
             assertVersionsMatchSchema({ entries: versions, components: {}, resources: {}, currentVersion: 99 }),
-        ).toThrow(/Set the version resource default to 4/);
+        ).toThrow(/database version is 99 but the history's current version is 4/);
     });
 
     it("rejects a no-op entry with empty changes", () => {
@@ -209,22 +207,24 @@ describe("createVersionUpgrader — on-load upgrade", () => {
         expect(result).toEqual({ loaded: true });
         expect(app.read(entity)).toEqual({ hp: { current: 80, max: 80 }, score: 50 }); // hp remapped; no mana (old entity)
         expect(app.resources.difficulty).toBe("normal"); // additive resource materialized
-        expect(app.resources.databaseVersion).toBe(4); // stamped current
+        expect(app.version).toBe(4); // the db's current schema version
     });
 
     it("rejects a document newer than the app (non-destructive)", async () => {
         const future = Database.create(
             Database.Plugin.create({
                 components: { hp: health },
-                resources: { databaseVersion: { default: 9 } },
+                resources: {},
                 archetypes: { A: ["hp"] } as const,
                 transactions: { spawn(t, a: { hp: { current: number; max: number } }) { return t.archetypes.A.insert(a); } },
             }),
         );
         future.transactions.spawn({ hp: { current: 1, max: 1 } });
+        // A blob saved by a v9 build — its metadata carries document version 9.
+        const doc = { ...(future.toData() as object), schemaVersions: { document: 9, settings: 9 } };
         const app = Database.create(plugin, { versioning: upgrader() });
         const kept = app.transactions.spawn({ hp: { current: 5, max: 5 }, score: 5, mana: 5 });
-        const result = await app.fromData(future.toData()); // documentVersion 9 > currentVersion 4
+        const result = await app.fromData(doc); // document version 9 > currentVersion 4
 
         expect(result).toEqual({ loaded: false, documentVersion: 9, currentVersion: 4 }); // observable reject
         expect(app.select(["hp"])).toEqual([kept]); // untouched
@@ -298,26 +298,12 @@ describe("assertVersioning (combined guard)", () => {
     };
 
     it("passes when the history folds to the live schema and every handler has a passing case", async () => {
-        await assertVersioning({ database: Database.create(plugin), entries: versions, versionResource: "databaseVersion", handlers: hpCase });
+        await assertVersioning({ database: Database.create(plugin, { versioning: upgrader() }), entries: versions, handlers: hpCase });
     });
 
     it("throws synchronously when a handler case is missing (handler coverage)", () => {
         expect(() =>
-            assertVersioning({ database: Database.create(plugin), entries: versions, versionResource: "databaseVersion", handlers: {} }),
+            assertVersioning({ database: Database.create(plugin, { versioning: upgrader() }), entries: versions, handlers: {} }),
         ).toThrow(/Version 4 has an upgrade handler but no test case/);
-    });
-
-    it("throws when the stamped version disagrees with the history (schema coverage)", () => {
-        // A db whose version resource default (9) does not equal entries.length - 1 (4).
-        const wrong = Database.create(
-            Database.Plugin.create({
-                components: { hp: health, score: { type: "number", precision: 1, default: 0, maximum: 100 } as Schema, mana: f32 },
-                resources: { turn: { type: "integer", default: 0 }, difficulty: { type: "string", default: "normal" }, databaseVersion: { default: 9 } },
-                archetypes: {},
-            }),
-        );
-        expect(() =>
-            assertVersioning({ database: wrong, entries: versions, versionResource: "databaseVersion", handlers: hpCase }),
-        ).toThrow(/stamped current version is 9/);
     });
 });

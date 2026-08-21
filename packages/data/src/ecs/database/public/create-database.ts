@@ -11,7 +11,6 @@ import { observeIndexEntities } from "../observe-index-entities.js";
 import { createObservedDatabase } from "../observed/create-observed-database.js";
 import { storeSchemas } from "../../store/index.js";
 import { conformStoreToSchemas } from "../versioning/conform-store-to-schemas.js";
-import { readVersionResource, writeVersionResource } from "../versioning/version-resource.js";
 import type { DatabaseVersioning } from "./database-versioning.js";
 import { createImmediateConcurrency } from "../concurrency/immediate-concurrency.js";
 import type { ConcurrencyStrategy, ConcurrencyStrategyFactory } from "../concurrency/concurrency-strategy.js";
@@ -82,6 +81,13 @@ export function createDatabase(
     return db.extend(plugin);
 }
 
+// The per-quadrant schema versions a blob was saved at, from its save metadata.
+// Absent (a legacy blob predating versioning) ⇒ 0 for both quadrants.
+function readSchemaVersions(data: unknown): { document: number; settings: number } {
+    const meta = (data as { schemaVersions?: { document?: unknown; settings?: unknown } } | null)?.schemaVersions;
+    return { document: Number(meta?.document ?? 0), settings: Number(meta?.settings ?? 0) };
+}
+
 /**
  * Creates a database with empty store, no transactions, actions, services, computed, or systems.
  * All content is added via .extend(plugin). Single code path for extension.
@@ -146,59 +152,60 @@ function createEmptyDatabase({ concurrency, versioning }: {
     // `db.indexes.<name>` and `t.indexes.<name>` pointing at one source of
     // truth.
 
+    // The current schema version — 0 when this db isn't versioned. Stamped into the
+    // save metadata of every `toData`, per persisted quadrant, and read back on load.
+    const version = versioning ? versioning.currentVersion : 0;
+
     const toData = (options?: { readonly scope?: PersistenceScope }) => {
         const scope = options?.scope;
         // Fast path: a strategy with no replay hook leaves the store untouched
         // after serialization, so a live-reference snapshot is safe.
+        // Otherwise a replay strategy mutates the live buffers in `onAfterToData`,
+        // which would corrupt a live-reference snapshot, so capture a detached copy
+        // of the committed (rolled-back) state before replaying.
+        let data: unknown;
         if (!strategy.onAfterToData) {
-            return observedDatabase.toData({ copy: false, scope });
+            data = observedDatabase.toData({ copy: false, scope });
+        } else {
+            strategy.onBeforeToData?.();
+            data = observedDatabase.toData({ copy: true, scope });
+            strategy.onAfterToData();
         }
-        // A replay strategy mutates the live buffers in `onAfterToData`, which
-        // would corrupt a live-reference snapshot. Capture a detached copy of
-        // the committed (rolled-back) state before replaying.
-        strategy.onBeforeToData?.();
-        const data = observedDatabase.toData({ copy: true, scope });
-        strategy.onAfterToData();
-        return data;
+        // Extend the save format with the schema version, per persisted quadrant.
+        // The db writes its single `version` as both stamps; when the two blobs are
+        // saved separately in future, each carries its own quadrant's stamp.
+        return { ...(data as object), schemaVersions: { document: version, settings: version } };
     };
     const fromData = async (data: unknown, scope?: PersistenceScope): Promise<FromDataResult> => {
-        // Versioning applies only to whole-document (unscoped) loads. A scoped
-        // load is a partial quadrant that does not carry the document's version,
-        // so it bypasses the handler and loads directly (the original path), as
-        // does a database with no handler configured.
+        // Versioning applies only to whole-document (unscoped) loads. A scoped load
+        // is a partial quadrant handled directly (the original path), as is a db with
+        // no handler configured.
         if (versioning && scope === undefined) {
-            // Reconstruct the document into a bare document store (its OWN schema,
-            // no dependence on the live db), read the document + current versions,
-            // and hand them to the (possibly async) upgrade handler. `handle` may
-            // await — e.g. `import("./upgrader")` to load migration code only when
-            // a document actually needs upgrading. It returns the store to commit
-            // or null to reject — a reject leaves the live db untouched.
+            // Reconstruct the document into a bare document store (its OWN schema, no
+            // dependence on the live db). The per-quadrant versions the blob was saved
+            // at come from its save METADATA (`schemaVersions`; absent ⇒ 0, a legacy
+            // blob), NOT from the store data. Hand both to the (possibly async) upgrade
+            // handler — it may `await import("./upgrader")` to load migration code only
+            // when a document actually needs upgrading. It returns the store to commit,
+            // or null to reject (a reject leaves the live db untouched).
             const documentStore = Store.create({ components: {}, resources: {}, archetypes: {} });
             documentStore.fromData(data);
-            const documentVersion = readVersionResource(documentStore, versioning.resource);
-            const currentVersion = readVersionResource(store, versioning.resource);
-            const committed = await versioning.handle({ documentStore, documentVersion, currentVersion });
+            const schemaVersions = readSchemaVersions(data);
+            const committed = await versioning.handle({ documentStore, schemaVersions });
             if (committed === null) {
-                // Refused (e.g. document newer than this app) — live db untouched.
-                return { loaded: false, documentVersion, currentVersion };
+                return { loaded: false, documentVersion: schemaVersions.document, currentVersion: version };
             }
-            // The live database is ALREADY initialized to the current-version
-            // schema. We copy only the DATA for components it declares and adopt no
-            // schema from the returned store — so conform the returned store's data
-            // to the current schema first, dropping any foreign component the
-            // migration left behind (`componentSchemas` keys are the components +
-            // resource singletons the live db declares).
+            // The live database is ALREADY initialized to the current-version schema.
+            // Copy only the DATA for components it declares (adopt no schema) — so
+            // conform the returned store to the current schema first, dropping any
+            // foreign component the migration left behind.
             committed.pruneToSchema(new Set(Object.keys(store.componentSchemas)));
-            // The load succeeded → stamp the committed document to the current
-            // version (the library owns reading it, so it owns writing it too).
-            writeVersionResource(committed, versioning.resource, currentVersion);
-            // Auto-heal the returned store to the current schema: additive/minor/
-            // reorder/clamp changes convert automatically; a non-auto-convertible
-            // remnant (a handler that failed to produce the current shape) throws.
+            // Auto-heal to the current schema: additive/minor/reorder/clamp convert
+            // automatically; a non-auto-convertible remnant (a handler that failed to
+            // produce the current shape) throws.
             conformStoreToSchemas(committed, storeSchemas(store));
             // Commit into the live db. copy:false hands the (now schema-conformed)
-            // store's buffers over structurally — it is discarded right after — so
-            // this is a cheap structural adoption of the data, not a deep copy.
+            // store's buffers over structurally — it is discarded right after.
             observedDatabase.fromData(committed.toData({ copy: false }));
         } else {
             observedDatabase.fromData(data, scope);
@@ -233,6 +240,7 @@ function createEmptyDatabase({ concurrency, versioning }: {
             // level (see Database.pruneToPluginSchema).
             return partialDatabase;
         },
+        version,
         toData,
         fromData,
         transactions,

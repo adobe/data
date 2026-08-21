@@ -13,9 +13,10 @@ import "@spectrum-web-components/theme/spectrum-two/scale-medium.js";
 const app = document.getElementById("app");
 if (app) {
   // Configured with the version upgrader: a document loaded via `service.fromData`
-  // is migrated from its stamped `documentVersion` up to the current schema.
+  // is migrated from its saved `db.version` (carried in the blob metadata) up to
+  // the current schema.
   const service = Database.create(MainService.plugin, {
-    versioning: createVersionUpgrader(versions, { document: "documentVersion" }),
+    versioning: createVersionUpgrader(versions),
   });
 
   service.actions.createTodo({ name: "Buy groceries" });

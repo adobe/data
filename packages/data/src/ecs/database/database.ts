@@ -280,6 +280,12 @@ export interface Database<
    * in-flight transients into persisted state. The old reconciler tests missed
    * it because they only asserted the snapshot was truthy, never round-tripped it.
    */
+  /**
+   * The current schema version — `entries.length - 1` when a version upgrader is
+   * configured, else `0`. Stamped into the save metadata of every {@link toData}
+   * (per persisted quadrant) and read back on load. Never an ECS component/resource.
+   */
+  readonly version: number
   toData(options?: { readonly scope?: PersistenceScope }): unknown
   /**
    * Load a snapshot. Async because a configured version handler may be async

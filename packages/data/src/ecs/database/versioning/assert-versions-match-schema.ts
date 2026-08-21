@@ -20,8 +20,8 @@ type Drift = {
  * record it, and this throws — with an actionable recipe for fixing it.
  *
  * `components`/`resources` are the app's current persistent schemas (inject the
- * plugin's, minus the built-ins). Pass `currentVersion` to also assert the
- * stamped version resource default equals `entries.length - 1` (the current version).
+ * plugin's, minus the built-ins). Pass `currentVersion` (the db's `version`) to also
+ * assert it equals `entries.length - 1` (the current version).
  *
  * On drift the message classifies every change as auto-convertible (record a
  * merge-patch, no handler) or breaking (record a patch AND a handler), and prints
@@ -32,19 +32,8 @@ export function assertVersionsMatchSchema(input: {
     readonly entries: readonly VersionEntry[];
     readonly components: Readonly<Record<string, Schema>>;
     readonly resources: Readonly<Record<string, Schema>>;
-    /** Name(s) of the version resource(s), excluded from the diff — a stamp's
-     *  default IS the version number, so it changes every version by construction
-     *  and is not tracked in the history. Pass an array for per-quadrant stamps. */
-    readonly versionResource?: string | readonly string[];
     readonly currentVersion?: number;
 }): void {
-    const versionResources = new Set(
-        input.versionResource === undefined
-            ? []
-            : typeof input.versionResource === "string"
-              ? [input.versionResource]
-              : input.versionResource,
-    );
     for (let i = 0; i < input.entries.length; i++) {
         if (input.entries[i]!.version !== i) {
             throw new Error(
@@ -69,8 +58,8 @@ export function assertVersionsMatchSchema(input: {
     const currentVersion = input.entries.length - 1;
     if (input.currentVersion !== undefined && input.currentVersion !== currentVersion) {
         throw new Error(
-            `Version mismatch: the stamped current version is ${input.currentVersion} but the history's current ` +
-            `version is ${currentVersion} (entries.length - 1). Set the version resource default to ${currentVersion}.`,
+            `Version mismatch: the database version is ${input.currentVersion} but the history's current version ` +
+            `is ${currentVersion} (entries.length - 1). These are wired from the same history, so this indicates a bug.`,
         );
     }
 
@@ -94,7 +83,7 @@ export function assertVersionsMatchSchema(input: {
     // bare default. Only session values (excluded above) may be untyped — e.g. a
     // GPU buffer that can't be schema-typed. A real type is what lets a change be
     // detected; an untyped `{ default }` hides shape changes.
-    const versioned = collectVersioned(folded, input.components, input.resources, versionResources);
+    const versioned = collectVersioned(folded, input.components, input.resources);
     const untyped = versioned.filter((s) => !hasDeclaredType(s.schema)).map((s) => `${s.namespace} "${s.name}"`);
     if (untyped.length > 0) {
         throw new Error(
@@ -126,7 +115,7 @@ export function assertVersionsMatchSchema(input: {
 
     const drifts = [
         ...diff("components", folded.components, input.components),
-        ...diff("resources", withoutNames(folded.resources, versionResources), withoutNames(input.resources, versionResources)),
+        ...diff("resources", folded.resources, input.resources),
     ];
     if (drifts.length === 0) return;
 
@@ -139,17 +128,15 @@ function transientNames(namespace: string, schemas: Readonly<Record<string, Sche
         .map((name) => `${namespace} "${name}"`);
 }
 
-// Every versioned schema (recorded + current), minus the version resource.
+// Every versioned schema (recorded + current).
 function collectVersioned(
     folded: { components: Readonly<Record<string, Schema>>; resources: Readonly<Record<string, Schema>> },
     components: Readonly<Record<string, Schema>>,
     resources: Readonly<Record<string, Schema>>,
-    versionResources: ReadonlySet<string>,
 ): { namespace: string; name: string; schema: Schema }[] {
     const out: { namespace: string; name: string; schema: Schema }[] = [];
     const add = (namespace: string, map: Readonly<Record<string, Schema>>) => {
         for (const name of Object.keys(map)) {
-            if (namespace === "resources" && versionResources.has(name)) continue;
             out.push({ namespace, name, schema: map[name]! });
         }
     };
@@ -208,15 +195,6 @@ function defaultViolatesSchema(schema: Schema, value: unknown): boolean {
         default:
             return false; // untyped is rejected earlier; nothing to check here
     }
-}
-
-function withoutNames(schemas: Readonly<Record<string, Schema>>, names: ReadonlySet<string>): Readonly<Record<string, Schema>> {
-    if (names.size === 0) return schemas;
-    const rest: Record<string, Schema> = {};
-    for (const name of Object.keys(schemas)) {
-        if (!names.has(name)) rest[name] = schemas[name]!;
-    }
-    return rest;
 }
 
 function diff(

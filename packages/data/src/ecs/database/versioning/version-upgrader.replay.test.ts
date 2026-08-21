@@ -20,12 +20,6 @@ const getRes = (store: Store<any, any, any>, name: string): number => {
     return (arch.columns as Record<string, { get(i: number): number }>)[name]!.get(0);
 };
 
-// Give a hand-built document store its `databaseVersion` stamp, as a saved document
-// would carry — the upgrader reads each quadrant's version off the store itself.
-const stampVersion = (store: Store<any, any, any>, version: number): void => {
-    store.extend({ components: {}, resources: { databaseVersion: { type: "integer", default: version } }, archetypes: {} });
-};
-
 // v0 {a} → v1 +b (additive) → v2 MAJOR a:number→{n} → v3 +bonus resource (additive)
 //   → v4 MAJOR a:{n}→{n,total} where total = n + bonus (reads the resource staged in at v3)
 const versions: readonly VersionEntry[] = [
@@ -46,12 +40,12 @@ const versions: readonly VersionEntry[] = [
 
 describe("multi-major replay", () => {
     it("runs every major in order, staging the additive resource in before the last handler reads it", async () => {
-        const upgrader = createVersionUpgrader(versions, { document: "databaseVersion" });
+        const upgrader = createVersionUpgrader(versions);
         const doc = createStoreAtVersion(versions, 0); // schema at version 0: { a }
-        stampVersion(doc, 0); // a saved document carries its own version stamp
         const e = (doc.ensureArchetype(["a"] as never[]) as any).insert({ a: 5 });
 
-        const result = await upgrader.handle({ documentStore: doc, documentVersion: 0, currentVersion: 4 });
+        // Saved at version 0 in both quadrants (the metadata a real blob would carry).
+        const result = await upgrader.handle({ documentStore: doc, schemaVersions: { document: 0, settings: 0 } });
 
         expect(result).not.toBeNull();
         // v2 turned 5 into { n: 5 }; v4 read the staged bonus (10) and computed total.
@@ -59,12 +53,12 @@ describe("multi-major replay", () => {
     });
 
     it("starts partway through history for a mid-version document (only later majors run)", async () => {
-        const upgrader = createVersionUpgrader(versions, { document: "databaseVersion" });
+        const upgrader = createVersionUpgrader(versions);
         const doc = createStoreAtVersion(versions, 3); // already { a:{n}, b } + bonus resource
-        stampVersion(doc, 3); // stamped v3 → only the v4 handler should run
         const e = (doc.ensureArchetype(["a"] as never[]) as any).insert({ a: { n: 7 } });
 
-        const result = await upgrader.handle({ documentStore: doc, documentVersion: 3, currentVersion: 4 });
+        // Saved at v3 → only the v4 handler should run.
+        const result = await upgrader.handle({ documentStore: doc, schemaVersions: { document: 3, settings: 3 } });
 
         // Only the v4 handler ran; a already at {n} from version 3.
         expect((result!.read(e) as any)?.a).toEqual({ n: 7, total: 17 });
@@ -76,7 +70,7 @@ describe("removal with a preservation handler (full load path)", () => {
         // A v0 document with a `doomed` component carrying data.
         const v0Plugin = Database.Plugin.create({
             components: { keep: f32, doomed: f32 },
-            resources: { databaseVersion: { type: "integer", default: 0 } },
+            resources: {},
             archetypes: { E: ["keep", "doomed"] } as const,
             transactions: { add(t, a: { keep: number; doomed: number }) { return t.archetypes.E.insert(a); } },
         });
@@ -106,10 +100,10 @@ describe("removal with a preservation handler (full load path)", () => {
         const app = Database.create(
             Database.Plugin.create({
                 components: { keep: f32 },
-                resources: { databaseVersion: { type: "integer", default: 1 }, rescued: { type: "integer", default: 0 } },
+                resources: { rescued: { type: "integer", default: 0 } },
                 archetypes: { E: ["keep"] } as const,
             }),
-            { versioning: createVersionUpgrader(versions2, { document: "databaseVersion" }) },
+            { versioning: createVersionUpgrader(versions2) },
         );
         await app.fromData(doc);
 

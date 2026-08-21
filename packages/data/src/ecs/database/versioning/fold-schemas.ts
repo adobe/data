@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Schema } from "../../../schema/index.js";
-import { mergePatchU, type PatchU } from "../../../functions/index.js";
+import { mergePatch, type Patch } from "../../../functions/index.js";
 import { quadrantOf, type Quadrant } from "../../store/index.js";
 import type { SchemaChanges, VersionEntry } from "./version-entry.js";
 
@@ -82,8 +82,8 @@ function withNewKeys(prev: Readonly<Record<string, Schema>>, cur: Readonly<Recor
 // `undefined` deletes it (`name: undefined` drops the whole component/resource).
 function apply(schemas: Record<string, Schema>, changes: SchemaChanges | undefined): void {
     if (changes === undefined) return;
-    const merged = mergePatchU(schemas, changes as PatchU<Record<string, Schema>>);
-    // mergePatchU is non-mutating; copy the result back into the accumulator.
+    const merged = mergePatch(schemas, changes as Patch<Record<string, Schema>>);
+    // mergePatch is non-mutating; copy the result back into the accumulator.
     for (const name of Object.keys(schemas)) delete schemas[name];
     Object.assign(schemas, merged);
 }

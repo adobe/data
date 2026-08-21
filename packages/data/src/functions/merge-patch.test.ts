@@ -1,151 +1,65 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { mergePatch, mergePatchU } from "./merge-patch.js";
-import type { Patch } from "./merge-patch.js";
+import { mergePatch } from "./merge-patch.js";
 
 /**
- * RFC 7396 expectations:
- * - null replaces (or deletes when nested in an object)
- * - arrays replace wholesale (no deep merge)
- * - primitives replace
- * - objects merge recursively
+ * mergePatch semantics:
+ * - objects merge recursively; a key set to the `deleteSentinel` is deleted.
+ * - arrays replace wholesale (no deep merge); primitives replace.
+ * - `deleteSentinel` defaults to `undefined`, so `null` is an ordinary value.
+ *   Pass `null` for strict RFC 7396 (where `null` deletes).
  */
-
-describe("mergePatch", () => {
-    it("replaces top-level with null", () => {
-        type T = { a: number; b: number };
-        const target: T = { a: 1, b: 2 };
-        const patch: Patch<T> = null;
-        const result = mergePatch(target, patch);
-        expect(result).toBeNull();
-    });
-
-    it("replaces primitives", () => {
-        expect(mergePatch<number>(1, 2)).toBe(2);
-        expect(mergePatch<string>("a", "b")).toBe("b");
-        expect(mergePatch<boolean>(true, false)).toBe(false);
-    });
-
-    it("replaces arrays wholesale", () => {
-        type T = { items: number[] };
-        const target: T = { items: [1, 2, 3] };
-        const patch: Patch<T> = { items: [9] };
-        const result = mergePatch(target, patch);
-        expect(result).toEqual({ items: [9] });
-    });
-
-    it("deletes object members when value is null", () => {
-        type T = { a: number; b?: number };
-        const target: T = { a: 1, b: 2 };
-        const patch: Patch<T> = { b: null };
-        const result = mergePatch(target, patch);
-        expect(result).toEqual({ a: 1 });
-        // ensure non-mutating
-        expect(target).toEqual({ a: 1, b: 2 });
-    });
-
+describe("mergePatch (default: undefined deletes, null is a value)", () => {
     it("recursively merges nested objects", () => {
         type T = { a: { x: number; y?: number }; b: number };
-        const target: T = { a: { x: 1, y: 2 }, b: 5 };
-        const patch: Patch<T> = { a: { y: 9 } };
-        const result = mergePatch(target, patch);
+        const result = mergePatch<T>({ a: { x: 1, y: 2 }, b: 5 }, { a: { y: 9 } });
         expect(result).toEqual({ a: { x: 1, y: 9 }, b: 5 });
     });
 
-    it("replaces non-object targets when patch is object", () => {
-        // Using explicit any generic to exercise runtime behavior intentionally outside typing constraints
-        expect(mergePatch<any>(1, { a: 1 })).toEqual({ a: 1 });
-        expect(mergePatch<any>([1, 2], { a: 1 })).toEqual({ a: 1 });
-        expect(mergePatch<any>(null, { a: 1 })).toEqual({ a: 1 });
-    });
-
-    it("handles adding new keys", () => {
-        type T = { a: number; b?: number };
-        const target: T = { a: 1 };
-        const patch: Patch<T> = { b: 2 };
-        const result = mergePatch(target, patch);
+    it("adds new keys", () => {
+        const result = mergePatch<{ a: number; b?: number }>({ a: 1 }, { b: 2 });
         expect(result).toEqual({ a: 1, b: 2 });
     });
 
-    it("handles nested null to delete deep key", () => {
-        type T = { a: { x: number; y?: number }; b: number };
-        const target: T = { a: { x: 1, y: 2 }, b: 3 };
-        const patch: Patch<T> = { a: { y: null } };
-        const result = mergePatch(target, patch);
-        expect(result).toEqual({ a: { x: 1 }, b: 3 });
-    });
-
-    it("replaces array value with null to delete property", () => {
-        type T = { a?: number[]; b: number };
-        const target: T = { a: [1, 2, 3], b: 1 };
-        const patch: Patch<T> = { a: null };
-        const result = mergePatch(target, patch);
-        expect(result).toEqual({ b: 1 });
-    });
-
-    it("replaces scalar with array and vice versa", () => {
-        type T = { a: number | number[] };
-        const t1: T = { a: 1 };
-        const p1: Patch<T> = { a: [1, 2] };
-        expect(mergePatch(t1, p1)).toEqual({ a: [1, 2] });
-
-        const t2: T = { a: [1, 2] };
-        const p2: Patch<T> = { a: 7 };
-        expect(mergePatch(t2, p2)).toEqual({ a: 7 });
-    });
-
-    it("does not mutate input objects or arrays", () => {
-        type T = { a: { x: number; y?: number }; arr: number[] };
-        const target: T = { a: { x: 1 }, arr: [1, 2] };
-        const patch: Patch<T> = { a: { y: 2 }, arr: [9] };
-        const targetClone = JSON.parse(JSON.stringify(target));
-        mergePatch({ ...target, a: { ...target.a }, arr: [...target.arr] }, patch);
-        expect(target).toEqual(targetClone);
-    });
-
-    it("merging empty object returns structural copy of target (no-op)", () => {
-        type T = { a: number; b: { x: number } };
-        const target: T = { a: 1, b: { x: 2 } };
-        const patch: Patch<T> = {};
-        const result = mergePatch(target, patch);
-        expect(result).toEqual(target);
-        // not the same reference when patching an object
-        expect(result).not.toBe(target);
-    });
-
-    it("merges when target has undefined keys (treats as normal values)", () => {
-        type T = { a?: number; b?: number };
-        const target: T = { a: undefined };
-        const patch: Patch<T> = { a: 1, b: undefined };
-        const result = mergePatch(target, patch);
-        expect(result).toEqual({ a: 1, b: undefined });
-    });
-});
-
-/**
- * The `undefined`-sentinel variant: `undefined` deletes a key, so `null` is a
- * preserved value (the opposite of RFC 7396).
- */
-describe("mergePatchU", () => {
     it("deletes a key set to undefined; keeps null as a value", () => {
-        expect(mergePatchU<{ a?: number; b?: number }>({ a: 1, b: 2 }, { b: undefined })).toEqual({ a: 1 });
-        expect(mergePatchU<{ a: number | null }>({ a: 1 }, { a: null })).toEqual({ a: null });
+        expect(mergePatch<{ a?: number; b?: number }>({ a: 1, b: 2 }, { b: undefined })).toEqual({ a: 1 });
+        expect(mergePatch<{ a: number | null }>({ a: 1 }, { a: null })).toEqual({ a: null });
     });
 
-    it("deep-merges nested objects and deletes nested keys with undefined", () => {
+    it("deletes a nested key set to undefined", () => {
         const target: { a: Record<string, number> } = { a: { x: 1, y: 2 } };
-        const result = mergePatchU(target, { a: { y: undefined, z: 3 } });
-        expect(result).toEqual({ a: { x: 1, z: 3 } });
+        expect(mergePatch(target, { a: { y: undefined } })).toEqual({ a: { x: 1 } });
     });
 
-    it("replaces arrays and scalars wholesale; an object patch onto a scalar builds fresh", () => {
-        expect(mergePatchU<any>({ a: [1, 2, 3] }, { a: [9] })).toEqual({ a: [9] });
-        expect(mergePatchU<any>({ a: 1 }, { a: { x: 1 } })).toEqual({ a: { x: 1 } });
+    it("replaces arrays wholesale and replaces primitives", () => {
+        expect(mergePatch<{ items: number[] }>({ items: [1, 2, 3] }, { items: [9] })).toEqual({ items: [9] });
+        expect(mergePatch<number>(1, 2)).toBe(2);
+        expect(mergePatch<string>("a", "b")).toBe("b");
+    });
+
+    it("replaces a non-object target when the patch is an object", () => {
+        expect(mergePatch<any>(1, { a: 1 })).toEqual({ a: 1 });
+        expect(mergePatch<any>(null, { a: 1 })).toEqual({ a: 1 });
     });
 
     it("does not mutate the target", () => {
-        const target: { a: Record<string, number> } = { a: { x: 1 } };
-        mergePatchU(target, { a: { y: 2 } });
+        const target: { a: { x: number; y?: number } } = { a: { x: 1 } };
+        const result = mergePatch(target, { a: { y: 2 } });
+        expect(result).not.toBe(target);
         expect(target).toEqual({ a: { x: 1 } });
+    });
+});
+
+// The null sentinel isn't encoded in `Patch<T>` (deletion is a runtime concern),
+// so these opt-in RFC cases use `<any>` to pass `null` where the value type forbids it.
+describe("mergePatch with a null delete sentinel (RFC 7396)", () => {
+    it("deletes a key set to null; keeps undefined-valued keys", () => {
+        expect(mergePatch<any>({ a: 1, b: 2 }, { b: null }, null)).toEqual({ a: 1 });
+        // With the null sentinel, an undefined-valued key is a normal (undefined) value.
+        expect(mergePatch<any>({ a: 1 }, { a: undefined }, null)).toEqual({ a: undefined });
+    });
+
+    it("deletes a nested key set to null", () => {
+        expect(mergePatch<any>({ a: { x: 1, y: 2 } }, { a: { y: null } }, null)).toEqual({ a: { x: 1 } });
     });
 });

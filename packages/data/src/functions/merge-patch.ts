@@ -1,52 +1,31 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-export type Patch<T> =
-    | (T extends readonly any[]
-        ? T                                   // arrays must be same array type
-        : T extends object
-        ? { [K in keyof T]?: Patch<T[K]> | null } // objects are partial; null deletes
-        : T)                                  // scalars replace
-    | null;
 
 /**
- * A merge patch whose delete sentinel is `undefined` instead of `null`, so `null`
- * survives as a real value. Objects are partial; setting a key to `undefined`
- * deletes it. Arrays and scalars replace. See {@link mergePatchU}.
+ * A merge patch over `T`: objects are partial and merge recursively; arrays and
+ * scalars replace wholesale. Deletion is expressed at RUNTIME by setting a key to
+ * the delete sentinel passed to {@link mergePatch} (default `undefined`), not in the
+ * type — so `null` is an ordinary value unless you opt into it as the sentinel.
  */
-export type PatchU<T> =
+export type Patch<T> =
     T extends readonly any[]
         ? T // arrays replace wholesale
         : T extends object
-        ? { [K in keyof T]?: PatchU<T[K]> } // objects are partial; a key set to `undefined` deletes it
+        ? { [K in keyof T]?: Patch<T[K]> }
         : T; // scalars (incl. null) replace
 
 /**
- * Executes a JSON Merge Patch (RFC 7396) on `target` with `patch`.
- * - Objects: recursively merge; `null` deletes a property.
+ * Executes a JSON Merge Patch (RFC 7396-style) on `target` with `patch`:
+ * - Objects: recursively merge; a key set to `deleteSentinel` is deleted.
  * - Arrays: replaced wholesale (no element-wise merge).
- * - Primitives: replaced.
- * Does NOT mutate the input objects or arrays.
- */
-export function mergePatch<T>(target: T, patch: Patch<T>): T {
-    return mergePatchWith(target, patch, null);
-}
-
-/**
- * JSON Merge Patch with the delete sentinel moved from `null` to `undefined`, so
- * `null` is a preservable value (e.g. `default: null` sets the default to null
- * rather than deleting it). Not RFC 7396 (which is {@link mergePatch}) — `undefined`
- * is not serializable, which is fine here because these patches are never serialized.
- * - Objects: recursively merge; a key whose value is `undefined` is deleted.
- * - Arrays: replaced wholesale (no element-wise merge).
- * - Primitives (including `null`): replace.
+ * - Primitives: replace.
  * Does NOT mutate the inputs.
+ *
+ * `deleteSentinel` is the value that DELETES a key. It defaults to `undefined`, so
+ * `null` survives as an ordinary value (e.g. `default: null` sets the default to
+ * null). Pass `null` for strict RFC 7396, where `null` deletes instead. `undefined`
+ * is not serializable, which is fine for patches that are never serialized.
  */
-export function mergePatchU<T>(target: T, patch: PatchU<T>): T {
-    return mergePatchWith(target, patch, undefined);
-}
-
-// Shared merge-patch algorithm; `sentinel` is the value that DELETES a key
-// (`null` for RFC 7396, `undefined` for the {@link mergePatchU} variant).
-function mergePatchWith<T>(target: T, patch: unknown, sentinel: null | undefined): T {
+export function mergePatch<T>(target: T, patch: Patch<T>, deleteSentinel: null | undefined = undefined): T {
     // Arrays and non-objects (scalars, and the sentinel itself at the top) replace.
     if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
         return patch as T;
@@ -56,10 +35,10 @@ function mergePatchWith<T>(target: T, patch: unknown, sentinel: null | undefined
     const result: Record<string, unknown> = { ...base };
     for (const key of Object.keys(patch)) {
         const value = (patch as Record<string, unknown>)[key];
-        if (value === sentinel) {
+        if (value === deleteSentinel) {
             delete result[key];
         } else {
-            result[key] = mergePatchWith(base[key], value, sentinel);
+            result[key] = mergePatch(base[key], value as Patch<unknown>, deleteSentinel);
         }
     }
     return result as T;

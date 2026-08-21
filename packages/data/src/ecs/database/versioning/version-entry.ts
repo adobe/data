@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Schema } from "../../../schema/index.js";
-import type { PatchU } from "../../../functions/index.js";
+import type { Patch } from "../../../functions/index.js";
 import type { Store } from "../../store/index.js";
 
 /**
@@ -13,8 +13,8 @@ import type { Store } from "../../store/index.js";
  *     component/resource; a nested `precision: undefined` drops just that field;
  *   - arrays and scalars replace wholesale. `null` is a normal value (so
  *     `default: null` sets the default to null), NOT a delete — this is the
- *     `undefined`-sentinel merge-patch variant ({@link PatchU} / `mergePatchU`),
- *     chosen because these patches are never serialized.
+ *     `undefined`-sentinel merge patch ({@link Patch} / `mergePatch`, whose delete
+ *     sentinel defaults to `undefined`), chosen because these patches are never serialized.
  *
  * Because it is a MERGE, a shape change must delete the fields that no longer
  * apply: number → object is `{ type: "object", properties: {…}, precision: undefined,
@@ -31,7 +31,7 @@ import type { Store } from "../../store/index.js";
  * carries no shape, so the guard can only detect a change of the default's runtime
  * type — a same-typed shape change goes undetected (no handler demanded).
  */
-export type SchemaChanges = Readonly<Record<string, PatchU<Schema> | undefined>>;
+export type SchemaChanges = Readonly<Record<string, Patch<Schema> | undefined>>;
 
 /**
  * One entry in an ordered version history. `entries[i]` IS version `i`: applying

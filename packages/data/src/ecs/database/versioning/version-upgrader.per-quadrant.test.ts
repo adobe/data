@@ -170,4 +170,5 @@ describe("per-quadrant upgrade through the full Database load path", () => {
         // A corrupt stamp reads as +Infinity ⇒ treated as newer than any app ⇒ reject.
         expect(result).toEqual({ loaded: false, currentVersion: 2, schemaVersions: { document: Infinity, settings: 2 } });
     });
+
 });

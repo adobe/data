@@ -10,6 +10,8 @@
 
 import { describe, it, expect } from "vitest";
 import { Database } from "./database.js";
+import { Store } from "../store/index.js";
+import { createVersionUpgrader, type VersionEntry } from "./versioning/index.js";
 import type { DatabaseVersioning } from "./public/database-versioning.js";
 import type { Schema } from "../../schema/index.js";
 
@@ -302,27 +304,29 @@ const scopedPlugin = Database.Plugin.create({
     },
 });
 
-describe("Database.create versioning — scoped loads bypass versioning", () => {
-    it("a scoped load bypasses the handler and loads directly, isolating quadrants", async () => {
-        const author = Database.create(scopedPlugin);
+describe("Database.create versioning — a scoped load upgrades only its quadrant", () => {
+    it("consults versioning for the scoped quadrant and isolates the other", async () => {
+        const author = Database.create(scopedPlugin); // unversioned ⇒ stamps version 0
         author.transactions.setSetting(5);
-        const settingsDoc = author.toData({ scope: { nonShared: true } });
+        const settingsBlob = author.toData({ scope: { nonShared: true } });
 
-        let handlerCalled = false;
+        let seen: { document: number; settings: number } | undefined;
         const target = Database.create(scopedPlugin, {
             versioning: {
                 currentVersion: 1,
-                handle: ({ documentStore }) => {
-                    handlerCalled = true;
+                handle: ({ documentStore, schemaVersions }) => {
+                    seen = schemaVersions;
                     return documentStore;
                 },
             },
         });
         target.transactions.setDoc(42);
 
-        await target.fromData(settingsDoc, { nonShared: true });
+        await target.fromData(settingsBlob, { nonShared: true });
 
-        expect(handlerCalled).toBe(false); // scoped ⇒ versioning bypassed
+        // Versioning ran for the SETTINGS quadrant (its saved stamp, 0); the out-of-scope
+        // document quadrant is treated as current (1) so its handlers never run.
+        expect(seen).toEqual({ document: 1, settings: 0 });
         expect(target.resources.settingRes).toBe(5); // settings quadrant loaded
         expect(target.resources.docRes).toBe(42); // document quadrant untouched
     });
@@ -398,5 +402,53 @@ describe("Database.create versioning — migration shapes", () => {
         await target.fromData(snap);
 
         expect(target.indexes.byB.find({ b: 100 })).toContain(e);
+    });
+});
+
+// The versioned split: a document blob and a settings blob saved to (and loaded
+// from) two SEPARATE locations, each carrying and upgrading its own quadrant.
+describe("Database.create versioning — split persistence (one blob per quadrant)", () => {
+    const f32 = { type: "number", precision: 1, default: 0 } as const satisfies Schema;
+    const xy = { type: "object", properties: { x: f32, y: f32 } } as const satisfies Schema;
+    const pref = { type: "integer", default: 0, nonShared: true } as const satisfies Schema; // settings resource
+    const versions: readonly VersionEntry[] = [
+        { version: 0, changes: { components: { pos: numeric }, resources: { pref } } },
+        {
+            version: 1, // document-quadrant major: pos number → { x, y }
+            changes: { components: { pos: { type: "object", properties: { x: f32, y: f32 }, precision: undefined, default: undefined } } },
+            handler: (s) => Store.remapComponent(s as any, "pos", xy, (o: number) => ({ x: o, y: o })),
+        },
+    ];
+
+    it("saves document + settings separately and loads+upgrades each, non-clobbering and order-independent", async () => {
+        // One source persists two scoped blobs — a real app hands each to its own
+        // storage backend (two locations). Both are at v0 here.
+        const source = Database.create(
+            Database.Plugin.create({
+                components: { pos: numeric },
+                resources: { pref },
+                archetypes: { P: ["pos"] } as const,
+                transactions: {
+                    addPos(t, v: number) { return t.archetypes.P.insert({ pos: v }); },
+                    setPref(t, v: number) { t.resources.pref = v; },
+                },
+            }),
+        );
+        const posE = source.transactions.addPos(5);
+        source.transactions.setPref(7);
+        const documentBlob = source.toData({ scope: { shared: true } }); // → document location
+        const settingsBlob = source.toData({ scope: { nonShared: true } }); // → settings location
+
+        // A fresh v1 app loads each quadrant from its own blob, in either order.
+        const app = Database.create(
+            Database.Plugin.create({ components: { pos: xy }, resources: { pref }, archetypes: { P: ["pos"] } as const }),
+            { versioning: createVersionUpgrader(versions) },
+        );
+        expect(await app.fromData(settingsBlob, { nonShared: true })).toEqual({ loaded: true });
+        expect(app.resources.pref).toBe(7); // settings quadrant loaded
+
+        expect(await app.fromData(documentBlob, { shared: true })).toEqual({ loaded: true });
+        expect(app.read(posE)).toEqual({ pos: { x: 5, y: 5 } }); // document upgraded v0 → v1
+        expect(app.resources.pref).toBe(7); // settings quadrant left intact by the document load
     });
 });

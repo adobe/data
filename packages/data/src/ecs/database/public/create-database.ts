@@ -9,7 +9,7 @@ import { createTransactionDispatcher } from "./create-transaction-dispatcher.js"
 import { observeSelectEntities } from "../observe-select-entities.js";
 import { observeIndexEntities } from "../observe-index-entities.js";
 import { createObservedDatabase } from "../observed/create-observed-database.js";
-import { storeSchemas } from "../../store/index.js";
+import { storeSchemas, quadrantOf, type Quadrant, type StoreSchemas } from "../../store/index.js";
 import { conformStoreToSchemas } from "../versioning/conform-store-to-schemas.js";
 import type { DatabaseVersioning } from "./database-versioning.js";
 import { createImmediateConcurrency } from "../concurrency/immediate-concurrency.js";
@@ -92,6 +92,28 @@ function readSchemaVersions(data: unknown): { document: number; settings: number
         return Number.isFinite(n) ? n : Infinity;
     };
     return { document: read(meta?.document), settings: read(meta?.settings) };
+}
+
+// Whether a persisted quadrant is covered by a load/save scope (undefined ⇒ both).
+function quadrantInScope(scope: PersistenceScope | undefined, quadrant: Quadrant): boolean {
+    if (scope === undefined) return true;
+    if (quadrant === "document") return scope.shared === true;
+    if (quadrant === "settings") return scope.nonShared === true;
+    return false; // non-persistent quadrants are never in a persistence scope
+}
+
+// Restrict a schema split to the in-scope quadrants, so a scoped load conforms only
+// what it is loading (never materializing the other quadrant's schemas).
+function scopedSchemas(schemas: StoreSchemas, scope: PersistenceScope | undefined): StoreSchemas {
+    if (scope === undefined) return schemas;
+    const keep = (map: Record<string, Schema>): Record<string, Schema> => {
+        const out: Record<string, Schema> = {};
+        for (const name of Object.keys(map)) {
+            if (quadrantInScope(scope, quadrantOf(map[name]!))) out[name] = map[name]!;
+        }
+        return out;
+    };
+    return { components: keep(schemas.components), resources: keep(schemas.resources) };
 }
 
 /**
@@ -183,38 +205,44 @@ function createEmptyDatabase({ concurrency, versioning }: {
         return { ...(data as object), schemaVersions: { document: version, settings: version } };
     };
     const fromData = async (data: unknown, scope?: PersistenceScope): Promise<FromDataResult> => {
-        // Versioning applies only to whole-document (unscoped) loads. A scoped load
-        // is a partial quadrant handled directly (the original path), as is a db with
-        // no handler configured.
-        if (versioning && scope === undefined) {
-            // Reconstruct the document into a bare document store (its OWN schema, no
-            // dependence on the live db). The per-quadrant versions the blob was saved
-            // at come from its save METADATA (`schemaVersions`; absent ⇒ 0, a legacy
-            // blob), NOT from the store data. Hand both to the (possibly async) upgrade
-            // handler — it may `await import("./upgrader")` to load migration code only
-            // when a document actually needs upgrading. It returns the store to commit,
-            // or null to reject (a reject leaves the live db untouched).
+        // With versioning configured, EVERY load is version-upgraded — a whole-database
+        // load (no scope) or a single scoped quadrant. A scoped load upgrades ONLY its
+        // quadrant(s) and commits scoped, so it never disturbs the other quadrant: that
+        // is what lets a document blob and a settings blob be saved to — and loaded
+        // from — two separate locations independently. (Sound because every handler is
+        // single-quadrant, guard-enforced, so a quadrant upgrades on its own.)
+        if (versioning) {
+            // Reconstruct into a bare store (its OWN schema, no dependence on the live
+            // db), loading only the in-scope quadrant(s). The per-quadrant saved
+            // versions come from the blob's save METADATA (`schemaVersions`; absent ⇒ 0,
+            // a legacy blob), NOT from the store data. A quadrant NOT in scope is treated
+            // as current so its handlers don't run — we aren't loading it. The handler
+            // may `await import(...)` migration code; it returns the store to commit, or
+            // null to reject (a reject leaves the live db untouched).
+            // Rebuild the throwaway store UNSCOPED (it's fresh — nothing to clobber, and
+            // a scoped load into an empty store would not rebuild archetype structure). A
+            // scoped blob carries only its quadrant's data, so this materializes exactly
+            // that quadrant; the SCOPE governs stamp selection and the scoped commit below.
             const documentStore = Store.create({ components: {}, resources: {}, archetypes: {} });
             documentStore.fromData(data);
-            const schemaVersions = readSchemaVersions(data);
+            const blob = readSchemaVersions(data);
+            const schemaVersions = {
+                document: quadrantInScope(scope, "document") ? blob.document : version,
+                settings: quadrantInScope(scope, "settings") ? blob.settings : version,
+            };
             const committed = await versioning.handle({ documentStore, schemaVersions });
             if (committed === null) {
-                // Refused: some quadrant's saved version > currentVersion. Report both
-                // stamps so the caller can tell which quadrant is too new.
+                // Refused: an in-scope quadrant's saved version > currentVersion.
                 return { loaded: false, currentVersion: version, schemaVersions };
             }
             // The live database is ALREADY initialized to the current-version schema.
-            // Copy only the DATA for components it declares (adopt no schema) — so
-            // conform the returned store to the current schema first, dropping any
-            // foreign component the migration left behind.
+            // Copy only the DATA for components it declares (adopt no schema): keep only
+            // declared components, conform the in-scope quadrant(s) to the current schema
+            // (auto-heal; a non-auto-convertible remnant throws), then commit SCOPED so
+            // the other quadrant is left intact.
             committed.pruneToSchema(new Set(Object.keys(store.componentSchemas)));
-            // Auto-heal to the current schema: additive/minor/reorder/clamp convert
-            // automatically; a non-auto-convertible remnant (a handler that failed to
-            // produce the current shape) throws.
-            conformStoreToSchemas(committed, storeSchemas(store));
-            // Commit into the live db. copy:false hands the (now schema-conformed)
-            // store's buffers over structurally — it is discarded right after.
-            observedDatabase.fromData(committed.toData({ copy: false }));
+            conformStoreToSchemas(committed, scopedSchemas(storeSchemas(store), scope));
+            observedDatabase.fromData(committed.toData({ copy: false, scope }), scope);
         } else {
             observedDatabase.fromData(data, scope);
         }

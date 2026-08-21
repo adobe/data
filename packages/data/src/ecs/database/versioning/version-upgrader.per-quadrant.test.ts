@@ -139,4 +139,35 @@ describe("per-quadrant upgrade through the full Database load path", () => {
         expect((app.read(themeE) as any)?.theme).toEqual({ name: "dark" }); // settings was current
         expect(app.version).toBe(2); // db exposes the current schema version
     });
+
+    it("reports BOTH quadrant versions on reject when SETTINGS is the too-new one", async () => {
+        const saved = mergedStore(xy, themeObj);
+        insertPos(saved, { x: 1, y: 2 });
+        // document is fine (2), but settings was saved by a newer build (5).
+        const blob = { ...(saved.toData() as object), schemaVersions: { document: 2, settings: 5 } };
+
+        const app = Database.create(
+            Database.Plugin.create({ components: { pos: xy, theme: themeObj }, resources: {}, archetypes: {} }),
+            { versioning: upgrader() },
+        );
+        const result = await app.fromData(blob);
+
+        // The result names both stamps, so a caller can see SETTINGS (5 > 2) triggered it.
+        expect(result).toEqual({ loaded: false, currentVersion: 2, schemaVersions: { document: 2, settings: 5 } });
+    });
+
+    it("rejects a corrupt (non-numeric) version stamp instead of replaying everything", async () => {
+        const saved = mergedStore(xy, themeObj);
+        insertPos(saved, { x: 1, y: 2 });
+        const blob = { ...(saved.toData() as object), schemaVersions: { document: "oops", settings: 2 } };
+
+        const app = Database.create(
+            Database.Plugin.create({ components: { pos: xy, theme: themeObj }, resources: {}, archetypes: {} }),
+            { versioning: upgrader() },
+        );
+        const result = await app.fromData(blob);
+
+        // A corrupt stamp reads as +Infinity ⇒ treated as newer than any app ⇒ reject.
+        expect(result).toEqual({ loaded: false, currentVersion: 2, schemaVersions: { document: Infinity, settings: 2 } });
+    });
 });

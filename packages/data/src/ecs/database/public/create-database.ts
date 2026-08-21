@@ -82,10 +82,16 @@ export function createDatabase(
 }
 
 // The per-quadrant schema versions a blob was saved at, from its save metadata.
-// Absent (a legacy blob predating versioning) ⇒ 0 for both quadrants.
+// Absent (a legacy blob predating versioning) ⇒ 0 for both quadrants. A present but
+// non-numeric stamp (a corrupt/hand-crafted blob) ⇒ +Infinity, so it is treated as
+// "newer than any app" and REJECTED rather than triggering a wrong full replay.
 function readSchemaVersions(data: unknown): { document: number; settings: number } {
     const meta = (data as { schemaVersions?: { document?: unknown; settings?: unknown } } | null)?.schemaVersions;
-    return { document: Number(meta?.document ?? 0), settings: Number(meta?.settings ?? 0) };
+    const read = (value: unknown): number => {
+        const n = Number(value ?? 0);
+        return Number.isFinite(n) ? n : Infinity;
+    };
+    return { document: read(meta?.document), settings: read(meta?.settings) };
 }
 
 /**
@@ -193,7 +199,9 @@ function createEmptyDatabase({ concurrency, versioning }: {
             const schemaVersions = readSchemaVersions(data);
             const committed = await versioning.handle({ documentStore, schemaVersions });
             if (committed === null) {
-                return { loaded: false, documentVersion: schemaVersions.document, currentVersion: version };
+                // Refused: some quadrant's saved version > currentVersion. Report both
+                // stamps so the caller can tell which quadrant is too new.
+                return { loaded: false, currentVersion: version, schemaVersions };
             }
             // The live database is ALREADY initialized to the current-version schema.
             // Copy only the DATA for components it declares (adopt no schema) — so

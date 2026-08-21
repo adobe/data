@@ -108,12 +108,18 @@ import type { IndexDeclarations } from "../store/index-types.js";
 
 /**
  * The outcome of {@link Database.fromData}: loaded (possibly after migration), or
- * refused by a version handler (with the versions so a caller can react — e.g.
- * `documentVersion > currentVersion` means "the document is newer than this app").
+ * refused because a persisted quadrant was saved at a version NEWER than this app
+ * (`currentVersion`). `schemaVersions` reports each quadrant's saved version, so a
+ * caller can tell WHICH quadrant is too new — a value `> currentVersion` triggered
+ * the reject. The live database is left untouched on `loaded: false`.
  */
 export type FromDataResult =
   | { readonly loaded: true }
-  | { readonly loaded: false; readonly documentVersion: number; readonly currentVersion: number };
+  | {
+      readonly loaded: false;
+      readonly currentVersion: number;
+      readonly schemaVersions: { readonly document: number; readonly settings: number };
+    };
 
 export interface Database<
   C extends Components = {},
@@ -294,10 +300,10 @@ export interface Database<
    * load path can await a handler.
    *
    * Resolves with a {@link FromDataResult}: `{ loaded: true }` when the data was
-   * loaded (possibly migrated), or `{ loaded: false, documentVersion, currentVersion }`
-   * when a version handler refused it (e.g. the document is newer than this app) —
-   * the live database is left untouched. Rejection is data, not a throw, so a UI
-   * can branch on it (e.g. prompt "please update").
+   * loaded (possibly migrated), or `{ loaded: false, currentVersion, schemaVersions }`
+   * when a persisted quadrant was saved at a version newer than this app — the live
+   * database is left untouched. Rejection is data, not a throw, so a UI can branch on
+   * it (e.g. prompt "please update").
    */
   fromData(data: unknown, scope?: PersistenceScope): Promise<FromDataResult>
   /**

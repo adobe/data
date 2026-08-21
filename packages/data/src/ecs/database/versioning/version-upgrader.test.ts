@@ -226,7 +226,7 @@ describe("createVersionUpgrader — on-load upgrade", () => {
         const kept = app.transactions.spawn({ hp: { current: 5, max: 5 }, score: 5, mana: 5 });
         const result = await app.fromData(doc); // document version 9 > currentVersion 4
 
-        expect(result).toEqual({ loaded: false, documentVersion: 9, currentVersion: 4 }); // observable reject
+        expect(result).toEqual({ loaded: false, currentVersion: 4, schemaVersions: { document: 9, settings: 9 } }); // observable reject
         expect(app.select(["hp"])).toEqual([kept]); // untouched
     });
 });

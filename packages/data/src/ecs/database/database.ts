@@ -106,6 +106,21 @@ export type PluginComputedFactories<DB = any> = { readonly [K: string]: (db: DB)
 export type { IndexDeclarations } from "../store/index-types.js";
 import type { IndexDeclarations } from "../store/index-types.js";
 
+/**
+ * The outcome of {@link Database.fromData}: loaded (possibly after migration), or
+ * refused because a persisted quadrant was saved at a version NEWER than this app
+ * (`currentVersion`). `schemaVersions` reports each quadrant's saved version, so a
+ * caller can tell WHICH quadrant is too new — a value `> currentVersion` triggered
+ * the reject. The live database is left untouched on `loaded: false`.
+ */
+export type FromDataResult =
+  | { readonly loaded: true }
+  | {
+      readonly loaded: false;
+      readonly currentVersion: number;
+      readonly schemaVersions: { readonly document: number; readonly settings: number };
+    };
+
 export interface Database<
   C extends Components = {},
   R extends ResourceComponents = {},
@@ -271,14 +286,26 @@ export interface Database<
    * in-flight transients into persisted state. The old reconciler tests missed
    * it because they only asserted the snapshot was truthy, never round-tripped it.
    */
+  /**
+   * The current schema version — `entries.length - 1` when a version upgrader is
+   * configured, else `0`. Stamped into the save metadata of every {@link toData}
+   * (per persisted quadrant) and read back on load. Never an ECS component/resource.
+   */
+  readonly version: number
   toData(options?: { readonly scope?: PersistenceScope }): unknown
   /**
    * Load a snapshot. Async because a configured version handler may be async
    * (e.g. it lazy-`import()`s migration code); with no handler it still resolves
    * after the synchronous load completes. `toData` stays synchronous — only the
    * load path can await a handler.
+   *
+   * Resolves with a {@link FromDataResult}: `{ loaded: true }` when the data was
+   * loaded (possibly migrated), or `{ loaded: false, currentVersion, schemaVersions }`
+   * when a persisted quadrant was saved at a version newer than this app — the live
+   * database is left untouched. Rejection is data, not a throw, so a UI can branch on
+   * it (e.g. prompt "please update").
    */
-  fromData(data: unknown, scope?: PersistenceScope): Promise<void>
+  fromData(data: unknown, scope?: PersistenceScope): Promise<FromDataResult>
   /**
    * Conform the database's DATA to a target plugin's schema, dropping every
    * component and resource the plugin does not declare (its imports/extends are

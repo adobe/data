@@ -23,11 +23,13 @@ import type { Schema } from "../../schema/index.js";
 
 const numeric = { type: "number", default: 0 } as const satisfies Schema;
 
-// One plugin per app version; they differ only in the version resource's default.
-const makePlugin = (currentVersion: number) =>
+// Stamp a snapshot's save metadata with the version it was saved at (both quadrants).
+const saveAt = (data: unknown, version: number) => ({ ...(data as object), schemaVersions: { document: version, settings: version } });
+
+const makePlugin = () =>
     Database.Plugin.create({
         components: { a: numeric, b: numeric },
-        resources: { databaseVersion: { default: currentVersion } },
+        resources: {},
         archetypes: { A: ["a"], AB: ["a", "b"] } as const,
         transactions: {
             addA(t, args: { a: number }) {
@@ -36,23 +38,21 @@ const makePlugin = (currentVersion: number) =>
         },
     });
 
-// A v1 -> v2 data migration, expressed against a transaction context `t` on the
-// bare document store (no named archetypes / resource accessors): give every [a] entity
-// a `b`, then stamp the version singleton. The `b` component must already be
-// declared on the store before this runs.
+// A v1 -> v2 data migration, expressed against a transaction context `t` on the bare
+// document store (no named archetypes): give every [a] entity a `b`. The `b` component
+// must already be declared on the store before this runs. The version isn't data — it
+// rides the save metadata — so the migration doesn't stamp it.
 const upgradeV1toV2Data = (t: any): void => {
     for (const arch of t.queryArchetypes(["a"])) {
         for (let i = arch.rowCount - 1; i >= 0; i--) {
             t.update(arch.columns.id.get(i), { b: 100 });
         }
     }
-    const vArch = t.queryArchetypes(["databaseVersion"])[0];
-    t.update(vArch.columns.id.get(0), { databaseVersion: 2 });
 };
 
 describe("SAMPLE: capture an out-of-transaction edit as a replicable delta", () => {
     it("TransactionResult.capture mutates the store in place and returns the change-set", async () => {
-        const db = Database.create(makePlugin(1));
+        const db = Database.create(makePlugin());
         const e = db.transactions.addA({ a: 1 });
 
         // Wrap the raw store, do the edit as one transaction, keep the change.
@@ -74,18 +74,18 @@ describe("SAMPLE: upgrade-on-load produces a delta a peer replays to converge", 
         // A document authored by a v1 app, persisted to bytes. Each client
         // deserializes its OWN copy (as a real client loads from storage/network),
         // so an in-place migration on one never touches another's snapshot.
-        const author = Database.create(makePlugin(1));
+        const author = Database.create(makePlugin());
         const e = author.transactions.addA({ a: 5 });
-        const v1bytes = serialize(author.toData());
+        const v1bytes = serialize(saveAt(author.toData(), 1)); // saved at v1 (in the metadata)
 
         // Client A (v2 app) opens the v1 document. Its version handler upgrades
         // the document store AND captures the migration as a delta to hand to
         // replication, then returns the documentStore to commit.
         let migrationDelta: TransactionWriteOperation<any>[] = [];
         const versioning: DatabaseVersioning = {
-            resource: "databaseVersion",
-            handle: ({ documentStore, documentVersion, currentVersion }) => {
-                if (documentVersion < currentVersion) {
+            currentVersion: 2,
+            handle: ({ documentStore, schemaVersions }) => {
+                if (schemaVersions.document < 2) {
                     // Declare the new component, then capture the data migration as
                     // a delta (the replicable change-set) and apply it in place.
                     (documentStore as any).extend({ components: { b: numeric }, resources: {}, archetypes: {} });
@@ -94,24 +94,22 @@ describe("SAMPLE: upgrade-on-load produces a delta a peer replays to converge", 
                 return documentStore;
             },
         };
-        const clientA = Database.create(makePlugin(2), { versioning });
+        const clientA = Database.create(makePlugin(), { versioning });
         await clientA.fromData(deserialize(v1bytes));
 
         expect(clientA.read(e)).toEqual({ a: 5, b: 100 });
-        expect(clientA.resources.databaseVersion).toBe(2);
+        expect(clientA.version).toBe(2);
         expect(migrationDelta.length).toBeGreaterThan(0);
 
-        // Client B (v2 app) received the SAME document but only the migration
-        // delta from A (not the migration code). It loads the doc unmigrated,
+        // Client B (v2 app, here unversioned) received the SAME document but only the
+        // migration delta from A (not the migration code). It loads the doc unmigrated,
         // then replays the delta and converges to A's state.
-        const clientB = Database.create(makePlugin(2));
+        const clientB = Database.create(makePlugin());
         await clientB.fromData(deserialize(v1bytes));
         expect(clientB.read(e)).toEqual({ a: 5 }); // not yet upgraded
-        expect(clientB.resources.databaseVersion).toBe(1);
 
         applyOperations((clientB as any).store, migrationDelta);
 
         expect(clientB.read(e)).toEqual({ a: 5, b: 100 }); // converged with A
-        expect(clientB.resources.databaseVersion).toBe(2);
     });
 });

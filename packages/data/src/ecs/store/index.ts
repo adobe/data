@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 export * from "./store.js";
-export * from "./coerce-store-component.js";
+export * from "./store-schemas.js";
 export * from "./archetype-components.js";
 export type { ArchetypeSchema, ArchetypeRowOf, ArchetypeHandleOf } from "./archetype-row.js";
 export type { EntityReadValues, EntityUpdateValues, ArchetypeQueryOptions } from "./core/core.js";

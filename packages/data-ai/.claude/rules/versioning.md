@@ -1,0 +1,143 @@
+---
+paths:
+  - '**/versioning/**/*.ts'
+  - '**/versions.ts'
+  - '**/versions.test.ts'
+---
+
+# Database schema versioning & upgrade-on-load
+
+A versioned `@adobe/data` database keeps an ordered **version history** so an old
+persisted document can be upgraded to the current schema on load. You (human or
+agent) should almost never have to reason about this by hand: **change the schema,
+run the tests, and the failing test prints the exact fix to apply.**
+
+## The pieces (all from `@adobe/data/ecs`)
+
+- **`versions.ts`** — `export const versions: readonly VersionEntry[]`. `entries[i]`
+  IS version `i`; `entries[0]` is a frozen copy of the initial schema. `currentVersion
+  = versions.length - 1`.
+- **`VersionEntry`** — `{ version, changes: { components?, resources? }, handler? }`.
+  `version` MUST equal the array index. `changes` is a **JSON Merge Patch** applied to
+  the folded-so-far schema — record ONLY what changes, not a restated copy:
+  - `name: { …fields… }` adds a new component/resource, or deep-merges those fields
+    onto the existing schema;
+  - a key set to **`undefined`** DELETES it — `name: undefined` drops the whole
+    component/resource; a nested `precision: undefined` drops just that field;
+  - `null` is a normal VALUE (so `default: null` sets the default), not a delete;
+    arrays/scalars replace wholesale.
+  Because it MERGES, a shape change must delete the fields that no longer apply —
+  number → object is `{ type: "object", properties: {…}, precision: undefined, default: undefined }`,
+  never a bare `{ type: "object", … }` (which would keep the old `precision`/`default`).
+  Never write empty `changes: {}` — an entry must record at least one change. Components
+  and resources are separate namespaces. `handler` is present ONLY for a change that is
+  not automatically convertible.
+- The version is **NOT an ECS resource** — it rides the save-format metadata. The db
+  exposes it as `db.version` (`= currentVersion`, or `0` when unversioned), stamps it into
+  every `toData` per persisted quadrant (`schemaVersions: { document, settings }`), and
+  reads it back on load. Do not declare a `documentVersion`/`version` component or resource.
+- **`createVersionUpgrader(versions)`** passed as `Database.create(plugin, { versioning })`.
+  No config — the per-quadrant saved versions come from the blob metadata. Each `handler`
+  touches exactly ONE persisted quadrant (`document` or `settings`); the upgrader replays
+  each quadrant from its own saved version up to current (see rule 7).
+- ONE co-located guard test in `versions.test.ts` calling `assertVersioning(...)` (see below).
+
+## Rules — do not violate
+
+1. **Existing entries are FROZEN.** Never edit, reorder, or delete an entry — it is
+   historical fact. Only ever APPEND a new entry.
+2. **Version 0 is a deep copy, never a reference.** It must not change when the live
+   schema changes; that is the whole point of a history.
+3. **Additive & minor changes need NO handler** — the load path auto-converts them
+   (add-field-with-default, widen/narrow, reorder, clamp, add component/resource).
+   Just record the `changes` patch.
+4. **Breaking changes REQUIRE a handler** — a type change, a rename, splitting/moving
+   a field. The handler runs against the store staged to the previous version and
+   mutates it in place to the new shape. For an ISOLATED single-component change,
+   `Store.remapComponent(store, name, newSchema, old => newValue)` does it in one call —
+   but it is NOT required and NOT always applicable. A migration that reads from or
+   writes to SEVERAL components (a cross-component move, deriving a new component from
+   others, splitting one into many) must be hand-written to your upgrade algorithm:
+   query the input components, compute, and write the outputs directly on the store.
+   Add a test case either way (rule 6).
+5. **Removing a component drops its data.** If the data still matters, migrate it in a
+   handler BEFORE the removal entry.
+6. **Versioned schemas must be REAL** — declare a `type` (or `enum`/`const`), and the
+   `default` must be fully described by that schema (no extra keys/structure). Only
+   SESSION values (`nonPersistent` AND `nonShared`, e.g. a GPU buffer) may be untyped,
+   and those are never versioned — leave them out of the history entirely.
+7. **A handler touches ONE quadrant.** Persisted quadrants (shared+persistent = the
+   cloud document; nonShared+persistent = local settings) can be saved separately and
+   drift to DIFFERENT versions. On load they are merged into one store and the upgrader
+   replays EACH quadrant from its own stamp — so a handler that changes schemas in more
+   than one quadrant fails the guard (when one quadrant is behind, staging its handler
+   must not touch the other). Split it into one version per quadrant — the upgrader reads
+   each quadrant's saved version from the blob metadata automatically.
+
+## When a schema change makes a test fail — the fix is in the error
+
+`assertVersionsMatchSchema` fails whenever the live schema no longer folds from the
+history. Its message is a literal recipe. To fix it:
+
+1. **Append one new entry** to the `versions` array with `version:` = the next index
+   and the `changes` block the error printed verbatim. `db.version` follows the history
+   automatically (`= versions.length - 1`) — there is no resource default to update.
+2. If the error marks a change **BREAKING — needs a handler**, add a `handler` to that
+   entry AND add a matching test case under `testUpgradeHandlers` (rule 6). The error
+   may point at `Store.remapComponent(...)` for an isolated single-component change, but
+   that is only a suggestion — write whatever upgrade code the change actually needs.
+
+Do exactly what the message says; do not touch existing entries.
+
+## The one guard test
+
+A single `assertVersioning(...)` runs BOTH checks — the history folds to the current
+schema (schema coverage) AND every entry with a `handler` has a passing test case
+(handler coverage + behavior). Keep this one test.
+
+```ts
+import { Database, assertVersioning, createVersionUpgrader } from "@adobe/data/ecs";
+import { MainService } from "../main-service.js";
+import { versions } from "./versions.js";
+
+describe("database schema versions", () => {
+  it("the version history is consistent (schema folds + every handler tested)", () =>
+    assertVersioning({
+      // the version-configured db, so db.version = the history's current version
+      database: Database.create(MainService.plugin, { versioning: createVersionUpgrader(versions) }),
+      entries: versions,
+      handlers: {
+        // Append a case per version that adds a `handler` (rule 6):
+        // <version>: { setup: (store) => <populate the version-(v-1) store, return entities>,
+        //              expect: (store, setup) => <assert the version-v result> },
+      },
+    }));
+});
+```
+
+(`assertVersionsMatchSchema` and `testUpgradeHandlers` remain exported for bespoke use.)
+```
+
+## Example: a breaking change (number → object) at version 1
+
+```ts
+// versions.ts — append (do NOT edit version 0)
+import { Store } from "@adobe/data/ecs";
+const HealthObject = { type: "object", properties: { current: { type: "number", precision: 1, default: 0 }, max: { type: "number", precision: 1, default: 0 } } };
+export const versions = [
+  { version: 0, changes: { components: { /* …frozen… */ hp: { type: "number", precision: 1, default: 0 } } } },
+  { version: 1,
+    // MERGE patch: add the object shape, DELETE the number-only fields it drops.
+    changes: { components: { hp: { type: "object", properties: HealthObject.properties, precision: undefined, default: undefined } } },
+    handler: (store) => Store.remapComponent(store, "hp", HealthObject, (old: number) => ({ current: old, max: old })) },
+];
+// `db.version` becomes 1 automatically (= versions.length - 1) — nothing else to set.
+
+// versions.test.ts — add the required case to the guard's `handlers`
+assertVersioning({ database: db, entries: versions, handlers: {
+  1: {
+    setup: (store) => store.ensureArchetype(["hp"]).insert({ hp: 42 }),
+    expect: (store, e) => expect(store.read(e)?.hp).toEqual({ current: 42, max: 42 }),
+  },
+} });
+```

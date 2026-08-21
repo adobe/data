@@ -68,7 +68,16 @@ export function createCoerceFunction(
             return arrayCoercer(input, output);
         }
         default:
-            return null;
+            // Untyped/opaque schemas (e.g. `{ default: x }` with no `type`/`enum`)
+            // back a generic array buffer holding arbitrary JSON — no shape info to
+            // check against. Pass a value through unchanged ONLY when the two look
+            // shape-compatible, approximated by their defaults' runtime type (so a
+            // default-value tweak `{default:0}→{default:1}` is auto, but a shape
+            // change `{default:"x"}→{default:{…}}` is NOT — it forces a handler).
+            // Typed schemas get real structural checking; prefer them for anything
+            // that can evolve.
+            if (inKind !== "unknown") return null;
+            return typeof input.default === typeof output.default ? identity : null;
     }
 }
 

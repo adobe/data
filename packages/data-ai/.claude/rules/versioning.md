@@ -32,14 +32,14 @@ run the tests, and the failing test prints the exact fix to apply.**
   Never write empty `changes: {}` — an entry must record at least one change. Components
   and resources are separate namespaces. `handler` is present ONLY for a change that is
   not automatically convertible.
-- A `databaseVersion` (or similarly named) **integer resource** on the plugin, `default`
+- A `documentVersion` (or similarly named) **integer resource** on the plugin, `default`
   set to `currentVersion`. Stamped into the document; excluded from the history itself.
-- **`createVersionUpgrader(versions, { document: "databaseVersion" })`** passed as
+- **`createVersionUpgrader(versions, { document: "documentVersion" })`** passed as
   `Database.create(plugin, { versioning })`. The option maps each PERSISTED quadrant to
   its version resource — `{ document, settings }`. Give `settings` its own integer
   resource only if you save the settings quadrant separately (see rule 7); most apps
-  version just the `document` quadrant and pass `{ document: "databaseVersion" }`.
-- Two co-located guard tests in `versions.test.ts` (see below).
+  version just the `document` quadrant and pass `{ document: "documentVersion" }`.
+- ONE co-located guard test in `versions.test.ts` calling `assertVersioning(...)` (see below).
 
 ## Rules — do not violate
 
@@ -51,8 +51,14 @@ run the tests, and the failing test prints the exact fix to apply.**
    (add-field-with-default, widen/narrow, reorder, clamp, add component/resource).
    Just record the `changes` patch.
 4. **Breaking changes REQUIRE a handler** — a type change, a rename, splitting/moving
-   a field. Write it with `remapStoreComponent(store, name, newSchema, old => newValue)`
-   inside the entry's `handler`, and add a test case (rule 6).
+   a field. The handler runs against the store staged to the previous version and
+   mutates it in place to the new shape. For an ISOLATED single-component change,
+   `remapStoreComponent(store, name, newSchema, old => newValue)` does it in one call —
+   but it is NOT required and NOT always applicable. A migration that reads from or
+   writes to SEVERAL components (a cross-component move, deriving a new component from
+   others, splitting one into many) must be hand-written to your upgrade algorithm:
+   query the input components, compute, and write the outputs directly on the store.
+   Add a test case either way (rule 6).
 5. **Removing a component drops its data.** If the data still matters, migrate it in a
    handler BEFORE the removal entry.
 6. **Versioned schemas must be REAL** — declare a `type` (or `enum`/`const`), and the
@@ -74,38 +80,42 @@ history. Its message is a literal recipe. To fix it:
 
 1. **Append one new entry** to the `versions` array with `version:` = the next index
    and the `changes` block the error printed verbatim.
-2. **Set the `databaseVersion` resource `default`** to the new `currentVersion` the
+2. **Set the `documentVersion` resource `default`** to the new `currentVersion` the
    error names.
 3. If the error marks a change **BREAKING — needs a handler**, add a `handler` to that
-   entry (the error suggests the `remapStoreComponent(...)` call) AND add a matching
-   test case under `testUpgradeHandlers` (rule 6).
+   entry AND add a matching test case under `testUpgradeHandlers` (rule 6). The error
+   may point at `remapStoreComponent(...)` for an isolated single-component change, but
+   that is only a suggestion — write whatever upgrade code the change actually needs.
 
 Do exactly what the message says; do not touch existing entries.
 
-## The two guard tests (keep both)
+## The one guard test
+
+A single `assertVersioning(...)` runs BOTH checks — the history folds to the current
+schema (schema coverage) AND every entry with a `handler` has a passing test case
+(handler coverage + behavior). Keep this one test.
 
 ```ts
-import { Database, storeSchemas, assertVersionsMatchSchema, testUpgradeHandlers } from "@adobe/data/ecs";
+import { Database, assertVersioning } from "@adobe/data/ecs";
 import { MainService } from "../main-service.js";
 import { versions } from "./versions.js";
 
 describe("database schema versions", () => {
-  it("the version history matches the current schema", () => {
-    const db = Database.create(MainService.plugin);
-    assertVersionsMatchSchema({
+  it("the version history is consistent (schema folds + every handler tested)", () =>
+    assertVersioning({
+      database: Database.create(MainService.plugin),
       entries: versions,
-      ...storeSchemas(db),
-      versionResource: "databaseVersion",
-      currentVersion: db.resources.databaseVersion,
-    });
-  });
-
-  // Fails if any entry with a handler lacks a case. Add one per breaking change.
-  it("every upgrade handler has a unit test", () => testUpgradeHandlers(versions, {
-    // <version>: { setup: (store) => <populate the version-(v-1) store, return entities>,
-    //              expect: (store, setup) => <assert the version-v result> },
-  }));
+      versionResource: "documentVersion", // an array for per-quadrant stamps
+      handlers: {
+        // Append a case per version that adds a `handler` (rule 6):
+        // <version>: { setup: (store) => <populate the version-(v-1) store, return entities>,
+        //              expect: (store, setup) => <assert the version-v result> },
+      },
+    }));
 });
+```
+
+(`assertVersionsMatchSchema` and `testUpgradeHandlers` remain exported for bespoke use.)
 ```
 
 ## Example: a breaking change (number → object) at version 1

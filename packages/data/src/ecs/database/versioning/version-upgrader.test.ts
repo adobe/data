@@ -18,6 +18,7 @@ import {
     foldSchemas,
     createVersionUpgrader,
     assertVersionsMatchSchema,
+    assertVersioning,
     testUpgradeHandlers,
 } from "./index.js";
 
@@ -284,5 +285,39 @@ describe("every upgrade handler is tested", () => {
         expect(() => testUpgradeHandlers(versions, {})).toThrow(
             /Version 4 has an upgrade handler but no test case/,
         );
+    });
+});
+
+// ─── the single combined guard: schema coverage AND handler coverage in one ──
+describe("assertVersioning (combined guard)", () => {
+    const hpCase = {
+        4: {
+            setup: (store: any) => (store.ensureArchetype(["hp"] as never[]) as any).insert({ hp: 42 }) as number,
+            expect: (store: any, e: number) => expect((store.read(e) as Record<string, unknown> | null)?.hp).toEqual({ current: 42, max: 42 }),
+        },
+    };
+
+    it("passes when the history folds to the live schema and every handler has a passing case", async () => {
+        await assertVersioning({ database: Database.create(plugin), entries: versions, versionResource: "databaseVersion", handlers: hpCase });
+    });
+
+    it("throws synchronously when a handler case is missing (handler coverage)", () => {
+        expect(() =>
+            assertVersioning({ database: Database.create(plugin), entries: versions, versionResource: "databaseVersion", handlers: {} }),
+        ).toThrow(/Version 4 has an upgrade handler but no test case/);
+    });
+
+    it("throws when the stamped version disagrees with the history (schema coverage)", () => {
+        // A db whose version resource default (9) does not equal entries.length - 1 (4).
+        const wrong = Database.create(
+            Database.Plugin.create({
+                components: { hp: health, score: { type: "number", precision: 1, default: 0, maximum: 100 } as Schema, mana: f32 },
+                resources: { turn: { type: "integer", default: 0 }, difficulty: { type: "string", default: "normal" }, databaseVersion: { default: 9 } },
+                archetypes: {},
+            }),
+        );
+        expect(() =>
+            assertVersioning({ database: wrong, entries: versions, versionResource: "databaseVersion", handlers: hpCase }),
+        ).toThrow(/stamped current version is 9/);
     });
 });

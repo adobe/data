@@ -7,7 +7,7 @@ export const resources = Database.resources({
     // Schema version stamped into the persisted document. Read by the version
     // upgrader on load; excluded from the version history itself (its default IS
     // the current version). See ../versioning/versions.ts.
-    databaseVersion: { type: "integer", default: 0 },
+    documentVersion: { type: "integer", default: 0 },
   },
   settings: {
     displayCompleted: Boolean.schema, // per-device view toggle; durable, not shared

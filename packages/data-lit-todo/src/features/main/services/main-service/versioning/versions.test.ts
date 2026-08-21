@@ -1,27 +1,24 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 //
-// The two guard tests every versioned database keeps. If either fails, its error
-// message is a recipe — follow it (edit versions.ts / resources.ts) and re-run.
+// The ONE co-located guard every versioned database keeps. It runs both checks —
+// the history folds to the current schema, and every upgrade handler has a passing
+// test. If it fails, the error message is a recipe: follow it (edit versions.ts /
+// resources.ts, add a handler case here) and re-run.
 
 import { describe, it } from "vitest";
-import { Database, storeSchemas, assertVersionsMatchSchema, testUpgradeHandlers } from "@adobe/data/ecs";
+import { Database, assertVersioning } from "@adobe/data/ecs";
 import { MainService } from "../main-service.js";
 import { versions } from "./versions.js";
 
 describe("database schema versions", () => {
-  it("the version history matches the current schema", () => {
-    const db = Database.create(MainService.plugin);
-    assertVersionsMatchSchema({
+  it("the version history is consistent (schema folds + every handler tested)", () =>
+    assertVersioning({
+      database: Database.create(MainService.plugin),
       entries: versions,
-      ...storeSchemas(db),
-      versionResource: "databaseVersion",
-      currentVersion: db.resources.databaseVersion,
-    });
-  });
-
-  it("every upgrade handler has a unit test", () =>
-    testUpgradeHandlers(versions, {
-      // Append a case here for each version that adds a `handler`. Empty today
-      // because no version needs one yet — every change so far is auto-convertible.
+      versionResource: "documentVersion",
+      handlers: {
+        // Append a case here for each version that adds a `handler`. Empty today
+        // because no version needs one yet — every change so far is auto-convertible.
+      },
     }));
 });

@@ -281,9 +281,14 @@ function buildRecipe(drifts: Drift[], length: number): string {
             `${breaking.length} modification(s) are NOT auto-convertible and REQUIRE a handler on the new entry:`,
         );
         for (const d of breaking) {
-            lines.push(`  - ${d.namespace} "${d.name}" — remapStoreComponent(store, "${d.name}", <new schema>, old => <new value>).`);
+            lines.push(`  - ${d.namespace} "${d.name}"`);
         }
-        lines.push(`The handler runs against the store staged to version ${length - 1}, and may read any component.`);
+        lines.push(
+            `The handler runs against the store staged to version ${length - 1} and mutates it in place; it may read/write ANY component. ` +
+            `Write whatever upgrade code the change needs. For an isolated single-component change, ` +
+            `remapStoreComponent(store, name, <new schema>, old => <new value>) suffices (not required); a migration ` +
+            `spanning several components must be hand-written to your upgrade algorithm.`,
+        );
     }
     return lines.join("\n");
 }

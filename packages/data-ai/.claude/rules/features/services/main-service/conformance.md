@@ -165,7 +165,11 @@ It discovers every file exporting `cases`, enforces the two-exports rule, and
 dispatches on case shape (transition → state + effects, derivation →
 `fn(input) ≡ value`), seeding each case's `before`/`input` as a delta over
 `State.create()`. On the ECS side it resolves the reference args a case's `args`
-schema marks; the pure side reads them plain.
+schema marks; the pure side reads them plain. A transition case may declare
+`throws` instead of `after`/`effects` to assert the call rejects its input —
+see `../../data/state.md` ("A case that expects a throw"). `runSpec`,
+`runTransactions`, and `runActions` all honor it identically, so the same case
+proves the pure transform and its paired ecs op fail the same way.
 
 ## The exception — a per-surface `userId`, via the lower-level runners
 

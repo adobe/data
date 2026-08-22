@@ -42,12 +42,16 @@ type ArgsOf<F extends (...args: never[]) => unknown> = Parameters<F> extends [un
 // mention is the default and stays unchanged. (A full `before`/`after` still works
 // — it just overrides the default wholesale.) `args` is OMITTABLE exactly when the
 // transform takes none. Shared by the spec aggregator and the ecs runners.
-export type Case<State, Args> = {
-  readonly name: string;
-  readonly before: Partial<State>;
-  readonly after: Partial<State>;
-  readonly effects?: Effects<Args>;
-} & ([Args] extends [void] ? { readonly args?: undefined } : { readonly args: Args });
+//
+// A case is EITHER a normal `after`/`effects` expectation OR a `throws`
+// expectation — never both, since a thrown call never produces a writes patch or
+// records effects to assert. `throws: true` accepts any thrown error; a string
+// narrows to one the error's `message` must contain as a substring.
+export type Case<State, Args> = ({ readonly name: string; readonly before: Partial<State> } & (
+  | { readonly after: Partial<State>; readonly effects?: Effects<Args>; readonly throws?: undefined }
+  | { readonly throws: true | string; readonly after?: undefined; readonly effects?: undefined }
+)) &
+  ([Args] extends [void] ? { readonly args?: undefined } : { readonly args: Args });
 
 // A transform's cases, with the case `args` derived from the transform's own
 // signature — author `export const cases: Conformance.Cases<State, typeof theTransform>`

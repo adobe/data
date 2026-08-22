@@ -4,6 +4,7 @@ import type { Entity } from "@adobe/data/ecs";
 import type { MatchOptions } from "../match/match.js";
 import { discoverTransitions, discoverOps } from "./discover.js";
 import { expectAfter } from "./expect-after.js";
+import { expectThrows } from "./expect-throws.js";
 import type { SchemaSource } from "./refify.js";
 import { resolveArgs } from "./resolve-args.js";
 import { splitAndRecordServices, expectEffects } from "./record-effects.js";
@@ -50,7 +51,12 @@ export function runActions<Db, Store extends SchemaSource, State>(config: Action
           // Resolve entity-reference args (the fields the case's `args` schema marks)
           // to the seeded entities; a transition with no such schema passes through.
           const args = resolveArgs(input, paired.argsSchema, resolve);
-          await (action as (d: Db, a?: unknown) => Promise<void> | void)(db, args);
+          const call = action as (d: Db, a?: unknown) => Promise<void> | void;
+          if (testCase.throws !== undefined) {
+            await expectThrows(() => call(db, args), testCase.throws as true | string);
+            return;
+          }
+          await call(db, args);
           // `after` is a writes patch, compared up to an id-bijection.
           const store = config.store(db);
           expectAfter(config.toState(store), before as object, testCase.after as object, store, config.match);

@@ -38,3 +38,17 @@ const _derivedCases: readonly unknown[] = derived.cases;
 const badArgs = { type: "object", properties: { id: { type: "string" }, count: { type: "integer" } } } as const;
 // @ts-expect-error — args type is not assignable to Schema.ToType<args>
 export const bad = cases(reparent, { args: badArgs }, { name: "bad", before: {}, args: { id: 1, count: 2 }, after: { selected: 1 } });
+
+// A `throws` case takes no `after`/`effects` — `true` for any message, or a
+// substring the thrown message must contain.
+export const throwsAny = cases(
+  reparent,
+  { name: "throws (any message)", before: {}, args: { id: 1, count: 2 }, throws: true },
+);
+export const throwsSubstring = cases(
+  reparent,
+  { name: "throws (substring)", before: {}, args: { id: 1, count: 2 }, throws: "not found" },
+);
+// A case cannot declare both `after` and `throws` — the union forbids it.
+// @ts-expect-error — `after` and `throws` are mutually exclusive
+export const badBoth = cases(reparent, { name: "bad", before: {}, args: { id: 1, count: 2 }, after: { selected: 1 }, throws: true });

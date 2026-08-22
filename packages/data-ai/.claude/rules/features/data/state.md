@@ -217,7 +217,10 @@ export const cases = Conformance.cases(createTodo,
   injected service, etc. into it, never as a third positional. A transition that takes
   **no** args omits `args` from each case entirely (the shared `Case` type makes
   `args` optional exactly then). **Guard no-ops by returning an empty patch `{}`**
-  (or the unchanged slice), never throw.
+  (or the unchanged slice), never throw for an ordinary "nothing to do here"
+  condition. Reserve `throw` for a genuine precondition violation the case wants
+  to name (see "A case that expects a throw" below) — the rare exception, not the
+  default guard style.
 - **A composer merges sub-patches explicitly.** A transition built from smaller
   ones spreads them — `return { ...s, ...sub(s) }` — so each sub-patch's writes
   layer in; a transition that merely **delegates** to one sub-transition returns
@@ -294,6 +297,32 @@ export const cases = Conformance.cases(createTodo,
   `state/` — a `create()` constructor, a single-field predicate — has no `cases`
   and isn't a `(state,args)=>state` transform, so `runSpec` skips it: **keep its own
   sibling `*.test.ts`** rather than deleting it and losing coverage.
+
+### A case that expects a throw
+
+A case is normally `{ name, before, args?, after, effects? }`. When a transition
+must reject its input outright — not the "guard no-op, return `{}`" case above,
+but a genuine precondition violation the spec wants to name — declare `throws`
+instead of `after`/`effects`:
+
+```ts
+export const cases = Conformance.cases(withdrawFunds,
+    { name: "rejects a withdrawal over the balance",
+      before: { balance: 10 },
+      args: { amount: 11 },
+      throws: "insufficient funds" },   // substring the thrown Error.message must contain
+);
+```
+
+`throws: true` accepts any thrown error; a string narrows to one whose message
+**contains** it. A case can declare `after`/`effects` **or** `throws`, never
+both — the shared `Case` type makes them mutually exclusive, and there is
+nothing to compare against `after` once a call never returns a patch. The same
+case runs against the pure transform (`runSpec`) **and** the paired ecs
+transaction/action (`runFeature`/`runTransactions`/`runActions`), so a `throws`
+case proves both sides reject the same input the same way. Reach for this only
+when throwing is the transition's actual contract — most invalid input should
+still no-op per the rule above.
 
 ## Injected services and side effects
 

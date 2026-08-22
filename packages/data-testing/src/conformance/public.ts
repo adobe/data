@@ -16,4 +16,7 @@ export { runFeature, type FeatureRunConfig, type Projection } from "./run-featur
 // For custom conformance harnesses (e.g. an ECS-system frame): compare two States
 // up to an id-bijection, the same way the runners do.
 export { assertState } from "./assert-state.js";
+// For custom conformance harnesses: assert a call throws, the same way a case's
+// `throws` field does in the built-in runners.
+export { expectThrows } from "./expect-throws.js";
 export type { SchemaSource } from "./refify.js";

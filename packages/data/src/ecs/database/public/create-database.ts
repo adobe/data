@@ -1,16 +1,16 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { ReadonlyStore, Store } from "../../store/index.js";
-import { createTypedBuffer, ReadonlyTypedBuffer, structBufferType } from "../../../typed-buffer/index.js";
-import { getStructLayout } from "../../../typed-buffer/structs/get-struct-layout.js";
 import type { Schema } from "../../../schema/index.js";
-import { Database, FromServiceFactories } from "../database.js";
+import { Database, FromServiceFactories, FromDataResult } from "../database.js";
 import { PersistenceScope } from "../../persistence-scope.js";
 import { calculateSystemOrder } from "../calculate-system-order.js";
 import { createTransactionDispatcher } from "./create-transaction-dispatcher.js";
 import { observeSelectEntities } from "../observe-select-entities.js";
 import { observeIndexEntities } from "../observe-index-entities.js";
 import { createObservedDatabase } from "../observed/create-observed-database.js";
+import { storeSchemas, quadrantOf, type Quadrant, type StoreSchemas } from "../../store/index.js";
+import { conformStoreToSchemas } from "../versioning/conform-store-to-schemas.js";
 import type { DatabaseVersioning } from "./database-versioning.js";
 import { createImmediateConcurrency } from "../concurrency/immediate-concurrency.js";
 import type { ConcurrencyStrategy, ConcurrencyStrategyFactory } from "../concurrency/concurrency-strategy.js";
@@ -81,6 +81,41 @@ export function createDatabase(
     return db.extend(plugin);
 }
 
+// The per-quadrant schema versions a blob was saved at, from its save metadata.
+// Absent (a legacy blob predating versioning) ⇒ 0 for both quadrants. A present but
+// non-numeric stamp (a corrupt/hand-crafted blob) ⇒ +Infinity, so it is treated as
+// "newer than any app" and REJECTED rather than triggering a wrong full replay.
+function readSchemaVersions(data: unknown): { document: number; settings: number } {
+    const meta = (data as { schemaVersions?: { document?: unknown; settings?: unknown } } | null)?.schemaVersions;
+    const read = (value: unknown): number => {
+        const n = Number(value ?? 0);
+        return Number.isFinite(n) ? n : Infinity;
+    };
+    return { document: read(meta?.document), settings: read(meta?.settings) };
+}
+
+// Whether a persisted quadrant is covered by a load/save scope (undefined ⇒ both).
+function quadrantInScope(scope: PersistenceScope | undefined, quadrant: Quadrant): boolean {
+    if (scope === undefined) return true;
+    if (quadrant === "document") return scope.shared === true;
+    if (quadrant === "settings") return scope.nonShared === true;
+    return false; // non-persistent quadrants are never in a persistence scope
+}
+
+// Restrict a schema split to the in-scope quadrants, so a scoped load conforms only
+// what it is loading (never materializing the other quadrant's schemas).
+function scopedSchemas(schemas: StoreSchemas, scope: PersistenceScope | undefined): StoreSchemas {
+    if (scope === undefined) return schemas;
+    const keep = (map: Record<string, Schema>): Record<string, Schema> => {
+        const out: Record<string, Schema> = {};
+        for (const name of Object.keys(map)) {
+            if (quadrantInScope(scope, quadrantOf(map[name]!))) out[name] = map[name]!;
+        }
+        return out;
+    };
+    return { components: keep(schemas.components), resources: keep(schemas.resources) };
+}
+
 /**
  * Creates a database with empty store, no transactions, actions, services, computed, or systems.
  * All content is added via .extend(plugin). Single code path for extension.
@@ -145,135 +180,74 @@ function createEmptyDatabase({ concurrency, versioning }: {
     // `db.indexes.<name>` and `t.indexes.<name>` pointing at one source of
     // truth.
 
+    // The current schema version — 0 when this db isn't versioned. Stamped into the
+    // save metadata of every `toData`, per persisted quadrant, and read back on load.
+    const version = versioning ? versioning.currentVersion : 0;
+
     const toData = (options?: { readonly scope?: PersistenceScope }) => {
         const scope = options?.scope;
         // Fast path: a strategy with no replay hook leaves the store untouched
         // after serialization, so a live-reference snapshot is safe.
+        // Otherwise a replay strategy mutates the live buffers in `onAfterToData`,
+        // which would corrupt a live-reference snapshot, so capture a detached copy
+        // of the committed (rolled-back) state before replaying.
+        let data: unknown;
         if (!strategy.onAfterToData) {
-            return observedDatabase.toData({ copy: false, scope });
+            data = observedDatabase.toData({ copy: false, scope });
+        } else {
+            strategy.onBeforeToData?.();
+            data = observedDatabase.toData({ copy: true, scope });
+            strategy.onAfterToData();
         }
-        // A replay strategy mutates the live buffers in `onAfterToData`, which
-        // would corrupt a live-reference snapshot. Capture a detached copy of
-        // the committed (rolled-back) state before replaying.
-        strategy.onBeforeToData?.();
-        const data = observedDatabase.toData({ copy: true, scope });
-        strategy.onAfterToData();
-        return data;
+        // Extend the save format with the schema version, per persisted quadrant.
+        // The db writes its single `version` as both stamps; when the two blobs are
+        // saved separately in future, each carries its own quadrant's stamp.
+        return { ...(data as object), schemaVersions: { document: version, settings: version } };
     };
-    // The version resource's singleton archetype in a store, or undefined when
-    // the store carries no version (a pre-versioning legacy document). A
-    // reconstructed store has no resource accessor, so the version is reached via
-    // its raw singleton component.
-    const versionSingleton = (s: Store<any, any, any>, name: string) =>
-        s.queryArchetypes([name] as never[]).find((a) => a.rowCount > 0);
-
-    // Read the numeric version off a store (absent ⇒ 0, a legacy document).
-    const readVersionResource = (s: Store<any, any, any>, name: string): number => {
-        const archetype = versionSingleton(s, name);
-        return archetype ? Number((archetype.columns as Record<string, { get(i: number): unknown }>)[name]!.get(0)) : 0;
-    };
-
-    // Stamp a store's version resource to `value` (no-op if it carries none).
-    const writeVersionResource = (s: Store<any, any, any>, name: string, value: number) => {
-        const archetype = versionSingleton(s, name);
-        if (!archetype) return;
-        const id = (archetype.columns as Record<string, { get(i: number): number }>)["id"]!.get(0);
-        s.update(id, { [name]: value } as never);
-    };
-
-    // Validate that the returned store's typed buffers are STORAGE-compatible
-    // with the live database's, for every current-schema component the returned
-    // store carries data for — the check that matters for the `copy:false`
-    // structural adoption on commit, which binds those buffers into the live db by
-    // reference. Two levels:
-    //   - buffer `type` + per-element byte size must match (e.g. a number that
-    //     changed U16→U32 / F64→F32, or any buffer-kind change, is rejected);
-    //   - for a **value type** (a fixed-layout `struct` buffer) the full struct
-    //     layout — field names, order, offsets and types — must match, so a
-    //     same-size field reorder / rename / retype is caught too (the live db
-    //     would otherwise mis-read the adopted binary buffer).
-    // Cosmetic schema differences (default, min/max, description) are deliberately
-    // NOT checked — those are a migration's own concern. An incompatible buffer is
-    // a developer error in the migration → thrown (a rejected *document* is data:
-    // the `null` return above).
-    const assertReturnedBuffersCompatible = (committed: Store<any, any, any>) => {
-        // `componentSchemas` is a plain string-keyed schema map at runtime; widen
-        // off its readonly index signature to index it by dynamic name.
-        const current = store.componentSchemas as Record<string, Schema>;
-        const checked = new Set<string>();
-        for (const archetype of committed.queryArchetypes([] as never[])) {
-            if (archetype.rowCount === 0) continue;
-            // Columns are typed buffers; the store is `any`-parameterized here so
-            // name-index them through the readonly typed-buffer shape.
-            const columns = archetype.columns as Record<string, ReadonlyTypedBuffer<unknown>>;
-            for (const name of archetype.components) {
-                if (name === "id" || name === "nonPersistent" || name === "nonShared" || checked.has(name)) continue;
-                checked.add(name);
-                if (!(name in current)) continue; // foreign component — dropped on commit, not adopted
-                const returned = columns[name]!;
-                const expected = createTypedBuffer(current[name]!, 1);
-                if (returned.type !== expected.type || returned.typedArrayElementSizeInBytes !== expected.typedArrayElementSizeInBytes) {
-                    throw new Error(
-                        `Database version handler returned component "${name}" with an incompatible storage layout ` +
-                        `(${returned.type} ${returned.typedArrayElementSizeInBytes}B vs the current ${expected.type} ${expected.typedArrayElementSizeInBytes}B). ` +
-                        `A migration must convert it to the current representation.`,
-                    );
-                }
-                // Value type: require identical struct layout, not just size. The
-                // resolved layout is deterministic plain data (fields in offset
-                // order), so a JSON fingerprint captures name/order/offset/type.
-                if (returned.type === structBufferType) {
-                    const returnedLayout = JSON.stringify(getStructLayout(returned.schema));
-                    const expectedLayout = JSON.stringify(getStructLayout(expected.schema));
-                    if (returnedLayout !== expectedLayout) {
-                        throw new Error(
-                            `Database version handler returned value-type component "${name}" with a different struct layout ` +
-                            `than the current schema (field names/order/offsets/types must match for a same-size struct). ` +
-                            `A migration must convert it to the current representation.`,
-                        );
-                    }
-                }
-            }
-        }
-    };
-
-    const fromData = async (data: unknown, scope?: PersistenceScope): Promise<void> => {
-        // Versioning applies only to whole-document (unscoped) loads. A scoped
-        // load is a partial quadrant that does not carry the document's version,
-        // so it bypasses the handler and loads directly (the original path), as
-        // does a database with no handler configured.
-        if (versioning && scope === undefined) {
-            // Reconstruct the document into a bare document store (its OWN schema,
-            // no dependence on the live db), read the document + current versions,
-            // and hand them to the (possibly async) upgrade handler. `handle` may
-            // await — e.g. `import("./upgrader")` to load migration code only when
-            // a document actually needs upgrading. It returns the store to commit
-            // or null to reject — a reject leaves the live db untouched.
+    const fromData = async (data: unknown, scope?: PersistenceScope): Promise<FromDataResult> => {
+        // With versioning configured, EVERY load is version-upgraded — a whole-database
+        // load (no scope) or a single scoped quadrant. A scoped load upgrades ONLY its
+        // quadrant(s) and commits scoped, so it never disturbs the other quadrant: that
+        // is what lets a document blob and a settings blob be saved to — and loaded
+        // from — two separate locations independently. (Sound because every handler is
+        // single-quadrant, guard-enforced, so a quadrant upgrades on its own.)
+        if (versioning) {
+            // Reconstruct into a bare store (its OWN schema, no dependence on the live
+            // db), loading only the in-scope quadrant(s). The per-quadrant saved
+            // versions come from the blob's save METADATA (`schemaVersions`; absent ⇒ 0,
+            // a legacy blob), NOT from the store data. A quadrant NOT in scope is treated
+            // as current so its handlers don't run — we aren't loading it. The handler
+            // may `await import(...)` migration code; it returns the store to commit, or
+            // null to reject (a reject leaves the live db untouched).
+            // Rebuild the throwaway store UNSCOPED (it's fresh — nothing to clobber, and
+            // a scoped load into an empty store would not rebuild archetype structure). A
+            // scoped blob carries only its quadrant's data, so this materializes exactly
+            // that quadrant; the SCOPE governs stamp selection and the scoped commit below.
             const documentStore = Store.create({ components: {}, resources: {}, archetypes: {} });
             documentStore.fromData(data);
-            const documentVersion = readVersionResource(documentStore, versioning.resource);
-            const currentVersion = readVersionResource(store, versioning.resource);
-            const committed = await versioning.handle({ documentStore, documentVersion, currentVersion });
-            if (committed === null) return; // reject: live database untouched
-            // The live database is ALREADY initialized to the current-version
-            // schema. We copy only the DATA for components it declares and adopt no
-            // schema from the returned store — so conform the returned store's data
-            // to the current schema first, dropping any foreign component the
-            // migration left behind (`componentSchemas` keys are the components +
-            // resource singletons the live db declares).
+            const blob = readSchemaVersions(data);
+            const schemaVersions = {
+                document: quadrantInScope(scope, "document") ? blob.document : version,
+                settings: quadrantInScope(scope, "settings") ? blob.settings : version,
+            };
+            const committed = await versioning.handle({ documentStore, schemaVersions });
+            if (committed === null) {
+                // Refused: an in-scope quadrant's saved version > currentVersion.
+                return { loaded: false, currentVersion: version, schemaVersions };
+            }
+            // The live database is ALREADY initialized to the current-version schema.
+            // Copy only the DATA for components it declares (adopt no schema): keep only
+            // declared components, conform the in-scope quadrant(s) to the current schema
+            // (auto-heal; a non-auto-convertible remnant throws), then commit SCOPED so
+            // the other quadrant is left intact.
             committed.pruneToSchema(new Set(Object.keys(store.componentSchemas)));
-            // The load succeeded → stamp the committed document to the current
-            // version (the library owns reading it, so it owns writing it too).
-            writeVersionResource(committed, versioning.resource, currentVersion);
-            assertReturnedBuffersCompatible(committed);
-            // Commit into the live db. copy:false hands the (now schema-conformed)
-            // store's buffers over structurally — it is discarded right after — so
-            // this is a cheap structural adoption of the data, not a deep copy.
-            observedDatabase.fromData(committed.toData({ copy: false }));
+            conformStoreToSchemas(committed, scopedSchemas(storeSchemas(store), scope));
+            observedDatabase.fromData(committed.toData({ copy: false, scope }), scope);
         } else {
             observedDatabase.fromData(data, scope);
         }
         strategy.onAfterFromData?.();
+        return { loaded: true };
     };
 
     const partialDatabase: any = {
@@ -302,6 +276,7 @@ function createEmptyDatabase({ concurrency, versioning }: {
             // level (see Database.pruneToPluginSchema).
             return partialDatabase;
         },
+        version,
         toData,
         fromData,
         transactions,

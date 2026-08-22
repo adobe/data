@@ -3,19 +3,17 @@
 import type { Schema } from "../../schema/index.js";
 import { TypedBuffer, convertTypedBuffer } from "../../typed-buffer/index.js";
 import type { Archetype } from "./archetype.js";
+import { replaceArchetypeColumn } from "./replace-archetype-column.js";
 
 /**
  * Convert one component column of `archetype` to `targetSchema` IN PLACE,
  * preserving the archetype's live rows. Returns `false` (a no-op) when the
- * component is absent from this archetype.
+ * component is absent from this archetype. Only the live `rowCount` rows are
+ * converted; unused capacity stays at the new column's default.
  *
- * An archetype (a table) bakes its column references into a specialized `insert`;
- * swapping a column therefore goes through `archetype.fromData`, which replaces
- * the columns AND rebuilds that baked insert so later inserts write through the
- * converted column. Only the live `rowCount` rows are converted — unused capacity
- * stays at the new column's default.
- *
- * Throws (via {@link convertTypedBuffer}) if no automatic conversion exists.
+ * This is the AUTOMATIC path — throws (via {@link convertTypedBuffer}) if no
+ * automatic conversion exists. For a change that is not auto-convertible, use
+ * `remapArchetypeColumn` with an explicit value mapper.
  */
 export function coerceArchetypeColumn(
     archetype: Archetype<any>,
@@ -26,10 +24,6 @@ export function coerceArchetypeColumn(
     const existing = columns[component];
     if (existing === undefined) return false;
     const converted = convertTypedBuffer({ source: existing, targetSchema, capacity: archetype.rowCapacity, count: archetype.rowCount });
-    archetype.fromData({
-        columns: { ...columns, [component]: converted },
-        rowCount: archetype.rowCount,
-        rowCapacity: archetype.rowCapacity,
-    });
+    replaceArchetypeColumn(archetype, component, converted);
     return true;
 }

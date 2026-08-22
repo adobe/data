@@ -58,11 +58,20 @@ import { Store } from "../../store/index.js";
  * No migration algorithm is coupled into the database; `handle` is caller-supplied.
  */
 export interface DatabaseVersioning {
-    /** Name of the resource holding the document's numeric version. */
-    readonly resource: string;
+    /**
+     * The current schema version (`entries.length - 1`). The database exposes it as
+     * `db.version` and stamps it into the save metadata (`schemaVersions`) of every
+     * `toData`, per persisted quadrant.
+     */
+    readonly currentVersion: number;
     readonly handle: (context: {
         readonly documentStore: Store<any, any, any>;
-        readonly documentVersion: number;
-        readonly currentVersion: number;
+        /**
+         * The per-quadrant version stamps read from the blob's save metadata — the
+         * version each persisted quadrant was last saved at (absent ⇒ 0, a legacy
+         * blob). The handler replays each quadrant from its own stamp up to
+         * `currentVersion`; the two can differ when the blobs were saved separately.
+         */
+        readonly schemaVersions: { readonly document: number; readonly settings: number };
     }) => Store<any, any, any> | null | Promise<Store<any, any, any> | null>;
 }

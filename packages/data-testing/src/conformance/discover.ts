@@ -42,10 +42,13 @@ const scan = (
   return out;
 };
 
-// Transitions — files whose cases are `{ before, args?, after }` — keyed by the
-// transform's function name (the name the ecs transaction/action must share).
+// Transitions — files whose cases are `{ before, args?, after }` OR `{ before,
+// args?, throws }` — keyed by the transform's function name (the name the ecs
+// transaction/action must share). Checking either key means a module whose
+// FIRST case happens to be a `throws` case is still recognized (only the first
+// case decides the module's kind).
 export const discoverTransitions = (modules: Record<string, Record<string, unknown>>): Map<string, Discovered> =>
-  scan(modules, (c) => "after" in c);
+  scan(modules, (c) => "after" in c || "throws" in c);
 // Derivations — files whose cases are `{ input, value }` — keyed by the
 // derivation's function name (the name the ecs computed must share).
 export const discoverDerivations = (modules: Record<string, Record<string, unknown>>): Map<string, Discovered> =>

@@ -4,6 +4,7 @@ import { Database, Store } from "@adobe/data/ecs";
 import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
 import { expectAfter } from "./expect-after.js";
+import { expectThrows } from "./expect-throws.js";
 import type { SchemaSource } from "./refify.js";
 import { recordArgServices, expectEffects } from "./record-effects.js";
 import type { DerivationCase, Effects } from "./types.js";
@@ -126,8 +127,9 @@ export const runSpec = (config: SpecRunConfig): void => {
           readonly name: string;
           readonly before: unknown;
           readonly args?: unknown;
-          readonly after: unknown;
+          readonly after?: unknown;
           readonly effects?: Effects<Record<string, unknown>>;
+          readonly throws?: true | string;
         };
         it(tc.name, async () => {
           // The pure spec reads args as authored — plain spec-ids that already match
@@ -138,6 +140,10 @@ export const runSpec = (config: SpecRunConfig): void => {
             ...(config.state?.create() ?? {}),
             ...(tc.before as Record<string, unknown>),
           };
+          if (tc.throws !== undefined) {
+            await expectThrows(() => suite.fn(before, args), tc.throws!);
+            return;
+          }
           const result = (await suite.fn(before, args)) as Record<string, unknown>;
           // The pure transform mints its own spec-ids, so compare up to an
           // id-bijection too (entity map keys always; reference fields when a

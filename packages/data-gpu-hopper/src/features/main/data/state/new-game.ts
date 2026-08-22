@@ -15,7 +15,7 @@ export const newGame = (_state: State): State => create();
 // status all differ) so the reset is proven total. `after` is just the initial game
 // (`create()`): its hazard-entity keys are plain spec-ids that conformance compares
 // up to an id-bijection, so the ecs is free to mint its own.
-export const cases = Conformance.cases(newGame,
+export const cases = /*@__PURE__*/ Conformance.cases(newGame,
   {
     name: "resets a mid-game store to the initial game",
     before: {

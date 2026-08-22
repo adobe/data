@@ -52,7 +52,7 @@ export const spawnWave = (
 // count is asteroidsFor(1)=4, so the ring lands on the four clean quadrant angles.
 const field = { ...create(), bounds: [200, 200] as [number, number] };
 
-export const cases = Conformance.cases(spawnWave,
+export const cases = /*@__PURE__*/ Conformance.cases(spawnWave,
   {
     name: "spawns the next wave of large asteroids when the field is clear",
     before: { ...field, entities: new Map(), wave: 0 },

@@ -29,7 +29,7 @@ const activeFox: Sprite = {
 // Spec-owned cases, shared with the ecs `toggleSpriteActive` transaction. `before`
 // keys are plain spec-ids the `args` address by id (the `args` schema marks `id` as a reference); `after` keys are
 // plain spec-ids (the ecs mints its own; compared up to an id-bijection).
-export const cases = Conformance.cases(toggleSpriteActive, { args: { type: "object", properties: { id: Entity.schema } } },
+export const cases = /*@__PURE__*/ Conformance.cases(toggleSpriteActive, { args: { type: "object", properties: { id: Entity.schema } } },
   {
     name: "toggles a sprite from inactive to active",
     before: { entities: new Map([[1, bunny], [2, activeFox]]) },

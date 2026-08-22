@@ -18,7 +18,7 @@ export const toggleDisplayCompleted = (
 // `before` is a delta over `State.create()`; `after` lists only the written
 // `displayCompleted`. Only the flag flips; entities are untouched; the transition
 // logs `displayCompletedToggled` (as the action does).
-export const cases = Conformance.cases(toggleDisplayCompleted,
+export const cases = /*@__PURE__*/ Conformance.cases(toggleDisplayCompleted,
   {
     name: "turns the completed view on",
     before: {},

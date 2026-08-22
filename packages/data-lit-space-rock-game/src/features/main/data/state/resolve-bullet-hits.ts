@@ -78,7 +78,7 @@ export const resolveBulletHits = (
 // broad phase need not match the spec's order — collections compare as multisets).
 const field = { ...create(), bounds: [800, 600] as [number, number] };
 
-export const cases = Conformance.cases(resolveBulletHits,
+export const cases = /*@__PURE__*/ Conformance.cases(resolveBulletHits,
   {
     name: "destroys bullet + asteroid, scores, and spawns split children (large → 2 medium)",
     before: {

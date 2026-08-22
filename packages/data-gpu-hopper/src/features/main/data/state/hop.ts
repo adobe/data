@@ -37,7 +37,7 @@ const base: Omit<State, "frog"> = {
 
 // Spec-owned cases, shared with the ecs `hop` transaction. `before` overrides the
 // default with a small test board; `after` is the writes patch (`frog` only).
-export const cases = Conformance.cases(hop,
+export const cases = /*@__PURE__*/ Conformance.cases(hop,
   { name: "hops up toward the goal",
     before: { ...base, frog: { x: 2, y: 0 } }, args: "up", after: { frog: { x: 2, y: 1 } } },
   { name: "hops down toward the start",

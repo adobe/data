@@ -37,7 +37,7 @@ export const stepBullets = (
 // under it, mixed drop, and the empty list.
 const field = { ...create(), bounds: [100, 100] as [number, number] };
 
-export const cases = Conformance.cases(stepBullets,
+export const cases = /*@__PURE__*/ Conformance.cases(stepBullets,
   {
     name: "moves and ages a live bullet",
     before: {

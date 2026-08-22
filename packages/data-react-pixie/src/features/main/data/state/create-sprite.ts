@@ -31,7 +31,7 @@ export const createSprite = (
 // sprites are untouched. `before` is a delta over `State.create()`; `after` is
 // the writes patch — map keys are plain spec-ids (the ecs mints its own; conformance
 // compares up to an id-bijection).
-export const cases = Conformance.cases(createSprite,
+export const cases = /*@__PURE__*/ Conformance.cases(createSprite,
   {
     name: "appends the first sprite to an empty scene",
     before: {},

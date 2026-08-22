@@ -69,7 +69,7 @@ export const spawnRandomWave = (
 const field = { ...create(), bounds: [200, 200] as [number, number] };
 const randoms = [0, 0.5, 0.25, 0.75];
 
-export const cases = Conformance.cases(spawnRandomWave,
+export const cases = /*@__PURE__*/ Conformance.cases(spawnRandomWave,
   {
     name: "spawns a randomized wave (jittered drift speeds) when the field is clear",
     before: { ...field, entities: new Map(), wave: 0 },

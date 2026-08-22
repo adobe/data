@@ -44,7 +44,7 @@ const three: readonly (readonly [number, Todo])[] = [
 // `order`. Every case keeps all todos incomplete with `displayCompleted` true, so
 // the visible list `dragTodo` indexes equals the full list. The unknown-id no-op is
 // exercised only by the pure transform — `dragTodo` has no such guard.
-export const cases = Conformance.cases(reorderTodo, { args: { type: "object", properties: { id: Entity.schema } } },
+export const cases = /*@__PURE__*/ Conformance.cases(reorderTodo, { args: { type: "object", properties: { id: Entity.schema } } },
   {
     name: "moves the first todo to the end",
     before: { entities: new Map(three), displayCompleted: true },

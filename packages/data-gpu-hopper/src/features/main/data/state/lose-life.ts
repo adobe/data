@@ -29,7 +29,7 @@ const base: Omit<State, "lives" | "status" | "frog"> = {
 };
 
 // Spec-owned cases, shared with the ecs `loseLife` transaction.
-export const cases = Conformance.cases(loseLife,
+export const cases = /*@__PURE__*/ Conformance.cases(loseLife,
   { name: "spends a life and respawns the frog at the start",
     before: { ...base, lives: 3, status: "playing", frog: { x: 1, y: 1 } },
     after: { lives: 2, status: "playing", frog: { x: 2, y: 0 } } },

@@ -27,7 +27,7 @@ export const createTodo = (
 // map is keyed by PLAIN spec-id numbers. `after` lists only what the transition
 // writes — the entities — keyed by plain spec-ids (the ecs mints its own ids; conformance compares
 // up to an id-bijection; values are id-less and compare by content). `complete` defaults to false; it logs `todoCreated`.
-export const cases = Conformance.cases(createTodo,
+export const cases = /*@__PURE__*/ Conformance.cases(createTodo,
   {
     name: "appends the first todo to an empty list",
     before: {},

@@ -23,7 +23,7 @@ export const fireBullet = (
 // rotation −π/2 → facing [0,−1] (up). The existing bullets pass through untouched.
 const field = { ...create(), bounds: [800, 600] as [number, number] };
 
-export const cases = Conformance.cases(fireBullet,
+export const cases = /*@__PURE__*/ Conformance.cases(fireBullet,
   {
     name: "fires from a ship facing +x at rest",
     before: {

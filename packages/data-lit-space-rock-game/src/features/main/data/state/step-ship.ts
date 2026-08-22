@@ -32,7 +32,7 @@ export const stepShip = (
 const field = { ...create(), bounds: [100, 100] as [number, number] };
 const idle: Input = { turn: 0, thrust: false, fire: false };
 
-export const cases = Conformance.cases(stepShip,
+export const cases = /*@__PURE__*/ Conformance.cases(stepShip,
   {
     name: "turns right by a positive turn input",
     before: {

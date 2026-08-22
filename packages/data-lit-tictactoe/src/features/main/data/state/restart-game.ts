@@ -22,7 +22,7 @@ export const restartGame = (state: State): State => {
 // Every restart clears the board and hands the first move to the other player;
 // the scoreboard is bumped only for the finished game's outcome — X win, O win,
 // draw (cat), or, when the game wasn't finished, no counter at all.
-export const cases = Conformance.cases(restartGame,
+export const cases = /*@__PURE__*/ Conformance.cases(restartGame,
   {
     name: "tallies an X win, alternates first player, clears the board",
     before: { board: "XXX      " },

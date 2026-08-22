@@ -31,7 +31,7 @@ export const playMove = (
 // only what the move writes — the board. Covers a legal placement, turn alternation
 // by move count, a winning placement, and the three rejections (occupied, out of
 // bounds, already won) that leave the board as-is.
-export const cases = Conformance.cases(playMove,
+export const cases = /*@__PURE__*/ Conformance.cases(playMove,
   {
     name: "places the first player's mark into an empty cell",
     before: {},

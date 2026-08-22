@@ -19,7 +19,7 @@ export const deleteAllTodos = (
 // a delta over `State.create()`; `after` lists only the written entities (empty).
 // Every todo is removed and `displayCompleted` is untouched; the transition logs
 // `allTodosCleared` (as the action does).
-export const cases = Conformance.cases(deleteAllTodos,
+export const cases = /*@__PURE__*/ Conformance.cases(deleteAllTodos,
   {
     name: "empties a populated list, preserving displayCompleted",
     before: {

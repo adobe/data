@@ -16,7 +16,7 @@ export const visibleTodos = (
 // computed the runner hydrates through `toData` into these id-less values). A
 // derivation case is `{ input, value }`; `input` is keyed by PLAIN spec-ids;
 // `value` is id-less content in significant display order.
-export const cases = Conformance.derivations(visibleTodos,
+export const cases = /*@__PURE__*/ Conformance.derivations(visibleTodos,
   {
     name: "hides completed todos unless the completed view is on",
     input: {

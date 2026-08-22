@@ -29,7 +29,7 @@ const fox: Sprite = {
 // Spec-owned cases, shared with the ecs `setSpriteHovered` transaction. `before`
 // keys are plain spec-ids the `args` address via `1`; `after` keys are
 // plain spec-ids (the ecs mints its own; compared up to an id-bijection).
-export const cases = Conformance.cases(setSpriteHovered, { args: { type: "object", properties: { id: Entity.schema } } },
+export const cases = /*@__PURE__*/ Conformance.cases(setSpriteHovered, { args: { type: "object", properties: { id: Entity.schema } } },
   {
     name: "sets hovered true on the addressed sprite only",
     before: { entities: new Map([[1, bunny], [2, fox]]) },

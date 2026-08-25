@@ -294,8 +294,14 @@ describe("blobStore", () => {
             expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
             expect(testBlobStore._testGetBorrowCount(combined)).toBe(2);
 
+            // The shared object URL must be revoked exactly once, only after the
+            // last of the two borrows (across both ref shapes) is returned.
             testBlobStore.returnUrl(url1);
+            expect(mockRevokeObjectURL).not.toHaveBeenCalled();
             testBlobStore.returnUrl(url2);
+            expect(mockRevokeObjectURL).toHaveBeenCalledTimes(1);
+            expect(mockRevokeObjectURL).toHaveBeenCalledWith(url1);
+            expect(testBlobStore._testGetBorrowCount(combined)).toBe(0);
         });
     });
 });

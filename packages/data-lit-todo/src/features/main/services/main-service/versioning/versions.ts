@@ -6,9 +6,9 @@
 //
 // HOW TO EVOLVE THIS FILE:
 //   • Change a component/resource schema in core-database, then run the tests.
-//   • If a test fails, it prints the exact entry to append here (and the new
-//     `databaseVersion` default to set in resources.ts). Do THAT — do not edit
-//     an existing entry.
+//   • If a test fails, it prints the exact entry to append here. Do THAT — do not
+//     edit an existing entry. `db.version` follows the history automatically
+//     (= entries.length - 1); there is no resource default to set.
 //   • Additive/minor changes need only the `changes` patch (no handler).
 //   • A change flagged BREAKING needs a `handler` (see the test's message).
 //

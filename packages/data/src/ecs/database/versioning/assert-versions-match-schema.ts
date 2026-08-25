@@ -223,7 +223,7 @@ function buildRecipe(drifts: Drift[], length: number): string {
     const breaking = drifts.filter((d) => d.kind === "breaking");
     const lines: string[] = [
         `The version history no longer matches the current schema — ${drifts.length} change(s) are unrecorded.`,
-        `Fix: append ONE new entry (version: ${length}) with the changes below, then set the version resource default to ${length}.`,
+        `Fix: append ONE new entry (version: ${length}) with the changes below — db.version follows the history automatically (= entries.length - 1); there is no resource default to set.`,
         ``,
     ];
 

@@ -46,10 +46,20 @@ export type SchemaChanges = Readonly<Record<string, Patch<Schema> | undefined>>;
  *
  * `handler` is present **iff** the change is not automatically convertible (a
  * *major* change — a type change, split, cross-component move, …). It runs against
- * the document store already staged to the schema of version `i - 1` — the input
- * this entry transforms — so it sees a known shape for every component (no pinning
- * needed) and transforms the data in place. Additive / minor / removal changes
+ * the store staged to the schema of version `i - 1` — the input this entry
+ * transforms — and transforms the data in place. Additive / minor / removal changes
  * carry no handler — load-time conversion handles them.
+ *
+ * SINGLE-QUADRANT CONTRACT. A handler touches exactly ONE persisted quadrant —
+ * `document` (shared+persistent) or `settings` (nonShared+persistent): the one its
+ * schema change is in, which the guard enforces. Only THAT quadrant is staged to the
+ * version `i - 1` shape before the handler runs; the other quadrant is deliberately
+ * left unconformed, because per-quadrant versioning lets the two drift to different
+ * versions and staging the other one could down-convert it. So a handler must read
+ * and write ONLY its own quadrant's components/resources. Reading another quadrant is
+ * a silent bug: under a scoped/split load it may be absent or at a different version,
+ * so the read returns stale/default data and the migration decides wrong. This is not
+ * statically enforced — keep each handler within its own quadrant.
  */
 export type VersionEntry = {
     /**

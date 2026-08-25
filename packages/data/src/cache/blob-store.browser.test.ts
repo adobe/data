@@ -2,6 +2,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { type BlobStore, createBlobStore } from "./blob-store.js";
 
+// Unique content per test so hashes never collide across the shared
+// "blobstore" Cache-API namespace.
+function uniqueBlob(): Blob {
+  return new Blob([`content-${Math.random()}-${Date.now()}`], {
+    type: "text/plain",
+  });
+}
+const REMOTE_URL = "http://example.com/asset";
+
 describe("blobStore", () => {
     // Mock URL.createObjectURL and URL.revokeObjectURL
     const mockCreateObjectURL = vi.fn((blob: Blob) => `blob:${Math.random()}`);
@@ -153,4 +162,146 @@ describe("blobStore", () => {
             expect(mockRevokeObjectURL).toHaveBeenCalledWith(url1);
         });
     });
-}); 
+
+    describe("deferred durability", () => {
+        it("serves a blob immediately after getRef, and flush resolves", async () => {
+            const blob = uniqueBlob();
+            const ref = await testBlobStore.getRef(blob);
+
+            const got = await testBlobStore.getBlob(ref);
+            expect(await got?.text()).toBe(await blob.text());
+
+            await expect(testBlobStore.flush()).resolves.toBeUndefined();
+        });
+    });
+
+    describe("combined blob refs (local + remote)", () => {
+        const makeFetchSpy = () => vi.spyOn(globalThis, "fetch");
+        let fetchSpy: ReturnType<typeof makeFetchSpy>;
+
+        beforeEach(() => {
+            fetchSpy = makeFetchSpy();
+        });
+        afterEach(() => {
+            fetchSpy.mockRestore();
+        });
+
+        it("resolves locally without fetching when the bytes are present", async () => {
+            const blob = uniqueBlob();
+            const localRef = await testBlobStore.getRef(blob);
+            const combined = testBlobStore.withRemoteUrl(localRef, REMOTE_URL);
+
+            fetchSpy.mockClear();
+            const got = await testBlobStore.getBlob(combined);
+
+            expect(await got?.text()).toBe(await blob.text());
+            expect(fetchSpy).not.toHaveBeenCalled();
+        });
+
+        it("falls back to remote on local miss, repopulates, then serves locally", async () => {
+            const blob = uniqueBlob();
+            const localRef = await testBlobStore.getRef(blob);
+            // Drop the local bytes so the ref must re-derive from remote.
+            await testBlobStore.releaseBlob(localRef);
+            const combined = testBlobStore.withRemoteUrl(localRef, REMOTE_URL);
+
+            fetchSpy.mockImplementation(async () => new Response(blob));
+
+            const first = await testBlobStore.getBlob(combined);
+            expect(await first?.text()).toBe(await blob.text());
+            expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+            // The remote fetch repopulated the local cache; the next read is local.
+            const second = await testBlobStore.getBlob(combined);
+            expect(await second?.text()).toBe(await blob.text());
+            expect(fetchSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it("withRemoteUrl rejects a non-http url", async () => {
+            const localRef = await testBlobStore.getRef(uniqueBlob());
+            expect(() => testBlobStore.withRemoteUrl(localRef, "ftp://x/a")).toThrow();
+        });
+
+        it("withRemoteUrl rejects a ref without a local hash", () => {
+            const remoteRef = testBlobStore.createRemoteBlobRef(REMOTE_URL);
+            expect(() => testBlobStore.withRemoteUrl(remoteRef, "http://y/a")).toThrow();
+        });
+
+        it("fetches a remote-only ref via the network", async () => {
+            const blob = uniqueBlob();
+            const remoteRef = testBlobStore.createRemoteBlobRef(REMOTE_URL);
+            fetchSpy.mockImplementation(async () => new Response(blob));
+
+            const got = await testBlobStore.getBlob(remoteRef);
+
+            expect(await got?.text()).toBe(await blob.text());
+            expect(fetchSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it("serves matching remote bytes and repopulates when verifyRemoteHash is enabled", async () => {
+            const verifying = createBlobStore({ verifyRemoteHash: true });
+            const blob = uniqueBlob();
+            const localRef = await verifying.getRef(blob);
+            await verifying.releaseBlob(localRef);
+            const combined = verifying.withRemoteUrl(localRef, REMOTE_URL);
+
+            // Remote serves the exact bytes the hash was computed from.
+            fetchSpy.mockImplementation(async () => new Response(blob));
+
+            const first = await verifying.getBlob(combined);
+            expect(await first?.text()).toBe(await blob.text());
+            expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+            // Repopulated locally: the next read does not hit the network again.
+            const second = await verifying.getBlob(combined);
+            expect(await second?.text()).toBe(await blob.text());
+            expect(fetchSpy).toHaveBeenCalledTimes(1);
+        });
+
+        it("throws on a remote hash mismatch when verifyRemoteHash is enabled", async () => {
+            const verifying = createBlobStore({ verifyRemoteHash: true });
+            const expected = uniqueBlob();
+            const localRef = await verifying.getRef(expected);
+            await verifying.releaseBlob(localRef);
+            const combined = verifying.withRemoteUrl(localRef, REMOTE_URL);
+
+            // Remote serves different bytes than the ref's content hash.
+            const wrong = uniqueBlob();
+            fetchSpy.mockImplementation(async () => new Response(wrong));
+
+            await expect(verifying.getBlob(combined)).rejects.toThrow(/mismatch/);
+        });
+
+        it("hasBlob is true for a combined ref on local miss (remote present)", async () => {
+            const blob = uniqueBlob();
+            const localRef = await testBlobStore.getRef(blob);
+            await testBlobStore.releaseBlob(localRef);
+            const combined = testBlobStore.withRemoteUrl(localRef, REMOTE_URL);
+
+            expect(await testBlobStore.hasBlob(localRef)).toBe(false);
+            expect(await testBlobStore.hasBlob(combined)).toBe(true);
+        });
+
+        it("canonicalizes identity on the hash: combined == local-only", async () => {
+            const blob = uniqueBlob();
+            const localRef = await testBlobStore.getRef(blob);
+            const combined = testBlobStore.withRemoteUrl(localRef, REMOTE_URL);
+
+            const url1 = await testBlobStore.borrowUrl(localRef);
+            const url2 = await testBlobStore.borrowUrl(combined);
+
+            expect(url1).toBe(url2);
+            expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
+            expect(testBlobStore._testGetBorrowCount(combined)).toBe(2);
+
+            // The shared object URL must be revoked exactly once, only after the
+            // last of the two borrows (across both ref shapes) is returned.
+            testBlobStore.returnUrl(url1);
+            expect(mockRevokeObjectURL).not.toHaveBeenCalled();
+            testBlobStore.returnUrl(url2);
+            expect(mockRevokeObjectURL).toHaveBeenCalledTimes(1);
+            expect(mockRevokeObjectURL).toHaveBeenCalledWith(url1);
+            expect(testBlobStore._testGetBorrowCount(combined)).toBe(0);
+        });
+    });
+});

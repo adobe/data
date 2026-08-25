@@ -8,6 +8,9 @@ export const serializeToStorage = async <T>(data: T, id: string, storage: Storag
         blobStore.getRef(json),
         blobStore.getRef(binary)
     ]);
+    // Blob writes are deferred; flush before persisting the refs so they cannot
+    // point at bytes that never reached durable storage. See BlobStore.flush.
+    await blobStore.flush();
     storage.setItem(id, JSON.stringify({ json: jsonBlobRef, binary: binaryBlobRef }));
 }
 

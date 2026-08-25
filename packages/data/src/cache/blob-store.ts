@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { type AsyncCache } from "./async-cache.js";
-import { getManagedPersistentCache } from "./get-persistent-cache.js";
+import { getDeferredManagedPersistentCache } from "./get-persistent-cache.js";
+import { type DeferredFallbackAsyncCache } from "./deferred-fallback-async-cache.js";
 import { type Schema } from "../schema/index.js";
 import { blobToHash } from "./functions/hashing/blob-to-hash.js";
 import { preventParallelExecution } from "./functions/prevent-parallel-execution.js";
@@ -30,8 +30,26 @@ const LocalBlobRefSchema = {
 } as const satisfies Schema;
 type LocalBlobRef = Schema.ToType<typeof LocalBlobRefSchema>;
 
+/**
+ * A ref holding both keys: the content hash (identity) plus a persistent,
+ * immutable URL the same content is re-fetchable from. Lets a local asset be
+ * augmented with a remote URL on save without changing identity, keeping the
+ * local fast-path while guaranteeing re-derivability from a cold cache.
+ */
+const CombinedBlobRefSchema = {
+  required: ["localBlobRef", "remoteBlobRef"],
+  properties: {
+    localBlobRef: { type: "string" },
+    remoteBlobRef: RemoteUrlSchema,
+  },
+  additionalProperties: false,
+} as const satisfies Schema;
+type CombinedBlobRef = Schema.ToType<typeof CombinedBlobRefSchema>;
+
+// Each `oneOf` member forbids the other's extra key, so a value matches exactly
+// one shape: remote-only, local-only, or combined (both keys present).
 export const BlobRefSchema = {
-  oneOf: [RemoteBlobRefSchema, LocalBlobRefSchema],
+  oneOf: [RemoteBlobRefSchema, LocalBlobRefSchema, CombinedBlobRefSchema],
 } as const satisfies Schema;
 
 /**
@@ -41,12 +59,18 @@ export const BlobRefSchema = {
  */
 export type BlobRef = Schema.ToType<typeof BlobRefSchema>;
 
-function isRemoteBlobRef(ref: unknown): ref is RemoteBlobRef {
+// A ref carrying a content hash (local-only or combined) / a remote URL
+// (remote-only or combined). The guards narrow to these so a combined ref keeps
+// both capabilities available to the caller.
+type WithLocalRef = LocalBlobRef | CombinedBlobRef;
+type WithRemoteRef = RemoteBlobRef | CombinedBlobRef;
+
+function isRemoteBlobRef(ref: unknown): ref is WithRemoteRef {
   const maybe = ref as Partial<RemoteBlobRef> | undefined;
   return typeof maybe?.remoteBlobRef === "string";
 }
 
-function isLocalBlobRef(ref: unknown): ref is LocalBlobRef {
+function isLocalBlobRef(ref: unknown): ref is WithLocalRef {
   const maybe = ref as Partial<LocalBlobRef> | undefined;
   return typeof maybe?.localBlobRef === "string";
 }
@@ -74,8 +98,17 @@ function isRemoteUrl(url: string): url is RemoteUrl {
   return url.startsWith(remoteUrlPrefix);
 }
 
-function toRequest(ref: LocalBlobRef) {
+function toRequest(ref: WithLocalRef) {
   return new Request(`${window.location.origin}/${ref.localBlobRef}`);
+}
+
+// Canonical identity key. Content identity (the hash) wins when present, so a
+// combined ref and a local-only ref with the same hash canonicalize equal and
+// share borrow/dedup state; a promotion (adding a URL) does not change identity.
+function toRefKey(ref: BlobRef): string {
+  return isLocalBlobRef(ref)
+    ? `local:${ref.localBlobRef}`
+    : `remote:${ref.remoteBlobRef}`;
 }
 
 /**
@@ -91,8 +124,21 @@ export interface BlobStore {
    * Stores a blob and returns a reference to it.
    * Blob references are based upon the content and type of the Blob.
    * If an equivalent blob is stored, an equivalent reference will be returned every time.
+   *
+   * The returned ref is readable immediately, but its durable (storage-tier)
+   * write is deferred off the critical path. Any layer that persists a document
+   * containing a local blob ref MUST await {@link BlobStore.flush} first, or the
+   * persisted ref may point at bytes that never reached storage and will not
+   * resolve after reload.
    */
   getRef(b: Blob | string): Promise<BlobRef>;
+  /**
+   * Resolves once every deferred blob write has reached durable storage.
+   * Rejects if any deferred write failed. Call this before persisting any
+   * document that references local blob refs — it is the durability barrier
+   * that makes deferred writes safe.
+   */
+  flush(): Promise<void>;
   /**
    * Gets a blob from the blob store or null if it is not available.
    */
@@ -121,6 +167,15 @@ export interface BlobStore {
    */
   createRemoteBlobRef(url: string): BlobRef;
   /**
+   * Augments an existing local blob ref with a remote URL, producing a combined
+   * ref (same content identity, now also re-fetchable at the URL). The URL must
+   * start with http and MUST serve immutable content whose hash equals the
+   * ref's `localBlobRef`; the local fast-path and dedup identity are preserved.
+   * @param ref A local (or already-combined) blob ref.
+   * @param url The persistent, immutable URL the same content is served from.
+   */
+  withRemoteUrl(ref: BlobRef, url: string): BlobRef;
+  /**
    * TEST ONLY: Gets the current borrow count for a blob reference.
    * This should only be used in tests to verify reference counting behavior.
    * @param r The blob reference to check
@@ -130,17 +185,31 @@ export interface BlobStore {
 }
 
 /**
+ * Options for {@link createBlobStore}.
+ */
+export interface BlobStoreOptions {
+  /**
+   * When true, bytes fetched via the remote fallback of a combined ref are
+   * re-hashed and compared to the ref's `localBlobRef`; a mismatch throws
+   * rather than serving unexpected bytes. Defaults to false (remote content is
+   * contractually immutable). Enable in debug/verification builds.
+   */
+  verifyRemoteHash?: boolean;
+}
+
+/**
  * Creates a new blob store instance.
  */
-export function createBlobStore() {
+export function createBlobStore(options: BlobStoreOptions = {}) {
+  const { verifyRemoteHash = false } = options;
   // Lazy-init the persistent cache so that importing this module on a
   // runtime without `globalThis.caches` (e.g. Node) does not produce an
   // unhandled rejection. The cache promise is only kicked off the first
   // time a blob store method actually needs it. See CLAUDE.md for the
   // rationale behind the lazy-init pattern.
-  let cachePromiseInternal: Promise<AsyncCache<Request, Response>> | undefined;
-  const cachePromise = (): Promise<AsyncCache<Request, Response>> =>
-    (cachePromiseInternal ??= getManagedPersistentCache("blobstore", {
+  let cachePromiseInternal: Promise<DeferredFallbackAsyncCache> | undefined;
+  const cachePromise = (): Promise<DeferredFallbackAsyncCache> =>
+    (cachePromiseInternal ??= getDeferredManagedPersistentCache("blobstore", {
       maximumMemoryEntries: 10,
       maximumStorageEntries: 1000,
     }));
@@ -167,36 +236,68 @@ export function createBlobStore() {
     return ref;
   }
 
+  // Reads from the local cache only (memory -> pending -> storage), no network.
+  async function getLocalResponse(
+    r: WithLocalRef
+  ): Promise<Response | undefined> {
+    return (await cachePromise()).match(toRequest(r));
+  }
+
   async function hasBlob(r: BlobRef): Promise<boolean> {
-    if (isRemoteBlobRef(r)) {
+    // Local hit is authoritative and cheap. A remote URL is assumed available
+    // (remote content is contractually immutable), so mirror that here.
+    if (isLocalBlobRef(r) && (await getLocalResponse(r)) !== undefined) {
       return true;
     }
-    const cache = await cachePromise();
-    const response = await cache.match(toRequest(r));
-    return response !== undefined;
+    return isRemoteBlobRef(r);
   }
 
   async function getBlob(r?: BlobRef | null): Promise<Blob | null> {
     if (!r) {
       return null;
     }
-    const response = await (isRemoteBlobRef(r)
-      ? fetch(r.remoteBlobRef)
-      : (await cachePromise()).match(toRequest(r)));
-    if (!response) {
-      return null;
+    // Local-first: a combined ref resolves from cache with no network when the
+    // bytes are present.
+    if (isLocalBlobRef(r)) {
+      const local = await getLocalResponse(r);
+      if (local) {
+        return local.blob();
+      }
     }
-    if (!response.ok) {
-      // this should only happen with remote urls. local blob responses are always ok.
-      throw new Error(response.statusText);
+    // Remote fallback: remote-only refs, or a combined ref whose local bytes
+    // have been evicted. Self-heal by repopulating the local cache under the
+    // known hash so the next read is served locally.
+    if (isRemoteBlobRef(r)) {
+      const response = await fetch(r.remoteBlobRef);
+      if (!response) {
+        return null;
+      }
+      if (!response.ok) {
+        throw new Error(response.statusText);
+      }
+      const blob = await response.blob();
+      if (isLocalBlobRef(r)) {
+        if (verifyRemoteHash) {
+          const actual = await blobToHash(blob);
+          if (actual !== r.localBlobRef) {
+            // Remote violated its immutability contract, or the URL is wrong.
+            throw new Error(
+              `Remote blob hash mismatch: expected ${r.localBlobRef}, got ${actual} from ${r.remoteBlobRef}`
+            );
+          }
+        }
+        const cache = await cachePromise();
+        await cache.put(toRequest(r), new Response(blob));
+      }
+      return blob;
     }
-    return response.blob();
+    return null;
   }
 
   async function releaseBlob(r: BlobRef): Promise<void> {
     if (isLocalBlobRef(r)) {
       const cache = await cachePromise();
-      cache.delete(toRequest(r));
+      await cache.delete(toRequest(r));
     }
   }
 
@@ -204,22 +305,29 @@ export function createBlobStore() {
    * prevent parallel execution to avoid race condition in borrowUrl while awaiting getBlob
    */
   const borrowUrlInternalNoIncrement = preventParallelExecution(async (key: string, r: BlobRef): Promise<{ url: string; count: number } | null> => {
+    // Local-first: hand out an object URL when the bytes are present locally.
+    if (isLocalBlobRef(r)) {
+      const response = await getLocalResponse(r);
+      if (response) {
+        const url = URL.createObjectURL(await response.blob());
+        const existing = { url, count: 0 };
+        borrowedUrls.set(key, existing);
+        urlToKey.set(url, key);
+        return existing;
+      }
+    }
+    // Otherwise defer to the remote URL directly (the browser fetches/caches it).
     if (isRemoteBlobRef(r)) {
       return { url: r.remoteBlobRef, count: 0 };
     }
-    const blob = await getBlob(r);
-    if (!blob) {
-      return null;
-    }
-    const url = URL.createObjectURL(blob);
-    const existing = { url, count: 0 };
-    borrowedUrls.set(key, existing);
-    urlToKey.set(url, key);
-    return existing;
+    return null;
   });
 
-  async function borrowUrl(r: BlobRef): Promise<string | null> {
-    const key = JSON.stringify(r);
+  async function borrowUrl(r: BlobRef | null): Promise<string | null> {
+    if (!r) {
+      return null;
+    }
+    const key = toRefKey(r);
     const existing = borrowedUrls.get(key) ?? await borrowUrlInternalNoIncrement(key, r);
     if (!existing) {
       return null;
@@ -258,19 +366,41 @@ export function createBlobStore() {
     return { remoteBlobRef: url } satisfies RemoteBlobRef;
   }
 
+  function withRemoteUrl(ref: BlobRef, url: string): BlobRef {
+    if (!isLocalBlobRef(ref)) {
+      throw new Error(
+        `withRemoteUrl requires a local blob ref (with a content hash)`
+      );
+    }
+    if (!isRemoteUrl(url)) {
+      throw new Error(
+        `Invalid url, expected to start with (${remoteUrlPrefix}): ${url}`
+      );
+    }
+    return {
+      localBlobRef: ref.localBlobRef,
+      remoteBlobRef: url,
+    } satisfies CombinedBlobRef;
+  }
+
+  async function flush(): Promise<void> {
+    await (await cachePromise()).flush();
+  }
+
   function _testGetBorrowCount(r: BlobRef): number {
-    const key = JSON.stringify(r);
-    return borrowedUrls.get(key)?.count ?? 0;
+    return borrowedUrls.get(toRefKey(r))?.count ?? 0;
   }
 
   return {
     getRef,
+    flush,
     getBlob,
     hasBlob,
     borrowUrl,
     returnUrl,
     releaseBlob,
     createRemoteBlobRef,
+    withRemoteUrl,
     _testGetBorrowCount,
   } as const satisfies BlobStore;
 }

@@ -171,4 +171,37 @@ describe("per-quadrant upgrade through the full Database load path", () => {
         expect(result).toEqual({ loaded: false, currentVersion: 2, schemaVersions: { document: Infinity, settings: 2 } });
     });
 
+    it("rejects a null version stamp instead of replaying from 0", async () => {
+        const saved = mergedStore(xy, themeObj);
+        insertPos(saved, { x: 1, y: 2 });
+        const blob = { ...(saved.toData() as object), schemaVersions: { document: null, settings: 2 } };
+
+        const app = Database.create(
+            Database.Plugin.create({ components: { pos: xy, theme: themeObj }, resources: {}, archetypes: {} }),
+            { versioning: upgrader() },
+        );
+        const result = await app.fromData(blob);
+
+        // `Number(null)` is 0, so coercion would masquerade a corrupt null stamp as
+        // version 0 and replay everything. A PRESENT block requires a finite number,
+        // so a null stamp reads as +Infinity ⇒ reject (live db untouched).
+        expect(result).toEqual({ loaded: false, currentVersion: 2, schemaVersions: { document: Infinity, settings: 2 } });
+    });
+
+    it("rejects a present schemaVersions block that is missing a quadrant stamp", async () => {
+        const saved = mergedStore(xy, themeObj);
+        insertPos(saved, { x: 1, y: 2 });
+        const blob = { ...(saved.toData() as object), schemaVersions: { document: 1 } };
+
+        const app = Database.create(
+            Database.Plugin.create({ components: { pos: xy, theme: themeObj }, resources: {}, archetypes: {} }),
+            { versioning: upgrader() },
+        );
+        const result = await app.fromData(blob);
+
+        // Only a WHOLLY absent `schemaVersions` block is legacy (0/0, full replay). Once
+        // the block is present, an absent quadrant stamp is malformed ⇒ +Infinity ⇒ reject.
+        expect(result).toEqual({ loaded: false, currentVersion: 2, schemaVersions: { document: 1, settings: Infinity } });
+    });
+
 });

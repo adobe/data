@@ -82,16 +82,20 @@ export function createDatabase(
 }
 
 // The per-quadrant schema versions a blob was saved at, from its save metadata.
-// Absent (a legacy blob predating versioning) ⇒ 0 for both quadrants. A present but
-// non-numeric stamp (a corrupt/hand-crafted blob) ⇒ +Infinity, so it is treated as
-// "newer than any app" and REJECTED rather than triggering a wrong full replay.
+// A blob predating versioning carries NO `schemaVersions` block at all ⇒ 0 for both
+// quadrants (legacy, full replay). But once the block is PRESENT, every stamp must be
+// a finite number: a missing/null/non-numeric stamp is a corrupt/hand-crafted blob ⇒
+// +Infinity, so it is treated as "newer than any app" and REJECTED rather than
+// silently triggering a wrong full replay from 0.
 function readSchemaVersions(data: unknown): { document: number; settings: number } {
     const meta = (data as { schemaVersions?: { document?: unknown; settings?: unknown } } | null)?.schemaVersions;
-    const read = (value: unknown): number => {
-        const n = Number(value ?? 0);
-        return Number.isFinite(n) ? n : Infinity;
-    };
-    return { document: read(meta?.document), settings: read(meta?.settings) };
+    if (meta === undefined || meta === null) {
+        return { document: 0, settings: 0 }; // legacy blob predating versioning
+    }
+    // A stamp must BE a finite number. `Number(null)` is 0, so coercion would let a
+    // corrupt null stamp masquerade as version 0 — check the type instead.
+    const read = (value: unknown): number => (typeof value === "number" && Number.isFinite(value) ? value : Infinity);
+    return { document: read(meta.document), settings: read(meta.settings) };
 }
 
 // Whether a persisted quadrant is covered by a load/save scope (undefined ⇒ both).

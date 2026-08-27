@@ -9,6 +9,7 @@ import { Entity } from "../entity/entity.js";
 import { StringKeyof } from "../../types/types.js";
 import { ensureCapacity } from "../../table/ensure-capacity.js";
 import { TypedBuffer, createTypedBuffer } from "../../typed-buffer/index.js";
+import { MemoryAllocator } from "../../cache/memory-allocator.js";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Specialized insert function per archetype.
@@ -168,13 +169,14 @@ export const createArchetype = <C extends Record<IdComponent, typeof Entity.sche
     components: C,
     id: number,
     entityLocationTable: EntityLocationTable,
+    allocator?: MemoryAllocator,
 ): Archetype<Omit<{ [K in keyof C]: Schema.ToType<C[K]> }, IdComponent>> => {
     // The archetype's public COMPONENT set excludes `id`: id is the entity's
     // identity, a column but never a component value. (`table.columns` and the
     // runtime `componentSet` still carry id — required for swap-remove and
     // serialization — but that is asserted below where the types are narrowed.)
     type PublicComponents = Omit<{ [K in keyof C]: Schema.ToType<C[K]> }, IdComponent>;
-    const table = TABLE.createTable(components);
+    const table = TABLE.createTable(components, allocator);
     const componentSet = new Set(Object.keys(components));
 
     // Mutable so we can rebuild it after fromData replaces columns. In the
@@ -221,7 +223,7 @@ export const createArchetype = <C extends Record<IdComponent, typeof Entity.sche
             for (const name of archetype.components) {
                 if (!(name in archetype.columns)) {
                     (archetype.columns as Record<string, TypedBuffer<unknown>>)[name] =
-                        createTypedBuffer(columnSchemas[name]!, archetype.rowCapacity);
+                        createTypedBuffer(columnSchemas[name]!, archetype.rowCapacity, allocator);
                 }
             }
             // Rebuild insertImpl so the baked column refs match the new live columns.

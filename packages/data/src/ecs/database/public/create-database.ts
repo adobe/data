@@ -16,6 +16,7 @@ import { createImmediateConcurrency } from "../concurrency/immediate-concurrency
 import type { ConcurrencyStrategy, ConcurrencyStrategyFactory } from "../concurrency/concurrency-strategy.js";
 import type { Entity } from "../../entity/entity.js";
 import type { Observe } from "../../../observe/index.js";
+import type { MemoryAllocator } from "../../../cache/memory-allocator.js";
 
 /**
  * For each system in newDeclarations that is not yet in systemFunctions: call create(db),
@@ -58,6 +59,14 @@ interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, an
      * {@link DatabaseVersioning}.
      */
     versioning?: DatabaseVersioning;
+    /**
+     * Backing memory allocator for every numeric component column in the
+     * database's store. Omit for the default (each column owns its own
+     * SharedArrayBuffer / ArrayBuffer). Inject a wasm or growable-
+     * SharedArrayBuffer allocator to place numeric component storage in a single
+     * shareable arena.
+     */
+    allocator?: MemoryAllocator;
 }
 
 export function createDatabase(): Database<{}, {}, {}, {}, never, {}, {}, {}>
@@ -71,7 +80,7 @@ export function createDatabase(
     plugin?: Database.Plugin<any, any, any, any, any, any, any, any>,
     options?: CreateDatabaseOptions<any>,
 ): any {
-    const db = createEmptyDatabase({ concurrency: options?.concurrency, versioning: options?.versioning });
+    const db = createEmptyDatabase({ concurrency: options?.concurrency, versioning: options?.versioning, allocator: options?.allocator });
     if (plugin === undefined) {
         return db;
     }
@@ -124,15 +133,16 @@ function scopedSchemas(schemas: StoreSchemas, scope: PersistenceScope | undefine
  * Creates a database with empty store, no transactions, actions, services, computed, or systems.
  * All content is added via .extend(plugin). Single code path for extension.
  */
-function createEmptyDatabase({ concurrency, versioning }: {
+function createEmptyDatabase({ concurrency, versioning, allocator }: {
     concurrency: ConcurrencyStrategyFactory | undefined,
     versioning?: DatabaseVersioning,
+    allocator?: MemoryAllocator,
 }): any {
     const store = Store.create({
         components: {},
         resources: {},
         archetypes: {},
-    });
+    }, { allocator });
 
     const observedDatabase = createObservedDatabase(store);
 

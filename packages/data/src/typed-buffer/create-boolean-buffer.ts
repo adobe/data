@@ -1,8 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { resize } from "../internal/array-buffer-like/resize.js";
 import { TypedArray } from "../internal/typed-array/index.js";
 import { Schema } from "../schema/index.js";
-import { createSharedArrayBuffer } from "../internal/shared-array-buffer/create-shared-array-buffer.js";
+import { MemoryAllocator, defaultMemoryAllocator } from "../cache/memory-allocator.js";
 import { TypedBuffer, TypedBufferType } from "./typed-buffer.js";
 
 export const booleanBufferType = "boolean";
@@ -30,16 +29,18 @@ class BooleanTypedBuffer extends TypedBuffer<boolean> {
     public readonly type: TypedBufferType = booleanBufferType;
     public readonly typedArrayElementSizeInBytes = 0;
 
-    private arrayBuffer: ArrayBuffer | SharedArrayBuffer;
     private array: Uint32Array;
+    private readonly allocator: MemoryAllocator;
     private _capacity: number;
 
-    constructor(schema: Schema, initialCapacity: number) {
+    constructor(schema: Schema, initialCapacity: number, allocator: MemoryAllocator = defaultMemoryAllocator) {
         super(schema);
+        this.allocator = allocator;
         this._capacity = initialCapacity;
-        const wordCount = booleanWordCount(initialCapacity);
-        this.arrayBuffer = createSharedArrayBuffer(wordCount * 4);
-        this.array = new Uint32Array(this.arrayBuffer);
+        this.array = allocator.allocate(Uint32Array, booleanWordCount(initialCapacity));
+        allocator.needsRefresh(() => {
+            this.array = allocator.refresh(this.array);
+        });
     }
 
     get capacity(): number {
@@ -48,9 +49,12 @@ class BooleanTypedBuffer extends TypedBuffer<boolean> {
 
     set capacity(value: number) {
         if (value !== this._capacity) {
+            const next = this.allocator.allocate(Uint32Array, booleanWordCount(value));
+            const old = this.allocator.refresh(this.array);
+            next.set(old.subarray(0, Math.min(next.length, old.length)));
+            this.array = next;
             this._capacity = value;
-            this.arrayBuffer = resize(this.arrayBuffer, booleanStorageByteLength(value));
-            this.array = new Uint32Array(this.arrayBuffer);
+            this.allocator.release(old);
         }
     }
 
@@ -96,7 +100,7 @@ class BooleanTypedBuffer extends TypedBuffer<boolean> {
 
     copy(): TypedBuffer<boolean> {
         const copy = new BooleanTypedBuffer(this.schema, this._capacity);
-        copy.array.set(this.array);
+        copy.array.set(this.allocator.refresh(this.array));
         return copy;
     }
 }
@@ -104,6 +108,7 @@ class BooleanTypedBuffer extends TypedBuffer<boolean> {
 export const createBooleanBuffer = (
     schema: Schema,
     initialCapacity: number,
+    allocator?: MemoryAllocator,
 ): TypedBuffer<boolean> => {
-    return new BooleanTypedBuffer(schema, initialCapacity);
+    return new BooleanTypedBuffer(schema, initialCapacity, allocator);
 };

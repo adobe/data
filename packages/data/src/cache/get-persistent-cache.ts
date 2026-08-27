@@ -10,7 +10,14 @@ import { createMemoryAsyncCache } from "./memory-async-cache.js";
 
 interface ManagedCacheOptions {
   maximumMemoryEntries: number;
-  maximumStorageEntries: number;
+  /**
+   * Cap on the storage-tier entry count, enforced by periodically scanning
+   * and FIFO-trimming all keys in the underlying Cache Storage bucket. Omit
+   * to leave the storage tier unbounded and rely on the browser's own
+   * Cache Storage eviction (coarser-grained, but avoids the recurring
+   * full-bucket `keys()` scan this cap requires).
+   */
+  maximumStorageEntries?: number;
 }
 
 /**
@@ -39,10 +46,14 @@ async function createManagedTiers(
     createMemoryAsyncCache(),
     options.maximumMemoryEntries
   );
-  const storageCache = createManagedAsyncCache(
-    await getUnmanagedPersistentCache(name),
-    options.maximumStorageEntries
-  );
+  const unmanagedStorageCache = await getUnmanagedPersistentCache(name);
+  const storageCache =
+    options.maximumStorageEntries === undefined
+      ? unmanagedStorageCache
+      : createManagedAsyncCache(
+          unmanagedStorageCache,
+          options.maximumStorageEntries
+        );
   return { memoryCache, storageCache };
 }
 

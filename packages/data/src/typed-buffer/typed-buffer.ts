@@ -38,6 +38,17 @@ export abstract class TypedBuffer<T> implements ReadonlyTypedBuffer<T> {
     abstract isDefault(index: number): boolean;
 
     /**
+     * Release any backing memory and detach from its allocator. After `dispose`
+     * the buffer must not be used again. Call it when a column is permanently
+     * discarded (e.g. replaced during `archetype.fromData`) so an arena allocator
+     * reclaims the block and drops the buffer's `needsRefresh` subscription.
+     *
+     * The default is a no-op — buffers with no linear storage (const, JS-array)
+     * hold no allocator resources. Storage buffers override it.
+     */
+    dispose(): void { }
+
+    /**
      * Checks if two TypedBuffer instances are deeply equal.
      * @param a The first TypedBuffer.
      * @param b The second TypedBuffer.

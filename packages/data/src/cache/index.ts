@@ -16,5 +16,6 @@ export {
   isSharedArrayBufferAllocatorSupported,
   defaultMemoryAllocator,
   type SharedArrayBufferAllocatorOptions,
+  type WasmMemoryAllocatorOptions,
 } from "./memory-allocator.js";
 export * from "./functions/index.js";

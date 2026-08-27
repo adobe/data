@@ -31,6 +31,8 @@ class BooleanTypedBuffer extends TypedBuffer<boolean> {
 
     private array: Uint32Array;
     private readonly allocator: MemoryAllocator;
+    private readonly unsubscribe: () => void;
+    private disposed = false;
     private _capacity: number;
 
     constructor(schema: Schema, initialCapacity: number, allocator: MemoryAllocator = defaultMemoryAllocator) {
@@ -38,9 +40,16 @@ class BooleanTypedBuffer extends TypedBuffer<boolean> {
         this.allocator = allocator;
         this._capacity = initialCapacity;
         this.array = allocator.allocate(Uint32Array, booleanWordCount(initialCapacity));
-        allocator.needsRefresh(() => {
+        this.unsubscribe = allocator.needsRefresh(() => {
             this.array = allocator.refresh(this.array);
         });
+    }
+
+    override dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true;
+        this.unsubscribe();
+        this.allocator.release(this.allocator.refresh(this.array));
     }
 
     get capacity(): number {

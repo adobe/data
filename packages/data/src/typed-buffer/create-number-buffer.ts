@@ -35,6 +35,8 @@ class NumberTypedBuffer extends TypedBuffer<number> {
     private array: TypedArray;
     private readonly typedArrayConstructor: TypedArrayConstructor;
     private readonly allocator: MemoryAllocator;
+    private readonly unsubscribe: () => void;
+    private disposed = false;
     private _capacity: number;
 
     constructor(schema: Schema, initialCapacity: number, allocator: MemoryAllocator = defaultMemoryAllocator) {
@@ -45,9 +47,16 @@ class NumberTypedBuffer extends TypedBuffer<number> {
         this._capacity = initialCapacity;
         this.array = allocator.allocate(this.typedArrayConstructor, initialCapacity);
         // A detaching allocator (wasm) rebuilds every live view on grow.
-        allocator.needsRefresh(() => {
+        this.unsubscribe = allocator.needsRefresh(() => {
             this.array = allocator.refresh(this.array);
         });
+    }
+
+    override dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true;
+        this.unsubscribe();
+        this.allocator.release(this.allocator.refresh(this.array));
     }
 
     get capacity(): number {

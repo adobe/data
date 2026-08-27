@@ -219,12 +219,21 @@ export const createArchetype = <C extends Record<IdComponent, typeof Entity.sche
             for (const name in archetype.columns) {
                 columnSchemas[name] = (archetype.columns as Record<string, TypedBuffer<unknown>>)[name]!.schema;
             }
+            // Old column instances, captured before Object.assign swaps the map.
+            const oldColumns = Object.values(archetype.columns as Record<string, TypedBuffer<unknown>>);
             Object.assign(archetype, data);
             for (const name of archetype.components) {
                 if (!(name in archetype.columns)) {
                     (archetype.columns as Record<string, TypedBuffer<unknown>>)[name] =
                         createTypedBuffer(columnSchemas[name]!, archetype.rowCapacity, allocator);
                 }
+            }
+            // Dispose every old column the new column set does not reuse: its
+            // allocator block (arena) and needsRefresh subscription would leak
+            // otherwise. Columns carried across the swap (===) are retained.
+            const retained = new Set(Object.values(archetype.columns as Record<string, TypedBuffer<unknown>>));
+            for (const column of oldColumns) {
+                if (!retained.has(column)) column.dispose();
             }
             // Rebuild insertImpl so the baked column refs match the new live columns.
             refreshInsertImpl();

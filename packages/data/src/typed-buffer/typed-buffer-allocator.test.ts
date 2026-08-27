@@ -7,6 +7,7 @@ import {
   isSharedArrayBufferAllocatorSupported,
   MemoryAllocator,
 } from "../cache/memory-allocator.js";
+import { TypedArray } from "../internal/typed-array/index.js";
 import type { Schema } from "../schema/index.js";
 
 const numberSchema = { type: "number" } as const satisfies Schema;
@@ -63,6 +64,61 @@ describe("createTypedBuffer with a wasm allocator", () => {
     const memory = new WebAssembly.Memory({ initial: 1 });
     const buffer = createTypedBuffer(numberSchema, 4, createWasmMemoryAllocator(memory));
     expect(buffer.getTypedArray().buffer).toBe(memory.buffer);
+  });
+});
+
+// A MemoryAllocator that tracks live needsRefresh subscribers, so a leak (a
+// buffer that never unsubscribes) is directly observable.
+function recordingAllocator() {
+  const subscribers = new Set<() => void>();
+  const allocator: MemoryAllocator = {
+    needsRefresh: (cb) => {
+      subscribers.add(cb);
+      return () => subscribers.delete(cb);
+    },
+    allocate: <T extends TypedArray>(
+      ctor: { BYTES_PER_ELEMENT: number } & (new (b?: ArrayBufferLike, o?: number, l?: number) => T),
+      n: number,
+    ): T => new ctor(new ArrayBuffer(n * ctor.BYTES_PER_ELEMENT), 0, n),
+    refresh: (a) => a,
+    release: () => { },
+  };
+  return { allocator, subscriberCount: () => subscribers.size };
+}
+
+describe("TypedBuffer.dispose", () => {
+  it("releases the arena block so a same-size allocation reuses it", () => {
+    const alloc = createWasmMemoryAllocator(new WebAssembly.Memory({ initial: 1 }));
+    const a = createTypedBuffer(numberSchema, 4, alloc);
+    const offset = a.getTypedArray().byteOffset;
+    a.dispose();
+    const b = createTypedBuffer(numberSchema, 4, alloc);
+    expect(b.getTypedArray().byteOffset).toBe(offset);
+  });
+
+  it("unsubscribes from needsRefresh (no leaked subscription)", () => {
+    const { allocator, subscriberCount } = recordingAllocator();
+    const buffer = createTypedBuffer(numberSchema, 4, allocator);
+    expect(subscriberCount()).toBe(1);
+    buffer.dispose();
+    expect(subscriberCount()).toBe(0);
+  });
+
+  it("is a no-op for buffers without linear storage (const)", () => {
+    const constBuffer = createTypedBuffer({ const: 5 } as const satisfies Schema, 4);
+    expect(() => constBuffer.dispose()).not.toThrow();
+  });
+
+  it("applies to struct, boolean and enum buffers too", () => {
+    const { allocator, subscriberCount } = recordingAllocator();
+    const buffers = [
+      createTypedBuffer(structSchema, 4, allocator),
+      createTypedBuffer(booleanSchema, 4, allocator),
+      createTypedBuffer(enumSchema, 4, allocator),
+    ];
+    expect(subscriberCount()).toBe(3);
+    for (const b of buffers) b.dispose();
+    expect(subscriberCount()).toBe(0);
   });
 });
 

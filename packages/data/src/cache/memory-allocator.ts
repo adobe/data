@@ -97,10 +97,20 @@ interface ArenaBacking {
   buffer(): ArrayBufferLike;
   /** Total capacity of the backing buffer in bytes. */
   byteLength(): number;
-  /** Grow the backing buffer so its capacity is at least `minByteLength`. */
-  grow(minByteLength: number): void;
+  /**
+   * Grow the backing buffer to at least `minByteLength`, preferring
+   * `preferredByteLength` when the backing can accommodate it (geometric growth).
+   * @throws an actionable error when even `minByteLength` cannot be satisfied.
+   */
+  grow(minByteLength: number, preferredByteLength: number): void;
   /** Whether existing views detach when `grow` is called (wasm: true). */
   readonly detachesOnGrow: boolean;
+  /**
+   * Bytes at the START of the backing buffer that the arena does NOT own (e.g. a
+   * wasm module's own data/stack). Allocations never touch below this offset.
+   * Aligned to {@link ALIGNMENT}.
+   */
+  readonly baseOffset: number;
 }
 
 // What a live allocation occupies. Kept in a WeakMap keyed by the handed-out
@@ -112,35 +122,58 @@ interface Allocation {
   readonly ctor: TypedArrayConstructor;
 }
 
+// `zeroed` tracks whether a free block's bytes are known to be all-zero (fresh
+// from a spec-zeroed grow, or never written). Allocating a zeroed block can skip
+// the fill(0); a released (dirty) block cannot.
+interface FreeBlock {
+  offset: number;
+  size: number;
+  zeroed: boolean;
+}
+
 function createArenaAllocator(backing: ArenaBacking): MemoryAllocator {
-  const freeList: { offset: number; size: number }[] = [
-    { offset: 0, size: backing.byteLength() },
+  const freeList: FreeBlock[] = [
+    { offset: backing.baseOffset, size: backing.byteLength() - backing.baseOffset, zeroed: true },
   ];
   const live = new WeakMap<TypedArray, Allocation>();
   const [needsRefresh, notifyNeedsRefresh] = Observe.createEvent<void>();
 
-  const mergeFreeBlocks = (): void => {
-    freeList.sort((a, b) => a.offset - b.offset);
+  // Insert a freed/grown block keeping `freeList` sorted by offset and merging
+  // with the immediately adjacent neighbors only — no full re-sort. A merge of a
+  // zeroed and a dirty block yields dirty (the union contains non-zero bytes).
+  const insertFreeBlock = (offset: number, size: number, zeroed: boolean): void => {
     let i = 0;
-    while (i < freeList.length - 1) {
-      const current = freeList[i];
-      const next = freeList[i + 1];
-      if (current.offset + current.size === next.offset) {
-        current.size += next.size;
-        freeList.splice(i + 1, 1);
-      } else {
-        i++;
+    while (i < freeList.length && freeList[i].offset < offset) i++;
+    freeList.splice(i, 0, { offset, size, zeroed });
+    // Merge current into its right neighbor.
+    const next = freeList[i + 1];
+    if (next && offset + size === next.offset) {
+      freeList[i].size += next.size;
+      freeList[i].zeroed = freeList[i].zeroed && next.zeroed;
+      freeList.splice(i + 1, 1);
+    }
+    // Merge current into its left neighbor.
+    if (i > 0) {
+      const prev = freeList[i - 1];
+      const cur = freeList[i];
+      if (prev.offset + prev.size === cur.offset) {
+        prev.size += cur.size;
+        prev.zeroed = prev.zeroed && cur.zeroed;
+        freeList.splice(i, 1);
       }
     }
   };
 
   const growArena = (minAdditionalBytes: number): void => {
     const before = backing.byteLength();
-    backing.grow(before + minAdditionalBytes);
+    const usable = before - backing.baseOffset;
+    // Geometric: prefer at least doubling the usable arena so a run of small
+    // allocations does not trigger a grow (and, for wasm, a detach storm) each.
+    backing.grow(before + minAdditionalBytes, before + Math.max(minAdditionalBytes, usable));
     const after = backing.byteLength();
     if (after > before) {
-      freeList.push({ offset: before, size: after - before });
-      mergeFreeBlocks();
+      // Freshly grown backing memory is spec-zeroed.
+      insertFreeBlock(before, after - before, true);
     }
     // A detaching grow invalidated every live view; tell holders to refresh.
     if (backing.detachesOnGrow) {
@@ -153,6 +186,11 @@ function createArenaAllocator(backing: ArenaBacking): MemoryAllocator {
     sizeInElements: number
   ): T => {
     const sizeInBytes = alignUp(sizeInElements * typedArray.BYTES_PER_ELEMENT);
+    // A zero-length request carves nothing and is not tracked — hand out an empty
+    // view at the arena base (aligned, touches no owned bytes).
+    if (sizeInBytes === 0) {
+      return new typedArray(backing.buffer(), backing.baseOffset, 0);
+    }
     let index = freeList.findIndex((block) => block.size >= sizeInBytes);
     if (index === -1) {
       growArena(sizeInBytes);
@@ -163,14 +201,17 @@ function createArenaAllocator(backing: ArenaBacking): MemoryAllocator {
     freeList.splice(index, 1);
     const remainingSize = block.size - sizeInBytes;
     if (remainingSize > 0) {
-      freeList.push({ offset: block.offset + sizeInBytes, size: remainingSize });
+      insertFreeBlock(block.offset + sizeInBytes, remainingSize, block.zeroed);
     }
 
     const view = new typedArray(backing.buffer(), block.offset, sizeInElements);
     // The simple allocator always hands back a freshly zeroed buffer; match that
-    // so callers see default (0) storage regardless of allocator. A reused free
-    // block still holds its previous occupant's bytes, so zero unconditionally.
-    view.fill(0);
+    // so callers see default (0) storage regardless of allocator. A block that is
+    // already known-zero (fresh from grow / never written) skips the redundant
+    // fill; a reused dirty block still holds stale bytes and must be zeroed.
+    if (!block.zeroed) {
+      view.fill(0);
+    }
     live.set(view, { offset: block.offset, length: sizeInElements, ctor: typedArray });
     return view;
   };
@@ -196,20 +237,13 @@ function createArenaAllocator(backing: ArenaBacking): MemoryAllocator {
 
   const release = (array: TypedArray): void => {
     const info = live.get(array);
+    // Only views this arena handed out can be released. A foreign view's
+    // byteOffset is relative to a DIFFERENT buffer, so trusting it would insert a
+    // bogus (overlapping) block into this free list — silently ignore it.
     if (info === undefined) {
-      // Unknown view: fall back to its own offset/length (only valid if it has
-      // not detached). Detached views report 0/0 and free nothing.
-      if (array.byteLength > 0) {
-        freeList.push({ offset: array.byteOffset, size: alignUp(array.byteLength) });
-        mergeFreeBlocks();
-      }
       return;
     }
-    freeList.push({
-      offset: info.offset,
-      size: alignUp(info.length * info.ctor.BYTES_PER_ELEMENT),
-    });
-    mergeFreeBlocks();
+    insertFreeBlock(info.offset, alignUp(info.length * info.ctor.BYTES_PER_ELEMENT), false);
     live.delete(array);
   };
 
@@ -218,22 +252,52 @@ function createArenaAllocator(backing: ArenaBacking): MemoryAllocator {
 
 const PAGE_SIZE = 64 * 1024; // 64 KB — one WebAssembly memory page.
 
+export interface WasmMemoryAllocatorOptions {
+  /**
+   * Bytes at the start of `memory` reserved for the wasm module itself (its data
+   * segment / stack / heap). The arena allocates only ABOVE this offset and never
+   * zeroes or hands out the reserved region. Defaults to 0 (the allocator owns
+   * the whole memory). Rounded up to a 16-byte boundary.
+   */
+  byteOffset?: number;
+}
+
 /**
  * Sub-allocate numeric component storage into a `WebAssembly.Memory`, so the
  * same bytes are visible to a wasm module (physics, codecs, …) without copying.
  * `memory.grow` detaches the backing buffer, so every live view is refreshed via
  * `needsRefresh` when the arena has to grow.
+ *
+ * The arena owns `[byteOffset, end)` of the memory; pass `byteOffset` when the
+ * same `Memory` also backs a module whose own state lives in the low addresses.
  */
 export function createWasmMemoryAllocator(
-  memory: WebAssembly.Memory
+  memory: WebAssembly.Memory,
+  options: WasmMemoryAllocatorOptions = {}
 ): MemoryAllocator {
+  const growTo = (targetBytes: number): boolean => {
+    const current = memory.buffer.byteLength;
+    if (targetBytes <= current) return true;
+    try {
+      memory.grow(Math.ceil((targetBytes - current) / PAGE_SIZE));
+      return true;
+    } catch {
+      return false;
+    }
+  };
   return createArenaAllocator({
+    baseOffset: alignUp(options.byteOffset ?? 0),
     buffer: () => memory.buffer,
     byteLength: () => memory.buffer.byteLength,
-    grow: (minByteLength) => {
-      const current = memory.buffer.byteLength;
-      if (minByteLength <= current) return;
-      memory.grow(Math.ceil((minByteLength - current) / PAGE_SIZE));
+    grow: (minByteLength, preferredByteLength) => {
+      // Try the geometric target first; fall back to the strict minimum so a
+      // preferred overshoot past the Memory's maximum does not needlessly fail.
+      if (growTo(preferredByteLength)) return;
+      if (growTo(minByteLength)) return;
+      throw new Error(
+        `WebAssembly memory allocator exhausted: cannot grow to ${minByteLength} bytes ` +
+        `(the WebAssembly.Memory maximum has been reached).`
+      );
     },
     detachesOnGrow: true,
   });
@@ -281,17 +345,21 @@ export function createSharedArrayBufferAllocator(
       "to createSimpleMemoryAllocator()."
     );
   }
-  const maxByteLength = options.maxByteLength ?? 1024 * 1024 * 1024; // 1 GB
+  // Align both bounds to 16 so every (offset, length) sub-view the arena hands
+  // out — including the first block that starts at a grown boundary — satisfies
+  // the alignment every typed-array constructor requires.
+  const maxByteLength = alignUp(options.maxByteLength ?? 1024 * 1024 * 1024); // 1 GB
   const initialByteLength = Math.min(
-    options.initialByteLength ?? PAGE_SIZE,
+    alignUp(options.initialByteLength ?? PAGE_SIZE),
     maxByteLength
   );
   const sab = new SharedArrayBuffer(initialByteLength, { maxByteLength });
 
   return createArenaAllocator({
+    baseOffset: 0,
     buffer: () => sab,
     byteLength: () => sab.byteLength,
-    grow: (minByteLength) => {
+    grow: (minByteLength, preferredByteLength) => {
       if (minByteLength <= sab.byteLength) return;
       if (minByteLength > maxByteLength) {
         throw new Error(
@@ -299,7 +367,8 @@ export function createSharedArrayBufferAllocator(
           `but maxByteLength is ${maxByteLength}. Pass a larger maxByteLength.`
         );
       }
-      sab.grow(minByteLength);
+      // Grow to the geometric target when it fits under the cap, else to the cap.
+      sab.grow(Math.min(Math.max(preferredByteLength, minByteLength), maxByteLength));
     },
     detachesOnGrow: false,
   });

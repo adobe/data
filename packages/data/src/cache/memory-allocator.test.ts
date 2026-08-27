@@ -155,3 +155,86 @@ if (isSharedArrayBufferAllocatorSupported()) {
     createSharedArrayBufferAllocator({ initialByteLength: 64 * 1024 }),
   );
 }
+
+// ── Regression coverage for the PR #190 review findings ──────────────────────
+
+describe("arena release() ignores foreign views (no free-list corruption)", () => {
+  it("does not insert an unrelated buffer's offset into the free list", () => {
+    const alloc = createWasmMemoryAllocator(new WebAssembly.Memory({ initial: 1 }));
+    const a = alloc.allocate(Uint8Array, 32);
+    a.fill(0xaa);
+    // A view over a completely unrelated buffer, byteOffset 0 — releasing it must
+    // NOT push offset 0 into THIS arena's free list (it would overlap `a`).
+    const foreign = new Uint8Array(new ArrayBuffer(64));
+    alloc.release(foreign);
+    const b = alloc.allocate(Uint8Array, 32);
+    expect(b.byteOffset).not.toBe(a.byteOffset);
+    // `b` must not overlap `a`; its fill(0) must not have clobbered `a`.
+    expect(Array.from(a).every((x) => x === 0xaa)).toBe(true);
+  });
+});
+
+describe("arena growth is geometric (amortized), not just-enough", () => {
+  const maybe = isSharedArrayBufferAllocatorSupported() ? it : it.skip;
+  maybe("over-provisions on grow so the next small allocation fits without another grow", () => {
+    const alloc = createSharedArrayBufferAllocator({ initialByteLength: 1024, maxByteLength: 1 << 20 });
+    const a = alloc.allocate(Uint8Array, 1024); // fills the initial arena exactly
+    const b = alloc.allocate(Uint8Array, 16); // forces a grow
+    // Geometric growth at least doubles the backing buffer; a just-enough grow
+    // would have landed near 1040 bytes.
+    expect(a.buffer.byteLength).toBeGreaterThanOrEqual(2048);
+    expect(b.byteOffset).toBeGreaterThanOrEqual(1024);
+  });
+});
+
+describe("createSharedArrayBufferAllocator alignment", () => {
+  const maybe = isSharedArrayBufferAllocatorSupported() ? it : it.skip;
+  maybe("aligns a non-multiple-of-4 initialByteLength so grown regions stay addressable", () => {
+    // 10 is not a multiple of 8; without alignment the first grown block would
+    // start at offset 10 and constructing a Float64Array there throws.
+    const alloc = createSharedArrayBufferAllocator({ initialByteLength: 10, maxByteLength: 1 << 20 });
+    expect(() => {
+      const a = alloc.allocate(Float64Array, 8);
+      a[0] = 1;
+      expect(a[0]).toBe(1);
+    }).not.toThrow();
+  });
+});
+
+describe("createWasmMemoryAllocator reserved base offset", () => {
+  it("allocates above a reserved region and leaves it untouched", () => {
+    const memory = new WebAssembly.Memory({ initial: 1 });
+    // Reserve the low 1 KB for the wasm module itself and mark it.
+    new Uint8Array(memory.buffer, 0, 1024).fill(0xcd);
+    const alloc = createWasmMemoryAllocator(memory, { byteOffset: 1024 });
+    const a = alloc.allocate(Float64Array, 4);
+    expect(a.byteOffset).toBeGreaterThanOrEqual(1024);
+    a.fill(7);
+    // The reserved region is not part of the arena and was never zeroed/written.
+    const reserved = new Uint8Array(memory.buffer, 0, 1024);
+    expect(reserved.every((x) => x === 0xcd)).toBe(true);
+  });
+});
+
+describe("arena zero-length allocation", () => {
+  it("hands out an empty view and does not corrupt later allocations", () => {
+    const alloc = createWasmMemoryAllocator(new WebAssembly.Memory({ initial: 1 }));
+    const empty = alloc.allocate(Float64Array, 0);
+    expect(empty.length).toBe(0);
+    expect(() => alloc.release(empty)).not.toThrow();
+    // A real allocation still starts at the arena base — the zero-length view
+    // carved and tracked nothing.
+    const a = alloc.allocate(Float64Array, 4);
+    expect(a.byteOffset).toBe(0);
+    a[3] = 9;
+    expect(a[3]).toBe(9);
+  });
+});
+
+describe("createWasmMemoryAllocator exhaustion", () => {
+  it("throws an actionable error when the memory cannot grow further", () => {
+    const memory = new WebAssembly.Memory({ initial: 1, maximum: 1 }); // capped at 64 KB
+    const alloc = createWasmMemoryAllocator(memory);
+    expect(() => alloc.allocate(Float64Array, 100_000)).toThrow(/exhaust/i);
+  });
+});

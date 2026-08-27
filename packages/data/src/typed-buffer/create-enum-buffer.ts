@@ -14,6 +14,8 @@ class EnumTypedBuffer<T> extends TypedBuffer<T> {
 
     private array: Uint8Array;
     private readonly allocator: MemoryAllocator;
+    private readonly unsubscribe: () => void;
+    private disposed = false;
     private _capacity: number;
     private readonly indexToValue: readonly T[];
     private readonly valueToIndex: Map<T, number>;
@@ -43,13 +45,20 @@ class EnumTypedBuffer<T> extends TypedBuffer<T> {
 
         this._capacity = initialCapacity;
         this.array = allocator.allocate(Uint8Array, initialCapacity);
-        allocator.needsRefresh(() => {
+        this.unsubscribe = allocator.needsRefresh(() => {
             this.array = allocator.refresh(this.array);
         });
 
         if (this.defaultIndex !== 0) {
             this.array.fill(this.defaultIndex);
         }
+    }
+
+    override dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true;
+        this.unsubscribe();
+        this.allocator.release(this.allocator.refresh(this.array));
     }
 
     get capacity(): number {

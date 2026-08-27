@@ -23,6 +23,8 @@ class StructTypedBuffer<S extends Schema, ArrayType extends keyof DataView32 = "
     private dataView: DataView32;
     private typedArray: TypedArray;
     private readonly allocator: MemoryAllocator;
+    private readonly unsubscribe: () => void;
+    private disposed = false;
     private readonly layout: NonNullable<ReturnType<typeof getStructLayout>>;
     private readonly read: ReturnType<typeof createReadStruct<Schema.ToType<S>>>;
     private readonly write: ReturnType<typeof createWriteStruct<Schema.ToType<S>>>;
@@ -58,7 +60,7 @@ class StructTypedBuffer<S extends Schema, ArrayType extends keyof DataView32 = "
         }
         this.dataView = this.buildDataView();
         this.typedArray = this.dataView[this.arrayType];
-        this.allocator.needsRefresh(() => {
+        this.unsubscribe = this.allocator.needsRefresh(() => {
             this.region = this.allocator.refresh(this.region);
             this.dataView = this.buildDataView();
             this.typedArray = this.dataView[this.arrayType];
@@ -66,6 +68,13 @@ class StructTypedBuffer<S extends Schema, ArrayType extends keyof DataView32 = "
 
         this.read = createReadStruct<Schema.ToType<S>>(this.layout);
         this.write = createWriteStruct<Schema.ToType<S>>(this.layout);
+    }
+
+    override dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true;
+        this.unsubscribe();
+        this.allocator.release(this.allocator.refresh(this.region));
     }
 
     // The f32/u32/i32 views must cover exactly this struct's (offset, length)

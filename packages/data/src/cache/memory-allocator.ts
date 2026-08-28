@@ -265,11 +265,28 @@ export interface WasmMemoryAllocatorOptions {
 /**
  * Sub-allocate numeric component storage into a `WebAssembly.Memory`, so the
  * same bytes are visible to a wasm module (physics, codecs, …) without copying.
- * `memory.grow` detaches the backing buffer, so every live view is refreshed via
- * `needsRefresh` when the arena has to grow.
+ * `memory.grow` swaps in a new backing buffer, so every live view is refreshed
+ * via `needsRefresh` when the arena has to grow.
  *
  * The arena owns `[byteOffset, end)` of the memory; pass `byteOffset` when the
  * same `Memory` also backs a module whose own state lives in the low addresses.
+ *
+ * **Shared memory = wasm-accessible AND cross-worker shareable.** Construct the
+ * memory with `{ shared: true }` (which requires `maximum`) and `memory.buffer`
+ * is a growable `SharedArrayBuffer`. This allocator then gives you the union of
+ * both off-the-shelf arenas in one — numeric components that a wasm module can
+ * read/write in place *and* that can be posted to a worker without copying:
+ *
+ * ```ts
+ * const memory = new WebAssembly.Memory({ initial: 16, maximum: 4096, shared: true });
+ * createDatabase(plugin, { allocator: createWasmMemoryAllocator(memory) });
+ * ```
+ *
+ * Unlike non-shared memory (whose old buffer is DETACHED on grow), a shared
+ * memory's prior buffer stays valid and aliases the same pages; V8 still returns
+ * a fresh `SharedArrayBuffer` object from `memory.buffer` after a grow, so views
+ * are refreshed onto it and every column stays on one shared buffer. In a
+ * browser, `SharedArrayBuffer` requires cross-origin isolation (COOP/COEP).
  */
 export function createWasmMemoryAllocator(
   memory: WebAssembly.Memory,

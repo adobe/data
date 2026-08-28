@@ -118,6 +118,25 @@ describe("createWasmMemoryAllocator", () => {
   });
 });
 
+describe("createWasmMemoryAllocator with shared WebAssembly.Memory", () => {
+  it("allocates into a SharedArrayBuffer and preserves data across a grow", () => {
+    const memory = new WebAssembly.Memory({ initial: 1, maximum: 100, shared: true });
+    const alloc = createWasmMemoryAllocator(memory);
+    let a = alloc.allocate(Float64Array, 4000); // 32 KB
+    a[0] = 7;
+    a[3999] = 9;
+    expect(a.buffer).toBeInstanceOf(SharedArrayBuffer);
+    alloc.needsRefresh(() => { a = alloc.refresh(a); });
+    // Forces a grow. A shared memory's old buffer is NOT detached, but V8 still
+    // returns a fresh SharedArrayBuffer, so views refresh onto it.
+    const b = alloc.allocate(Float64Array, 5000); // 40 KB -> 72 KB > 64 KB
+    expect(a[0]).toBe(7);
+    expect(a[3999]).toBe(9);
+    expect(a.buffer).toBe(memory.buffer);
+    expect(b.buffer).toBe(memory.buffer);
+  });
+});
+
 describe("createSharedArrayBufferAllocator", () => {
   it("reports growable-SharedArrayBuffer support truthfully", () => {
     expect(typeof isSharedArrayBufferAllocatorSupported()).toBe("boolean");

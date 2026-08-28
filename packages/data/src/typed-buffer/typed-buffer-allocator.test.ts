@@ -122,6 +122,29 @@ describe("TypedBuffer.dispose", () => {
   });
 });
 
+describe("createTypedBuffer with a shared WebAssembly.Memory allocator", () => {
+  it("keeps every column on one SharedArrayBuffer across a grow", () => {
+    const memory = new WebAssembly.Memory({ initial: 1, maximum: 200, shared: true });
+    const alloc = createWasmMemoryAllocator(memory);
+    const a = createTypedBuffer(numberSchema, 4, alloc);
+    const b = createTypedBuffer(structSchema, 4, alloc);
+    a.set(0, 11);
+    a.set(3, 22);
+    b.set(1, { x: 1.5, y: 2.5 });
+    // Grow one column past the initial 64 KB page, forcing memory.grow.
+    a.capacity = 20000; // 20000 * 8 = 160 KB
+    // Both columns are wasm-accessible and share ONE SharedArrayBuffer, even
+    // after the grow migrated their views onto the new buffer object.
+    expect(a.getTypedArray().buffer).toBeInstanceOf(SharedArrayBuffer);
+    expect(a.getTypedArray().buffer).toBe(b.getTypedArray().buffer);
+    expect(a.getTypedArray().buffer).toBe(memory.buffer);
+    // Data survived the grow.
+    expect(a.get(0)).toBe(11);
+    expect(a.get(3)).toBe(22);
+    expect(b.get(1)).toEqual({ x: 1.5, y: 2.5 });
+  });
+});
+
 describe.skipIf(!isSharedArrayBufferAllocatorSupported())(
   "createTypedBuffer with a growable SharedArrayBuffer allocator",
   () => {

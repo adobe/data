@@ -20,6 +20,7 @@ import { ComponentSchemas } from "../../component-schemas.js";
 import { OptionalComponents } from "../../optional-components.js";
 import { True } from "../../../schema/true/index.js";
 import { PartitionKeysOf } from "../partition.js";
+import { MemoryAllocator } from "../../../cache/memory-allocator.js";
 
 /**
  * Serialization format version stamped into every `toData` snapshot and
@@ -72,6 +73,13 @@ export function createCore<NC extends ComponentSchemas>(
      * maintained insert with no wrapper or Proxy indirection.
      */
     onArchetypeCreated?: (archetype: Archetype<any>) => void,
+    /**
+     * Backing memory allocator for every column buffer this core creates. Omit
+     * for the default (each column owns a freshly-created SharedArrayBuffer /
+     * ArrayBuffer). Inject a wasm or growable-SharedArrayBuffer allocator to
+     * place numeric component storage in a shareable arena.
+     */
+    allocator?: MemoryAllocator,
 ): Core<Simplify<OptionalComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> }>, PartitionKeysOf<NC>> {
     type C = RequiredComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> };
 
@@ -209,7 +217,8 @@ export function createCore<NC extends ComponentSchemas>(
         const archetype = ARCHETYPE.createArchetype(
             archetypeComponentSchemas as any,
             id,
-            locationTables[quadrantFor(isNonPersistent, isNonShared)]!
+            locationTables[quadrantFor(isNonPersistent, isNonShared)]!,
+            allocator,
         );
         archetypes.push(archetype as unknown as Archetype<C & RequiredComponents & OptionalComponents>);
         archetypeByIdentity.set(key, archetype);
@@ -613,7 +622,9 @@ export function createCore<NC extends ComponentSchemas>(
                 // partition archetype restores as its concrete value-child.
                 const archetype = resolveArchetype(componentNames, partitionValues);
                 archetypeIdMap.push(archetype.id);
-                archetype.fromData(archetypeData);
+                // rehome: re-home restored columns onto the core's allocator so a
+                // loaded arena-backed store keeps its arena backing.
+                archetype.fromData(archetypeData, true);
                 restoredArchetypes.push(archetype as unknown as Archetype<any>);
             }
             for (const quadrant of scopeQuadrants(scope)) {

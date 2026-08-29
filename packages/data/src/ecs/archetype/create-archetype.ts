@@ -9,6 +9,7 @@ import { Entity } from "../entity/entity.js";
 import { StringKeyof } from "../../types/types.js";
 import { ensureCapacity } from "../../table/ensure-capacity.js";
 import { TypedBuffer, createTypedBuffer } from "../../typed-buffer/index.js";
+import { MemoryAllocator } from "../../cache/memory-allocator.js";
 
 // ───────────────────────────────────────────────────────────────────────────
 // Specialized insert function per archetype.
@@ -168,13 +169,14 @@ export const createArchetype = <C extends Record<IdComponent, typeof Entity.sche
     components: C,
     id: number,
     entityLocationTable: EntityLocationTable,
+    allocator?: MemoryAllocator,
 ): Archetype<Omit<{ [K in keyof C]: Schema.ToType<C[K]> }, IdComponent>> => {
     // The archetype's public COMPONENT set excludes `id`: id is the entity's
     // identity, a column but never a component value. (`table.columns` and the
     // runtime `componentSet` still carry id — required for swap-remove and
     // serialization — but that is asserted below where the types are narrowed.)
     type PublicComponents = Omit<{ [K in keyof C]: Schema.ToType<C[K]> }, IdComponent>;
-    const table = TABLE.createTable(components);
+    const table = TABLE.createTable(components, allocator);
     const componentSet = new Set(Object.keys(components));
 
     // Mutable so we can rebuild it after fromData replaces columns. In the
@@ -208,7 +210,7 @@ export const createArchetype = <C extends Record<IdComponent, typeof Entity.sche
             rowCount: archetype.rowCount,
             rowCapacity: archetype.rowCapacity,
         }),
-        fromData: (data: unknown) => {
+        fromData: (data: unknown, rehome = false) => {
             // Capture the current column schemas before Object.assign replaces the
             // whole `columns` object. Any component omitted from `data` (a
             // nonPersistent column that wasn't serialized) is then rebuilt fresh
@@ -217,12 +219,39 @@ export const createArchetype = <C extends Record<IdComponent, typeof Entity.sche
             for (const name in archetype.columns) {
                 columnSchemas[name] = (archetype.columns as Record<string, TypedBuffer<unknown>>)[name]!.schema;
             }
+            // Old column instances, captured before Object.assign swaps the map.
+            const oldColumns = Object.values(archetype.columns as Record<string, TypedBuffer<unknown>>);
             Object.assign(archetype, data);
+            const columns = archetype.columns as Record<string, TypedBuffer<unknown>>;
+            const rebuilt = new Set<string>();
             for (const name of archetype.components) {
-                if (!(name in archetype.columns)) {
-                    (archetype.columns as Record<string, TypedBuffer<unknown>>)[name] =
-                        createTypedBuffer(columnSchemas[name]!, archetype.rowCapacity);
+                if (!(name in columns)) {
+                    columns[name] = createTypedBuffer(columnSchemas[name]!, archetype.rowCapacity, allocator);
+                    rebuilt.add(name);
                 }
+            }
+            // Snapshot restore into an allocator-backed archetype: the adopted
+            // columns are default-allocated (copy() / deserialization), so re-home
+            // each linear-storage column onto the injected allocator — otherwise a
+            // loaded store silently drops off its arena and the zero-copy wasm/SAB
+            // backing is lost. Guarded by `rehome` (only the restore path sets it)
+            // AND by `allocator` presence, so the default ECS path does no extra
+            // work. The adopted default-allocated columns hold no arena block, so
+            // dropping them (not disposing) is enough.
+            if (rehome && allocator !== undefined) {
+                for (const name in columns) {
+                    if (rebuilt.has(name)) continue;
+                    const adopted = columns[name]!;
+                    if (adopted.type === "const" || adopted.type === "array") continue;
+                    columns[name] = adopted.copy(allocator);
+                }
+            }
+            // Dispose every old column the new column set does not reuse: its
+            // allocator block (arena) and needsRefresh subscription would leak
+            // otherwise. Columns carried across the swap (===) are retained.
+            const retained = new Set(Object.values(columns));
+            for (const column of oldColumns) {
+                if (!retained.has(column)) column.dispose();
             }
             // Rebuild insertImpl so the baked column refs match the new live columns.
             refreshInsertImpl();

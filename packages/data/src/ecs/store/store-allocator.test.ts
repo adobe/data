@@ -44,6 +44,31 @@ describe("createStore with an injected allocator", () => {
     for (let i = 0; i < 500; i++) expect(store.read(entities[i])).toEqual({ hp: i });
   });
 
+  it("round-trips toData/fromData under a wasm allocator without corruption", () => {
+    const source = Store.create(
+      { components: { position, hp }, resources: {}, archetypes: { Mover: ["position", "hp"] } },
+      { allocator: createWasmMemoryAllocator(new WebAssembly.Memory({ initial: 1, maximum: 400 })) },
+    );
+    const S = source.archetypes.Mover as any;
+    const ids = [];
+    for (let i = 0; i < 300; i++) ids.push(S.insert({ position: { x: i, y: -i }, hp: i * 2 }));
+    const snapshot = source.toData({ copy: true });
+
+    // Load into a fresh store that ALSO uses a wasm arena. fromData replaces the
+    // freshly-created columns with the restored ones and disposes the originals;
+    // the reloaded data must be exact.
+    const target = Store.create(
+      { components: { position, hp }, resources: {}, archetypes: { Mover: ["position", "hp"] } },
+      { allocator: createWasmMemoryAllocator(new WebAssembly.Memory({ initial: 1, maximum: 400 })) },
+    );
+    target.fromData(snapshot);
+    for (let i = 0; i < 300; i++) expect(target.read(ids[i])).toEqual({ position: { x: i, y: -i }, hp: i * 2 });
+
+    // Reloading the SAME store again (disposing the just-loaded columns) is stable.
+    target.fromData(snapshot);
+    for (let i = 0; i < 300; i++) expect(target.read(ids[i])).toEqual({ position: { x: i, y: -i }, hp: i * 2 });
+  });
+
   it("defaults to per-column buffers when no allocator is injected", () => {
     const store = Store.create({ components: { hp }, resources: {}, archetypes: { Unit: ["hp"] } });
     const Unit = store.archetypes.Unit as any;

@@ -493,8 +493,12 @@ export function createCore<NC extends ComponentSchemas>(
             for (const archetype of restored) {
                 const present = [...noDefault].filter((n) => archetype.components.has(n));
                 if (present.length === 0) continue;
-                const removal = Object.fromEntries(present.map((n) => [n, undefined])) as EntityUpdateValues<C>;
                 while (archetype.rowCount > 0) {
+                    // A FRESH removal object per pass: core.update deletes the
+                    // `undefined` keys from the object it is handed (reusing it as
+                    // the migrated row's data), so a shared object would empty out
+                    // after the first row and the loop would never terminate.
+                    const removal = Object.fromEntries(present.map((n) => [n, undefined])) as EntityUpdateValues<C>;
                     updateEntity(archetype.columns[ID]!.get(0), removal);
                 }
             }

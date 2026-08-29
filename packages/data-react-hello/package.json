@@ -1,6 +1,6 @@
 {
   "name": "data-react-hello",
-  "version": "0.10.5",
+  "version": "0.10.6",
   "description": "Hello World sample - click counter using @adobe/data-react",
   "type": "module",
   "private": true,

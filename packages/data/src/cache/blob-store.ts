@@ -211,7 +211,9 @@ export function createBlobStore(options: BlobStoreOptions = {}) {
   const cachePromise = (): Promise<DeferredFallbackAsyncCache> =>
     (cachePromiseInternal ??= getDeferredManagedPersistentCache("blobstore", {
       maximumMemoryEntries: 10,
-      maximumStorageEntries: 1000,
+      // No storage-tier cap: local blob refs already self-heal from
+      // remoteBlobRef on eviction (see getBlob), so we rely on the browser's
+      // own Cache Storage eviction instead of a manual FIFO scan/trim.
     }));
 
   // Track borrowed URLs and their reference counts

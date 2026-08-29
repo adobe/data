@@ -1,9 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { resize } from "../internal/array-buffer-like/resize.js";
 import { Schema } from "../schema/index.js";
 import { TypedArray } from "../internal/typed-array/index.js";
 import { TypedBuffer, TypedBufferType } from "./typed-buffer.js";
-import { createSharedArrayBuffer } from "../internal/shared-array-buffer/create-shared-array-buffer.js";
+import { MemoryAllocator, defaultMemoryAllocator } from "../cache/memory-allocator.js";
 
 export const enumBufferType = "enum";
 
@@ -13,15 +12,18 @@ class EnumTypedBuffer<T> extends TypedBuffer<T> {
     public readonly type: TypedBufferType = enumBufferType;
     public readonly typedArrayElementSizeInBytes = 1;
 
-    private arrayBuffer: ArrayBuffer | SharedArrayBuffer;
     private array: Uint8Array;
+    private readonly allocator: MemoryAllocator;
+    private readonly unsubscribe: () => void;
+    private disposed = false;
     private _capacity: number;
     private readonly indexToValue: readonly T[];
     private readonly valueToIndex: Map<T, number>;
     private readonly defaultIndex: number;
 
-    constructor(schema: Schema, initialCapacity: number) {
+    constructor(schema: Schema, initialCapacity: number, allocator: MemoryAllocator = defaultMemoryAllocator) {
         super(schema);
+        this.allocator = allocator;
 
         const enumValues = schema.enum as readonly T[];
         if (enumValues.length > MAX_ENUM_VALUES) {
@@ -42,12 +44,21 @@ class EnumTypedBuffer<T> extends TypedBuffer<T> {
             : 0;
 
         this._capacity = initialCapacity;
-        this.arrayBuffer = createSharedArrayBuffer(initialCapacity);
-        this.array = new Uint8Array(this.arrayBuffer);
+        this.array = allocator.allocate(Uint8Array, initialCapacity);
+        this.unsubscribe = allocator.needsRefresh(() => {
+            this.array = allocator.refresh(this.array);
+        });
 
         if (this.defaultIndex !== 0) {
             this.array.fill(this.defaultIndex);
         }
+    }
+
+    override dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true;
+        this.unsubscribe();
+        this.allocator.release(this.allocator.refresh(this.array));
     }
 
     get capacity(): number {
@@ -57,12 +68,15 @@ class EnumTypedBuffer<T> extends TypedBuffer<T> {
     set capacity(value: number) {
         if (value !== this._capacity) {
             const oldCapacity = this._capacity;
-            this._capacity = value;
-            this.arrayBuffer = resize(this.arrayBuffer, value);
-            this.array = new Uint8Array(this.arrayBuffer);
+            const next = this.allocator.allocate(Uint8Array, value);
+            const old = this.allocator.refresh(this.array);
+            next.set(old.subarray(0, Math.min(oldCapacity, value)));
             if (this.defaultIndex !== 0 && value > oldCapacity) {
-                this.array.fill(this.defaultIndex, oldCapacity, value);
+                next.fill(this.defaultIndex, oldCapacity, value);
             }
+            this.array = next;
+            this._capacity = value;
+            this.allocator.release(old);
         }
     }
 
@@ -101,9 +115,9 @@ class EnumTypedBuffer<T> extends TypedBuffer<T> {
         return result;
     }
 
-    copy(): TypedBuffer<T> {
-        const copy = new EnumTypedBuffer<T>(this.schema, this._capacity);
-        copy.array.set(this.array);
+    copy(allocator?: MemoryAllocator): TypedBuffer<T> {
+        const copy = new EnumTypedBuffer<T>(this.schema, this._capacity, allocator);
+        copy.array.set(this.allocator.refresh(this.array));
         return copy;
     }
 }
@@ -111,6 +125,7 @@ class EnumTypedBuffer<T> extends TypedBuffer<T> {
 export const createEnumBuffer = <T>(
     schema: Schema,
     initialCapacity: number,
+    allocator?: MemoryAllocator,
 ): TypedBuffer<T> => {
-    return new EnumTypedBuffer<T>(schema, initialCapacity);
+    return new EnumTypedBuffer<T>(schema, initialCapacity, allocator);
 };

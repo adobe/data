@@ -108,6 +108,9 @@ importers:
       riteway:
         specifier: v8.0.0-RC4
         version: 8.0.0-RC4(@types/node@25.6.0)(@vitest/browser@1.6.0)(jsdom@24.1.0)(react@18.3.1)
+      signal-polyfill:
+        specifier: ^0.2.2
+        version: 0.2.2
       stylelint:
         specifier: ^16.2.1
         version: 16.2.1(typescript@5.8.3)
@@ -6755,6 +6758,10 @@ packages:
   /signal-exit@4.1.0:
     resolution: {integrity: sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==}
     engines: {node: '>=14'}
+    dev: true
+
+  /signal-polyfill@0.2.2:
+    resolution: {integrity: sha512-p63Y4Er5/eMQ9RHg0M0Y64NlsQKpiu6MDdhBXpyywRuWiPywhJTpKJ1iB5K2hJEbFZ0BnDS7ZkJ+0AfTuL37Rg==}
     dev: true
 
   /simple-update-notifier@2.0.0:

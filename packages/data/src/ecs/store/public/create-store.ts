@@ -23,6 +23,17 @@ import {
 } from "../../database/index-registry/index.js";
 import { PartitionKeysOf } from "../partition.js";
 import { IndexDeclarations } from "../index-types.js";
+import { MemoryAllocator } from "../../../cache/memory-allocator.js";
+
+export interface CreateStoreOptions {
+    /**
+     * Backing memory allocator for every numeric component column. Omit for the
+     * default (each column owns its own SharedArrayBuffer / ArrayBuffer). Inject
+     * {@link createWasmMemoryAllocator} or {@link createSharedArrayBufferAllocator}
+     * to place numeric component storage in a single shareable arena.
+     */
+    allocator?: MemoryAllocator;
+}
 
 export function createStore<
     CS extends ComponentSchemas = {},
@@ -31,6 +42,7 @@ export function createStore<
     IX extends IndexDeclarations<FromSchemas<CS>, A> = {},
 >(
     schema?: Store.Schema<CS, RS, A, IX>,
+    options?: CreateStoreOptions,
 ): Store<FromSchemas<CS>, FromSchemas<RS>, A, IX, PartitionKeysOf<CS>> {
     const schemaArg = schema as any;
     const hasSchemaShape =
@@ -60,6 +72,7 @@ export function createStore<
     const core = createCore(
         componentAndResourceSchemas,
         (archetype) => decorateArchetypeForIndexes(archetype),
+        options?.allocator,
     ) as unknown as Core<C>;
 
     // Index registry. Owned at the Store layer because index state is

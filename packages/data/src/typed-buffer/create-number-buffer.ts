@@ -1,11 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { resize } from "../internal/array-buffer-like/resize.js";
 import { I32 } from "../math/i32/index.js";
 import { Schema } from "../schema/index.js";
 import { TypedArrayConstructor, TypedArray } from "../internal/typed-array/index.js";
 import { U32 } from "../math/u32/index.js";
 import { TypedBuffer, TypedBufferType } from "./typed-buffer.js";
-import { createSharedArrayBuffer } from "../internal/shared-array-buffer/create-shared-array-buffer.js";
+import { MemoryAllocator, defaultMemoryAllocator } from "../cache/memory-allocator.js";
 
 const getTypedArrayConstructor = (schema: Schema): TypedArrayConstructor => {
     if (schema.type === 'number' || schema.type === 'integer') {
@@ -33,18 +32,31 @@ class NumberTypedBuffer extends TypedBuffer<number> {
     public readonly type: TypedBufferType = numberBufferType;
     public readonly typedArrayElementSizeInBytes: number;
     
-    private arrayBuffer: ArrayBuffer | SharedArrayBuffer;
     private array: TypedArray;
     private readonly typedArrayConstructor: TypedArrayConstructor;
+    private readonly allocator: MemoryAllocator;
+    private readonly unsubscribe: () => void;
+    private disposed = false;
     private _capacity: number;
 
-    constructor(schema: Schema, initialCapacity: number) {
+    constructor(schema: Schema, initialCapacity: number, allocator: MemoryAllocator = defaultMemoryAllocator) {
         super(schema);
         this.typedArrayConstructor = getTypedArrayConstructor(schema);
         this.typedArrayElementSizeInBytes = this.typedArrayConstructor.BYTES_PER_ELEMENT;
+        this.allocator = allocator;
         this._capacity = initialCapacity;
-        this.arrayBuffer = createSharedArrayBuffer(this.typedArrayElementSizeInBytes * initialCapacity);
-        this.array = new this.typedArrayConstructor(this.arrayBuffer);
+        this.array = allocator.allocate(this.typedArrayConstructor, initialCapacity);
+        // A detaching allocator (wasm) rebuilds every live view on grow.
+        this.unsubscribe = allocator.needsRefresh(() => {
+            this.array = allocator.refresh(this.array);
+        });
+    }
+
+    override dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true;
+        this.unsubscribe();
+        this.allocator.release(this.allocator.refresh(this.array));
     }
 
     get capacity(): number {
@@ -53,9 +65,16 @@ class NumberTypedBuffer extends TypedBuffer<number> {
 
     set capacity(value: number) {
         if (value !== this._capacity) {
+            // allocate() may grow a detaching arena and refresh this.array via
+            // needsRefresh, so re-read the (now valid) old view AFTER allocating
+            // and release that one — releasing a pre-allocate reference would
+            // leak the block once the arena had swapped the view out.
+            const next = this.allocator.allocate(this.typedArrayConstructor, value);
+            const old = this.allocator.refresh(this.array);
+            next.set(old.subarray(0, Math.min(this._capacity, value)));
+            this.array = next;
             this._capacity = value;
-            this.arrayBuffer = resize(this.arrayBuffer, value * this.typedArrayElementSizeInBytes); 
-            this.array = new this.typedArrayConstructor(this.arrayBuffer);
+            this.allocator.release(old);
         }
     }
 
@@ -84,9 +103,11 @@ class NumberTypedBuffer extends TypedBuffer<number> {
         return this.array.subarray(start, end);
     }
 
-    copy(): TypedBuffer<number> {
-        const copy = new NumberTypedBuffer(this.schema, this._capacity);
-        copy.array.set(this.array);
+    copy(allocator?: MemoryAllocator): TypedBuffer<number> {
+        // A copy is detached — it owns its own buffer. `allocator` lets the
+        // caller place the copy on a specific arena (default: per-copy buffer).
+        const copy = new NumberTypedBuffer(this.schema, this._capacity, allocator);
+        copy.array.set(this.allocator.refresh(this.array));
         return copy;
     }
 }
@@ -94,6 +115,7 @@ class NumberTypedBuffer extends TypedBuffer<number> {
 export const createNumberBuffer = (
     schema: Schema,
     initialCapacity: number,
+    allocator?: MemoryAllocator,
 ): TypedBuffer<number> => {
-    return new NumberTypedBuffer(schema, initialCapacity);
+    return new NumberTypedBuffer(schema, initialCapacity, allocator);
 };

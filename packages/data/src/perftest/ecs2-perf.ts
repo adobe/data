@@ -2,14 +2,19 @@
 import { Store } from "../ecs/store/index.js";
 import { F32, True, U32 } from "../schema/index.js";
 import { PerformanceTest } from "./perf-test.js";
+import * as assembly from "../../dist/assembly/index.js";
+import { createWasmMemoryAllocator } from "../cache/memory-allocator.js";
+import { TypedBuffer } from "../typed-buffer/index.js";
 
 // Mirror of ecs1-perf.ts on the new ECS, using createStore directly so we
 // measure raw column read/write cost — no plugin, no transactions, no undo
 // machinery. The legacy suite also bypasses transactions, so this matches.
 //
-// Dropped vs ecs1: move_native (no .native typed-array view exposed) and
-// move_wasm* (no custom WASM allocator yet). Add them back here when the
-// new ECS gains those surfaces.
+// move_native and move_wasm* run the SAME AssemblyScript kernels ecs1 uses,
+// over columns the new ECS allocated into `assembly.memory` via the injected
+// createWasmMemoryAllocator — proving the new ECS supports the identical
+// zero-copy wasm compute path (`column.getTypedArray()` is the `.native`
+// equivalent; the byteOffset is the wasm pointer).
 
 const storeSchema = Store.Schema.create({
     components: {
@@ -166,7 +171,87 @@ const createMoveParticlesPerformanceTest = (): PerformanceTest => {
     return { setup, run, cleanup, getVisibleEnabledPositions, type: "move", startN: 1_000_000 };
 };
 
+// Run an AssemblyScript kernel over two columns in-place: a[i] += b[i]. The
+// columns live in `assembly.memory` (injected wasm allocator), so their
+// getTypedArray().byteOffset IS the wasm pointer — no copy, exactly like ecs1.
+function addColumns(
+    a: TypedBuffer<number>,
+    b: TypedBuffer<number>,
+    rows: number,
+    addWasm: typeof assembly.addF32Arrays,
+): void {
+    addWasm(a.getTypedArray().byteOffset, b.getTypedArray().byteOffset, rows);
+}
+
+// Mirrors ecs1's createMoveParticlesPerformanceTest for the native / wasm modes.
+// The store is built with the wasm allocator so component columns are laid out
+// in `assembly.memory`, matching ecs1's memory layout for a fair comparison.
+const createWasmMoveTest = (options: {
+    mode: "native" | typeof assembly.addF32Arrays;
+}): PerformanceTest => {
+    let store: ParticleStore;
+    const setup = async (n: number) => {
+        store = Store.create(storeSchema, {
+            allocator: createWasmMemoryAllocator(assembly.memory),
+        });
+        seedAll(store, n);
+    };
+    const run = () => {
+        const addWasm = typeof options.mode === "function" ? options.mode : null;
+        const archetypes = store.queryArchetypes([
+            "positionX", "positionY", "positionZ",
+            "velocityX", "velocityY", "velocityZ",
+            "visible", "enabled",
+        ] as const);
+        for (const archetype of archetypes) {
+            const { columns, rowCount } = archetype;
+            if (addWasm) {
+                addColumns(columns.positionX, columns.velocityX, rowCount, addWasm);
+                addColumns(columns.positionY, columns.velocityY, rowCount, addWasm);
+                addColumns(columns.positionZ, columns.velocityZ, rowCount, addWasm);
+            } else {
+                // "native": iterate the raw typed-array views directly, like
+                // ecs1's move_native over column.native.
+                const positionX = columns.positionX.getTypedArray();
+                const positionY = columns.positionY.getTypedArray();
+                const positionZ = columns.positionZ.getTypedArray();
+                const velocityX = columns.velocityX.getTypedArray();
+                const velocityY = columns.velocityY.getTypedArray();
+                const velocityZ = columns.velocityZ.getTypedArray();
+                for (let i = 0; i < rowCount; i++) {
+                    positionX[i] += velocityX[i];
+                    positionY[i] += velocityY[i];
+                    positionZ[i] += velocityZ[i];
+                }
+            }
+        }
+    };
+    const getVisibleEnabledPositions = (): number[] => {
+        const values: number[] = [];
+        const archetypes = store.queryArchetypes([
+            "positionX", "positionY", "positionZ",
+            "visible", "enabled",
+        ] as const);
+        for (const archetype of archetypes) {
+            const { columns, rowCount } = archetype;
+            const positionX = columns.positionX;
+            const positionY = columns.positionY;
+            const positionZ = columns.positionZ;
+            for (let i = 0; i < rowCount; i++) {
+                values.push(positionX.get(i), positionY.get(i), positionZ.get(i));
+            }
+        }
+        return values;
+    };
+    const cleanup = async () => { };
+    return { setup, run, cleanup, getVisibleEnabledPositions, type: "move", startN: 1_000_000 };
+};
+
 export const ecs2 = {
     create: create(),
     move_column: createMoveParticlesPerformanceTest(),
+    move_native: createWasmMoveTest({ mode: "native" }),
+    move_wasm: createWasmMoveTest({ mode: assembly.addF32Arrays }),
+    move_wasm_simd4: createWasmMoveTest({ mode: assembly.addF32ArraysSimd4 }),
+    move_wasm_simd4_unrolled: createWasmMoveTest({ mode: assembly.addF32ArraysSimd4Unrolled }),
 };

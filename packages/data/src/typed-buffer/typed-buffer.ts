@@ -2,6 +2,7 @@
 import { TypedArray } from "../internal/typed-array/index.js";
 import { Schema } from "../schema/index.js";
 import { typedBufferEquals } from "./typed-buffer-equals.js";
+import type { MemoryAllocator } from "../cache/memory-allocator.js";
 
 export type TypedBufferType = "array" | "boolean" | "const" | "enum" | "number" | "struct";
 
@@ -34,8 +35,25 @@ export abstract class TypedBuffer<T> implements ReadonlyTypedBuffer<T> {
     abstract get(index: number): T;
     abstract slice(start?: number, end?: number): ArrayLike<T> & Iterable<T>;
     abstract set(index: number, value: T): void;
-    abstract copy(): TypedBuffer<T>;
+    /**
+     * Return a detached copy of this buffer. Pass `allocator` to back the copy
+     * with a specific allocator (e.g. to re-home a restored column onto an arena
+     * on load); omit it for the default (per-copy buffer). Buffers with no linear
+     * storage (const / JS-array) ignore `allocator`.
+     */
+    abstract copy(allocator?: MemoryAllocator): TypedBuffer<T>;
     abstract isDefault(index: number): boolean;
+
+    /**
+     * Release any backing memory and detach from its allocator. After `dispose`
+     * the buffer must not be used again. Call it when a column is permanently
+     * discarded (e.g. replaced during `archetype.fromData`) so an arena allocator
+     * reclaims the block and drops the buffer's `needsRefresh` subscription.
+     *
+     * The default is a no-op — buffers with no linear storage (const, JS-array)
+     * hold no allocator resources. Storage buffers override it.
+     */
+    dispose(): void { }
 
     /**
      * Checks if two TypedBuffer instances are deeply equal.

@@ -103,10 +103,10 @@ class NumberTypedBuffer extends TypedBuffer<number> {
         return this.array.subarray(start, end);
     }
 
-    copy(): TypedBuffer<number> {
-        // A copy is a detached snapshot — it owns its own buffer via the default
-        // allocator rather than sharing the source's (possibly arena-backed) one.
-        const copy = new NumberTypedBuffer(this.schema, this._capacity);
+    copy(allocator?: MemoryAllocator): TypedBuffer<number> {
+        // A copy is detached — it owns its own buffer. `allocator` lets the
+        // caller place the copy on a specific arena (default: per-copy buffer).
+        const copy = new NumberTypedBuffer(this.schema, this._capacity, allocator);
         copy.array.set(this.allocator.refresh(this.array));
         return copy;
     }

@@ -52,7 +52,13 @@ export interface Archetype<C = {}> extends BaseArchetype, Table<C & RequiredComp
     insert: <T extends EntityInsertValues<C>>(rowData: Exact<EntityInsertValues<C>, T>) => Entity;
     /** See {@link ReadonlyArchetype.toData}. */
     toData: (copy?: boolean, omit?: ReadonlySet<string>) => unknown
-    fromData: (data: unknown) => void
+    /**
+     * Restore column data. `rehome` (set by the snapshot-restore path) re-homes
+     * adopted default-allocated columns onto the archetype's injected allocator,
+     * so a loaded store keeps its arena backing; it is a no-op without a custom
+     * allocator.
+     */
+    fromData: (data: unknown, rehome?: boolean) => void
 }
 
 // eslint-disable-next-line @typescript-eslint/no-namespace

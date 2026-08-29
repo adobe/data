@@ -235,6 +235,19 @@ describe("createWasmMemoryAllocator reserved base offset", () => {
   });
 });
 
+describe("wasm allocator over already-populated memory", () => {
+  it("zeroes the first allocation instead of trusting caller-owned memory", () => {
+    const memory = new WebAssembly.Memory({ initial: 1 });
+    // Simulate reused / module-populated memory: every byte non-zero.
+    new Uint8Array(memory.buffer).fill(0xff);
+    const alloc = createWasmMemoryAllocator(memory);
+    // The very first allocation comes from the initial region — it must read as
+    // default (0), not the 0xff garbage that was already there.
+    const a = alloc.allocate(Float64Array, 8);
+    expect(Array.from(a)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+  });
+});
+
 describe("arena zero-length allocation", () => {
   it("hands out an empty view and does not corrupt later allocations", () => {
     const alloc = createWasmMemoryAllocator(new WebAssembly.Memory({ initial: 1 }));

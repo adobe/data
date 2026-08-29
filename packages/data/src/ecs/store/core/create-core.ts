@@ -622,7 +622,9 @@ export function createCore<NC extends ComponentSchemas>(
                 // partition archetype restores as its concrete value-child.
                 const archetype = resolveArchetype(componentNames, partitionValues);
                 archetypeIdMap.push(archetype.id);
-                archetype.fromData(archetypeData);
+                // rehome: re-home restored columns onto the core's allocator so a
+                // loaded arena-backed store keeps its arena backing.
+                archetype.fromData(archetypeData, true);
                 restoredArchetypes.push(archetype as unknown as Archetype<any>);
             }
             for (const quadrant of scopeQuadrants(scope)) {

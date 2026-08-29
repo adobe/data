@@ -111,6 +111,14 @@ interface ArenaBacking {
    * Aligned to {@link ALIGNMENT}.
    */
   readonly baseOffset: number;
+  /**
+   * Whether the arena's initial region `[baseOffset, byteLength)` is known to be
+   * all-zero. True for a freshly-minted backing (a new SharedArrayBuffer); FALSE
+   * for caller-owned memory (a `WebAssembly.Memory` may already hold a module's
+   * data or a prior allocator's bytes), so the first allocation there must still
+   * be zeroed rather than trusting the region.
+   */
+  readonly initiallyZeroed: boolean;
 }
 
 // What a live allocation occupies. Kept in a WeakMap keyed by the handed-out
@@ -133,7 +141,7 @@ interface FreeBlock {
 
 function createArenaAllocator(backing: ArenaBacking): MemoryAllocator {
   const freeList: FreeBlock[] = [
-    { offset: backing.baseOffset, size: backing.byteLength() - backing.baseOffset, zeroed: true },
+    { offset: backing.baseOffset, size: backing.byteLength() - backing.baseOffset, zeroed: backing.initiallyZeroed },
   ];
   const live = new WeakMap<TypedArray, Allocation>();
   const [needsRefresh, notifyNeedsRefresh] = Observe.createEvent<void>();
@@ -287,6 +295,12 @@ export interface WasmMemoryAllocatorOptions {
  * a fresh `SharedArrayBuffer` object from `memory.buffer` after a grow, so views
  * are refreshed onto it and every column stays on one shared buffer. In a
  * browser, `SharedArrayBuffer` requires cross-origin isolation (COOP/COEP).
+ *
+ * ⚠️ Arena columns are freed when discarded (e.g. a `store.fromData` that
+ * replaces them). Do NOT retain a live-reference snapshot (`db.toData({ copy:
+ * false })`) across a subsequent `fromData` under an arena allocator — the
+ * snapshot's column buffers may have been freed and reused (use-after-free).
+ * Serialize/persist such a snapshot synchronously, or take it with `copy: true`.
  */
 export function createWasmMemoryAllocator(
   memory: WebAssembly.Memory,
@@ -304,6 +318,9 @@ export function createWasmMemoryAllocator(
   };
   return createArenaAllocator({
     baseOffset: alignUp(options.byteOffset ?? 0),
+    // Caller-owned memory: it may already hold a module's data or a prior
+    // allocator's bytes, so do not assume the region is zero.
+    initiallyZeroed: false,
     buffer: () => memory.buffer,
     byteLength: () => memory.buffer.byteLength,
     grow: (minByteLength, preferredByteLength) => {
@@ -351,6 +368,10 @@ export interface SharedArrayBufferAllocatorOptions {
  * @throws if the runtime lacks growable-SharedArrayBuffer support — feature-test
  * with {@link isSharedArrayBufferAllocatorSupported} and fall back to
  * {@link createSimpleMemoryAllocator} when unavailable.
+ *
+ * ⚠️ Same lifetime caveat as {@link createWasmMemoryAllocator}: do NOT retain a
+ * `copy: false` snapshot across a subsequent `fromData`, as the snapshot's arena
+ * column buffers may be freed and reused.
  */
 export function createSharedArrayBufferAllocator(
   options: SharedArrayBufferAllocatorOptions = {}
@@ -374,6 +395,8 @@ export function createSharedArrayBufferAllocator(
 
   return createArenaAllocator({
     baseOffset: 0,
+    // We just minted this SharedArrayBuffer, so it is spec-zeroed.
+    initiallyZeroed: true,
     buffer: () => sab,
     byteLength: () => sab.byteLength,
     grow: (minByteLength, preferredByteLength) => {

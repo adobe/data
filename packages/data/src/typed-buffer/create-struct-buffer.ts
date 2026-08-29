@@ -136,10 +136,10 @@ class StructTypedBuffer<S extends Schema, ArrayType extends keyof DataView32 = "
         return result;
     }
 
-    copy(): TypedBuffer<Schema.ToType<S>> {
-        // A copy is a detached snapshot backed by its own (default-allocated)
-        // buffer, not a view into the source's shared arena.
-        const copy = new StructTypedBuffer<S, ArrayType>(this.schema as S, this._capacity);
+    copy(allocator?: MemoryAllocator): TypedBuffer<Schema.ToType<S>> {
+        // A copy is detached — its own buffer. `allocator` lets the caller place
+        // the copy on a specific arena (default: per-copy buffer).
+        const copy = new StructTypedBuffer<S, ArrayType>(this.schema as S, this._capacity, allocator);
         const src = this.allocator.refresh(this.region);
         copy.region.set(src.subarray(0, this._capacity * this.sizeInQuads));
         return copy;

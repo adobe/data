@@ -115,8 +115,8 @@ class EnumTypedBuffer<T> extends TypedBuffer<T> {
         return result;
     }
 
-    copy(): TypedBuffer<T> {
-        const copy = new EnumTypedBuffer<T>(this.schema, this._capacity);
+    copy(allocator?: MemoryAllocator): TypedBuffer<T> {
+        const copy = new EnumTypedBuffer<T>(this.schema, this._capacity, allocator);
         copy.array.set(this.allocator.refresh(this.array));
         return copy;
     }

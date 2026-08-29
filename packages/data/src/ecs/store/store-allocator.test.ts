@@ -57,12 +57,20 @@ describe("createStore with an injected allocator", () => {
     // Load into a fresh store that ALSO uses a wasm arena. fromData replaces the
     // freshly-created columns with the restored ones and disposes the originals;
     // the reloaded data must be exact.
+    const targetMemory = new WebAssembly.Memory({ initial: 1, maximum: 400 });
     const target = Store.create(
       { components: { position, hp }, resources: {}, archetypes: { Mover: ["position", "hp"] } },
-      { allocator: createWasmMemoryAllocator(new WebAssembly.Memory({ initial: 1, maximum: 400 })) },
+      { allocator: createWasmMemoryAllocator(targetMemory) },
     );
     target.fromData(snapshot);
     for (let i = 0; i < 300; i++) expect(target.read(ids[i])).toEqual({ position: { x: i, y: -i }, hp: i * 2 });
+
+    // The restored columns are re-homed onto the target's arena — the loaded
+    // store keeps its wasm backing rather than silently reverting to default
+    // per-column buffers.
+    const arch = target.queryArchetypes(["position", "hp"])[0] as unknown as Archetype<any>;
+    expect(arch.columns.hp.getTypedArray().buffer).toBe(targetMemory.buffer);
+    expect(arch.columns.position.getTypedArray().buffer).toBe(targetMemory.buffer);
 
     // Reloading the SAME store again (disposing the just-loaded columns) is stable.
     target.fromData(snapshot);

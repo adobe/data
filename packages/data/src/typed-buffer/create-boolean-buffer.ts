@@ -107,8 +107,8 @@ class BooleanTypedBuffer extends TypedBuffer<boolean> {
         return result;
     }
 
-    copy(): TypedBuffer<boolean> {
-        const copy = new BooleanTypedBuffer(this.schema, this._capacity);
+    copy(allocator?: MemoryAllocator): TypedBuffer<boolean> {
+        const copy = new BooleanTypedBuffer(this.schema, this._capacity, allocator);
         copy.array.set(this.allocator.refresh(this.array));
         return copy;
     }

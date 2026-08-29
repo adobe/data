@@ -72,6 +72,7 @@
     "prettier-package-json": "^2.8.0",
     "pretty-quick": "^4.0.0",
     "riteway": "v8.0.0-RC4",
+    "signal-polyfill": "^0.2.2",
     "stylelint": "^16.2.1",
     "stylelint-config-standard": "^36.0.0",
     "typedoc": "^0.28.9",
@@ -90,6 +91,14 @@
     "@cfworker/json-schema": "^4.1.1",
     "hash-wasm": "^4.12.0",
     "jsonpath": "^1.1.1"
+  },
+  "peerDependencies": {
+    "signal-polyfill": ">=0.2.0"
+  },
+  "peerDependenciesMeta": {
+    "signal-polyfill": {
+      "optional": true
+    }
   },
   "typesVersions": {
     "*": {
@@ -131,6 +140,9 @@
       ],
       "math": [
         "./dist/math/index.d.ts"
+      ],
+      "signals": [
+        "./dist/signals/index.d.ts"
       ]
     }
   },
@@ -186,6 +198,10 @@
     "./math": {
       "import": "./dist/math/index.js",
       "types": "./dist/math/index.d.ts"
+    },
+    "./signals": {
+      "import": "./dist/signals/index.js",
+      "types": "./dist/signals/index.d.ts"
     },
     "./equals-shallow": {
       "import": "./dist/equals-shallow.js",

@@ -187,11 +187,14 @@ export function createTransactionalStore<
         const resourceId = name as keyof C;
         const componentNames = resourceComponentNames(name);
         const archetype = store.ensureArchetype(componentNames);
-        const entityId = archetype.columns[ID].get(0);
         Object.defineProperty(resources, name, {
             get: Object.getOwnPropertyDescriptor(store.resources, name)!.get,
             set: (newValue) => {
-                updateEntity(entityId, { [resourceId]: newValue } as any);
+                // Resolve the singleton's CURRENT id at write time: fromData/reset
+                // re-creates the resource singleton under a fresh id, so an id
+                // captured here would go stale (row 0 of this archetype is always
+                // the singleton).
+                updateEntity(archetype.columns[ID].get(0), { [resourceId]: newValue } as any);
             },
             enumerable: true,
             // Configurable so pruneToSchema can drop a retired resource's accessor
@@ -310,11 +313,13 @@ export function createTransactionalStore<
                     const resourceId = name as keyof C;
                     const componentNames = resourceComponentNames(name);
                     const archetype = store.ensureArchetype(componentNames);
-                    const entityId = archetype.columns[ID].get(0);
                     Object.defineProperty(resources, name, {
                         get: Object.getOwnPropertyDescriptor(store.resources, name)!.get,
                         set: (newValue: any) => {
-                            updateEntity(entityId, { [resourceId]: newValue } as any);
+                            // Resolve the singleton's CURRENT id at write time (see
+                            // the initial resource loop above) — a captured id goes
+                            // stale across a fromData/reset re-create.
+                            updateEntity(archetype.columns[ID].get(0), { [resourceId]: newValue } as any);
                         },
                         enumerable: true,
                         configurable: true,

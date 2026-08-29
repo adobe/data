@@ -125,12 +125,33 @@ export function createObservedDatabase<
         return names;
     };
 
+    // The resource singleton is always row 0 of its identity-stable archetype.
+    // Bind the observer to the resource COMPONENT's change notifications and read
+    // row 0 live, rather than capturing the singleton's entity id: fromData/reset
+    // re-creates the singleton under a fresh id, so a fixed-id observer would be
+    // stranded on a dangling entity (and emit null). The archetype instance and
+    // the row-0 convention both survive the reload, so a live read always yields
+    // the current value — including the schema default just re-seeded.
+    const observeResourceValue = <K extends StringKeyof<R>>(resource: K): Observe<R[K]> => {
+        const archetype = store.ensureArchetype(resourceArchetypeComponents(resource));
+        // Read the singleton (row 0) through the archetype on every call, never a
+        // captured column: `archetype.fromData` replaces `archetype.columns`
+        // wholesale on load, so a captured column would detach and re-emit the
+        // pre-reload value. The archetype instance itself is identity-stable.
+        // Runtime invariant: a resource is stored as a component column of the
+        // same name on its singleton archetype — outside the C-typed columns view.
+        // Re-read `archetype.columns` (not a captured columns object) each call:
+        // `Object.assign(archetype, data)` swaps the whole object on load.
+        const read = () =>
+            (archetype.columns as unknown as Record<string, { get(row: number): R[K] }>)[resource]!.get(0);
+        return (observer) => {
+            observer(read());
+            return addToMapSet(resource as unknown as StringKeyof<C>, componentObservers)(() => observer(read()));
+        };
+    };
+
     const observeResource = Object.fromEntries(
-        Object.entries(store.resources).map(([resource]) => {
-            const archetype = store.ensureArchetype(resourceArchetypeComponents(resource));
-            const resourceId = archetype.columns[ID].get(0);
-            return [resource, Observe.withMap(observeEntity(resourceId), (values) => (values as any)?.[resource] ?? null)];
-        })
+        Object.keys(store.resources).map((resource) => [resource, observeResourceValue(resource as StringKeyof<R>)])
     ) as { [K in StringKeyof<R>]: Observe<R[K]>; };
 
     const observeTransaction: Observe<TransactionResult<C>> = (notify: (transaction: TransactionResult<C>) => void) => {
@@ -188,11 +209,7 @@ export function createObservedDatabase<
     const rebuildObservableMaps = () => {
         (observe as any).components = mapEntries(store.componentSchemas, ([component]) => addToMapSet(component, componentObservers));
         (observe as any).resources = Object.fromEntries(
-            Object.entries(store.resources).map(([resource]) => {
-                const archetype = store.ensureArchetype(resourceArchetypeComponents(resource));
-                const resourceId = archetype.columns[ID].get(0);
-                return [resource, Observe.withMap(observeEntity(resourceId), (values) => (values as any)?.[resource] ?? null)];
-            })
+            Object.keys(store.resources).map((resource) => [resource, observeResourceValue(resource as StringKeyof<R>)])
         );
     };
 

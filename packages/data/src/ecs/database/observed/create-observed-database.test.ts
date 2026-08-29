@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createObservedDatabase } from "./create-observed-database.js";
 import { Store } from "../../store/index.js";
 import { Schema } from "../../../schema/index.js";
+import { Observe } from "../../../observe/index.js";
 import { Entity } from "../../entity/entity.js";
 import { Database } from "../database.js";
 
@@ -717,6 +718,139 @@ describe("createObservedDatabase", () => {
 
         unsubscribe();
         newUnsubscribe();
+    });
+
+    // A nonPersistent (transient) resource with a non-null array default, added
+    // via `extend` AFTER the nonPersistent quadrant is already occupied by
+    // presence entities. That makes the resource singleton land on a HIGH entity
+    // id. A whole-database `fromData` / `reset` resets the nonPersistent quadrant
+    // (counter back to 0) and re-seeds the singleton under a FRESH, LOWER id — so
+    // anything that captured the original id is now looking at a dangling entity.
+    const createTransientResourceFixture = () => {
+        const restrictedUrlsSchema = {
+            type: "array",
+            items: { type: "string" },
+            default: [] as readonly string[],
+            nonPersistent: true,
+        } as const satisfies Schema;
+
+        const store = Store.create({
+            components: { cursor: { type: "number" } },
+            resources: {},
+            // Presence carries the nonPersistent marker → nonPersistent quadrant.
+            archetypes: { Presence: ["cursor", "nonPersistent"] } as const,
+        });
+        const observed = createObservedDatabase(store);
+
+        // Occupy the nonPersistent quadrant so the resource singleton (added
+        // next) does not land on that quadrant's id 0.
+        for (let i = 0; i < 4; i++) {
+            observed.execute(db => db.archetypes.Presence.insert({ cursor: i, nonPersistent: true }));
+        }
+
+        // `ObservedDatabase.extend` returns `any` at runtime; bridge that untyped
+        // return to the small surface these tests exercise (one boundary cast).
+        interface TransientResourceDb {
+            observe: { resources: { restrictedUrls: Observe<readonly string[]> } };
+            resources: { restrictedUrls: readonly string[] };
+            execute(handler: (t: { resources: { restrictedUrls: readonly string[] } }) => void): unknown;
+            toData(): unknown;
+            fromData(data: unknown): void;
+            reset(): void;
+        }
+        const db = observed.extend(Database.Plugin.create({
+            resources: { restrictedUrls: restrictedUrlsSchema },
+        })) as unknown as TransientResourceDb;
+        return { db };
+    };
+
+    it("should re-emit a transient resource's schema default (not null) on fromData reload", () => {
+        const { db } = createTransientResourceFixture();
+
+        const observer = vi.fn();
+        const unsubscribe = db.observe.resources.restrictedUrls(observer);
+
+        // Initial emit is the default.
+        expect(observer).toHaveBeenLastCalledWith([]);
+        observer.mockClear();
+
+        db.fromData(db.toData());
+
+        // After fromData the observer must fire with the [] default, never null.
+        expect(observer).toHaveBeenCalledTimes(1);
+        expect(observer).toHaveBeenLastCalledWith([]);
+
+        // A live subscriber relying on the array type must not receive null.
+        const lastValue: readonly string[] | null = observer.mock.calls.at(-1)?.[0];
+        expect(lastValue).not.toBeNull();
+        expect(() => lastValue!.includes("x")).not.toThrow();
+
+        unsubscribe();
+    });
+
+    it("should re-emit a transient resource's schema default (not null) on reset", () => {
+        const { db } = createTransientResourceFixture();
+
+        const observer = vi.fn();
+        const unsubscribe = db.observe.resources.restrictedUrls(observer);
+        observer.mockClear();
+
+        db.reset();
+
+        expect(observer).toHaveBeenCalledTimes(1);
+        expect(observer).toHaveBeenLastCalledWith([]);
+
+        unsubscribe();
+    });
+
+    it("should allow writing a transient resource after a fromData reload", () => {
+        const { db } = createTransientResourceFixture();
+
+        db.fromData(db.toData());
+
+        // The transactional resource setter must resolve the singleton's CURRENT
+        // id, not the id captured at construction — otherwise this throws
+        // "Entity not found".
+        const observer = vi.fn();
+        const unsubscribe = db.observe.resources.restrictedUrls(observer);
+        observer.mockClear();
+
+        expect(() => db.execute(t => { t.resources.restrictedUrls = ["x"]; })).not.toThrow();
+        expect(db.resources.restrictedUrls).toEqual(["x"]);
+        // The write must also propagate through the (component-notification) path.
+        expect(observer).toHaveBeenLastCalledWith(["x"]);
+
+        unsubscribe();
+    });
+
+    it("should re-emit the LOADED value (not a stale one) for a persistent resource on fromData", () => {
+        // Regression guard: the resource observer must read the singleton live
+        // through the archetype, not a captured column. `archetype.fromData`
+        // replaces `archetype.columns` wholesale, so a persistent resource whose
+        // value changes across the load must re-emit the LOADED value.
+        const configSchema = { type: "number", default: 0 } as const satisfies Schema;
+        const make = () => createObservedDatabase(Store.create({
+            components: {},
+            resources: { config: configSchema },
+            archetypes: {} as const,
+        }));
+
+        const source = make();
+        source.execute(db => { db.resources.config = 42; });
+        const snapshot = source.toData();
+
+        const target = make();
+        const observer = vi.fn();
+        const unsubscribe = target.observe.resources.config(observer);
+        expect(observer).toHaveBeenLastCalledWith(0); // pre-load default
+        observer.mockClear();
+
+        target.fromData(snapshot);
+
+        expect(observer).toHaveBeenCalledTimes(1);
+        expect(observer).toHaveBeenLastCalledWith(42);
+
+        unsubscribe();
     });
 
     it("should extend with new components, resources, and archetypes", () => {

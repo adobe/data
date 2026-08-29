@@ -763,6 +763,35 @@ describe("createStore", () => {
             expect(target.read(selectionEntity)).toBeNull();
         });
 
+        it("strips a no-default nonPersistent component from every restored row without hanging", { timeout: 3000 }, () => {
+            // A PERSISTENT entity archetype carrying a nonPersistent-schema
+            // component that has NO default (the GPU-buffer / handle pattern).
+            // On load the column is rebuilt empty and the component must be
+            // stripped from EVERY row. With 2+ such rows the strip loop must
+            // still terminate — a shared removal object emptied by the first
+            // pass would loop forever (mirrors pruneToSchema's fresh-per-pass fix).
+            const makeStore = () => createStore({
+                components: {
+                    x: { type: "number", default: 0 },
+                    handle: { type: "number", nonPersistent: true },
+                },
+                resources: {},
+                archetypes: { Buffered: ["x", "handle"] },
+            } as const);
+
+            const source = makeStore();
+            source.archetypes.Buffered.insert({ x: 0, handle: 111 });
+            source.archetypes.Buffered.insert({ x: 1, handle: 222 });
+            const snapshot = source.toData({ copy: true });
+
+            const target = makeStore();
+            target.fromData(snapshot);
+
+            // Both rows survive with `handle` stripped (migrated to the x-only archetype).
+            expect(target.count(["x"])).toBe(2);
+            expect(target.count(["handle"])).toBe(0);
+        });
+
         it("preserves archetype ids across serialization when a nonPersistent archetype precedes a persistent one", () => {
             const selectionSchema = { type: "boolean", default: false } as const satisfies Schema;
             const positionScalarSchema = { type: "number", default: 0 } as const satisfies Schema;

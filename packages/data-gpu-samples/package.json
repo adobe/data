@@ -1,6 +1,6 @@
 {
   "name": "data-gpu-samples",
-  "version": "0.10.6",
+  "version": "0.10.7",
   "description": "WebGPU samples built on @adobe/data-gpu",
   "type": "module",
   "private": true,

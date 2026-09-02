@@ -26,6 +26,8 @@ type FromSchemaInternal<T, Depth extends number = 5> = T extends { const: infer 
   ? boolean
   : T extends { type: 'null' }
   ? null
+  : T extends { type: 'blob' }
+  ? Blob
   : T extends { type: 'typed-buffer', items: infer Items }
   ? TypedBuffer<FromSchemaInternal<Items>>
   : T extends { type: 'typed-buffer' }

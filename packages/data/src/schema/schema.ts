@@ -83,7 +83,7 @@ export interface Schema {
    *
    * The two channels have **deliberately opposite default polarity**, matching
    * their trust level. Resolve them with `resolveExternalInvocation(schema)`
-   * (see `external.ts`) — the single source of truth — rather than re-deriving
+   * (see `resolve-external-invocation.ts`) — the single source of truth — rather than re-deriving
    * per call site, because getting the `link` default wrong is a security hole.
    *
    * - `link` — a deeplink / URL: the least-trusted channel (anyone can craft a

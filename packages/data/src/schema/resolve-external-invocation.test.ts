@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { describe, it, expect } from "vitest";
-import { resolveExternalInvocation } from "./external.js";
+import { resolveExternalInvocation } from "./resolve-external-invocation.js";
 import type { Schema } from "./schema.js";
 
 const fn = (external?: Schema["external"]): Schema => ({

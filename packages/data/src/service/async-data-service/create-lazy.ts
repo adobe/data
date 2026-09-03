@@ -301,9 +301,12 @@ export function createLazy<
         // AsyncGenerator function - returns generator that waits for service
         lazyService[key] = (...args: any[]): AsyncGenerator<any> => {
           let realGenerator: AsyncGenerator<any> | null = null;
+          let done = false;
 
-          return {
+          const gen = {
             async next(): Promise<IteratorResult<any>> {
+              // Once terminated, never resurrect and start the real generator.
+              if (done) return { done: true, value: undefined };
               if (!realGenerator) {
                 const service = await ensureLoading();
                 if (service.serviceName !== undefined && service.serviceName !== 'lazy-service') {
@@ -311,10 +314,15 @@ export function createLazy<
                 }
                 realGenerator = (service as any)[key](...args);
               }
-              return realGenerator!.next();
+              const result = await realGenerator!.next();
+              if (result.done) done = true;
+              return result;
             },
 
+            // Latch `done` so a subsequent next() cannot start the real generator;
+            // delegate to it only when iteration has already begun.
             async return(value?: any): Promise<IteratorResult<any>> {
+              done = true;
               if (realGenerator) {
                 return realGenerator.return(value);
               }
@@ -322,6 +330,7 @@ export function createLazy<
             },
 
             async throw(e: any): Promise<IteratorResult<any>> {
+              done = true;
               if (realGenerator) {
                 return realGenerator.throw(e);
               }
@@ -330,8 +339,15 @@ export function createLazy<
 
             [Symbol.asyncIterator]() {
               return this;
-            }
+            },
+
+            // Explicit resource management: `await using` disposes by terminating.
+            async [Symbol.asyncDispose](): Promise<void> {
+              await gen.return(undefined);
+            },
           } as AsyncGenerator<any>;
+
+          return gen;
         };
       }
     }

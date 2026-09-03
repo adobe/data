@@ -950,6 +950,75 @@ describe('createLazy', () => {
     });
   });
 
+  test('generator return() before next() latches done (no resurrection)', async () => {
+    interface TestService extends Service {
+      streamData: () => AsyncGenerator<number>;
+    }
+
+    let started = false;
+    const factory = createLazy({
+      load: () => Promise.resolve({
+        serviceName: 'test-service',
+        streamData: async function* () {
+          started = true;
+          yield 1;
+          yield 2;
+        }
+      }),
+      schema: {
+        type: "object",
+        properties: { streamData: { type: "function", parameters: [], returns: { type: "generator", value: {} } } },
+        required: ["streamData"],
+        additionalProperties: false
+      }
+    });
+
+    const gen = factory().streamData();
+    const returned = await gen.return(undefined);
+    const afterReturn = await gen.next();
+
+    assert({
+      given: 'return() is called before the first next()',
+      should: 'report done and never start the real generator',
+      actual: `${returned.done},${afterReturn.done},${started}`,
+      expected: 'true,true,false'
+    });
+  });
+
+  test('generator supports async dispose', async () => {
+    interface TestService extends Service {
+      streamData: () => AsyncGenerator<number>;
+    }
+
+    const factory = createLazy({
+      load: () => Promise.resolve({
+        serviceName: 'test-service',
+        streamData: async function* () {
+          yield 1;
+          yield 2;
+        }
+      }),
+      schema: {
+        type: "object",
+        properties: { streamData: { type: "function", parameters: [], returns: { type: "generator", value: {} } } },
+        required: ["streamData"],
+        additionalProperties: false
+      }
+    });
+
+    const gen = factory().streamData();
+    const hasDispose = typeof (gen as unknown as { [Symbol.asyncDispose]?: () => Promise<void> })[Symbol.asyncDispose];
+    await (gen as unknown as { [Symbol.asyncDispose](): Promise<void> })[Symbol.asyncDispose]();
+    const afterDispose = await gen.next();
+
+    assert({
+      given: 'a lazy generator is async-disposed',
+      should: 'expose Symbol.asyncDispose and be done afterward',
+      actual: `${hasDispose},${afterDispose.done}`,
+      expected: 'function,true'
+    });
+  });
+
   test('generator function returns same instance', async () => {
     interface TestService extends Service {
       streamData: () => AsyncGenerator<number>;

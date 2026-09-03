@@ -205,6 +205,29 @@ const validWithPreload = createLazy({
   preload: true
 });
 
+// ✅ Test 4c: a service that is NOT a valid AsyncDataService (returns non-Data)
+// is still accepted — createLazy gates on schema-match alone, not IsValid.
+interface NonConformantService extends Service {
+  fetch: (id: string) => Promise<Response>;      // Response ∉ Data → not IsValid
+  count: Observe<number | undefined>;            // undefined-in-Observe → not IsValid
+}
+// The service genuinely fails IsValid...
+// @ts-expect-error - NonConformantService returns non-Data / undefined-in-Observe
+type _NonConformantFailsIsValid = Assert<IsValid<NonConformantService>>;
+// ...yet createLazy accepts it because the schema correctly describes the members.
+const validNonConformant = createLazy({
+  load: () => Promise.resolve({} as NonConformantService),
+  schema: {
+    type: "object",
+    properties: {
+      fetch: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } },
+      count: { type: "observe", value: {} }
+    },
+    required: ["fetch", "count"],
+    additionalProperties: false
+  }
+});
+
 // ============================================================================
 // ERROR TESTS (These should produce TypeScript errors)
 // ============================================================================

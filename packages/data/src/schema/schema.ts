@@ -74,15 +74,25 @@ export interface Schema {
   // absent `returns` ⇒ void.
   parameters?: readonly Schema[];
   returns?: Schema;
-  // Invocation policy for a `function` schema, read at runtime by an executor
-  // that may invoke it from an untrusted channel. Metadata only — `Schema.ToType`
-  // ignores it, so it never affects the derived function type. The two channels
-  // have DELIBERATELY OPPOSITE default polarity; resolve with the `External`
-  // accessors rather than re-deriving per call site (see `external.ts`):
-  // - `link` (deeplink / URL — least trusted, attacker-craftable): default-DENY
-  //   whitelist. Invocable from a link only when `link === true`.
-  // - `agent` (acting on the user's behalf — more trusted): default-ALLOW
-  //   blacklist. Invocable by an agent unless `agent === false`.
+  /**
+   * Invocation policy for a `function` schema — who may call it from an
+   * **untrusted channel**. Read at runtime by the executor that performs the
+   * invocation; it is pure metadata and does NOT affect the type produced by
+   * `Schema.ToType` (a function differing only in `external` derives the same
+   * signature), nor does it affect service-schema validation or lazy wrapping.
+   *
+   * The two channels have **deliberately opposite default polarity**, matching
+   * their trust level. Resolve them with `resolveExternalInvocation(schema)`
+   * (see `external.ts`) — the single source of truth — rather than re-deriving
+   * per call site, because getting the `link` default wrong is a security hole.
+   *
+   * - `link` — a deeplink / URL: the least-trusted channel (anyone can craft a
+   *   URL and get a victim to open it in their authenticated session).
+   *   **Default-deny whitelist**: link-invocable only when `link === true`;
+   *   absent or `false` ⇒ not link-invocable.
+   * - `agent` — an agent acting on the user's behalf: more trusted.
+   *   **Default-allow blacklist**: agent-invocable unless `agent === false`.
+   */
   external?: { readonly agent?: boolean; readonly link?: boolean };
   properties?: { readonly [key: string]: Schema };
   required?: readonly string[];

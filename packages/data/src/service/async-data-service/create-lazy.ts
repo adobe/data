@@ -92,7 +92,7 @@ function memberKind(member: Schema): WrapKind {
  *
  * TypeScript enforces that `schema` describes every member of the loaded service
  * with the correct wrapper kind; otherwise the `schema` argument reports a
- * {@link SchemaMismatch}. Note: member value/parameter schemas authored as `{}`
+ * `SchemaMismatch`. Note: member value/parameter schemas authored as `{}`
  * resolve to `any`, so presence and wrapper kind are checked but inner payload
  * types are only verified where a precise `value`/parameter schema is supplied.
  *

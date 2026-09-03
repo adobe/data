@@ -18,7 +18,13 @@ export type Conditional = {
   value: JSONMergePatch;
 }
 
-const schemaTypes = { number: true, integer: true, string: true, boolean: true, null: true, array: true, object: true, 'typed-buffer': true, blob: true } as const;
+// Data types describe serializable/storable values. The type-constructor types
+// (observe/promise/generator/function) describe data-adjacent *types* — reactive
+// values, async values, streams, and callables — so a Schema can describe a
+// service surface, not just data. Like `blob`/`typed-buffer`, these are confined
+// by usage: they belong in service/interface schemas, never in ECS component,
+// resource, or typed-buffer schemas (which handle-or-throw at runtime, as today).
+const schemaTypes = { number: true, integer: true, string: true, boolean: true, null: true, array: true, object: true, 'typed-buffer': true, blob: true, observe: true, promise: true, generator: true, function: true } as const;
 
 export interface Schema {
   type?: keyof typeof schemaTypes;
@@ -60,6 +66,14 @@ export interface Schema {
   minItems?: number;
   maxItems?: number;
   items?: Schema;
+  // The wrapped value type for the `observe`/`promise`/`generator` constructors:
+  // `{ type: "observe", value: S }` → `Observe<ToType<S>>`, etc. Absent ⇒ any.
+  value?: Schema;
+  // Signature of the `function` constructor: `{ type: "function", parameters,
+  // returns }` → `(...args) => ToType<returns>`. Absent `parameters` ⇒ no args;
+  // absent `returns` ⇒ void.
+  parameters?: readonly Schema[];
+  returns?: Schema;
   properties?: { readonly [key: string]: Schema };
   required?: readonly string[];
   additionalProperties?: boolean | Schema;

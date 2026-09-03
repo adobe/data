@@ -50,7 +50,7 @@ namespace MyService {
     type: "object",
     properties: {
       data: { type: "observe", value: {} },
-      fetchData: { type: "function", parameters: [], returns: { type: "promise", value: {} } },
+      fetchData: { type: "function", signature: { parameters: [], returns: { type: "promise", value: {} } } },
     },
     required: ["data", "fetchData"],
     additionalProperties: false,

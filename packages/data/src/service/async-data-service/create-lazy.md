@@ -40,12 +40,12 @@ AsyncDataService.createLazy({
 `schema` is an object `Schema` whose `properties` describe each service member using the schema type-constructors. `createLazy` derives the runtime wrapper strategy from each member's schema:
 
 - `{ type: "observe", value: S }` → an `Observe<T>` property
-- `{ type: "function", returns: { type: "observe", … } }` → a function returning `Observe<T>`
-- `{ type: "function", returns: { type: "generator", … } }` → a function returning `AsyncGenerator<T>`
-- `{ type: "function", returns: { type: "promise", … } }` → a function returning `Promise<T>`
-- `{ type: "function" }` (no `returns`) → a function returning `void`
+- `{ type: "function", signature: { returns: { type: "observe", … } } }` → a function returning `Observe<T>`
+- `{ type: "function", signature: { returns: { type: "generator", … } } }` → a function returning `AsyncGenerator<T>`
+- `{ type: "function", signature: { returns: { type: "promise", … } } }` → a function returning `Promise<T>`
+- `{ type: "function" }` (no `signature`) → a function returning `void`
 
-Use `value: {}` as a "don't-care" (resolves to `any`) when a member's precise value type doesn't matter for wrapping; fill in real value schemas when the schema is also a published contract. Function `parameters` list only the **required** parameters. Publish the schema beside the service with the namespace pattern and validate it with `IsValidWithCompleteSchema`.
+The function constructor groups its `parameters`/`returns` (and invocation-policy `external`) under a nested `signature`, so those members live only on function schemas. Use `value: {}` as a "don't-care" (resolves to `any`) when a member's precise value type doesn't matter for wrapping; fill in real value schemas when the schema is also a published contract. Function `signature.parameters` list only the **required** parameters. Publish the schema beside the service with the namespace pattern and validate it with `IsValidWithCompleteSchema`.
 
 ## Type Safety Guarantees
 
@@ -77,7 +77,7 @@ namespace AuthService {
     properties: {
       isSignedIn: { type: "observe", value: {} },
       accessToken: { type: "observe", value: {} },
-      signIn: { type: "function", parameters: [{}], returns: { type: "promise" } },
+      signIn: { type: "function", signature: { parameters: [{}], returns: { type: "promise" } } },
       signOut: { type: "function" },
     },
     required: ["isSignedIn", "accessToken", "signIn", "signOut"],
@@ -108,7 +108,7 @@ namespace ConfigService {
     type: "object",
     properties: {
       config: { type: "observe", value: {} },
-      fetch: { type: "function", parameters: [{}], returns: { type: "promise", value: {} } },
+      fetch: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } },
     },
     required: ["config", "fetch"],
     additionalProperties: false,
@@ -143,9 +143,9 @@ namespace ComplexService {
     type: "object",
     properties: {
       status: { type: "observe", value: {} },
-      selectById: { type: "function", parameters: [{}], returns: { type: "observe", value: {} } },
-      streamEvents: { type: "function", returns: { type: "generator", value: {} } },
-      fetchData: { type: "function", returns: { type: "promise", value: {} } },
+      selectById: { type: "function", signature: { parameters: [{}], returns: { type: "observe", value: {} } } },
+      streamEvents: { type: "function", signature: { returns: { type: "generator", value: {} } } },
+      fetchData: { type: "function", signature: { returns: { type: "promise", value: {} } } },
       clearCache: { type: "function" },
     },
     required: ["status", "selectById", "streamEvents", "fetchData", "clearCache"],
@@ -169,7 +169,7 @@ AsyncDataService.createLazy({
   load: () => import('./auth').then(m => m.create()),
   schema: {
     type: "object",
-    properties: { isSignedIn: { type: "observe", value: {} }, signIn: { type: "function", parameters: [{}], returns: { type: "promise" } } },
+    properties: { isSignedIn: { type: "observe", value: {} }, signIn: { type: "function", signature: { parameters: [{}], returns: { type: "promise" } } } },
     required: ["isSignedIn", "signIn"],
     additionalProperties: false,
   } as const satisfies Schema,   // ← error: schema omits `signOut` (and `accessToken`)

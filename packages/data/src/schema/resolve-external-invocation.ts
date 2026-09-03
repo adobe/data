@@ -19,8 +19,9 @@ import type { Schema } from "./schema.js";
  * (link denied, agent allowed).
  */
 export function resolveExternalInvocation(schema: Schema): { readonly link: boolean; readonly agent: boolean } {
+  const external = schema.signature?.external;
   return {
-    link: schema.external?.link === true,
-    agent: schema.external?.agent !== false,
+    link: external?.link === true,
+    agent: external?.agent !== false,
   };
 }

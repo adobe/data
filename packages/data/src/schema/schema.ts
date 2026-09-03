@@ -69,31 +69,38 @@ export interface Schema {
   // The wrapped value type for the `observe`/`promise`/`generator` constructors:
   // `{ type: "observe", value: S }` → `Observe<ToType<S>>`, etc. Absent ⇒ any.
   value?: Schema;
-  // Signature of the `function` constructor: `{ type: "function", parameters,
-  // returns }` → `(...args) => ToType<returns>`. Absent `parameters` ⇒ no args;
-  // absent `returns` ⇒ void.
-  parameters?: readonly Schema[];
-  returns?: Schema;
   /**
-   * Invocation policy for a `function` schema — who may call it from an
-   * **untrusted channel**. Read at runtime by the executor that performs the
-   * invocation; it is pure metadata and does NOT affect the type produced by
-   * `Schema.ToType` (a function differing only in `external` derives the same
-   * signature), nor does it affect service-schema validation or lazy wrapping.
-   *
-   * The two channels have **deliberately opposite default polarity**, matching
-   * their trust level. Resolve them with `resolveExternalInvocation(schema)`
-   * (see `resolve-external-invocation.ts`) — the single source of truth — rather than re-deriving
-   * per call site, because getting the `link` default wrong is a security hole.
-   *
-   * - `link` — a deeplink / URL: the least-trusted channel (anyone can craft a
-   *   URL and get a victim to open it in their authenticated session).
-   *   **Default-deny whitelist**: link-invocable only when `link === true`;
-   *   absent or `false` ⇒ not link-invocable.
-   * - `agent` — an agent acting on the user's behalf: more trusted.
-   *   **Default-allow blacklist**: agent-invocable unless `agent === false`.
+   * The signature of the `function` constructor, grouped so these members live
+   * only on function schemas rather than on every `Schema`:
+   * `{ type: "function", signature: { parameters, returns } }` →
+   * `(...args) => ToType<returns>`. Absent `parameters` ⇒ no args; absent
+   * `returns` ⇒ void; absent `signature` entirely ⇒ `() => void`.
    */
-  external?: { readonly agent?: boolean; readonly link?: boolean };
+  signature?: {
+    readonly parameters?: readonly Schema[];
+    readonly returns?: Schema;
+    /**
+     * Invocation policy — who may call this function from an **untrusted
+     * channel**. Read at runtime by the executor that performs the invocation;
+     * pure metadata that does NOT affect the type produced by `Schema.ToType`
+     * (a function differing only in `external` derives the same signature), nor
+     * service-schema validation or lazy wrapping.
+     *
+     * The two channels have **deliberately opposite default polarity**, matching
+     * their trust level. Resolve them with `resolveExternalInvocation(schema)`
+     * (see `resolve-external-invocation.ts`) — the single source of truth —
+     * rather than re-deriving per call site, because getting the `link` default
+     * wrong is a security hole.
+     *
+     * - `link` — a deeplink / URL: the least-trusted channel (anyone can craft a
+     *   URL and get a victim to open it in their authenticated session).
+     *   **Default-deny whitelist**: link-invocable only when `link === true`;
+     *   absent or `false` ⇒ not link-invocable.
+     * - `agent` — an agent acting on the user's behalf: more trusted.
+     *   **Default-allow blacklist**: agent-invocable unless `agent === false`.
+     */
+    readonly external?: { readonly agent?: boolean; readonly link?: boolean };
+  };
   properties?: { readonly [key: string]: Schema };
   required?: readonly string[];
   additionalProperties?: boolean | Schema;

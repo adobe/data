@@ -53,9 +53,9 @@ namespace UserService {
     properties: {
       currentUser: { type: "observe", value: {} },
       allUsers: { type: "observe", value: {} },
-      selectUserById: { type: "function", parameters: [{}], returns: { type: "observe", value: {} } },
-      fetchUser: { type: "function", parameters: [{}], returns: { type: "promise", value: {} } },
-      updateUser: { type: "function", parameters: [{}, {}], returns: { type: "promise" } },
+      selectUserById: { type: "function", signature: { parameters: [{}], returns: { type: "observe", value: {} } } },
+      fetchUser: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } },
+      updateUser: { type: "function", signature: { parameters: [{}, {}], returns: { type: "promise" } } },
       clearCache: { type: "function" },
     },
     required: ["currentUser", "allUsers", "selectUserById", "fetchUser", "updateUser", "clearCache"],
@@ -106,7 +106,7 @@ namespace ConfigurableUserService {
     properties: {
       config: { type: "observe", value: {} },
       currentUser: { type: "observe", value: {} },
-      fetchUser: { type: "function", parameters: [{}], returns: { type: "promise", value: {} } },
+      fetchUser: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } },
     },
     required: ["config", "currentUser", "fetchUser"],
     additionalProperties: false,

@@ -32,7 +32,7 @@ type InferArgs<F> =
 // runtime `memberKind` dispatch to disagree with the type-level check.
 type LazyMemberSchema =
   | { readonly type: "observe" }
-  | { readonly type: "function"; readonly returns?: { readonly type: "observe" | "promise" | "generator" } };
+  | { readonly type: "function"; readonly signature?: { readonly returns?: { readonly type: "observe" | "promise" | "generator" } } };
 
 type LazyServiceSchema = Schema & {
   readonly properties?: { readonly [name: string]: LazyMemberSchema };
@@ -51,8 +51,9 @@ type WrapKind = "observe" | "fn:observe" | "fn:promise" | "fn:generator" | "fn:v
 function memberKind(member: Schema): WrapKind {
   if (member.type === "observe") return "observe";
   if (member.type === "function") {
-    if (member.returns === undefined) return "fn:void"; // absent returns ⇒ void
-    switch (member.returns.type) {
+    const returns = member.signature?.returns;
+    if (returns === undefined) return "fn:void"; // absent returns ⇒ void
+    switch (returns.type) {
       case "observe": return "fn:observe";
       case "promise": return "fn:promise";
       case "generator": return "fn:generator";
@@ -60,7 +61,7 @@ function memberKind(member: Schema): WrapKind {
         // A present `returns` with an unrecognized type must not silently become
         // void (that would drop the result); fail loudly instead.
         throw new Error(
-          `createLazy: unsupported function returns schema type "${member.returns.type}" — must be observe, promise, generator, or omitted (void)`,
+          `createLazy: unsupported function returns schema type "${returns.type}" — must be observe, promise, generator, or omitted (void)`,
         );
     }
   }

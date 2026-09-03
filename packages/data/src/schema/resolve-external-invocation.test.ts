@@ -4,10 +4,11 @@ import { describe, it, expect } from "vitest";
 import { resolveExternalInvocation } from "./resolve-external-invocation.js";
 import type { Schema } from "./schema.js";
 
-const fn = (external?: Schema["external"]): Schema => ({
+type External = NonNullable<Schema["signature"]>["external"];
+
+const fn = (external?: External): Schema => ({
   type: "function",
-  parameters: [],
-  ...(external ? { external } : {}),
+  signature: { parameters: [], ...(external ? { external } : {}) },
 });
 
 describe("resolveExternalInvocation", () => {

@@ -59,21 +59,24 @@ type Decrement<N extends number> = ((...x: any[]) => void) extends (
 // The wrapped value schema for observe/promise/generator; absent ⇒ any.
 type ValueSchema<T> = T extends { value: infer V } ? V : {};
 
-// The function-constructor mapping: parameters → positional args, returns → result.
+// The function-constructor mapping: `signature.parameters` → positional args,
+// `signature.returns` → result. Absent `signature` ⇒ `() => void`.
 type FromSchemaFunction<T, Depth extends number> =
-  T extends { parameters: infer P }
-  ? P extends readonly Schema[]
-  ? (...args: FromSchemaArgs<P, Depth>) => FromSchemaReturns<T, Depth>
-  : never
-  : (...args: []) => FromSchemaReturns<T, Depth>;
+  T extends { signature: infer Sig }
+  ? (...args: FromSchemaArgs<SignatureParams<Sig>, Depth>) => FromSchemaReturns<Sig, Depth>
+  : () => void;
+
+// The signature's parameters tuple; absent ⇒ no args.
+type SignatureParams<Sig> =
+  Sig extends { parameters: infer P } ? P extends readonly Schema[] ? P : readonly [] : readonly [];
 
 type FromSchemaArgs<P extends readonly Schema[], Depth extends number> = {
   -readonly [K in keyof P]: ToType<P[K], Depth>;
 };
 
 // Absent `returns` ⇒ void (a function that returns nothing meaningful).
-type FromSchemaReturns<T, Depth extends number> =
-  T extends { returns: infer R } ? R extends Schema ? ToType<R, Depth> : void : void;
+type FromSchemaReturns<Sig, Depth extends number> =
+  Sig extends { returns: infer R } ? R extends Schema ? ToType<R, Depth> : void : void;
 
 type FromSchemaArray<T, Depth extends number> = T extends {
   items: infer Items;
@@ -321,20 +324,22 @@ type CheckGenerator = True<EquivalentTypes<TestGenerator, AsyncGenerator<boolean
 
 // function
 type TestFunction = ToType<{
-  type: 'function', parameters: [{ type: 'number' }, { type: 'string' }], returns: { type: 'boolean' }
+  type: 'function', signature: { parameters: [{ type: 'number' }, { type: 'string' }], returns: { type: 'boolean' } }
 }>; // (a: number, b: string) => boolean
 type CheckFunction = True<EquivalentTypes<TestFunction, (a: number, b: string) => boolean>>;
 
-type TestFunctionVoid = ToType<{ type: 'function', parameters: [] }>; // () => void
+type TestFunctionVoid = ToType<{ type: 'function', signature: { parameters: [] } }>; // () => void
 type CheckFunctionVoid = True<EquivalentTypes<TestFunctionVoid, () => void>>;
 
-type TestFunctionNoParams = ToType<{ type: 'function' }>; // () => void
+type TestFunctionNoParams = ToType<{ type: 'function' }>; // () => void (no signature)
 type CheckFunctionNoParams = True<EquivalentTypes<TestFunctionNoParams, () => void>>;
 
 // `external` invocation-policy metadata never affects the derived function type.
 type TestFunctionExternalIgnored = ToType<{
-  type: 'function', parameters: [{ type: 'number' }], returns: { type: 'promise', value: { type: 'number' } },
-  external: { link: true, agent: false }
+  type: 'function', signature: {
+    parameters: [{ type: 'number' }], returns: { type: 'promise', value: { type: 'number' } },
+    external: { link: true, agent: false }
+  }
 }>; // (a: number) => Promise<number>
 type CheckFunctionExternalIgnored = True<EquivalentTypes<TestFunctionExternalIgnored, (a: number) => Promise<number>>>;
 
@@ -342,13 +347,15 @@ type CheckFunctionExternalIgnored = True<EquivalentTypes<TestFunctionExternalIgn
 // with a Promise return — the shape plain-Data parameters could not express.
 type TestStreamingAction = ToType<{
   type: 'function',
-  parameters: [{
-    type: 'object',
-    properties: { chunks: { type: 'generator', value: { type: 'number' } } },
-    required: ['chunks'],
-    additionalProperties: false
-  }],
-  returns: { type: 'promise', value: { type: 'null' } }
+  signature: {
+    parameters: [{
+      type: 'object',
+      properties: { chunks: { type: 'generator', value: { type: 'number' } } },
+      required: ['chunks'],
+      additionalProperties: false
+    }],
+    returns: { type: 'promise', value: { type: 'null' } }
+  }
 }>; // (arg: { readonly chunks: AsyncGenerator<number> }) => Promise<null>
 type CheckStreamingAction = True<EquivalentTypes<
   TestStreamingAction,

@@ -33,8 +33,10 @@ const _accountSchema = {
     balance: { type: "observe", value: { type: "number" }, description: "current balance" },
     deposit: {
       type: "function",
-      parameters: [{ type: "number" }],
-      returns: { type: "promise", value: { type: "number" } },
+      signature: {
+        parameters: [{ type: "number" }],
+        returns: { type: "promise", value: { type: "number" } },
+      },
       description: "add funds; resolves to the new balance",
     },
   },
@@ -71,8 +73,10 @@ const _assetSchema = {
     thumbnail: { type: "observe", value: { type: "blob" }, description: "current thumbnail" },
     download: {
       type: "function",
-      parameters: [{ type: "string" }],
-      returns: { type: "promise", value: { type: "blob" } },
+      signature: {
+        parameters: [{ type: "string" }],
+        returns: { type: "promise", value: { type: "blob" } },
+      },
       description: "download an asset by id",
     },
   },

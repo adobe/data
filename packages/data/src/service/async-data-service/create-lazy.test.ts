@@ -321,6 +321,44 @@ const errorGenerator = createLazy({
   }
 });
 
+// ❌ Test 11: Nested organizational object member is not a supported wrapper kind.
+// createLazy only wraps observe values and functions, so a member of type "object"
+// is rejected at compile time (rather than throwing at runtime).
+interface ServiceWithNestedGroup extends Service {
+  group: { readonly ready: Observe<boolean> };
+}
+type _CheckNestedGroupIsValid = Assert<IsValid<ServiceWithNestedGroup>>;
+const errorNestedObject = createLazy({
+  load: () => Promise.resolve({} as ServiceWithNestedGroup),
+  schema: {
+    type: "object",
+    properties: {
+      // @ts-expect-error - nested-object members are not a supported createLazy wrapper kind
+      group: { type: "object", properties: { ready: { type: "observe", value: {} } }, required: ["ready"], additionalProperties: false },
+    },
+    required: ["group"],
+    additionalProperties: false
+  }
+});
+
+// ❌ Test 12: A function member whose `returns` carries no recognized type would
+// resolve to `any` (vacuously passing the gate) but has no runtime wrapper — so it
+// is rejected at compile time by the member-kind constraint.
+const errorMalformedReturns = createLazy({
+  load: () => Promise.resolve({} as ServiceWithObserveFn),
+  schema: {
+    type: "object",
+    properties: {
+      allUsers: { type: "observe", value: {} },
+      selectUser: { type: "function", parameters: [{}], returns: { type: "observe", value: {} } },
+      // @ts-expect-error - `returns` has no recognized type-constructor
+      fetchData: { type: "function", parameters: [], returns: { value: {} } },
+    },
+    required: ["allUsers", "selectUser", "fetchData"],
+    additionalProperties: false
+  }
+});
+
 // ============================================================================
 // RUNTIME TESTS
 // ============================================================================

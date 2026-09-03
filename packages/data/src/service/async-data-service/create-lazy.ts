@@ -29,6 +29,21 @@ type SchemaMismatch = {
   readonly __createLazyError: "createLazy: schema must completely and correctly describe the loaded service";
 };
 
+// createLazy only wraps observe values and functions (classified by what they
+// return). Constrain each member schema to those shapes so an unsupported member
+// — a nested organizational object, a data property, or a function whose
+// `returns` carries no recognized type — is a compile error at the call site
+// rather than a runtime throw. The generic complete-schema gate would otherwise
+// accept such members (e.g. a `returns` that resolves to `any`), leaving the
+// runtime `memberKind` dispatch to disagree with the type-level check.
+type LazyMemberSchema =
+  | { readonly type: "observe" }
+  | { readonly type: "function"; readonly returns?: { readonly type: "observe" | "promise" | "generator" } };
+
+type LazyServiceSchema = Schema & {
+  readonly properties?: { readonly [name: string]: LazyMemberSchema };
+};
+
 // ============================================================================
 // RUNTIME WRAPPER KIND
 // ============================================================================
@@ -36,15 +51,23 @@ type SchemaMismatch = {
 type WrapKind = "observe" | "fn:observe" | "fn:promise" | "fn:generator" | "fn:void";
 
 // The runtime wrapper strategy for a service member, derived from its schema:
-// an `observe` value, or a `function` classified by what it returns.
+// an `observe` value, or a `function` classified by what it returns. Well-typed
+// callers can never reach a throw (the LazyServiceSchema constraint rejects
+// unsupported members at compile time); the throws defend untyped/`any` callers.
 function memberKind(member: Schema): WrapKind {
   if (member.type === "observe") return "observe";
   if (member.type === "function") {
-    switch (member.returns?.type) {
+    if (member.returns === undefined) return "fn:void"; // absent returns ⇒ void
+    switch (member.returns.type) {
       case "observe": return "fn:observe";
       case "promise": return "fn:promise";
       case "generator": return "fn:generator";
-      default: return "fn:void"; // absent returns ⇒ void
+      default:
+        // A present `returns` with an unrecognized type must not silently become
+        // void (that would drop the result); fail loudly instead.
+        throw new Error(
+          `createLazy: unsupported function returns schema type "${member.returns.type}" — must be observe, promise, generator, or omitted (void)`,
+        );
     }
   }
   throw new Error(
@@ -67,8 +90,11 @@ function memberKind(member: Schema): WrapKind {
  *   idle instead of waiting for the first property access.
  * @returns A factory function that creates lazy service instances
  *
- * TypeScript enforces that `schema` completely and correctly describes the loaded
- * service; otherwise the `schema` argument reports a {@link SchemaMismatch}.
+ * TypeScript enforces that `schema` describes every member of the loaded service
+ * with the correct wrapper kind; otherwise the `schema` argument reports a
+ * {@link SchemaMismatch}. Note: member value/parameter schemas authored as `{}`
+ * resolve to `any`, so presence and wrapper kind are checked but inner payload
+ * types are only verified where a precise `value`/parameter schema is supplied.
  *
  * @example
  * ```typescript
@@ -90,7 +116,7 @@ function memberKind(member: Schema): WrapKind {
  */
 export function createLazy<
   LoadFn extends (...args: any[]) => Promise<Service>,
-  const S extends Schema
+  const S extends LazyServiceSchema
 >(
   params: {
     load: LoadFn,
@@ -152,7 +178,7 @@ export function createLazy<
           let isCancelled = false;
 
           ensureLoading().then((service: any) => {
-            if (!isCancelled && service.serviceName !== 'lazy-service') {
+            if (!isCancelled && service.serviceName !== undefined && service.serviceName !== 'lazy-service') {
               // Update lazy service name once real service loads
               lazyService.serviceName = `lazy-${service.serviceName}`;
             }
@@ -204,7 +230,7 @@ export function createLazy<
               isProcessing = true;
               ensureLoading()
                 .then((service: any) => {
-                  if (service.serviceName !== 'lazy-service') {
+                  if (service.serviceName !== undefined && service.serviceName !== 'lazy-service') {
                     lazyService.serviceName = `lazy-${service.serviceName}`;
                   }
                   runDrain(service);
@@ -241,7 +267,7 @@ export function createLazy<
           if (!isProcessing) {
             isProcessing = true;
             ensureLoading().then((service: any) => {
-              if (service.serviceName !== 'lazy-service') {
+              if (service.serviceName !== undefined && service.serviceName !== 'lazy-service') {
                 lazyService.serviceName = `lazy-${service.serviceName}`;
               }
               runDrain(service);
@@ -256,7 +282,7 @@ export function createLazy<
             let isCancelled = false;
 
             ensureLoading().then((service: any) => {
-              if (service.serviceName !== 'lazy-service') {
+              if (service.serviceName !== undefined && service.serviceName !== 'lazy-service') {
                 lazyService.serviceName = `lazy-${service.serviceName}`;
               }
               if (!isCancelled) {
@@ -280,7 +306,7 @@ export function createLazy<
             async next(): Promise<IteratorResult<any>> {
               if (!realGenerator) {
                 const service = await ensureLoading();
-                if (service.serviceName !== 'lazy-service') {
+                if (service.serviceName !== undefined && service.serviceName !== 'lazy-service') {
                   lazyService.serviceName = `lazy-${service.serviceName}`;
                 }
                 realGenerator = (service as any)[key](...args);

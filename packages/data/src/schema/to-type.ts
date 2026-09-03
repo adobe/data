@@ -331,6 +331,13 @@ type CheckFunctionVoid = True<EquivalentTypes<TestFunctionVoid, () => void>>;
 type TestFunctionNoParams = ToType<{ type: 'function' }>; // () => void
 type CheckFunctionNoParams = True<EquivalentTypes<TestFunctionNoParams, () => void>>;
 
+// `external` invocation-policy metadata never affects the derived function type.
+type TestFunctionExternalIgnored = ToType<{
+  type: 'function', parameters: [{ type: 'number' }], returns: { type: 'promise', value: { type: 'number' } },
+  external: { link: true, agent: false }
+}>; // (a: number) => Promise<number>
+type CheckFunctionExternalIgnored = True<EquivalentTypes<TestFunctionExternalIgnored, (a: number) => Promise<number>>>;
+
 // Driver case: an AsyncGenerator<Data> parameter nested inside an object argument,
 // with a Promise return — the shape plain-Data parameters could not express.
 type TestStreamingAction = ToType<{

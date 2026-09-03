@@ -74,6 +74,16 @@ export interface Schema {
   // absent `returns` ⇒ void.
   parameters?: readonly Schema[];
   returns?: Schema;
+  // Invocation policy for a `function` schema, read at runtime by an executor
+  // that may invoke it from an untrusted channel. Metadata only — `Schema.ToType`
+  // ignores it, so it never affects the derived function type. The two channels
+  // have DELIBERATELY OPPOSITE default polarity; resolve with the `External`
+  // accessors rather than re-deriving per call site (see `external.ts`):
+  // - `link` (deeplink / URL — least trusted, attacker-craftable): default-DENY
+  //   whitelist. Invocable from a link only when `link === true`.
+  // - `agent` (acting on the user's behalf — more trusted): default-ALLOW
+  //   blacklist. Invocable by an agent unless `agent === false`.
+  external?: { readonly agent?: boolean; readonly link?: boolean };
   properties?: { readonly [key: string]: Schema };
   required?: readonly string[];
   additionalProperties?: boolean | Schema;

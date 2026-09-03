@@ -39,18 +39,28 @@ interface MyService extends Service {
 type Check = Assert<AsyncDataService.IsValid<MyService>>;
 ```
 
-### `AsyncDataService.createLazy({ load, properties, preload? })`
+### `AsyncDataService.createLazy({ load, schema, preload? })`
 
-Creates a lazy-loading wrapper factory for a service. Returns a factory function that creates service instances. The real service is only loaded when first accessed (or, with `preload: true`, at browser idle). TypeScript automatically infers service and argument types.
+Creates a lazy-loading wrapper factory for a service. Returns a factory function that creates service instances. The real service is only loaded when first accessed (or, with `preload: true`, at browser idle). The service's sideloaded `Schema` (published beside it — see [is-valid-with-complete-schema.ts](./is-valid-with-complete-schema.ts)) drives how each member is wrapped, and TypeScript enforces that the schema completely describes the loaded service.
 
 ```typescript
+// The service publishes its schema on the side
+namespace MyService {
+  export const schema = {
+    type: "object",
+    properties: {
+      data: { type: "observe", value: {} },
+      fetchData: { type: "function", parameters: [], returns: { type: "promise", value: {} } },
+    },
+    required: ["data", "fetchData"],
+    additionalProperties: false,
+  } as const satisfies Schema;
+}
+
 // Define the factory
 const createLazyService = AsyncDataService.createLazy({
   load: () => import('./my-service').then(m => m.createService()),
-  properties: {
-    data: 'observe',
-    fetchData: 'fn:promise'
-  }
+  schema: MyService.schema,
 });
 
 // Create instances
@@ -62,7 +72,7 @@ const service = createLazyService();
 ```typescript
 const createLazyService = AsyncDataService.createLazy({
   load: (config: Config) => import('./my-service').then(m => m.createService(config)),
-  properties: { data: 'observe', fetch: 'fn:promise' }
+  schema: MyService.schema,
 });
 
 const service = createLazyService({ apiUrl: '...' });
@@ -71,6 +81,7 @@ const service = createLazyService({ apiUrl: '...' });
 **Features:**
 
 - ✅ Full type inference (no generic type parameters needed)
+- ✅ Compile-time check that the schema completely describes the loaded service
 - ✅ Lazy loading on first property access
 - ✅ Call queuing for functions (all calls execute in order after load)
 - ✅ Proper cleanup for Observe subscriptions
@@ -81,6 +92,8 @@ See [create-lazy.md](./create-lazy.md) for complete documentation.
 ## Files
 
 - **is-valid.ts** - Type utility for validating AsyncDataService conformance
+- **is-valid-with-partial-schema.ts** - Valid service whose members include everything a schema describes (subset)
+- **is-valid-with-complete-schema.ts** - Valid service whose members are exactly what a schema describes
 - **create-lazy.ts** - Function signature for creating lazy service wrappers
 - **create-lazy.test.ts** - Type safety tests
 - **create-lazy.md** - Complete documentation and examples

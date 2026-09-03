@@ -116,38 +116,53 @@ type _CheckRecognitionService = Assert<IsValid<RecognitionService>>;
 // VALID USAGE TESTS
 // ============================================================================
 
-// ✅ Test 1: Complete descriptor for SimpleAuthService
+// ✅ Test 1: Complete schema for SimpleAuthService
 const validAuth = createLazy({
   load: () => Promise.resolve({} as SimpleAuthService),
-  properties: {
-    isSignedIn: 'observe',
-    accessToken: 'observe',
-    userProfile: 'observe',
-    showSignInDialog: 'fn:void',
-    hideSignInDialog: 'fn:void',
-    refreshToken: 'fn:promise',
-    signIn: 'fn:promise',
-    signOut: 'fn:promise'
+  schema: {
+    type: "object",
+    properties: {
+      isSignedIn: { type: "observe", value: {} },
+      accessToken: { type: "observe", value: {} },
+      userProfile: { type: "observe", value: {} },
+      showSignInDialog: { type: "function", parameters: [] },
+      hideSignInDialog: { type: "function", parameters: [] },
+      refreshToken: { type: "function", parameters: [], returns: { type: "promise", value: {} } },
+      signIn: { type: "function", parameters: [{}], returns: { type: "promise", value: {} } },
+      signOut: { type: "function", parameters: [], returns: { type: "promise", value: {} } }
+    },
+    required: ["isSignedIn", "accessToken", "userProfile", "showSignInDialog", "hideSignInDialog", "refreshToken", "signIn", "signOut"],
+    additionalProperties: false
   }
 });
 
 // ✅ Test 2: Service with function returning Observe
 const validObserveFn = createLazy({
   load: () => Promise.resolve({} as ServiceWithObserveFn),
-  properties: {
-    allUsers: 'observe',
-    selectUser: 'fn:observe',
-    fetchData: 'fn:promise'
+  schema: {
+    type: "object",
+    properties: {
+      allUsers: { type: "observe", value: {} },
+      selectUser: { type: "function", parameters: [{}], returns: { type: "observe", value: {} } },
+      fetchData: { type: "function", parameters: [], returns: { type: "promise", value: {} } }
+    },
+    required: ["allUsers", "selectUser", "fetchData"],
+    additionalProperties: false
   }
 });
 
 // ✅ Test 3: Service with AsyncGenerator
 const validGenerator = createLazy({
   load: () => Promise.resolve({} as ServiceWithGenerator),
-  properties: {
-    status: 'observe',
-    streamEvents: 'fn:generator',
-    cancel: 'fn:void'
+  schema: {
+    type: "object",
+    properties: {
+      status: { type: "observe", value: {} },
+      streamEvents: { type: "function", parameters: [], returns: { type: "generator", value: {} } },
+      cancel: { type: "function", parameters: [] }
+    },
+    required: ["status", "streamEvents", "cancel"],
+    additionalProperties: false
   }
 });
 
@@ -163,19 +178,29 @@ const validWithArgs = createLazy({
     console.log(args.apiUrl);
     return Promise.resolve({} as ConfigurableService);
   },
-  properties: {
-    config: 'observe',
-    fetch: 'fn:promise'
+  schema: {
+    type: "object",
+    properties: {
+      config: { type: "observe", value: {} },
+      fetch: { type: "function", parameters: [{}], returns: { type: "promise", value: {} } }
+    },
+    required: ["config", "fetch"],
+    additionalProperties: false
   }
 });
 
 // ✅ Test 4b: preload flag is accepted
 const validWithPreload = createLazy({
   load: () => Promise.resolve({} as ServiceWithObserveFn),
-  properties: {
-    allUsers: 'observe',
-    selectUser: 'fn:observe',
-    fetchData: 'fn:promise'
+  schema: {
+    type: "object",
+    properties: {
+      allUsers: { type: "observe", value: {} },
+      selectUser: { type: "function", parameters: [{}], returns: { type: "observe", value: {} } },
+      fetchData: { type: "function", parameters: [], returns: { type: "promise", value: {} } }
+    },
+    required: ["allUsers", "selectUser", "fetchData"],
+    additionalProperties: false
   },
   preload: true
 });
@@ -187,82 +212,112 @@ const validWithPreload = createLazy({
 // ❌ Test 5: Missing property 'refreshToken'
 const errorMissing = createLazy({
   load: () => Promise.resolve({} as SimpleAuthService),
-  // @ts-expect-error - Missing property 'refreshToken' in descriptor
-  properties: {
-    isSignedIn: 'observe',
-    accessToken: 'observe',
-    userProfile: 'observe',
-    showSignInDialog: 'fn:void',
-    hideSignInDialog: 'fn:void',
-    // Missing: refreshToken
-    signIn: 'fn:promise',
-    signOut: 'fn:promise'
+  // @ts-expect-error - Missing property 'refreshToken' in schema
+  schema: {
+    type: "object",
+    properties: {
+      isSignedIn: { type: "observe", value: {} },
+      accessToken: { type: "observe", value: {} },
+      userProfile: { type: "observe", value: {} },
+      showSignInDialog: { type: "function", parameters: [] },
+      hideSignInDialog: { type: "function", parameters: [] },
+      // Missing: refreshToken
+      signIn: { type: "function", parameters: [{}], returns: { type: "promise", value: {} } },
+      signOut: { type: "function", parameters: [], returns: { type: "promise", value: {} } }
+    },
+    required: ["isSignedIn", "accessToken", "userProfile", "showSignInDialog", "hideSignInDialog", "signIn", "signOut"],
+    additionalProperties: false
   }
 });
 
-// ❌ Test 6: Wrong descriptor type (observe property marked as fn:observe)
+// ❌ Test 6: Wrong schema type (observe property described as an observe function)
 const errorWrongType1 = createLazy({
   load: () => Promise.resolve({} as SimpleAuthService),
-  properties: {
-    // @ts-expect-error - Wrong descriptor type
-    isSignedIn: 'fn:observe', // WRONG: should be 'observe'
-    accessToken: 'observe',
-    userProfile: 'observe',
-    showSignInDialog: 'fn:void',
-    hideSignInDialog: 'fn:void',
-    refreshToken: 'fn:promise',
-    signIn: 'fn:promise',
-    signOut: 'fn:promise'
+  // @ts-expect-error - Wrong schema type for isSignedIn (function instead of observe)
+  schema: {
+    type: "object",
+    properties: {
+      isSignedIn: { type: "function", parameters: [], returns: { type: "observe", value: {} } }, // WRONG: should be observe
+      accessToken: { type: "observe", value: {} },
+      userProfile: { type: "observe", value: {} },
+      showSignInDialog: { type: "function", parameters: [] },
+      hideSignInDialog: { type: "function", parameters: [] },
+      refreshToken: { type: "function", parameters: [], returns: { type: "promise", value: {} } },
+      signIn: { type: "function", parameters: [{}], returns: { type: "promise", value: {} } },
+      signOut: { type: "function", parameters: [], returns: { type: "promise", value: {} } }
+    },
+    required: ["isSignedIn", "accessToken", "userProfile", "showSignInDialog", "hideSignInDialog", "refreshToken", "signIn", "signOut"],
+    additionalProperties: false
   }
 });
 
-// ❌ Test 7: Wrong descriptor type (void function marked as fn:promise)
+// ❌ Test 7: Wrong schema type (void function described as promise function)
 const errorWrongType2 = createLazy({
   load: () => Promise.resolve({} as SimpleAuthService),
-  properties: {
-    isSignedIn: 'observe',
-    accessToken: 'observe',
-    userProfile: 'observe',
-    // @ts-expect-error - Wrong descriptor type
-    showSignInDialog: 'fn:promise', // WRONG: should be 'fn:void'
-    hideSignInDialog: 'fn:void',
-    refreshToken: 'fn:promise',
-    signIn: 'fn:promise',
-    signOut: 'fn:promise'
+  // @ts-expect-error - Wrong schema type for showSignInDialog (promise instead of void)
+  schema: {
+    type: "object",
+    properties: {
+      isSignedIn: { type: "observe", value: {} },
+      accessToken: { type: "observe", value: {} },
+      userProfile: { type: "observe", value: {} },
+      showSignInDialog: { type: "function", parameters: [], returns: { type: "promise", value: {} } }, // WRONG: should be void
+      hideSignInDialog: { type: "function", parameters: [] },
+      refreshToken: { type: "function", parameters: [], returns: { type: "promise", value: {} } },
+      signIn: { type: "function", parameters: [{}], returns: { type: "promise", value: {} } },
+      signOut: { type: "function", parameters: [], returns: { type: "promise", value: {} } }
+    },
+    required: ["isSignedIn", "accessToken", "userProfile", "showSignInDialog", "hideSignInDialog", "refreshToken", "signIn", "signOut"],
+    additionalProperties: false
   }
 });
 
 // ❌ Test 8: Extra property that doesn't exist in service
 const errorExtra = createLazy({
   load: () => Promise.resolve({} as ServiceWithObserveFn),
-  properties: {
-    allUsers: 'observe',
-    selectUser: 'fn:observe',
-    fetchData: 'fn:promise',
-    // @ts-expect-error - Extra property
-    unknownProperty: 'observe' // EXTRA: doesn't exist in service
+  // @ts-expect-error - Extra property 'unknownProperty' not in service
+  schema: {
+    type: "object",
+    properties: {
+      allUsers: { type: "observe", value: {} },
+      selectUser: { type: "function", parameters: [{}], returns: { type: "observe", value: {} } },
+      fetchData: { type: "function", parameters: [], returns: { type: "promise", value: {} } },
+      unknownProperty: { type: "observe", value: {} } // EXTRA: doesn't exist in service
+    },
+    required: ["allUsers", "selectUser", "fetchData", "unknownProperty"],
+    additionalProperties: false
   }
 });
 
-// ❌ Test 9: Wrong descriptor for fn:observe (marked as observe)
+// ❌ Test 9: Wrong schema for observe function (described as observe property)
 const errorObserveFn = createLazy({
   load: () => Promise.resolve({} as ServiceWithObserveFn),
-  properties: {
-    allUsers: 'observe',
-    // @ts-expect-error - Wrong descriptor type
-    selectUser: 'observe', // WRONG: should be 'fn:observe'
-    fetchData: 'fn:promise'
+  // @ts-expect-error - Wrong schema type for selectUser (observe instead of observe function)
+  schema: {
+    type: "object",
+    properties: {
+      allUsers: { type: "observe", value: {} },
+      selectUser: { type: "observe", value: {} }, // WRONG: should be a function returning observe
+      fetchData: { type: "function", parameters: [], returns: { type: "promise", value: {} } }
+    },
+    required: ["allUsers", "selectUser", "fetchData"],
+    additionalProperties: false
   }
 });
 
-// ❌ Test 10: Wrong descriptor for generator
+// ❌ Test 10: Wrong schema for generator (described as promise function)
 const errorGenerator = createLazy({
   load: () => Promise.resolve({} as ServiceWithGenerator),
-  properties: {
-    status: 'observe',
-    // @ts-expect-error - Wrong descriptor type
-    streamEvents: 'fn:promise', // WRONG: should be 'fn:generator'
-    cancel: 'fn:void'
+  // @ts-expect-error - Wrong schema type for streamEvents (promise instead of generator)
+  schema: {
+    type: "object",
+    properties: {
+      status: { type: "observe", value: {} },
+      streamEvents: { type: "function", parameters: [], returns: { type: "promise", value: {} } }, // WRONG: should be generator
+      cancel: { type: "function", parameters: [] }
+    },
+    required: ["status", "streamEvents", "cancel"],
+    additionalProperties: false
   }
 });
 
@@ -288,7 +343,12 @@ describe('createLazy', () => {
 
     const factory = createLazy({
       load: createTestService,
-      properties: { value: 'observe' }
+      schema: {
+        type: "object",
+        properties: { value: { type: "observe", value: {} } },
+        required: ["value"],
+        additionalProperties: false
+      }
     });
 
     assert({
@@ -325,7 +385,12 @@ describe('createLazy', () => {
 
     const factory = createLazy({
       load: createTestService,
-      properties: { value: 'observe' }
+      schema: {
+        type: "object",
+        properties: { value: { type: "observe", value: {} } },
+        required: ["value"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -365,7 +430,12 @@ describe('createLazy', () => {
 
     const factory = createLazy({
       load: createTestService,
-      properties: { value: 'observe' }
+      schema: {
+        type: "object",
+        properties: { value: { type: "observe", value: {} } },
+        required: ["value"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -397,7 +467,12 @@ describe('createLazy', () => {
 
     const factory = createLazy({
       load: createTestService,
-      properties: { fetchData: 'fn:promise' }
+      schema: {
+        type: "object",
+        properties: { fetchData: { type: "function", parameters: [{}], returns: { type: "promise", value: {} } } },
+        required: ["fetchData"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -435,7 +510,12 @@ describe('createLazy', () => {
 
     const factory = createLazy({
       load: createTestService,
-      properties: { fetchData: 'fn:promise' }
+      schema: {
+        type: "object",
+        properties: { fetchData: { type: "function", parameters: [{}], returns: { type: "promise", value: {} } } },
+        required: ["fetchData"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -475,7 +555,12 @@ describe('createLazy', () => {
 
     const factory = createLazy({
       load: createTestService,
-      properties: { fetchData: 'fn:promise' }
+      schema: {
+        type: "object",
+        properties: { fetchData: { type: "function", parameters: [{}], returns: { type: "promise", value: {} } } },
+        required: ["fetchData"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -515,7 +600,12 @@ describe('createLazy', () => {
         serviceName: 'test-service',
         fetchData: async (id: string) => `result-${id}`
       }),
-      properties: { fetchData: 'fn:promise' }
+      schema: {
+        type: "object",
+        properties: { fetchData: { type: "function", parameters: [{}], returns: { type: "promise", value: {} } } },
+        required: ["fetchData"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -541,7 +631,12 @@ describe('createLazy', () => {
         serviceName: 'test-service',
         fetchData: async (id: string) => `result-${id}`
       }),
-      properties: { fetchData: 'fn:promise' }
+      schema: {
+        type: "object",
+        properties: { fetchData: { type: "function", parameters: [{}], returns: { type: "promise", value: {} } } },
+        required: ["fetchData"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -585,7 +680,12 @@ describe('createLazy', () => {
 
     const factory = createLazy({
       load: createTestService,
-      properties: { track: 'fn:void' }
+      schema: {
+        type: "object",
+        properties: { track: { type: "function", parameters: [{}] } },
+        required: ["track"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -621,7 +721,12 @@ describe('createLazy', () => {
 
     const factory = createLazy({
       load: createTestService,
-      properties: { selectUser: 'fn:observe' }
+      schema: {
+        type: "object",
+        properties: { selectUser: { type: "function", parameters: [{}], returns: { type: "observe", value: {} } } },
+        required: ["selectUser"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -658,7 +763,12 @@ describe('createLazy', () => {
           return () => {};
         }
       }),
-      properties: { selectUser: 'fn:observe' }
+      schema: {
+        type: "object",
+        properties: { selectUser: { type: "function", parameters: [{}], returns: { type: "observe", value: {} } } },
+        required: ["selectUser"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -687,7 +797,12 @@ describe('createLazy', () => {
           return () => {};
         }
       }),
-      properties: { selectUser: 'fn:observe' }
+      schema: {
+        type: "object",
+        properties: { selectUser: { type: "function", parameters: [{}], returns: { type: "observe", value: {} } } },
+        required: ["selectUser"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -724,7 +839,12 @@ describe('createLazy', () => {
           return () => {};
         }
       }),
-      properties: { selectUser: 'fn:observe' }
+      schema: {
+        type: "object",
+        properties: { selectUser: { type: "function", parameters: [{}], returns: { type: "observe", value: {} } } },
+        required: ["selectUser"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -769,7 +889,12 @@ describe('createLazy', () => {
 
     const factory = createLazy({
       load: createTestService,
-      properties: { streamData: 'fn:generator' }
+      schema: {
+        type: "object",
+        properties: { streamData: { type: "function", parameters: [], returns: { type: "generator", value: {} } } },
+        required: ["streamData"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -800,7 +925,12 @@ describe('createLazy', () => {
           yield 2;
         }
       }),
-      properties: { streamData: 'fn:generator' }
+      schema: {
+        type: "object",
+        properties: { streamData: { type: "function", parameters: [], returns: { type: "generator", value: {} } } },
+        required: ["streamData"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -829,7 +959,12 @@ describe('createLazy', () => {
           yield `${prefix}-2`;
         }
       }),
-      properties: { streamData: 'fn:generator' }
+      schema: {
+        type: "object",
+        properties: { streamData: { type: "function", parameters: [{}], returns: { type: "generator", value: {} } } },
+        required: ["streamData"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -873,7 +1008,12 @@ describe('createLazy', () => {
         serviceName: 'test-service',
         track: (event: string) => {}
       }),
-      properties: { track: 'fn:void' }
+      schema: {
+        type: "object",
+        properties: { track: { type: "function", parameters: [{}] } },
+        required: ["track"],
+        additionalProperties: false
+      }
     });
 
     const service = factory();
@@ -919,9 +1059,16 @@ describe('createLazy preload option', () => {
     }
   };
 
+  const trackSchema = {
+    type: "object",
+    properties: { track: { type: "function", parameters: [{}] } },
+    required: ["track"],
+    additionalProperties: false
+  } as const;
+
   test('does not load when preload is not set', async () => {
     const loadCount = { value: 0 };
-    const factory = createLazy({ load: makeLoader(loadCount), properties: { track: 'fn:void' } });
+    const factory = createLazy({ load: makeLoader(loadCount), schema: trackSchema });
 
     factory();
     await new Promise(resolve => setTimeout(resolve, 10));
@@ -937,7 +1084,7 @@ describe('createLazy preload option', () => {
   test('preload: true warms the service before any property touch', async () => {
     await withIdleCallback(async () => {
       const loadCount = { value: 0 };
-      const factory = createLazy({ load: makeLoader(loadCount), properties: { track: 'fn:void' }, preload: true });
+      const factory = createLazy({ load: makeLoader(loadCount), schema: trackSchema, preload: true });
 
       factory();
       await new Promise(resolve => setTimeout(resolve, 10));
@@ -954,7 +1101,7 @@ describe('createLazy preload option', () => {
   test('preload: true dedupes with the first real property access', async () => {
     await withIdleCallback(async () => {
       const loadCount = { value: 0 };
-      const factory = createLazy({ load: makeLoader(loadCount), properties: { track: 'fn:void' }, preload: true });
+      const factory = createLazy({ load: makeLoader(loadCount), schema: trackSchema, preload: true });
 
       const service = factory();
       service.track('event-1');

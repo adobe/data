@@ -163,9 +163,11 @@ export function createLazy<
       if (typeof idle === 'function') idle(() => { void ensureLoading(); });
     }
 
-    // Build lazy service object
+    // Build lazy service object. Expose the schema up front (before load) so the
+    // lazy instance is introspectable without triggering a load.
     const lazyService: any = {
       serviceName: 'lazy-service',
+      schema,
     };
 
     // Wrap each member based on the strategy derived from its schema

@@ -364,6 +364,37 @@ const errorMalformedReturns = createLazy({
 // ============================================================================
 
 describe('createLazy', () => {
+  test('lazy instance exposes its schema before load', async () => {
+    interface TestService extends Service {
+      value: Observe<string>;
+    }
+
+    let loaded = false;
+    const schema = {
+      type: "object",
+      properties: { value: { type: "observe", value: {} } },
+      required: ["value"],
+      additionalProperties: false
+    } as const;
+
+    const factory = createLazy({
+      load: (): Promise<TestService> => {
+        loaded = true;
+        return Promise.resolve({ serviceName: 'test-service', value: (n) => { n('x'); return () => {}; } });
+      },
+      schema
+    });
+
+    const service = factory();
+
+    assert({
+      given: 'a lazy service is created',
+      should: 'expose the same schema without triggering a load',
+      actual: `${service.schema === schema},${loaded}`,
+      expected: 'true,false'
+    });
+  });
+
   test('factory pattern', async () => {
     interface TestService extends Service {
       value: Observe<string>;

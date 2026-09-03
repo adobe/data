@@ -2,6 +2,7 @@
 
 export * from "./component/component.js";
 export * from "./component/stack.js";
+export * from "./component/hooks-controller.js";
 export * from "./use-state.js";
 export * from "./use-effect.js";
 export * from "./use-connected.js";

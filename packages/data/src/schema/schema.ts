@@ -18,7 +18,13 @@ export type Conditional = {
   value: JSONMergePatch;
 }
 
-const schemaTypes = { number: true, integer: true, string: true, boolean: true, null: true, array: true, object: true, 'typed-buffer': true, blob: true } as const;
+// Data types describe serializable/storable values. The type-constructor types
+// (observe/promise/generator/function) describe data-adjacent *types* — reactive
+// values, async values, streams, and callables — so a Schema can describe a
+// service surface, not just data. Like `blob`/`typed-buffer`, these are confined
+// by usage: they belong in service/interface schemas, never in ECS component,
+// resource, or typed-buffer schemas (which handle-or-throw at runtime, as today).
+const schemaTypes = { number: true, integer: true, string: true, boolean: true, null: true, array: true, object: true, 'typed-buffer': true, blob: true, observe: true, promise: true, generator: true, function: true } as const;
 
 export interface Schema {
   type?: keyof typeof schemaTypes;
@@ -60,6 +66,41 @@ export interface Schema {
   minItems?: number;
   maxItems?: number;
   items?: Schema;
+  // The wrapped value type for the `observe`/`promise`/`generator` constructors:
+  // `{ type: "observe", value: S }` → `Observe<ToType<S>>`, etc. Absent ⇒ any.
+  value?: Schema;
+  /**
+   * The signature of the `function` constructor, grouped so these members live
+   * only on function schemas rather than on every `Schema`:
+   * `{ type: "function", signature: { parameters, returns } }` →
+   * `(...args) => ToType<returns>`. Absent `parameters` ⇒ no args; absent
+   * `returns` ⇒ void; absent `signature` entirely ⇒ `() => void`.
+   */
+  signature?: {
+    readonly parameters?: readonly Schema[];
+    readonly returns?: Schema;
+    /**
+     * Invocation policy — who may call this function from an **untrusted
+     * channel**. Read at runtime by the executor that performs the invocation;
+     * pure metadata that does NOT affect the type produced by `Schema.ToType`
+     * (a function differing only in `external` derives the same signature), nor
+     * service-schema validation or lazy wrapping.
+     *
+     * The two channels have **deliberately opposite default polarity**, matching
+     * their trust level. Resolve them with `resolveExternalInvocation(schema)`
+     * (see `resolve-external-invocation.ts`) — the single source of truth —
+     * rather than re-deriving per call site, because getting the `link` default
+     * wrong is a security hole.
+     *
+     * - `link` — a deeplink / URL: the least-trusted channel (anyone can craft a
+     *   URL and get a victim to open it in their authenticated session).
+     *   **Default-deny whitelist**: link-invocable only when `link === true`;
+     *   absent or `false` ⇒ not link-invocable.
+     * - `agent` — an agent acting on the user's behalf: more trusted.
+     *   **Default-allow blacklist**: agent-invocable unless `agent === false`.
+     */
+    readonly external?: { readonly agent?: boolean; readonly link?: boolean };
+  };
   properties?: { readonly [key: string]: Schema };
   required?: readonly string[];
   additionalProperties?: boolean | Schema;

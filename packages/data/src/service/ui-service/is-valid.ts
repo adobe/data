@@ -88,9 +88,12 @@ type IsValidProperty<P> =
   : P extends (...args: any[]) => infer R
   ? ValidReturnType<R>
   : P extends object
-  ? keyof P extends never
+  // Exclude base-Service metadata keys (`serviceName`/`schema`) from nested
+  // objects — they are metadata, not data members, and it keeps validation from
+  // recursing into the deeply self-referential `Schema` on the `schema` slot.
+  ? Exclude<keyof P, keyof Service> extends never
   ? false
-  : { [K in keyof P]: IsValidProperty<P[K]> } extends Record<keyof P, true>
+  : { [K in Exclude<keyof P, keyof Service>]: IsValidProperty<P[K]> } extends Record<Exclude<keyof P, keyof Service>, true>
   ? true
   : false
   : false;

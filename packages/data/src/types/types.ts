@@ -103,7 +103,7 @@ export type IsUnknown<T> = unknown extends T
   : false;
 
 
-export type DeepReadonly<T> = T extends Function | Branded | Element | Blob
+export type DeepReadonly<T> = T extends Function | Branded | Element | Blob | Promise<any> | AsyncGenerator<any, any, any>
   ? T
   : T extends number | string | boolean | symbol | bigint
   ? T

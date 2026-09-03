@@ -1,7 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { TypedBuffer } from "../typed-buffer/typed-buffer.js";
-import { DeepReadonly, EquivalentTypes, True } from "../types/types.js";
+import { DeepReadonly, EquivalentTypes, False, True } from "../types/types.js";
+import type { Observe } from "../observe/index.js";
 import { Schema } from "./schema.js";
 
 export type ToType<T, Depth extends number = 5> =
@@ -26,6 +27,16 @@ type FromSchemaInternal<T, Depth extends number = 5> = T extends { const: infer 
   ? boolean
   : T extends { type: 'null' }
   ? null
+  : T extends { type: 'blob' }
+  ? Blob
+  : T extends { type: 'observe' }
+  ? Observe<ToType<ValueSchema<T>, Decrement<Depth>>>
+  : T extends { type: 'promise' }
+  ? Promise<ToType<ValueSchema<T>, Decrement<Depth>>>
+  : T extends { type: 'generator' }
+  ? AsyncGenerator<ToType<ValueSchema<T>, Decrement<Depth>>>
+  : T extends { type: 'function' }
+  ? FromSchemaFunction<T, Decrement<Depth>>
   : T extends { type: 'typed-buffer', items: infer Items }
   ? TypedBuffer<FromSchemaInternal<Items>>
   : T extends { type: 'typed-buffer' }
@@ -44,6 +55,28 @@ type Decrement<N extends number> = ((...x: any[]) => void) extends (
 ) => void
   ? R['length']
   : never;
+
+// The wrapped value schema for observe/promise/generator; absent ⇒ any.
+type ValueSchema<T> = T extends { value: infer V } ? V : {};
+
+// The function-constructor mapping: `signature.parameters` → positional args,
+// `signature.returns` → result. Absent `signature` ⇒ `() => void`.
+type FromSchemaFunction<T, Depth extends number> =
+  T extends { signature: infer Sig }
+  ? (...args: FromSchemaArgs<SignatureParams<Sig>, Depth>) => FromSchemaReturns<Sig, Depth>
+  : () => void;
+
+// The signature's parameters tuple; absent ⇒ no args.
+type SignatureParams<Sig> =
+  Sig extends { parameters: infer P } ? P extends readonly Schema[] ? P : readonly [] : readonly [];
+
+type FromSchemaArgs<P extends readonly Schema[], Depth extends number> = {
+  -readonly [K in keyof P]: ToType<P[K], Depth>;
+};
+
+// Absent `returns` ⇒ void (a function that returns nothing meaningful).
+type FromSchemaReturns<Sig, Depth extends number> =
+  Sig extends { returns: infer R } ? R extends Schema ? ToType<R, Depth> : void : void;
 
 type FromSchemaArray<T, Depth extends number> = T extends {
   items: infer Items;
@@ -263,4 +296,78 @@ type TestAllOfSingle = ToType<{
   allOf: [{ type: 'object'; properties: { name: { type: 'string' } } }]
 }>; // { name?: string }
 type CheckAllOfSingle = True<EquivalentTypes<TestAllOfSingle, { name?: string }>>;
+
+// ============================================================================
+// TYPE-CONSTRUCTOR SCHEMAS (data-adjacent types)
+// ============================================================================
+
+// observe
+type TestObserve = ToType<{ type: 'observe', value: { type: 'number' } }>; // Observe<number>
+type CheckObserve = True<EquivalentTypes<TestObserve, Observe<number>>>;
+
+type TestObserveNoValue = ToType<{ type: 'observe' }>; // Observe<any>
+type CheckObserveNoValue = True<EquivalentTypes<TestObserveNoValue, Observe<any>>>;
+
+type TestObserveObject = ToType<{
+  type: 'observe',
+  value: { type: 'object', properties: { x: { type: 'number' } }, required: ['x'], additionalProperties: false }
+}>; // Observe<{ readonly x: number }>
+type CheckObserveObject = True<EquivalentTypes<TestObserveObject, Observe<{ readonly x: number }>>>;
+
+// promise
+type TestPromise = ToType<{ type: 'promise', value: { type: 'string' } }>; // Promise<string>
+type CheckPromise = True<EquivalentTypes<TestPromise, Promise<string>>>;
+
+// generator
+type TestGenerator = ToType<{ type: 'generator', value: { type: 'boolean' } }>; // AsyncGenerator<boolean>
+type CheckGenerator = True<EquivalentTypes<TestGenerator, AsyncGenerator<boolean>>>;
+
+// function
+type TestFunction = ToType<{
+  type: 'function', signature: { parameters: [{ type: 'number' }, { type: 'string' }], returns: { type: 'boolean' } }
+}>; // (a: number, b: string) => boolean
+type CheckFunction = True<EquivalentTypes<TestFunction, (a: number, b: string) => boolean>>;
+
+type TestFunctionVoid = ToType<{ type: 'function', signature: { parameters: [] } }>; // () => void
+type CheckFunctionVoid = True<EquivalentTypes<TestFunctionVoid, () => void>>;
+
+type TestFunctionNoParams = ToType<{ type: 'function' }>; // () => void (no signature)
+type CheckFunctionNoParams = True<EquivalentTypes<TestFunctionNoParams, () => void>>;
+
+// `external` invocation-policy metadata never affects the derived function type.
+type TestFunctionExternalIgnored = ToType<{
+  type: 'function', signature: {
+    parameters: [{ type: 'number' }], returns: { type: 'promise', value: { type: 'number' } },
+    external: { link: true, agent: false }
+  }
+}>; // (a: number) => Promise<number>
+type CheckFunctionExternalIgnored = True<EquivalentTypes<TestFunctionExternalIgnored, (a: number) => Promise<number>>>;
+
+// Driver case: an AsyncGenerator<Data> parameter nested inside an object argument,
+// with a Promise return — the shape plain-Data parameters could not express.
+type TestStreamingAction = ToType<{
+  type: 'function',
+  signature: {
+    parameters: [{
+      type: 'object',
+      properties: { chunks: { type: 'generator', value: { type: 'number' } } },
+      required: ['chunks'],
+      additionalProperties: false
+    }],
+    returns: { type: 'promise', value: { type: 'null' } }
+  }
+}>; // (arg: { readonly chunks: AsyncGenerator<number> }) => Promise<null>
+type CheckStreamingAction = True<EquivalentTypes<
+  TestStreamingAction,
+  (arg: { readonly chunks: AsyncGenerator<number> }) => Promise<null>
+>>;
+
+// Negatives — inner types, constructor kinds, and function signatures are honored.
+type CheckObserveNotString = False<EquivalentTypes<TestObserve, Observe<string>>>;
+type CheckObserveNotPromise = False<EquivalentTypes<TestObserve, Promise<number>>>;
+type CheckPromiseNotObserve = False<EquivalentTypes<TestPromise, Observe<string>>>;
+type CheckGeneratorNotPromise = False<EquivalentTypes<TestGenerator, Promise<boolean>>>;
+type CheckFunctionWrongArg = False<EquivalentTypes<TestFunction, (a: string, b: string) => boolean>>;
+type CheckFunctionWrongReturn = False<EquivalentTypes<TestFunction, (a: number, b: string) => number>>;
+type CheckFunctionWrongArity = False<EquivalentTypes<TestFunction, (a: number) => boolean>>;
 

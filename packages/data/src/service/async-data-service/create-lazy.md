@@ -2,12 +2,13 @@
 
 ## Overview
 
-`AsyncDataService.createLazy` provides a type-safe way to create lazy-loading wrapper factories for AsyncDataServices. The real service is only loaded when the first property is accessed.
+`AsyncDataService.createLazy` provides a type-safe way to create lazy-loading wrapper factories for AsyncDataServices. The real service is only loaded when the first property is accessed. Wrapping is driven by the service's **sideloaded schema** — a `Schema` published beside the service (e.g. `MyService.schema`) rather than attached to instances.
 
 ## Import
 
 ```typescript
 import { AsyncDataService } from "@adobe/data/service";
+import { Schema } from "@adobe/data/schema";
 ```
 
 ## API Surface
@@ -15,12 +16,12 @@ import { AsyncDataService } from "@adobe/data/service";
 ```typescript
 AsyncDataService.createLazy({
   load: (...args: any[]) => Promise<Service>,
-  properties: { [key: string]: PropertyDescriptor },
+  schema: Schema,          // the service's object schema (e.g. MyService.schema)
   preload?: boolean
 }): (...args: Args) => Service
 ```
 
-Returns a **factory function** that creates lazy service instances. TypeScript automatically infers both the service type and argument types from the `load` function.
+Returns a **factory function** that creates lazy service instances. TypeScript infers the service type and argument types from the `load` function, and enforces that `schema` completely and correctly describes the loaded service (see [Type Safety Guarantees](#type-safety-guarantees)).
 
 ### Preloading
 
@@ -29,45 +30,31 @@ By default a lazy service loads on first property access. Set `preload: true` to
 ```typescript
 AsyncDataService.createLazy({
   load: () => import('./analytics').then(m => m.create()),
-  properties: { send: 'fn:void', pageload: 'fn:void' },
+  schema: AnalyticsService.schema,
   preload: true   // warm at browser idle
 });
 ```
 
-### Descriptor Format
+### The schema
 
-```typescript
-type LazyServiceDescriptor<T extends Service, Args = void> = {
-  // Loader function - may accept optional constructor args
-  load: Args extends void 
-    ? () => Promise<T> 
-    : (args: Args) => Promise<T>;
-  
-  // Must describe every property (excluding base Service properties)
-  properties: {
-    [K in Exclude<keyof T, keyof Service>]: PropertyDescriptor<T[K]>;
-  };
-};
-```
+`schema` is an object `Schema` whose `properties` describe each service member using the schema type-constructors. `createLazy` derives the runtime wrapper strategy from each member's schema:
 
-### Property Descriptors
+- `{ type: "observe", value: S }` → an `Observe<T>` property
+- `{ type: "function", signature: { returns: { type: "observe", … } } }` → a function returning `Observe<T>`
+- `{ type: "function", signature: { returns: { type: "generator", … } } }` → a function returning `AsyncGenerator<T>`
+- `{ type: "function", signature: { returns: { type: "promise", … } } }` → a function returning `Promise<T>`
+- `{ type: "function" }` (no `signature`) → a function returning `void`
 
-Each property must be described with a string that matches its type:
-
-- `'observe'` - For `Observe<T>` properties
-- `'fn:observe'` - For functions returning `Observe<T>`
-- `'fn:generator'` - For functions returning `AsyncGenerator<T>`
-- `'fn:promise'` - For functions returning `Promise<T>`
-- `'fn:void'` - For functions returning `void`
+The function constructor groups its `parameters`/`returns` (and invocation-policy `external`) under a nested `signature`, so those members live only on function schemas. Use `value: {}` as a "don't-care" (resolves to `any`) when a member's precise value type doesn't matter for wrapping; fill in real value schemas when the schema is also a published contract. Function `signature.parameters` list only the **required** parameters. Publish the schema beside the service with the namespace pattern and validate it with `IsValidWithCompleteSchema`.
 
 ## Type Safety Guarantees
 
-TypeScript will enforce:
+TypeScript enforces, via `IsValidWithCompleteSchema`:
 
-1. ✅ **Completeness** - All service properties must be declared
-2. ✅ **Type Matching** - Each descriptor must match the actual property type
-3. ✅ **No Extra Properties** - Cannot add properties that don't exist in service
-4. ✅ **Clear Errors** - Missing or wrong types produce clear compile errors
+1. ✅ **Completeness** — every service member must be described by the schema
+2. ✅ **Type Matching** — each member's schema must match the actual member type
+3. ✅ **No Extra Members** — the schema cannot describe members that don't exist on the service
+4. ✅ **Clear Errors** — a mismatch reports a `SchemaMismatch` on the `schema` argument
 
 ## Usage Examples
 
@@ -75,6 +62,7 @@ TypeScript will enforce:
 
 ```typescript
 import { AsyncDataService } from "@adobe/data/service";
+import { Schema } from "@adobe/data/schema";
 
 interface AuthService extends Service {
   isSignedIn: Observe<boolean>;
@@ -83,15 +71,24 @@ interface AuthService extends Service {
   signOut: () => void;
 }
 
+namespace AuthService {
+  export const schema = {
+    type: "object",
+    properties: {
+      isSignedIn: { type: "observe", value: {} },
+      accessToken: { type: "observe", value: {} },
+      signIn: { type: "function", signature: { parameters: [{}], returns: { type: "promise" } } },
+      signOut: { type: "function" },
+    },
+    required: ["isSignedIn", "accessToken", "signIn", "signOut"],
+    additionalProperties: false,
+  } as const satisfies Schema;
+}
+
 // Define the lazy factory
 const createLazyAuthService = AsyncDataService.createLazy({
   load: () => import('./auth-service').then(m => m.createAuthService()),
-  properties: {
-    isSignedIn: 'observe',
-    accessToken: 'observe',
-    signIn: 'fn:promise',
-    signOut: 'fn:void'
-  }
+  schema: AuthService.schema,
 });
 
 // Create an instance
@@ -101,25 +98,28 @@ const authService = createLazyAuthService();
 ### Service With Constructor Args
 
 ```typescript
-import { AsyncDataService } from "@adobe/data/service";
-
 interface ConfigService extends Service {
   config: Observe<Config>;
   fetch: (endpoint: string) => Promise<Data>;
 }
 
-type ServiceConfig = {
-  apiUrl: string;
-  timeout?: number;
-};
+namespace ConfigService {
+  export const schema = {
+    type: "object",
+    properties: {
+      config: { type: "observe", value: {} },
+      fetch: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } },
+    },
+    required: ["config", "fetch"],
+    additionalProperties: false,
+  } as const satisfies Schema;
+}
 
-// Define the lazy factory
+type ServiceConfig = { apiUrl: string; timeout?: number };
+
 const createLazyConfigService = AsyncDataService.createLazy({
   load: (config: ServiceConfig) => import('./config-service').then(m => m.create(config)),
-  properties: {
-    config: 'observe',
-    fetch: 'fn:promise'
-  }
+  schema: ConfigService.schema,
 });
 
 // Create instances with different configs
@@ -127,103 +127,72 @@ const prodService = createLazyConfigService({ apiUrl: 'https://api.prod.com' });
 const testService = createLazyConfigService({ apiUrl: 'https://api.test.com' });
 ```
 
-### All Property Types
+### All Member Kinds
 
 ```typescript
-import { AsyncDataService } from "@adobe/data/service";
-
 interface ComplexService extends Service {
-  // Observe property
-  status: Observe<string>;
-  
-  // Function returning Observe
-  selectById: (id: string) => Observe<Data | null>;
-  
-  // Function returning AsyncGenerator
-  streamEvents: () => AsyncGenerator<Event>;
-  
-  // Function returning Promise
-  fetchData: () => Promise<Data>;
-  
-  // Function returning void
-  clearCache: () => void;
+  status: Observe<string>;                                 // observe
+  selectById: (id: string) => Observe<Data | null>;       // function → observe
+  streamEvents: () => AsyncGenerator<Event>;              // function → generator
+  fetchData: () => Promise<Data>;                          // function → promise
+  clearCache: () => void;                                  // function → void
+}
+
+namespace ComplexService {
+  export const schema = {
+    type: "object",
+    properties: {
+      status: { type: "observe", value: {} },
+      selectById: { type: "function", signature: { parameters: [{}], returns: { type: "observe", value: {} } } },
+      streamEvents: { type: "function", signature: { returns: { type: "generator", value: {} } } },
+      fetchData: { type: "function", signature: { returns: { type: "promise", value: {} } } },
+      clearCache: { type: "function" },
+    },
+    required: ["status", "selectById", "streamEvents", "fetchData", "clearCache"],
+    additionalProperties: false,
+  } as const satisfies Schema;
 }
 
 const createLazyComplexService = AsyncDataService.createLazy({
   load: () => import('./complex').then(m => m.createService()),
-  properties: {
-    status: 'observe',
-    selectById: 'fn:observe',
-    streamEvents: 'fn:generator',
-    fetchData: 'fn:promise',
-    clearCache: 'fn:void'
-  }
+  schema: ComplexService.schema,
 });
-
-const service = createLazyComplexService();
 ```
 
 ## Compile-Time Error Examples
 
-### Missing Property
+A schema that does not completely and correctly describe the service reports a `SchemaMismatch` on the `schema` argument:
 
 ```typescript
-// ❌ Error: Property 'signOut' is missing
-const error = AsyncDataService.createLazy({
+// ❌ Missing member 'signOut' — schema is not a complete description
+AsyncDataService.createLazy({
   load: () => import('./auth').then(m => m.create()),
-  properties: {
-    isSignedIn: 'observe',
-    accessToken: 'observe',
-    signIn: 'fn:promise'
-    // Missing: signOut - TypeScript will error
-  }
+  schema: {
+    type: "object",
+    properties: { isSignedIn: { type: "observe", value: {} }, signIn: { type: "function", signature: { parameters: [{}], returns: { type: "promise" } } } },
+    required: ["isSignedIn", "signIn"],
+    additionalProperties: false,
+  } as const satisfies Schema,   // ← error: schema omits `signOut` (and `accessToken`)
 });
-```
 
-### Wrong Descriptor Type
-
-```typescript
-// ❌ Error: Type '"fn:observe"' is not assignable to type '"observe"'
-const error = AsyncDataService.createLazy({
-  load: () => import('./auth').then(m => m.create()),
-  properties: {
-    isSignedIn: 'fn:observe', // Wrong: should be 'observe'
-    accessToken: 'observe',
-    signIn: 'fn:promise',
-    signOut: 'fn:void'
-  }
-});
-```
-
-### Extra Property
-
-```typescript
-// ❌ Error: 'unknownProp' does not exist in type
-const error = AsyncDataService.createLazy({
-  load: () => import('./auth').then(m => m.create()),
-  properties: {
-    isSignedIn: 'observe',
-    accessToken: 'observe',
-    signIn: 'fn:promise',
-    signOut: 'fn:void',
-    unknownProp: 'observe' // Extra: doesn't exist in service
-  }
-});
+// ❌ Wrong kind — `isSignedIn` is an observe property, not a function
+// ❌ Extra member — a property not on the service
+// both likewise report a SchemaMismatch on the schema argument
 ```
 
 ## Behavior (Queue Strategy)
 
 All calls are queued and executed in order once the service loads:
 
-- **`'observe'`** - Subscription is deferred until service loads
-- **`'fn:observe'`** - Calls are queued, each returns Observe that subscribes when loaded
-- **`'fn:generator'`** - Calls are queued, each returns AsyncGenerator that yields when loaded
-- **`'fn:promise'`** - Calls are queued, each returns Promise that resolves when loaded
-- **`'fn:void'`** - Calls are queued, all execute in order when loaded
+- **observe property** — subscription is deferred until the service loads
+- **function → observe** — calls queued; each returns an `Observe` that subscribes when loaded
+- **function → generator** — calls queued; each returns an `AsyncGenerator` that yields when loaded
+- **function → promise** — calls queued; each returns a `Promise` that resolves when loaded
+- **function → void** — calls queued; all execute in order when loaded
 
 ## Validation
 
-Use `AsyncDataService.IsValid` to validate that a service conforms to the AsyncDataService pattern:
+Use `AsyncDataService.IsValid` to validate that a service conforms to the AsyncDataService pattern, and `IsValidWithCompleteSchema` to validate that a sideloaded schema matches it exactly:
 
 ```typescript
 import { AsyncDataService, Assert } from "@adobe/data/service";
@@ -233,14 +202,14 @@ interface MyService extends Service {
   fetchData: () => Promise<number>;
 }
 
-// This will compile successfully if MyService is a valid async data service
-type CheckValidDataService = Assert<AsyncDataService.IsValid<MyService>>;
+type CheckValid = Assert<AsyncDataService.IsValid<MyService>>;
+type CheckSchema = Assert<AsyncDataService.IsValidWithCompleteSchema<MyService, typeof MyService.schema>>;
 ```
 
 ## Testing
 
 See `create-lazy.test.ts` for comprehensive type safety tests including:
 
-- Valid usage with all property types
-- Error cases for missing/wrong/extra properties
+- Valid usage with all member kinds
+- Error cases for missing / wrong / extra members
 - Services with and without constructor args

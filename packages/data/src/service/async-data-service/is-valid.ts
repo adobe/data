@@ -89,7 +89,10 @@ type AllArgsAreData<Args extends readonly any[]> =
   : false;
 
 // Helper: Check if a single property is valid
-// Allows: Observe<Data>, valid functions, and readonly objects whose properties are all valid (for organization)
+// Allows: Observe<Data>, valid functions, and readonly objects whose properties are all valid (for organization).
+// Nested objects exclude base-Service metadata keys (`serviceName`/`schema`) — those are metadata, not data
+// members (the top-level check excludes them too), and it keeps validation from recursing into the deeply
+// self-referential `Schema` type carried by the optional `schema` slot.
 type IsValidProperty<P> =
   P extends Observe<infer T>
   ? T extends Data ? true : false
@@ -98,9 +101,9 @@ type IsValidProperty<P> =
   ? ValidReturnType<R>
   : false
   : P extends object
-  ? keyof P extends never
+  ? Exclude<keyof P, keyof Service> extends never
   ? false
-  : { [K in keyof P]: IsValidProperty<P[K]> } extends Record<keyof P, true>
+  : { [K in Exclude<keyof P, keyof Service>]: IsValidProperty<P[K]> } extends Record<Exclude<keyof P, keyof Service>, true>
   ? true
   : false
   : false;

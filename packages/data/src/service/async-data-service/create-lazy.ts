@@ -23,12 +23,6 @@ type InferArgs<F> =
   ? A
   : never;
 
-// Surfaced on the `schema` argument when it does not completely and correctly
-// describe the loaded service, so the mismatch is caught at the call site.
-type SchemaMismatch = {
-  readonly __createLazyError: "createLazy: schema must completely and correctly describe the loaded service";
-};
-
 // createLazy only wraps observe values and functions (classified by what they
 // return). Constrain each member schema to those shapes so an unsupported member
 // — a nested organizational object, a data property, or a function whose
@@ -91,8 +85,8 @@ function memberKind(member: Schema): WrapKind {
  * @returns A factory function that creates lazy service instances
  *
  * TypeScript enforces that `schema` describes every member of the loaded service
- * with the correct wrapper kind; otherwise the `schema` argument reports a
- * `SchemaMismatch`. Note: member value/parameter schemas authored as `{}`
+ * with the correct wrapper kind; otherwise the `schema` argument fails to type-check
+ * with a `__createLazyError` marker. Note: member value/parameter schemas authored as `{}`
  * resolve to `any`, so presence and wrapper kind are checked but inner payload
  * types are only verified where a precise `value`/parameter schema is supplied.
  *
@@ -124,7 +118,8 @@ export function createLazy<
     preload?: boolean
   } & (IsValidWithCompleteSchema<InferService<LoadFn>, S> extends true
     ? unknown
-    : { schema: SchemaMismatch })
+    // Inline (not a named type) so the mismatch marker isn't a documented symbol.
+    : { schema: { readonly __createLazyError: "createLazy: schema must completely and correctly describe the loaded service" } })
 ): InferArgs<LoadFn> extends void
   ? () => InferService<LoadFn>
   : (args: InferArgs<LoadFn>) => InferService<LoadFn> {

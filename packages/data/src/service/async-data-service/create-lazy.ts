@@ -4,6 +4,7 @@ import { Observe } from "../../observe/index.js";
 import { Schema } from "../../schema/index.js";
 import { Service } from "../service.js";
 import { EquivalentTypes } from "../../types/types.js";
+import { memberKind } from "./member-kind.js";
 
 // ============================================================================
 // TYPE INFERENCE HELPERS
@@ -47,38 +48,6 @@ type LazyServiceSchema = Schema & {
 // service's definition site if you also want async-data-service conformance.
 type SchemaMatchesService<T extends Service, S extends Schema> =
   EquivalentTypes<Schema.ToType<S>, Omit<T, keyof Service>>;
-
-// ============================================================================
-// RUNTIME WRAPPER KIND
-// ============================================================================
-
-type WrapKind = "observe" | "fn:observe" | "fn:promise" | "fn:generator" | "fn:void";
-
-// The runtime wrapper strategy for a service member, derived from its schema:
-// an `observe` value, or a `function` classified by what it returns. Well-typed
-// callers can never reach a throw (the LazyServiceSchema constraint rejects
-// unsupported members at compile time); the throws defend untyped/`any` callers.
-function memberKind(member: Schema): WrapKind {
-  if (member.type === "observe") return "observe";
-  if (member.type === "function") {
-    const returns = member.signature?.returns;
-    if (returns === undefined) return "fn:void"; // absent returns ⇒ void
-    switch (returns.type) {
-      case "observe": return "fn:observe";
-      case "promise": return "fn:promise";
-      case "generator": return "fn:generator";
-      default:
-        // A present `returns` with an unrecognized type must not silently become
-        // void (that would drop the result); fail loudly instead.
-        throw new Error(
-          `createLazy: unsupported function returns schema type "${returns.type}" — must be observe, promise, generator, or omitted (void)`,
-        );
-    }
-  }
-  throw new Error(
-    `createLazy: unsupported member schema type "${member.type}" — service members must be observe or function schemas`,
-  );
-}
 
 // ============================================================================
 // MAIN FUNCTION SIGNATURE

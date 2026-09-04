@@ -4,6 +4,8 @@ packages:
   - 'packages/data-testing'
   - 'packages/data-persistence'
   - 'packages/data-sync'
+  - 'packages/data-rpc'
+  - 'packages/data-rpc-iframe'
   - 'packages/data-lit'
   - 'packages/data-lit-todo'
   - 'packages/data-react'

@@ -3,11 +3,13 @@
 import type { Schema } from "@adobe/data/schema";
 import type { InterpolationMode } from "../interpolation-mode/interpolation-mode.js";
 import { componentwiseLerp } from "./componentwise-lerp.js";
+import { interpolatorRegistry } from "./interpolator-registry.js";
 
 /**
  * Dispatches to a schema-declared interpolator if present, otherwise falls
  * back to a sensible default: `step` returns `next`, `linear` walks the schema
- * and lerps numeric leaves. `cubicSpline` requires a schema override.
+ * and lerps numeric leaves. `cubicSpline` requires a schema override. A schema
+ * names its interpolator (pure JSON); the name is resolved via the registry.
  */
 export function interpolate(
     schema: Schema,
@@ -16,8 +18,12 @@ export function interpolate(
     next: any,
     t: number,
 ): any {
-    const custom = schema.interpolators?.[mode];
-    if (custom) return custom(prev, next, t);
+    const name = schema.interpolators?.[mode];
+    if (name !== undefined) {
+        const custom = interpolatorRegistry[name];
+        if (!custom) throw new Error(`interpolate: unknown interpolator "${name}" for mode "${mode}"`);
+        return custom(prev, next, t);
+    }
     if (mode === "step") return prev;
     if (mode === "linear") return componentwiseLerp(schema, prev, next, t);
     throw new Error(`interpolate: schema type "${schema.type}" has no "${mode}" interpolator`);

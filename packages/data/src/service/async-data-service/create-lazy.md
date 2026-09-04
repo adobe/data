@@ -2,7 +2,7 @@
 
 ## Overview
 
-`AsyncDataService.createLazy` provides a type-safe way to create lazy-loading wrapper factories for AsyncDataServices. The real service is only loaded when the first property is accessed. Wrapping is driven by the service's **sideloaded schema** — a `Schema` published beside the service (e.g. `MyService.schema`) rather than attached to instances.
+`AsyncDataService.createLazy` provides a type-safe way to create lazy-loading wrapper factories for AsyncDataServices. The real service is only loaded when the first property is accessed. Wrapping is driven by the service's **sideloaded schema** — a `Schema` authored beside the service (e.g. `MyService.schema`) and passed to `createLazy`. (Separately, a service may also expose that schema at runtime via the optional base-`Service` `schema` slot, typed `Observe<Schema>` so it can change as the interface evolves.)
 
 ## Import
 

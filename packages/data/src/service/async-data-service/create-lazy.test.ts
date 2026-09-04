@@ -410,10 +410,14 @@ describe('createLazy', () => {
 
     const service = factory();
 
+    // The schema slot is Observe<Schema>; subscribing emits the constant synchronously.
+    let observed: unknown;
+    service.schema?.((s) => { observed = s; });
+
     assert({
       given: 'a lazy service is created',
-      should: 'expose the same schema without triggering a load',
-      actual: `${service.schema === schema},${loaded}`,
+      should: 'expose its schema as a constant observable without triggering a load',
+      actual: `${observed === schema},${loaded}`,
       expected: 'true,false'
     });
   });

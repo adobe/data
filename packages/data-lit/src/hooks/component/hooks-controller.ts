@@ -13,7 +13,7 @@ const HOOKS_CONTROLLER = Symbol("data-lit.hooksController");
 type ReactiveHost = Component & ReactiveControllerHost & { [HOOKS_CONTROLLER]?: boolean };
 
 function isReactiveHost(host: Component): host is ReactiveHost {
-    return typeof (host as Partial<ReactiveControllerHost>).addController === "function";
+    return "addController" in host && typeof host.addController === "function";
 }
 
 /**
@@ -29,6 +29,11 @@ function disposeHooks(host: Component): void {
             (hook as { dispose?: () => void } | undefined)?.dispose?.();
         }
     }
+    // Invariant: every live subscription (useEffect / useObservable / ...) exposes a
+    // `dispose` and is torn down in the loop above, so nothing should fire after this.
+    // A useState setter closure that still runs post-disconnect would write into the
+    // emptied array and requestUpdate a detached host. That signals an un-torn-down
+    // subscription (a bug at the subscription site), not something to guard here.
     host.hooks = [];
     host.hookIndex = 0;
 }
@@ -63,11 +68,18 @@ export function installHooksController(host: Component): void {
     if (!isReactiveHost(host) || host[HOOKS_CONTROLLER]) {
         return;
     }
+    // Mark installed BEFORE addController below: on an already-connected host
+    // addController fires hostConnected synchronously, and setting the flag first
+    // guards against a re-entrant render re-installing a duplicate controller.
     host[HOOKS_CONTROLLER] = true;
 
     let connectedOnce = false;
     const controller: ReactiveController = {
         hostConnected() {
+            // The "connected" / "disconnected" events are for EXTERNAL listeners only.
+            // The internal useConnected does NOT depend on them: this fires before the
+            // render body attaches any listener, so useConnected is driven by its direct
+            // isConnected check plus useEffect cleanup instead.
             host.dispatchEvent(new Event("connected"));
             if (connectedOnce) {
                 // Reconnect: the previous disconnect disposed and cleared every
@@ -81,5 +93,12 @@ export function installHooksController(host: Component): void {
             disposeHooks(host);
         },
     };
-    host.addController(controller);
+    try {
+        host.addController(controller);
+    } catch (error) {
+        // addController failed, so no controller is registered. Clear the flag so a
+        // later render can retry the install instead of being permanently skipped.
+        host[HOOKS_CONTROLLER] = undefined;
+        throw error;
+    }
 }

@@ -21,7 +21,10 @@ export function useConnected(callback: EffectCallback, dependencies?: unknown[])
         }
     }
 
-    //  TODO
+    // This direct isConnected check is what actually drives the connect path. The
+    // controller's "connected" event (see hooks-controller.ts) is dispatched before
+    // this listener is attached below, so useConnected can't rely on receiving it.
+    // It checks isConnected synchronously here on first render and after a reconnect.
     if (component.isConnected) {
         onConnect();
     }

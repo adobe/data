@@ -2,7 +2,6 @@
 
 import { F32 } from "../f32/index.js";
 import { Schema } from "../../schema/index.js";
-import { slerp } from "./slerp.js";
 
 export const schema = {
     type: 'array',
@@ -10,8 +9,10 @@ export const schema = {
     minItems: 4,
     maxItems: 4,
     default: [0, 0, 0, 1], // identity quaternion
+    // "slerp" (spherical linear interpolation) — the animation system resolves
+    // this name to Quat.slerp so quaternion tracks interpolate on the 4-sphere.
     interpolators: {
-        linear: slerp,
+        linear: "slerp",
     },
 } as const satisfies Schema;
 

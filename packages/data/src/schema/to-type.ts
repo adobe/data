@@ -29,14 +29,6 @@ type FromSchemaInternal<T, Depth extends number = 5> = T extends { const: infer 
   ? null
   : T extends { type: 'blob' }
   ? Blob
-  : T extends { type: 'observe' }
-  ? Observe<ToType<ValueSchema<T>, Decrement<Depth>>>
-  : T extends { type: 'promise' }
-  ? Promise<ToType<ValueSchema<T>, Decrement<Depth>>>
-  : T extends { type: 'generator' }
-  ? AsyncGenerator<ToType<ValueSchema<T>, Decrement<Depth>>>
-  : T extends { type: 'function' }
-  ? FromSchemaFunction<T, Decrement<Depth>>
   : T extends { type: 'typed-buffer', items: infer Items }
   ? TypedBuffer<FromSchemaInternal<Items>>
   : T extends { type: 'typed-buffer' }
@@ -46,6 +38,20 @@ type FromSchemaInternal<T, Depth extends number = 5> = T extends { const: infer 
   : T extends { type?: undefined, default: infer D } ? D
   : T extends { type: 'object' } | { properties: any }
   ? FromSchemaObject<T, Decrement<Depth>>
+  // Type-constructor schemas are placed AFTER the data branches on purpose: a
+  // data schema (every ECS component/resource) must NOT pay extra conditional
+  // depth for these, because `FromSchemas` runs `ToType` per component across a
+  // whole plugin `combine` chain, and the added depth tips deep chains past TS's
+  // stack-depth limit (TS2321). Only observe/promise/generator/function schemas —
+  // which appear in service schemas, never in the Plugin hot path — fall through.
+  : T extends { type: 'observe' }
+  ? Observe<ToType<ValueSchema<T>, Decrement<Depth>>>
+  : T extends { type: 'promise' }
+  ? Promise<ToType<ValueSchema<T>, Decrement<Depth>>>
+  : T extends { type: 'generator' }
+  ? AsyncGenerator<ToType<ValueSchema<T>, Decrement<Depth>>>
+  : T extends { type: 'function' }
+  ? FromSchemaFunction<T, Decrement<Depth>>
   : any
   ;
 

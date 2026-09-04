@@ -3,7 +3,7 @@
 import { Observe } from "../../observe/index.js";
 import { Schema } from "../../schema/index.js";
 import { Service } from "../service.js";
-import { IsValidWithCompleteSchema } from "./is-valid-with-complete-schema.js";
+import { EquivalentTypes } from "../../types/types.js";
 
 // ============================================================================
 // TYPE INFERENCE HELPERS
@@ -37,6 +37,16 @@ type LazyMemberSchema =
 type LazyServiceSchema = Schema & {
   readonly properties?: { readonly [name: string]: LazyMemberSchema };
 };
+
+// createLazy's gate: the schema must completely and correctly describe the loaded
+// service's members. This is the actual correctness condition for building the
+// wrappers, and it is INTENTIONALLY independent of `AsyncDataService.IsValid` —
+// createLazy wraps whatever the schema describes, so a service that returns
+// non-`Data` (e.g. a `fetch(): Promise<Response>` port) can still be lazily
+// chunk-loaded as long as its schema matches. Enforce `IsValid` separately at the
+// service's definition site if you also want async-data-service conformance.
+type SchemaMatchesService<T extends Service, S extends Schema> =
+  EquivalentTypes<Schema.ToType<S>, Omit<T, keyof Service>>;
 
 // ============================================================================
 // RUNTIME WRAPPER KIND
@@ -87,7 +97,11 @@ function memberKind(member: Schema): WrapKind {
  *
  * TypeScript enforces that `schema` describes every member of the loaded service
  * with the correct wrapper kind; otherwise the `schema` argument fails to type-check
- * with a `__createLazyError` marker. Note: member value/parameter schemas authored as `{}`
+ * with a `__createLazyError` marker. This is the ONLY requirement — createLazy does
+ * NOT require the service to be a valid `AsyncDataService`, so a service that returns
+ * non-`Data` (e.g. `Promise<Response>`) can still be lazily loaded. Enforce
+ * `AsyncDataService.IsValid` separately at the service definition site if you want it.
+ * Note: member value/parameter schemas authored as `{}`
  * resolve to `any`, so presence and wrapper kind are checked but inner payload
  * types are only verified where a precise `value`/parameter schema is supplied.
  *
@@ -117,7 +131,7 @@ export function createLazy<
     load: LoadFn,
     schema: S,
     preload?: boolean
-  } & (IsValidWithCompleteSchema<InferService<LoadFn>, S> extends true
+  } & (SchemaMatchesService<InferService<LoadFn>, S> extends true
     ? unknown
     // Inline (not a named type) so the mismatch marker isn't a documented symbol.
     : { schema: { readonly __createLazyError: "createLazy: schema must completely and correctly describe the loaded service" } })
@@ -160,10 +174,11 @@ export function createLazy<
     }
 
     // Build lazy service object. Expose the schema up front (before load) so the
-    // lazy instance is introspectable without triggering a load.
+    // lazy instance is introspectable without triggering a load. The base slot is
+    // `Observe<Schema>`, so publish the static contract as a constant observable.
     const lazyService: any = {
       serviceName: 'lazy-service',
-      schema,
+      schema: Observe.fromConstant(schema),
     };
 
     // Wrap each member based on the strategy derived from its schema

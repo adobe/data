@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Data } from "@adobe/data";
+import type { Schema } from "@adobe/data/schema";
 import { marshalError } from "../host/marshal-error.js";
 import type { CallerContext, CallerGenSlot, PullResult } from "./caller-context.js";
 
@@ -20,7 +21,8 @@ export function makeGenerator(
     ctx: CallerContext,
     service: string,
     path: readonly string[],
-    args: readonly Data[],
+    args: readonly unknown[],
+    params?: readonly Schema[],
 ): AsyncGenerator<Data> {
     const id = ctx.nextId();
     const slot: CallerGenSlot = { pulls: [] };
@@ -32,6 +34,7 @@ export function makeGenerator(
     const finish = () => {
         finished = true;
         ctx.callerGens.delete(id);
+        ctx.releaseArgRefs(id);
     };
 
     const gen: AsyncGenerator<Data> = {
@@ -42,7 +45,7 @@ export function makeGenerator(
             }
             if (!started) {
                 started = true;
-                ctx.send({ kind: "iterate", id, service, path, args });
+                ctx.send({ kind: "iterate", id, service, path, args: ctx.marshalArgs(args, params, id) });
             }
             ctx.send({ kind: "pull", id });
             const result = await new Promise<PullResult>((res) => slot.pulls.push(res));

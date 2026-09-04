@@ -79,4 +79,12 @@ export type RpcMessage =
     | { readonly kind: "done"; readonly id: number; readonly value?: Data }
     | { readonly kind: "throw"; readonly id: number; readonly error: RpcError }
     | { readonly kind: "return"; readonly id: number }
-    | { readonly kind: "raise"; readonly id: number; readonly error: RpcError };
+    | { readonly kind: "raise"; readonly id: number; readonly error: RpcError }
+
+    // ---- argument observes (REVERSE channel: an Observe passed as/inside a call
+    //      argument streams callee → back to the caller). `ref` is the caller's
+    //      arg-observe id; `sub` is the callee's subscription id. `arg-subscribe`
+    //      / `arg-unsubscribe` flow callee → caller; `arg-next` flows caller → callee. ----
+    | { readonly kind: "arg-subscribe"; readonly ref: number; readonly sub: number }
+    | { readonly kind: "arg-next"; readonly sub: number; readonly value: Data }
+    | { readonly kind: "arg-unsubscribe"; readonly sub: number };

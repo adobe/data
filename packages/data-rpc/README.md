@@ -30,6 +30,14 @@ own member `properties` is shimmed recursively on both sides (to any depth), and
 each leaf is addressed by its full path from the service root — so
 `remote.child.deep.greet(name)` round-trips exactly like a top-level member.
 
+**`Observe` arguments** work too, in reverse: an `Observe` passed as (or nested
+inside) a call argument — e.g. `display(foo: { a: Observe<number>, b: Observe<string> }): Observe<string>` —
+is a stream from the *caller* to the *callee*. The caller sends a ref instead of
+the function and streams its values back on demand; the callee reconstructs a
+local `Observe`. Describe such an argument with an `observe` schema at that
+position. (Supported for arguments to promise/observe/generator members; a void
+member can't release them, so avoid observe args there.)
+
 ## Define a service
 
 A projected service is an ordinary `@adobe/data` `AsyncDataService`: an interface

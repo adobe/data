@@ -1,9 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Data } from "@adobe/data";
-import type { Notify, Unobserve } from "@adobe/data/observe";
+import type { Notify, Observe, Unobserve } from "@adobe/data/observe";
 import type { Schema } from "@adobe/data/schema";
 import type { Service } from "@adobe/data/service";
+import { marshalArgsWith, unmarshalArgsWith } from "./arg-observe.js";
 import type { CallerContext, CallSlot, CallerGenSlot } from "./consume/caller-context.js";
 import { reconstructError } from "./consume/reconstruct-error.js";
 import { synthesizeService } from "./consume/synthesize-service.js";
@@ -29,11 +30,56 @@ export function createRpcEndpoint(transport: RpcTransport, options: RpcEndpointO
         if (!closed) transport.send(msg);
     };
 
+    // ---- argument-observe state (REVERSE channel: an Observe passed as/inside a
+    //      call argument streams from THIS side, as caller, back to the callee) ----
+    const argProviders = new Map<number, Observe<Data>>(); // ref → our local arg observe
+    const argProviderSubs = new Map<number, { unobserve: Unobserve; ref: number }>(); // sub → the callee's live subscription to it
+    const callArgRefs = new Map<number, Set<number>>(); // opId → arg refs to release when the op ends
+    const hostArgSubs = new Map<number, Notify<Data>>(); // sub → our (as callee) notify for a remote arg observe
+
+    const marshalArgs = (args: readonly unknown[], params: readonly Schema[] | undefined, opId: number): Data[] =>
+        marshalArgsWith(args, params, (obs) => {
+            const ref = nextId();
+            argProviders.set(ref, obs);
+            let refs = callArgRefs.get(opId);
+            if (refs === undefined) {
+                refs = new Set();
+                callArgRefs.set(opId, refs);
+            }
+            refs.add(ref);
+            return ref;
+        });
+
+    const releaseArgRefs = (opId: number): void => {
+        const refs = callArgRefs.get(opId);
+        if (refs === undefined) return;
+        callArgRefs.delete(opId);
+        for (const ref of refs) {
+            argProviders.delete(ref);
+            for (const [sub, entry] of argProviderSubs) {
+                if (entry.ref === ref) {
+                    entry.unobserve();
+                    argProviderSubs.delete(sub);
+                }
+            }
+        }
+    };
+
+    const unmarshalArgs = (args: readonly Data[], params: readonly Schema[] | undefined): unknown[] =>
+        unmarshalArgsWith(args, params, (ref) => (notify) => {
+            const sub = nextId();
+            hostArgSubs.set(sub, notify);
+            send({ kind: "arg-subscribe", ref, sub });
+            return () => {
+                if (hostArgSubs.delete(sub)) send({ kind: "arg-unsubscribe", sub });
+            };
+        });
+
     // ---- host-side state (keyed by the REMOTE caller's id) ----
     const exposed = new Map<string, ExposedService>();
     const hostSubs = new Map<number, Unobserve>();
     const hostGens = new Map<number, AsyncGenerator<Data>>();
-    const hostCtx: HostContext = { send, exposed, hostSubs, hostGens, canInvoke, onError };
+    const hostCtx: HostContext = { send, exposed, hostSubs, hostGens, canInvoke, onError, unmarshalArgs };
 
     // ---- caller-side state (keyed by a LOCAL id) ----
     const callPending = new Map<number, CallSlot>();
@@ -50,6 +96,8 @@ export function createRpcEndpoint(transport: RpcTransport, options: RpcEndpointO
         callerGens,
         defaultTimeoutMs: options.defaultTimeoutMs,
         isClosed: () => closed,
+        marshalArgs,
+        releaseArgRefs,
     };
 
     const flushAwaiting = (name: string, schema: Schema) => {
@@ -96,6 +144,7 @@ export function createRpcEndpoint(transport: RpcTransport, options: RpcEndpointO
                 if (slot !== undefined) {
                     if (slot.timer !== undefined) clearTimeout(slot.timer);
                     callPending.delete(msg.id);
+                    releaseArgRefs(msg.id);
                     slot.resolve(msg.value);
                 }
                 return;
@@ -105,6 +154,7 @@ export function createRpcEndpoint(transport: RpcTransport, options: RpcEndpointO
                 if (slot !== undefined) {
                     if (slot.timer !== undefined) clearTimeout(slot.timer);
                     callPending.delete(msg.id);
+                    releaseArgRefs(msg.id);
                     slot.reject(reconstructError(msg.error));
                 }
                 return;
@@ -122,6 +172,29 @@ export function createRpcEndpoint(transport: RpcTransport, options: RpcEndpointO
                 if (msg.kind === "yield") resolvePull({ done: false, value: msg.value });
                 else if (msg.kind === "done") resolvePull({ done: true, value: msg.value });
                 else resolvePull({ error: reconstructError(msg.error) });
+                return;
+            }
+            // ---- reverse channel: argument observes ----
+            case "arg-subscribe": {
+                // We are the CALLER: the callee wants to observe an arg we sent.
+                const provider = argProviders.get(msg.ref);
+                if (provider === undefined) return; // ref already released / unknown
+                const unobserve = provider((value) => send({ kind: "arg-next", sub: msg.sub, value }));
+                argProviderSubs.set(msg.sub, { unobserve, ref: msg.ref });
+                return;
+            }
+            case "arg-next": {
+                // We are the CALLEE: a value arrived for a remote arg observe we subscribed to.
+                hostArgSubs.get(msg.sub)?.(msg.value);
+                return;
+            }
+            case "arg-unsubscribe": {
+                // We are the CALLER: the callee unsubscribed from an arg observe.
+                const entry = argProviderSubs.get(msg.sub);
+                if (entry !== undefined) {
+                    entry.unobserve();
+                    argProviderSubs.delete(msg.sub);
+                }
                 return;
             }
             default:
@@ -154,6 +227,12 @@ export function createRpcEndpoint(transport: RpcTransport, options: RpcEndpointO
         hostSubs.clear();
         for (const [, gen] of hostGens) void gen.return(undefined).catch(() => undefined);
         hostGens.clear();
+        // Reverse channel: release every arg-observe provider and subscription.
+        for (const [, entry] of argProviderSubs) entry.unobserve();
+        argProviderSubs.clear();
+        argProviders.clear();
+        callArgRefs.clear();
+        hostArgSubs.clear();
         unMessage();
     };
     transport.onClose(teardown);

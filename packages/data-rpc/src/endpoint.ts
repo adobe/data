@@ -1,7 +1,20 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Schema } from "@adobe/data/schema";
-import { AsyncDataService, type Service } from "@adobe/data/service";
+import { type Service } from "@adobe/data/service";
+import type { EquivalentTypes } from "@adobe/data/types";
+
+/**
+ * The `expose` gate: the schema must describe the service's members EXACTLY
+ * (same shape as `createLazy`'s check). This is what keeps the wire `Data`-only —
+ * describe members with `Data` leaves plus the `observe`/`promise`/`generator`/
+ * `function` constructors (an `Observe` argument is shimmed via the reverse
+ * channel; a genuinely non-`Data` leaf like `Response` would throw when marshaled).
+ */
+type SchemaDescribesService<T extends Service, S extends Schema> = EquivalentTypes<
+    Schema.ToType<S>,
+    Omit<T, keyof Service>
+>;
 
 /** Options for {@link createRpcEndpoint}. */
 export interface RpcEndpointOptions {
@@ -42,10 +55,10 @@ export interface RpcEndpoint {
         name: string,
         service: T,
         schema: S &
-            (AsyncDataService.IsValidWithCompleteSchema<T, S> extends true
+            (SchemaDescribesService<T, S> extends true
                 ? unknown
                 : {
-                      readonly __rpcError: "data-rpc: service must be a valid AsyncDataService fully described by this schema";
+                      readonly __rpcError: "data-rpc: schema must describe the service exactly (Data leaves + observe/promise/generator/function constructors)";
                   }),
     ): () => void;
 

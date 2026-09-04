@@ -3,6 +3,7 @@
 import type { Data } from "@adobe/data";
 import type { Observe } from "@adobe/data/observe";
 import { validate, type Schema } from "@adobe/data/schema";
+import { isPureDataSchema } from "../arg-observe.js";
 import { reconstructError } from "../consume/reconstruct-error.js";
 import type { RpcError, RpcMessage } from "../protocol.js";
 import type { HostContext } from "./host-context.js";
@@ -28,7 +29,7 @@ function resolve(
     service: string,
     path: readonly string[],
     args: readonly Data[],
-): { readonly memberSchema: Schema; readonly target: Member } | { readonly error: RpcError } {
+): { readonly memberSchema: Schema; readonly target: Member; readonly args: readonly unknown[] } | { readonly error: RpcError } {
     const label = `${service}.${path.join(".")}`;
     const exposed = ctx.exposed.get(service);
     if (exposed === undefined) {
@@ -54,7 +55,9 @@ function resolve(
         const errors: string[] = [];
         params.forEach((p, i) => {
             if (i >= args.length) errors.push(`missing required argument ${i} for "${label}"`);
-            else errors.push(...validate(p, args[i]));
+            // Only pure-Data params are validated; a param that carries an observe
+            // (an arg-observe ref on the wire) is not a validatable Data value.
+            else if (isPureDataSchema(p)) errors.push(...validate(p, args[i]));
         });
         if (errors.length > 0) {
             return { error: { name: "RpcError", message: `invalid arguments for "${label}": ${errors.join("; ")}` } };
@@ -66,7 +69,9 @@ function resolve(
     for (const key of path) {
         target = (target as Record<string, unknown>)[key];
     }
-    return { memberSchema, target: target as Member };
+    // Reconstruct any arg-observes into local Observes that pull from the caller.
+    const realArgs = ctx.unmarshalArgs(args, params);
+    return { memberSchema, target: target as Member, args: realArgs };
 }
 
 /**
@@ -90,9 +95,9 @@ export function handleHostRequest(ctx: HostContext, msg: RpcMessage): boolean {
                 ctx.send({ kind: "reject", id: msg.id, error: r.error });
                 return true;
             }
-            const fn = r.target as (...args: Data[]) => Promise<Data | void>;
+            const fn = r.target as (...args: unknown[]) => Promise<Data | void>;
             Promise.resolve()
-                .then(() => fn(...msg.args))
+                .then(() => fn(...r.args))
                 .then(
                     (value) => ctx.send({ kind: "resolve", id: msg.id, value: value === undefined ? null : value }),
                     (error) => ctx.send({ kind: "reject", id: msg.id, error: marshalError(error) }),
@@ -108,7 +113,7 @@ export function handleHostRequest(ctx: HostContext, msg: RpcMessage): boolean {
             }
             // A void member's throw has no wire channel — surface it via onError.
             try {
-                (r.target as (...args: Data[]) => void)(...msg.args);
+                (r.target as (...args: unknown[]) => void)(...r.args);
             } catch (error) {
                 ctx.onError(error);
             }
@@ -125,7 +130,7 @@ export function handleHostRequest(ctx: HostContext, msg: RpcMessage): boolean {
             const observe: Observe<Data> =
                 r.memberSchema.type === "observe"
                     ? (r.target as Observe<Data>)
-                    : (r.target as (...args: Data[]) => Observe<Data>)(...msg.args);
+                    : (r.target as (...args: unknown[]) => Observe<Data>)(...r.args);
             const unobserve = observe((value) => ctx.send({ kind: "next", id: msg.id, value }));
             ctx.hostSubs.set(msg.id, unobserve);
             return true;
@@ -143,7 +148,7 @@ export function handleHostRequest(ctx: HostContext, msg: RpcMessage): boolean {
                 ctx.send({ kind: "throw", id: msg.id, error: r.error });
                 return true;
             }
-            const gen = (r.target as (...args: Data[]) => AsyncGenerator<Data>)(...msg.args);
+            const gen = (r.target as (...args: unknown[]) => AsyncGenerator<Data>)(...r.args);
             ctx.hostGens.set(msg.id, gen);
             return true;
         }

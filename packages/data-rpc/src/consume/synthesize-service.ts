@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import type { Data } from "@adobe/data";
 import { Observe } from "@adobe/data/observe";
 import type { Schema } from "@adobe/data/schema";
 import { AsyncDataService, type Service } from "@adobe/data/service";
@@ -29,21 +28,22 @@ function buildMembers(
         const memberPath = [...path, key];
         if (member.type === "observe" || member.type === "function") {
             const kind = AsyncDataService.memberKind(member);
+            const params = member.signature?.parameters;
             switch (kind) {
                 case "observe":
                     out[key] = makeObserve(ctx, service, memberPath, []);
                     break;
                 case "fn:observe":
-                    out[key] = (...args: Data[]) => makeObserve(ctx, service, memberPath, args);
+                    out[key] = (...args: unknown[]) => makeObserve(ctx, service, memberPath, args, params);
                     break;
                 case "fn:promise":
-                    out[key] = (...args: Data[]) => makePromise(ctx, service, memberPath, args);
+                    out[key] = (...args: unknown[]) => makePromise(ctx, service, memberPath, args, params);
                     break;
                 case "fn:generator":
-                    out[key] = (...args: Data[]) => makeGenerator(ctx, service, memberPath, args);
+                    out[key] = (...args: unknown[]) => makeGenerator(ctx, service, memberPath, args, params);
                     break;
                 case "fn:void":
-                    out[key] = (...args: Data[]) => makeVoid(ctx, service, memberPath, args);
+                    out[key] = (...args: unknown[]) => makeVoid(ctx, service, memberPath, args, params);
                     break;
             }
         } else if (member.type === "object" || member.properties !== undefined) {

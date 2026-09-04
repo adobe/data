@@ -24,4 +24,9 @@ export interface HostContext {
     readonly hostGens: Map<number, AsyncGenerator<Data>>;
     readonly canInvoke: (service: string, member: string) => boolean;
     readonly onError: (error: unknown) => void;
+    /**
+     * Transform incoming args: reconstruct any arg-observe ref (guided by
+     * `params`) into a local `Observe` that pulls values back from the caller.
+     */
+    readonly unmarshalArgs: (args: readonly Data[], params: readonly Schema[] | undefined) => unknown[];
 }

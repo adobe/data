@@ -174,10 +174,11 @@ export function createLazy<
     }
 
     // Build lazy service object. Expose the schema up front (before load) so the
-    // lazy instance is introspectable without triggering a load.
+    // lazy instance is introspectable without triggering a load. The base slot is
+    // `Observe<Schema>`, so publish the static contract as a constant observable.
     const lazyService: any = {
       serviceName: 'lazy-service',
-      schema,
+      schema: Observe.fromConstant(schema),
     };
 
     // Wrap each member based on the strategy derived from its schema

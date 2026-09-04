@@ -60,7 +60,7 @@ export type RpcMessage =
     | { readonly kind: "schema"; readonly id: number; readonly service: string; readonly schema: Schema | null }
 
     // ---- promise call ----
-    | { readonly kind: "call"; readonly id: number; readonly service: string; readonly path: readonly string[]; readonly args: readonly Data[]; readonly deadline?: number }
+    | { readonly kind: "call"; readonly id: number; readonly service: string; readonly path: readonly string[]; readonly args: readonly Data[] }
     | { readonly kind: "resolve"; readonly id: number; readonly value: Data }
     | { readonly kind: "reject"; readonly id: number; readonly error: RpcError }
 

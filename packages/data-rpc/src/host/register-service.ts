@@ -42,13 +42,15 @@ function resolve(
         return { error: { name: "RpcError", message: `"${label}" is not permitted` } };
     }
     // Walk the schema tree to the leaf member schema (through nested services).
+    // Own-property checks only, so a wire path can never reach an inherited member
+    // (e.g. `constructor`, `__proto__`) on the schema or the service object.
     let memberSchema: Schema = exposed.schema;
     for (const key of path) {
-        const next = memberSchema.properties?.[key];
-        if (next === undefined) {
+        const props = memberSchema.properties;
+        if (props === undefined || !Object.prototype.hasOwnProperty.call(props, key)) {
             return { error: { name: "RpcError", message: `service "${service}" has no member "${label}"` } };
         }
-        memberSchema = next;
+        memberSchema = props[key];
     }
     const params = memberSchema.signature?.parameters;
     if (params !== undefined) {
@@ -63,10 +65,12 @@ function resolve(
             return { error: { name: "RpcError", message: `invalid arguments for "${label}": ${errors.join("; ")}` } };
         }
     }
-    // Walk the service object tree to the leaf member (exists and matches its
-    // schema kind — guaranteed at expose()).
+    // Walk the service object tree to the leaf member (own properties only).
     let target: unknown = exposed.service;
     for (const key of path) {
+        if (target === null || typeof target !== "object" || !Object.prototype.hasOwnProperty.call(target, key)) {
+            return { error: { name: "RpcError", message: `service "${service}" has no member "${label}"` } };
+        }
         target = (target as Record<string, unknown>)[key];
     }
     // Reconstruct any arg-observes into local Observes that pull from the caller.

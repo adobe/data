@@ -28,8 +28,17 @@ export interface UnmarshalHandlers {
     readonly generator: (ref: number) => AsyncGenerator<Data>;
 }
 
+// Refs travel as a one-key tagged envelope so a literal value at a constructor
+// position (a caller type violation) can never be mistaken for a ref.
+const REF_KEY = "$rpcRef";
+type RefEnvelope = { readonly [REF_KEY]: number };
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isRefEnvelope(value: unknown): value is RefEnvelope {
+    return isPlainObject(value) && typeof value[REF_KEY] === "number";
 }
 
 function isThenable(value: unknown): value is Promise<Data> {
@@ -42,9 +51,9 @@ function isAsyncIterable(value: unknown): value is AsyncGenerator<Data> {
 
 /** Replace every constructor-typed position in `value` (guided by `schema`) with a ref. */
 export function marshalArgValue(value: unknown, schema: Schema, h: MarshalHandlers): Data {
-    if (schema.type === "observe") return typeof value === "function" ? h.observe(value as Observe<Data>) : (value as Data);
-    if (schema.type === "promise") return isThenable(value) ? h.promise(value) : (value as Data);
-    if (schema.type === "generator") return isAsyncIterable(value) ? h.generator(value) : (value as Data);
+    if (schema.type === "observe") return typeof value === "function" ? { [REF_KEY]: h.observe(value as Observe<Data>) } : (value as Data);
+    if (schema.type === "promise") return isThenable(value) ? { [REF_KEY]: h.promise(value) } : (value as Data);
+    if (schema.type === "generator") return isAsyncIterable(value) ? { [REF_KEY]: h.generator(value) } : (value as Data);
     if ((schema.type === "object" || schema.properties !== undefined) && isPlainObject(value)) {
         const props = schema.properties ?? {};
         const out: Record<string, Data> = { ...(value as Record<string, Data>) };
@@ -62,9 +71,9 @@ export function marshalArgValue(value: unknown, schema: Schema, h: MarshalHandle
 
 /** Reconstruct every constructor-typed position (a ref) in `value` into a local value. */
 export function unmarshalArgValue(value: unknown, schema: Schema, h: UnmarshalHandlers): unknown {
-    if (schema.type === "observe") return typeof value === "number" ? h.observe(value) : value;
-    if (schema.type === "promise") return typeof value === "number" ? h.promise(value) : value;
-    if (schema.type === "generator") return typeof value === "number" ? h.generator(value) : value;
+    if (schema.type === "observe") return isRefEnvelope(value) ? h.observe(value[REF_KEY]) : value;
+    if (schema.type === "promise") return isRefEnvelope(value) ? h.promise(value[REF_KEY]) : value;
+    if (schema.type === "generator") return isRefEnvelope(value) ? h.generator(value[REF_KEY]) : value;
     if ((schema.type === "object" || schema.properties !== undefined) && isPlainObject(value)) {
         const props = schema.properties ?? {};
         const out: Record<string, unknown> = { ...value };

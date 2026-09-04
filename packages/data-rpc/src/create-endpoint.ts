@@ -92,11 +92,16 @@ export function createRpcEndpoint(transport: RpcTransport, options: RpcEndpointO
                     argObserveSubs.delete(sub);
                 }
             }
-            argPromiseProviders.delete(ref);
+            // A still-pending promise arg is cancelled on the callee so its `await`
+            // can't hang after we stop servicing the ref.
+            if (argPromiseProviders.delete(ref)) {
+                send({ kind: "arg-reject", ref, error: { name: "RpcError", message: "data-rpc: argument cancelled — call completed" } });
+            }
             const gen = argGenProviders.get(ref);
             if (gen !== undefined) {
                 argGenProviders.delete(ref);
                 void gen.return(undefined).catch(() => undefined);
+                // Any later `arg-pull` for this ref is answered `arg-done` (below).
             }
         }
     };
@@ -146,7 +151,13 @@ export function createRpcEndpoint(transport: RpcTransport, options: RpcEndpointO
                     if (hostArgObserveSubs.delete(sub)) send({ kind: "arg-unsubscribe", sub });
                 };
             },
-            promise: (ref) => new Promise<Data>((resolve, reject) => argPromiseWaiters.set(ref, { resolve, reject })),
+            promise: (ref) => {
+                const promise = new Promise<Data>((resolve, reject) => argPromiseWaiters.set(ref, { resolve, reject }));
+                // Suppress an unhandledRejection if the member never awaits this arg
+                // (a rejection/cancellation still surfaces to any real `await`).
+                promise.catch(() => undefined);
+                return promise;
+            },
             generator: (ref) => makeArgGenerator(ref),
         });
 
@@ -294,7 +305,12 @@ export function createRpcEndpoint(transport: RpcTransport, options: RpcEndpointO
             case "arg-pull": {
                 // We are the CALLER: the callee pulled the next value from an arg generator.
                 const gen = argGenProviders.get(msg.ref);
-                if (gen === undefined) return;
+                if (gen === undefined) {
+                    // Provider released (op completed) or unknown — tell the callee it's done
+                    // so its `for await` terminates instead of hanging.
+                    send({ kind: "arg-done", ref: msg.ref });
+                    return;
+                }
                 gen.next().then(
                     (result) => {
                         if (result.done) {

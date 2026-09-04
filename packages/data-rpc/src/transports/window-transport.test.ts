@@ -40,6 +40,15 @@ describe("createWindowTransport", () => {
         transport.close();
     });
 
+    it("requires an explicit targetOrigin when allowedOrigins is ambiguous (N1)", () => {
+        expect(() => createWindowTransport(window, { allowedOrigins: ["https://a.example", "https://b.example"] })).toThrow();
+        // A single allowed origin (or an explicit targetOrigin) is fine.
+        expect(() => createWindowTransport(window, { allowedOrigins: ["https://a.example"] })).not.toThrow();
+        expect(() =>
+            createWindowTransport(window, { allowedOrigins: ["https://a.example", "https://b.example"], targetOrigin: "https://a.example" }),
+        ).not.toThrow();
+    });
+
     it("stops delivering after close", async () => {
         const transport = createWindowTransport(window, { allowedOrigins: ["https://trusted.example"] });
         const received: RpcMessage[] = [];

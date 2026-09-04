@@ -45,8 +45,10 @@ sumStream(nums: AsyncGenerator<number>): Promise<number>
 
 Describe such an argument with the matching `observe`/`promise`/`generator` schema
 at that position. Providers are released when the owning call/subscription ends and
-on endpoint close. (Function/callback arguments are not supported; and a `void`
-member can't release constructor args, so avoid them there.)
+on endpoint close (a promise/generator arg consumed after its call has returned is
+cancelled). Function/callback arguments are not supported, and a `void` member
+cannot take constructor-typed arguments (it has no completion signal to release
+them) — doing so throws.
 
 ## Define a service
 
@@ -125,8 +127,10 @@ all four kinds in both directions.
 ## Transports
 
 - `createMessagePortTransport(port)` — the primary iframe/worker transport.
-- `createWindowTransport(target, { allowedOrigins })` — `window.postMessage`, for
-  the initial port handoff, with origin allowlisting.
+- `createWindowTransport(target, { allowedOrigins, targetOrigin? })` — `window.postMessage`,
+  for the initial port handoff, with origin allowlisting. `targetOrigin` is inferred
+  when there is exactly one allowed origin; otherwise it must be given explicitly
+  (outbound never defaults to `"*"`).
 - `createRpcLoopbackTransport()` — in-process pair for tests and single-process demos.
 
 `RpcTransport` is a small `send`/`onMessage`/`onClose`/`close` interface; bring

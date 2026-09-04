@@ -28,8 +28,6 @@ export function makePromise(
         const id = ctx.nextId();
         const wireArgs = ctx.marshalArgs(args, params, id);
         const slot: CallSlot = { resolve, reject };
-        const deadline =
-            ctx.defaultTimeoutMs !== undefined ? Date.now() + ctx.defaultTimeoutMs : undefined;
         if (ctx.defaultTimeoutMs !== undefined) {
             slot.timer = setTimeout(() => {
                 if (ctx.callPending.delete(id)) {
@@ -39,6 +37,6 @@ export function makePromise(
             }, ctx.defaultTimeoutMs);
         }
         ctx.callPending.set(id, slot);
-        ctx.send({ kind: "call", id, service, path, args: wireArgs, deadline });
+        ctx.send({ kind: "call", id, service, path, args: wireArgs });
     });
 }

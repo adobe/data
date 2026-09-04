@@ -28,8 +28,13 @@ export function createWindowTransport(target: Window, options: WindowTransportOp
     const pending: RpcMessage[] = [];
     let closed = false;
 
-    const targetOrigin =
-        options.targetOrigin ?? (options.allowedOrigins.length === 1 ? options.allowedOrigins[0] : "*");
+    // Never default outbound to "*" — that would post (possibly sensitive) replies
+    // to whatever origin currently occupies the target frame. Require an explicit
+    // targetOrigin unless there is exactly one allowed origin to infer it from.
+    const targetOrigin = options.targetOrigin ?? (options.allowedOrigins.length === 1 ? options.allowedOrigins[0] : undefined);
+    if (targetOrigin === undefined) {
+        throw new Error("createWindowTransport: specify `targetOrigin` when `allowedOrigins` is not exactly one origin");
+    }
 
     const handler = (event: MessageEvent) => {
         if (!options.allowedOrigins.includes(event.origin)) return; // untrusted origin

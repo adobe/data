@@ -3,6 +3,7 @@
 import { Observe } from "@adobe/data/observe";
 import type { Schema } from "@adobe/data/schema";
 import { AsyncDataService, type Service } from "@adobe/data/service";
+import { isPureDataSchema } from "../arg-marshal.js";
 import type { CallerContext } from "./caller-context.js";
 import { makeObserve } from "./make-observe.js";
 import { makePromise } from "./make-promise.js";
@@ -43,7 +44,16 @@ function buildMembers(
                     out[key] = (...args: unknown[]) => makeGenerator(ctx, service, memberPath, args, params);
                     break;
                 case "fn:void":
-                    out[key] = (...args: unknown[]) => makeVoid(ctx, service, memberPath, args, params);
+                    // A void member has no completion signal, so it can't release
+                    // arg-constructor providers — reject them rather than leak.
+                    if ((params ?? []).some((p) => !isPureDataSchema(p))) {
+                        const label = memberPath.join(".");
+                        out[key] = () => {
+                            throw new Error(`data-rpc: void member "${label}" cannot take Observe/Promise/AsyncGenerator arguments — use a promise/observe/generator member`);
+                        };
+                    } else {
+                        out[key] = (...args: unknown[]) => makeVoid(ctx, service, memberPath, args, params);
+                    }
                     break;
             }
         } else if (member.type === "object" || member.properties !== undefined) {

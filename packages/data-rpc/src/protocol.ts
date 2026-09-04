@@ -81,10 +81,25 @@ export type RpcMessage =
     | { readonly kind: "return"; readonly id: number }
     | { readonly kind: "raise"; readonly id: number; readonly error: RpcError }
 
-    // ---- argument observes (REVERSE channel: an Observe passed as/inside a call
-    //      argument streams callee → back to the caller). `ref` is the caller's
-    //      arg-observe id; `sub` is the callee's subscription id. `arg-subscribe`
-    //      / `arg-unsubscribe` flow callee → caller; `arg-next` flows caller → callee. ----
+    // ---- argument constructors (REVERSE channel: an Observe/Promise/AsyncGenerator
+    //      passed as/inside a call argument is serviced from the caller). `ref` is
+    //      the caller's arg id. ----
+
+    // observe arg: `arg-subscribe`/`arg-unsubscribe` flow callee → caller (`sub` is
+    // the callee's per-subscription id); `arg-next` flows caller → callee.
     | { readonly kind: "arg-subscribe"; readonly ref: number; readonly sub: number }
     | { readonly kind: "arg-next"; readonly sub: number; readonly value: Data }
-    | { readonly kind: "arg-unsubscribe"; readonly sub: number };
+    | { readonly kind: "arg-unsubscribe"; readonly sub: number }
+
+    // promise arg (caller → callee, one-shot, keyed by ref)
+    | { readonly kind: "arg-resolve"; readonly ref: number; readonly value: Data }
+    | { readonly kind: "arg-reject"; readonly ref: number; readonly error: RpcError }
+
+    // generator arg (pull-based, keyed by ref): `arg-pull`/`arg-return`/`arg-raise`
+    // flow callee → caller; `arg-yield`/`arg-done`/`arg-throw` flow caller → callee.
+    | { readonly kind: "arg-pull"; readonly ref: number }
+    | { readonly kind: "arg-yield"; readonly ref: number; readonly value: Data }
+    | { readonly kind: "arg-done"; readonly ref: number; readonly value?: Data }
+    | { readonly kind: "arg-throw"; readonly ref: number; readonly error: RpcError }
+    | { readonly kind: "arg-return"; readonly ref: number }
+    | { readonly kind: "arg-raise"; readonly ref: number; readonly error: RpcError };

@@ -3,7 +3,7 @@
 import type { Data } from "@adobe/data";
 import type { Observe } from "@adobe/data/observe";
 import { validate, type Schema } from "@adobe/data/schema";
-import { isPureDataSchema } from "../arg-observe.js";
+import { isPureDataSchema } from "../arg-marshal.js";
 import { reconstructError } from "../consume/reconstruct-error.js";
 import type { RpcError, RpcMessage } from "../protocol.js";
 import type { HostContext } from "./host-context.js";

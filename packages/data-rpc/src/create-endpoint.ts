@@ -4,9 +4,10 @@ import type { Data } from "@adobe/data";
 import type { Notify, Observe, Unobserve } from "@adobe/data/observe";
 import type { Schema } from "@adobe/data/schema";
 import type { Service } from "@adobe/data/service";
-import { marshalArgsWith, unmarshalArgsWith } from "./arg-observe.js";
-import type { CallerContext, CallSlot, CallerGenSlot } from "./consume/caller-context.js";
+import { marshalArgsWith, unmarshalArgsWith } from "./arg-marshal.js";
+import type { CallerContext, CallSlot, CallerGenSlot, PullResult } from "./consume/caller-context.js";
 import { reconstructError } from "./consume/reconstruct-error.js";
+import { marshalError } from "./host/marshal-error.js";
 import { synthesizeService } from "./consume/synthesize-service.js";
 import type { RpcEndpoint, RpcEndpointOptions } from "./endpoint.js";
 import type { ExposedService, HostContext } from "./host/host-context.js";
@@ -30,24 +31,53 @@ export function createRpcEndpoint(transport: RpcTransport, options: RpcEndpointO
         if (!closed) transport.send(msg);
     };
 
-    // ---- argument-observe state (REVERSE channel: an Observe passed as/inside a
-    //      call argument streams from THIS side, as caller, back to the callee) ----
-    const argProviders = new Map<number, Observe<Data>>(); // ref → our local arg observe
-    const argProviderSubs = new Map<number, { unobserve: Unobserve; ref: number }>(); // sub → the callee's live subscription to it
+    // ---- argument-constructor state (REVERSE channel: an Observe/Promise/
+    //      AsyncGenerator passed as/inside a call argument is serviced from THIS
+    //      side, as caller, and reconstructed on THIS side, as callee) ----
+    // Caller role — providers we service on the peer's demand, keyed by our ref:
+    const argObserveProviders = new Map<number, Observe<Data>>();
+    const argObserveSubs = new Map<number, { unobserve: Unobserve; ref: number }>(); // sub → callee's live subscription
+    const argPromiseProviders = new Set<number>(); // refs whose promise is still pending
+    const argGenProviders = new Map<number, AsyncGenerator<Data>>();
     const callArgRefs = new Map<number, Set<number>>(); // opId → arg refs to release when the op ends
-    const hostArgSubs = new Map<number, Notify<Data>>(); // sub → our (as callee) notify for a remote arg observe
+    // Callee role — local reconstructions of the peer's arg constructors, keyed by ref:
+    const hostArgObserveSubs = new Map<number, Notify<Data>>(); // sub → our notify for a remote arg observe
+    const argPromiseWaiters = new Map<number, { resolve: (value: Data) => void; reject: (error: unknown) => void }>();
+    const argGenSlots = new Map<number, CallerGenSlot>();
+
+    const trackRef = (opId: number, ref: number) => {
+        let refs = callArgRefs.get(opId);
+        if (refs === undefined) {
+            refs = new Set();
+            callArgRefs.set(opId, refs);
+        }
+        refs.add(ref);
+    };
 
     const marshalArgs = (args: readonly unknown[], params: readonly Schema[] | undefined, opId: number): Data[] =>
-        marshalArgsWith(args, params, (obs) => {
-            const ref = nextId();
-            argProviders.set(ref, obs);
-            let refs = callArgRefs.get(opId);
-            if (refs === undefined) {
-                refs = new Set();
-                callArgRefs.set(opId, refs);
-            }
-            refs.add(ref);
-            return ref;
+        marshalArgsWith(args, params, {
+            observe: (obs) => {
+                const ref = nextId();
+                argObserveProviders.set(ref, obs);
+                trackRef(opId, ref);
+                return ref;
+            },
+            promise: (promise) => {
+                const ref = nextId();
+                argPromiseProviders.add(ref);
+                trackRef(opId, ref);
+                void promise.then(
+                    (value) => { if (argPromiseProviders.delete(ref)) send({ kind: "arg-resolve", ref, value: value === undefined ? null : value }); },
+                    (error) => { if (argPromiseProviders.delete(ref)) send({ kind: "arg-reject", ref, error: marshalError(error) }); },
+                );
+                return ref;
+            },
+            generator: (generator) => {
+                const ref = nextId();
+                argGenProviders.set(ref, generator);
+                trackRef(opId, ref);
+                return ref;
+            },
         });
 
     const releaseArgRefs = (opId: number): void => {
@@ -55,24 +85,69 @@ export function createRpcEndpoint(transport: RpcTransport, options: RpcEndpointO
         if (refs === undefined) return;
         callArgRefs.delete(opId);
         for (const ref of refs) {
-            argProviders.delete(ref);
-            for (const [sub, entry] of argProviderSubs) {
+            argObserveProviders.delete(ref);
+            for (const [sub, entry] of argObserveSubs) {
                 if (entry.ref === ref) {
                     entry.unobserve();
-                    argProviderSubs.delete(sub);
+                    argObserveSubs.delete(sub);
                 }
+            }
+            argPromiseProviders.delete(ref);
+            const gen = argGenProviders.get(ref);
+            if (gen !== undefined) {
+                argGenProviders.delete(ref);
+                void gen.return(undefined).catch(() => undefined);
             }
         }
     };
 
+    // Callee-role reconstruction of a remote arg-generator: pull-based, keyed by ref.
+    const makeArgGenerator = (ref: number): AsyncGenerator<Data> => {
+        const slot: CallerGenSlot = { pulls: [] };
+        argGenSlots.set(ref, slot);
+        let finished = false;
+        const finish = () => {
+            finished = true;
+            argGenSlots.delete(ref);
+        };
+        const gen: AsyncGenerator<Data> = {
+            async next(): Promise<IteratorResult<Data>> {
+                if (finished || closed) {
+                    finish();
+                    return { done: true, value: undefined };
+                }
+                send({ kind: "arg-pull", ref });
+                const result = await new Promise<PullResult>((res) => slot.pulls.push(res));
+                if ("error" in result) { finish(); throw result.error; }
+                if (result.done) { finish(); return { done: true, value: result.value }; }
+                return { done: false, value: result.value };
+            },
+            async return(value?: Data): Promise<IteratorResult<Data>> {
+                if (!finished) { finish(); send({ kind: "arg-return", ref }); }
+                return { done: true, value: value as Data };
+            },
+            async throw(error?: unknown): Promise<IteratorResult<Data>> {
+                if (!finished) { finish(); send({ kind: "arg-raise", ref, error: marshalError(error) }); }
+                throw error;
+            },
+            [Symbol.asyncIterator]() { return this; },
+            async [Symbol.asyncDispose](): Promise<void> { await gen.return(undefined); },
+        };
+        return gen;
+    };
+
     const unmarshalArgs = (args: readonly Data[], params: readonly Schema[] | undefined): unknown[] =>
-        unmarshalArgsWith(args, params, (ref) => (notify) => {
-            const sub = nextId();
-            hostArgSubs.set(sub, notify);
-            send({ kind: "arg-subscribe", ref, sub });
-            return () => {
-                if (hostArgSubs.delete(sub)) send({ kind: "arg-unsubscribe", sub });
-            };
+        unmarshalArgsWith(args, params, {
+            observe: (ref) => (notify) => {
+                const sub = nextId();
+                hostArgObserveSubs.set(sub, notify);
+                send({ kind: "arg-subscribe", ref, sub });
+                return () => {
+                    if (hostArgObserveSubs.delete(sub)) send({ kind: "arg-unsubscribe", sub });
+                };
+            },
+            promise: (ref) => new Promise<Data>((resolve, reject) => argPromiseWaiters.set(ref, { resolve, reject })),
+            generator: (ref) => makeArgGenerator(ref),
         });
 
     // ---- host-side state (keyed by the REMOTE caller's id) ----
@@ -177,24 +252,88 @@ export function createRpcEndpoint(transport: RpcTransport, options: RpcEndpointO
             // ---- reverse channel: argument observes ----
             case "arg-subscribe": {
                 // We are the CALLER: the callee wants to observe an arg we sent.
-                const provider = argProviders.get(msg.ref);
+                const provider = argObserveProviders.get(msg.ref);
                 if (provider === undefined) return; // ref already released / unknown
                 const unobserve = provider((value) => send({ kind: "arg-next", sub: msg.sub, value }));
-                argProviderSubs.set(msg.sub, { unobserve, ref: msg.ref });
+                argObserveSubs.set(msg.sub, { unobserve, ref: msg.ref });
                 return;
             }
             case "arg-next": {
                 // We are the CALLEE: a value arrived for a remote arg observe we subscribed to.
-                hostArgSubs.get(msg.sub)?.(msg.value);
+                hostArgObserveSubs.get(msg.sub)?.(msg.value);
                 return;
             }
             case "arg-unsubscribe": {
                 // We are the CALLER: the callee unsubscribed from an arg observe.
-                const entry = argProviderSubs.get(msg.sub);
+                const entry = argObserveSubs.get(msg.sub);
                 if (entry !== undefined) {
                     entry.unobserve();
-                    argProviderSubs.delete(msg.sub);
+                    argObserveSubs.delete(msg.sub);
                 }
+                return;
+            }
+            // ---- reverse channel: argument promises ----
+            case "arg-resolve": {
+                // We are the CALLEE: a remote arg promise settled.
+                const waiter = argPromiseWaiters.get(msg.ref);
+                if (waiter !== undefined) {
+                    argPromiseWaiters.delete(msg.ref);
+                    waiter.resolve(msg.value);
+                }
+                return;
+            }
+            case "arg-reject": {
+                const waiter = argPromiseWaiters.get(msg.ref);
+                if (waiter !== undefined) {
+                    argPromiseWaiters.delete(msg.ref);
+                    waiter.reject(reconstructError(msg.error));
+                }
+                return;
+            }
+            // ---- reverse channel: argument generators ----
+            case "arg-pull": {
+                // We are the CALLER: the callee pulled the next value from an arg generator.
+                const gen = argGenProviders.get(msg.ref);
+                if (gen === undefined) return;
+                gen.next().then(
+                    (result) => {
+                        if (result.done) {
+                            argGenProviders.delete(msg.ref);
+                            send({ kind: "arg-done", ref: msg.ref, value: result.value ?? undefined });
+                        } else {
+                            send({ kind: "arg-yield", ref: msg.ref, value: result.value });
+                        }
+                    },
+                    (error) => {
+                        argGenProviders.delete(msg.ref);
+                        send({ kind: "arg-throw", ref: msg.ref, error: marshalError(error) });
+                    },
+                );
+                return;
+            }
+            case "arg-yield":
+            case "arg-done":
+            case "arg-throw": {
+                // We are the CALLEE: a pull on a remote arg generator was answered.
+                const slot = argGenSlots.get(msg.ref);
+                const resolvePull = slot?.pulls.shift();
+                if (resolvePull === undefined) return;
+                if (msg.kind === "arg-yield") resolvePull({ done: false, value: msg.value });
+                else if (msg.kind === "arg-done") resolvePull({ done: true, value: msg.value });
+                else resolvePull({ error: reconstructError(msg.error) });
+                return;
+            }
+            case "arg-return": {
+                // We are the CALLER: the callee ended an arg generator early.
+                const gen = argGenProviders.get(msg.ref);
+                argGenProviders.delete(msg.ref);
+                void gen?.return(undefined).catch((error) => onError(error));
+                return;
+            }
+            case "arg-raise": {
+                const gen = argGenProviders.get(msg.ref);
+                argGenProviders.delete(msg.ref);
+                void gen?.throw(reconstructError(msg.error)).catch(() => undefined);
                 return;
             }
             default:
@@ -227,12 +366,21 @@ export function createRpcEndpoint(transport: RpcTransport, options: RpcEndpointO
         hostSubs.clear();
         for (const [, gen] of hostGens) void gen.return(undefined).catch(() => undefined);
         hostGens.clear();
-        // Reverse channel: release every arg-observe provider and subscription.
-        for (const [, entry] of argProviderSubs) entry.unobserve();
-        argProviderSubs.clear();
-        argProviders.clear();
+        // Reverse channel: release every arg-constructor provider and reconstruction.
+        for (const [, entry] of argObserveSubs) entry.unobserve();
+        argObserveSubs.clear();
+        argObserveProviders.clear();
+        argPromiseProviders.clear();
+        for (const [, gen] of argGenProviders) void gen.return(undefined).catch(() => undefined);
+        argGenProviders.clear();
         callArgRefs.clear();
-        hostArgSubs.clear();
+        hostArgObserveSubs.clear();
+        for (const [, waiter] of argPromiseWaiters) waiter.reject(new Error("data-rpc endpoint closed"));
+        argPromiseWaiters.clear();
+        for (const [, slot] of argGenSlots) {
+            for (const resolvePull of slot.pulls.splice(0)) resolvePull({ done: true, value: undefined });
+        }
+        argGenSlots.clear();
         unMessage();
     };
     transport.onClose(teardown);

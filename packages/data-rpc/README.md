@@ -30,13 +30,23 @@ own member `properties` is shimmed recursively on both sides (to any depth), and
 each leaf is addressed by its full path from the service root — so
 `remote.child.deep.greet(name)` round-trips exactly like a top-level member.
 
-**`Observe` arguments** work too, in reverse: an `Observe` passed as (or nested
-inside) a call argument — e.g. `display(foo: { a: Observe<number>, b: Observe<string> }): Observe<string>` —
-is a stream from the *caller* to the *callee*. The caller sends a ref instead of
-the function and streams its values back on demand; the callee reconstructs a
-local `Observe`. Describe such an argument with an `observe` schema at that
-position. (Supported for arguments to promise/observe/generator members; a void
-member can't release them, so avoid observe args there.)
+**Constructor-typed arguments** (`Observe`, `Promise`, `AsyncGenerator`) work too,
+in reverse: one passed as — or nested inside — a call argument is a channel from
+the *caller* to the *callee*. The caller sends a ref instead of the value and
+services it over a reverse channel (an `Observe` streams on subscribe; a `Promise`
+settles once; an `AsyncGenerator` is pulled by the callee); the callee reconstructs
+a local value. For example, all of these round-trip:
+
+```ts
+display(foo: { alpha: Observe<number>; beta: Observe<string> }): Observe<string>
+awaitAndDouble(p: Promise<number>): Promise<number>
+sumStream(nums: AsyncGenerator<number>): Promise<number>
+```
+
+Describe such an argument with the matching `observe`/`promise`/`generator` schema
+at that position. Providers are released when the owning call/subscription ends and
+on endpoint close. (Function/callback arguments are not supported; and a `void`
+member can't release constructor args, so avoid them there.)
 
 ## Define a service
 

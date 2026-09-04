@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>@adobe/data-rpc — iframe sample</title>
+  <style>
+    body { margin: 0; font-family: system-ui, sans-serif; padding: 1rem; }
+    h1 { font-size: 1.25rem; }
+    #layout { display: flex; gap: 1rem; align-items: flex-start; }
+    #app { flex: 1 1 0; --accent: #4a6; }
+    #frame-container { flex: 1 1 0; }
+  </style>
+</head>
+<body>
+  <h1>@adobe/data-rpc — bidirectional services across an iframe</h1>
+  <p>Left = main frame. Right = sub frame (a real iframe). Each drives the other's
+     observe / promise / generator / void members over one MessagePort.</p>
+  <div id="layout">
+    <div id="app"></div>
+    <div id="frame-container"></div>
+  </div>
+  <script type="module" src="/src/main/main.ts"></script>
+</body>
+</html>

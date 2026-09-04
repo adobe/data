@@ -1,7 +1,7 @@
 {
-    "name": "@adobe/data-sync",
+    "name": "@adobe/data-rpc",
     "version": "0.10.10",
-    "description": "Multi-user real-time synchronisation for @adobe/data ECS — server, client, and in-process loopback.",
+    "description": "Schema-driven, bidirectional projection of @adobe/data async data services across a boundary (iframe / MessagePort / Worker). Only Data crosses the wire.",
     "type": "module",
     "sideEffects": false,
     "private": false,
@@ -18,14 +18,14 @@
         "build": "cp ../../LICENSE . 2>/dev/null || true; tsc -b",
         "clean": "rm -rf dist node_modules",
         "dev": "tsc -b -w --preserveWatchOutput",
-        "test": "vitest --run --project=node",
-        "test:node": "vitest --run --project=node",
+        "test": "vitest --run",
         "typecheck": "tsc -b"
     },
     "dependencies": {
         "@adobe/data": "workspace:*"
     },
     "devDependencies": {
+        "jsdom": "^24.1.0",
         "typescript": "^5.8.3",
         "vitest": "^1.6.0"
     },

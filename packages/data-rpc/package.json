@@ -1,6 +1,6 @@
 {
     "name": "@adobe/data-rpc",
-    "version": "0.10.10",
+    "version": "0.10.11",
     "description": "Schema-driven, bidirectional projection of @adobe/data async data services across a boundary (iframe / MessagePort / Worker). Only Data crosses the wire.",
     "type": "module",
     "sideEffects": false,

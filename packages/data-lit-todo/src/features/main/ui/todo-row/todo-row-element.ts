@@ -1,16 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { customElement, property } from "lit/decorators.js";
 import type { Entity } from "@adobe/data/ecs";
-import { useObservableValues, useState, useDragTransaction } from "@adobe/data-lit";
+import { useObservableValues, useState, useDragGenerator } from "@adobe/data-lit";
 import { TodoElement } from "../todo-element.js";
 import { styles } from "./todo-row.css.js";
 import { TODO_ROW_HEIGHT } from "./todo-row.constants.js";
-import type { dragTodo } from "../../services/main-service/transaction-database/transactions/drag-todo.js";
 import * as presentation from "./todo-row-presentation.js";
-
-// The transaction owns this shape and doesn't export it; infer it from the
-// function's second parameter rather than importing a type.
-type DragTodoInput = Parameters<typeof dragTodo>[1];
 
 const tagName = "todo-row";
 
@@ -40,29 +35,24 @@ export class TodoRowElement extends TodoElement {
     );
     const todo = values?.todo;
 
-    // Dragging is a lifecycle/pointer concern, so it lives in the element (not
-    // the pure presentation). A single coalesced transaction spans the whole
-    // gesture: `move` frames record the live pixel offset, `end` commits the
-    // reorder. Drag is a continuous manipulation, so it calls the transaction
-    // directly rather than an analytics-wrapped action.
+    // Dragging is a lifecycle/pointer concern, so the pointer stream is
+    // captured here — but mapping it into transaction args is logic, and
+    // belongs to the `dragTodo` action, not this element (`element.md`: no
+    // shape-building in a callback). `useDragGenerator` hands the action a
+    // raw `DragState` generator; the action drives the `dragTodo` transaction
+    // with it directly, so the whole gesture — every live frame plus the
+    // final drop — commits as one coalesced, undoable step.
     const { entity, index } = this;
-    useDragTransaction<DragTodoInput>(
-      {
-        transaction: this.service.transactions.dragTodo,
-        update: (value) => {
-          if (value.type === "move") {
-            return { entity, dragPosition: value.delta[1] };
-          }
-          if (value.type === "end") {
-            return {
-              entity,
-              dragPosition: value.delta[1],
-              finalIndex: index + Math.round(value.delta[1] / TODO_ROW_HEIGHT),
-            };
-          }
-        },
-      },
-      [this.service.transactions.dragTodo, entity, index],
+    useDragGenerator(
+      {},
+      [this.service.actions.dragTodo, entity, index],
+      (drag) =>
+        this.service.actions.dragTodo({
+          entity,
+          index,
+          rowHeight: TODO_ROW_HEIGHT,
+          drag,
+        }),
     );
 
     return presentation.render({

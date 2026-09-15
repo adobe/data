@@ -3,9 +3,10 @@ import type { Entity } from "@adobe/data/ecs";
 import type { ServiceDatabase } from "../../service-database/service-database.js";
 
 // Move a todo to `toIndex` — the programmatic counterpart of the drag UI (which
-// dispatches the richer `dragTodo` transaction directly). Reproduces
-// `State.reorderTodo` as a single final-drop `dragTodo` commit, so it is the
-// same-named action that conforms the `reorderTodo` transition.
+// drives the same `dragTodo` transaction through the richer `dragTodo` action,
+// streamed frame-by-frame from `useDragGenerator`). Reproduces `State.reorderTodo`
+// as a single final-drop `dragTodo` commit, so it is the same-named action that
+// conforms the `reorderTodo` transition.
 export const reorderTodo = (
   db: ServiceDatabase,
   { id, toIndex }: { id: Entity; toIndex: number },

@@ -7,3 +7,4 @@ export * from "./delete-todo.js";
 export * from "./delete-all-todos.js";
 export * from "./toggle-display-completed.js";
 export * from "./reorder-todo.js";
+export * from "./drag-todo.js";

@@ -8,11 +8,16 @@ import { normalizeOrder, selectOrderedTodos } from "./order/index.js";
 // `type DragTodoInput = Parameters<typeof dragTodo>[1]`.
 type DragTodoInput = {
   readonly entity: Entity;
-  /** Live vertical pixel offset from the todo's resting position. */
-  readonly dragPosition: number;
+  /**
+   * Live vertical pixel offset from the todo's resting position. `null`
+   * abandons the drag with no reorder — the same shape a cancelled gesture
+   * yields as its final frame.
+   */
+  readonly dragPosition: number | null;
   /**
    * Target index within the currently visible list. Present only on the final
-   * frame of a drag; while omitted the drag is still in progress.
+   * frame of a drag; while omitted the drag is still in progress (or was
+   * cancelled).
    */
   readonly finalIndex?: number;
 };
@@ -24,8 +29,10 @@ type DragTodoInput = {
  * a fractional `order` between its new visible neighbours, clears
  * `dragPosition`, then normalizes every todo back to contiguous integers.
  *
- * Intended to be driven by `useDragTransaction`, which invokes it with an
- * `AsyncArgsProvider` so all frames commit as one undoable step.
+ * Intended to be driven by the `dragTodo` action, which maps a
+ * `useDragGenerator` stream into this shape and drives this transaction with
+ * the resulting async generator so every frame — including the final drop —
+ * commits as one undoable step.
  */
 export const dragTodo = (t: CoreDatabase.Store, input: DragTodoInput): void => {
   t.undoable = { coalesce: false };

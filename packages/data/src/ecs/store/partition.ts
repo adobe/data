@@ -50,8 +50,8 @@ export type HasPartitionKey<Keys extends string, PK extends string> =
  * caller). `Has` is a *naked* type parameter so a `boolean` (from `PK = any`)
  * distributes to `Archetype.Router<C> | Concrete`.
  */
-export type ArchetypeOrRouter<Has extends boolean, C, Concrete> =
-    Has extends true ? Archetype.Router<C> : Concrete;
+export type ArchetypeOrRouter<Has extends boolean, C, Concrete, DK extends keyof C = never> =
+    Has extends true ? Archetype.Router<C, DK> : Concrete;
 
 /**
  * Return type of `ensureArchetype(keys, values?)`:

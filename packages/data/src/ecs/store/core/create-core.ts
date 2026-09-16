@@ -20,6 +20,7 @@ import { ComponentSchemas } from "../../component-schemas.js";
 import { OptionalComponents } from "../../optional-components.js";
 import { True } from "../../../schema/true/index.js";
 import { PartitionKeysOf } from "../partition.js";
+import { DefaultFactoryKeys } from "../../default-factory-keys.js";
 import { MemoryAllocator } from "../../../cache/memory-allocator.js";
 
 /**
@@ -80,7 +81,15 @@ export function createCore<NC extends ComponentSchemas>(
      * place numeric component storage in a shareable arena.
      */
     allocator?: MemoryAllocator,
-): Core<Simplify<OptionalComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> }>, PartitionKeysOf<NC>> {
+    /**
+     * Registry resolving a component schema's `defaultFactory` NAME to a
+     * `() => value` (see Schema.defaultFactory / CreateStoreOptions). A component
+     * whose schema names a factory is minted at insert when its row omits it. A
+     * named factory absent from this registry is a construction-time error, thrown
+     * when the first archetype carrying that component is resolved.
+     */
+    defaultFactories: Record<string, () => unknown> = {},
+): Core<Simplify<OptionalComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> }>, PartitionKeysOf<NC>, DefaultFactoryKeys<NC>> {
     type C = RequiredComponents & { [K in StringKeyof<NC>]: Schema.ToType<NC[K]> };
 
     // Reserved names (`id`, `nonPersistent`, `nonShared`) are the ECS's own
@@ -205,6 +214,10 @@ export function createCore<NC extends ComponentSchemas>(
         const archetypeComponentSchemas: Record<string, Schema> = { [ID]: componentSchemas[ID] };
         let isNonPersistent = false;
         let isNonShared = false;
+        // Resolved `component name → () => value` for the components of THIS
+        // archetype whose schema names a default factory. Empty for the common
+        // archetype with none.
+        const archetypeDefaultFactories: Record<string, () => unknown> = {};
         for (const comp of namesArr) {
             if (comp === ID) continue;
             if (comp === "nonPersistent") isNonPersistent = true;
@@ -213,12 +226,25 @@ export function createCore<NC extends ComponentSchemas>(
             archetypeComponentSchemas[comp] = isPartition(comp)
                 ? { ...base, const: partitionValues![comp] }
                 : base;
+            const factoryName = (base as Schema | undefined)?.defaultFactory;
+            if (factoryName !== undefined) {
+                const factory = defaultFactories[factoryName];
+                if (factory === undefined) {
+                    // Fail fast at construction (not per insert): a component names a
+                    // factory the store was never given, so it could never mint.
+                    throw new Error(
+                        `Component "${comp}" declares defaultFactory "${factoryName}", but no such factory was provided to the store's defaultFactories registry.`,
+                    );
+                }
+                archetypeDefaultFactories[comp] = factory;
+            }
         }
         const archetype = ARCHETYPE.createArchetype(
             archetypeComponentSchemas as any,
             id,
             locationTables[quadrantFor(isNonPersistent, isNonShared)]!,
             allocator,
+            archetypeDefaultFactories,
         );
         archetypes.push(archetype as unknown as Archetype<C & RequiredComponents & OptionalComponents>);
         archetypeByIdentity.set(key, archetype);

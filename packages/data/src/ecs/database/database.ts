@@ -24,6 +24,7 @@ import { toSystemDatabase as _toSystemDatabase } from "./to-system-database.js";
 import { ResourceSchemas } from "../resource-schemas.js";
 import { ComponentSchemas } from "../component-schemas.js";
 import { PartitionKeysOf } from "../store/partition.js";
+import type { DefaultFactoryKeys } from "../default-factory-keys.js";
 import { FromSchemas } from "../../schema/index.js";
 import type {
   TransactionDeclarations,
@@ -507,7 +508,7 @@ export namespace Database {
      * type transaction functions operate on; a store *is* the transaction
      * context, so there is no separate transaction-context type.
      */
-    export type ToStore<P extends Database.Plugin> = Store<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>, RemoveIndex<P['indexes']>, PartitionKeysOf<RemoveIndex<P['components']>>>;
+    export type ToStore<P extends Database.Plugin> = Store<FromSchemas<RemoveIndex<P['components']>>, FromSchemas<RemoveIndex<P['resources']>>, RemoveIndex<P['archetypes']>, RemoveIndex<P['indexes']>, PartitionKeysOf<RemoveIndex<P['components']>>, DefaultFactoryKeys<RemoveIndex<P['components']>>>;
     export type ToSystemDatabase<P extends Database.Plugin> = Database.FromPlugin<P> & {
       // Systems are allowed to access the database store directly.
       // This direct access will NOT trigger observable transactions.

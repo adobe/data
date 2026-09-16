@@ -53,6 +53,18 @@ export interface Schema {
   entity?: boolean;
   mutable?: boolean; // defaults to false
   default?: any;
+  // Name of a zero-arg factory that mints this component's value at insert time
+  // when the insert row omits it — resolved to a `() => value` by the store's
+  // `defaultFactories` registry (see CreateStoreOptions), exactly as
+  // `interpolators` names are resolved by the animation system. A serializable
+  // NAME, never a function — a Schema is pure JSON. Unlike `default` (one shared
+  // literal, backfilled on load), the factory runs PER insert, so each entity
+  // gets a fresh value — the intended shape for a per-entity identity such as a
+  // cross-runtime GUID. A component naming a factory is OPTIONAL at insert: omit
+  // it and the factory mints one; SUPPLY it (replication-inbound / load) and the
+  // supplied value wins, so the factory never runs. Naming a factory the registry
+  // does not provide is a construction-time error (fail fast, not per insert).
+  defaultFactory?: string;
   precision?: 1 | 2;
   multipleOf?: number;
   mediaType?: string; // media type such as image/jpeg, image/png, video/* etc.

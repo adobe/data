@@ -1,6 +1,6 @@
 {
   "name": "@adobe/data-testing",
-  "version": "0.10.12",
+  "version": "0.10.13",
   "description": "Conformance-testing utilities (Match + Conformance runners) for @adobe/data ECS features",
   "type": "module",
   "sideEffects": false,

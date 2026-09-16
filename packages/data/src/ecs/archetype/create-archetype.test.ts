@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect } from 'vitest';
-import { createArchetype } from '../archetype/index.js';
+import { createArchetype, type Archetype } from '../archetype/index.js';
 import { createEntityLocationTable } from '../entity-location-table/index.js';
 import { Entity } from '../entity/entity.js';
 import { U32 } from '../../math/u32/index.js';
@@ -130,6 +130,57 @@ describe('createArchetype', () => {
         expect(newArchetype.columns.mana.get(1)).toBe(25);
         expect(newArchetype.columns.id.get(0)).toBe(0);
         expect(newArchetype.columns.id.get(1)).toBe(4);
+    });
+
+    it('mints a default-factory component when the insert row omits it, fresh per insert', () => {
+        const entityLocationTable = createEntityLocationTable();
+        const components = { id: Entity.schema, value: U32.schema, seq: U32.schema };
+        let next = 100;
+        // Runtime invariant the compiler can't see: `seq` has a default factory, so
+        // it is optional at insert. createArchetype's return type reports DK=never
+        // (the core/store boundary is where DK is derived), so we assert it here.
+        const archetype = createArchetype(components, 5, entityLocationTable, undefined, {
+            seq: () => next++,
+        }) as unknown as Archetype<{ value: number; seq: number }, "seq">;
+
+        // seq omitted → minted by the factory, a fresh value each insert.
+        archetype.insert({ value: 1 });
+        archetype.insert({ value: 2 });
+        expect(archetype.columns.seq.get(0)).toBe(100);
+        expect(archetype.columns.seq.get(1)).toBe(101);
+        expect(next).toBe(102);
+    });
+
+    it('uses the supplied value over the factory (replication-inbound / load path)', () => {
+        const entityLocationTable = createEntityLocationTable();
+        const components = { id: Entity.schema, seq: U32.schema };
+        let calls = 0;
+        // Runtime invariant the compiler can't see: `seq` is default-factory ⇒ DK.
+        const archetype = createArchetype(components, 6, entityLocationTable, undefined, {
+            seq: () => { calls++; return 999; },
+        }) as unknown as Archetype<{ seq: number }, "seq">;
+
+        archetype.insert({ seq: 7 });
+        expect(archetype.columns.seq.get(0)).toBe(7);
+        expect(calls).toBe(0); // factory never ran for a supplied value
+    });
+
+    it('applies default factories on the generic (non-identifier name) insert path', () => {
+        const entityLocationTable = createEntityLocationTable();
+        // A non-identifier component name forces buildGenericInsert (codegen is skipped).
+        const components = { id: Entity.schema, ['weird-name']: U32.schema };
+        let next = 10;
+        // `any` archetype handle: this test exercises the runtime generic-insert
+        // path, not the insert types (a non-identifier key isn't a valid TS field).
+        const archetype: any = createArchetype(components as any, 7, entityLocationTable, undefined, {
+            ['weird-name']: () => next++,
+        });
+
+        archetype.insert({}); // omitted → minted
+        archetype.insert({ ['weird-name']: 42 }); // supplied → wins
+        expect((archetype.columns as any)['weird-name'].get(0)).toBe(10);
+        expect((archetype.columns as any)['weird-name'].get(1)).toBe(42);
+        expect(next).toBe(11);
     });
 
     it('should preserve component set during serialization/deserialization', () => {

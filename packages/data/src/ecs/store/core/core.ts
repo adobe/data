@@ -31,6 +31,9 @@ export type ArchetypeQueryOptions<C extends object, PK extends string = never> =
 export interface ReadonlyCore<
     C extends Components = never,
     PK extends string = never,
+    // Default-factory component names (see DefaultFactoryKeys / Schema.defaultFactory).
+    // A returned archetype whose set includes one of these types it OPTIONAL at insert.
+    DFK extends string = never,
 > {
     readonly componentSchemas: { readonly [K in StringKeyof<C & RequiredComponents & OptionalComponents>]: Schema };
 
@@ -45,7 +48,7 @@ export interface ReadonlyCore<
     ensureArchetype<const CC extends StringKeyof<C & OptionalComponents>>(
         components: readonly CC[] | ReadonlySet<CC>,
     ): HasPartitionKey<CC, PK> extends true
-        ? Archetype.Router<{ [K in CC]: (C & OptionalComponents)[K] }>
+        ? Archetype.Router<{ [K in CC]: (C & OptionalComponents)[K] }, Extract<CC, DFK>>
         : ReadonlyArchetype<{ [K in CC]: (C & OptionalComponents)[K] }>;
     // Partition value(s) supplied → the concrete value-child, always.
     ensureArchetype<const CC extends StringKeyof<C & OptionalComponents>>(
@@ -97,22 +100,23 @@ export interface ReadonlyCore<
 export interface Core<
     C extends Components = never,
     PK extends string = never,
-> extends ReadonlyCore<C, PK> {
+    DFK extends string = never,
+> extends ReadonlyCore<C, PK, DFK> {
     queryArchetypes<
         Include extends StringKeyof<C & OptionalComponents>,
     >(
         include: readonly Include[] | ReadonlySet<string>,
         options?: ArchetypeQueryOptions<C, PK>
-    ): readonly Archetype<Pick<C & OptionalComponents, Include>>[];
+    ): readonly Archetype<Pick<C & OptionalComponents, Include>, Extract<Include, DFK>>[];
     ensureArchetype<const CC extends StringKeyof<C & OptionalComponents>>(
         components: readonly CC[] | ReadonlySet<CC>,
     ): HasPartitionKey<CC, PK> extends true
-        ? Archetype.Router<{ [K in CC]: (C & OptionalComponents)[K] }>
-        : Archetype<{ [K in CC]: (C & OptionalComponents)[K] }>;
+        ? Archetype.Router<{ [K in CC]: (C & OptionalComponents)[K] }, Extract<CC, DFK>>
+        : Archetype<{ [K in CC]: (C & OptionalComponents)[K] }, Extract<CC, DFK>>;
     ensureArchetype<const CC extends StringKeyof<C & OptionalComponents>>(
         components: readonly CC[] | ReadonlySet<CC>,
         partitionValues: { readonly [K in Extract<CC, PK>]: (C & OptionalComponents)[K] },
-    ): Archetype<{ [K in CC]: (C & OptionalComponents)[K] }>;
+    ): Archetype<{ [K in CC]: (C & OptionalComponents)[K] }, Extract<CC, DFK>>;
     locate: (entity: Entity) => { archetype: Archetype, row: number } | null;
     /**
      * Deletes the entity. Returns the entity that was swap-moved into the

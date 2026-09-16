@@ -70,6 +70,7 @@ const buildSpecializedInsert = (
     archetypeId: number,
     columns: Record<string, TypedBuffer<any>>,
     entityLocationTable: EntityLocationTable,
+    defaultFactories: Record<string, () => unknown>,
 ): InsertImpl | null => {
     const componentNames = Object.keys(columns);
     if (componentNames.some((n) => !SAFE_IDENT.test(n))) {
@@ -90,14 +91,26 @@ const buildSpecializedInsert = (
     // with reserved words or shadowing globals (e.g. a component called
     // `delete`).
     const componentParamNames: string[] = [];
-    const componentParamValues: TypedBuffer<any>[] = [];
+    const componentParamValues: (TypedBuffer<any> | (() => unknown))[] = [];
     const sets: string[] = [];
     for (const name of componentNames) {
         if (name === ID) continue;
         const local = `_${name}`;
         componentParamNames.push(local);
         componentParamValues.push(columns[name]);
-        sets.push(`        ${local}.set(row, rowData.${name});`);
+        const factory = defaultFactories[name];
+        if (factory === undefined) {
+            sets.push(`        ${local}.set(row, rowData.${name});`);
+        } else {
+            // Default-factory component: the insert row MAY omit it. When it does,
+            // mint a fresh value via the baked factory const; a supplied value
+            // (replication inbound / load) always wins, so the factory never runs
+            // for it. One extra `!== undefined` branch, only on defaulted columns.
+            const factoryLocal = `_factory_${name}`;
+            componentParamNames.push(factoryLocal);
+            componentParamValues.push(factory);
+            sets.push(`        ${local}.set(row, rowData.${name} !== undefined ? rowData.${name} : ${factoryLocal}());`);
+        }
     }
 
     const factoryBody = `
@@ -137,7 +150,9 @@ ${sets.join("\n")}
         ensureCapacityFn: typeof ensureCapacity,
         entityLocationTable: EntityLocationTable,
         idColumn: TypedBuffer<number>,
-        ...componentColumns: TypedBuffer<any>[]
+        // Trailing args are the baked per-component column refs, each optionally
+        // followed by its `_factory_<name>` const — hence the widened element type.
+        ...componentColumnsAndFactories: (TypedBuffer<any> | (() => unknown))[]
     ) => InsertImpl;
 
     return factory(
@@ -156,9 +171,17 @@ ${sets.join("\n")}
 const buildGenericInsert = (
     archetypeId: number,
     entityLocationTable: EntityLocationTable,
+    defaultFactories: Record<string, () => unknown>,
 ): InsertImpl => {
+    const factoryEntries = Object.entries(defaultFactories);
     return (archetype: any, rowData: any) => {
         const row = TABLE.addRow(archetype, rowData);
+        // Mint any default-factory component the row omitted. addRow only sets the
+        // columns present in rowData, so an omitted defaulted column is filled here
+        // (a supplied value went through addRow already and is left untouched).
+        for (const [name, factory] of factoryEntries) {
+            if (rowData[name] === undefined) archetype.columns[name].set(row, factory());
+        }
         const entity = entityLocationTable.create({ archetype: archetypeId, row });
         archetype.columns[ID].set(row, entity);
         return entity;
@@ -170,6 +193,14 @@ export const createArchetype = <C extends Record<IdComponent, typeof Entity.sche
     id: number,
     entityLocationTable: EntityLocationTable,
     allocator?: MemoryAllocator,
+    // Resolved `component name → () => value` map (see Schema.defaultFactory). The
+    // caller (core) resolves each component's `defaultFactory` NAME against the
+    // store registry and passes only the entries whose component this archetype
+    // actually carries. Omitted → no defaulting (the original insert shape). The
+    // returned Archetype's insert type still reports every component as required
+    // (DK = never here); the OPTIONAL-at-insert typing is applied by the core /
+    // store boundary that knows which names are defaulted (see ensureArchetype).
+    defaultFactories: Record<string, () => unknown> = {},
 ): Archetype<Omit<{ [K in keyof C]: Schema.ToType<C[K]> }, IdComponent>> => {
     // The archetype's public COMPONENT set excludes `id`: id is the entity's
     // identity, a column but never a component value. (`table.columns` and the
@@ -184,8 +215,8 @@ export const createArchetype = <C extends Record<IdComponent, typeof Entity.sche
     let insertImpl: InsertImpl;
     const refreshInsertImpl = () => {
         insertImpl =
-            buildSpecializedInsert(id, archetype.columns as Record<string, TypedBuffer<any>>, entityLocationTable) ??
-            buildGenericInsert(id, entityLocationTable);
+            buildSpecializedInsert(id, archetype.columns as Record<string, TypedBuffer<any>>, entityLocationTable, defaultFactories) ??
+            buildGenericInsert(id, entityLocationTable, defaultFactories);
     };
 
     const createEntity = (rowData: EntityInsertValues<PublicComponents>): Entity => {

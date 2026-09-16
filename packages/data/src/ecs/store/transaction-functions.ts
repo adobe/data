@@ -16,7 +16,10 @@ export type TransactionDeclaration<
     A extends ArchetypeComponents<StringKeyof<C>>,
     IX extends IndexDeclarations<C> = {},
     PK extends string = never,
-    Input extends any | void = any> = (t: Store<C, R, A, IX, PK>, input: Input) => void | Entity;
+    // Default-factory component names (see DefaultFactoryKeys): optional at insert
+    // inside the transaction body's store `t`. Defaults to `never`.
+    DFK extends string = never,
+    Input extends any | void = any> = (t: Store<C, R, A, IX, PK, DFK>, input: Input) => void | Entity;
 
 export type TransactionDeclarations<
     C extends Components,
@@ -24,7 +27,8 @@ export type TransactionDeclarations<
     A extends ArchetypeComponents<StringKeyof<C>>,
     IX extends IndexDeclarations<C> = {},
     PK extends string = never,
-> = { readonly [Q: string]: TransactionDeclaration<C, R, A, IX, PK> };
+    DFK extends string = never,
+> = { readonly [Q: string]: TransactionDeclaration<C, R, A, IX, PK, DFK> };
 
 /**
  * Converts from TransactionDeclarations to TransactionFunctions by removing

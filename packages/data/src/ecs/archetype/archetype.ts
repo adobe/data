@@ -4,9 +4,24 @@ import { Entity } from "../entity/entity.js";
 import { Table, ReadonlyTable } from "../../table/index.js";
 import { Assert } from "../../types/assert.js";
 import { Equal } from "../../types/equal.js";
-import { Exact, StringKeyof } from "../../types/types.js";
+import { Exact, Simplify, StringKeyof } from "../../types/types.js";
 
-export type EntityInsertValues<C> = Omit<C, IdComponent>;
+// `DK` (default-factory keys) names the components whose schema declares a
+// `defaultFactory` (see Schema.defaultFactory). Those are OPTIONAL at insert:
+// omit one and the archetype mints it via the factory; supply it (replication
+// inbound / load) and the supplied value wins. Every other component stays
+// required. `DK` defaults to `never`, so an archetype with no default factories
+// keeps the original "all non-id components required" shape.
+export type EntityInsertValues<C, DK extends keyof C = never> =
+    // No default keys → exactly `Omit<C, IdComponent>` (byte-identical to the
+    // original shape, so every existing archetype/store/transaction type is
+    // unchanged). Only when default keys exist do we split them out as optional.
+    [DK] extends [never]
+        ? Omit<C, IdComponent>
+        : Simplify<
+            & Omit<C, IdComponent | DK>
+            & Partial<Pick<C, Exclude<Extract<DK, keyof C>, IdComponent>>>
+        >;
 export type ArchetypeId = number;
 
 /**
@@ -47,9 +62,9 @@ export interface ReadonlyArchetype<C = {}> extends BaseArchetype, ReadonlyTable<
     toData: (copy?: boolean, omit?: ReadonlySet<string>) => unknown
 }
 
-export interface Archetype<C = {}> extends BaseArchetype, Table<C & RequiredComponents> {
+export interface Archetype<C = {}, DK extends keyof C = never> extends BaseArchetype, Table<C & RequiredComponents> {
     readonly components: ComponentSet<StringKeyof<C>>;
-    insert: <T extends EntityInsertValues<C>>(rowData: Exact<EntityInsertValues<C>, T>) => Entity;
+    insert: <T extends EntityInsertValues<C, DK>>(rowData: Exact<EntityInsertValues<C, DK>, T>) => Entity;
     /** See {@link ReadonlyArchetype.toData}. */
     toData: (copy?: boolean, omit?: ReadonlySet<string>) => unknown
     /**
@@ -80,9 +95,9 @@ export namespace Archetype {
      * component) therefore still permits `.insert` with no narrowing — only dense
      * column access requires having resolved to a concrete {@link Archetype}.
      */
-    export interface Router<C = {}> {
+    export interface Router<C = {}, DK extends keyof C = never> {
         readonly components: ComponentSet<StringKeyof<C>>;
-        insert: <T extends EntityInsertValues<C>>(rowData: Exact<EntityInsertValues<C>, T>) => Entity;
+        insert: <T extends EntityInsertValues<C, DK>>(rowData: Exact<EntityInsertValues<C, DK>, T>) => Entity;
     }
 }
 
@@ -91,7 +106,7 @@ export namespace Archetype {
 // part of the component row.
 export type FromArchetype<T> =
     T extends ReadonlyArchetype<infer C> ? { readonly [K in keyof Omit<C, IdComponent>]: C[K] } :
-    T extends Archetype<infer C> ? { readonly [K in keyof Omit<C, IdComponent>]: C[K] } :
+    T extends Archetype<infer C, any> ? { readonly [K in keyof Omit<C, IdComponent>]: C[K] } :
     never;
 
 // compile time type tests.
@@ -120,4 +135,26 @@ type TestIdColumnStillTyped = Assert<IdComponent extends keyof Archetype<{ a: nu
         // @ts-expect-error - Should reject extra properties
         arch.insert(invalidData);
     };
+}
+
+// Compile-time tests for default-factory optionality (DK).
+{
+    // guid names a default factory → optional at insert; position stays required.
+    type GuidArchetype = Archetype<{ guid: [number, number], position: [number, number, number] }, "guid">;
+
+    const testOmitDefaulted = (arch: GuidArchetype) => {
+        // guid omitted → the archetype mints it. Must compile.
+        arch.insert({ position: [0, 0, 0] });
+        // guid supplied (replication-inbound / load path) → wins. Must compile.
+        arch.insert({ position: [0, 0, 0], guid: [1, 2] });
+    };
+
+    const testStillRequired = (arch: GuidArchetype) => {
+        // @ts-expect-error - position is not a default-factory key, still required.
+        arch.insert({ guid: [1, 2] });
+    };
+
+    // A defaulted key is only optional, never removed: EntityInsertValues keeps it.
+    type Values = EntityInsertValues<{ guid: [number, number], position: [number, number, number] }, "guid">;
+    type TestGuidOptional = Assert<Equal<Values, { position: [number, number, number]; guid?: [number, number] }>>;
 }

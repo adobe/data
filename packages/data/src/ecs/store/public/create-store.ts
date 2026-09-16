@@ -22,6 +22,7 @@ import {
     RuntimeIndex,
 } from "../../database/index-registry/index.js";
 import { PartitionKeysOf } from "../partition.js";
+import { DefaultFactoryKeys } from "../../default-factory-keys.js";
 import { IndexDeclarations } from "../index-types.js";
 import { MemoryAllocator } from "../../../cache/memory-allocator.js";
 
@@ -33,6 +34,15 @@ export interface CreateStoreOptions {
      * to place numeric component storage in a single shareable arena.
      */
     allocator?: MemoryAllocator;
+    /**
+     * Resolves a component schema's `defaultFactory` NAME to a `() => value` that
+     * mints the component at insert when the row omits it (see
+     * {@link Schema.defaultFactory}). Keeps the factory — a function — OUT of the
+     * pure-JSON schema: the schema carries only the name, this registry carries
+     * the behavior. A component naming a factory absent here throws when its first
+     * archetype is resolved (fail fast, not per insert).
+     */
+    defaultFactories?: Record<string, () => unknown>;
 }
 
 export function createStore<
@@ -43,7 +53,7 @@ export function createStore<
 >(
     schema?: Store.Schema<CS, RS, A, IX>,
     options?: CreateStoreOptions,
-): Store<FromSchemas<CS>, FromSchemas<RS>, A, IX, PartitionKeysOf<CS>> {
+): Store<FromSchemas<CS>, FromSchemas<RS>, A, IX, PartitionKeysOf<CS>, DefaultFactoryKeys<CS>> {
     const schemaArg = schema as any;
     const hasSchemaShape =
         schemaArg &&
@@ -73,6 +83,7 @@ export function createStore<
         componentAndResourceSchemas,
         (archetype) => decorateArchetypeForIndexes(archetype),
         options?.allocator,
+        options?.defaultFactories,
     ) as unknown as Core<C>;
 
     // Index registry. Owned at the Store layer because index state is

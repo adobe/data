@@ -8,6 +8,7 @@ import { Components } from "./components.js";
 import { ArchetypeComponents } from "./archetype-components.js";
 import { Archetype, ReadonlyArchetype } from "../archetype/archetype.js";
 import { HasPartitionKey, PartitionKeysOf, ArchetypeOrRouter } from "./partition.js";
+import { DefaultFactoryKeys } from "../default-factory-keys.js";
 import { EntitySelectOptions } from "./entity-select-options.js";
 import { Undoable } from "../database/undoable.js";
 import { Assert } from "../../types/assert.js";
@@ -59,12 +60,14 @@ export interface ReadonlyStore<
     A extends ArchetypeComponents<StringKeyof<C>> = never,
     IX extends IndexDeclarations<C> = {},
     PK extends string = never,
-> extends BaseStore<C>, ReadonlyCore<C, PK> {
+    DFK extends string = never,
+> extends BaseStore<C>, ReadonlyCore<C, PK, DFK> {
     readonly resources: { readonly [K in StringKeyof<R>]: R[K] };
     readonly archetypes: { readonly [K in StringKeyof<A>]: ArchetypeOrRouter<
         HasPartitionKey<A[K][number], PK>,
         { [Col in A[K][number]]: (C & OptionalComponents)[Col] },
-        ReadonlyArchetype<{ [Col in A[K][number]]: (C & OptionalComponents)[Col] }>
+        ReadonlyArchetype<{ [Col in A[K][number]]: (C & OptionalComponents)[Col] }>,
+        Extract<A[K][number], DFK>
     > }
     readonly indexes: { readonly [K in keyof IX]: Index.Handle<C, IX[K]> };
 }
@@ -80,7 +83,8 @@ export interface Store<
     A extends ArchetypeComponents<StringKeyof<C>> = {},
     IX extends IndexDeclarations<C> = {},
     PK extends string = never,
-> extends BaseStore<C>, Core<C, PK> {
+    DFK extends string = never,
+> extends BaseStore<C>, Core<C, PK, DFK> {
     /**
      * This is used when a store is used to represent a transaction.
      * For most stores, this is ignored if it is set.
@@ -97,7 +101,8 @@ export interface Store<
     readonly archetypes: { -readonly [K in StringKeyof<A>]: ArchetypeOrRouter<
         HasPartitionKey<A[K][number], PK>,
         { [Col in A[K][number]]: (C & OptionalComponents)[Col] },
-        Archetype<{ [Col in A[K][number]]: (C & OptionalComponents)[Col] }>
+        Archetype<{ [Col in A[K][number]]: (C & OptionalComponents)[Col] }, Extract<A[K][number], DFK>>,
+        Extract<A[K][number], DFK>
     > }
     /**
      * Index handles keyed by user-chosen name. Returned handles are the
@@ -120,7 +125,7 @@ export interface Store<
      */
     pruneToSchema(keep: ReadonlySet<string>): void;
     fromData(data: unknown, scope?: PersistenceScope): void
-    extend<S extends Store.Schema>(schema: S): S extends Store.Schema<infer XC, infer XR, infer XA, infer XIX> ? Store<C & FromSchemas<XC>, R & FromSchemas<XR>, A & XA, IX & XIX, PK | PartitionKeysOf<XC>> : never;
+    extend<S extends Store.Schema>(schema: S): S extends Store.Schema<infer XC, infer XR, infer XA, infer XIX> ? Store<C & FromSchemas<XC>, R & FromSchemas<XR>, A & XA, IX & XIX, PK | PartitionKeysOf<XC>, DFK | DefaultFactoryKeys<XC>> : never;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -145,7 +150,7 @@ export namespace Store {
         readonly indexes?: IX;
     };
 
-    export type FromSchema<T> = T extends Store.Schema<infer CS, infer RS, infer A, infer IX> ? Store<FromSchemas<CS>, FromSchemas<RS>, A, IX, PartitionKeysOf<CS>> : never;
+    export type FromSchema<T> = T extends Store.Schema<infer CS, infer RS, infer A, infer IX> ? Store<FromSchemas<CS>, FromSchemas<RS>, A, IX, PartitionKeysOf<CS>, DefaultFactoryKeys<CS>> : never;
 
     export namespace Schema {
 

@@ -8,6 +8,7 @@ import type { TransactionDeclarations, ToTransactionFunctions } from "../store/t
 import type { ToActionFunctions } from "../store/action-functions.js";
 import type { FromSchemas } from "../../schema/index.js";
 import type { PartitionKeysOf } from "../store/partition.js";
+import type { DefaultFactoryKeys } from "../default-factory-keys.js";
 import type { StringKeyof, NoInfer, RemoveIndex } from "../../types/types.js";
 import { combinePlugins } from "./combine-plugins.js";
 import { Store } from "../store/store.js";
@@ -190,7 +191,7 @@ export function createPlugin<
     const RS extends ResourceSchemas,
     const A extends ArchetypeComponents<StringKeyof<RemoveIndex<CS> & XP['components'] & IP['components']>>,
     const IX extends IndexDeclarations<FromSchemas<RemoveIndex<CS> & XP['components'] & IP['components']>, RemoveIndex<A> & XP['archetypes'] & IP['archetypes']>,
-    const TD extends TransactionDeclarations<FromSchemas<RemoveIndex<CS> & XP['components'] & IP['components']>, FromSchemas<RemoveIndex<RS> & XP['resources'] & IP['resources']>, RemoveIndex<A> & XP['archetypes'] & IP['archetypes'], RemoveIndex<IX> & XP['indexes'] & IP['indexes'], PartitionKeysOf<RemoveIndex<CS> & XP['components'] & IP['components']>>,
+    const TD extends TransactionDeclarations<FromSchemas<RemoveIndex<CS> & XP['components'] & IP['components']>, FromSchemas<RemoveIndex<RS> & XP['resources'] & IP['resources']>, RemoveIndex<A> & XP['archetypes'] & IP['archetypes'], RemoveIndex<IX> & XP['indexes'] & IP['indexes'], PartitionKeysOf<RemoveIndex<CS> & XP['components'] & IP['components']>, DefaultFactoryKeys<RemoveIndex<CS> & XP['components'] & IP['components']>>,
     const AD,
     const S extends string = never,
     const SVF extends ServiceFactories<Database.FromPlugin<AmbientPlugin<XP, IP>>> = {},
@@ -244,7 +245,10 @@ export function createPlugin<
                 readonly store: Store<
                     FromSchemas<RemoveIndex<CS> & XP['components'] & IP['components']>,
                     FromSchemas<RemoveIndex<RS> & XP['resources'] & IP['resources']>,
-                    RemoveIndex<A> & XP['archetypes'] & IP['archetypes']
+                    RemoveIndex<A> & XP['archetypes'] & IP['archetypes'],
+                    {},
+                    never,
+                    DefaultFactoryKeys<RemoveIndex<CS> & XP['components'] & IP['components']>
                 >
                 services: { -readonly [K in keyof FromServiceFactories<RemoveIndex<SVF> & XP['services'] & IP['services']>]: FromServiceFactories<RemoveIndex<SVF> & XP['services'] & IP['services']>[K] }
             }) => SystemFunction | void;

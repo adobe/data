@@ -67,6 +67,14 @@ interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, an
      * shareable arena.
      */
     allocator?: MemoryAllocator;
+    /**
+     * Resolves a component schema's `defaultFactory` NAME to a `() => value`
+     * (see {@link Schema.defaultFactory} / {@link CreateStoreOptions}). A component
+     * naming a factory is minted at insert when its row omits it — the factory
+     * (a function) lives here, keeping the schema pure JSON. A named factory
+     * absent from this map throws when its first archetype is resolved.
+     */
+    defaultFactories?: Record<string, () => unknown>;
 }
 
 export function createDatabase(): Database<{}, {}, {}, {}, never, {}, {}, {}>
@@ -80,7 +88,7 @@ export function createDatabase(
     plugin?: Database.Plugin<any, any, any, any, any, any, any, any>,
     options?: CreateDatabaseOptions<any>,
 ): any {
-    const db = createEmptyDatabase({ concurrency: options?.concurrency, versioning: options?.versioning, allocator: options?.allocator });
+    const db = createEmptyDatabase({ concurrency: options?.concurrency, versioning: options?.versioning, allocator: options?.allocator, defaultFactories: options?.defaultFactories });
     if (plugin === undefined) {
         return db;
     }
@@ -133,16 +141,17 @@ function scopedSchemas(schemas: StoreSchemas, scope: PersistenceScope | undefine
  * Creates a database with empty store, no transactions, actions, services, computed, or systems.
  * All content is added via .extend(plugin). Single code path for extension.
  */
-function createEmptyDatabase({ concurrency, versioning, allocator }: {
+function createEmptyDatabase({ concurrency, versioning, allocator, defaultFactories }: {
     concurrency: ConcurrencyStrategyFactory | undefined,
     versioning?: DatabaseVersioning,
     allocator?: MemoryAllocator,
+    defaultFactories?: Record<string, () => unknown>,
 }): any {
     const store = Store.create({
         components: {},
         resources: {},
         archetypes: {},
-    }, { allocator });
+    }, { allocator, defaultFactories });
 
     const observedDatabase = createObservedDatabase(store);
 

@@ -55,6 +55,7 @@ function createTrackedObservable(initial = 0): {
 // history without reaching into the element instance.
 let connectEdges: string[] = [];
 let disconnectEdges: string[] = [];
+let openResources = 0;
 let renderCount = 0;
 let observableUnderTest: Observe<number>;
 
@@ -65,11 +66,14 @@ class LifecycleProbeElement extends LitElement {
     }
     render() {
         renderCount++;
-        // Edge primitive: must fire synchronously on every connect/disconnect edge.
+        // Edge primitive: must fire synchronously on every connect/disconnect edge,
+        // and open exactly one resource per connect (balanced by its teardown).
         useConnected(() => {
             connectEdges.push("connect");
+            openResources++;
             return () => {
                 disconnectEdges.push("disconnect");
+                openResources--;
             };
         });
         // Value slot: must survive a move (retain its number across re-parenting).
@@ -84,6 +88,7 @@ customElements.define("lifecycle-probe-element", LifecycleProbeElement);
 function resetProbes(obs: Observe<number>): void {
     connectEdges = [];
     disconnectEdges = [];
+    openResources = 0;
     renderCount = 0;
     observableUnderTest = obs;
 }
@@ -101,6 +106,30 @@ describe("two-slot hook lifecycle — real DOM", () => {
         el.remove();
         // The edge is synchronous: no microtask flush before this assertion.
         expect(disconnectEdges).toEqual(["disconnect"]);
+    });
+
+    it("useConnected runs setup ONCE across ordinary re-renders — no per-render leak", async () => {
+        const { observable } = createTrackedObservable();
+        resetProbes(observable);
+        const el = document.createElement("lifecycle-probe-element") as LifecycleProbeElement;
+        document.body.appendChild(el);
+        await el.updateComplete;
+        expect(connectEdges).toEqual(["connect"]);
+        expect(openResources).toBe(1);
+
+        // Ordinary re-renders (no connect/disconnect edge) re-run the hook body but
+        // must NOT re-invoke setup — the teardown handle persists across renders.
+        el.requestUpdate();
+        await el.updateComplete;
+        el.requestUpdate();
+        await el.updateComplete;
+        expect(connectEdges).toEqual(["connect"]);
+        expect(openResources).toBe(1);
+
+        // Unmount tears down exactly the one open resource — nothing leaked.
+        el.remove();
+        expect(disconnectEdges).toEqual(["disconnect"]);
+        expect(openResources).toBe(0);
     });
 
     it("useConnected churns disconnect→connect SYNCHRONOUSLY on a MOVE (re-parent)", async () => {

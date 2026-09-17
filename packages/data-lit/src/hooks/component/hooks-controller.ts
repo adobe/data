@@ -63,12 +63,18 @@ function finalizeHooks(host: Component): void {
  *  - **Slot finalization is deferred behind an `isConnected` re-check.** A
  *    disconnect schedules a microtask; when it runs it disposes the slots only
  *    if the host is STILL disconnected. A move has reconnected by then, so its
- *    slots survive untouched — no re-subscribe, no state reset, no forced
- *    re-render. A genuine unmount is still disconnected, so it finalizes,
- *    preserving the unmount-leak fix.
- *
- * On a reconnect after a genuine finalization, the slots are empty, so the
- * controller forces one `requestUpdate` to re-initialize them.
+ *    subscription/value slots survive untouched — no re-subscribe, no state
+ *    reset. A genuine unmount is still disconnected, so it finalizes, preserving
+ *    the unmount-leak fix.
+ *  - **Every RE-connect forces one `requestUpdate`.** The DOM does not re-render
+ *    an element on a bare re-parent, so without this an element whose render
+ *    reads mutable non-hook state (a plain field, an ancestor value) would show
+ *    stale output after a move. The re-render is cheap: across a move the slots
+ *    are preserved, so it does NOT re-subscribe or re-run producers — it is a Lit
+ *    diff over unchanged hook state. Across a genuine remount the slots were
+ *    finalized (cleared), so the same re-render re-initializes and re-subscribes
+ *    them. (The perf win is not re-running producers on a move — never the cheap
+ *    re-render.)
  *
  * It is installed lazily from inside the wrapped `render` (see {@link withHooks}),
  * which runs after `connectedCallback`, so `addController` fires `hostConnected`
@@ -86,9 +92,9 @@ export function installHooksController(host: Component): void {
     // guards against a re-entrant render re-installing a duplicate controller.
     host[HOOKS_CONTROLLER] = true;
 
-    // The slots were finalized (disposed + cleared) while the host was detached,
-    // so the next connect must re-render to re-initialize and re-subscribe them.
-    let finalized = false;
+    // First connect is the initial mount (Lit renders it anyway); only a RE-connect
+    // needs a forced re-render.
+    let connectedOnce = false;
     // A finalization microtask is already queued; don't queue a second.
     let finalizationQueued = false;
 
@@ -97,12 +103,19 @@ export function installHooksController(host: Component): void {
             // Fire the connect edge synchronously on EVERY connect (mount / move /
             // remount) so edge hooks (useConnected) run their setup deterministically.
             host.dispatchEvent(new Event("connected"));
-            if (finalized) {
-                // The host was fully finalized while detached (a genuine unmount): its
-                // slots are empty, so re-render to re-initialize and re-subscribe them.
-                finalized = false;
+            if (connectedOnce) {
+                // Re-render on EVERY reconnect — a move as well as a genuine remount.
+                // The subscription slots are PRESERVED across a move (finalization is
+                // gated on isConnected below), so this re-render does NOT re-subscribe
+                // or re-run producers — it is a cheap Lit diff. It is required for
+                // correctness: an element whose render reads mutable non-hook state
+                // (a plain field, an ancestor value) would otherwise show stale output
+                // after a move, since Lit does not re-render on a bare re-parent. On a
+                // genuine remount the slots were finalized (cleared), so this same
+                // re-render re-initializes and re-subscribes them.
                 host.requestUpdate();
             }
+            connectedOnce = true;
         },
         hostDisconnected() {
             // Fire the disconnect edge synchronously on EVERY disconnect (unmount /
@@ -124,7 +137,6 @@ export function installHooksController(host: Component): void {
                     return;
                 }
                 finalizeHooks(host);
-                finalized = true;
             });
         },
     };

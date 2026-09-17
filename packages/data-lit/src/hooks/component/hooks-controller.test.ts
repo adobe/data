@@ -79,7 +79,7 @@ describe("installHooksController", () => {
         expect(onDisconnected).toHaveBeenCalledTimes(1);
     });
 
-    it("fires disconnect THEN connect synchronously across a MOVE, and does NOT finalize", async () => {
+    it("across a MOVE: fires both edges synchronously, PRESERVES the slot, and re-renders on reconnect", async () => {
         const host = new FakeHost();
         const dispose = vi.fn();
         host.hooks = [{ dispose, dependencies: [] }];
@@ -89,7 +89,9 @@ describe("installHooksController", () => {
         host.addEventListener("connected", () => edges.push("connect"));
 
         installHooksController(host);
+        host.connect(); // initial mount
         host.requestUpdate.mockClear();
+        edges.length = 0;
 
         // Move: disconnect immediately followed by reconnect, same task.
         host.disconnect();
@@ -97,10 +99,13 @@ describe("installHooksController", () => {
         expect(edges).toEqual(["disconnect", "connect"]); // both edges, synchronous, in order
 
         await flushMicrotasks();
-        // The slot survived: not disposed, and no re-render was forced.
+        // The slot SURVIVED the move — not disposed, not re-created...
         expect(dispose).not.toHaveBeenCalled();
         expect(host.hooks).toHaveLength(1);
-        expect(host.requestUpdate).not.toHaveBeenCalled();
+        // ...but the reconnect DID force one re-render. This is correctness, not churn:
+        // the preserved slot is not re-subscribed, so it is a cheap Lit diff — required
+        // so an element reading mutable non-hook state in render refreshes after a move.
+        expect(host.requestUpdate).toHaveBeenCalledTimes(1);
     });
 
     it("a rapid disconnect→connect→disconnect bounce finalizes exactly once (net state wins)", async () => {
@@ -134,16 +139,25 @@ describe("installHooksController", () => {
         expect(host.hooks).toHaveLength(1);
     });
 
-    it("forces a re-render only on a genuine RE-connect, not the first connect or a move", async () => {
+    it("forces a re-render on EVERY reconnect — a move and a genuine remount — but not the first connect", async () => {
         const host = new FakeHost();
         installHooksController(host);
 
-        host.connect(); // first mount
+        host.connect(); // first mount — Lit renders it anyway, no forced update
         expect(host.requestUpdate).not.toHaveBeenCalled();
 
+        // A MOVE (reconnect with slots preserved) forces a re-render.
+        host.disconnect();
+        host.connect();
+        await flushMicrotasks(); // finalization skipped (reconnected in the same task)
+        expect(host.requestUpdate).toHaveBeenCalledTimes(1);
+
+        // A genuine unmount+remount (slots finalized) also forces a re-render, which
+        // re-initializes and re-subscribes the cleared slots.
+        host.requestUpdate.mockClear();
         host.disconnect();
         await flushMicrotasks(); // genuine unmount: finalization runs
-        host.connect(); // reconnect must re-initialize the finalized hooks
+        host.connect();
         expect(host.requestUpdate).toHaveBeenCalledTimes(1);
     });
 

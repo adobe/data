@@ -103,6 +103,23 @@ describe("installHooksController", () => {
         expect(host.requestUpdate).not.toHaveBeenCalled();
     });
 
+    it("a rapid disconnect→connect→disconnect bounce finalizes exactly once (net state wins)", async () => {
+        const host = new FakeHost();
+        const dispose = vi.fn();
+        host.hooks = [{ dispose, dependencies: [] }];
+
+        installHooksController(host);
+        // Bounce within one task: only one finalization microtask is queued, and it
+        // reads the final isConnected (false) → finalizes once, not per disconnect.
+        host.disconnect();
+        host.connect();
+        host.disconnect();
+        await flushMicrotasks();
+
+        expect(dispose).toHaveBeenCalledTimes(1);
+        expect(host.hooks).toEqual([]);
+    });
+
     it("gates finalization on isConnected — a slot that reconnects before the microtask survives", async () => {
         const host = new FakeHost();
         const dispose = vi.fn();

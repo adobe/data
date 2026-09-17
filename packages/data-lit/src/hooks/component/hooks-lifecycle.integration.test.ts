@@ -8,6 +8,7 @@ import { withHooks } from "../with-hooks.js";
 import { useObservable } from "../use-observable.js";
 import { useState } from "../use-state.js";
 import { useConnected } from "../use-connected.js";
+import { useEffect } from "../use-effect.js";
 
 /**
  * Real-DOM regression tests for the two-slot hook lifecycle:
@@ -55,6 +56,9 @@ function createTrackedObservable(initial = 0): {
 // history without reaching into the element instance.
 let connectEdges: string[] = [];
 let disconnectEdges: string[] = [];
+let openResources = 0;
+let effectSetups = 0;
+let effectCleanups = 0;
 let renderCount = 0;
 let observableUnderTest: Observe<number>;
 
@@ -65,13 +69,24 @@ class LifecycleProbeElement extends LitElement {
     }
     render() {
         renderCount++;
-        // Edge primitive: must fire synchronously on every connect/disconnect edge.
+        // Edge primitive: must fire synchronously on every connect/disconnect edge,
+        // and open exactly one resource per connect (balanced by its teardown).
         useConnected(() => {
             connectEdges.push("connect");
+            openResources++;
             return () => {
                 disconnectEdges.push("disconnect");
+                openResources--;
             };
         });
+        // Plain effect slot: React-parity — cleanup on finalization/dep-change,
+        // never on a bare disconnect (so it survives a move too).
+        useEffect(() => {
+            effectSetups++;
+            return () => {
+                effectCleanups++;
+            };
+        }, []);
         // Value slot: must survive a move (retain its number across re-parenting).
         const [n] = useState(() => 41);
         // Subscription slot: must survive a move (no unsubscribe/re-subscribe).
@@ -84,6 +99,9 @@ customElements.define("lifecycle-probe-element", LifecycleProbeElement);
 function resetProbes(obs: Observe<number>): void {
     connectEdges = [];
     disconnectEdges = [];
+    openResources = 0;
+    effectSetups = 0;
+    effectCleanups = 0;
     renderCount = 0;
     observableUnderTest = obs;
 }
@@ -101,6 +119,30 @@ describe("two-slot hook lifecycle — real DOM", () => {
         el.remove();
         // The edge is synchronous: no microtask flush before this assertion.
         expect(disconnectEdges).toEqual(["disconnect"]);
+    });
+
+    it("useConnected runs setup ONCE across ordinary re-renders — no per-render leak", async () => {
+        const { observable } = createTrackedObservable();
+        resetProbes(observable);
+        const el = document.createElement("lifecycle-probe-element") as LifecycleProbeElement;
+        document.body.appendChild(el);
+        await el.updateComplete;
+        expect(connectEdges).toEqual(["connect"]);
+        expect(openResources).toBe(1);
+
+        // Ordinary re-renders (no connect/disconnect edge) re-run the hook body but
+        // must NOT re-invoke setup — the teardown handle persists across renders.
+        el.requestUpdate();
+        await el.updateComplete;
+        el.requestUpdate();
+        await el.updateComplete;
+        expect(connectEdges).toEqual(["connect"]);
+        expect(openResources).toBe(1);
+
+        // Unmount tears down exactly the one open resource — nothing leaked.
+        el.remove();
+        expect(disconnectEdges).toEqual(["disconnect"]);
+        expect(openResources).toBe(0);
     });
 
     it("useConnected churns disconnect→connect SYNCHRONOUSLY on a MOVE (re-parent)", async () => {
@@ -181,5 +223,57 @@ describe("two-slot hook lifecycle — real DOM", () => {
         expect(totalSubscribes()).toBe(2);
         // And the edge primitive reconnected.
         expect(connectEdges.filter(e => e === "connect").length).toBe(2);
+    });
+
+    it("a genuine unmount→remount to a DIFFERENT parent (across a task) re-initializes and re-subscribes", async () => {
+        const { observable, subscriberCount, totalSubscribes } = createTrackedObservable();
+        resetProbes(observable);
+        const parentA = document.createElement("div");
+        const parentB = document.createElement("div");
+        document.body.append(parentA, parentB);
+        const el = document.createElement("lifecycle-probe-element") as LifecycleProbeElement;
+        parentA.appendChild(el);
+        await el.updateComplete;
+        expect(totalSubscribes()).toBe(1);
+
+        // Unmount from A, let finalization run, then remount under a DIFFERENT parent.
+        // The finalization gate reads `isConnected` (not "did it reconnect to the same
+        // node"), so a remount anywhere is handled uniformly.
+        el.remove();
+        await flushMicrotasks();
+        expect(subscriberCount()).toBe(0);
+
+        parentB.appendChild(el);
+        await el.updateComplete;
+
+        expect(subscriberCount()).toBe(1);
+        expect(totalSubscribes()).toBe(2);
+        expect(connectEdges.filter(e => e === "connect").length).toBe(2);
+    });
+
+    it("plain useEffect cleanup does NOT run on a MOVE, and runs (deferred) on a genuine unmount", async () => {
+        const { observable } = createTrackedObservable();
+        resetProbes(observable);
+        const parentA = document.createElement("div");
+        const parentB = document.createElement("div");
+        document.body.append(parentA, parentB);
+        const el = document.createElement("lifecycle-probe-element") as LifecycleProbeElement;
+        parentA.appendChild(el);
+        await el.updateComplete;
+        expect(effectSetups).toBe(1);
+        expect(effectCleanups).toBe(0);
+
+        // MOVE: the effect slot survives untouched — no cleanup, no re-setup.
+        parentB.appendChild(el);
+        await flushMicrotasks();
+        await el.updateComplete;
+        expect(effectSetups).toBe(1);
+        expect(effectCleanups).toBe(0);
+
+        // UNMOUNT: cleanup runs on the finalization microtask, not synchronously.
+        el.remove();
+        expect(effectCleanups).toBe(0);
+        await flushMicrotasks();
+        expect(effectCleanups).toBe(1);
     });
 });

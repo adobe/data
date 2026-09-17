@@ -96,6 +96,24 @@ class LifecycleProbeElement extends LitElement {
 }
 customElements.define("lifecycle-probe-element", LifecycleProbeElement);
 
+/**
+ * Renders a plain mutable field (no hook, no requestUpdate on change). Used to prove
+ * that a reconnect forces a re-render so mutable non-hook state refreshes after a move.
+ */
+class MutableProbeElement extends LitElement {
+    flag = "INITIAL";
+    rendered = "";
+    constructor() {
+        super();
+        attachDecorator(this, "render", withHooks);
+    }
+    render() {
+        this.rendered = this.flag;
+        return html`<span>${this.flag}</span>`;
+    }
+}
+customElements.define("mutable-probe-element", MutableProbeElement);
+
 function resetProbes(obs: Observe<number>): void {
     connectEdges = [];
     disconnectEdges = [];
@@ -164,7 +182,7 @@ describe("two-slot hook lifecycle — real DOM", () => {
         expect(connectEdges).toEqual(["connect", "connect"]);
     });
 
-    it("value + subscription slots SURVIVE a MOVE (state kept, no re-subscribe, no forced render)", async () => {
+    it("value + subscription slots SURVIVE a MOVE (no re-subscribe), and the reconnect re-renders once", async () => {
         const { observable, subscriberCount, totalSubscribes, totalUnsubscribes } = createTrackedObservable();
         resetProbes(observable);
         const parentA = document.createElement("div");
@@ -180,11 +198,37 @@ describe("two-slot hook lifecycle — real DOM", () => {
         await flushMicrotasks();
         await el.updateComplete;
 
-        // Subscription untouched; useState value preserved; no re-render forced.
+        // The subscription is untouched — this is the perf win (no re-subscribe, no
+        // producer re-run, no state reset)...
         expect(subscriberCount()).toBe(1);
         expect(totalSubscribes()).toBe(1);
         expect(totalUnsubscribes()).toBe(0);
-        expect(renderCount).toBe(rendersBeforeMove);
+        // ...but the reconnect forces exactly one re-render (a cheap Lit diff over the
+        // preserved hook state) so an element reading mutable non-hook state refreshes.
+        expect(renderCount).toBe(rendersBeforeMove + 1);
+    });
+
+    it("an element reading MUTABLE non-hook state refreshes across a MOVE (the reconnect re-render)", async () => {
+        // Regression: a move fires no DOM re-render, so without the controller's forced
+        // reconnect re-render an element whose render reads a plain mutable field shows
+        // stale output after a re-parent.
+        const { observable } = createTrackedObservable();
+        resetProbes(observable);
+        const parentA = document.createElement("div");
+        const parentB = document.createElement("div");
+        document.body.append(parentA, parentB);
+        const el = document.createElement("mutable-probe-element") as MutableProbeElement;
+        parentA.appendChild(el);
+        await el.updateComplete;
+        expect(el.rendered).toBe("INITIAL");
+
+        el.flag = "CHANGED"; // mutate a plain field (no hook, no requestUpdate)
+        parentB.appendChild(el); // MOVE
+        await flushMicrotasks();
+        await el.updateComplete;
+
+        expect(el.isConnected).toBe(true);
+        expect(el.rendered).toBe("CHANGED");
     });
 
     it("finalizes on a genuine unmount — subscription disposed, no leak", async () => {
@@ -275,5 +319,36 @@ describe("two-slot hook lifecycle — real DOM", () => {
         expect(effectCleanups).toBe(0);
         await flushMicrotasks();
         expect(effectCleanups).toBe(1);
+    });
+
+    it("a subscription that has not yet emitted heals on a post-MOVE emit (preserved-subscription data contract)", async () => {
+        // Data-layer contract: the move preserves the single mount-time subscription, so
+        // a source that emits only LATER still reaches the element. This guards against a
+        // regression that tears subscriptions down on move (which would strand a source
+        // that does not replay-on-subscribe — the root of the studio "renders nothing").
+        let deliver: ((value: number) => void) | undefined;
+        const stalled: Observe<number> = observer => {
+            deliver = observer; // note: does NOT emit synchronously on subscribe
+            return () => {
+                deliver = undefined;
+            };
+        };
+        resetProbes(stalled);
+        const parentA = document.createElement("div");
+        const parentB = document.createElement("div");
+        document.body.append(parentA, parentB);
+        const el = document.createElement("lifecycle-probe-element") as LifecycleProbeElement;
+        parentA.appendChild(el);
+        await el.updateComplete;
+        expect(el.shadowRoot?.textContent).toContain("41:"); // value undefined, not yet emitted
+
+        // Move BEFORE the source emits, then emit.
+        parentB.appendChild(el);
+        await flushMicrotasks();
+        deliver?.(99);
+        await el.updateComplete;
+
+        // The preserved subscription delivered the post-move emit → element healed.
+        expect(el.shadowRoot?.textContent).toContain("99");
     });
 });

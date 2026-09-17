@@ -131,12 +131,15 @@ describe("hook disposal on real DOM disconnect", () => {
         // The element is still mounted and its subscription is intact...
         expect(el.isConnected).toBe(true);
         expect(subscriberCount()).toBe(1);
-        // ...and, crucially, the move neither disposed nor re-created it. Before the
-        // deferred-disposal fix, a move disposed and re-subscribed (2 subs / 1 unsub)
-        // and forced an extra re-render — the source of the studio-page lag, churn,
-        // and transient empty lists on project switch (FFP-111900).
+        // ...and, crucially, the move neither disposed nor re-created the subscription:
+        // no re-subscribe, no producer re-run. That is the perf win (before this, a move
+        // disposed and re-subscribed — 2 subs / 1 unsub — the source of the studio-page
+        // lag, churn, and transient empty lists on project switch, FFP-111900).
         expect(totalUnsubscribes()).toBe(0);
         expect(totalSubscribes()).toBe(1);
-        expect(updatesDuringMove).toBe(0);
+        // The reconnect DOES force exactly one re-render — a cheap Lit diff over the
+        // preserved subscription (no re-subscribe), required so an element that reads
+        // mutable non-hook state in render refreshes after a move.
+        expect(updatesDuringMove).toBe(1);
     });
 });

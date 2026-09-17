@@ -7,8 +7,10 @@ import { installHooksController } from "./hooks-controller.js";
 /**
  * Minimal stand-in for a Lit host: an EventTarget that captures the controller
  * installed on it so the test can drive `hostConnected` / `hostDisconnected`
- * directly (a real Lit element would need a DOM). `addController` mirrors Lit's
- * contract of firing `hostConnected` synchronously when already connected.
+ * directly (a real Lit element would need a DOM). `connect()` / `disconnect()`
+ * flip `isConnected` BEFORE dispatching, mirroring the DOM (the callback runs
+ * after connectedness has already changed) — the controller's deferred
+ * finalization reads `isConnected` to tell a move from a genuine unmount.
  */
 class FakeHost extends EventTarget implements Component {
     isConnected = true;
@@ -21,20 +23,21 @@ class FakeHost extends EventTarget implements Component {
     addController(controller: ReactiveController) {
         this.controllers.push(controller);
     }
-    // Simulate Lit dispatching lifecycle to every registered controller.
     connect() {
+        this.isConnected = true;
         for (const c of this.controllers) c.hostConnected?.();
     }
     disconnect() {
+        this.isConnected = false;
         for (const c of this.controllers) c.hostDisconnected?.();
     }
 }
 
-/** Resolves after the current microtask checkpoint, so deferred teardown can run. */
+/** Resolves after the current microtask checkpoint, so deferred finalization can run. */
 const flushMicrotasks = (): Promise<void> => new Promise(resolve => queueMicrotask(resolve));
 
 describe("installHooksController", () => {
-    it("disposes every effect hook and resets the cursor on a genuine disconnect", async () => {
+    it("finalizes every effect hook and resets the cursor on a genuine disconnect", async () => {
         const host = new FakeHost();
         const disposeA = vi.fn();
         const disposeB = vi.fn();
@@ -48,8 +51,8 @@ describe("installHooksController", () => {
 
         installHooksController(host);
         host.disconnect();
-        // Teardown is deferred one microtask (so a move can cancel it); with no
-        // reconnect this is a real unmount, so it runs on the next checkpoint.
+        // Finalization is deferred one microtask (so a move can cancel it); with no
+        // reconnect the host is still disconnected, so it runs on the next checkpoint.
         await flushMicrotasks();
 
         expect(disposeA).toHaveBeenCalledTimes(1);
@@ -58,28 +61,7 @@ describe("installHooksController", () => {
         expect(host.hookIndex).toBe(0);
     });
 
-    it("a synchronous disconnect→reconnect (a MOVE) cancels teardown and forces no re-render", async () => {
-        const host = new FakeHost();
-        const dispose = vi.fn();
-        host.hooks = [{ dispose, dependencies: [] }];
-        host.hookIndex = 1;
-
-        installHooksController(host);
-        host.connect(); // first mount
-        host.requestUpdate.mockClear();
-
-        // Disconnect immediately followed by reconnect, same task — a DOM move.
-        host.disconnect();
-        host.connect();
-        await flushMicrotasks();
-
-        // Nothing was torn down and no re-render was forced: the hooks survived.
-        expect(dispose).not.toHaveBeenCalled();
-        expect(host.hooks).toHaveLength(1);
-        expect(host.requestUpdate).not.toHaveBeenCalled();
-    });
-
-    it("dispatches connected / disconnected events across the lifecycle", async () => {
+    it("fires the connect / disconnect EDGE synchronously — no microtask needed", () => {
         const host = new FakeHost();
         const onConnected = vi.fn();
         const onDisconnected = vi.fn();
@@ -91,11 +73,51 @@ describe("installHooksController", () => {
         expect(onConnected).toHaveBeenCalledTimes(1);
 
         host.disconnect();
-        await flushMicrotasks();
+        // No flush: the edge is synchronous so connectedness hooks (useConnected)
+        // tear down inline. Under the old defer-everything controller this event
+        // only fired on a later microtask.
         expect(onDisconnected).toHaveBeenCalledTimes(1);
     });
 
-    it("forces a re-render only on a genuine RE-connect, not the first connect", async () => {
+    it("fires disconnect THEN connect synchronously across a MOVE, and does NOT finalize", async () => {
+        const host = new FakeHost();
+        const dispose = vi.fn();
+        host.hooks = [{ dispose, dependencies: [] }];
+        host.hookIndex = 1;
+        const edges: string[] = [];
+        host.addEventListener("disconnected", () => edges.push("disconnect"));
+        host.addEventListener("connected", () => edges.push("connect"));
+
+        installHooksController(host);
+        host.requestUpdate.mockClear();
+
+        // Move: disconnect immediately followed by reconnect, same task.
+        host.disconnect();
+        host.connect();
+        expect(edges).toEqual(["disconnect", "connect"]); // both edges, synchronous, in order
+
+        await flushMicrotasks();
+        // The slot survived: not disposed, and no re-render was forced.
+        expect(dispose).not.toHaveBeenCalled();
+        expect(host.hooks).toHaveLength(1);
+        expect(host.requestUpdate).not.toHaveBeenCalled();
+    });
+
+    it("gates finalization on isConnected — a slot that reconnects before the microtask survives", async () => {
+        const host = new FakeHost();
+        const dispose = vi.fn();
+        host.hooks = [{ dispose, dependencies: [] }];
+
+        installHooksController(host);
+        host.disconnect(); // schedules finalization; isConnected now false
+        host.connect(); // reconnects in the same task; isConnected back to true
+        await flushMicrotasks();
+
+        expect(dispose).not.toHaveBeenCalled();
+        expect(host.hooks).toHaveLength(1);
+    });
+
+    it("forces a re-render only on a genuine RE-connect, not the first connect or a move", async () => {
         const host = new FakeHost();
         installHooksController(host);
 
@@ -103,8 +125,8 @@ describe("installHooksController", () => {
         expect(host.requestUpdate).not.toHaveBeenCalled();
 
         host.disconnect();
-        await flushMicrotasks(); // genuine unmount: teardown runs
-        host.connect(); // reconnect re-initializes the torn-down hooks
+        await flushMicrotasks(); // genuine unmount: finalization runs
+        host.connect(); // reconnect must re-initialize the finalized hooks
         expect(host.requestUpdate).toHaveBeenCalledTimes(1);
     });
 

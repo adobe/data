@@ -51,11 +51,25 @@ function disposeHooks(host: Component): void {
  *
  * This installs a single Lit {@link ReactiveController} — the one hook-friendly
  * path to a genuine `hostDisconnected` — that:
- *  - on connect, dispatches `"connected"`, and on every *re*-connect forces a
- *    re-render so the (previously torn-down) hooks re-initialize and
- *    re-subscribe;
- *  - on disconnect, dispatches `"disconnected"` then disposes and clears all
- *    hook slots (full unmount semantics).
+ *  - on disconnect, *schedules* (on a microtask) dispatching `"disconnected"`,
+ *    disposing every hook slot, and clearing the cursor (full unmount semantics);
+ *  - on connect, if a teardown is still pending it CANCELS it (the disconnect
+ *    was half of a DOM move — hooks are intact, so nothing re-subscribes and no
+ *    re-render is forced); otherwise it dispatches `"connected"` and, on a true
+ *    reconnect, forces a re-render so the torn-down hooks re-initialize.
+ *
+ * ## Why disposal is deferred
+ *
+ * The DOM fires `disconnectedCallback` then `connectedCallback` **synchronously,
+ * in the same task,** whenever a connected element is merely *moved* — a Lit
+ * `repeat` reorder, a list re-parenting, a drag-reorder. Disposing inline would
+ * tear down and rebuild every subscription (re-running uncached producers) plus
+ * force a re-render on every such move, with the hook state momentarily reset —
+ * the studio-page lag, refresh churn, and transient empty lists on project
+ * switch (FFP-111900). Deferring teardown one microtask lets a synchronous
+ * reconnect distinguish a move (cancel) from a genuine unmount (let it run), so
+ * a move is a no-op and only a real unmount disposes. A late reconnect (a
+ * different task) is treated as unmount+remount, which is correct.
  *
  * It is installed lazily from inside the wrapped `render` (see {@link withHooks}),
  * which runs after `connectedCallback`, so `addController` fires `hostConnected`
@@ -74,8 +88,18 @@ export function installHooksController(host: Component): void {
     host[HOOKS_CONTROLLER] = true;
 
     let connectedOnce = false;
+    // True between a disconnect and its scheduled teardown. A reconnect that sees
+    // this flag set is the tail of a move and cancels the teardown.
+    let pendingDisposal = false;
     const controller: ReactiveController = {
         hostConnected() {
+            if (pendingDisposal) {
+                // Tail of a MOVE: the just-fired disconnect scheduled a teardown that
+                // has not run yet. Cancel it — the hooks are untouched, so there is
+                // nothing to re-subscribe and no reason to force a re-render.
+                pendingDisposal = false;
+                return;
+            }
             // The "connected" / "disconnected" events are for EXTERNAL listeners only.
             // The internal useConnected does NOT depend on them: this fires before the
             // render body attaches any listener, so useConnected is driven by its direct
@@ -89,8 +113,17 @@ export function installHooksController(host: Component): void {
             connectedOnce = true;
         },
         hostDisconnected() {
-            host.dispatchEvent(new Event("disconnected"));
-            disposeHooks(host);
+            // Defer teardown one microtask so a synchronous reconnect (a DOM move)
+            // can cancel it above. Only a genuine unmount reaches the callback.
+            pendingDisposal = true;
+            queueMicrotask(() => {
+                if (!pendingDisposal) {
+                    return;
+                }
+                pendingDisposal = false;
+                host.dispatchEvent(new Event("disconnected"));
+                disposeHooks(host);
+            });
         },
     };
     try {

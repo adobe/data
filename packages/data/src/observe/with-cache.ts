@@ -1,12 +1,30 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Notify, Observe, Unobserve } from "./index.js";
 
-/**
- * Creates a new Observe function that will cache the last value and notify observers immediately with the last value.
- * Also prevents the base observe function from being called more than once with multiple simultaneous observers.
- */
+export interface WithCacheOptions {
+  /**
+   * When `true`, the upstream subscription is torn down once the last observer unsubscribes and
+   * re-established when a new observer subscribes — releasing any active upstream resource while
+   * idle. When `false` (the default) the single upstream subscription is kept alive for the
+   * lifetime of the returned observable.
+   *
+   * Either way the last value is retained and replayed synchronously to every new observer
+   * (including one that subscribes after all previous observers have left), so a subscriber never
+   * stalls waiting for a fresh emission. Use `release: true` for a source that holds an active
+   * resource (a poll, a socket, an event listener) that should stop while nobody is listening.
+   */
+  release?: boolean;
+}
 
-export function withCache<T>(observable: Observe<T>): Observe<T> {
+/**
+ * Creates a new Observe function that caches the last value, notifies every new observer
+ * immediately with it, and shares a single upstream subscription across simultaneous observers.
+ *
+ * The last value is always retained and replayed on subscribe — even to an observer that arrives
+ * after all previous observers have unsubscribed. The {@link WithCacheOptions.release} flag
+ * controls only whether the upstream subscription is torn down while idle (default: kept alive).
+ */
+export function withCache<T>(observable: Observe<T>, { release = false }: WithCacheOptions = {}): Observe<T> {
   let value: T | undefined = undefined;
   let hasValue = false;
   const observers = new Set<Notify<T>>();
@@ -17,7 +35,7 @@ export function withCache<T>(observable: Observe<T>): Observe<T> {
       observer(value as T);
     }
 
-    if (observers.size === 1) {
+    if (!unobserve) {
       unobserve = observable((newValue) => {
         hasValue = true;
         value = newValue;
@@ -29,10 +47,10 @@ export function withCache<T>(observable: Observe<T>): Observe<T> {
 
     return () => {
       observers.delete(observer);
-      if (observers.size === 0 && unobserve) {
+      if (release && observers.size === 0 && unobserve) {
+        // Release the upstream resource while idle, but retain the last value so the next
+        // observer is replayed it synchronously (upstream re-subscribes for fresh values).
         unobserve();
-        value = undefined;
-        hasValue = false;
         unobserve = null;
       }
     };

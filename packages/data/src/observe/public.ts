@@ -26,7 +26,6 @@ export * from "./with-async-map.js";
 export * from "./with-map.js";
 export * from "./with-map-data.js";
 export * from "./with-optional.js";
-export * from "./with-replay.js";
 export * from "./with-switch.js";
 export * from "./with-unwrap.js";
 export * from "./with-lazy.js";

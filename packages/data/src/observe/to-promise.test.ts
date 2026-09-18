@@ -18,7 +18,7 @@ describe('toPromise', () => {
         expect(activeSubscribers).toBe(0);
     });
 
-    test('second toPromise sees stale cached value after mutation', async () => {
+    test('second toPromise replays the retained cached value (release: false default)', async () => {
         let state = 'A';
         const subscribers = new Set<(v: string) => void>();
 
@@ -36,7 +36,10 @@ describe('toPromise', () => {
         state = 'B';
         queueMicrotask(() => { for (const s of subscribers) s('B'); });
 
+        // withCache retains its last value and keeps the upstream alive by default, so a second
+        // toPromise resolves synchronously with the retained value ('A'); the microtask that would
+        // deliver 'B' has not run yet. (The old refcount behavior re-read the source and saw 'B'.)
         const v2 = await toPromise(cached);
-        expect(v2).toBe('B');
+        expect(v2).toBe('A');
     });
 });

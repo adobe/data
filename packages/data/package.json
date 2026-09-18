@@ -1,6 +1,6 @@
 {
   "name": "@adobe/data",
-  "version": "0.10.18",
+  "version": "0.10.19",
   "description": "Adobe data oriented programming library",
   "type": "module",
   "sideEffects": false,

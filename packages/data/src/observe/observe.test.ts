@@ -427,7 +427,7 @@ describe("observable", () => {
     });
   });
 
-  test("withCache retains its value and upstream across observer churn (release: false default)", async () => {
+  test("withCache resets when observables unsubscribe", async () => {
     const [observable, setValue] = createEvent<number>();
     const cachedObservable = withCache(observable);
 
@@ -491,9 +491,9 @@ describe("observable", () => {
     assert({
       given:
         "withCache with an observer that has started after old observers unsubscribed AND a value has been sent during the gap in observation",
-      should: "replay the latest retained value (the upstream stays live with release: false, so the gap value is cached)",
+      should: "not reset the cache and not send to the new observer",
       actual: observer3Values,
-      expected: [4],
+      expected: [],
     });
 
     setValue(5);
@@ -502,7 +502,7 @@ describe("observable", () => {
       given: "withCache with an observer that has unobserved and a cache state",
       should: "send the cached state and then forward values",
       actual: [observer1Values, observer2Values, observer3Values],
-      expected: [[1, 2], [1, 2, 3], [4, 5]],
+      expected: [[1, 2], [1, 2, 3], [5]],
     });
 
     unobserve3();

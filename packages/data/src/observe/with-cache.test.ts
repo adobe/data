@@ -6,7 +6,8 @@ import { withCache } from "./with-cache.js";
 
 /**
  * An instrumented source that records how many times it is subscribed/unsubscribed and lets the
- * test drive emissions, so we can assert both the replayed value and the upstream lifecycle.
+ * test drive emissions, so we can assert both the replayed value and the upstream lifecycle. It
+ * does NOT emit on subscribe, so a cold cache replays nothing until the next `emit`.
  */
 function makeSource() {
   let subscribeCount = 0;
@@ -35,10 +36,10 @@ function makeSource() {
 }
 
 describe("withCache", () => {
-  test("replays the last value synchronously to a later subscriber", () => {
+  test("replays the last value synchronously to a simultaneous later subscriber", () => {
     const source = makeSource();
     const cached = withCache(source.observable);
-    cached(() => {});
+    cached(() => {}); // keep the cache active
     source.emit(1);
     source.emit(2);
 
@@ -75,10 +76,39 @@ describe("withCache", () => {
     expect(bValues).toEqual([1, 2]);
   });
 
-  describe("default (release: false)", () => {
-    test("never releases the upstream subscription", () => {
+  describe("default (release: true)", () => {
+    test("tears down upstream when the last observer leaves", () => {
       const source = makeSource();
       const cached = withCache(source.observable);
+      const a = cached(() => {});
+      const b = cached(() => {});
+      a();
+      expect(source.unsubscribeCount).toBe(0); // b still observing
+      b();
+      expect(source.unsubscribeCount).toBe(1); // last observer gone → torn down
+    });
+
+    test("clears the cache after the last observer leaves — a later subscriber sees a cold cache", () => {
+      const source = makeSource();
+      const cached = withCache(source.observable);
+      const unobserve = cached(() => {});
+      source.emit(42);
+      unobserve(); // teardown + clear
+
+      let received: number | undefined;
+      cached((value) => {
+        received = value;
+      });
+
+      expect(received).toBeUndefined(); // nothing replayed; source has not re-emitted
+      expect(source.subscribeCount).toBe(2); // re-subscribed cold on the new observer
+    });
+  });
+
+  describe("release: false", () => {
+    test("never releases the upstream subscription", () => {
+      const source = makeSource();
+      const cached = withCache(source.observable, { release: false });
       const a = cached(() => {});
       const b = cached(() => {});
       a();
@@ -87,12 +117,12 @@ describe("withCache", () => {
       expect(source.unsubscribeCount).toBe(0);
     });
 
-    test("replays to a subscriber that arrives after ALL previous observers left", () => {
+    test("retains and replays the last value to a subscriber that arrives after ALL previous observers left", () => {
       const source = makeSource();
-      const cached = withCache(source.observable);
+      const cached = withCache(source.observable, { release: false });
       const unobserve = cached(() => {});
       source.emit(42);
-      unobserve(); // every observer is now gone
+      unobserve(); // every observer is gone, but the value is retained
 
       let received: number | undefined;
       cached((value) => {
@@ -104,56 +134,13 @@ describe("withCache", () => {
 
     test("subscribes upstream exactly once across full observer churn", () => {
       const source = makeSource();
-      const cached = withCache(source.observable);
+      const cached = withCache(source.observable, { release: false });
       const a = cached(() => {});
       a();
       const b = cached(() => {});
       b();
 
       expect(source.subscribeCount).toBe(1);
-    });
-  });
-
-  describe("release: true", () => {
-    test("releases the upstream subscription when the last observer leaves", () => {
-      const source = makeSource();
-      const cached = withCache(source.observable, { release: true });
-      const a = cached(() => {});
-      const b = cached(() => {});
-      a();
-      expect(source.unsubscribeCount).toBe(0); // b still observing
-      b();
-      expect(source.unsubscribeCount).toBe(1); // last observer gone → released
-    });
-
-    test("still retains and replays the last value after releasing", () => {
-      const source = makeSource();
-      const cached = withCache(source.observable, { release: true });
-      const unobserve = cached(() => {});
-      source.emit(7);
-      unobserve(); // released, but value retained
-
-      let received: number | undefined;
-      cached((value) => {
-        received = value;
-      });
-
-      expect(received).toBe(7);
-    });
-
-    test("re-subscribes upstream when an observer returns after release", () => {
-      const source = makeSource();
-      const cached = withCache(source.observable, { release: true });
-      const unobserve = cached(() => {});
-      source.emit(1);
-      unobserve();
-
-      const values: number[] = [];
-      cached((value) => values.push(value));
-      source.emit(2); // fresh value from the re-subscribed upstream
-
-      expect(source.subscribeCount).toBe(2); // once initially, once after release
-      expect(values).toEqual([1, 2]); // replayed retained value, then fresh
     });
   });
 });

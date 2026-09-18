@@ -3,15 +3,18 @@ import { Notify, Observe, Unobserve } from "./index.js";
 
 export interface WithCacheOptions {
   /**
-   * When `true`, the upstream subscription is torn down once the last observer unsubscribes and
-   * re-established when a new observer subscribes — releasing any active upstream resource while
-   * idle. When `false` (the default) the single upstream subscription is kept alive for the
-   * lifetime of the returned observable.
+   * When `true` (the default) the cache is reference-counted: the single upstream subscription is
+   * opened on the first observer and torn down — and the cached value cleared — when the last
+   * observer unsubscribes, so the next observer re-subscribes and sees a freshly computed value.
+   * Use the default for a source that holds an active resource (a poll, a socket, an event
+   * listener) that should stop while nobody is listening, or that must be re-read fresh each time.
    *
-   * Either way the last value is retained and replayed synchronously to every new observer
-   * (including one that subscribes after all previous observers have left), so a subscriber never
-   * stalls waiting for a fresh emission. Use `release: true` for a source that holds an active
-   * resource (a poll, a socket, an event listener) that should stop while nobody is listening.
+   * When `false` the upstream subscription is kept alive for the lifetime of the returned
+   * observable and the last value is retained, so every new observer — including one that
+   * subscribes after all previous observers have left — is replayed the current value synchronously
+   * and never stalls waiting for a fresh emission. Use it for a long-lived, app-scoped source a
+   * subscribe-once consumer must be able to read immediately regardless of subscription timing
+   * (e.g. an async value feeding `fromProperties`, where a cold cache would stall the combination).
    */
   release?: boolean;
 }
@@ -20,11 +23,11 @@ export interface WithCacheOptions {
  * Creates a new Observe function that caches the last value, notifies every new observer
  * immediately with it, and shares a single upstream subscription across simultaneous observers.
  *
- * The last value is always retained and replayed on subscribe — even to an observer that arrives
- * after all previous observers have unsubscribed. The {@link WithCacheOptions.release} flag
- * controls only whether the upstream subscription is torn down while idle (default: kept alive).
+ * By default the cache is reference-counted — see {@link WithCacheOptions.release}. Pass
+ * `{ release: false }` to keep the upstream alive and retain the value for the observable's
+ * lifetime, replaying it synchronously to every subscriber.
  */
-export function withCache<T>(observable: Observe<T>, { release = false }: WithCacheOptions = {}): Observe<T> {
+export function withCache<T>(observable: Observe<T>, { release = true }: WithCacheOptions = {}): Observe<T> {
   let value: T | undefined = undefined;
   let hasValue = false;
   const observers = new Set<Notify<T>>();
@@ -48,9 +51,9 @@ export function withCache<T>(observable: Observe<T>, { release = false }: WithCa
     return () => {
       observers.delete(observer);
       if (release && observers.size === 0 && unobserve) {
-        // Release the upstream resource while idle, but retain the last value so the next
-        // observer is replayed it synchronously (upstream re-subscribes for fresh values).
         unobserve();
+        value = undefined;
+        hasValue = false;
         unobserve = null;
       }
     };

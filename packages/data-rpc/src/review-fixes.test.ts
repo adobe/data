@@ -24,7 +24,7 @@ interface IgnoreService extends Service {
 const ignoreSchema = {
     type: "object",
     properties: {
-        ignoreArg: { type: "function", signature: { parameters: [{ type: "promise", value: { type: "number" } }], returns: { type: "promise" } } },
+        ignoreArg: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "promise", value: { type: "number" } } }], returns: { type: "promise" } } },
     },
     required: ["ignoreArg"],
     additionalProperties: false,
@@ -73,9 +73,9 @@ interface LateService extends Service {
 const lateSchema = {
     type: "object",
     properties: {
-        lateAwait: { type: "function", signature: { parameters: [{ type: "promise", value: { type: "number" } }], returns: { type: "promise" } } },
+        lateAwait: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "promise", value: { type: "number" } } }], returns: { type: "promise" } } },
         result: { type: "observe", value: { type: "string" } },
-        lateDrain: { type: "function", signature: { parameters: [{ type: "generator", value: { type: "number" } }], returns: { type: "promise" } } },
+        lateDrain: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "generator", value: { type: "number" } } }], returns: { type: "promise" } } },
         drained: { type: "observe", value: { type: "string" } },
     },
     required: ["lateAwait", "result", "lateDrain", "drained"],
@@ -201,7 +201,7 @@ interface VoidArgService extends Service {
 const voidArgSchema = {
     type: "object",
     properties: {
-        logObs: { type: "function", signature: { parameters: [{ type: "observe", value: { type: "number" } }] } },
+        logObs: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "observe", value: { type: "number" } } }] } },
     },
     required: ["logObs"],
     additionalProperties: false,
@@ -235,7 +235,7 @@ interface AwaitService extends Service {
 const awaitSchema = {
     type: "object",
     properties: {
-        awaitIt: { type: "function", signature: { parameters: [{ type: "promise", value: { type: "number" } }], returns: { type: "promise", value: { type: "number" } } } },
+        awaitIt: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "promise", value: { type: "number" } } }], returns: { type: "promise", value: { type: "number" } } } },
     },
     required: ["awaitIt"],
     additionalProperties: false,

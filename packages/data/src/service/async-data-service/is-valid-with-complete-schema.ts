@@ -34,7 +34,7 @@ const _accountSchema = {
     deposit: {
       type: "function",
       signature: {
-        parameters: [{ type: "number" }],
+        parameters: [{ name: "arg0", schema: { type: "number" } }],
         returns: { type: "promise", value: { type: "number" } },
       },
       description: "add funds; resolves to the new balance",
@@ -74,7 +74,7 @@ const _assetSchema = {
     download: {
       type: "function",
       signature: {
-        parameters: [{ type: "string" }],
+        parameters: [{ name: "arg0", schema: { type: "string" } }],
         returns: { type: "promise", value: { type: "blob" } },
       },
       description: "download an asset by id",

@@ -24,13 +24,16 @@ namespace DisplayService {
                 signature: {
                     parameters: [
                         {
-                            type: "object",
-                            properties: {
-                                alpha: { type: "observe", value: { type: "number" } },
-                                beta: { type: "observe", value: { type: "string" } },
+                            name: "arg0",
+                            schema: {
+                                type: "object",
+                                properties: {
+                                    alpha: { type: "observe", value: { type: "number" } },
+                                    beta: { type: "observe", value: { type: "string" } },
+                                },
+                                required: ["alpha", "beta"],
+                                additionalProperties: false,
                             },
-                            required: ["alpha", "beta"],
-                            additionalProperties: false,
                         },
                     ],
                     returns: { type: "observe", value: { type: "string" } },

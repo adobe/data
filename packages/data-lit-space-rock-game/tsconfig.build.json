@@ -1,0 +1,29 @@
+{
+  // The RUNTIME wall (dependency isolation). It compiles the shippable data + services
+  // tiers as a `composite` project, so a data/ or services/ runtime file that imports a
+  // test-tier file (`*.cases.ts`, `*.fake.ts`, `spec.ts`, anything under `conformance/`)
+  // is a COMPILE ERROR (TS6307: not in this project's file list). `ui/` and the app-shell
+  // (`src/*.ts`) live in the test project instead — they import test-tier only in their own
+  // `*.test.ts`, and keeping their (often very large) inferred element/plugin types out of
+  // this project avoids forcing them into serialized declarations. Emits declarations only,
+  // to a throwaway dir, purely to satisfy the composite contract `tsconfig.test.json` refs.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "./.tsbuild",
+    "rootDir": "src"
+  },
+  "include": ["src/features/**/*"],
+  "exclude": [
+    "**/ui/**",
+    "**/*.test.ts",
+    "**/*.type-test.ts",
+    "**/*.cases.ts",
+    "**/*.fake.ts",
+    "**/spec.ts",
+    "**/conformance/**"
+  ]
+}

@@ -38,7 +38,7 @@ export const playMove = (t: CoreDatabase.Store, { index }: PlayMoveArgs) => {
   direct substitute for the conformance oracle (see `../../index.md`, Two modes). The
   bullet below applies only to **state-based** features.
 - **Conformance is wired once, centrally, and auto-paired** — not per-file. The
-  feature's single `conformance/conformance.test.ts` `Conformance.runFeature({...})`
+  feature's single `conformance/conformance.test.ts` `Conformance.checkFeature(spec)`
   call conforms transactions: it pulls them off **`plugin.transactions`** (the
   registered facet), pairs each to the **same-named** `data/state` transition, and
   conforms it — seed `fromState(before)`, apply, `Match.assert` `toState ≡ after`

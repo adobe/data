@@ -8,11 +8,11 @@ import { readFrog } from "./read-frog.js";
 // resources; the decision is the pure `data/` transform, and this only writes
 // the resulting position back to the frog entity. A no-op while not playing
 // writes the same values, so it stays idempotent.
-export const hop = (t: CoreDatabase.Store, direction: Direction) => {
+export const hop = (t: CoreDatabase.Store, { direction }: { readonly direction: Direction }) => {
   const { id, frog } = readFrog(t);
   const next = State.hop(
     { frog, width: t.resources.width, height: t.resources.height, status: t.resources.status },
-    direction,
+    { direction },
   );
   t.update(id, { x: next.frog.x, y: next.frog.y });
 };

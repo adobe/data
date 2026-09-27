@@ -34,7 +34,7 @@ const readEntities = (store: CoreDatabase.Store): Map<number, Hazard> => {
   return entities;
 };
 
-// The test-only ecs↔`State` projection, passed to `Conformance.runFeature` (and
+// The test-only ecs↔`State` projection, carried on the manifest and used by `Conformance.checkFeature` (and
 // reused by the system tick-loop / outcome-selection tests). Hopper is not
 // id-addressed (transactions take a direction, not an entity id), so `fromState`
 // returns no id map and there are no id-list computeds — hence no `toData`. These

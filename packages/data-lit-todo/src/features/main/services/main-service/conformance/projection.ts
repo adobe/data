@@ -17,7 +17,7 @@ const toData = (store: CoreDatabase.Store, entity: Entity): Todo => {
   return { name: row.name, complete: row.complete, order: row.order };
 };
 
-// The test-only ecs↔`State` projection, passed to `Conformance.runFeature`.
+// The test-only ecs↔`State` projection, carried on the manifest and used by `Conformance.checkFeature`.
 // `fromState` seeds a store to a `State` (clearing every todo, setting the
 // `displayCompleted` resource, then inserting each entity with its own `order`;
 // the implementation-only slots (`dragPosition`, `assignees`) and the `todo` tag

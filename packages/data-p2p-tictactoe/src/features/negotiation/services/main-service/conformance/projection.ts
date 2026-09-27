@@ -2,7 +2,7 @@
 import type { State } from "../../../data/state/state.js";
 import type { CoreDatabase } from "../core-database/core-database.js";
 
-// The test-only store↔`State` projection, passed to `Conformance.runFeature`.
+// The test-only store↔`State` projection, carried on the conformance manifest.
 // Negotiation is resource-only (no entity collections), so `fromState` seeds the
 // scalar resources and returns nothing — ids resolve to `Entity.none` — and there
 // is no per-entity `toData`. The non-serializable `gameDb` resource is deliberately

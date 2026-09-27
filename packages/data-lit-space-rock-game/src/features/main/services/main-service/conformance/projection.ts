@@ -42,7 +42,7 @@ const toData = (
   );
 };
 
-// The test-only ecs↔`State` projection, passed to `Conformance.runFeature`.
+// The test-only ecs↔`State` projection, carried on the manifest and used by `Conformance.checkFeature`.
 // `fromState` seeds a store to a `State` (space-rock is not id-addressed, so it
 // returns no id map); `toState` reads it back through `toData`; `toData` reads one
 // entity. These are STRICTLY for conformance tests and MUST NEVER run in

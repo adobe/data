@@ -20,7 +20,7 @@ const toData = (store: CoreDatabase.Store, entity: Entity): Sprite => {
   };
 };
 
-// The test-only ecs↔`State` projection, passed to `Conformance.runFeature`.
+// The test-only ecs↔`State` projection, carried on the manifest and used by `Conformance.checkFeature`.
 // `fromState` seeds a store to a `State` (clear every sprite, set `filter`, then
 // insert the sprites) and returns the `spec id → seeded entity` map so the
 // runners resolve id-addressed operations generically; `toState` reads it back

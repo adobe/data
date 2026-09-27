@@ -1,8 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Vec2 } from "@adobe/data/math";
 import type { State } from "./state.js";
-import { Conformance } from "./conformance-case.js";
-import { create } from "./create.js";
 import { Asteroid } from "../asteroid/asteroid.js";
 import { Size } from "../size/size.js";
 import { Motion } from "../motion/motion.js";
@@ -43,47 +41,3 @@ export const spawnWave = (
   }
   return { wave, entities };
 };
-
-// Spec-owned cases for the deterministic `spawnWave` (no args) — the fixed FIRST
-// wave `createInitial` seeds (its randomized refill sibling is `spawnRandomWave`).
-// When the field is clear it bumps the wave and spawns a ring of large asteroids
-// around the centre, each drifting tangentially at 60px/s; while asteroids remain
-// it is a no-op. Field 200×200 → centre [100,100], ring radius 80. From wave 0 the
-// count is asteroidsFor(1)=4, so the ring lands on the four clean quadrant angles.
-const field = { ...create(), bounds: [200, 200] as [number, number] };
-
-export const cases = /*@__PURE__*/ Conformance.cases(spawnWave,
-  {
-    name: "spawns the next wave of large asteroids when the field is clear",
-    before: { ...field, entities: new Map(), wave: 0 },
-    args: undefined,
-    after: {
-      ...field,
-      wave: 1,
-      entities: new Map([
-        [1, { position: [180, 100], velocity: [0, 60], size: "large" }],
-        [2, { position: [100, 180], velocity: [-60, 0], size: "large" }],
-        [3, { position: [20, 100], velocity: [0, -60], size: "large" }],
-        [4, { position: [100, 20], velocity: [60, 0], size: "large" }],
-      ]),
-    },
-  },
-  {
-    name: "does nothing while asteroids still remain",
-    before: {
-      ...field,
-      wave: 1,
-      entities: new Map([
-        [1, { position: [10, 10], velocity: [0, 0], size: "large" }],
-      ]),
-    },
-    args: undefined,
-    after: {
-      ...field,
-      wave: 1,
-      entities: new Map([
-        [1, { position: [10, 10], velocity: [0, 0], size: "large" }],
-      ]),
-    },
-  },
-);

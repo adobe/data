@@ -23,13 +23,11 @@ not a hot per-entity or large-N path. Reusing a tested derivation is good — th
 only cost is that it takes the **whole `State`**, so the computed must observe the
 full-state projection and re-runs on *any* field change (fine for a small feature,
 wasteful on a large or hot one, where you hand-wire the minimal resource/index
-reads instead). A derivation takes **no services**, so its co-located `cases` are
-inert `{ input, value }` data (no test-doubles) that tree-shake out of the app
-build (they reference the `@adobe/data-testing` matchers only, and that module is
-`sideEffects: false`) — the one hazard is a `cases` literal touching the
-`public.js` barrel at load, which `state.md` already forbids. **Performance is the
-first-class constraint**: reuse freely where it doesn't matter, hand-wire minimal
-reads where it does.
+reads instead). A derivation takes **no services**, so its sibling `*.cases.ts` is
+inert `{ input, value }` data (no test-doubles); like every `*.cases.ts` it is
+test-tier and excluded from the runtime build by the project-reference wall, so it
+never reaches the app bundle. **Performance is the first-class constraint**: reuse
+freely where it doesn't matter, hand-wire minimal reads where it does.
 
 ```ts
 import { cached } from "@adobe/data/cache";
@@ -53,10 +51,11 @@ only when the count changes, allocating no entity array. Prefer it over
 `db.observe.select(...)` mapped through `.length`.
 
 **Conform a computed to its `data/state` derivation** whenever one exists. The
-derivation co-locates `{ input, value }` cases (`Derivation<typeof fn>`), and the
-feature's single `conformance/conformance.test.ts` `Conformance.runFeature({...})`
-call conforms computeds: it pulls them off **`computedPlugin.computed`**, pairs each
-to its **same-named** derivation, seeds the store from `input`, reads the computed's
+derivation's sibling `*.cases.ts` holds `{ input, value }` cases
+(`Conformance.SpecDerivations<typeof fn>`), and the feature's single
+`conformance/conformance.test.ts` `Conformance.checkFeature(spec)` call conforms
+computeds: it pulls them off **`computedPlugin.computed`**, pairs each to its
+**same-named** derivation, seeds the store from `input`, reads the computed's
 synchronous emission, and `Match.assert`s it against `value` (see `conformance.md`).
 There is no `define`/`conforms` wiring. **`computedPlugin` is the `ComputedDatabase`
 layer** — the runner builds computed conformance from that layer, not the assembled

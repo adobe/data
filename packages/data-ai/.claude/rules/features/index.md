@@ -32,8 +32,9 @@ one of two modes, discriminated by **the presence of `data/state/`**:
 - **State-based** — a **Functional State Specification (FSS)** is the source of
   truth: the pure `data/State` aggregate with its transitions and derivations, and
   the ECS is a conformance-verified implementation of it. Adds `data/state/` (State,
-  transitions, co-located `cases`, `spec.test.ts`), `services/main-service/conformance/`,
-  and the `state` projection computed. **This is how every new feature is authored.**
+  the pure transforms with sibling `*.cases.ts`, the `transforms.ts` barrel, the `spec.ts`
+  manifest, `spec.test.ts`), `services/main-service/conformance/`, and the `state`
+  projection computed. **This is how every new feature is authored.**
 - **ECS-based** — the **ECS is the source of truth**, authored directly:
   **no `data/state/`**, no FSS, no conformance. This is a **legacy** shape — features
   written before the state-based approach existed. New features are **never** authored
@@ -129,16 +130,17 @@ The tie between `data/` (spec) and `main-service` (implementation) is
 **conformance**, one property —
 `toState(apply(fromState(before), args)) ≡ transform(before, args)`: each
 main-service mutation, seeded and read back through a test-only store↔`State`
-projection, equals the pure `data/` transform it stands for. The per-feature
-projection lives in `services/main-service/conformance/`, and a **single
-`Conformance.runFeature({...})` call** replays the shared cases against the ecs —
-pairing each ECS op to its same-named transition automatically and round-tripping
-the projection (see `services/main-service/conformance.md`);
-the shared `{ before, args, after }` cases are spec-owned — co-located in each
-`data/state/<transform>.ts`, which exports its function plus `cases` — so
-conforming the implementation is "substitute the implementation, reuse the
-expectations." This lets `main-service` be largely mechanical and agent-generated,
-with the spec as oracle. *How* to author each layer lives in the per-folder rules below.
+projection, equals the pure `data/` transform it stands for. The spec-owned cases
+are authored as inert `data/state/*.cases.ts` and gathered by the `data/state/spec.ts`
+**manifest**, which both the pure `spec.test.ts` (`Conformance.checkSpec(spec)`) and the
+ecs `services/main-service/conformance/conformance.test.ts`
+(`Conformance.checkFeature(spec)`) import. `checkFeature` pairs each ECS op to its
+same-named transition, replays the shared cases, and round-trips the projection (see
+`services/main-service/conformance.md`); the manifest's compile-time guards keep the two
+calls the whole conformance surface. So conforming the implementation is "substitute the
+implementation, reuse the expectations" — `main-service` is largely mechanical and
+agent-generated, with the spec as oracle. *How* to author each layer lives in the
+per-folder rules below.
 
 ## Reference implementations
 

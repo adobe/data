@@ -61,24 +61,33 @@ portability and lazy loading (`AsyncDataService.createLazy`).
 - Members are async only: `void | Promise<T> | AsyncGenerator<T> | Observe<T>`.
 - Provide `create*` factories.
 
-## Deterministic test doubles, adjacent to the contract
+## Test doubles are a test-tier `*.fake.ts` — never in the production barrel
 
-A service is the seam consumers swap out under test — `data/` transitions that
-take it as an injected dependency (`data/state.md`), actions, systems. Ship a
-**deterministic test double** alongside the interface, in the same namespace
-folder and under the same `global/namespace.md` standard: `create-fake.ts` is a
-**single export**, `createFake`, re-exported through `public.ts` so callers reach
-it as `MyService.createFake` (mirroring the `create` / `factory` pair).
+A service is the seam consumers swap out under test. Ship a **shape-only recording
+template** alongside the interface, in the same namespace folder: `<name>.fake.ts`, a
+**single export** `createFake` that returns the service with each method present but
+inert (void methods do nothing; value methods return a placeholder). It is **NOT**
+re-exported through `public.ts` — so `MyService.createFake` is never reachable from
+runtime code — and it imports the contract with `import type` only. The conformance
+manifest (`data/state.md`) imports it directly; nothing else does.
 
-Because tests assert on exact `after` values, the double must be **deterministic
-and its responses caller-controlled**: `createFake` takes the exact response — the
-fixed value, or the ordered sequence each method returns — as a parameter, with a
-small inline default. A conformance case then **injects the responses it needs**
-(`createFake(["random task"])`, `createFake([4])`) and authors its `after` /
-`effects` against those values it supplied — nothing is read from a shared
-published constant (that would be a second export, and it makes the assertion
-guess at a value it doesn't own). The injected schedule is exactly what makes the
-double a dependable oracle: the test controls both the input and the expectation.
+```ts
+// analytics-service/analytics.fake.ts — test tier, not on the namespace
+import type { AnalyticsService } from "./analytics-service.js";
+export const createFake = (): AnalyticsService => ({
+  serviceName: "analytics",
+  todoToggled: () => {},                                   // void method: inert
+  randomTodoRequested: () => Promise.resolve({ startedAt: 0 }), // value method: placeholder
+  // …one entry per method
+});
+```
+
+The template supplies only the service's **shape** (the runner calls it once to
+enumerate methods — no Proxy). It invents **no return values**: a conformance case
+schedules each value-returning method's returns in its `responses` and asserts the
+calls in its `effects` (`data/state.md`), so the case owns both the input and the
+expectation. A `*.fake.ts` therefore takes no response parameter and hardcodes nothing
+a case asserts.
 
 ## Where the I/O types live
 

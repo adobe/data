@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Conformance } from "../index.js";
+import { runSpec } from "./run-spec.js";
 
 // Non-empty discovery: one pure transition with co-located cases still pairs and
 // asserts as before (empty-discovery path must not break populated specs).
@@ -17,7 +17,7 @@ const withdraw = (
   return { n: state.n - amount };
 };
 
-Conformance.runSpec({
+runSpec({
   state: { create: () => ({ n: 0 }) },
   transitions: {
     "./increment.ts": {

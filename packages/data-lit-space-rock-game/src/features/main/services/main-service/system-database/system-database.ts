@@ -268,7 +268,7 @@ const systemDatabasePlugin = Database.Plugin.create({
           for (const arch of db.store.queryArchetypes(["size"])) {
             if (arch.rowCount > 0) return;
           }
-          db.transactions.spawnRandomWave({ random });
+          db.transactions.refillWave({ random });
         };
       },
     },

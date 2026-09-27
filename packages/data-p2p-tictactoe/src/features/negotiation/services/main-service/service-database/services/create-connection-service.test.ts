@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import { Database } from "@adobe/data/ecs";
 import { TransactionDatabase } from "../../transaction-database/transaction-database.js";
-import { SignalingService } from "../../../signaling-service/signaling-service.js";
+import { createFake } from "../../../signaling-service/signaling.fake.js";
 import { createConnectionService } from "./create-connection-service.js";
 
 // A microtask/timer flush so the fake signaling promises resolve.
@@ -11,7 +11,7 @@ const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 describe("connection service (deterministic fake signaling)", () => {
   it("startHost enters host-signaling and records the invite code", async () => {
     const db = Database.create(TransactionDatabase.plugin);
-    const service = createConnectionService(db, SignalingService.createFake);
+    const service = createConnectionService(db, createFake);
 
     service.startHost();
     expect(db.resources.phase).toBe("host-signaling");
@@ -24,7 +24,7 @@ describe("connection service (deterministic fake signaling)", () => {
 
   it("generateAnswer records the answer code", async () => {
     const db = Database.create(TransactionDatabase.plugin);
-    const service = createConnectionService(db, SignalingService.createFake);
+    const service = createConnectionService(db, createFake);
 
     db.transactions.setJoinerOfferInput({ value: "OFFER-xyz" });
     service.startJoin();

@@ -1,0 +1,26 @@
+{
+  // The NON-EMITTING tier: everything the runtime wall (`tsconfig.build.json`) doesn't own —
+  // the test-tier (conformance manifest + inert cases, service fakes, `*.test.ts`,
+  // `conformance/`), plus `ui/` and the app-shell (`src/*.ts`). It `references` the runtime
+  // project, so its imports of data/services resolve through that project's declarations,
+  // and it alone may see `@adobe/data-testing`. Nothing here emits, so large element/plugin
+  // types are type-checked without being serialized. `tsc -b tsconfig.test.json` builds the
+  // wall first, then type-checks this tier — together covering all of `src`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true
+  },
+  "include": [
+    "src/*.ts",
+    "src/**/ui/**/*",
+    "src/**/*.test.ts",
+    "src/**/*.type-test.ts",
+    "src/**/*.cases.ts",
+    "src/**/*.fake.ts",
+    "src/**/spec.ts",
+    "src/**/conformance/**/*"
+  ],
+  "exclude": [],
+  "references": [{ "path": "./tsconfig.build.json" }]
+}

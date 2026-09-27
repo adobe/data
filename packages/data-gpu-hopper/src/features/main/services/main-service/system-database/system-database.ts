@@ -45,7 +45,7 @@ const systemDatabasePlugin = Database.Plugin.create({
         if (!GameStatus.isPlaying(resources.status)) return;
         const direction = resources.pendingDirection;
         if (direction === null) return;
-        db.transactions.hop(direction);
+        db.transactions.hop({ direction });
         resources.pendingDirection = null;
       },
     },

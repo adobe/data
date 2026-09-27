@@ -1,20 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Conformance } from "@adobe/data-testing";
-import { State } from "../../../data/state/state.js";
-import { transitions } from "../../../data/state/transitions.js";
-import { MainService } from "../main-service.js";
-import { ComputedDatabase } from "../computed-database/computed-database.js";
-import { projection } from "./projection.js";
+import { spec } from "../../../data/state/spec.js";
 
-// The whole ecs conformance for this feature in one call: `runFeature` pulls the
-// transactions/actions off `MainService.plugin`, the computeds off the
-// `ComputedDatabase` layer, seeds each case's `before` (a delta) over
-// `State.create()`, and round-trips `State.samples` through the projection.
-// `transitions` (the discovered `{ fn, cases }` modules) is shared with spec.test.
-Conformance.runFeature({
-  state: State,
-  transitions,
-  plugin: MainService.plugin,
-  computedPlugin: ComputedDatabase.plugin,
-  projection,
-});
+// The whole ecs conformance for this feature in one call: `checkFeature` replays the
+// manifest's shared cases against the transactions/actions on `MainService.plugin`
+// and the computeds on `ComputedDatabase`, seeds each `before` over `State.create()`,
+// and round-trips `State.samples` through the `projection`. It shares `spec` with
+// `spec.test.ts` — same cases, substituted implementation.
+Conformance.checkFeature(spec);

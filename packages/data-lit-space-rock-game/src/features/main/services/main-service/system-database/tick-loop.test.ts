@@ -26,8 +26,9 @@ import { State } from "../../../data/state/state.js";
 import { Ship } from "../../../data/ship/ship.js";
 import { Asteroid } from "../../../data/asteroid/asteroid.js";
 import { Input } from "../../../data/input/input.js";
-import { cases } from "../../../data/state/step.js";
+import { cases } from "../../../data/state/step.cases.js";
 import { Conformance } from "@adobe/data-testing";
+import { createFake as createRandom } from "../../random-service/random.fake.js";
 import { createSystemDatabase } from "../conformance/create-system-database.js";
 import { projection } from "../conformance/projection.js";
 import { driveFrame } from "../conformance/drive-frame.js";
@@ -36,15 +37,20 @@ describe("ECS system tick loop conforms to State.step (one frame = one step)", (
   for (const testCase of cases.cases) {
     it(testCase.name, () => {
       const { dt, input } = testCase.args;
-      // A case `before` is a delta over the feature default (`Case.before` is
+      // A case `before` is a delta over the feature default (`SpecCase.before` is
       // `Partial<State>`), so materialise the full seed the same way the runners do.
       // `db.store` supplies the schemas `assertState` reads to compare up to an
       // id-bijection (a tick spawns split children, so keys differ on both sides).
       const before = { ...State.create(), ...testCase.before };
       const db = createSystemDatabase();
-      // The co-located case carries its own inert `random` double (no case clears
-      // the field, so it is never drawn), so drive the oracle with the case args.
-      Conformance.assertState(State.step(before, testCase.args), testCase.after, db.store);
+      // The case args omit the injected `random` port (data-only), so supply an inert
+      // double here — no step case clears the field, so it is never drawn — to satisfy
+      // the oracle's signature while keeping both sides exact.
+      Conformance.assertState(
+        State.step(before, { dt, input, random: createRandom() }),
+        testCase.after,
+        db.store,
+      );
 
       projection.fromState(db.store, before);
       db.store.resources.frameDelta = dt;

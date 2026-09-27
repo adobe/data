@@ -1,21 +1,16 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Conformance } from "@adobe/data-testing";
-import { State } from "../../../data/state/state.js";
-import { transitions } from "../../../data/state/transitions.js";
-import { MainService } from "../main-service.js";
-import { projection } from "./projection.js";
+import { spec } from "../../../data/state/spec.js";
 
-// The whole ecs conformance for this feature in one call: `runFeature` pulls the
-// transactions/actions off `MainService.plugin`, seeds each case's `before` (a
-// delta) over `State.create()`, and round-trips `State.samples` through the
-// projection. `transitions` (the discovered `{ fn, cases }` modules) is shared with
-// spec.test. The entities the ecs materialises in nondeterministic row order live in
-// one `entities: ReadonlyMap<number, Bullet | Asteroid>`, so the comparator matches
-// them order-independently. There is no `computedPlugin` — space-rock has no `state/`
-// derivations.
-Conformance.runFeature({
-  state: State,
-  transitions,
-  plugin: MainService.plugin,
-  projection,
-});
+// The whole ecs conformance for this feature in one call: `checkFeature` pairs each
+// transaction/action on `MainService.plugin` with its same-named `data/state`
+// transition (`createInitial` transaction, `fireBullet` transaction + action,
+// `spawnRandomWave` action), seeds each case's `before` over `State.create()`, and
+// round-trips `State.samples` through the `projection`. The bullets and asteroids live
+// in one identity-keyed `entities` `ReadonlyMap`, so the comparator matches them
+// order-independently (the ecs materialises them in nondeterministic row order and
+// mints its own ids the `after`/`samples` refs leave open). The per-frame transitions
+// (`step*`, `resolve*`, `spawnWave`) have no same-named ecs op — the system tick loop
+// conforms them in `system-database/tick-loop.test.ts` (see systems.md) — so they are
+// simply skipped here. Space-rock has no derivations, so no `computedPlugin`.
+Conformance.checkFeature(spec);

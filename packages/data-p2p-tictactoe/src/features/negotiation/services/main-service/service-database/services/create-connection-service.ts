@@ -46,8 +46,8 @@ const serverLog = (msg: string) => console.log(`[sync-server] ${msg}`);
 
 /**
  * Create the connection service bound to its database. `signalingFactory`
- * defaults to the production {@link SignalingService.create}; tests inject
- * {@link SignalingService.createFake} for deterministic code exchange.
+ * defaults to the production {@link SignalingService.create}; tests inject the
+ * shape-only `createFake` from `signaling.fake.ts` for deterministic code exchange.
  */
 export const createConnectionService = (
   db: TransactionDatabase,

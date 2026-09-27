@@ -1,12 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Vec2 } from "@adobe/data/math";
 import type { State } from "./state.js";
-import { Conformance } from "./conformance-case.js";
-import { create } from "./create.js";
 import { Asteroid } from "../asteroid/asteroid.js";
 import { Size } from "../size/size.js";
 import { Motion } from "../motion/motion.js";
-import { RandomService } from "../../services/random-service/random-service.js";
 import type { Services } from "../../services/services.js";
 
 // Base drift speed; each rock's actual speed is jittered around it.
@@ -54,53 +51,3 @@ export const spawnRandomWave = (
   }
   return { wave, entities };
 };
-
-// Spec-owned cases, shared with the ecs `spawnRandomWave` transaction. Each case
-// injects its own fixed random sequence and authors `after` against it — the same
-// double flows to both sides, so the randomized velocities are exact and the two
-// sides agree: conformance stays honest even though the transition draws
-// randomness. `next` is a value-returning read (not a fire-and-forget side
-// effect), so it is NOT declared in `effects`.
-//
-// The injected sequence has length 4 and a spawn draws exactly 4 values (one per
-// asteroid at `asteroidsFor(1) = 4`). Field 200×200 → centre [100,100], ring
-// radius 80; positions match `spawnWave`, only drift SPEED is jittered:
-// `speed(i) = 60·(0.5 + sequence[i])` → [30, 60, 45, 75] in ring order.
-const field = { ...create(), bounds: [200, 200] as [number, number] };
-const randoms = [0, 0.5, 0.25, 0.75];
-
-export const cases = /*@__PURE__*/ Conformance.cases(spawnRandomWave,
-  {
-    name: "spawns a randomized wave (jittered drift speeds) when the field is clear",
-    before: { ...field, entities: new Map(), wave: 0 },
-    args: { random: RandomService.createFake(randoms) },
-    after: {
-      ...field,
-      wave: 1,
-      entities: new Map([
-        [1, { position: [180, 100], velocity: [0, 30], size: "large" }],
-        [2, { position: [100, 180], velocity: [-60, 0], size: "large" }],
-        [3, { position: [20, 100], velocity: [0, -45], size: "large" }],
-        [4, { position: [100, 20], velocity: [75, 0], size: "large" }],
-      ]),
-    },
-  },
-  {
-    name: "does nothing while asteroids still remain",
-    before: {
-      ...field,
-      wave: 1,
-      entities: new Map([
-        [1, { position: [10, 10], velocity: [0, 0], size: "large" }],
-      ]),
-    },
-    args: { random: RandomService.createFake(randoms) },
-    after: {
-      ...field,
-      wave: 1,
-      entities: new Map([
-        [1, { position: [10, 10], velocity: [0, 0], size: "large" }],
-      ]),
-    },
-  },
-);

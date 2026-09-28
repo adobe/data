@@ -13,22 +13,21 @@ import { boundsFromShapeMesh } from "../../scene/model/shape/bounds-from-shape-m
 import type { ColliderMesh } from "../../../physics/body/collider-mesh.js";
 import { interpolation } from "../interpolation-plugin.js";
 
-/** Authored column sets for primitive collider rows (RigidBody, ConvexBody,
- *  StaticCollider, MeshCollider). Query by these sets — not the named handle —
- *  so solver-tagged variants are found after migration. Rows with
- *  `voxelShapeName` are skipped at runtime (mechs voxel bodies). */
+/**
+ * Authored column sets for primitive collider rows still missing a render mesh.
+ * - exclude `mesh` → once assigned, rows drop out of the scan (O(pending) not O(all)).
+ * - exclude `voxelShapeName` → mechs voxel bodies use voxelShapeVisualBridge only
+ *   (never visit ~all static voxel colliders every frame).
+ */
 const PRIMITIVE_COLLIDER_QUERIES: readonly {
     include: readonly string[];
-    exclude?: readonly string[];
+    exclude: readonly string[];
 }[] = [
-    { include: RIGID_BODY_COMPONENTS, exclude: ["convexPoints"] },
-    { include: [...RIGID_BODY_COMPONENTS, "convexPoints"] },
-    { include: STATIC_COLLIDER_COMPONENTS, exclude: ["colliderMesh"] },
-    { include: [...STATIC_COLLIDER_COMPONENTS, "colliderMesh"] },
+    { include: RIGID_BODY_COMPONENTS, exclude: ["convexPoints", "voxelShapeName", "mesh"] },
+    { include: [...RIGID_BODY_COMPONENTS, "convexPoints"], exclude: ["voxelShapeName", "mesh"] },
+    { include: STATIC_COLLIDER_COMPONENTS, exclude: ["colliderMesh", "voxelShapeName", "mesh"] },
+    { include: [...STATIC_COLLIDER_COMPONENTS, "colliderMesh"], exclude: ["voxelShapeName", "mesh"] },
 ];
-
-const hasVoxelShapeName = (store: { read(id: Entity): Record<string, unknown> | null }, id: Entity): boolean =>
-    store.read(id)?.voxelShapeName != null;
 
 /**
  * physicsRenderBridge — assigns default primitive render meshes for standard
@@ -97,15 +96,13 @@ export const physicsRenderBridge = Database.Plugin.create({
                     for (const { include, exclude } of PRIMITIVE_COLLIDER_QUERIES) {
                         for (const arch of db.store.queryArchetypes(
                             include as typeof RIGID_BODY_COMPONENTS,
-                            exclude ? { exclude: exclude as ["convexPoints"] | ["colliderMesh"] } : undefined,
+                            { exclude: exclude as ["mesh"] },
                         )) {
                             const ids = arch.columns.id;
                             const css = arch.columns.colliderShape;
                             const hes = arch.columns.halfExtents;
                             for (let i = arch.rowCount - 1; i >= 0; i--) {
                                 const id = ids.get(i);
-                                if (hasVoxelShapeName(db.store, id)) continue;
-                                if (db.store.get(id, "mesh") != null) continue;
                                 const shape = css.get(i);
                                 const he = hes.get(i);
                                 let meshId: Entity;

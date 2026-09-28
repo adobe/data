@@ -22,15 +22,37 @@ import {
 
 interface InstCache { buffer: GPUBuffer; indexBuffer: GPUBuffer; bindGroup: GPUBindGroup; capacity: number }
 
+interface StaticPrimDraw {
+    readonly primId: Entity;
+    readonly n: number;
+    readonly indexCount: number;
+    readonly indexFormat: GPUIndexFormat;
+    readonly vertexBuffer: GPUBuffer;
+    readonly indexBuffer: GPUBuffer;
+    readonly bindGroup: GPUBindGroup;
+}
+
 /**
  * pbrFactorRender — instanced primitive PBR from material factors only (no map
  * sampling). Extends `pbrIblRender` for IBL + skybox + optional glTF draws.
  * Pairs with `materialPaletteGpu` (`_paletteIndex` on factor materials).
  *
  * Pairs with `materialPaletteGpu` (`_paletteIndex`). Idle when no factor materials or drawables exist.
+ *
+ * Set resource `_pbrFactorStaticInstances = true` for fully static scenes
+ * (e.g. terrain heightfield): after drawable count stabilizes, skip per-frame
+ * TRS gather + instance buffer uploads and only re-issue drawIndexed.
  */
 export const pbrFactorRender = Database.Plugin.create({
     extends: Database.Plugin.combine(pbrIblRender, materialPaletteGpu, displayTransform),
+    resources: {
+        /**
+         * When true, instance matrices are uploaded once the drawable set is
+         * stable; later frames only rebind and draw. Clear or leave false for
+         * scenes that move/add bodies every frame.
+         */
+        _pbrFactorStaticInstances: { default: false as boolean, nonPersistent: true },
+    },
     systems: {
         pbrFactorPrimitiveRenderSystem: {
             schedule: { during: ["render"], after: ["beginRenderPass", "pbrIblRenderSystem"], before: ["endRenderPass"] },
@@ -54,10 +76,15 @@ export const pbrFactorRender = Database.Plugin.create({
                 let mats = new Float32Array(64 * 16);
                 const batches = new Map<Entity, MeshBatch>();
 
+                let staticDraws: StaticPrimDraw[] | null = null;
+                let staticDrawCount = -1;
+                let staticStableFrames = 0;
+
                 return () => {
                     const {
                         device, renderPassEncoder, canvasFormat, depthFormat, _sceneUniformsBuffer,
                         _factorPaletteBindGroup, _iblIrradiance, _iblPrefiltered, _iblBrdfLut,
+                        _pbrFactorStaticInstances,
                     } = db.store.resources;
                     if (!device || !renderPassEncoder || !_sceneUniformsBuffer || !_factorPaletteBindGroup) return;
                     if (!_iblIrradiance || !_iblPrefiltered || !_iblBrdfLut) return;
@@ -102,6 +129,21 @@ export const pbrFactorRender = Database.Plugin.create({
                             ],
                         });
                         cachedIrradiance = _iblIrradiance;
+                    }
+
+                    // Static path: re-draw without re-gather / re-upload.
+                    if (_pbrFactorStaticInstances && staticDraws != null && staticDraws.length > 0) {
+                        renderPassEncoder.setPipeline(pipeline);
+                        renderPassEncoder.setBindGroup(0, sceneBindGroup);
+                        renderPassEncoder.setBindGroup(1, _factorPaletteBindGroup);
+                        renderPassEncoder.setBindGroup(2, iblBindGroup);
+                        for (const d of staticDraws) {
+                            renderPassEncoder.setBindGroup(3, d.bindGroup);
+                            renderPassEncoder.setVertexBuffer(0, d.vertexBuffer);
+                            renderPassEncoder.setIndexBuffer(d.indexBuffer, d.indexFormat);
+                            renderPassEncoder.drawIndexed(d.indexCount, d.n);
+                        }
+                        return;
                     }
 
                     let mc = 0;
@@ -150,6 +192,8 @@ export const pbrFactorRender = Database.Plugin.create({
                     renderPassEncoder.setBindGroup(1, _factorPaletteBindGroup);
                     renderPassEncoder.setBindGroup(2, iblBindGroup);
 
+                    const nextStatic: StaticPrimDraw[] = [];
+
                     for (const arch of db.store.queryArchetypes(PRIMITIVE)) {
                         const vbs = arch.columns._vertexBuffer, ibs = arch.columns._indexBuffer;
                         const counts = arch.columns._indexCount, formats = arch.columns._indexFormat;
@@ -187,7 +231,37 @@ export const pbrFactorRender = Database.Plugin.create({
                             renderPassEncoder.setVertexBuffer(0, vbs.get(i)!);
                             renderPassEncoder.setIndexBuffer(ibs.get(i)!, formats.get(i));
                             renderPassEncoder.drawIndexed(counts.get(i), n);
+
+                            if (_pbrFactorStaticInstances) {
+                                nextStatic.push({
+                                    primId,
+                                    n,
+                                    indexCount: counts.get(i),
+                                    indexFormat: formats.get(i),
+                                    vertexBuffer: vbs.get(i)!,
+                                    indexBuffer: ibs.get(i)!,
+                                    bindGroup: entry.bindGroup,
+                                });
+                            }
                         }
+                    }
+
+                    // Freeze only after the drawable set stops growing for one frame
+                    // (mesh resolve / material assign finish during the first seconds).
+                    if (_pbrFactorStaticInstances) {
+                        if (drawCount === staticDrawCount && drawCount > 0) {
+                            staticStableFrames++;
+                        } else {
+                            staticStableFrames = 0;
+                            staticDrawCount = drawCount;
+                        }
+                        if (staticStableFrames >= 1 && nextStatic.length > 0) {
+                            staticDraws = nextStatic;
+                        }
+                    } else {
+                        staticDraws = null;
+                        staticStableFrames = 0;
+                        staticDrawCount = -1;
                     }
                 };
             },

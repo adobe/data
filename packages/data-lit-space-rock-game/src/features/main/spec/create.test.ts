@@ -1,0 +1,20 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+import { describe, it, expect } from "vitest";
+import { State } from "./state.js";
+import { Lives } from "../data/values/lives/lives.js";
+
+describe("State.create", () => {
+  it("is a blank neutral state: no field, idle ship, empty, full lives, wave 0", () => {
+    const state = State.create();
+    expect(state.bounds).toEqual([0, 0]);
+    expect(state.ship.velocity).toEqual([0, 0]);
+    expect(state.entities).toEqual(new Map());
+    expect(state.score).toBe(0);
+    expect(state.lives).toBe(3);
+    expect(state.wave).toBe(0);
+  });
+
+  it("is not game over", () => {
+    expect(Lives.isGameOver(State.create().lives)).toBe(false);
+  });
+});

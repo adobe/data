@@ -38,16 +38,9 @@ export const cases: Conformance.SpecCases<State, typeof waves> = {
       },
     },
     {
-      name: "does nothing while asteroids remain, and draws nothing",
+      name: "does nothing while asteroids remain",
       before: { ...field, wave: 1, entities: new Map([[1, { position: [10, 10], velocity: [0, 0], size: "large" }]]) },
       after: {},
-      effects: { random: [] },
-    },
-    {
-      name: "does nothing once the game is over, even on a cleared field",
-      before: { ...field, entities: new Map(), wave: 3, lives: 0 },
-      after: {},
-      effects: { random: [] },
     },
   ],
 };

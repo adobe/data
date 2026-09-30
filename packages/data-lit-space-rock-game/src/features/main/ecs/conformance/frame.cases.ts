@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Conformance } from "@adobe/data-testing";
-import type { State } from "./state.js";
-import type * as systems from "./systems.js";
-import { Input } from "../data/values/input/input.js";
-import { Ship } from "../data/values/ship/ship.js";
+import type { State } from "../../spec/state.js";
+import type * as systems from "../../spec/systems.js";
+import { Input } from "../../data/values/input/input.js";
+import { Ship } from "../../data/values/ship/ship.js";
 
 // Whole-frame cases: every system once, in the order their `schedule`s declare. Each
 // exercises one hand-off between systems with geometry chosen so every `after` is

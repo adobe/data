@@ -13,6 +13,7 @@ computed. The folder holds:
 conformance/
   projection.ts         the store ⇄ State mapping
   implementation.ts     the spec paired with its ECS build
+  frame.cases.ts        whole-frame cases (real-time features)
   conformance.test.ts   Conformance.checkFeature(implementation)
 ```
 
@@ -39,7 +40,8 @@ export const implementation = Conformance.implementation(spec, {
   hydrate: ["visibleTodos"],                 // exactly the computeds that emit entity ids
   services: { game: GameService.createFake },   // base fakes for app-injected services
   frame: { args: { dt: (db, dt) => { db.store.resources.frameDelta = dt; } },
-           unmodelled: { physics: "wasm rigid-body step" } },   // real-time features
+           unmodelled: { physics: "wasm rigid-body step" },
+           cases: frameCases },                          // real-time features
 });
 ```
 
@@ -50,9 +52,10 @@ export const implementation = Conformance.implementation(spec, {
   them.
 - **`frame`** is required when the spec has `systems`. `args` writes each frame data
   arg into the store; `unmodelled` names, with a reason, each system the spec doesn't
-  model. Each spec system conforms by running just that system; each frame case runs
-  every modelled system once in `db.system.order` (`systems.md`). Systems keep their
-  in-place column writes.
+  model; `cases` are whole-frame cases (`frame.cases.ts` here, typed
+  `Conformance.FrameCases<State, typeof systems>`). Each spec system conforms by
+  running just that system; each frame case runs every modelled system once in
+  `db.system.order` (`systems.md`). Systems keep their in-place column writes.
 - `hydrate` exactness and `computedPlugin` requiredness are checked at compile time.
 
 ## `conformance.test.ts`

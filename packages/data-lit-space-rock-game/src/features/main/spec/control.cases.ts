@@ -39,11 +39,5 @@ export const cases: Conformance.SpecCases<State, typeof control> = {
       args: { dt: 1, input: { turn: 1, thrust: true, fire: false } },
       after: { ship: { position: [50, 50], velocity: [200, 0], rotation: 0 } },
     },
-    {
-      name: "does nothing once the game is over",
-      before: { ship: { position: [50, 50], velocity: [0, 0], rotation: 0 }, lives: 0 },
-      args: { dt: 1, input: { turn: 1, thrust: true, fire: false } },
-      after: {},
-    },
   ],
 };

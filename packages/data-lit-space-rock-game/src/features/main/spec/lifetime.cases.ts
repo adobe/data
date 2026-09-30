@@ -61,16 +61,5 @@ export const cases: Conformance.SpecCases<State, typeof lifetime> = {
       args: { dt: 0.1, input: trigger },
       after: { entities: new Map([[1, { position: [152, 100], velocity: [400, 0], age: 0.1 }]]) },
     },
-    {
-      name: "does nothing once the game is over, even with the trigger pulled",
-      before: {
-        ...field,
-        ship: { position: [50, 50], velocity: [0, 0], rotation: 0 },
-        entities: new Map([[1, { position: [10, 50], velocity: [100, 0], age: 0 }]]),
-        lives: 0,
-      },
-      args: { dt: 0.1, input: trigger },
-      after: {},
-    },
   ],
 };

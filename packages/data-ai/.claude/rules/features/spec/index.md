@@ -19,7 +19,7 @@ spec/
   toggle-complete.ts   toggle-complete.cases.ts        # one action or derivation + its cases
   visible-todos.ts     visible-todos.cases.ts
   transforms.ts                                        # barrel of every action + derivation
-  systems.ts   <system>.cases.ts   frame.cases.ts      # real-time only: one function per ECS system
+  systems.ts   <system>.cases.ts                       # real-time only: one function per ECS system
   spec.ts   spec.test.ts                               # the manifest + Conformance.checkSpec
 ```
 
@@ -100,7 +100,8 @@ export const cases: Conformance.SpecCases<State, typeof toggleComplete> = {
 - **`before`** is a delta over `State.create()`; **`after`** is the writes patch; a
   derivation case is `{ name, input, value }`.
 - **`args` is data only.** Services never appear in cases. A value-returning service
-  method's results are scheduled in **`responses`**, and calls to assert go in
+  method's results are scheduled in **`responses`** — calling one with nothing
+  scheduled, or more times than scheduled, fails the case — and calls to assert go in
   **`effects`** (`Array` = ordered, `Set` = any order).
 - **Ids are plain numbers** everywhere; conformance compares them up to an id
   bijection. Mark entity-reference args in the `args` schema.
@@ -139,7 +140,11 @@ export const collision = whilePlaying((s) => ({ ...resolveHits(s) }));
 
 // spec.ts
 export const spec = Conformance.spec({ …,
-  systems: { fns: systems, cases: { movement, collision }, frame: frameCases },
+  systems: {
+    fns: systems,
+    cases: { movement, collision },
+    noOp: [{ name: "frozen once the game is over", before: { status: "over" }, args: { dt: 1 } }],
+  },
 });
 ```
 
@@ -147,7 +152,10 @@ export const spec = Conformance.spec({ …,
   function composes both; when two systems split one step, split the function too
   (the handoff must be a `State` field).
 - **One `SpecCases` module per system**; `checkSpec` runs them against the functions.
-- **Frame cases** (`Conformance.FrameCases<State, typeof systems>`) cover how systems
-  interact over one tick; `checkFeature` runs them in the schedule's order.
+- **`noOp`** lists states every system must leave unchanged (game over, paused). Each
+  is checked against every system, so a shared guard needs one case, not one per
+  system.
+- **Whole-frame cases** depend on the ECS's schedule, so they live with the
+  implementation (`../ecs/conformance.md`), not here.
 - A system the spec can't model (wasm physics, init-only seeding) has no function;
   the implementation declares it unmodelled (`../ecs/conformance.md`).

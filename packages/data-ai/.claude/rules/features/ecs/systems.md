@@ -133,15 +133,18 @@ frame: {
   args: { dt: (db, dt) => { db.store.resources.frameDelta = dt; },
           input: (db, input) => { db.store.resources.input = input; } },
   unmodelled: { physics: "wasm rigid-body step", seedLevel: "init-only" },
+  cases: frameCases,   // ecs/conformance/frame.cases.ts
 },
 ```
 
 - **Per system:** each case seeds the store, writes the case's args, runs **just that
   system**, and compares with its spec function. Selection and detection logic (which
   entities collide) is tested here, with seeded edge-case geometries.
-- **Per frame:** each frame case folds the spec system functions in `db.system.order`
-  and also runs one real frame; both must give `after`. The order comes only from the
-  `schedule` declarations.
+- **Per frame:** each frame case (`ecs/conformance/frame.cases.ts`) folds the spec
+  system functions in `db.system.order` and also runs one real frame; both must give
+  `after`. The order comes only from the `schedule` declarations.
+- **Shared guards:** the spec's `systems.noOp` states (game over) are checked against
+  every system, on both sides.
 - **Unmodelled systems** (wasm, init-only) are skipped on both sides and reported as
   skipped tests. Every system is modelled or unmodelled — a compile error otherwise.
   To test an unmodelled system's glue, put the wasm call behind a service and model it

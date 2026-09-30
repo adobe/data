@@ -13,7 +13,7 @@ Create the feature's `spec/` folder, the specification the ECS will be conformed
 - One file per **action** (each operation the app performs) and per **derivation**
   (each derived value it shows), each with its inert `*.cases.ts`. A real-time feature
   adds `systems.ts`: one pure function per ECS system it will have, named the same,
-  each with cases, plus frame cases.
+  each with cases, plus `noOp` states every system leaves unchanged.
 - `transforms.ts` (the barrel of every action and derivation), `spec.ts`
   (`Conformance.spec`) and `spec.test.ts` (`Conformance.checkSpec`).
 

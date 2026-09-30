@@ -13,8 +13,9 @@ Database.Plugin.combine(<currentTop>.plugin, scheduler), systems: { … } })`, w
 per-row work writes columns in place; discrete events dispatch transactions. Order
 systems under `schedule`; it is the only statement of order.
 
-Add `frame: { args, unmodelled? }` to the implementation: a writer per frame arg, and
-each system the spec can't model (wasm, init-only) with its reason. Gate: every
+Add `frame: { args, unmodelled?, cases? }` to the implementation: a writer per frame
+arg, each system the spec can't model (wasm, init-only) with its reason, and
+whole-frame cases in `ecs/conformance/frame.cases.ts`. Gate: every
 system's own cases and the frame cases pass.
 
 The how is in the auto-loading `features/ecs/systems.md` rule.

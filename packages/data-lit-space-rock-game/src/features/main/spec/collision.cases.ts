@@ -285,20 +285,5 @@ export const cases: Conformance.SpecCases<State, typeof collision> = {
       args: { dt },
       after: { entities: new Map(), score: 100 },
     },
-    {
-      name: "does nothing once the game is over",
-      before: {
-        ...small,
-        ship: respawned,
-        entities: new Map([
-          [1, { position: [50, 50], velocity: [0, 0], age: 0 }],
-          [2, { position: [50, 50], velocity: [0, 0], size: "small" }],
-          [3, { position: [100, 100], velocity: [0, 0], size: "large" }],
-        ]),
-        lives: 0,
-      },
-      args: { dt },
-      after: {},
-    },
   ],
 };

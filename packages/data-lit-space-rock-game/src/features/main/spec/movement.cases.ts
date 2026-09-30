@@ -69,16 +69,5 @@ export const cases: Conformance.SpecCases<State, typeof movement> = {
       args: { dt: 1 },
       after: { entities: new Map([[1, { position: [10, 10], velocity: [10, 0], age: 0 }]]) },
     },
-    {
-      name: "does nothing once the game is over",
-      before: {
-        ...field,
-        ship: { position: [50, 50], velocity: [10, 0], rotation: 0 },
-        entities: new Map([[1, { position: [10, 10], velocity: [30, 0], size: "large" }]]),
-        lives: 0,
-      },
-      args: { dt: 1 },
-      after: {},
-    },
   ],
 };

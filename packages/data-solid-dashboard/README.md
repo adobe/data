@@ -17,7 +17,7 @@ pnpm dev        # starts Vite on http://localhost:3004
 - **Fine-grained reactivity** — each component observes only the slices it
   needs (`count`, `log`, `userName`). Updating one resource does not re-render
   components that don't depend on it.
-- **Cross-component actions** — the control panel fires transactions
+- **Cross-component actions** — the control panel fires actions
   (`increment`, `setUserName`, …) that are reflected in the counter display,
   activity log, and status bar.
 - **Presentation separation** — each component is split into a data-wiring
@@ -27,31 +27,29 @@ pnpm dev        # starts Vite on http://localhost:3004
 
 ## Structure
 
-Organized into the feature-folder architecture — layered by the *kind of type*
-each folder holds (`data/` value types & pure transforms, `services/` the ECS
-implementation, `ui/` presentation):
+Organized into the layered feature layout (`data → spec | ecs → ui → app`):
 
 ```
 src/
-  main.tsx                              entry point
+  app/main.tsx                          entry point
   features/main/
-    data/state/                         the spec — one immutable State + pure transforms
-      state.ts  create.ts  public.ts
-      increment.ts / .test.ts  decrement.ts / .test.ts  reset.ts / .test.ts
-      set-user-name.ts / .test.ts  clear-log.ts / .test.ts
-      conformance-case.ts  expect-state-matches.ts
-    services/main-service/              the implementation — the sole entrypoint the ui/ binds to
-      core-database/                    resources (count, userName, log) — no entities
-      transaction-database/transactions/  one mutation per file + conformance test
-      conformance/                      fromState / toState / expectConforms (test-only)
+    data/                               runtime: pure Data declarations
+      values/activity-log/              ActivityLog type + pinned schema
+      resources/                        count, userName, log (one schema per file) + index.ts
+    spec/                               test tier: State + one pure action per file + its cases
+      state.ts  create.ts  samples.ts  transforms.ts  spec.ts  spec.test.ts
+      increment.ts  decrement.ts  reset.ts  set-user-name.ts  clear-log.ts  (+ .cases.ts)
+    ecs/                                runtime: the ECS implementation
+      core/  transactions/  actions/    one op per file + <layer>-database.ts
       main-service.ts                   aliases the top layer as MainService
+      conformance/                      test tier: projection, implementation, conformance.test.ts
     ui/                                 Solid components (element + pure presentation)
       app/  status-bar/  control-panel/  counter-display/  activity-log/
 ```
 
-Each transaction is proven equivalent to its pure `data/` transform via
-`toState(apply(fromState(before), args)) ≡ State.transform(before, args)`, reusing
-the spec-owned cases exported from each `data/state/<transform>.test.ts`.
+Each spec action is replayed against the same-named `MainService` action via
+`toState(action(fromState(before), args)) ≡ spec(before, args)`, using the inert
+cases in `spec/<action>.cases.ts`.
 
 ## Pattern summary
 

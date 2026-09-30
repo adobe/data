@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Database } from "@adobe/data/ecs";
-import { MainService } from "../services/main-service/main-service.js";
+import { MainService } from "../ecs/main-service.js";
 import { HopperRenderDatabase } from "./render/hopper-render-plugin.js";
 
 // The browser application: the headless simulation (`MainService`) plus the

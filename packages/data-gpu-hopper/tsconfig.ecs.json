@@ -1,0 +1,16 @@
+{
+  // Runtime: the ECS implementation (ecs/, minus conformance). References only data +
+  // services, so an ecs file importing spec/ is a compile error.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "./.tsbuild/ecs",
+    "rootDir": "src"
+  },
+  "include": ["src/features/*/ecs/**/*"],
+  "exclude": ["**/conformance/**", "**/*.test.ts", "**/*.type-test.ts"],
+  "references": [{ "path": "./tsconfig.data.json" }]
+}

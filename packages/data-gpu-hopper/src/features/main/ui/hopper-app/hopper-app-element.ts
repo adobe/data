@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { customElement } from "lit/decorators.js";
 import { DatabaseElement, useEffect, useElement, useObservableValues } from "@adobe/data-lit";
-import type { Direction } from "../../data/direction/direction.js";
+import type { Direction } from "../../data/values/direction/direction.js";
 import { HopperApp } from "../hopper-app-plugin.js";
 import * as presentation from "./hopper-app-presentation.js";
 import { styles } from "./hopper-app.css.js";
@@ -51,7 +51,7 @@ export class HopperAppElement extends DatabaseElement<typeof HopperApp.plugin> {
     const onKeyDown = (event: KeyboardEvent) => {
       const direction = keyToDirection[event.key];
       if (direction === undefined) return;
-      service.transactions.queueHop(direction);
+      service.actions.hop({ direction });
       event.preventDefault();
     };
 

@@ -20,7 +20,7 @@ const toData = (store: CoreDatabase.Store, entity: Entity): Todo => {
 // The test-only ecs↔`State` projection, carried on the manifest and used by `Conformance.checkFeature`.
 // `fromState` seeds a store to a `State` (clearing every todo, setting the
 // `displayCompleted` resource, then inserting each entity with its own `order`;
-// the implementation-only `dragPosition` slot and the `todo` tag are seeded here). Clearing iterates tail→head so each delete is from the tail
+// the implementation-only `todo` tag is seeded here). Clearing iterates tail→head so each delete is from the tail
 // (no hole-fill shift). The ecs assigns entity ids from its own id-space, unrelated
 // to the spec's domain id; `fromState` returns the `spec id → seeded entity` map so
 // the runners resolve id-addressed operations generically. `toState` reads it back
@@ -48,7 +48,6 @@ export const projection = {
           name: todo.name,
           complete: todo.complete,
           order: todo.order,
-          dragPosition: null,
         }),
       ]),
     );

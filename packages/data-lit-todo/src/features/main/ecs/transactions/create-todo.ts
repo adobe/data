@@ -11,5 +11,4 @@ export const createTodo = (
     name: input.name,
     complete: input.complete ?? false,
     order: nextOrder(t),
-    dragPosition: null,
   });

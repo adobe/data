@@ -21,6 +21,7 @@ export const checkFeature = <State extends object, Fns extends Record<string, An
     projection: impl.projection,
     hydrate: impl.hydrate,
     transactionOps: impl.transactionOps,
+    frame: impl.frame,
     services: impl.services,
     match: spec.match,
     ops: impl.ops,

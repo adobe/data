@@ -12,6 +12,8 @@ import type { Projection } from "./run-feature.js";
 import type { Spec } from "./spec.js";
 
 type AnyFn = (...args: never[]) => unknown;
+// A transition's args — its second parameter.
+type ArgsOf<F> = F extends (state: never, args: infer A, ...rest: never[]) => unknown ? A : never;
 
 // A feature's ECS implementation, paired with its pure spec — the manifest a feature's
 // `ecs/conformance/` authors. `checkFeature` conforms every spec action against the
@@ -24,6 +26,15 @@ export interface Implementation<State extends object, Fns extends Record<string,
   // step, not a user action). These conform against the transaction; every other
   // transition must have a same-named action.
   readonly transactionOps?: readonly string[];
+  // A real-time feature's per-frame spec transition (e.g. `step`), realized by the
+  // systems tick loop rather than an action. Each case seeds a db built from `plugin`,
+  // runs `setup` to apply the case args (e.g. `frameDelta = dt`), drives exactly one
+  // frame (every system in `db.system.order`), and compares the result. Systems keep
+  // their in-place column writes; no per-frame transaction is needed to conform them.
+  readonly frame?: {
+    readonly op: string;
+    readonly setup?: (db: never, args: never) => void;
+  };
   // The `ComputedDatabase` layer plugin, built alone so a `withCache` value from a
   // layer above can't go stale across the seed. Required when the spec has derivations.
   readonly computedPlugin?: Database.Plugin;
@@ -50,9 +61,16 @@ export const implementation = <
   C extends object,
   P extends ProjectionShape<State>,
   const H extends readonly Extract<keyof Fns, string>[] = readonly [],
+  PL extends Database.Plugin = Database.Plugin,
+  O extends Extract<keyof Fns, string> = never,
 >(
   spec: Spec<State, Fns, C>,
-  impl: Omit<Implementation<State, Fns, ProjectionStore<P>>, "spec" | "projection" | "hydrate" | "computedPlugin" | "transactionOps"> & {
+  impl: Omit<Implementation<State, Fns, ProjectionStore<P>>, "spec" | "plugin" | "projection" | "hydrate" | "computedPlugin" | "transactionOps" | "frame"> & {
+    readonly plugin: PL;
+    readonly frame?: {
+      readonly op: O;
+      readonly setup?: (db: Database.Plugin.ToSystemDatabase<PL>, args: ArgsOf<Fns[O]>) => void;
+    };
     readonly projection: P;
     readonly hydrate?: H;
     readonly transactionOps?: readonly Extract<keyof Fns, string>[];

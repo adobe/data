@@ -39,13 +39,15 @@ const injectDoubles = (
 // transaction is a pure store mutation and never receives services).
 export const adaptCases = (
   fns: Readonly<Record<string, AnyFn>>,
-  cases: Readonly<Record<string, LooseCaseModule>>,
+  cases: object,
   services: Readonly<Record<string, () => object>> | undefined,
   injectServices: boolean,
 ): Record<string, Record<string, unknown>> => {
   const out: Record<string, Record<string, unknown>> = {};
   for (const [name, fn] of Object.entries(fns)) {
-    const module = cases[name]!;
+    // Runtime invariant: a manifest's `cases` holds one case module per fn (the
+    // `Conformance.spec` coverage guard).
+    const module = (cases as Readonly<Record<string, LooseCaseModule>>)[name]!;
     const list = module.cases;
     const first = list[0] as Record<string, unknown> | undefined;
     if (first !== undefined && "value" in first) {

@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { ComponentSchemas } from "../../component-schemas.js";
+import type { EntityComponents } from "./entity-components.js";
 
 /**
  * Declare a feature's archetypes, validating every key against `components` and
@@ -16,7 +17,7 @@ import type { ComponentSchemas } from "../../component-schemas.js";
  */
 export function archetypes<
     C extends ComponentSchemas,
-    const A extends { readonly [name: string]: readonly (keyof C & string)[] },
+    const A extends { readonly [name: string]: EntityComponents<C> },
 >(_components: C, map: A): A {
     // `_components` carries the component type C for key validation; unused at runtime.
     return map;

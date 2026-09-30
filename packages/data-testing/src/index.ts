@@ -2,9 +2,9 @@
 
 // Shared test-only utilities for the spec↔ecs conformance pattern. Two namespaces:
 //   Match       — tolerant, matcher-aware value comparison (framework-agnostic).
-//   Conformance — the manifest API (`feature` / `checkSpec` / `checkFeature`), the case
+//   Conformance — the manifest API (`spec` / `implementation` / `checkSpec` / `checkFeature`), the case
 //                 types, and the lower-level runner escape hatch.
-// Import only from a feature's test tier (its `*.cases.ts`, `spec.ts`, `*.fake.ts`, and
+// Import only from a feature's test tier (its `spec/` folder, `ecs/conformance/`, and
 // `*.test.ts`), which the package's project-reference wall keeps out of the runtime build.
 export * as Match from "./match/public.js";
 export * as Conformance from "./conformance/public.js";
@@ -22,7 +22,9 @@ export type {
   SpecDerivations,
   Responses,
   CaseModule,
-  FeatureSpec,
+  Spec,
+  Implementation,
+  StateMatches,
   Effects,
   ServiceCall,
 } from "./conformance/public.js";

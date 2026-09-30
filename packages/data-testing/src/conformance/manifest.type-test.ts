@@ -1,12 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-// Type-level checks for the `feature` manifest's two compile-time guards: the `cases`
-// coverage guard (exactly one case module per conformed fn) and the `hydrate`
+// Type-level checks for the `spec` / `implementation` manifests' compile-time guards: the
+// `cases` coverage guard (exactly one case module per conformed fn) and the `hydrate`
 // exactness guard (exactly the entity-list derivations, no more, no fewer). Each guard
 // gets a POSITIVE case (must compile) and NEGATIVE cases (`@ts-expect-error`, must NOT
 // compile) — a negative that stops failing turns the directive into an "unused
 // directive" error, so the guard can't silently rot.
 import type { Database, Entity } from "@adobe/data/ecs";
-import { feature } from "./feature-spec.js";
+import { spec as specOf } from "./spec.js";
+import { implementation } from "./implementation.js";
 import type { CaseModule, SpecCases, SpecDerivations } from "./feature-types.js";
 
 type Foo = { readonly name: string };
@@ -41,23 +42,23 @@ const listFoosCases: SpecDerivations<typeof listFoos> = {
 };
 
 // POSITIVE — every fn has a case, and `hydrate` is exactly the entity-list derivation.
-export const ok = feature({ state, fns, plugin, computedPlugin, projection, hydrate: ["listFoos"], cases: { bump: bumpCases, listFoos: listFoosCases } });
+export const ok = implementation(specOf({ state, fns, cases: { bump: bumpCases, listFoos: listFoosCases } }), { plugin, computedPlugin, projection, hydrate: ["listFoos"] });
 
 // NEGATIVE (cases coverage) — a conformed fn with no case module.
 // @ts-expect-error — `cases` is missing `listFoos`
-export const missingCase = feature({ state, fns, plugin, computedPlugin, projection, hydrate: ["listFoos"], cases: { bump: bumpCases } });
+export const missingCase = implementation(specOf({ state, fns, cases: { bump: bumpCases } }), { plugin, computedPlugin, projection, hydrate: ["listFoos"] });
 
 // NEGATIVE (cases coverage) — a case module for a name that is not a conformed fn.
 // @ts-expect-error — `cases` has `bogus`, which is not in `fns`
-export const extraCase = feature({ state, fns, plugin, computedPlugin, projection, hydrate: ["listFoos"], cases: { bump: bumpCases, listFoos: listFoosCases, bogus: bumpCases } });
+export const extraCase = implementation(specOf({ state, fns, cases: { bump: bumpCases, listFoos: listFoosCases, bogus: bumpCases } }), { plugin, computedPlugin, projection, hydrate: ["listFoos"] });
 
 // NEGATIVE (hydrate exactness) — an entity-list derivation left out of `hydrate`.
 // @ts-expect-error — `hydrate` is missing the entity-list derivation `listFoos`
-export const missingHydrate = feature({ state, fns, plugin, computedPlugin, projection, hydrate: [], cases: { bump: bumpCases, listFoos: listFoosCases } });
+export const missingHydrate = implementation(specOf({ state, fns, cases: { bump: bumpCases, listFoos: listFoosCases } }), { plugin, computedPlugin, projection, hydrate: [] });
 
 // NEGATIVE (hydrate exactness) — a non-entity-list fn listed in `hydrate`.
 // @ts-expect-error — `hydrate` lists `bump`, which does not need hydration
-export const extraHydrate = feature({ state, fns, plugin, computedPlugin, projection, hydrate: ["listFoos", "bump"], cases: { bump: bumpCases, listFoos: listFoosCases } });
+export const extraHydrate = implementation(specOf({ state, fns, cases: { bump: bumpCases, listFoos: listFoosCases } }), { plugin, computedPlugin, projection, hydrate: ["listFoos", "bump"] });
 
 // ── `SpecCases` case-shape guards (tested directly, without the manifest) ──────────
 // A service-injected transition: `log` is fire-and-forget (void), `next` returns a value.
@@ -146,12 +147,12 @@ export const residualGap: CaseModule<State, typeof count> = resetCases;
 // `fns` above has `listFoos` (a derivation), so `ok` (which includes `computedPlugin`)
 // is the POSITIVE. NEGATIVE — omit it with a derivation present:
 // @ts-expect-error — `computedPlugin` is required because `listFoos` is a derivation
-export const missingComputedPlugin = feature({ state, fns, plugin, projection, hydrate: ["listFoos"], cases: { bump: bumpCases, listFoos: listFoosCases } });
+export const missingComputedPlugin = implementation(specOf({ state, fns, cases: { bump: bumpCases, listFoos: listFoosCases } }), { plugin, projection, hydrate: ["listFoos"] });
 
 // POSITIVE — a transition-only feature may omit `computedPlugin` (no derivations).
 const txFns = { bump };
 declare const txCases: SpecCases<State, typeof bump>;
-export const noComputedOk = feature({ state, fns: txFns, plugin, projection, cases: { bump: txCases } });
+export const noComputedOk = implementation(specOf({ state, fns: txFns, cases: { bump: txCases } }), { plugin, projection });
 
 // ── `services` requiredness (needed iff a fn injects a service) ──────────────────────
 declare const logger: Logger;
@@ -159,16 +160,27 @@ const svcFns = { record };
 declare const recordCases: SpecCases<State, typeof record>;
 
 // POSITIVE — the injected service `logger` has a template.
-export const servicesOk = feature({ state, fns: svcFns, plugin, projection, services: { logger: () => logger }, cases: { record: recordCases } });
+export const servicesOk = implementation(specOf({ state, fns: svcFns, services: { logger: () => logger }, cases: { record: recordCases } }), { plugin, projection });
 
 // NEGATIVE — a fn injects `logger`, but `services` is omitted (today: a runtime crash).
 // @ts-expect-error — `services` is required because `record` injects `logger`
-export const missingServices = feature({ state, fns: svcFns, plugin, projection, cases: { record: recordCases } });
+export const missingServices = implementation(specOf({ state, fns: svcFns, cases: { record: recordCases } }), { plugin, projection });
 
 // NEGATIVE — `services` omits the required `logger` template.
 // @ts-expect-error — `services` is missing the `logger` template
-export const incompleteServices = feature({ state, fns: svcFns, plugin, projection, services: {}, cases: { record: recordCases } });
+export const incompleteServices = implementation(specOf({ state, fns: svcFns, services: {}, cases: { record: recordCases } }), { plugin, projection });
 
 // NEGATIVE — a service-free feature must not carry dead templates.
 // @ts-expect-error — `bump` injects no service, so `services` must be absent
-export const extraServices = feature({ state, fns: txFns, plugin, projection, services: { logger: () => logger }, cases: { bump: txCases } });
+export const extraServices = implementation(specOf({ state, fns: txFns, services: { logger: () => logger }, cases: { bump: txCases } }), { plugin, projection });
+
+// ── `StateMatches` — State keys name resources (singletons) and components (entity values) ──
+import type { StateMatches } from "./state-matches.js";
+type Assert<T extends true> = T;
+type Resources = { readonly count: unknown };
+type Components = { readonly name: unknown };
+export type _stateOk = Assert<StateMatches<State, Resources, Components>>;
+// @ts-expect-error — `count` is not a resource
+export type _badSingleton = Assert<StateMatches<State, {}, Components>>;
+// @ts-expect-error — `name` is not a component
+export type _badEntity = Assert<StateMatches<State, Resources, {}>>;

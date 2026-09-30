@@ -1,8 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-// The conformance manifest API — the standard surface. `feature` builds a feature's
-// manifest; `checkSpec` runs the pure spec suite, `checkFeature` the ecs suite.
-export { feature, checkSpec, checkFeature, type FeatureSpec } from "./feature-spec.js";
+// The conformance manifest API — the standard surface. `spec` builds a feature's pure
+// spec manifest and `checkSpec` runs it; `implementation` pairs the spec with its ECS
+// build and `checkFeature` runs that. `StateMatches` pins State to the data schemas.
+export { spec, type Spec } from "./spec.js";
+export { implementation, type Implementation } from "./implementation.js";
+export { checkSpec } from "./check-spec.js";
+export { checkFeature } from "./check-feature.js";
+export type { StateMatches } from "./state-matches.js";
 export type {
   Responses,
   SpecCase,

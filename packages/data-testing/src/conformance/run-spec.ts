@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it } from "vitest";
-import { Database, Store } from "@adobe/data/ecs";
+import type { Schema } from "@adobe/data/schema";
 import { assert } from "../match/assert.js";
 import type { MatchOptions } from "../match/match.js";
 import { expectAfter } from "./expect-after.js";
@@ -23,14 +23,12 @@ export interface SpecRunConfig {
   // Passed through to `matches` (float tolerance). Ordered vs. unordered is now
   // carried by the value's type — `Array` positional, `Set`/`Map` order-independent.
   readonly match?: MatchOptions;
-  // The feature plugin, ONLY needed when entity VALUES (or singletons) carry
-  // reference fields (an `asset`/`parent`/`selected` id): the pure transform mints
-  // its own spec-ids, so a reference to a minted entity must compare up to the same
-  // id-bijection as the ecs side. Given it, `runSpec` reads the plugin's component +
-  // resource schemas (via a throwaway store) to find those reference fields — exactly
-  // as `runFeature` does from its store. Omit it for a feature of self-contained
-  // values: entity map KEYS refify with no schema (an id by construction).
-  readonly plugin?: Database.Plugin;
+  // The feature's component + resource schemas, ONLY needed when entity VALUES (or
+  // singletons) carry reference fields (an `asset`/`parent`/`selected` id): the pure
+  // transform mints its own spec-ids, so a reference to a minted entity must compare
+  // up to the same id-bijection as the ecs side. Omit it for a feature of
+  // self-contained values: entity map KEYS refify with no schema (an id by construction).
+  readonly schemas?: Readonly<Record<string, Schema>>;
   // Override the `describe` label per module (default `State.<fnName>`).
   readonly label?: (path: string, fnName: string | undefined) => string;
 }
@@ -64,12 +62,9 @@ type Suite = InvalidSuite | CasesSuite;
 // "No test suite found" — so we register a single no-op so empty discovery is a
 // valid outcome, not an error.
 export const runSpec = (config: SpecRunConfig): void => {
-  // Reference fields are found from schemas; without a plugin only map keys (an id
-  // by construction) refify. A throwaway store surfaces the plugin's component +
-  // resource schemas, exactly the source `runFeature`'s runners read.
-  const schemaSource: SchemaSource = config.plugin
-    ? { componentSchemas: Store.create(config.plugin as never).componentSchemas }
-    : { componentSchemas: {} };
+  // Reference fields are found from schemas; without them only map keys (an id by
+  // construction) refify.
+  const schemaSource: SchemaSource = { componentSchemas: config.schemas ?? {} };
   const suites: Suite[] = [];
   for (const [path, module] of Object.entries(config.transitions)) {
     const exportNames = Object.keys(module);
@@ -146,8 +141,8 @@ export const runSpec = (config: SpecRunConfig): void => {
           }
           const result = (await suite.fn(before, args)) as Record<string, unknown>;
           // The pure transform mints its own spec-ids, so compare up to an
-          // id-bijection too (entity map keys always; reference fields when a
-          // `plugin` gave the schemas).
+          // id-bijection too (entity map keys always; reference fields when
+          // `schemas` are given).
           expectAfter({ ...before, ...result }, before, tc.after as Record<string, unknown>, schemaSource, config.match);
           expectEffects(calls, tc.effects);
         });

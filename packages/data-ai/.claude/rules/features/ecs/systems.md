@@ -76,25 +76,22 @@ const plugin = Database.Plugin.create({
   a transaction that inserts/deletes invalidates any live archetype cursor, so
   snapshot the ids you'll act on (or reverse-iterate) *before* dispatching
   transactions inside a per-frame loop.
-- **Replicate the spec's top-level guard in every system.** If the spec
-  `step` opens with `if (isGameOver(state)) return state`, each split system must
-  early-return on the same condition — a frozen frame is only a true no-op if
-  *every* system honors the guard.
+- **Every system guards itself** (e.g. early-return once the game is over), as its
+  spec function does — a frozen frame is only a true no-op if *every* system honors
+  the guard.
 - **Index reads go through `db.indexes`** (plural) — the writable `db.store` a
   system receives is typed *without* its index handles, so a broad-phase query is
   `db.indexes.byCell.find({ cell })`, not `db.store.indexes.…`.
 - **Ordering is declared under `schedule`, not implied.** `schedule.before` /
   `schedule.after` are hard constraints (name sibling systems); `schedule.during`
   is a soft same-tier hint. Systems with no ordering relation share a tier
-  (conceptually parallel) — never rely on declaration order. When you split a
-  spec `step` into several ordered systems, the schedule **must
-  mirror the step's internal sequence** (advance → fire → age → collide → refill)
-  — otherwise the tick diverges from the oracle even though each system is
-  individually correct. Watch the subtle case: if a spawn step (fire) is followed
-  by a step that also processes the just-spawned entity (the new bullet is aged
-  and advanced this same tick), you can't advance *all* bodies in one system
-  before the spawn — split that entity's advance out so it runs *after* the spawn,
-  alongside the step that owns it.
+  (conceptually parallel) — never rely on declaration order; systems sharing a tier
+  must commute (conformance checks it). The schedule is the only statement of order:
+  the spec never re-sequences systems, and frame conformance composes them in the
+  order the schedule derives. Watch the subtle case: if a spawn (fire) is followed by
+  a step that also processes the just-spawned entity (the new bullet is aged and
+  advanced this same tick), you can't advance *all* bodies in one system before the
+  spawn — split that entity's advance out so it runs *after* the spawn.
 - Immediate-mode rendering: store the canvas in a session resource and render to
   it inside a system (see @adobe/data-gpu for patterns).
 
@@ -127,20 +124,28 @@ helpers (`(db) => () => void`) sit beside it only when an inline body grows too 
 
 ## Conformance
 
-The spec's `step(state, { dt, … })` is conformed by `frame` on the implementation
-manifest (`conformance.md`):
+Each system has a same-named pure function in the spec's `systems` group
+(`../spec/index.md`), and the implementation declares how frame args reach the store
+and which systems the spec does not model (`conformance.md`):
 
 ```ts
-frame: { op: "step", setup: (db, { dt, input }) => { db.store.resources.frameDelta = dt; db.store.resources.input = input; } },
+frame: {
+  args: { dt: (db, dt) => { db.store.resources.frameDelta = dt; },
+          input: (db, input) => { db.store.resources.input = input; } },
+  unmodelled: { physics: "wasm rigid-body step", seedLevel: "init-only" },
+},
 ```
 
-Each `step` case seeds the store from `before`, `setup` writes the case args into what
-the systems read, one headless frame runs every system in schedule order, and the
-result must equal `step`'s. A frame checks the whole tick, so keep each `step` case
-small and aimed at one behavior; then a failure names the behavior that diverged.
-Test **selection/detection** logic (which entities collide, which pair
-resolves) separately in `ecs/conformance/`, with seeded edge-case geometries — it's
-where subtle bugs hide.
+- **Per system:** each case seeds the store, writes the case's args, runs **just that
+  system**, and compares with its spec function. Selection and detection logic (which
+  entities collide) is tested here, with seeded edge-case geometries.
+- **Per frame:** each frame case folds the spec system functions in `db.system.order`
+  and also runs one real frame; both must give `after`. The order comes only from the
+  `schedule` declarations.
+- **Unmodelled systems** (wasm, init-only) are skipped on both sides and reported as
+  skipped tests. Every system is modelled or unmodelled — a compile error otherwise.
+  To test an unmodelled system's glue, put the wasm call behind a service and model it
+  with a fake.
 
 ## Iterating archetype rows
 

@@ -4,7 +4,8 @@ import { GameStatus } from "../data/values/game-status/game-status.js";
 import type { State } from "./state.js";
 
 // Spend one life: respawn the frog at the start, or end the game on the last life. A
-// no-op once the game has finished. A step sub-transition, not an operation of its own.
+// no-op once the game has finished. A `collision` sub-transition, not an operation of
+// its own.
 export const loseLife = (
   state: Pick<State, "lives" | "status" | "frog" | "width">,
 ): Pick<State, "lives" | "status" | "frog"> => {

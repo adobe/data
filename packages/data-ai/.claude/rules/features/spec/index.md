@@ -19,6 +19,7 @@ spec/
   toggle-complete.ts   toggle-complete.cases.ts        # one action or derivation + its cases
   visible-todos.ts     visible-todos.cases.ts
   transforms.ts                                        # barrel of every action + derivation
+  systems.ts   <system>.cases.ts   frame.cases.ts      # real-time only: one function per ECS system
   spec.ts   spec.test.ts                               # the manifest + Conformance.checkSpec
 ```
 
@@ -70,9 +71,10 @@ export const toggleComplete = (
 - **Guard a no-op by returning an unchanged patch**, never by throwing. Reserve
   `throw` for a precondition a case names with `throws`.
 - **A derivation** is `(state) => value`. It specs one computed of the same name.
-- **Per-frame work** in a real-time feature is one `step(state, { dt, … })` action,
-  conformed by driving one frame of systems (`../ecs/conformance.md`). Its sub-steps
-  are plain helpers here, not ops.
+- **Per-frame work** in a real-time feature is a `systems.ts` barrel: one pure
+  function per ECS system, named the same, with the ordinary transition signature
+  (below). There is no hand-written `step`: the frame order comes from the systems'
+  `schedule`.
 - Share logic with the ECS through `data/values/` helpers, never by the ECS importing
   the spec.
 
@@ -126,6 +128,26 @@ Conformance.checkSpec(spec);
 ```
 
 `Conformance.spec` checks at compile time that every fn has exactly one case module,
-and that `services` lists exactly the services the actions inject. A helper with
-cases of its own that isn't an op (a `step` sub-step) is checked with a second,
-spec-only manifest, or with plain unit tests.
+and that `services` lists exactly the services the actions and systems inject.
+
+## Systems (real-time features)
+
+```ts
+// systems.ts — one pure function per ECS system, each guarding itself
+export const movement = whilePlaying((s, { dt }) => ({ asteroids: stepAsteroids(s, { dt }) }));
+export const collision = whilePlaying((s) => ({ ...resolveHits(s) }));
+
+// spec.ts
+export const spec = Conformance.spec({ …,
+  systems: { fns: systems, cases: { movement, collision }, frame: frameCases },
+});
+```
+
+- **Mirror the ECS systems one to one.** When a system fuses two logical steps, its
+  function composes both; when two systems split one step, split the function too
+  (the handoff must be a `State` field).
+- **One `SpecCases` module per system**; `checkSpec` runs them against the functions.
+- **Frame cases** (`Conformance.FrameCases<State, typeof systems>`) cover how systems
+  interact over one tick; `checkFeature` runs them in the schedule's order.
+- A system the spec can't model (wasm physics, init-only seeding) has no function;
+  the implementation declares it unmodelled (`../ecs/conformance.md`).

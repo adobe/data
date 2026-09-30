@@ -41,8 +41,9 @@ export interface SystemRunConfig<State, StoreT> {
   readonly initial: State;
   // The adapted per-system `{ fn, cases }` map (see `adaptCases`), keyed by system name.
   readonly systems: Record<string, Record<string, unknown>>;
-  // Whole-frame cases, adapted the same way (doubles injected into `args`).
-  readonly frameCases: readonly SystemCase[];
+  // Whole-frame cases, adapted the same way. A factory, so every run gets fresh
+  // recording doubles and one run never drains another's response schedule.
+  readonly frameCases: () => readonly SystemCase[];
   // One writer per frame data arg: how a case's arg reaches the store.
   readonly args: Readonly<Record<string, (db: SystemDatabase<StoreT>, value: unknown) => void>>;
   // System name → why the spec does not model it.
@@ -127,7 +128,8 @@ export function runSystems<State, StoreT extends SchemaSource>(config: SystemRun
     });
   }
 
-  if (config.frameCases.length === 0) return;
+  const frameCases = config.frameCases();
+  if (frameCases.length === 0) return;
 
   // The modelled systems of each tier, in the order the scheduler runs them.
   const tiers = order.map((tier) => tier.filter((name) => name !== SCHEDULER && systems.has(name)));
@@ -140,8 +142,10 @@ export function runSystems<State, StoreT extends SchemaSource>(config: SystemRun
   };
 
   describe("frame conforms", () => {
-    for (const testCase of config.frameCases) {
-      it(`${testCase.name} (spec systems in schedule order)`, async () => {
+    frameCases.forEach((named, index) => {
+      const fresh = (): SystemCase => config.frameCases()[index]!;
+      it(`${named.name} (spec systems in schedule order)`, async () => {
+        const testCase = fresh();
         const { args, calls } = recordArgServices(testCase.args);
         const before = { ...(config.initial as object), ...testCase.before };
         let state: object = before;
@@ -149,7 +153,7 @@ export function runSystems<State, StoreT extends SchemaSource>(config: SystemRun
           const forward = await foldTier(state, tier, args);
           if (tier.length > 1) {
             // Systems sharing a tier have no declared order, so they must commute.
-            const reverse = await foldTier(state, [...tier].reverse(), recordArgServices(testCase.args).args);
+            const reverse = await foldTier(state, [...tier].reverse(), recordArgServices(fresh().args).args);
             if (!matches(forward, reverse, config.match)) {
               throw new Error(`systems ${tier.join(", ")} share a tier but don't commute; declare before/after`);
             }
@@ -161,7 +165,8 @@ export function runSystems<State, StoreT extends SchemaSource>(config: SystemRun
         expectEffects(calls, testCase.effects);
       });
 
-      it(`${testCase.name} (one ECS frame)`, async () => {
+      it(`${named.name} (one ECS frame)`, async () => {
+        const testCase = fresh();
         const { db, before, input, calls, resolve } = seed(testCase);
         writeArgs(db, resolveArgs(input, undefined, resolve) as Record<string, unknown>, config.args);
         for (const tier of db.system.order) {
@@ -173,6 +178,6 @@ export function runSystems<State, StoreT extends SchemaSource>(config: SystemRun
         }
         expectCase(db, before, testCase, calls);
       });
-    }
+    });
   });
 }

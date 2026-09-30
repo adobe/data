@@ -7,7 +7,7 @@ import { LaneKind } from "../../data/values/lane-kind/lane-kind.js";
 import { Outcome } from "../../data/values/outcome/outcome.js";
 import { GameStatus } from "../../data/values/game-status/game-status.js";
 
-// The real-time tick loop; together the two systems realize one spec `step` per frame:
+// The real-time tick loop; each system conforms to its same-named spec function:
 //
 //   movement  → carry the frog on the log it rides (found from the pre-scroll
 //               positions) and scroll every hazard, writing columns in place.

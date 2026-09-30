@@ -49,7 +49,7 @@ export const checkFeature = <State extends object, Fns extends Record<string, An
       toState: impl.projection.toState,
       initial: spec.state.create(),
       systems: adaptCases(spec.systems.fns, spec.systems.cases, spec.services, true),
-      frameCases: frameCasesOf(spec.systems.frame, spec.services),
+      frameCases: () => frameCasesOf(spec.systems?.frame, spec.services),
       // Runtime invariant: `implementation` types each writer against this db and arg.
       args: impl.frame.args as never,
       unmodelled: impl.frame.unmodelled ?? {},

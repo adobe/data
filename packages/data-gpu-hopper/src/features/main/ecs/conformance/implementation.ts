@@ -5,15 +5,17 @@ import { MainService } from "../main-service.js";
 import { projection } from "./projection.js";
 
 // The spec paired with its ECS build: `hop` and `newGame` conform against the
-// same-named actions; `step` is realized by the systems, so each case drives one
-// headless frame of `frameDelta = dt`.
+// same-named actions, `movement` and `collision` against the same-named systems. A
+// frame's `dt` reaches the systems as `frameDelta`. `MainService.plugin` is headless
+// (the render plugin's systems are layered on in the UI), so every system is modelled.
 export const implementation = Conformance.implementation(spec, {
   plugin: MainService.plugin,
   projection,
   frame: {
-    op: "step",
-    setup: (db, { dt }) => {
-      db.store.resources.frameDelta = dt;
+    args: {
+      dt: (db, dt) => {
+        db.store.resources.frameDelta = dt;
+      },
     },
   },
 });

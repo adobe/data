@@ -67,7 +67,7 @@ Each step has a gate that must pass before the next:
 | 4 | `spec/`: State, `create`, `samples`, then one action or derivation + cases at a time | `checkSpec` |
 | 5 | `ecs/core` + `ecs/conformance/projection.ts` | samples round-trip |
 | 6 | `ecs` indexes, transactions, services, computed, actions — one op at a time | `checkFeature` |
-| 7 | `ecs/systems` (real-time only) | `frame` conformance + system tests |
+| 7 | `ecs/systems` (real-time only) | per-system and frame conformance |
 | 8 | `ui/` presentations, then elements | presentation tests |
 | 9 | `app/` | versioning and persistence tests; the app builds |
 
@@ -109,7 +109,7 @@ Working samples ship inside `@adobe/data` at
 
 - **`data-lit-todo`** — the most complete: two features, services, indexes, cross-feature composition, and persistence.
 - **`data-lit-tictactoe`** — the minimal turn-based reference.
-- **`data-lit-space-rock-game`** and **`data-gpu-hopper`** — real-time, with systems and `frame` conformance.
+- **`data-lit-space-rock-game`** and **`data-gpu-hopper`** — real-time, with per-system and frame conformance.
 
 The per-folder rules live beside this file (`data/`, `services/`, `spec/`, `ecs/`,
 `ui/`). Always-on conventions are in `global/`.

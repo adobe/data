@@ -7,7 +7,8 @@ type AnyFn = (...args: never[]) => unknown;
 
 // The args one frame supplies: the intersection of every system function's args
 // (`{ dt } & { input } & { random }`), so a frame case provides them all.
-export type FrameArgs<Sys> = UnionToIntersection<{ [K in keyof Sys]: ArgsOf<Sys[K]> }[keyof Sys]>;
+// A system that takes no args contributes nothing.
+export type FrameArgs<Sys> = UnionToIntersection<{ [K in keyof Sys]: [ArgsOf<Sys[K]>] extends [void] ? {} : ArgsOf<Sys[K]> }[keyof Sys]>;
 
 // A whole-frame case: seed `before`, run every modelled system once in schedule
 // order, expect `after`.

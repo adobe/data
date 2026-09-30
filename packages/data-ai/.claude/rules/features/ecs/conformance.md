@@ -38,7 +38,8 @@ export const implementation = Conformance.implementation(spec, {
   projection,
   hydrate: ["visibleTodos"],                 // exactly the computeds that emit entity ids
   services: { game: GameService.createFake },   // base fakes for app-injected services
-  frame: { op: "step", setup: (db, { dt }) => { db.store.resources.frameDelta = dt; } },
+  frame: { args: { dt: (db, dt) => { db.store.resources.frameDelta = dt; } },
+           unmodelled: { physics: "wasm rigid-body step" } },   // real-time features
 });
 ```
 
@@ -47,10 +48,11 @@ export const implementation = Conformance.implementation(spec, {
 - **`services`** are fakes injected into every database the runner builds. They are
   needed for a service whose `create` throws. Each case's recording doubles override
   them.
-- **`frame`** is for a real-time feature. For each case of the `step` op, the runner
-  seeds a system database, runs `setup` to apply the args, drives one frame (every
-  system in `db.system.order`), and compares. Systems keep their in-place column
-  writes; nothing extra is written to be conformed.
+- **`frame`** is required when the spec has `systems`. `args` writes each frame data
+  arg into the store; `unmodelled` names, with a reason, each system the spec doesn't
+  model. Each spec system conforms by running just that system; each frame case runs
+  every modelled system once in `db.system.order` (`systems.md`). Systems keep their
+  in-place column writes.
 - `hydrate` exactness and `computedPlugin` requiredness are checked at compile time.
 
 ## `conformance.test.ts`
@@ -60,8 +62,8 @@ Conformance.checkFeature(implementation);
 ```
 
 This single call conforms every spec action and derivation and round-trips every
-`State.samples` entry through the projection. A spec op with no same-named action,
-computed or `frame` fails by name. So when the UI's real op is richer (`dragTodo`),
+`State.samples` entry through the projection. A spec op with no same-named action or
+computed fails by name, as does an ECS system that is neither modelled nor unmodelled. So when the UI's real op is richer (`dragTodo`),
 add a thin same-named action (`reorderTodo`) for the spec op to pair with. The UI
 calls actions, so conforming actions covers the path the app runs.
 

@@ -13,8 +13,8 @@ import { Lives } from "../../data/values/lives/lives.js";
 import { Size } from "../../data/values/size/size.js";
 
 // The real-time tick loop: the action database combined with the built-in
-// `scheduler`. One frame of these systems realizes the spec's whole-tick `step`,
-// in its order — advance → fire → age → collide → refill:
+// `scheduler`. Each frame runs these systems in their `schedule` order —
+// advance → fire → age → collide → refill:
 //
 //   control   → turn + thrust the ship (rotation + velocity)
 //   movement  → advance + wrap the ship and every asteroid

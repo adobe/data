@@ -5,8 +5,7 @@ import { Motion } from "../data/values/motion/motion.js";
 
 // Advance every bullet one tick: drop the ones that expire this tick, and move
 // + age + wrap the survivors (keeping each survivor's entity id). Non-bullet
-// entities pass through untouched. `dt` is bundled into one args object (second
-// parameter) as the conformance case model requires.
+// entities pass through untouched.
 export const stepBullets = (
   state: Pick<State, "entities" | "bounds">,
   { dt }: { readonly dt: number },

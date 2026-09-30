@@ -4,9 +4,7 @@ import { Asteroid } from "../data/values/asteroid/asteroid.js";
 import { Motion } from "../data/values/motion/motion.js";
 
 // Drift every asteroid one tick by its constant velocity, wrapping at edges
-// (keeping each asteroid's entity id). Non-asteroid entities pass through. `dt` is
-// bundled into one args object (second parameter) as the conformance case model
-// requires.
+// (keeping each asteroid's entity id). Non-asteroid entities pass through.
 export const stepAsteroids = (
   state: Pick<State, "entities" | "bounds">,
   { dt }: { readonly dt: number },

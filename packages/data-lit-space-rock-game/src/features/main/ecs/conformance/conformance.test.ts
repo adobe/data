@@ -2,6 +2,6 @@
 import { Conformance } from "@adobe/data-testing";
 import { implementation } from "./implementation.js";
 
-// Replays every spec case against the same-named action (or, for `step`, one driven
-// frame of the systems), and round-trips `State.samples` through the projection.
+// Replays every spec case against the same-named action or system, every frame case
+// against one real frame, and round-trips `State.samples` through the projection.
 Conformance.checkFeature(implementation);

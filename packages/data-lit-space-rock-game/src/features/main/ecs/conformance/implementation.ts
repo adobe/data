@@ -5,17 +5,20 @@ import { MainService } from "../main-service.js";
 import { projection } from "./projection.js";
 
 // The spec paired with its ECS build. `createInitial`, `fireBullet` and
-// `spawnRandomWave` conform against same-named actions; `step` against one driven
-// frame of the systems, with the case's `dt` and `input` seeded into the resources
-// the systems read.
+// `spawnRandomWave` conform against same-named actions; each spec system against its
+// same-named ECS system, with a case's `dt` and `input` written into the resources
+// the systems read. Every system is modelled.
 export const implementation = Conformance.implementation(spec, {
   plugin: MainService.plugin,
   projection,
   frame: {
-    op: "step",
-    setup: (db, { dt, input }) => {
-      db.store.resources.frameDelta = dt;
-      db.store.resources.input = input;
+    args: {
+      dt: (db, dt) => {
+        db.store.resources.frameDelta = dt;
+      },
+      input: (db, input) => {
+        db.store.resources.input = input;
+      },
     },
   },
 });

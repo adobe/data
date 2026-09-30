@@ -15,17 +15,18 @@ ecs/
   core/          core-database.ts, archetypes.ts        the schema (core.md)
   indexes/       index-database.ts + one file per index + index.ts
   transactions/  transaction-database.ts + one file per transaction + index.ts
-  computed/      computed-database.ts + one file per computed + index.ts
   services/      service-database.ts + database-bound service factories
+  computed/      computed-database.ts + one file per computed + index.ts
   actions/       action-database.ts + one file per action + index.ts
   systems/       system-database.ts (systems declared inline)
   main-service.ts
   conformance/   test tier (conformance.md)
 ```
 
-The order is fixed: `core → indexes → transactions → computed → services → actions
-→ systems`. A feature creates only the layers it uses. Each layer's file exports a
-namespace mirroring its plugin:
+The order is fixed: `core → indexes → transactions → services → computed → actions
+→ systems`. Services sit below computed because computeds may derive from service
+observables; a service factory therefore never reads a computed. A feature creates
+only the layers it uses. Each layer's file exports a namespace mirroring its plugin:
 
 ```ts
 const indexDatabasePlugin = Database.Plugin.create({ extends: CoreDatabase.plugin, indexes });

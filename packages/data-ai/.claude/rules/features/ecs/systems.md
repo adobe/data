@@ -118,9 +118,8 @@ is fully runnable and testable with no rAF and no rendering attached.
 
 ## Layer
 
-`system-database.ts` extends the feature's **current top** ecs layer (`ActionDatabase` /
-`ServiceDatabase` / `ComputedDatabase` — whichever it built; systems come last in the pipeline, so
-they must sit atop any service/action layers, not a hardcoded `ComputedDatabase`), combined with
+`system-database.ts` extends the feature's top ecs layer (`ActionDatabase`, since every spec
+action has an action; systems come last in the pipeline), combined with
 `scheduler`, and declares the `systems` map **inline** (see above —
 this is the one facet not split one-per-file, because `create`'s `db` is only typed
 inline and standalone declarations break name inference). Extracted per-frame body
@@ -129,8 +128,17 @@ helpers (`(db) => () => void`) sit beside it only when an inline body grows too 
 ## Conformance
 
 The spec's `step(state, { dt, … })` is conformed by `frame` on the implementation
-manifest (`conformance.md`): one headless frame from a seeded state must equal
-`step`. Test **selection/detection** logic (which entities collide, which pair
+manifest (`conformance.md`):
+
+```ts
+frame: { op: "step", setup: (db, { dt, input }) => { db.store.resources.frameDelta = dt; db.store.resources.input = input; } },
+```
+
+Each `step` case seeds the store from `before`, `setup` writes the case args into what
+the systems read, one headless frame runs every system in schedule order, and the
+result must equal `step`'s. A frame checks the whole tick, so keep each `step` case
+small and aimed at one behavior; then a failure names the behavior that diverged.
+Test **selection/detection** logic (which entities collide, which pair
 resolves) separately in `ecs/conformance/`, with seeded edge-case geometries — it's
 where subtle bugs hide.
 

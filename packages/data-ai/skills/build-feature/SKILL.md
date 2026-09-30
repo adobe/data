@@ -12,8 +12,8 @@ output: feature
     /build-core-database
     /build-indexes
     /build-transactions
-    /build-computed
     /build-service-database
+    /build-computed
     /build-actions
     /build-systems
     /build-ui

@@ -1,10 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Database } from "@adobe/data/ecs";
-import { ServiceDatabase } from "../services/service-database.js";
+import { ComputedDatabase } from "../computed/computed-database.js";
 import * as actions from "./index.js";
 
 const actionDatabasePlugin = Database.Plugin.create({
-  extends: ServiceDatabase.plugin,
+  extends: ComputedDatabase.plugin,
   actions,
 });
 

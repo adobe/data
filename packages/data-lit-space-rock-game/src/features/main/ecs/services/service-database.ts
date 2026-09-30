@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Database } from "@adobe/data/ecs";
 import type { Assert, Equal } from "@adobe/data/types";
-import { ComputedDatabase } from "../computed/computed-database.js";
+import { TransactionDatabase } from "../transactions/transaction-database.js";
 import { RandomService } from "../../services/random-service/random-service.js";
 import type { Services } from "../../services/services.js";
 
@@ -12,7 +12,7 @@ import type { Services } from "../../services/services.js";
 // `RandomService.createFake` through the `Database.create` service override.
 // Consumers reach it as `db.services.random`.
 const serviceDatabasePlugin = Database.Plugin.create({
-  extends: ComputedDatabase.plugin,
+  extends: TransactionDatabase.plugin,
   services: {
     random: RandomService.create,
   },

@@ -1,12 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Database } from "@adobe/data/ecs";
-import { ComputedDatabase } from "../computed/computed-database.js";
+import { TransactionDatabase } from "../transactions/transaction-database.js";
 import { createAgentService, createRootAgentService } from "./index.js";
 
-// AI agent services. Each reads the game's computeds and plays through its
-// transactions, so it is built from the database rather than injected.
+// AI agent services. Each observes the game and plays through its transactions, so
+// it is built from the database rather than injected.
 const serviceDatabasePlugin = Database.Plugin.create({
-  extends: ComputedDatabase.plugin,
+  extends: TransactionDatabase.plugin,
   services: {
     agent: createRootAgentService,
     agentX: (db) => createAgentService(db, "X"),

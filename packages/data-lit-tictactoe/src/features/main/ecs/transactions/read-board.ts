@@ -3,14 +3,18 @@ import { BoardState } from "../../data/values/board-state/board-state.js";
 import type { PlacedMark } from "../../data/entities/placed-mark.js";
 import type { CoreDatabase } from "../core/core-database.js";
 
-// The current board, folded synchronously from the placed-mark entities (the
-// `board` computed is the reactive counterpart). Shared by playMove and restartGame.
-export const readBoard = (t: CoreDatabase.Store): BoardState => {
+// The current board, folded from the placed-mark entities. Takes only the read
+// surface, so transactions (a store), the `board` computed and the agent service
+// (a `derive` read) all share it.
+type BoardReader = Pick<CoreDatabase.Store, "select" | "read"> & {
+  readonly archetypes: { readonly PlacedMark: Pick<CoreDatabase.Store["archetypes"]["PlacedMark"], "components"> };
+};
+
+export const readBoard = (db: BoardReader): BoardState => {
   const marks: PlacedMark[] = [];
-  for (const arch of t.queryArchetypes(t.archetypes.PlacedMark.components)) {
-    for (let row = 0; row < arch.rowCount; row++) {
-      marks.push({ mark: arch.columns.mark.get(row), cellIndex: arch.columns.cellIndex.get(row) });
-    }
+  for (const id of db.select(db.archetypes.PlacedMark.components)) {
+    const { mark, cellIndex } = db.read(id) ?? {};
+    if (mark !== undefined && cellIndex !== undefined) marks.push({ mark, cellIndex });
   }
   return BoardState.fromMarks(marks);
 };

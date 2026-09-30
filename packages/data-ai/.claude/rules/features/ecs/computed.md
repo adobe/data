@@ -26,7 +26,6 @@ export const status = cached((db: IndexDatabase) =>
   conformance maps each id through `toData`.
 - A computed with no spec derivation (one helper applied to one field) is covered by
   that helper's unit test.
-- **Type `db` on the lowest layer** that exposes what it reads. Computeds are not
-  available inside service factories while services are being built, so a factory
-  calls the computed function directly with its `db`.
+- **Type `db` on the lowest layer** that exposes what it reads. A computed may read
+  service observables (`db.services.*`), since services sit below it.
 - The `index.ts` barrel feeds the `computed` facet.

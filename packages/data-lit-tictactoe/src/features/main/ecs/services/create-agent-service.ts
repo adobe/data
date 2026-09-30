@@ -3,17 +3,19 @@ import { Observe } from "@adobe/data/observe";
 import { AgenticService } from "@adobe/data/service";
 import { BoardState } from "../../data/values/board-state/board-state.js";
 import type { PlayerMark } from "../../data/values/player-mark/player-mark.js";
-import type { ComputedDatabase } from "../computed/computed-database.js";
-import { board, currentPlayer, isGameOver, winner } from "../computed/index.js";
+import type { TransactionDatabase } from "../transactions/transaction-database.js";
+import { readBoard } from "../transactions/read-board.js";
 
 // An agent that plays one mark: it sees the board, whether it is its turn, and the
-// winner, and may play a move on its turn or reset a finished game. It calls the
-// computeds directly because `db.computed` is not yet populated while services build.
-export const createAgentService = (db: ComputedDatabase, agentMark: PlayerMark): AgenticService => {
-  const gameOver = isGameOver(db);
+// winner, and may play a move on its turn or reset a finished game. Services sit
+// below computed, so it derives what it observes from the store and `BoardState`.
+export const createAgentService = (db: TransactionDatabase, agentMark: PlayerMark): AgenticService => {
+  const board = Observe.withCache(db.derive(readBoard));
+  const gameOver = Observe.withFilter(board, BoardState.isGameOver);
   const yourTurn = Observe.withMap(
-    Observe.fromProperties({ isGameOver: gameOver, currentPlayer: currentPlayer(db) }),
-    ({ isGameOver, currentPlayer }) => !isGameOver && currentPlayer === agentMark,
+    Observe.fromProperties({ board, firstPlayer: db.observe.resources.firstPlayer }),
+    ({ board, firstPlayer }) =>
+      !BoardState.isGameOver(board) && BoardState.currentPlayer(board, firstPlayer) === agentMark,
   );
 
   return AgenticService.create({
@@ -53,9 +55,9 @@ export const createAgentService = (db: ComputedDatabase, agentMark: PlayerMark):
       role: Observe.fromConstant(
         `You are playing as ${agentMark} in tic-tac-toe. Play to the best of your ability.`,
       ),
-      board: board(db),
+      board,
       yourTurn,
-      winner: winner(db),
+      winner: Observe.withFilter(board, BoardState.getWinner),
       resetGame: async () => {
         db.transactions.restartGame();
       },

@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Database } from "@adobe/data/ecs";
 import type { Assert, Equal } from "@adobe/data/types";
-import { ComputedDatabase } from "../computed/computed-database.js";
+import { TransactionDatabase } from "../transactions/transaction-database.js";
 import { NameGeneratorService } from "../../services/name-generator-service/name-generator-service.js";
 import { AnalyticsService } from "../../services/analytics-service/analytics-service.js";
 import type { Services } from "../../services/services.js";
@@ -11,7 +11,7 @@ import type { Services } from "../../services/services.js";
 // db observables or calls transactions would instead get a factory in
 // `ecs/services/` (see the tic-tac-toe sample).
 const serviceDatabasePlugin = Database.Plugin.create({
-  extends: ComputedDatabase.plugin,
+  extends: TransactionDatabase.plugin,
   services: {
     nameGenerator: NameGeneratorService.create,
     analytics: AnalyticsService.create,

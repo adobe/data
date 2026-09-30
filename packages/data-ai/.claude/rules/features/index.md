@@ -28,7 +28,7 @@ src/
     data/        runtime   values/  components/  resources/  entities/
     services/    runtime   <name>-service/ namespaces, services.ts
     spec/        TEST TIER State, actions, derivations, cases, spec.ts
-    ecs/         runtime   core/ indexes/ transactions/ computed/ services/ actions/ systems/
+    ecs/         runtime   core/ indexes/ transactions/ services/ computed/ actions/ systems/
                            main-service.ts, conformance/ (TEST TIER)
     ui/<x>/      runtime   <x>-presentation.ts, <x>-element.ts
   app/           runtime   schema.ts, versioning/, main.ts
@@ -66,7 +66,7 @@ Each step has a gate that must pass before the next:
 | 3 | `services/` | per-service unit tests |
 | 4 | `spec/`: State, `create`, `samples`, then one action or derivation + cases at a time | `checkSpec` |
 | 5 | `ecs/core` + `ecs/conformance/projection.ts` | samples round-trip |
-| 6 | `ecs` indexes, transactions, computed, services, actions — one op at a time | `checkFeature` |
+| 6 | `ecs` indexes, transactions, services, computed, actions — one op at a time | `checkFeature` |
 | 7 | `ecs/systems` (real-time only) | `frame` conformance + system tests |
 | 8 | `ui/` presentations, then elements | presentation tests |
 | 9 | `app/` | versioning and persistence tests; the app builds |

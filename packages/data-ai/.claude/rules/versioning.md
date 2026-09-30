@@ -62,7 +62,7 @@ persisted data covers every feature's schema in the database.
    writes to SEVERAL components (a cross-component move, deriving a new component from
    others, splitting one into many) must be hand-written to your upgrade algorithm:
    query the input components, compute, and write the outputs directly on the store.
-   Add a test case either way (rule 6).
+   Add a test case either way (the guard test below).
 5. **Removing a component drops its data.** If the data still matters, migrate it in a
    handler BEFORE the removal entry.
 6. **Versioned schemas must be REAL** — declare a `type` (or `enum`/`const`), and the
@@ -86,7 +86,7 @@ history. Its message is a literal recipe. To fix it:
    and the `changes` block the error printed verbatim. `db.version` follows the history
    automatically (`= versions.length - 1`) — there is no resource default to update.
 2. If the error marks a change **BREAKING — needs a handler**, add a `handler` to that
-   entry AND add a matching test case under `testUpgradeHandlers` (rule 6). The error
+   entry AND add a matching test case under `testUpgradeHandlers` (the guard test below). The error
    may point at `Store.remapComponent(...)` for an isolated single-component change, but
    that is only a suggestion — write whatever upgrade code the change actually needs.
 
@@ -110,7 +110,7 @@ describe("database schema versions", () => {
       database: Database.create(AppSchema.plugin, { versioning: createVersionUpgrader(versions) }),
       entries: versions,
       handlers: {
-        // Append a case per version that adds a `handler` (rule 6):
+        // Append a case per version that adds a `handler` (the guard test below):
         // <version>: { setup: (store) => <populate the version-(v-1) store, return entities>,
         //              expect: (store, setup) => <assert the version-v result> },
       },
@@ -119,7 +119,6 @@ describe("database schema versions", () => {
 ```
 
 (`assertVersionsMatchSchema` and `testUpgradeHandlers` remain exported for bespoke use.)
-```
 
 ## Example: a breaking change (number → object) at version 1
 

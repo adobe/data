@@ -10,7 +10,7 @@ Create `ecs/transactions/`: `transaction-database.ts` (extends the previous laye
 `CoreDatabase.Store`, or `IndexDatabase.Store` once it reads an index. Guard by entity
 kind, and apply `data/values/` helpers; never import `spec/`.
 
-Transactions are conformed through the actions that call them, so build each one
-together with its action (`build-actions`).
+Build the transactions the spec actions will need. They are conformed through the
+actions that call them, so their gate is `build-actions`; add any missing one there.
 
 The how is in the auto-loading `features/ecs/transactions.md` rule.

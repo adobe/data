@@ -37,8 +37,8 @@ export * as AnalyticsService from "./public.js";
   `AsyncDataService.IsValid`.
 - A service that carries non-Data configuration the app injects (a host plugin, a
   callback) cannot pass `IsValid`; skip the assert for it, and keep such services rare.
-- A type only one service uses lives on its namespace (`AnalyticsService.Timing`),
-  or in its interface file.
+- A type only one service uses lives in its interface file (`Timing` beside
+  `AnalyticsService`).
 
 ## `create` and `createFake`
 

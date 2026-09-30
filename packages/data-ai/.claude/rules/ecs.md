@@ -7,6 +7,8 @@ paths:
 
 # Database.Plugin authoring
 
+> Inside a feature (`features/<name>/ecs/`), the `features/ecs/` rules govern file layout and naming: layer files are `<layer>-database.ts` exporting an `XDatabase` namespace, and systems are camelCase. This file covers general plugin mechanics.
+
 Plugins are created with `Database.Plugin.create()` from `@adobe/data/ecs`.
 
 ## Property order (enforced at runtime)
@@ -19,7 +21,7 @@ Properties **must** appear in this exact order. All are optional.
 | 2   | `extends`      | `Plugin`                               | Base plugin to extend (types re-exported) |
 | 3   | `services`     | `(db) => ServiceInstance`              | Singleton service factories               |
 | 4   | `components`   | schema object                          | ECS component schemas                     |
-| 5   | `resources`    | `{ default: value as Type }`           | Global resource schemas                   |
+| 5   | `resources`    | schema with a `default`                | Global resource schemas                   |
 | 6   | `archetypes`   | `['comp1', 'comp2']`                   | Standard ECS archetypes                   |
 | 7   | `indexes`      | `{ key, order?, unique?, archetype? }` | Sorted/filtered entity indexes            |
 | 8   | `computed`     | `(db) => Observe<T>`                   | Computed observables                      |
@@ -158,7 +160,7 @@ UI components that call actions must never consume returned values — see `feat
 
 ---
 
-## Naming conventions
+## Naming conventions (standalone plugins)
 
 | Item        | Convention                                            | Example                      |
 | ----------- | ----------------------------------------------------- | ---------------------------- |

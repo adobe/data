@@ -24,7 +24,7 @@ export const createRandomTodo = async (db: ServiceDatabase) => {
 - **Type `db` on the lowest layer** exposing what it calls, usually `ServiceDatabase`.
   Never the action layer itself.
 - **Call services here**: await ports, sequence calls, time a slow call. Then commit
-  through transactions, preferably one per action so undo is one step.
+  through **at most one transaction**, so undo/redo stays one step per operation.
 - **Fire-and-forget.** Results flow back through observables, never return values.
 - **Read current state synchronously** from the store (`db.resources`, `db.read`,
   `db.select`), never from a cached computed, which refreshes only on commit.

@@ -7,9 +7,10 @@ paths:
 
 The foundation layer. Everything here is a declaration about plain, serializable
 Data: JSON primitives/arrays/objects plus `ReadonlySet`, `ReadonlyMap`, and `Blob`
-(serialize with `Data.stringify` / `Data.parse`). No functions in values, no handles,
-no services, no ECS machinery. It depends only on `@adobe/data` and the `data/` of
-features this one builds on.
+(serialize with `Data.stringify` / `Data.parse`). No functions in values, no services,
+no ECS machinery. The one exception is a session-scoped resource holding a runtime
+handle (a canvas, a live database): `{ default: null as Handle | null, ...Scope.session }`.
+It depends only on `@adobe/data` and the `data/` of features this one builds on.
 
 ```
 data/

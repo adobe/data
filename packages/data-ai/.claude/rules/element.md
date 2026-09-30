@@ -3,6 +3,7 @@ paths:
   - '**/*-element.ts'
   - '**/elements/**/*.ts'
   - '**/ui/**/*.ts'
+  - '**/ui/**/*.tsx'
 ---
 
 # Container element authoring
@@ -117,8 +118,8 @@ transaction, or hook.
 | Framework | Container is             | Subscription hook     | Locator inputs       | Render delegation                                |
 | --------- | ------------------------ | --------------------- | -------------------- | ------------------------------------------------ |
 | Lit       | `DatabaseElement<P>`     | `useObservableValues` | `@property` only     | `presentation.render({ ...values, ...callbacks })` |
-| React     | function component       | `useObservableValues` | function arguments   | `<Presentation {...values} {...callbacks} />`    |
-| Solid     | component function       | framework-specific    | function arguments   | `<Presentation {...values} {...callbacks} />`    |
+| React     | function component       | `useObservableValues` | function arguments   | `presentation.render({ ...values, ...callbacks })` |
+| Solid     | component function       | framework-specific    | function arguments   | `presentation.render({ ...values, ...callbacks })` |
 
 Lit-only: `static styles = styles` from a sibling `*.css.ts`. `@property`
 exists *only* for locator inputs — never for state, never for derived

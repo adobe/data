@@ -27,7 +27,8 @@ import { Size } from "../../data/values/size/size.js";
 // transaction; the discrete outcomes (fire, hit, lose a life, refill) dispatch
 // transactions. Every system is frozen once the game is over. The scheduler drives
 // them on requestAnimationFrame; a headless host (tests, server sim) instead invokes
-// `db.system.functions[name]()` for each name in `db.system.order`.
+// `db.system.functions[name]()` for each name of each tier in `db.system.order`
+// (skipping `schedulerSystem`).
 const systemDatabasePlugin = Database.Plugin.create({
   extends: Database.Plugin.combine(ActionDatabase.plugin, scheduler),
   systems: {

@@ -6,7 +6,8 @@ paths:
 # Type namespace pattern
 
 Single import surface per type: `<type-name>/<type-name>.ts`. Schema in `-schema.ts`, namespace re-export from `public.js`. Types live in
-the `types/` layer.
+the `types/` layer. **In a feature**, Data types live in `features/<name>/data/values/<type>/` with the schema in `schema.ts`
+(`features/data/values.md`).
 
 ## Authority
 

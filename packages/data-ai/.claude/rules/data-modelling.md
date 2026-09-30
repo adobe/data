@@ -1,6 +1,7 @@
 ---
 paths:
-  - '**/data/*.ts'
+  - '**/features/*/data/**/*.ts'
+  - '**/features/*/spec/**/*.ts'
 ---
 
 # Data modelling — locality of knowledge

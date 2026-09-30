@@ -1,6 +1,7 @@
 ---
 paths:
   - '**/*presentation.ts'
+  - '**/*presentation.tsx'
 ---
 
 # Presentation authoring

@@ -12,7 +12,9 @@ const refsDir = path.join(packageRoot, "references");
 
 const packagesDir = path.join(packageRoot, "..");
 const PACKAGES = [
+  "data-gpu-hopper",
   "data-lit",
+  "data-lit-space-rock-game",
   "data-lit-tictactoe",
   "data-lit-todo",
   "data-react",
@@ -20,7 +22,17 @@ const PACKAGES = [
   "data-react-pixie",
 ];
 
-const COPY_ENTRIES = ["src", "package.json", "tsconfig.json", "README.md"];
+const COPY_ENTRIES = [
+  "src",
+  "package.json",
+  "README.md",
+  "tsconfig.json",
+  // The feature layer projects the rules point consumers to.
+  "tsconfig.data.json",
+  "tsconfig.spec.json",
+  "tsconfig.ecs.json",
+  "tsconfig.test.json",
+];
 
 function copyRecursive(src, dest) {
   const stat = fs.statSync(src);

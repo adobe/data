@@ -11,12 +11,12 @@ When a value is already a function with the signature the callee wants, pass it
 
 ```ts
 // ❌ identity wrappers — the arrow adds nothing
-expectConforms({ spec: (s, dt) => State.resolveBulletHits(s, dt), apply: (store, a) => hitAsteroid(store, a) });
+cached((db) => Observe.withFilter(db.observe.resources.board, (b) => BoardState.deriveStatus(b)));
 onClick={() => save()}
 todos.map((t) => render(t))
 
 // ✅ pass the function itself
-expectConforms({ spec: State.resolveBulletHits, apply: hitAsteroid });
+cached((db) => Observe.withFilter(db.observe.resources.board, BoardState.deriveStatus));
 onClick={save}
 todos.map(render)
 ```

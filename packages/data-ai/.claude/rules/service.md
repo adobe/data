@@ -6,6 +6,8 @@ paths:
 
 # Service authoring
 
+> Inside a feature, `features/services/index.md` governs the folder layout: a small service keeps `create.ts` and `create-fake.ts` flat beside the interface (the single-file exception below); one with helpers moves its implementation into a sub-folder. Database-bound factories in `ecs/services/` follow `features/ecs/services.md`.
+
 Asynchronous data services. Live in the `services/` layer. Adhere to the namespace rule for type and function organization.
 
 **Data** = readonly JSON values, `ReadonlySet`, `ReadonlyMap`, or Blobs.

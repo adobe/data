@@ -4,6 +4,8 @@ paths:
   - '**/*-plugin/**/*.ts'
   - '**/*-database.ts'
   - '**/*-database/**/*.ts'
+  - '**/features/*/data/entities/**/*.ts'
+  - '**/features/*/ecs/core/**/*.ts'
 ---
 
 # Archetypes — the ECS query & iteration model

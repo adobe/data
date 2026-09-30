@@ -7,7 +7,7 @@ paths:
 
 # Lit element authoring
 
-Lit elements live in the `components/` layer per the structure rule. Consume Observe and void actions from plugins per the service rule.
+Lit elements live in the `ui/` layer (`features/ui/`). Consume Observe and void actions from plugins per the service rule.
 
 ---
 

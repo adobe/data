@@ -31,9 +31,9 @@ import { Database, scheduler } from "@adobe/data/ecs";
 import { Motion } from "../../data/values/motion/motion.js";
 
 const plugin = Database.Plugin.create({
-    // combine scheduler with the CURRENT TOP layer — ComputedDatabase here, but
-    // ActionDatabase / ServiceDatabase if the feature built those (systems come last).
-    extends: Database.Plugin.combine(ComputedDatabase.plugin, scheduler),
+    // combine scheduler with the current top layer — ActionDatabase, since every
+    // spec action has an action (systems come last).
+    extends: Database.Plugin.combine(ActionDatabase.plugin, scheduler),
     systems: {
         control: { create: (db) => () => { /* input → ship; db.transactions.fireBullet() */ } },
         movement: {
@@ -106,15 +106,15 @@ Systems don't run themselves. Combine the built-in scheduler so they run on
 ```ts
 import { Database, scheduler } from "@adobe/data/ecs";
 // in system-database.ts:
-Database.Plugin.create({ extends: Database.Plugin.combine(ComputedDatabase.plugin, scheduler), systems });
+Database.Plugin.create({ extends: Database.Plugin.combine(ActionDatabase.plugin, scheduler), systems });
 ```
 
 The scheduler adds a `schedulerState` resource (`"running" | "paused" |
 "disposed"`) — gate start/pause/resume through it (start `"paused"` if the game
-begins on a user action). A headless host (tests, server sim) omits the
-scheduler and drives frames itself by calling `db.system.functions[name]()` for
-each `name` in `db.system.order` — so a simulation is fully runnable and testable
-with no rAF and no rendering attached.
+begins on a user action). A headless host (tests, server sim) drives frames itself: for each tier in
+`db.system.order` (an array of tiers), call `db.system.functions[name]()` for each
+name, skipping `schedulerSystem` and init-only systems (no function). So a simulation
+is fully runnable and testable with no rAF and no rendering attached.
 
 ## Layer
 

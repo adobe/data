@@ -49,10 +49,11 @@ tests:    ecs/conformance → spec + ecs
 - **No runtime file imports `spec/`.** The spec is consumed only by tests. Logic the
   spec and the implementation share (ordering math, name formatting) lives in
   `data/values/` helpers, which both import.
-- **Presentations import only `data/`** (a convention); elements bind to
-  `ecs/main-service`.
-- **A base feature never imports a feature built on it.** The one exception is the
-  UI's lazy-wrapper seam (`ui/lazy-wrapper.md`).
+- **Presentations import only `data/` and sibling `ui/` lazy wrappers** (a
+  convention); elements bind to `ecs/main-service`.
+- **A base feature never imports a feature built on it.** The one exception is a
+  presentation calling a higher feature's lazy wrapper (`lazy-element.md`), which
+  loads that feature's element and plugin on first render.
 
 ## Building a feature, one layer at a time
 
@@ -68,7 +69,7 @@ Each step has a gate that must pass before the next:
 | 6 | `ecs` indexes, transactions, computed, services, actions — one op at a time | `checkFeature` |
 | 7 | `ecs/systems` (real-time only) | `frame` conformance + system tests |
 | 8 | `ui/` presentations, then elements | presentation tests |
-| 9 | `app/` | versioning test, smoke test |
+| 9 | `app/` | versioning and persistence tests; the app builds |
 
 ## One app, many features
 
@@ -97,8 +98,9 @@ One TS project per layer (see `data-lit-todo`'s tsconfigs):
   `ecs/conformance/`, and every `*.test.ts`. It references ecs + spec.
 
 So `spec/` importing `ecs/`, or `ecs/` importing `spec/`, is a compile error (TS6307).
-The package's `typecheck` script is `tsc -b tsconfig.test.json`, which builds all of
-them.
+`ui/` and `app/` sit in the test project, so for them "never import `spec/`" is a
+convention, not a compile error. The package's `typecheck` script is
+`tsc -b tsconfig.test.json`, which builds all of them.
 
 ## Reference implementations
 

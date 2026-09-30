@@ -16,7 +16,8 @@ import { GameStatus } from "../../data/values/game-status/game-status.js";
 //
 // Each system is frozen once the game is over. The built-in `scheduler` drives them on
 // requestAnimationFrame; a headless host drives frames itself by invoking
-// `db.system.functions[name]()` for each name in `db.system.order`.
+// `db.system.functions[name]()` for each name of each tier in `db.system.order`
+// (skipping `schedulerSystem`).
 const systemDatabasePlugin = Database.Plugin.create({
   extends: Database.Plugin.combine(ActionDatabase.plugin, scheduler),
   systems: {

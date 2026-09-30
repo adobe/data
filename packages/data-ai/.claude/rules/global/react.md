@@ -5,7 +5,7 @@ paths:
 
 # React component authoring
 
-React components live in the `components/` layer. Consume Observe and void actions from plugins. Use `@adobe/data-react` for `useDatabase`,
+React components live in the `ui/` layer (`features/ui/`). Consume Observe and void actions from plugins. Use `@adobe/data-react` for `useDatabase`,
 `useObservableValues`, and `DatabaseProvider`.
 
 ---

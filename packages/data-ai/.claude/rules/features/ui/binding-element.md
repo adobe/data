@@ -1,8 +1,8 @@
 ---
 paths:
-  - 'src/**/*element*.ts'
-  - 'src/**/elements/**/*.ts'
-  - 'src/**/ui/**/*-element.ts'
+  - '**/src/**/*element*.ts'
+  - '**/src/**/elements/**/*.ts'
+  - '**/src/**/ui/**/*-element.ts'
 ---
 
 # Binding elements

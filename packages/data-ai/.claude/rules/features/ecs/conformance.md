@@ -7,7 +7,7 @@ paths:
 
 Test tier. The spec's cases are replayed against the ECS: every spec action against
 the `MainService` action of the same name, and every derivation against its
-computed. The folder holds three files:
+computed. The folder holds:
 
 ```
 conformance/

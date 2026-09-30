@@ -14,6 +14,7 @@ src/app/
   schema.ts            the app's composed plugin (when there are several features)
   versioning/          versions.ts + versions.test.ts (versioning.md)
   persistence.test.ts  a save/load round-trip, when the app persists
+  *.test.ts            cross-feature tests (e.g. a todo op ignores a user id)
   main.ts              the entry: create the database, inject services, render
 ```
 

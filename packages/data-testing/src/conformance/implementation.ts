@@ -22,10 +22,6 @@ export interface Implementation<State extends object, Fns extends Record<string,
   readonly spec: Spec<State, Fns, object>;
   // The assembled feature plugin (`MainService.plugin`): its actions are the ops under test.
   readonly plugin: Database.Plugin;
-  // Spec transitions a system dispatches straight to a same-named transaction (a tick
-  // step, not a user action). These conform against the transaction; every other
-  // transition must have a same-named action.
-  readonly transactionOps?: readonly string[];
   // A real-time feature's per-frame spec transition (e.g. `step`), realized by the
   // systems tick loop rather than an action. Each case seeds a db built from `plugin`,
   // runs `setup` to apply the case args (e.g. `frameDelta = dt`), drives exactly one
@@ -46,7 +42,6 @@ export interface Implementation<State extends object, Fns extends Record<string,
   readonly services?: Readonly<Record<string, () => object>>;
   // Override the ops read off the plugin facets.
   readonly ops?: {
-    readonly transactions?: Record<string, unknown>;
     readonly actions?: Record<string, unknown>;
     readonly computeds?: Record<string, unknown>;
   };
@@ -65,7 +60,7 @@ export const implementation = <
   O extends Extract<keyof Fns, string> = never,
 >(
   spec: Spec<State, Fns, C>,
-  impl: Omit<Implementation<State, Fns, ProjectionStore<P>>, "spec" | "plugin" | "projection" | "hydrate" | "computedPlugin" | "transactionOps" | "frame"> & {
+  impl: Omit<Implementation<State, Fns, ProjectionStore<P>>, "spec" | "plugin" | "projection" | "hydrate" | "computedPlugin" | "frame"> & {
     readonly plugin: PL;
     readonly frame?: {
       readonly op: O;
@@ -73,7 +68,6 @@ export const implementation = <
     };
     readonly projection: P;
     readonly hydrate?: H;
-    readonly transactionOps?: readonly Extract<keyof Fns, string>[];
   } & (HasDerivations<C> extends true ? { readonly computedPlugin: Database.Plugin } : { readonly computedPlugin?: Database.Plugin }) &
     HydrateExact<H, HydrationKeys<Fns, ProjectionValue<P>>>,
 ): Implementation<State, Fns, ProjectionStore<P>> =>

@@ -2,7 +2,7 @@
 
 import { Application } from "@pixi/react";
 import { DatabaseProvider } from "@adobe/data-react";
-import { MainService } from "../services/main-service/main-service.js";
+import { MainService } from "../ecs/main-service.js";
 import { FilterSelector } from "./filter-selector/filter-selector.js";
 import { PixieTick } from "./pixie-scene/pixie-tick.js";
 import { PixieScene } from "./pixie-scene/pixie-scene.js";

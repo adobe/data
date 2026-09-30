@@ -1,161 +1,115 @@
 ---
 paths:
-  - '**/features/*/data/**/*.ts'
-  - '**/features/*/services/**/*.ts'
-  - '**/features/*/ui/**/*.ts'
+  - '**/features/*/**/*.ts'
+  - '**/features/*/**/*.tsx'
 ---
 
-# Feature architecture — a verifiable spec and an optimized implementation
+# Feature architecture — layered, specified, implemented
 
-Each feature is built twice in one codebase: a **pure specification** you can
-trust, and an **efficient implementation** proven equivalent to it.
+Each feature is built up in layers, each simple and testable on its own:
 
-- **`data/` is the specification.** The whole feature modelled as one immutable
-  `State` with pure transformations over it — correct by construction, fully
-  unit-tested, performance irrelevant. This is the source of truth.
-- **`services/main-service/` is the implementation.** The same model physically
-  arranged for mutation efficiency — a reactive Entity-Component-System, an
-  implementation detail behind the service. Its reads and writes wrap the
-  `data/` functions where practical; where they must be hand-optimized, unit
-  tests verify they still agree with the `data/` precedent.
+- **`data/`** declares the feature's pure Data: value types, components, resources,
+  and entities (component tuples).
+- **`services/`** declares and implements the async services the feature talks to.
+- **`spec/`** is the feature's **specification**: one immutable `State` and pure
+  functions over it. It is test tier only.
+- **`ecs/`** is the **implementation**: a reactive Entity-Component-System, proven
+  equivalent to the spec by conformance.
+- **`ui/`** is presentation.
 
-Because the optimized `main-service` is largely mechanical given the `data/`
-spec, it can be generated and kept honest by AI rules, with the conformance
-tests as the safety net. Net result: write a slow-but-verifiable app, then
-derive a fast one that provably behaves the same.
+Write the slow, obviously-correct spec first; the ECS is then largely mechanical, and
+conformance keeps it honest.
 
-## Two modes: state-based vs. ECS-based
+## Layout
 
-The "built twice" structure above is the **state-based** mode. Every feature is in
-one of two modes, discriminated by **the presence of `data/state/`**:
+```
+src/
+  features/<feature>/
+    data/        runtime   values/  components/  resources/  entities/
+    services/    runtime   <name>-service/ namespaces, services.ts
+    spec/        TEST TIER State, actions, derivations, cases, spec.ts
+    ecs/         runtime   core/ indexes/ transactions/ services/ computed/ actions/ systems/
+                           main-service.ts, conformance/ (TEST TIER)
+    ui/<x>/      runtime   <x>-presentation.ts, <x>-element.ts
+  app/           runtime   schema.ts, versioning/, main.ts
+```
 
-- **State-based** — a **Functional State Specification (FSS)** is the source of
-  truth: the pure `data/State` aggregate with its transitions and derivations, and
-  the ECS is a conformance-verified implementation of it. Adds `data/state/` (State,
-  the pure transforms with sibling `*.cases.ts`, the `transforms.ts` barrel, the `spec.ts`
-  manifest, `spec.test.ts`), `services/main-service/conformance/`, and the `state`
-  projection computed. **This is how every new feature is authored.**
-- **ECS-based** — the **ECS is the source of truth**, authored directly:
-  **no `data/state/`**, no FSS, no conformance. This is a **legacy** shape — features
-  written before the state-based approach existed. New features are **never** authored
-  this way; ECS-based exists only to describe and maintain those older features.
+A feature creates only the layers and folders it uses.
 
-**Discriminator:** `data/state/` present → state-based; absent → ECS-based. The
-`data/<type>` value folders (the serializable types backing components/resources,
-the wire, and persistence) exist in **both** modes — only the aggregate `State`
-spec and the conformance layer are mode-specific. `data/` never disappears; the
-*aggregate spec* does.
+## Dependencies
 
-**Testing follows the mode.** A state-based feature is verified by conformance: the
-shared `cases` drive both the pure spec and the ECS, so a transaction or action with
-a same-named transition needs no test of its own. An **ECS-based feature has no
-conformance cases, so every transaction and every action carries its own unit
-test** — the direct substitute for the conformance oracle (see `services/main-service/transactions.md`
-and `actions.md`).
+```
+runtime:  data → services → ecs → ui → app
+spec:     data + services → spec          (test tier)
+tests:    ecs/conformance → spec + ecs
+```
 
-## The layers
+- **Each layer imports only from the layers before it.** A higher feature's layer
+  may import the same or a lower layer of a feature it builds on.
+- **No runtime file imports `spec/`.** The spec is consumed only by tests. Logic the
+  spec and the implementation share (ordering math, name formatting) lives in
+  `data/values/` helpers, which both import.
+- **Presentations import only `data/` and sibling `ui/` lazy wrappers** (a
+  convention); elements bind to `ecs/main-service`.
+- **A base feature never imports a feature built on it.** The one exception is a
+  presentation calling a higher feature's lazy wrapper (`lazy-element.md`), which
+  loads that feature's element and plugin on first render.
 
-**The layers organize by the *kind of type* each folder holds, not by a strict
-dependency wall.** `data/` holds **value types** (pure, serializable data) and
-the pure declarations over them; `services/` holds **service types** (interfaces
-**and** implementations); `ui/` holds presentation. The rule is about *what
-lives where*: a service is never authored under `data/`, a value type is never
-authored under `services/`.
+## Building a feature, one layer at a time
 
-**`ui/` isolation is strict and inviolable.** `ui/` sits at the top: neither
-`data/` nor `services/` may ever import from `ui/`, no exceptions. Presentation
-depends on the model; the model never depends on presentation.
+Each step has a gate that must pass before the next:
 
-Beneath that hard line, `data/` and `services/` are **not** strictly ordered.
-Value types are fundamental — a `data/` **type** depends on nothing but
-`@adobe/data` and other `data/` types. But the **transition functions** over
-them may depend on `services/` **without restriction**: they import whatever they
-need — service interfaces they inject, and any associated utilities the service
-namespace exposes — as ordinary imports, not type-only. So the strict wall is
-`ui/` above `data/` + `services/`; the `data/ ↔ services/` boundary is the loose
-one. A feature creates only the layers it uses.
-
-| Layer | Role |
-|-------|------|
-| `data/` | The spec: `State`, pure transforms & derivations, entity sub-types. Pure, tested. |
-| `services/main-service/` | The implementation: the ECS materialisation + reactive reads/writes. The **sole entrypoint** — the only service the `ui/` binds to. |
-| `services/<name>-service/` | Async capability contracts (ports to the outside world). Reached only *through* `main-service` (its actions/services wire them in), never by the UI. Optional. |
-| `ui/` | Presentation. |
-
-`services/` holds two kinds of service: the one `main-service/` (ECS-backed
-state, its own subtree of rules) and any async capability contracts. The UI, and
-every external consumer, sees only `main-service`.
+| # | Step | Gate |
+|---|---|---|
+| 1 | `data/values` | pins compile; helper tests |
+| 2 | `data/components`, `resources`, `entities` | compiles |
+| 3 | `services/` | per-service unit tests |
+| 4 | `spec/`: State, `create`, `samples`, then one action or derivation + cases at a time | `checkSpec` |
+| 5 | `ecs/core` + `ecs/conformance/projection.ts` | samples round-trip |
+| 6 | `ecs` indexes, transactions, services, computed, actions — one op at a time | `checkFeature` |
+| 7 | `ecs/systems` (real-time only) | per-system and frame conformance |
+| 8 | `ui/` presentations, then elements | presentation tests |
+| 9 | `app/` | versioning and persistence tests; the app builds |
 
 ## One app, many features
 
-An application is a set of **features**, each its own `features/<name>/` folder
-with the same layers. One base feature (`features/main/`) is the host; the rest
-are peers that load lazily.
+An app is a set of features under `features/<name>/`. One base feature
+(`features/main/`) hosts; the rest build on it and load lazily.
 
-**Keep each feature small; grow by adding features, not by bloating one.** A
-feature is meant to fit in the head — a handful of files per layer. When a
-part of a feature keeps growing, that is usually the signal to split it into
-its own peer feature rather than let one feature's folders balloon.
+- **Keep each feature small; grow by adding features.**
+- **One owner per component and resource name.** The lowest feature that needs a
+  name declares it in its `data/`; features built on it import that schema object
+  (identity is what the ECS compares) and spread the owner's barrel into their own.
+- **`app/` composes the features** (`../app.md`): its schema combines each feature's
+  plugins, it owns versioning, and it injects services that must be provided at
+  runtime.
+- **Features built on the base load lazily**: a feature's element extends the shared
+  live database with its plugin the first time it connects. Gate that first render
+  behind a user action.
 
-- **Dependencies point toward the base, never out of it.** A peer feature may
-  build on another feature's `data/` types and declarations (kept acyclic). The
-  base must not depend on its children — with one sanctioned exception below.
-- **The base `imports` every peer's *schema* plugin** —
-  `Database.Plugin.create({ imports })`, not `extends`. `imports` merges the
-  peer's `services/main-service/core-database` (components / resources /
-  archetypes) into the shared store at runtime **without** pulling its types or
-  behavior into the base's type or bundle (`extends` would do both, and cost
-  quadratically). So one store knows every feature's schema — data coexists,
-  persists, and syncs — while the base stays decoupled. Import the peer's
-  `services/main-service/core-database.ts` plugin (schema only) — under its
-  feature-qualified name `<Peer>CoreDatabase` (see the cross-feature naming rule
-  in `services/main-service/index.md`): its indexes, transactions, computed,
-  services, and UI stay out until the feature loads. A column two features share
-  (e.g. `name`) lives in `data/` and is referenced by identity, so
-  `combinePlugins` dedupes it.
-- **Peers load lazily by being used.** `DatabaseElement`, on connect, walks up to
-  the nearest ancestor database and `extend`s it with its own plugin — so the
-  first time a feature element renders, its full plugin (indexes, transactions,
-  computed, services) is added to the shared live database and its code chunk is
-  fetched. Gate that first render behind a user action (a button, a tab) so the
-  load is genuinely on-demand.
-- **The base reaches a child only through a lazy element wrapper** — a tiny
-  `Foo()` that `void import()`s the child element. That dynamic import is the one
-  allowed core→child seam; the heavy element and its main-service stay in the
-  child's own chunk.
+## Enforcement
 
-## Spec and implementation, kept honest
+One TS project per layer (see `data-lit-todo`'s tsconfigs):
 
-The tie between `data/` (spec) and `main-service` (implementation) is
-**conformance**, one property —
-`toState(apply(fromState(before), args)) ≡ transform(before, args)`: each
-main-service mutation, seeded and read back through a test-only store↔`State`
-projection, equals the pure `data/` transform it stands for. The spec-owned cases
-are authored as inert `data/state/*.cases.ts` and gathered by the `data/state/spec.ts`
-**manifest**, which both the pure `spec.test.ts` (`Conformance.checkSpec(spec)`) and the
-ecs `services/main-service/conformance/conformance.test.ts`
-(`Conformance.checkFeature(spec)`) import. `checkFeature` pairs each ECS op to its
-same-named transition, replays the shared cases, and round-trips the projection (see
-`services/main-service/conformance.md`); the manifest's compile-time guards keep the two
-calls the whole conformance surface. So conforming the implementation is "substitute the
-implementation, reuse the expectations" — `main-service` is largely mechanical and
-agent-generated, with the spec as oracle. *How* to author each layer lives in the
-per-folder rules below.
+- **`tsconfig.data.json`** — `data/` + `services/`, composite.
+- **`tsconfig.spec.json`** — `spec/`, references data.
+- **`tsconfig.ecs.json`** — `ecs/` minus `conformance/`, references data.
+- **`tsconfig.test.json`** — everything else, non-emitting: `ui/`, `app/`,
+  `ecs/conformance/`, and every `*.test.ts`. It references ecs + spec.
+
+So `spec/` importing `ecs/`, or `ecs/` importing `spec/`, is a compile error (TS6307).
+`ui/` and `app/` sit in the test project, so for them "never import `spec/`" is a
+convention, not a compile error. The package's `typecheck` script is
+`tsc -b tsconfig.test.json`, which builds all of them.
 
 ## Reference implementations
 
 Working samples ship inside `@adobe/data` at
-`node_modules/@adobe/data/references/<sample>/src/` — read them for concrete,
-current examples of this structure. `data-lit-todo` is the most complete
-(multi-feature, capability services, indexes, conformance tests);
-`data-lit-tictactoe` is the minimal turn-based reference.
+`node_modules/@adobe/data/references/<sample>/src/`:
 
-## Per-layer detail
+- **`data-lit-todo`** — the most complete: two features, services, indexes, cross-feature composition, and persistence.
+- **`data-lit-tictactoe`** — the minimal turn-based reference.
+- **`data-lit-space-rock-game`** and **`data-gpu-hopper`** — real-time, with per-system and frame conformance.
 
-See the rules under each folder: `data/`, `services/` — the `main-service/`
-subtree (components, resources, archetypes, computed, indexes, transactions,
-systems, conformance) and capability-contract services — and `ui/`.
-Always-on conventions live in `global/` (`namespace.md`, `cohesion.md`,
-`type-casts.md`, `function-references.md`, `react.md` — deliberately repo-wide);
-other cross-cutting patterns at the rules root — `data-modelling.md`,
-`archetypes.md` (row iteration).
+The per-folder rules live beside this file (`data/`, `services/`, `spec/`, `ecs/`,
+`ui/`). Always-on conventions are in `global/`.

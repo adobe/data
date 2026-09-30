@@ -1,27 +1,21 @@
 ---
 name: build-systems
-description: Build a feature's system-database — the real-time tick loop (systems the scheduler runs each frame). For real-time features only.
+description: Build a real-time feature's ecs/systems layer — the per-frame tick loop. Optional.
 input: feature
 output: feature
 ---
 
-Skip if this feature doesn't contain or require systems.
-Most games that use a canvas will use systems but most applications will not.
+Skip unless the feature is real-time (games, simulations).
 
-Create `services/main-service/system-database/system-database.ts`: `Database.Plugin.create({ extends:
-Database.Plugin.combine(<currentTop>.plugin, scheduler), systems })` — combine `scheduler` with the
-feature's **current top** main-service layer (`ActionDatabase` / `ServiceDatabase` / `ComputedDatabase`,
-whichever it built), never a hardcoded `ComputedDatabase`, so systems *and* any services/actions
-compose into the one `MainService`. The `systems`
-map is declared **inline** (see `features/services/main-service/systems.md` — inline is required for `db` to be
-typed and for system-name inference; a `systems/` folder is optional, only for extracted
-per-frame body helpers).
+Create `ecs/systems/system-database.ts`: `Database.Plugin.create({ extends:
+Database.Plugin.combine(<currentTop>.plugin, scheduler), systems: { … } })`, with the
+`systems` map declared **inline** so `db` and the system names are inferred. Hot
+per-row work writes columns in place; discrete events dispatch transactions. Order
+systems under `schedule`; it is the only statement of order.
 
-- A system is a `SystemDeclaration`: `{ create, schedule?: { before?, after?, during? } }`.
-  `create(db)` runs once (capture queries / index handles / closures); the returned function
-  advances the world one tick. Return `void` for an init-only system (seeding entities).
-- Order under `schedule` (mirror the `data/` step's internal sequence); drive the loop by
-  combining `scheduler` (rAF), gated by the `schedulerState` resource.
+Add `frame: { args, unmodelled?, cases? }` to the implementation: a writer per frame
+arg, each system the spec can't model (wasm, init-only) with its reason, and
+whole-frame cases in `ecs/conformance/frame.cases.ts`. Gate: every
+system's own cases and the frame cases pass.
 
-**Only for real-time features** (games, sims) — turn-based features skip this phase entirely.
-Comes after `build-computed`. The how is in the auto-loading `features/services/main-service/systems.md` rule.
+The how is in the auto-loading `features/ecs/systems.md` rule.

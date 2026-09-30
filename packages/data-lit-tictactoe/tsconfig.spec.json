@@ -1,0 +1,17 @@
+{
+  // Test tier: the pure spec (spec/). References only data + services, so a spec file
+  // importing ecs/ is a compile error. May use @adobe/data-testing. No runtime file
+  // imports it (runtime projects never reference it).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "./.tsbuild/spec",
+    "rootDir": "src"
+  },
+  "include": ["src/features/*/spec/**/*"],
+  "exclude": ["**/*.test.ts", "**/*.type-test.ts"],
+  "references": [{ "path": "./tsconfig.data.json" }]
+}

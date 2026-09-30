@@ -1,0 +1,63 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+import type { Entity } from "@adobe/data/ecs";
+import type { Sprite } from "../../data/entities/sprite.js";
+import type { State } from "../../spec/state.js";
+import type { CoreDatabase } from "../core/core-database.js";
+
+// Read one entity back into its id-less `data/` value — the per-entity projection
+// `toState` folds over, and the single place the ecs↔data mapping for a sprite
+// lives. Identity is the `State.entities` key (the entity itself), never a field.
+const toData = (store: CoreDatabase.Store, entity: Entity): Sprite => {
+  const row = store.read(entity, store.archetypes.Sprite);
+  if (row === null)
+    throw new Error("conformance projection: expected a sprite entity");
+  return {
+    position: row.position,
+    rotation: row.rotation,
+    kind: row.kind,
+    hovered: row.hovered,
+    active: row.active,
+  };
+};
+
+// The test-only ecs↔`State` projection, carried on the manifest and used by `Conformance.checkFeature`.
+// `fromState` seeds a store to a `State` (clear every sprite, set `filter`, then
+// insert the sprites) and returns the `spec id → seeded entity` map so the
+// runners resolve id-addressed operations generically; `toState` reads it back
+// into the identity-keyed `entities` map; `toData` reads one entity.
+export const projection = {
+  fromState: (
+    store: CoreDatabase.Store,
+    state: State,
+  ): ReadonlyMap<number, Entity> => {
+    for (const arch of store.queryArchetypes(
+      store.archetypes.Sprite.components,
+    )) {
+      for (let row = arch.rowCount - 1; row >= 0; row--) {
+        store.delete(arch.columns.id.get(row));
+      }
+    }
+    store.resources.filter = state.filter;
+    return new Map(
+      [...state.entities].map(([id, sprite]): [number, Entity] => [
+        id,
+        store.archetypes.Sprite.insert({
+          position: sprite.position,
+          rotation: sprite.rotation,
+          kind: sprite.kind,
+          hovered: sprite.hovered,
+          active: sprite.active,
+        }),
+      ]),
+    );
+  },
+  toState: (store: CoreDatabase.Store): State => ({
+    filter: store.resources.filter,
+    entities: new Map(
+      [...store.select(store.archetypes.Sprite.components)].map(
+        (entity): [number, Sprite] => [entity, toData(store, entity)],
+      ),
+    ),
+  }),
+  toData,
+};

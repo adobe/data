@@ -9,7 +9,7 @@
 import { customElement } from "lit/decorators.js";
 import { DatabaseElement, useObservableValues, usePointerObserve, useEffect, useElement } from "@adobe/data-lit";
 import { Observe } from "@adobe/data/observe";
-import { MainService } from "../../services/main-service/main-service.js";
+import { MainService } from "../../ecs/main-service.js";
 import { styles } from "./p2p-presence-overlay.css.js";
 import * as presentation from "./p2p-presence-overlay-presentation.js";
 

@@ -5,8 +5,9 @@ import "@spectrum-web-components/checkbox/sp-checkbox.js";
 import "@spectrum-web-components/action-button/sp-action-button.js";
 import "@spectrum-web-components/icons-workflow/icons/sp-icon-delete.js";
 import { TODO_ROW_HEIGHT } from "./todo-row.constants.js";
-// Lazy wrapper into the assign feature — the assignee names are main's data
-// (rendered here as chips); editing them lazily loads the feature's dropdown.
+// Lazy wrappers into the assign feature: its chips show a todo's assignees and its
+// dropdown edits them. Main never reads assign's data itself.
+import { AssigneeChips } from "../../../assign/ui/assignee-chips/assignee-chips.js";
 import { AssigneeDropdown } from "../../../assign/ui/assignee-dropdown/assignee-dropdown.js";
 
 type RenderArgs = {
@@ -14,7 +15,6 @@ type RenderArgs = {
   readonly name: string;
   readonly complete: boolean;
   readonly dragPosition: number | null;
-  readonly assignees: readonly string[];
   readonly editing: boolean;
   readonly toggleEditing: () => void;
   readonly index: number;
@@ -24,7 +24,7 @@ type RenderArgs = {
 };
 
 export function render(args: RenderArgs) {
-  const { ready, name, complete, dragPosition, assignees, editing, index, entity } = args;
+  const { ready, name, complete, dragPosition, editing, index, entity } = args;
 
   if (!ready) return nothing;
 
@@ -42,7 +42,7 @@ export function render(args: RenderArgs) {
         aria-label="Toggle complete"
       ></sp-checkbox>
       <span class="todo-name">${name}</span>
-      ${assignees.map((a) => html`<span class="assignee-chip">${a}</span>`)}
+      ${AssigneeChips({ todo: entity })}
       <sp-action-button
         size="s"
         quiet

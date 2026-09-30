@@ -41,6 +41,8 @@ import { combinePlugins } from "./combine-plugins.js";
 import { components as componentsFacet } from "./facets/components.js";
 import { resources as resourcesFacet } from "./facets/resources.js";
 import { archetypes as archetypesFacet } from "./facets/archetypes.js";
+import type { EntityComponents as EntityComponentsFacet } from "./facets/entity-components.js";
+import type { EntityType as EntityTypeFacet } from "./facets/entity-type.js";
 
 export type SystemFunction = () => void | Promise<void>;
 export type SystemDeclaration = {
@@ -349,6 +351,10 @@ export namespace Database {
   export const components = componentsFacet;
   export const resources = resourcesFacet;
   export const archetypes = archetypesFacet;
+  /** An entity's declaring component tuple (see `facets/entity-components.ts`). */
+  export type EntityComponents<C extends ComponentSchemas> = EntityComponentsFacet<C>;
+  /** An entity's value type: the aggregate of its component types (see `facets/entity-type.ts`). */
+  export type EntityType<C extends ComponentSchemas, A extends EntityComponentsFacet<C>> = EntityTypeFacet<C, A>;
 
   /**
    * Converts a Plugin type to its corresponding Database type.

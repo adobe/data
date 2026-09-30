@@ -31,10 +31,10 @@ export function Sprite({ entity }: { entity: Entity }) {
     rotation: sprite.rotation,
     scale,
     toggleSpriteActive: () =>
-      db.transactions.toggleSpriteActive({ id: entity }),
+      db.actions.toggleSpriteActive({ id: entity }),
     setSpriteHoveredTrue: () =>
-      db.transactions.setSpriteHovered({ id: entity, hovered: true }),
+      db.actions.setSpriteHovered({ id: entity, hovered: true }),
     setSpriteHoveredFalse: () =>
-      db.transactions.setSpriteHovered({ id: entity, hovered: false }),
+      db.actions.setSpriteHovered({ id: entity, hovered: false }),
   });
 }

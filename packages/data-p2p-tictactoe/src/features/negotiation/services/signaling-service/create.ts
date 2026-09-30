@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { startHostSignaling, startJoinerSignaling } from "./internal/signaling.js";
 import { createRenegotiator } from "./internal/renegotiator.js";
-import type { Role } from "../../data/role/role.js";
+import type { Role } from "../../data/values/role/role.js";
 import type { SignalingService } from "./signaling-service.js";
 import type { Handlers, PeerLink } from "./types.js";
 

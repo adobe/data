@@ -60,7 +60,6 @@ export class TodoRowElement extends TodoElement {
       name: todo?.name ?? "",
       complete: todo?.complete ?? false,
       dragPosition: todo?.dragPosition ?? null,
-      assignees: todo?.assignees ?? [],
       editing,
       toggleEditing: () => setEditing(!editing),
       index: this.index,

@@ -11,9 +11,9 @@ rules (each layer's rule and the cross-cutting rules — `namespace`, `data-mode
 `type-casts`, `cohesion`, …):
 
 - **Correctness** — does it typecheck and follow the layer's required shape?
-- **Adherence** — single public export per file, naming, the scope helpers
-  (`Database.components` / `resources` / `archetypes`), `satisfies` targets, barrels,
-  store-layer typing, etc.
+- **Adherence** — single public export per file, naming, per-file scope flags
+  (`Scope`), `satisfies` targets, barrels, the layer dependency order (no runtime
+  import of `spec/`), store-layer typing, etc.
 - **Generality** — no leaked type identities; follows the cross-cutting patterns.
 
 Report either **OPTIMAL**, or a short list of issues. Tag each issue with where the

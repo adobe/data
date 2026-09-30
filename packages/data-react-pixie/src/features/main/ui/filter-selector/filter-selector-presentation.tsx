@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import type { FilterKind } from "../../data/filter-kind/filter-kind.js";
+import type { FilterKind } from "../../data/values/filter-kind/filter-kind.js";
 
 const filterLabels: Record<FilterKind, string> = {
   none: "None",

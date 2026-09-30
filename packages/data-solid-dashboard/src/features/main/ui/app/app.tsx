@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { DatabaseProvider } from "@adobe/data-solid";
-import { MainService } from "../../services/main-service/main-service.js";
+import { MainService } from "../../ecs/main-service.js";
 import { StatusBar } from "../status-bar/status-bar.jsx";
 import { ControlPanel } from "../control-panel/control-panel.jsx";
 import { CounterDisplay } from "../counter-display/counter-display.jsx";

@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { BlurFilter, ColorMatrixFilter, type Filter } from "pixi.js";
-import type { FilterKind } from "../../data/filter-kind/filter-kind.js";
+import type { FilterKind } from "../../data/values/filter-kind/filter-kind.js";
 
 const blurFilter = new BlurFilter({ strength: 2, quality: 2 });
 const sepiaFilter = new ColorMatrixFilter();

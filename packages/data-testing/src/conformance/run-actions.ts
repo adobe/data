@@ -30,6 +30,8 @@ export interface ActionRunConfig<Db, Store, State> {
   // (e.g. the acting peer's `userId`) — the one seam not derivable from cases.
   readonly seedContext?: (db: Db, before: State, args: unknown) => void;
   readonly match?: MatchOptions;
+  // The describe label's op kind (default "action").
+  readonly kind?: string;
 }
 
 // The single conformance test for every ecs action: each transition's cases run
@@ -39,7 +41,7 @@ export function runActions<Db, Store extends SchemaSource, State>(config: Action
   for (const [name, action] of discoverOps(config.actions)) {
     const paired = transitions.get(name);
     if (!paired) continue; // action with no transition (e.g. a streaming port) — not conformed here
-    describe(`${name} action conforms`, () => {
+    describe(`${name} ${config.kind ?? "action"} conforms`, () => {
       for (const testCase of paired.cases) {
         it(testCase.name as string, async () => {
           const { services, input, calls } = splitAndRecordServices(testCase.args);

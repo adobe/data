@@ -5,12 +5,12 @@ import { Mat4x4, Quat, Vec3 } from "@adobe/data/math";
 import type { Aabb } from "@adobe/data/math";
 import { pbrIblRender, shapeGeometry, VisibleMaterial } from "@adobe/data-gpu/graphics";
 import type { Camera } from "@adobe/data-gpu/graphics";
-import { CoreDatabase } from "../../services/main-service/core-database/core-database.js";
-import { newGame } from "../../services/main-service/transaction-database/transactions/new-game.js";
-import { Frog } from "../../data/frog/frog.js";
-import { HazardKind } from "../../data/hazard-kind/hazard-kind.js";
-import { LaneKind } from "../../data/lane-kind/lane-kind.js";
-import type { Direction } from "../../data/direction/direction.js";
+import { CoreDatabase } from "../../ecs/core/core-database.js";
+import { newGame } from "../../ecs/transactions/new-game.js";
+import { Frog } from "../../data/values/frog/frog.js";
+import { HazardKind } from "../../data/values/hazard-kind/hazard-kind.js";
+import { LaneKind } from "../../data/values/lane-kind/lane-kind.js";
+import { Lane } from "../../data/values/lane/lane.js";
 
 // Board → world mapping. The board lies on the XZ plane (Y up): game column `x`
 // maps to world X, game row `y` maps to world −Z (row 0 nearest the camera). The
@@ -44,9 +44,11 @@ const hopperRenderPlugin = Database.Plugin.create({
   resources: {
     // color key → the cube mesh-asset entity baked for that color.
     _cubeMeshByColor: { default: null as Map<string, Entity> | null, nonPersistent: true },
+    // The frog's render cube (the frog is a resource, not an entity).
+    _frogCube: { default: null as Entity | null, nonPersistent: true },
   },
   archetypes: {
-    // A moving cube bound to a game entity (frog / hazard). `_worldMatrix` is
+    // A moving cube bound to a hazard entity. `_worldMatrix` is
     // added by the transform system, so this renders like any `Model`.
     _RenderCube: ["mesh", "position", "rotation", "scale", "visible", "parent", "_gameEntity"],
   },
@@ -79,21 +81,15 @@ const hopperRenderPlugin = Database.Plugin.create({
         environmentUrl: null,
       };
     },
-    // Reset to a fresh game. `newGame` deletes then re-inserts the frog and
-    // hazards, which recycles their entity ids; the render cubes are keyed by
-    // those ids, so a surviving cube would silently re-bind to a different-kind
-    // entity (a log landing on the frog's start, the frog cube drifting off to a
-    // hazard). Drop the render cubes here so `_renderSync` rebuilds them from the
-    // fresh entities next frame.
+    // Reset to a fresh game. `newGame` deletes then re-inserts the hazards, which
+    // recycles their entity ids; the render cubes are keyed by those ids, so a
+    // surviving cube would silently re-bind to a different hazard. Drop the render
+    // cubes here so `_renderSync` rebuilds them from the fresh entities next frame.
     startGame(t) {
       newGame(t);
       for (const arch of t.queryArchetypes(t.archetypes._RenderCube.components)) {
         for (let row = arch.rowCount - 1; row >= 0; row--) t.delete(arch.columns.id.get(row));
       }
-    },
-    // Queue a hop; the `hopInput` system consumes it next frame.
-    queueHop(t, direction: Direction) {
-      t.resources.pendingDirection = direction;
     },
   },
   systems: {
@@ -108,7 +104,7 @@ const hopperRenderPlugin = Database.Plugin.create({
 
     // One-time scene build once the GPU device and the shared cube are ready:
     // bake one color material per palette entry (all reusing the shared cube
-    // geometry) and lay down the static lane tiles.
+    // geometry), lay down the static lane tiles, and add the frog's cube.
     _buildScene: {
       schedule: { during: ["update"] },
       create: (db) => {
@@ -164,7 +160,6 @@ const hopperRenderPlugin = Database.Plugin.create({
             return meshAsset;
           };
 
-          ensure(Frog.frogColor);
           ensure(HazardKind.hazardColor.car);
           ensure(HazardKind.hazardColor.log);
 
@@ -182,16 +177,24 @@ const hopperRenderPlugin = Database.Plugin.create({
             });
           }
 
+          db.store.resources._frogCube = db.store.archetypes.Model.insert({
+            mesh: ensure(Frog.frogColor),
+            position: [0, ENTITY_Y, 0],
+            rotation: Quat.identity,
+            scale: FROG_SCALE,
+            visible: true,
+            parent: 0,
+          });
           db.store.resources._cubeMeshByColor = byColor;
           built = true;
         };
       },
     },
 
-    // Every frame, reconcile the moving render cubes to the game entities and
-    // reposition them: create a cube for a new frog/hazard, drop a cube whose
-    // game entity is gone (a new game recreates them), and copy each live
-    // entity's board position into its cube's world transform.
+    // Every frame, move the frog's cube, then reconcile the hazard cubes to the
+    // hazard entities: create a cube for a new hazard, drop a cube whose hazard is
+    // gone (a new game recreates them), and copy each live hazard's board position
+    // into its cube's world transform.
     _renderSync: {
       schedule: { during: ["preRender"] },
       create: (db) => () => {
@@ -205,35 +208,16 @@ const hopperRenderPlugin = Database.Plugin.create({
           for (let i = 0; i < arch.rowCount; i++) cubeByGame.set(gameCol.get(i), idCol.get(i));
         }
 
-        const alive = new Set<Entity>();
-        const frogMesh = byColor.get(colorKey(Frog.frogColor));
-        const lanes = db.store.resources.lanes;
-        for (const arch of db.store.queryArchetypes(["x", "y"])) {
-          const idCol = arch.columns.id;
-          const xCol = arch.columns.x;
-          const yCol = arch.columns.y;
-          for (let i = 0; i < arch.rowCount; i++) {
-            const gameId = idCol.get(i);
-            alive.add(gameId);
-            const y = yCol.get(i);
-            // On a river lane an alive frog is riding a log — lift it onto the
-            // log's top face instead of leaving it at ground level.
-            const lane = lanes.find((l) => l.row === y);
-            const onLog = lane !== undefined && LaneKind.coveredOutcome[lane.kind] === "ride";
-            const position: Vec3 = [xCol.get(i), onLog ? FROG_Y_ON_LOG : ENTITY_Y, -y];
-            const cube = cubeByGame.get(gameId);
-            if (cube !== undefined) {
-              db.store.update(cube, { position });
-            } else if (frogMesh !== undefined) {
-              db.store.archetypes._RenderCube.insert({
-                mesh: frogMesh, position, rotation: Quat.identity, scale: FROG_SCALE,
-                visible: true, parent: 0, _gameEntity: gameId,
-              });
-            }
-          }
+        // On a river lane the frog is riding a log: lift it onto the log's top face.
+        const { frog, lanes, _frogCube } = db.store.resources;
+        if (_frogCube !== null) {
+          const lane = Lane.at(lanes, frog.y);
+          const onLog = lane !== undefined && LaneKind.coveredOutcome[lane.kind] === "ride";
+          db.store.update(_frogCube, { position: [frog.x, onLog ? FROG_Y_ON_LOG : ENTITY_Y, -frog.y] });
         }
 
-        for (const arch of db.store.queryArchetypes(["kind", "lane", "x", "width", "velocity"])) {
+        const alive = new Set<Entity>();
+        for (const arch of db.store.queryArchetypes(db.store.archetypes.Hazard.components)) {
           const idCol = arch.columns.id;
           const kindCol = arch.columns.kind;
           const laneCol = arch.columns.lane;

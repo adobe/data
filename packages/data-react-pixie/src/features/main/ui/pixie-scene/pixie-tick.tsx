@@ -6,7 +6,7 @@ import { useMainService } from "../use-main-service.js";
 export function PixieTick() {
   const db = useMainService();
   useTick((ticker) => {
-    db.transactions.tick({ delta: ticker.deltaTime });
+    db.actions.tick({ delta: ticker.deltaTime });
   });
   return null;
 }

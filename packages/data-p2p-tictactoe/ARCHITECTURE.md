@@ -55,7 +55,7 @@ transparently.
 ```mermaid
 flowchart TB
     subgraph p2pttt [data-p2p-tictactoe sample]
-        app["<p2p-app> (thin shell — combines plugins, sets roles)"]
+        app["app/main.ts (thin shell — combines plugins, injects the game)"]
         neg["<p2p-negotiation> (generic, NegotiationDatabase local-only)"]
         overlay["<p2p-presence-overlay> (optional, reads cursorX/O)"]
     end

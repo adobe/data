@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import type { Vec2 } from "@adobe/data/math";
-import { Ship } from "../../data/ship/ship.js";
-import { Bullet } from "../../data/bullet/bullet.js";
-import { Size } from "../../data/size/size.js";
+import { Ship } from "../../data/values/ship/ship.js";
+import { Bullet } from "../../data/values/bullet/bullet.js";
+import { Size } from "../../data/values/size/size.js";
 
 // Pure canvas renderer. Given a 2D context and a plain snapshot of what to draw,
 // it paints one frame: asteroids as circles (radius + colour looked up from the

@@ -31,6 +31,8 @@ authoring abstraction.
 
 ## File naming
 
+Outside `features/`. Inside a feature, the `features/ecs/` naming applies (`<layer>-database.ts`).
+
 Each file whose primary export is a `Database.Plugin` (created or
 combined) ends in `-plugin.ts` — e.g. `node-plugin.ts`, `model-plugin.ts`,
 `pbr-core-plugin.ts`. The suffix is for discovery: cursor rules,

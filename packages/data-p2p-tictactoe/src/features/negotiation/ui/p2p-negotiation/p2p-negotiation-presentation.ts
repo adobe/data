@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { html, nothing, type TemplateResult } from "lit";
-import type { Phase } from "../../data/phase/phase.js";
-import type { ConnectionState } from "../../data/connection-state/connection-state.js";
+import type { Phase } from "../../data/values/phase/phase.js";
+import type { ConnectionState } from "../../data/values/connection-state/connection-state.js";
 
 export type RenderGame = (args: { service: unknown }) => TemplateResult;
 export type RenderPresence = (args: { service: unknown; children: TemplateResult }) => TemplateResult;

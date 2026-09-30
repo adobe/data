@@ -27,7 +27,7 @@ export class UsersTabElement extends AssignElement {
     const addUser = () => {
       const name = draftName.trim();
       if (name === "") return;
-      this.service.transactions.addUser({ name });
+      this.service.actions.addUser({ name });
       setDraftName("");
     };
 

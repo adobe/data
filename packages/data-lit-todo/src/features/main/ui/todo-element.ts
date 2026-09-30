@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { DatabaseElement } from "@adobe/data-lit";
-import { MainService } from "../services/main-service/main-service.js";
+import { MainService } from "../ecs/main-service.js";
 
 /**
  * Base class for all todo elements. Typed on the assembled `MainService`

@@ -28,8 +28,8 @@ export interface Spec<State extends object, Fns extends Record<string, AnyFn>, C
   readonly schemas?: Readonly<Record<string, Schema>>;
   readonly match?: MatchOptions;
   // A real-time feature's systems: pure functions named after the ECS systems they
-  // specify, one case module each, plus optional whole-frame cases. The frame order
-  // is never authored here; it comes from the systems' `schedule` declarations.
+  // specify, one case module each, and `noOp` states every system leaves unchanged.
+  // Whole-frame cases depend on the ECS's schedule, so they live on the implementation.
   readonly systems?: SpecSystems<State, Sys>;
 }
 

@@ -10,7 +10,7 @@ import type {
 } from "./feature-types.js";
 import type { Projection } from "./run-feature.js";
 import type { Spec } from "./spec.js";
-import type { FrameArgWriters, SystemKeys, SystemsExact } from "./systems-types.js";
+import type { FrameArgWriters, FrameCases, SystemKeys, SystemsExact } from "./systems-types.js";
 
 type AnyFn = (...args: never[]) => unknown;
 
@@ -24,11 +24,13 @@ export interface Implementation<State extends object, Fns extends Record<string,
   // A real-time feature's systems (required when the spec has `systems`). `args` writes
   // each frame arg into the store (`dt` → `frameDelta`); `unmodelled` names the systems
   // the spec does not model (wasm physics, init-only seeding), each with its reason.
-  // Every spec system conforms by running just that system; each frame case runs every
-  // modelled system once in `db.system.order`, the order the `schedule`s declare.
+  // Every spec system conforms by running just that system. Each of `cases` — whole
+  // frames — folds the spec systems and runs one ECS frame, both in `db.system.order`,
+  // the order the `schedule`s declare; they live here because that order is the ECS's.
   readonly frame?: {
     readonly args: Readonly<Record<string, (db: never, value: never) => void>>;
     readonly unmodelled?: Readonly<Record<string, string>>;
+    readonly cases?: object;
   };
   // The `ComputedDatabase` layer plugin, built alone so a `withCache` value from a
   // layer above can't go stale across the seed. Required when the spec has derivations.
@@ -74,6 +76,7 @@ export const implementation = <
           readonly frame: {
             readonly args: FrameArgWriters<PL, Sys>;
             readonly unmodelled?: { readonly [K in U]: string };
+            readonly cases?: FrameCases<State, Sys>;
           } & SystemsExact<Extract<keyof Sys, string>, U, SystemKeys<PL>>;
         }),
 ): Implementation<State, Fns, ProjectionStore<P>> =>

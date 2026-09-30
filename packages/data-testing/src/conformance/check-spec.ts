@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { runSpec } from "./run-spec.js";
 import { adaptCases } from "./adapt-spec.js";
+import { withNoOp } from "./with-no-op.js";
 import type { Spec } from "./spec.js";
 
 type AnyFn = (...args: never[]) => unknown;
@@ -16,7 +17,7 @@ export const checkSpec = <State extends object, Fns extends Record<string, AnyFn
     state: spec.state,
     transitions: {
       ...adaptCases(spec.fns, spec.cases, spec.services, true),
-      ...(spec.systems ? adaptCases(spec.systems.fns, spec.systems.cases, spec.services, true) : {}),
+      ...(spec.systems ? adaptCases(spec.systems.fns, withNoOp(spec.systems.cases, spec.systems.noOp), spec.services, true) : {}),
     },
     schemas: spec.schemas,
     match: spec.match,

@@ -3,6 +3,7 @@ import { Database } from "@adobe/data/ecs";
 import { runFeature } from "./run-feature.js";
 import { runSystems, type SystemCase, type SystemDatabase } from "./run-systems.js";
 import { adaptCases } from "./adapt-spec.js";
+import { withNoOp } from "./with-no-op.js";
 import type { SchemaSource } from "./refify.js";
 import type { Implementation } from "./implementation.js";
 
@@ -48,8 +49,8 @@ export const checkFeature = <State extends object, Fns extends Record<string, An
       fromState: impl.projection.fromState,
       toState: impl.projection.toState,
       initial: spec.state.create(),
-      systems: adaptCases(spec.systems.fns, spec.systems.cases, spec.services, true),
-      frameCases: () => frameCasesOf(spec.systems?.frame, spec.services),
+      systems: adaptCases(spec.systems.fns, withNoOp(spec.systems.cases, spec.systems.noOp), spec.services, true),
+      frameCases: () => frameCasesOf(impl.frame?.cases, spec.services),
       // Runtime invariant: `implementation` types each writer against this db and arg.
       args: impl.frame.args as never,
       unmodelled: impl.frame.unmodelled ?? {},

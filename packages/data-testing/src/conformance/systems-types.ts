@@ -17,11 +17,21 @@ export type FrameCases<State, Sys> = SpecCases<State, (state: State, args: Frame
 // The per-system cases: exactly one case module per system function.
 export type SystemCases<State, Sys> = { readonly [K in keyof Sys]: SpecCases<State, Sys[K] & AnyFn> };
 
-// The spec's systems group: pure functions named after the ECS systems they specify.
+// A state every modelled system must leave unchanged (e.g. game over), checked
+// against each system on both the spec and the ECS side. `args` supplies the frame's
+// data args; services arrive as doubles with no responses scheduled.
+export type NoOpCase<State, Sys> = { readonly name: string; readonly before: Partial<State> } & ([
+  DataArgKeys<FrameArgs<Sys>>,
+] extends [never]
+  ? { readonly args?: undefined }
+  : { readonly args: Pick<FrameArgs<Sys>, DataArgKeys<FrameArgs<Sys>>> });
+
+// The spec's systems group: pure functions named after the ECS systems they specify,
+// one case module each, and the states every system leaves unchanged.
 export type SpecSystems<State, Sys> = {
   readonly fns: Sys;
   readonly cases: SystemCases<State, Sys>;
-  readonly frame?: FrameCases<State, Sys>;
+  readonly noOp?: readonly NoOpCase<State, Sys>[];
 };
 
 // The names of a plugin's systems, less the scheduler's own driver system.

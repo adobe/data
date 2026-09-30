@@ -16,7 +16,7 @@ type IsService<T> = T extends readonly unknown[]
       : false;
 
 // A transform's args type — its second parameter, or `void` when it takes none.
-type ArgsOf<F> = F extends (...a: never[]) => unknown
+export type ArgsOf<F> = F extends (...a: never[]) => unknown
   ? Parameters<F> extends [unknown, infer A, ...unknown[]]
     ? A
     : void
@@ -51,7 +51,7 @@ export type Responses<Args> = {
 // The case's authored `args`, with injected-service fields removed — a case carries
 // only DATA; the recording doubles are synthesized by the runner from the feature's
 // `services` templates plus this case's `responses`.
-type DataArgKeys<Args> = { [K in keyof Args]-?: IsService<Args[K]> extends true ? never : K }[keyof Args];
+export type DataArgKeys<Args> = { [K in keyof Args]-?: IsService<Args[K]> extends true ? never : K }[keyof Args];
 type DataArgs<Args> = Pick<Args, DataArgKeys<Args>>;
 
 // One inert transition case: `before`/`after` state deltas, DATA-only `args`, and

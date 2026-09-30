@@ -8,6 +8,8 @@ export { implementation, type Implementation } from "./implementation.js";
 export { checkSpec } from "./check-spec.js";
 export { checkFeature } from "./check-feature.js";
 export type { StateMatches } from "./state-matches.js";
+export type { FrameCases, SystemCases } from "./systems-types.js";
+export { runSystems, type SystemRunConfig } from "./run-systems.js";
 export type {
   Responses,
   SpecCase,

@@ -20,9 +20,8 @@ export interface Projection<Store, State> {
 // registered facets (`plugin.actions` / `computedPlugin.computed`) and constructs the
 // dbs itself. Each spec transition conforms against the plugin's same-named ACTION —
 // the spec describes actions, and transactions are an implementation detail they
-// cover. The `frame` op is realized by the systems tick loop and conforms by driving
-// one frame. A spec op with no implementation is a named failure. It also round-trips
-// `State.samples` through the projection.
+// cover. A spec op with no implementation is a named failure. It also round-trips
+// `State.samples` through the projection. Systems conform separately (`runSystems`).
 //
 // A feature that needs ambient per-case context (a user-scoped `userId`) uses the
 // lower-level `runTransactions`/`runActions`/`runComputeds` directly instead.
@@ -42,8 +41,6 @@ export interface FeatureRunConfig<State, StoreT, Db extends { store: StoreT }> {
   readonly projection: Projection<StoreT, State>;
   // Names of computeds that emit an entity-id list (hydrated through `toData`).
   readonly hydrate?: readonly string[];
-  // The per-frame spec transition realized by the systems tick loop (see `Implementation`).
-  readonly frame?: { readonly op: string; readonly setup?: (db: never, args: never) => void };
   // Base service factories injected into every db (fakes for services whose factory
   // throws to require injection); per-case recording doubles override them.
   readonly services?: Readonly<Record<string, () => object>>;
@@ -58,23 +55,6 @@ export interface FeatureRunConfig<State, StoreT, Db extends { store: StoreT }> {
 // Runtime invariant: a plugin object carries its registered facet maps (see
 // `create-plugin.ts`), so this reads the ops directly off it.
 type PluginFacets = { actions: Record<string, unknown>; computed: Record<string, unknown> };
-
-// The slice of a system database a headless frame needs.
-type FrameDatabase = {
-  readonly system: { readonly order: readonly (readonly string[])[]; readonly functions: Readonly<Record<string, unknown>> };
-};
-
-// Run exactly one frame headlessly, as the scheduler would: every system in dependency
-// order, skipping the scheduler's own driver system and init-only systems.
-const driveFrame = (db: FrameDatabase): void => {
-  for (const tier of db.system.order) {
-    for (const name of tier) {
-      if (name === "schedulerSystem") continue;
-      const fn = db.system.functions[name];
-      if (typeof fn === "function") fn();
-    }
-  }
-};
 
 const pick = (source: ReadonlyMap<string, unknown>, names: ReadonlySet<string>): Record<string, unknown> =>
   Object.fromEntries([...source].filter(([name]) => names.has(name)));
@@ -97,10 +77,9 @@ export function runFeature<State, StoreT extends SchemaSource, Db extends { stor
   const actions = discoverOps(config.ops?.actions ?? facets.actions);
   const computeds = discoverOps(config.ops?.computeds ?? computedFacets?.computed ?? {});
 
-  const frameOp = config.frame?.op;
-  const byAction = new Set([...transitions.keys()].filter((name) => name !== frameOp && actions.has(name)));
+  const byAction = new Set([...transitions.keys()].filter((name) => actions.has(name)));
   const missing = [
-    ...[...transitions.keys()].filter((name) => !byAction.has(name) && name !== frameOp),
+    ...[...transitions.keys()].filter((name) => !byAction.has(name)),
     ...[...derivations.keys()].filter((name) => !computeds.has(name)),
   ];
 
@@ -127,31 +106,6 @@ export function runFeature<State, StoreT extends SchemaSource, Db extends { stor
     actions: pick(actions, byAction),
     match: config.match,
   });
-
-  if (config.frame && transitions.has(config.frame.op)) {
-    // Runtime invariant: the `implementation` signature types `setup` against this
-    // feature's system database and the frame op's args.
-    const setup = config.frame.setup as ((db: FrameDatabase, args: unknown) => void) | undefined;
-    runActions<FrameDatabase & Db, StoreT, State>({
-      makeDb: (services) =>
-        Database.toSystemDatabase(
-          Database.create(config.plugin as never, { services: { ...baseServices(), ...services } }),
-        ) as unknown as FrameDatabase & Db,
-      store: (db) => db.store,
-      fromState,
-      toState,
-      initial,
-      transitions: config.transitions,
-      kind: "frame",
-      actions: {
-        [config.frame.op]: (db: FrameDatabase, args: unknown) => {
-          setup?.(db, args);
-          driveFrame(db);
-        },
-      },
-      match: config.match,
-    });
-  }
 
   if (config.computedPlugin) {
     runComputeds<Db, StoreT, State>({

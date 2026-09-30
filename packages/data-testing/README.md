@@ -46,7 +46,10 @@ Conformance.checkFeature(implementation);
 - **`checkFeature`** runs every case against the ECS:
   - each spec action against the same-named action;
   - each derivation against its computed;
-  - a real-time `step` by driving one frame (the `frame` option).
+  - each ECS system against the same-named spec system function, running just that
+    system;
+  - each frame case by running every modelled system once, in the order the systems'
+    `schedule`s declare (the `frame` option lists arg writers and unmodelled systems).
 
   It also round-trips `State.samples` through the projection. A spec op with no
   implementation fails by name.

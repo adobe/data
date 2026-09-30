@@ -25,6 +25,8 @@ export type {
   Spec,
   Implementation,
   StateMatches,
+  FrameCases,
+  SystemCases,
   Effects,
   ServiceCall,
 } from "./conformance/public.js";

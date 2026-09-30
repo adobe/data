@@ -17,6 +17,6 @@ export function FilterSelector() {
 
   return presentation.render({
     currentFilter,
-    setFilter: (filter) => db.transactions.setFilter({ filter }),
+    setFilter: (filter) => db.actions.setFilter({ filter }),
   });
 }

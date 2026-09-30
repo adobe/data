@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import type { SpriteKind } from "../../data/sprite-kind/sprite-kind.js";
+import type { SpriteKind } from "../../data/values/sprite-kind/sprite-kind.js";
 import bunnyUrl from "./bunny.png";
 import foxUrl from "./fox.png";
 

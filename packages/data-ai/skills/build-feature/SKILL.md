@@ -8,6 +8,7 @@ output: feature
 /graph-execute
     /build-data
     /build-services
+    /build-spec
     /build-core-database
     /build-indexes
     /build-transactions

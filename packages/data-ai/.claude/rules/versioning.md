@@ -12,6 +12,9 @@ persisted document can be upgraded to the current schema on load. You (human or
 agent) should almost never have to reason about this by hand: **change the schema,
 run the tests, and the failing test prints the exact fix to apply.**
 
+The history lives in the app root, `src/app/versioning/` (`app.md`), because the
+persisted data covers every feature's schema in the database.
+
 ## The pieces (all from `@adobe/data/ecs`)
 
 - **`versions.ts`** — `export const versions: readonly VersionEntry[]`. `entries[i]`
@@ -97,14 +100,14 @@ schema (schema coverage) AND every entry with a `handler` has a passing test cas
 
 ```ts
 import { Database, assertVersioning, createVersionUpgrader } from "@adobe/data/ecs";
-import { MainService } from "../main-service.js";
+import { AppSchema } from "../schema.js";
 import { versions } from "./versions.js";
 
 describe("database schema versions", () => {
   it("the version history is consistent (schema folds + every handler tested)", () =>
     assertVersioning({
       // the version-configured db, so db.version = the history's current version
-      database: Database.create(MainService.plugin, { versioning: createVersionUpgrader(versions) }),
+      database: Database.create(AppSchema.plugin, { versioning: createVersionUpgrader(versions) }),
       entries: versions,
       handlers: {
         // Append a case per version that adds a `handler` (rule 6):

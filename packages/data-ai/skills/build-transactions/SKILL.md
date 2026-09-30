@@ -1,16 +1,16 @@
 ---
 name: build-transactions
-description: Build a feature's transaction-database — atomic mutations over the store.
+description: Build a feature's ecs/transactions layer.
 input: feature
 output: feature
 ---
 
-Create `services/main-service/transaction-database/`: `transaction-database.ts` (extends the
-preceding layer — `IndexDatabase` if the feature built indexes, else `CoreDatabase` — adds
-`transactions` from `./transactions/index.js`) plus a `transactions/` folder — one mutation per
-file + barrel. Type the store param `CoreDatabase.Store` (entities/resources/archetypes) or
-`IndexDatabase.Store` (reads an index).
+Create `ecs/transactions/`: `transaction-database.ts` (extends the previous layer, adds
+`transactions` from `./index.js`), one mutation per file, and a barrel. Type the store
+`CoreDatabase.Store`, or `IndexDatabase.Store` once it reads an index. Guard by entity
+kind, and apply `data/values/` helpers; never import `spec/`.
 
-Comes after `index-database` (or `core-database` if no indexes).
+Transactions are conformed through the actions that call them, so build each one
+together with its action (`build-actions`).
 
-The how is in the auto-loading `features/services/main-service/transactions.md` rule.
+The how is in the auto-loading `features/ecs/transactions.md` rule.

@@ -1,16 +1,15 @@
 ---
 name: build-actions
-description: Build a feature's action-database — async orchestration over services and transactions. If the feature has async flows or side effects outside of the main store.
+description: Build a feature's ecs/actions layer — the operations the app performs.
 input: feature
 output: feature
 ---
 
-Skip if this feature doesn't contain or require actions.
+Create `ecs/actions/`: `action-database.ts` (extends the previous layer, adds `actions`
+from `./index.js`), one action per file, and a barrel. Every spec action has a
+same-named action. It awaits services and commits through transactions (build each
+one's transaction alongside it). Point `ecs/main-service.ts` at the top layer.
 
-Create `services/main-service/action-database/`: `action-database.ts` (extends `ServiceDatabase`, adds `actions`
-from `./actions/index.js`) plus an `actions/` folder — one async orchestrator per file. An action
-takes `db: ServiceDatabase`, awaits `services/` ports, then commits **exactly one** transaction.
+Gate: `checkFeature` passes for each op as it is added.
 
-The top main-service layer; comes after `service-database`.
-
-The how is in the auto-loading `features/services/main-service/actions.md` rule.
+The how is in the auto-loading `features/ecs/actions.md` rule.

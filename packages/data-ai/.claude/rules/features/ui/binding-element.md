@@ -101,7 +101,7 @@ render() {
     // UI action call with simple ternary — good
     jump: (heroMode: boolean) => this.service.actions.move(heroMode ? 100 : 10),
     // transaction call - good
-    play: this.service.transactions.playTrack
+    play: this.service.actions.playTrack
   });
 }
 ```
@@ -218,7 +218,7 @@ export class BadControlElement extends FooElement {
       // violation: logic in callback + onX name
       const normalized = Math.round(v * 100) / 100;
       if (!Number.isFinite(normalized)) return;
-      this.service.transactions.updateThing({ value: normalized });
+      this.service.actions.updateThing({ value: normalized });
     };
     return presentation.render({ total: clamped, onSave });
   }

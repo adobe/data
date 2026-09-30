@@ -161,5 +161,4 @@ Example — a type merged with one value export and any number of type-only memb
     }
 
 The canonical use is a feature's `core-database.ts` / layered `*-database.ts` (a
-`plugin` value plus `Store` / `Index` / `Component` / `Archetype` types) — see
-`features/services/main-service/core-database.md`.
+`plugin` value plus `Store` / `Index` types) — see `features/ecs/core.md`.

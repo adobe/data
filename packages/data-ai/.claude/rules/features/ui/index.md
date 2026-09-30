@@ -5,9 +5,9 @@ paths:
 
 # ui/ — user interface
 
-The top layer: UI that binds the `services/main-service/` database to what the user sees. It
-owns no business logic — it subscribes to state, hands it to a pure
-presentation, and wires actions back to transactions.
+The top layer: UI that binds the feature's `MainService` database (`ecs/main-service.ts`)
+to what the user sees. It owns no business logic — it subscribes to state, hands it to
+a pure presentation, and wires user input to `service.actions.*`.
 
 The folder name is framework-neutral; its contents are framework-specific
 (Lit elements, React components, …). Each UI unit is its own folder, named

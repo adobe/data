@@ -61,7 +61,7 @@ function Counter() {
     count: db.observe.resources.count,
   }));
   if (!values) return null;
-  return presentation.render({ ...values, increment: db.transactions.increment });
+  return presentation.render({ ...values, increment: db.actions.increment });
 }
 ```
 
@@ -81,8 +81,8 @@ Use **verb** or **verbNoun** names — never `on*` prefix. See `features/ui/pres
 **Pass function references directly** when the signature matches; wrap in an arrow function only to supply arguments:
 
 ```tsx
-increment: db.transactions.increment; // reference — no wrapper needed
-toggleSprite: () => db.transactions.toggleSpriteActive({ entity }); // args required — wrap
+increment: db.actions.increment; // reference — no wrapper needed
+toggleSprite: () => db.actions.toggleSpriteActive({ entity }); // args required — wrap
 ```
 
 ---

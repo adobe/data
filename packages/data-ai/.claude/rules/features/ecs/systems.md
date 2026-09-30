@@ -1,9 +1,9 @@
 ---
 paths:
-  - '**/features/*/services/main-service/system-database/**/*.ts'
+  - '**/features/*/ecs/systems/**/*.ts'
 ---
 
-# database/systems/ — the real-time tick loop
+# ecs/systems/ — the real-time tick loop
 
 Systems are the framework's real-time backbone: functions the scheduler runs
 **every frame**, in dependency order, to advance a simulation. A feature only
@@ -21,14 +21,14 @@ arrow must be written inline in `Plugin.create` for two reasons: only there is `
 strongly typed (to the assembled plugin's database, with a **writable `store`**), and
 a pre-typed standalone `create` reference breaks the scheduler's system-name inference
 (the name union collapses to `never`, which then rejects every `schedule` entry). Keep
-each `create` thin by delegating the real per-frame work to a pure `data/` step
-function; if an ecs-specific body is substantial, extract it to a `systems/<name>.ts`
-helper `(db) => () => void` (annotate its `db`) and call it from the inline `create`.
+each `create` thin by delegating math to pure `data/values/` helpers (never `spec/`);
+if an ecs-specific body is substantial, extract it to a `systems/<name>.ts` helper
+`(db) => () => void` (annotate its `db`) and call it from the inline `create`.
 
 ```ts
 // in system-database.ts
 import { Database, scheduler } from "@adobe/data/ecs";
-import { Motion } from "../../data/motion/motion.js";
+import { Motion } from "../../data/values/motion/motion.js";
 
 const plugin = Database.Plugin.create({
     // combine scheduler with the CURRENT TOP layer — ComputedDatabase here, but
@@ -59,18 +59,15 @@ const plugin = Database.Plugin.create({
   `db.store.update / insert / delete` for lifecycle (spawning, dying) that changes
   archetype membership. Resources: `db.store.resources.x = …`.
 - **Dispatch a transaction for a discrete atomic event** — when the effect is a
-  self-contained event that already has a conformant transaction (score a hit,
-  lose a life, spawn a wave, fire a bullet), call `db.transactions.*` instead of
-  re-implementing it: you reuse the `data/`-verified logic and observers (a reactive
-  HUD) are notified. Reserve direct `db.store` writes for the hot per-row paths
+  self-contained event (score a hit, lose a life, spawn a wave, fire a bullet), call
+  `db.transactions.*`: observers (a reactive HUD) are notified. Reserve direct `db.store` writes for the hot per-row paths
   (movement, aging) that run on every entity every frame and shouldn't pay
   per-entity transaction overhead.
 - **Optimize hot paths for speed.** With many entities, query with efficient
   `queryArchetypes` and read/write minimal columns directly; avoid intermediate
-  allocations. On a hot path treat `data/` step functions as **spec only** — use
-  them when the path isn't hot or you can't beat them by writing the store
-  directly; off hot paths, reuse them freely. (Only transactions are observable —
-  direct store writes fire no observers.)
+  allocations. Never turn per-row work into per-entity transactions to make it
+  conformable: `frame` conformance checks in-place writes as they are. (Only
+  transactions are observable — direct store writes fire no observers.)
 - **Iterate archetypes per `archetypes.md`.** Express selection with
   `queryArchetypes(include, { exclude })`; when a system destroys/migrates rows
   (bullets expiring, entities dying) iterate **tail → head** so hole-fills don't
@@ -79,7 +76,7 @@ const plugin = Database.Plugin.create({
   a transaction that inserts/deletes invalidates any live archetype cursor, so
   snapshot the ids you'll act on (or reverse-iterate) *before* dispatching
   transactions inside a per-frame loop.
-- **Replicate the oracle's top-level guard in every system.** If the `data/`
+- **Replicate the spec's top-level guard in every system.** If the spec
   `step` opens with `if (isGameOver(state)) return state`, each split system must
   early-return on the same condition — a frozen frame is only a true no-op if
   *every* system honors the guard.
@@ -90,7 +87,7 @@ const plugin = Database.Plugin.create({
   `schedule.after` are hard constraints (name sibling systems); `schedule.during`
   is a soft same-tier hint. Systems with no ordering relation share a tier
   (conceptually parallel) — never rely on declaration order. When you split a
-  monolithic `data/` `step` into several ordered systems, the schedule **must
+  spec `step` into several ordered systems, the schedule **must
   mirror the step's internal sequence** (advance → fire → age → collide → refill)
   — otherwise the tick diverges from the oracle even though each system is
   individually correct. Watch the subtle case: if a spawn step (fire) is followed
@@ -121,20 +118,21 @@ with no rAF and no rendering attached.
 
 ## Layer
 
-`system-database.ts` extends the feature's **current top** main-service layer (`ActionDatabase` /
+`system-database.ts` extends the feature's **current top** ecs layer (`ActionDatabase` /
 `ServiceDatabase` / `ComputedDatabase` — whichever it built; systems come last in the pipeline, so
 they must sit atop any service/action layers, not a hardcoded `ComputedDatabase`), combined with
 `scheduler`, and declares the `systems` map **inline** (see above —
 this is the one facet not split one-per-file, because `create`'s `db` is only typed
-inline and standalone declarations break name inference). A `systems/` folder is
-optional: it holds extracted per-frame body helpers (`(db) => () => void`) only when
-an inline body grows too large — the schedule and registration still live inline in
-`system-database.ts`. The headless conformance test drives one frame via
-`db.system.order` / `db.system.functions` and compares to the `data/` `step` oracle,
-**reusing the feature projection** (`services/main-service/conformance.md`); it lives at
-`system-database/tick-loop.test.ts`. Test **selection/detection** logic (which
-entities collide, which pair resolves) separately, with seeded edge-case geometries
-— it's a system concern, not a transaction, and where subtle bugs hide.
+inline and standalone declarations break name inference). Extracted per-frame body
+helpers (`(db) => () => void`) sit beside it only when an inline body grows too large.
+
+## Conformance
+
+The spec's `step(state, { dt, … })` is conformed by `frame` on the implementation
+manifest (`conformance.md`): one headless frame from a seeded state must equal
+`step`. Test **selection/detection** logic (which entities collide, which pair
+resolves) separately in `ecs/conformance/`, with seeded edge-case geometries — it's
+where subtle bugs hide.
 
 ## Iterating archetype rows
 

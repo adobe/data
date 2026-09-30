@@ -1,24 +1,23 @@
 ---
 paths:
-  - '**/features/*/services/main-service/index-database/indexes/**/*.ts'
+  - '**/features/*/ecs/indexes/**/*.ts'
 ---
 
-# database/indexes/ — ECS indexes
+# ecs/indexes/ — ECS indexes
 
 One index descriptor per file: an object `satisfies CoreDatabase.Index` that
 tells the store to maintain a lookup keyed on a component, so queries and
 computed values can find entities without scanning.
 
 ```ts
-import type { CoreDatabase } from "../../core-database/core-database.js";
+import type { CoreDatabase } from "../core/core-database.js";
 
 export const byComplete = {
     key: "complete",
 } as const satisfies CoreDatabase.Index;
 ```
 
-`CoreDatabase.Index` is bound to every component (all scopes live in the one
-`core-database`). Archetype-scoped indexes carry an extra `archetype` field the
+`CoreDatabase.Index` is bound to every component in the core database. Archetype-scoped indexes carry an extra `archetype` field the
 `Index` helper can't express, so declare those with a bare `as const` (no
 `satisfies`) and let `index-database.ts`'s `create()` validate them.
 
@@ -37,7 +36,7 @@ Derive a discrete **bucket key** — but prefer a **computed-key extractor**
 recomputes the key from its source columns, so the index stays correct with no
 maintenance; a stored bucket column must instead be recomputed at every
 insertion/update site (or by a system) and silently drifts if one is missed. The
-derivation itself is a pure `data/` helper.
+derivation itself is a pure `data/values/` helper.
 
 Bucketed broad-phase only pays off at scale (hundreds+ candidates per query);
 below that a linear scan over an archetype wins. Index when the scan is a
@@ -58,6 +57,6 @@ below that a linear scan over an archetype wins. Index when the scan is a
   multi-value index — one bucket entry per element — and `find({ col: element })`
   takes the element, not the array.
 - **Model a many-to-many as a denormalized array + two indexes.** A
-  `todo.assignees: string[]` (owned/displayed by one feature) plus a unique
+  `todo.assignees: string[]` (owned by one feature) plus a unique
   `usersByName` (name → user) and a multi-value `todosByAssignee` (assignee →
   todos) gives efficient navigation in both directions from one join key.

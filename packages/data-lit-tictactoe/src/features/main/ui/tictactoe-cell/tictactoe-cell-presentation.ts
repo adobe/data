@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { html } from "lit";
-import { PlayerMark } from "../../data/player-mark/player-mark.js";
+import { PlayerMark } from "../../data/values/player-mark/player-mark.js";
 
 export function render(args: {
   cell: string;

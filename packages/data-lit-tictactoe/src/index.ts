@@ -7,16 +7,16 @@
 // services. Feature-qualified per the cross-feature naming rule so a peer or
 // downstream package never collides with another feature's database. Carries
 // `.plugin` / `.Store` for consumers that build their own database.
-export { MainService as TictactoeMainService } from "./features/main/services/main-service/main-service.js";
+export { MainService as TictactoeMainService } from "./features/main/ecs/main-service.js";
 
 // The base game database — all game logic (resources, transactions, computed),
 // no AI. Combine its `.plugin` with P2P-specific plugins, or reach for
 // `TictactoeMainService` to get the agent-extended assembly.
-export { ComputedDatabase as TictactoeGameDatabase } from "./features/main/services/main-service/computed-database/computed-database.js";
+export { ComputedDatabase as TictactoeGameDatabase } from "./features/main/ecs/computed/computed-database.js";
 
 export { Tictactoe } from "./features/main/ui/tictactoe-app/tictactoe-app.js";
 export { TictactoeElement } from "./features/main/ui/tictactoe-element.js";
 
-export { BoardState } from "./features/main/data/board-state/board-state.js";
-export { PlayerMark } from "./features/main/data/player-mark/player-mark.js";
-export { PlayMoveArgs } from "./features/main/data/play-move-args/play-move-args.js";
+export { BoardState } from "./features/main/data/values/board-state/board-state.js";
+export { PlayerMark } from "./features/main/data/values/player-mark/player-mark.js";
+export { PlayMoveArgs } from "./features/main/data/values/play-move-args/play-move-args.js";

@@ -2,7 +2,7 @@
 
 import { html, type TemplateResult } from "lit";
 import type { Database } from "@adobe/data/ecs";
-import type { MainService } from "../../services/main-service/main-service.js";
+import type { MainService } from "../../ecs/main-service.js";
 
 type PresenceService = Database.Plugin.ToDatabase<typeof MainService.plugin>;
 

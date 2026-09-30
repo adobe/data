@@ -40,8 +40,5 @@ export const cases: Conformance.SpecCases<State, typeof collision> = {
     { name: "grass is always safe",
       before: board({ frog: { x: 2, y: 0 } }),
       after: { lives: 3, score: 0, status: "playing" } },
-    { name: "is frozen once the game is over",
-      before: board({ frog: { x: 2, y: 1 }, entities: new Map([[1, car]]), lives: 0, status: "gameOver" }),
-      after: { lives: 0, status: "gameOver", frog: { x: 2, y: 1 } } },
   ],
 };

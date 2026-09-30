@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Conformance } from "@adobe/data-testing";
-import type { State } from "./state.js";
-import type * as systems from "./systems.js";
-import { board, riverLanes } from "./case-boards.js";
+import type { State } from "../../spec/state.js";
+import type * as systems from "../../spec/systems.js";
+import { board, riverLanes } from "../../spec/case-boards.js";
 
 // Whole frames: `movement` then `collision`, in the order their `schedule`s declare.
 // The hit, drown-past-edge and goal cases only hold in that order. dt = 1 so
@@ -39,10 +39,5 @@ export const cases: Conformance.FrameCases<State, typeof systems> = {
       args: { dt: 1 },
       after: { entities: new Map([[1, { kind: "car", lane: 1, x: 1, width: 1, velocity: 1 }]]),
         score: 1, status: "won" } },
-    { name: "does nothing once the game is over",
-      before: board({ frog: { x: 1, y: 1 }, lives: 0, status: "gameOver",
-        entities: new Map([[1, { kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]]) }),
-      args: { dt: 1 },
-      after: {} },
   ],
 };

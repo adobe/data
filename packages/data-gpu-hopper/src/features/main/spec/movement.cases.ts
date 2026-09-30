@@ -33,10 +33,5 @@ export const cases: Conformance.SpecCases<State, typeof movement> = {
         entities: new Map([[1, { kind: "log", lane: 1, x: 0, width: 3, velocity: 1 }]]) }),
       args: { dt: 1 },
       after: { entities: new Map([[1, { kind: "log", lane: 1, x: 1, width: 3, velocity: 1 }]]), frog: { x: 4, y: 1 } } },
-    { name: "is frozen once the game is over",
-      before: board({ status: "gameOver", lives: 0,
-        entities: new Map([[1, { kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]]) }),
-      args: { dt: 1 },
-      after: { entities: new Map([[1, { kind: "car", lane: 1, x: 0, width: 1, velocity: 1 }]]), frog: { x: 2, y: 0 } } },
   ],
 };

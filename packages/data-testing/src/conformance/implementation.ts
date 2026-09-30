@@ -18,9 +18,12 @@ type AnyFn = (...args: never[]) => unknown;
 // plugin's same-named action and every derivation against its computed.
 export interface Implementation<State extends object, Fns extends Record<string, AnyFn>, StoreT> {
   readonly spec: Spec<State, Fns, object>;
-  // The assembled feature plugin (`MainService.plugin`): its actions (and, for a spec
-  // op with no action, its transactions) are the ops under test.
+  // The assembled feature plugin (`MainService.plugin`): its actions are the ops under test.
   readonly plugin: Database.Plugin;
+  // Spec transitions a system dispatches straight to a same-named transaction (a tick
+  // step, not a user action). These conform against the transaction; every other
+  // transition must have a same-named action.
+  readonly transactionOps?: readonly string[];
   // The `ComputedDatabase` layer plugin, built alone so a `withCache` value from a
   // layer above can't go stale across the seed. Required when the spec has derivations.
   readonly computedPlugin?: Database.Plugin;
@@ -49,9 +52,10 @@ export const implementation = <
   const H extends readonly Extract<keyof Fns, string>[] = readonly [],
 >(
   spec: Spec<State, Fns, C>,
-  impl: Omit<Implementation<State, Fns, ProjectionStore<P>>, "spec" | "projection" | "hydrate" | "computedPlugin"> & {
+  impl: Omit<Implementation<State, Fns, ProjectionStore<P>>, "spec" | "projection" | "hydrate" | "computedPlugin" | "transactionOps"> & {
     readonly projection: P;
     readonly hydrate?: H;
+    readonly transactionOps?: readonly Extract<keyof Fns, string>[];
   } & (HasDerivations<C> extends true ? { readonly computedPlugin: Database.Plugin } : { readonly computedPlugin?: Database.Plugin }) &
     HydrateExact<H, HydrationKeys<Fns, ProjectionValue<P>>>,
 ): Implementation<State, Fns, ProjectionStore<P>> =>

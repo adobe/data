@@ -53,13 +53,4 @@ export const styles = css`
     flex-shrink: 0;
   }
 
-  .assignee-chip {
-    flex-shrink: 0;
-    font-size: var(--spectrum-font-size-50);
-    color: var(--spectrum-gray-800);
-    background: var(--spectrum-gray-200);
-    border-radius: 999px;
-    padding: 2px var(--spectrum-spacing-100);
-    white-space: nowrap;
-  }
 `;

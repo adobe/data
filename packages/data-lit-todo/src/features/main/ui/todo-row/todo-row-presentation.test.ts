@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 // @vitest-environment jsdom
-// jsdom only so the lazy assignee-dropdown wrapper can load; assertions never touch the DOM.
+// jsdom only so the lazy assign wrappers can load; assertions never touch the DOM.
 import { describe, it, expect } from "vitest";
 import { nothing } from "lit";
 import { Template } from "@adobe/data-lit";
@@ -11,7 +11,6 @@ const props = (over: Partial<Parameters<typeof render>[0]> = {}) => ({
   name: "Buy milk",
   complete: false,
   dragPosition: null,
-  assignees: [] as readonly string[],
   editing: false,
   toggleEditing: () => {},
   index: 0,
@@ -33,10 +32,9 @@ describe("todo-row-presentation", () => {
     expect(t.text).toContain("Assign");
   });
 
-  it("renders a chip per assignee", () => {
-    const t = Template.from(render(props({ assignees: ["ada", "linus"] })));
-    expect(t.text).toContain("ada");
-    expect(t.text).toContain("linus");
+  it("renders the assignee chips for its todo", () => {
+    const t = Template.from(render(props()));
+    expect(t.has("<assignee-chips")).toBe(true);
   });
 
   it("wires the complete toggle and delete", () => {

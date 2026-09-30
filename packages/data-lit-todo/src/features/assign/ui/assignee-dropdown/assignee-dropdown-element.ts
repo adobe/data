@@ -38,8 +38,8 @@ export class AssigneeDropdownElement extends AssignElement {
       })),
       toggleAssignee: (name: string) =>
         assigned.has(name)
-          ? this.service.transactions.unassignUser({ todo: this.todo, name })
-          : this.service.transactions.assignUser({ todo: this.todo, name }),
+          ? this.service.actions.unassignUser({ todo: this.todo, name })
+          : this.service.actions.assignUser({ todo: this.todo, name }),
     });
   }
 }

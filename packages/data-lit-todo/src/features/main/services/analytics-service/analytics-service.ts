@@ -7,8 +7,7 @@ import type { Assert } from "@adobe/data/types";
  * Opaque handle returned by `randomTodoRequested` and handed straight back to
  * `randomTodoAdded`. The action treats it as a black box — it never inspects or
  * constructs one — so timing lives entirely in the service without the service
- * holding any state between the two calls. Exported (not re-exported through
- * `public.ts`) so the adjacent `create-fake.ts` double can name it.
+ * holding any state between the two calls.
  */
 export type Timing = { readonly startedAt: number };
 

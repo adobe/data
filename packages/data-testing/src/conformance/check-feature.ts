@@ -20,6 +20,7 @@ export const checkFeature = <State extends object, Fns extends Record<string, An
     computedPlugin: impl.computedPlugin,
     projection: impl.projection,
     hydrate: impl.hydrate,
+    transactionOps: impl.transactionOps,
     services: impl.services,
     match: spec.match,
     ops: impl.ops,

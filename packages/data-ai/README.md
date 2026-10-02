@@ -55,6 +55,14 @@ self-update**, editing your `package.json` and `.gitignore` to:
    scripts, so a `postinstall` shipped inside the package would silently not fire;
 3. gitignore the managed bundle folders.
 
+Each managed folder also gets a short "externally managed — do not edit" notice so
+an agent that opens it is warned before touching the regenerated files. The notice
+follows your repo's instruction convention: it is written as `AGENTS.md` by default
+(the cross-agent standard, which Claude Code also reads) and only as `CLAUDE.md` for a
+repo that is still CLAUDE.md-only. `install` never drops a `CLAUDE.md` into a repo that
+uses `AGENTS.md` — a stray `CLAUDE.md` anywhere makes Claude Code ignore every
+`AGENTS.md` project-wide.
+
 The copied files are regenerated artifacts — never committed, never edited in
 place. The wiring is idempotent, so re-running is harmless; with `--global` or in a
 directory with no `package.json`, `install` just copies (no wiring).

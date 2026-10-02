@@ -41,10 +41,13 @@ const { name: PKG_NAME, version: VERSION } = pkg;
 // each agent root.
 const BUNDLE = "adobe-data-ai";
 
-// A do-not-edit notice dropped at each bundle root. Claude Code loads nested
-// CLAUDE.md files when working in a subtree, so an agent that opens one of these
-// folders sees the notice before touching anything. `extra` adds a pointer to
-// the companion bundle.
+// A do-not-edit notice dropped at each bundle root so an agent that opens one of
+// these managed folders sees it before touching anything. The file is named for the
+// project's instruction convention (see `noticeFilename`) — never unconditionally
+// `CLAUDE.md`: Claude Code treats any CLAUDE.md in the tree as switching the whole
+// project into CLAUDE.md mode and then ignores every AGENTS.md project-wide (observed
+// on Claude Code 2.1.286), which would silently blank out instructions in an
+// AGENTS.md-based repo. `extra` adds a pointer to the companion bundle.
 function notice(extra) {
     return `# Externally managed — do not edit
 
@@ -58,11 +61,23 @@ version, then reinstall — do not modify these files in place.
 ${extra ? `\n${extra}\n` : ""}`;
 }
 
-function writeMeta(bundleDir, noticeBody, extraMeta) {
-    writeFileSync(join(bundleDir, "CLAUDE.md"), noticeBody);
+// Choose the managed notice's filename from the project's instruction convention.
+// Preference is AGENTS.md (the cross-agent standard, which Claude Code also reads); we
+// fall back to CLAUDE.md only for a repo still on the CLAUDE.md convention (a root
+// CLAUDE.md and no AGENTS.md), so the notice keeps auto-loading there. An AGENTS.md
+// repo (and a greenfield one) therefore never receives a data-ai CLAUDE.md — a stray
+// CLAUDE.md anywhere flips Claude Code out of AGENTS.md mode for the whole project.
+function noticeFilename(base) {
+    const hasClaude = existsSync(join(base, "CLAUDE.md"));
+    const hasAgents = existsSync(join(base, "AGENTS.md"));
+    return hasClaude && !hasAgents ? "CLAUDE.md" : "AGENTS.md";
+}
+
+function writeMeta(bundleDir, noticeBody, extraMeta, noticeFile) {
+    writeFileSync(join(bundleDir, noticeFile), noticeBody);
     writeFileSync(
         join(bundleDir, ".data-ai.json"),
-        JSON.stringify({ package: PKG_NAME, version: VERSION, ...extraMeta }, null, 2) + "\n",
+        JSON.stringify({ package: PKG_NAME, version: VERSION, notice: noticeFile, ...extraMeta }, null, 2) + "\n",
     );
 }
 
@@ -107,6 +122,7 @@ function installSkills(base, skills) {
         bundleDir,
         notice("The architecture rules these skills follow are installed at\n`.claude/rules/adobe-data-ai/` (referenced by name from each SKILL.md)."),
         { skills },
+        noticeFilename(base),
     );
     return bundleDir;
 }
@@ -118,7 +134,7 @@ function installRules(base) {
     // Copy the whole rules tree, minus the top-level README.md meta doc.
     const readme = join(rulesSrc, "README.md");
     cpSync(rulesSrc, bundleDir, { recursive: true, filter: (src) => src !== readme });
-    writeMeta(bundleDir, notice(), { rules: countRules(rulesSrc) });
+    writeMeta(bundleDir, notice(), { rules: countRules(rulesSrc) }, noticeFilename(base));
     return bundleDir;
 }
 

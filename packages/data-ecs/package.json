@@ -1,0 +1,25 @@
+{
+  "name": "@adobe/data-ecs",
+  "version": "0.10.22",
+  "description": "Adobe data ECS",
+  "type": "module",
+  "sideEffects": false,
+  "private": true,
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "dev": "tsc -b -w --preserveWatchOutput",
+    "typecheck": "tsc -b"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  }
+}

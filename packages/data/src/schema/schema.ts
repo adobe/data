@@ -27,6 +27,9 @@ export type Conditional = {
 const schemaTypes = { number: true, integer: true, string: true, boolean: true, null: true, array: true, object: true, 'typed-buffer': true, blob: true, observe: true, promise: true, generator: true, function: true } as const;
 
 export interface Schema {
+  // Never set: it keeps a `Parameter` (`{ name, schema }`) from being mistaken for
+  // the schema it wraps.
+  readonly schema?: never;
   type?: keyof typeof schemaTypes;
   title?: string;
   description?: string;

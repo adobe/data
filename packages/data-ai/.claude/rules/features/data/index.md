@@ -26,4 +26,5 @@ fields, it takes them structurally
 (`Iterable<{ readonly mark: PlayerMark; readonly cellIndex: CellIndex }>`).
 
 Components and resources share **one namespace** across every feature in an app:
-a name is one column or one resource, never both, and has one owning feature.
+a name is one column or one resource, never both (the store throws on a clash), and
+has one owning feature.

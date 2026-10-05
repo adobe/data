@@ -8,8 +8,8 @@ import { Frog } from "../data/values/frog/frog.js";
 export const create = (): State => {
   const { width, height, lanes, hazards, lives } = Level.initial;
   return {
-    width,
-    height,
+    boardWidth: width,
+    boardHeight: height,
     lanes,
     entities: new Map(hazards.map((hazard, index) => [index + 1, hazard])),
     frog: Frog.start(width),

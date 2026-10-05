@@ -358,6 +358,10 @@ export function createStore<
             if (RESERVED_COMPONENT_NAMES.includes(name)) {
                 throw new Error(`Component name "${name}" is reserved by the ECS and cannot be defined.`);
             }
+            // Components and resources share one namespace (one schema map).
+            if (name in resourceSchemas) {
+                throw new Error(`"${name}" is already a resource; a component cannot share its name.`);
+            }
             if (name in componentAndResourceSchemas) {
                 if (componentAndResourceSchemas[name as keyof typeof componentAndResourceSchemas] !== newComponentSchema) {
                     throw new Error(`Component schema for "${name}" must be identical when extending.`);
@@ -377,6 +381,9 @@ export function createStore<
             // the built-in quadrant marker / identity column in the shared schema map.
             if (RESERVED_COMPONENT_NAMES.includes(name)) {
                 throw new Error(`Resource name "${name}" is reserved by the ECS and cannot be defined.`);
+            }
+            if (name in componentSchemas) {
+                throw new Error(`"${name}" is already a component; a resource cannot share its name.`);
             }
             if (name in resourceSchemas) {
                 if (resourceSchemas[name as keyof typeof resourceSchemas] !== newResourceSchema) {

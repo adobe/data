@@ -14,6 +14,20 @@ describe("createStore", () => {
         createStore({ components: componentSchemas, resources: {}, archetypes: {} }) as any
     );
 
+    describe("component/resource name clashes", () => {
+        const mode = { type: "number", default: 0 } as const;
+
+        it("throws when a resource reuses a component's name", () => {
+            const store = createStore({ components: { mode }, resources: {}, archetypes: {} });
+            expect(() => store.extend({ components: {}, resources: { mode }, archetypes: {} })).toThrow(/already a component/);
+        });
+
+        it("throws when a component reuses a resource's name", () => {
+            const store = createStore({ components: {}, resources: { mode }, archetypes: {} });
+            expect(() => store.extend({ components: { mode }, resources: {}, archetypes: {} })).toThrow(/already a resource/);
+        });
+    });
+
     describe("reserved names", () => {
         it("throws when a schema defines a reserved component name", () => {
             for (const reserved of ["id", "nonPersistent", "nonShared"]) {
@@ -317,14 +331,6 @@ describe("createStore", () => {
 
     // Store-specific resource tests
     describe("Resource functionality", () => {
-        const timeSchema = {
-            type: "object",
-            properties: {
-                delta: F32.schema,
-                elapsed: F32.schema,
-            }
-        } as const satisfies Schema;
-
         it("should create store with resources", () => {
             const store = createStore({ components: { position: positionSchema }, resources: {
                     time: { default: { delta: 0.016, elapsed: 0 } },
@@ -433,31 +439,12 @@ describe("createStore", () => {
             expect(store.resources.score).toBe(100);
         });
 
-        it("should allow querying resources as components", () => {
-            const store = createStore({ components: {
-                    position: positionSchema,
-                    time: timeSchema
-                }, resources: {
-                    time: { default: { delta: 0.016, elapsed: 0 } }
-                }, archetypes: {} });
-
-            // Resources should be queryable as components
-            const timeArchetypes = store.queryArchetypes(["time"]);
-            expect(timeArchetypes).toHaveLength(1);
-            expect(timeArchetypes[0].components.has("time")).toBe(true);
-        });
-
         it("should maintain resource singleton behavior", () => {
             const store = createStore({ components: {
                     position: positionSchema,
-                    time: timeSchema
                 }, resources: {
                     time: { default: { delta: 0.016, elapsed: 0 } }
                 }, archetypes: {} });
-
-            // Resources should be queryable as components
-            const timeArchetypes = store.queryArchetypes(["time"]);
-            expect(timeArchetypes).toHaveLength(1);
 
             // Resources should maintain their values
             expect(store.resources.time).toEqual({ delta: 0.016, elapsed: 0 });

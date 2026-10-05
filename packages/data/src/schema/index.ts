@@ -20,3 +20,4 @@ export { toVertexBufferLayout, toVertexBufferLayoutForType } from "./to-vertex-b
 export type { GPUVertexBufferLayout, GPUVertexAttributeDescriptor, GPUVertexFormat } from "./to-vertex-buffer-layout.js";
 export * from "./fractional-index/fractional-index.js";
 export * from "./guid/index.js";
+export { Scope } from "./scope.js";

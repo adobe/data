@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Database } from "@adobe/data/ecs";
+import type { ConcurrencyStrategyFactory, Database } from "@adobe/data/ecs";
 import type {
   HasDerivations,
   HydrateExact,
@@ -41,6 +41,12 @@ export interface Implementation<State extends object, Fns extends Record<string,
   // Base services injected into every db the runner builds — fakes for services whose
   // factory throws to require injection. Per-case recording doubles override them.
   readonly services?: Readonly<Record<string, () => object>>;
+  // Ambient per-case context an action reads that the spec cannot carry (e.g. the
+  // acting peer's `userId`, stamped by `concurrency` at dispatch). `seedContext` runs
+  // after the store is seeded and before the action; `concurrency` builds every
+  // action db.
+  readonly concurrency?: ConcurrencyStrategyFactory;
+  readonly seedContext?: (db: never, before: State, args: unknown) => void;
   // Override the ops read off the plugin facets.
   readonly ops?: {
     readonly actions?: Record<string, unknown>;
@@ -64,8 +70,9 @@ export const implementation = <
   U extends string = never,
 >(
   spec: Spec<State, Fns, C, Sys>,
-  impl: Omit<Implementation<State, Fns, ProjectionStore<P>>, "spec" | "plugin" | "projection" | "hydrate" | "computedPlugin" | "frame"> & {
+  impl: Omit<Implementation<State, Fns, ProjectionStore<P>>, "spec" | "plugin" | "projection" | "hydrate" | "computedPlugin" | "frame" | "seedContext"> & {
     readonly plugin: PL;
+    readonly seedContext?: (db: Database.Plugin.ToSystemDatabase<PL>, before: State, args: unknown) => void;
     readonly projection: P;
     readonly hydrate?: H;
   } & (HasDerivations<C> extends true ? { readonly computedPlugin: Database.Plugin } : { readonly computedPlugin?: Database.Plugin }) &

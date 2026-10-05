@@ -33,6 +33,9 @@ export const checkFeature = <State extends object, Fns extends Record<string, An
     projection: impl.projection,
     hydrate: impl.hydrate,
     services: impl.services,
+    concurrency: impl.concurrency,
+    // Runtime invariant: `implementation` types `seedContext` against this plugin's db.
+    seedContext: impl.seedContext as ((db: { store: StoreT }, before: State, args: unknown) => void) | undefined,
     match: spec.match,
     ops: impl.ops,
   });

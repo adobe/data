@@ -1,24 +1,27 @@
 ---
 name: build-core-database
-description: Build a feature's schema — the core-database (components, resources, archetypes). The first main-service layer.
+description: Build a feature's ECS schema (ecs/core) and its conformance wiring. The first ecs layer.
 input: feature
 output: feature
 ---
 
-Create `services/main-service/core-database/` — `core-database.ts` plus one single-export file per facet
-the feature actually uses (`components`, `resources`, `archetypes` are each optional on
-`Database.Plugin.create`). Create only the facet files you need; omit the rest rather than
-shipping empty `Database.components({})` boilerplate. A feature with **no entities** (a
-singleton whose whole state is resources) is just `resources.ts` + `core-database.ts`.
+Create:
 
-- `components.ts` → `Database.components({ document, settings, presence, session })` (scopes optional) — only if the feature has entities.
-- `resources.ts` → `Database.resources({ … })` (every entry needs a `default`) — for singleton / global state.
-- `archetypes.ts` → `Database.archetypes(components, { … })` — only alongside components.
-- `core-database.ts` → `Database.Plugin.create({ imports?, components?, resources?, archetypes? })`, exporting the `CoreDatabase` namespace.
+- `ecs/core/archetypes.ts` — `Database.archetypes(components, { … })`, spreading each
+  `data/entities` tuple and adding implementation-only columns (never a
+  `nonPersistent` column without a real default).
+- `ecs/core/core-database.ts` — `Database.Plugin.create({ extends?, components?,
+  resources?, archetypes? })` from the `data/` barrels, exporting the `CoreDatabase`
+  namespace. A feature built on another extends that feature's core.
+- `ecs/main-service.ts` — `export { CoreDatabase as MainService }`, moved up as layers
+  are added.
+- `ecs/conformance/` — `projection.ts`, `implementation.ts`
+  (`Conformance.implementation(spec, …)`) and `conformance.test.ts`
+  (`Conformance.checkFeature`).
 
-The schema root; comes after `data/` (and `services/`). Bind each schema from its `data/`
-type — don't author shapes here. Components use JSON schemas; resources use the
-`{ default }` convention (a schemaless aggregate binds via `{ default: State.create() }`).
+Gate: the samples round-trip through the projection. Until the later layers exist,
+`checkFeature` lists each spec op without an implementation by name; that list is
+the work remaining.
 
-The how is in the auto-loading `features/services/main-service/index.md` + `components.md` / `resources.md` /
-`archetypes.md` rules.
+The how is in the auto-loading `features/ecs/index.md`, `core.md` and `conformance.md`
+rules.

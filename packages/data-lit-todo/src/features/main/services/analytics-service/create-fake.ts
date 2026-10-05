@@ -2,12 +2,9 @@
 import type { AnalyticsService } from "./analytics-service.js";
 
 /**
- * Deterministic test double for {@link AnalyticsService}. The `void`
- * fire-and-forget methods do nothing; `randomTodoRequested` resolves a fixed
- * timing of `{ startedAt: 0 }` on the microtask queue instead of reading the
- * clock. A case that asserts on the timing references that literal directly.
- * This is the implementation tests inject so their
- * assertions are predictable — see `features/services/index.md`.
+ * Fake {@link AnalyticsService}, exported as `AnalyticsService.createFake` (tree-shaken when unused).
+ * Conformance calls it only to enumerate the service's methods; each case's
+ * `responses` supply the returns.
  */
 export const createFake = (): AnalyticsService => ({
   serviceName: "analytics",

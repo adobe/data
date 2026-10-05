@@ -1,6 +1,7 @@
 ---
 paths:
-  - '**/data/*.ts'
+  - '**/features/*/data/**/*.ts'
+  - '**/features/*/spec/**/*.ts'
 ---
 
 # Data modelling — locality of knowledge
@@ -54,15 +55,15 @@ single source of truth, not a downstream comparison flag:
   may be a plain `number` or the ECS `Entity` type (a branded `number`) — reusing
   `Entity`, and reference bundles like `CoeditingRelations.OrderedChild`, is allowed:
   they are plain value types, not ECS machinery, and keep the spec aligned with the ECS
-  (see `features/data/state.md`). Also used for deterministic-key lookups (an enum, a
-  name, a stable string).
+  (see `features/spec/index.md`). In a `State`, every `ReadonlyMap` field is an entity
+  collection; a lookup keyed by an enum or name belongs inside a value type.
 
 **Entities are keyed, never id-bearing values.** An entity's identity is its map
 key, so entity value types (`Todo`, `Bullet`) have no `id` field, and there is no
-`ReadonlySet<T>`/`ReadonlyArray<T>` *of entity values* — the single
-`ReadonlyMap<number, …>` store is the only home for entities, and queries return
-their **ids** (`ReadonlySet<number>` unordered, `ReadonlyArray<number>` ordered).
-See `features/data/state.md` for the full `State` shape.
+`ReadonlySet<T>`/`ReadonlyArray<T>` *of entity values* in `State` — a
+`ReadonlyMap<number, …>` per entity kind is the only home for entities. A derivation
+may return entity values for display (the ECS computed then emits ids, hydrated by
+conformance). See `features/spec/index.md` for the full `State` shape.
 
 These are first-class `Data` (see `features/data/index.md`) — serialize a
 Set/Map-bearing value with `Data.stringify` / `Data.parse` (plain `JSON.stringify`

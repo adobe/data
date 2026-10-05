@@ -1,16 +1,18 @@
 ---
 name: build-services
-description: Build a feature's services/ layer — async capability contracts (ports to the outside world). Optional.
+description: Build a feature's services/ layer — async data services (interface, create, createFake). Optional.
 input: feature
 output: feature
 ---
 
-Skip if this feature doesn't contain or require services.
+Skip if the feature talks to nothing outside itself.
 
-Create the feature's `services/` layer: one `<name>-service/` namespace folder per async
-contract — an `interface` (validated with `AsyncDataService.IsValid`), async-only members,
-and `create*` factories.
+Create one `services/<name>-service/` namespace per service: the interface (an async
+data service, validated with `AsyncDataService.IsValid`), `create` (the
+implementation, or a factory that throws when the app must inject it),
+`createFake`, and `public.ts`. Add `services/services.ts` with the `Services` map when
+spec actions inject services.
 
-Only if the feature talks to the outside world. Comes after `data/`, before `services/main-service/`.
+Depends only on `data/`. Gate: per-service unit tests.
 
-The how is in the auto-loading `features/services/index.md` rule (and `global/namespace.md`).
+The how is in the auto-loading `features/services/index.md` rule.

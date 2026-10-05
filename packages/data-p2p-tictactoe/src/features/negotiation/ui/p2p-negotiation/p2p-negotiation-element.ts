@@ -2,14 +2,12 @@
 //
 // Container for serverless P2P play. The negotiation main-service's `connection`
 // service is the imperative signaling machine; this element renders purely from
-// observable state and forwards user intent through `service.actions.*`. It
-// supplies the game-specific config once after mount and tears the service down
-// on unmount. No business logic, no full-database access.
+// observable state and forwards user intent through `service.actions.*`, and tears
+// the connection down on unmount. No business logic, no full-database access.
 
 import { customElement, property } from "lit/decorators.js";
-import { Database } from "@adobe/data/ecs";
 import { DatabaseElement, useObservableValues, useEffect } from "@adobe/data-lit";
-import { MainService } from "../../services/main-service/main-service.js";
+import { MainService } from "../../ecs/main-service.js";
 import { copyText } from "../copy-text.js";
 import { styles } from "./p2p-negotiation.css.js";
 import * as presentation from "./p2p-negotiation-presentation.js";
@@ -23,21 +21,9 @@ declare global {
     }
 }
 
-type GamePlugin = Database.Plugin<any, any, any, any, any, any, any, any>;
-type AssignUserId = (role: "host" | "joiner") => string;
-
 @customElement(tagName)
 export class P2pNegotiationElement extends DatabaseElement<typeof MainService.plugin> {
     static styles = styles;
-
-    // Game-specific config: which game to negotiate and how to assign peer ids.
-    // Supplied to the service via `configure` after mount (props do not exist
-    // when the database is created during connectedCallback).
-    @property({ attribute: false })
-    gamePlugin!: GamePlugin;
-
-    @property({ attribute: false })
-    assignUserId!: AssignUserId;
 
     @property({ attribute: false })
     renderGame!: RenderGame;
@@ -50,7 +36,7 @@ export class P2pNegotiationElement extends DatabaseElement<typeof MainService.pl
     }
 
     render() {
-        const { observe, actions, transactions } = this.service;
+        const { observe, actions } = this.service;
 
         const values = useObservableValues(() => ({
             phase: observe.resources.phase,
@@ -64,12 +50,8 @@ export class P2pNegotiationElement extends DatabaseElement<typeof MainService.pl
             gameDb: observe.resources.gameDb,
         }), []);
 
-        // Configure the service for this game on mount; tear down its WebRTC /
-        // sync machinery on unmount.
-        useEffect(() => {
-            actions.configure({ gamePlugin: this.gamePlugin, assignUserId: this.assignUserId });
-            return () => actions.dispose();
-        }, []);
+        // Tear down the WebRTC / sync machinery on unmount.
+        useEffect(() => () => actions.dispose(), []);
 
         if (!values) return undefined;
 
@@ -82,8 +64,8 @@ export class P2pNegotiationElement extends DatabaseElement<typeof MainService.pl
             submitAnswer: () => actions.submitAnswer(),
             generateAnswer: () => actions.generateAnswer(),
             reconnect: () => actions.reconnect(),
-            setHostAnswerInput: (value) => transactions.setHostAnswerInput({ value }),
-            setJoinerOfferInput: (value) => transactions.setJoinerOfferInput({ value }),
+            setHostAnswerInput: (value) => actions.setHostAnswerInput({ value }),
+            setJoinerOfferInput: (value) => actions.setJoinerOfferInput({ value }),
             copyText,
         });
     }

@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { html } from "lit";
-import type { GameStatus } from "../../data/game-status/game-status.js";
-import type { PlayerMark } from "../../data/player-mark/player-mark.js";
+import type { GameStatus } from "../../data/values/game-status/game-status.js";
+import type { PlayerMark } from "../../data/values/player-mark/player-mark.js";
 
 export function render(args: {
   status: GameStatus;

@@ -1,7 +1,7 @@
 ---
 paths:
-  - 'src/**/elements/**/*.ts'
-  - 'src/**/ui/**/*.ts'
+  - '**/src/**/elements/**/*.ts'
+  - '**/src/**/ui/**/*.ts'
 ---
 
 # Lazy Wrapper

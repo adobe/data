@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { html, type TemplateResult } from "lit";
-import type { GameStatus } from "../../data/game-status/game-status.js";
+import type { GameStatus } from "../../data/values/game-status/game-status.js";
 
 // Pure presentation: the HUD (lives / score / status + new-game) around the
 // WebGPU canvas the renderer draws into. The canvas is imperative — the scheduler

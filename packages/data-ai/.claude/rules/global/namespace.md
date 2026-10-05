@@ -6,7 +6,8 @@ paths:
 # Type namespace pattern
 
 Single import surface per type: `<type-name>/<type-name>.ts`. Schema in `-schema.ts`, namespace re-export from `public.js`. Types live in
-the `types/` layer.
+the `types/` layer. **In a feature**, Data types live in `features/<name>/data/values/<type>/` with the schema in `schema.ts`
+(`features/data/values.md`).
 
 ## Authority
 
@@ -161,5 +162,4 @@ Example — a type merged with one value export and any number of type-only memb
     }
 
 The canonical use is a feature's `core-database.ts` / layered `*-database.ts` (a
-`plugin` value plus `Store` / `Index` / `Component` / `Archetype` types) — see
-`features/services/main-service/core-database.md`.
+`plugin` value plus `Store` / `Index` types) — see `features/ecs/core.md`.

@@ -1,6 +1,7 @@
 ---
 paths:
   - '**/*presentation.test.ts'
+  - '**/*presentation.test.tsx'
 ---
 
 ## Testing

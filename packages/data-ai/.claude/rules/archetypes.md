@@ -4,13 +4,15 @@ paths:
   - '**/*-plugin/**/*.ts'
   - '**/*-database.ts'
   - '**/*-database/**/*.ts'
+  - '**/features/*/data/entities/**/*.ts'
+  - '**/features/*/ecs/core/**/*.ts'
 ---
 
 # Archetypes — the ECS query & iteration model
 
-General to all `@adobe/data` ECS use, feature-organized or not. The
-`core-database/archetypes.ts` *file* conventions live in
-`features/services/main-service/archetypes.md`.
+General to all `@adobe/data` ECS use, feature-organized or not. The feature file
+conventions live in `features/data/entities.md` (entity tuples) and
+`features/ecs/core.md` (archetype packing).
 
 An archetype is a named set of component keys — a kind of entity — and also a
 **query**: `queryArchetypes(include, { exclude })` (and the `select` / `count`

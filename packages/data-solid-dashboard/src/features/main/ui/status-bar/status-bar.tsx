@@ -2,7 +2,7 @@
 
 import { createMemo } from "solid-js";
 import { fromObserve, useDatabase } from "@adobe/data-solid";
-import { MainService } from "../../services/main-service/main-service.js";
+import { MainService } from "../../ecs/main-service.js";
 import * as presentation from "./status-bar.presentation.jsx";
 
 export function StatusBar() {

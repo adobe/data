@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect } from "vitest";
-import { Size } from "../../data/size/size.js";
-import { Bullet } from "../../data/bullet/bullet.js";
+import { Size } from "../../data/values/size/size.js";
+import { Bullet } from "../../data/values/bullet/bullet.js";
 import { draw } from "./space-rock-game-draw.js";
 
 type Arc = { x: number; y: number; r: number };

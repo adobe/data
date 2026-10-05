@@ -2,7 +2,7 @@
 
 import { customElement } from "lit/decorators.js";
 import { useObservableValues } from "@adobe/data-lit";
-import { PlayerMark } from "../../data/player-mark/player-mark.js";
+import { PlayerMark } from "../../data/values/player-mark/player-mark.js";
 import { TictactoeElement } from "../tictactoe-element.js";
 import { styles } from "./tictactoe-hud.css.js";
 import * as presentation from "./tictactoe-hud-presentation.js";

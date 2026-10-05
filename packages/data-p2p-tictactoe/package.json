@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "test": "vitest --run --passWithNoTests",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -b tsconfig.test.json"
   },
   "dependencies": {
     "@adobe/data": "workspace:*",

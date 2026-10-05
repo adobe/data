@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { useDatabase } from "@adobe/data-react";
-import { MainService } from "../services/main-service/main-service.js";
+import { MainService } from "../ecs/main-service.js";
 
 // The single main-service context every binding component reads. Wraps
 // `useDatabase(MainService.plugin)` so the plugin identity is named once.

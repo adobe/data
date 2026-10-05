@@ -1,14 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { html, type TemplateResult } from "lit";
-import type { Vec2 } from "@adobe/data/math";
 import { PlayerMark } from "data-lit-tictactoe";
+import type { Cursors } from "../../data/values/cursors/cursors.js";
 
 export function render({
     cursors,
     localMark,
 }: {
-    cursors: Partial<Record<PlayerMark, Vec2>> | undefined;
+    cursors: Cursors | undefined;
     localMark: number | string | undefined;
 }): TemplateResult {
     return html`

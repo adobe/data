@@ -3,10 +3,10 @@ import { describe, it } from "vitest";
 import { Database, Store } from "@adobe/data/ecs";
 import type { Entity } from "@adobe/data/ecs";
 import type { MatchOptions } from "../match/match.js";
-import { runTransactions } from "./run-transactions.js";
 import { runActions } from "./run-actions.js";
 import { runComputeds } from "./run-computeds.js";
 import { expectAfter } from "./expect-after.js";
+import { discoverTransitions, discoverDerivations, discoverOps } from "./discover.js";
 import type { SchemaSource } from "./refify.js";
 
 // The feature's ecs↔`State` projection — the one genuinely feature-specific piece.
@@ -17,25 +17,23 @@ export interface Projection<Store, State> {
 }
 
 // One call conforms a whole feature. The runner pulls the ops off the plugin's
-// registered facets (`plugin.transactions` / `plugin.actions` /
-// `computedPlugin.computed`) and constructs the stores/dbs itself, so a feature
-// supplies only its `State` namespace (default + representative samples), the
-// `data/state` glob (the `{ fn, cases }` source), the plugin(s), and its
-// projection. It runs the transaction, action, and computed conformance plus a
-// projection round-trip (`toState ∘ fromState ≡ identity`) over `State.samples`.
+// registered facets (`plugin.actions` / `computedPlugin.computed`) and constructs the
+// dbs itself. Each spec transition conforms against the plugin's same-named ACTION —
+// the spec describes actions, and transactions are an implementation detail they
+// cover. A spec op with no implementation is a named failure. It also round-trips
+// `State.samples` through the projection. Systems conform separately (`runSystems`).
 //
-// A feature whose ops aren't registered in the facet (a conformance-only action),
-// or that needs ambient per-case context (a user-scoped `userId`), uses the
+// A feature that needs ambient per-case context (a user-scoped `userId`) uses the
 // lower-level `runTransactions`/`runActions`/`runComputeds` directly instead.
 export interface FeatureRunConfig<State, StoreT, Db extends { store: StoreT }> {
   // The `State` namespace: `create()` is the default seed each case's `before`
   // deltas over; `samples` (optional) are representative full states for the
   // projection round-trip.
   readonly state: { create(): State; readonly samples?: readonly State[] };
-  // `import.meta.glob(["../../../data/state/*.ts", "!**/*.test.ts", "!**/*.type-test.ts"], { eager: true })`.
+  // The adapted `{ fn, cases }` map (see `adaptCases`).
   readonly transitions: Record<string, Record<string, unknown>>;
-  // The assembled feature plugin (`MainService.plugin`) — its `.transactions` and
-  // `.actions` facets are the ops, and it builds the transaction store + action db.
+  // The assembled feature plugin (`MainService.plugin`) — its `.actions` facet is the
+  // ops, and it builds the action db and the projection store.
   readonly plugin: Database.Plugin;
   // The `ComputedDatabase` layer plugin — its `.computed` facet is the ops, built
   // from this layer for seed-freshness. Omit when the feature has no derivations.
@@ -43,11 +41,12 @@ export interface FeatureRunConfig<State, StoreT, Db extends { store: StoreT }> {
   readonly projection: Projection<StoreT, State>;
   // Names of computeds that emit an entity-id list (hydrated through `toData`).
   readonly hydrate?: readonly string[];
+  // Base service factories injected into every db (fakes for services whose factory
+  // throws to require injection); per-case recording doubles override them.
+  readonly services?: Readonly<Record<string, () => object>>;
   readonly match?: MatchOptions;
-  // Override the ops discovered from the plugin when they aren't registered in a
-  // facet (e.g. per-transition actions kept out of the plugin to bound its type).
+  // Override the ops discovered from the plugin facets.
   readonly ops?: {
-    readonly transactions?: Record<string, unknown>;
     readonly actions?: Record<string, unknown>;
     readonly computeds?: Record<string, unknown>;
   };
@@ -55,7 +54,10 @@ export interface FeatureRunConfig<State, StoreT, Db extends { store: StoreT }> {
 
 // Runtime invariant: a plugin object carries its registered facet maps (see
 // `create-plugin.ts`), so this reads the ops directly off it.
-type PluginFacets = { transactions: Record<string, unknown>; actions: Record<string, unknown>; computed: Record<string, unknown> };
+type PluginFacets = { actions: Record<string, unknown>; computed: Record<string, unknown> };
+
+const pick = (source: ReadonlyMap<string, unknown>, names: ReadonlySet<string>): Record<string, unknown> =>
+  Object.fromEntries([...source].filter(([name]) => names.has(name)));
 
 export function runFeature<State, StoreT extends SchemaSource, Db extends { store: StoreT }>(
   config: FeatureRunConfig<State, StoreT, Db>,
@@ -63,41 +65,60 @@ export function runFeature<State, StoreT extends SchemaSource, Db extends { stor
   const initial = config.state.create();
   const { fromState, toState, toData } = config.projection;
   const facets = config.plugin as unknown as PluginFacets;
+  const computedFacets = config.computedPlugin as unknown as PluginFacets | undefined;
   // A plugin carries the schema facets, so `Store.create` / `Database.create`
   // accept it; the resulting store/db is the projection's `StoreT`/`Db`.
   const makeStore = (): StoreT => Store.create(config.plugin as never) as unknown as StoreT;
+  const baseServices = (): Record<string, object> =>
+    Object.fromEntries(Object.entries(config.services ?? {}).map(([name, create]) => [name, create()]));
 
-  runTransactions<StoreT, State>({
-    createStore: makeStore,
-    fromState,
-    toState,
-    initial,
-    transitions: config.transitions,
-    transactions: config.ops?.transactions ?? facets.transactions,
-    match: config.match,
-  });
+  const transitions = discoverTransitions(config.transitions);
+  const derivations = discoverDerivations(config.transitions);
+  const actions = discoverOps(config.ops?.actions ?? facets.actions);
+  const computeds = discoverOps(config.ops?.computeds ?? computedFacets?.computed ?? {});
+
+  const byAction = new Set([...transitions.keys()].filter((name) => actions.has(name)));
+  const missing = [
+    ...[...transitions.keys()].filter((name) => !byAction.has(name)),
+    ...[...derivations.keys()].filter((name) => !computeds.has(name)),
+  ];
+
+  if (missing.length > 0) {
+    describe("every spec op has an implementation", () => {
+      for (const name of missing) {
+        it(name, () => {
+          throw new Error(`spec op "${name}" has no same-named ${derivations.has(name) ? "computed" : "action"}`);
+        });
+      }
+    });
+  }
 
   runActions<Db, StoreT, State>({
-    makeDb: (services) => Database.toSystemDatabase(Database.create(config.plugin as never, { services })) as unknown as Db,
+    makeDb: (services) =>
+      Database.toSystemDatabase(
+        Database.create(config.plugin as never, { services: { ...baseServices(), ...services } }),
+      ) as unknown as Db,
     store: (db) => db.store,
     fromState,
     toState,
     initial,
     transitions: config.transitions,
-    actions: config.ops?.actions ?? facets.actions,
+    actions: pick(actions, byAction),
     match: config.match,
   });
 
   if (config.computedPlugin) {
-    const computedFacets = config.computedPlugin as unknown as PluginFacets;
     runComputeds<Db, StoreT, State>({
-      makeDb: () => Database.toSystemDatabase(Database.create(config.computedPlugin as never)) as unknown as Db,
+      makeDb: () =>
+        Database.toSystemDatabase(
+          Database.create(config.computedPlugin as never, { services: baseServices() }),
+        ) as unknown as Db,
       store: (db) => db.store,
       fromState,
       toData,
       initial,
       derivations: config.transitions,
-      computeds: config.ops?.computeds ?? computedFacets.computed,
+      computeds: Object.fromEntries(computeds),
       hydrate: config.hydrate,
       match: config.match,
     });

@@ -7,6 +7,8 @@ paths:
 
 # Database.Plugin authoring
 
+> Inside a feature (`features/<name>/ecs/`), the `features/ecs/` rules govern file layout and naming: layer files are `<layer>-database.ts` exporting an `XDatabase` namespace, and systems are camelCase. This file covers general plugin mechanics.
+
 Plugins are created with `Database.Plugin.create()` from `@adobe/data/ecs`.
 
 ## Property order (enforced at runtime)
@@ -19,7 +21,7 @@ Properties **must** appear in this exact order. All are optional.
 | 2   | `extends`      | `Plugin`                               | Base plugin to extend (types re-exported) |
 | 3   | `services`     | `(db) => ServiceInstance`              | Singleton service factories               |
 | 4   | `components`   | schema object                          | ECS component schemas                     |
-| 5   | `resources`    | `{ default: value as Type }`           | Global resource schemas                   |
+| 5   | `resources`    | schema with a `default`                | Global resource schemas                   |
 | 6   | `archetypes`   | `['comp1', 'comp2']`                   | Standard ECS archetypes                   |
 | 7   | `indexes`      | `{ key, order?, unique?, archetype? }` | Sorted/filtered entity indexes            |
 | 8   | `computed`     | `(db) => Observe<T>`                   | Computed observables                      |
@@ -99,7 +101,7 @@ const particleDataPlugin = Database.Plugin.create({
 ```
 
 - **Components**: per-entity data. Use schema imports (`Vec3`, `Vec4`, `F32` from `@adobe/data/math`) or type namespaces for custom shapes.
-- **Resources**: global state. Use **only** `{ default: value as Type }`.
+- **Resources**: global state. Every resource carries a `default` (`{ ...Boolean.schema }`, or `{ default: 'dark' as ThemeColor }` to widen a literal).
 - **Archetypes**: one per entity kind. List all components that kind requires.
 
 ---
@@ -108,23 +110,25 @@ const particleDataPlugin = Database.Plugin.create({
 
 ### components
 
-Non-persistable values (e.g. HTML elements, DOM refs) must use `ephemeral: true` on the schema.
+Non-persistable values (e.g. HTML elements, DOM refs) are session scope — spread
+`Scope.session` (`nonPersistent` + `nonShared`) into the schema.
 
 ```ts
 components: {
   layout: Layout.schema,
-  layoutElement: { default: null as unknown as HTMLElement, ephemeral: true },
+  layoutElement: { default: null as HTMLElement | null, ...Scope.session },
 },
 ```
 
 ### resources
 
-Use `as Type` to provide the compile-time type. Use `null as unknown as Type` for resources initialized later in a system initializer.
+Use `as Type` to widen a literal default to its type. A resource initialized later
+(in a system initializer) defaults to `null` widened to `Type | null`.
 
 ```ts
 resources: {
   themeColor: { default: 'dark' as ThemeColor },
-  connection: { default: null as unknown as WebSocket },
+  connection: { default: null as WebSocket | null, ...Scope.session },
 },
 ```
 
@@ -156,7 +160,7 @@ UI components that call actions must never consume returned values — see `feat
 
 ---
 
-## Naming conventions
+## Naming conventions (standalone plugins)
 
 | Item        | Convention                                            | Example                      |
 | ----------- | ----------------------------------------------------- | ---------------------------- |

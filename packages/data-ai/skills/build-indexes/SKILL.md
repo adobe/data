@@ -1,16 +1,15 @@
 ---
 name: build-indexes
-description: Build a feature's index-database — component/archetype indexes for O(1) lookup. As needed.
+description: Build a feature's ecs/indexes layer. Optional.
 input: feature
 output: feature
 ---
 
-Skip if this feature doesn't contain or require indexes.
+Skip if the feature needs no indexed lookups.
 
-Create `services/main-service/index-database/`: `index-database.ts` (extends `CoreDatabase`, adds the `indexes`
-facet from `./indexes/index.js`) plus an `indexes/` folder — one index per file + an `index.ts`
-barrel.
+Create `ecs/indexes/`: `index-database.ts` (extends `CoreDatabase`, adds `indexes` from
+`./index.js`), one index per file, and an `index.ts` barrel.
 
-Only if the feature needs indexed lookups. Comes after `core-database`.
+Gate: conformance unchanged, plus index tests where an index has logic.
 
-The how is in the auto-loading `features/services/main-service/indexes.md` rule.
+The how is in the auto-loading `features/ecs/indexes.md` rule.

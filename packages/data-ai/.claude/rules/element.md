@@ -3,6 +3,7 @@ paths:
   - '**/*-element.ts'
   - '**/elements/**/*.ts'
   - '**/ui/**/*.ts'
+  - '**/ui/**/*.tsx'
 ---
 
 # Container element authoring
@@ -84,9 +85,9 @@ function **by reference**, don't wrap it in an identity arrow:
 
 ```ts
 // ❌ identity wrapper — adds nothing
-setOperation: (op) => this.service.transactions.setOperation(op),
+setOperation: (op) => this.service.actions.setOperation(op),
 // ✅ same signature, pass it through
-setOperation: this.service.transactions.setOperation,
+setOperation: this.service.actions.setOperation,
 ```
 
 Only write an arrow when you genuinely adapt the call (drop an event
@@ -117,14 +118,14 @@ transaction, or hook.
 | Framework | Container is             | Subscription hook     | Locator inputs       | Render delegation                                |
 | --------- | ------------------------ | --------------------- | -------------------- | ------------------------------------------------ |
 | Lit       | `DatabaseElement<P>`     | `useObservableValues` | `@property` only     | `presentation.render({ ...values, ...callbacks })` |
-| React     | function component       | `useObservableValues` | function arguments   | `<Presentation {...values} {...callbacks} />`    |
-| Solid     | component function       | framework-specific    | function arguments   | `<Presentation {...values} {...callbacks} />`    |
+| React     | function component       | `useObservableValues` | function arguments   | `presentation.render({ ...values, ...callbacks })` |
+| Solid     | component function       | framework-specific    | function arguments   | `presentation.render({ ...values, ...callbacks })` |
 
 Lit-only: `static styles = styles` from a sibling `*.css.ts`. `@property`
 exists *only* for locator inputs — never for state, never for derived
 values, never for parent-forwarded flags. The `P` in `DatabaseElement<P>` (and
 the `get plugin()` it returns) is the surface the element *consumes* — never the
-varying topmost-layer name (see `features/services/main-service/index.md`): `typeof
+varying topmost-layer name (see `features/ecs/index.md`): `typeof
 MainService.plugin` for a self-contained feature. **Exception:** an element
 meant to be *extended* — injected with various databases that build on this
 feature (a peer app that adds an agent, a p2p/presence build) — types on the

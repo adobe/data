@@ -1,0 +1,19 @@
+{
+  // Everything else, non-emitting: ui/, app/, ecs/conformance/, and every *.test.ts.
+  // References the ecs and spec projects, so it sees both. `tsc -b tsconfig.test.json`
+  // builds the layer projects first, then type-checks this tier — together covering src.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true
+  },
+  "include": [
+    "src/app/**/*",
+    "src/features/*/ui/**/*",
+    "src/features/*/ecs/conformance/**/*",
+    "src/**/*.test.ts",
+    "src/**/*.type-test.ts"
+  ],
+  "exclude": [],
+  "references": [{ "path": "./tsconfig.ecs.json" }, { "path": "./tsconfig.spec.json" }]
+}

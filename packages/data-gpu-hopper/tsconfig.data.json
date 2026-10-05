@@ -1,0 +1,16 @@
+{
+  // Layer 1+2 runtime: pure data declarations (data/) and service namespaces (services/).
+  // Composite so higher layers reference it; a data/services file importing spec/, ecs/
+  // or any test file is a compile error (TS6307: not in this project).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outDir": "./.tsbuild/data",
+    "rootDir": "src"
+  },
+  "include": ["src/features/*/data/**/*", "src/features/*/services/**/*"],
+  "exclude": ["**/*.test.ts", "**/*.type-test.ts"]
+}

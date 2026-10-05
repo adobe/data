@@ -29,9 +29,9 @@ export namespace MainService {
         properties: {
             time: { type: "observe", value: { type: "number" } },
             logs: { type: "observe", value: { type: "array", items: { type: "string" } } },
-            echo: { type: "function", signature: { parameters: [{ type: "string" }], returns: { type: "promise", value: { type: "string" } } } },
-            countUp: { type: "function", signature: { parameters: [{ type: "number" }], returns: { type: "generator", value: { type: "number" } } } },
-            log: { type: "function", signature: { parameters: [{ type: "string" }] } },
+            echo: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "string" } }], returns: { type: "promise", value: { type: "string" } } } },
+            countUp: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "number" } }], returns: { type: "generator", value: { type: "number" } } } },
+            log: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "string" } }] } },
         },
         required: ["time", "logs", "echo", "countUp", "log"],
         additionalProperties: false,

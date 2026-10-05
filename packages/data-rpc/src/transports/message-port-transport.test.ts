@@ -16,7 +16,7 @@ const calcSchema = {
     type: "object",
     properties: {
         value: { type: "observe", value: { type: "number" } },
-        add: { type: "function", signature: { parameters: [{ type: "number" }, { type: "number" }], returns: { type: "promise", value: { type: "number" } } } },
+        add: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "number" } }, { name: "arg1", schema: { type: "number" } }], returns: { type: "promise", value: { type: "number" } } } },
     },
     required: ["value", "add"],
     additionalProperties: false,

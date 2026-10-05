@@ -128,7 +128,7 @@ const validAuth = createLazy({
       showSignInDialog: { type: "function", signature: { parameters: [] } },
       hideSignInDialog: { type: "function", signature: { parameters: [] } },
       refreshToken: { type: "function", signature: { parameters: [], returns: { type: "promise", value: {} } } },
-      signIn: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } },
+      signIn: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "promise", value: {} } } },
       signOut: { type: "function", signature: { parameters: [], returns: { type: "promise", value: {} } } }
     },
     required: ["isSignedIn", "accessToken", "userProfile", "showSignInDialog", "hideSignInDialog", "refreshToken", "signIn", "signOut"],
@@ -143,7 +143,7 @@ const validObserveFn = createLazy({
     type: "object",
     properties: {
       allUsers: { type: "observe", value: {} },
-      selectUser: { type: "function", signature: { parameters: [{}], returns: { type: "observe", value: {} } } },
+      selectUser: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "observe", value: {} } } },
       fetchData: { type: "function", signature: { parameters: [], returns: { type: "promise", value: {} } } }
     },
     required: ["allUsers", "selectUser", "fetchData"],
@@ -182,7 +182,7 @@ const validWithArgs = createLazy({
     type: "object",
     properties: {
       config: { type: "observe", value: {} },
-      fetch: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } }
+      fetch: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "promise", value: {} } } }
     },
     required: ["config", "fetch"],
     additionalProperties: false
@@ -196,7 +196,7 @@ const validWithPreload = createLazy({
     type: "object",
     properties: {
       allUsers: { type: "observe", value: {} },
-      selectUser: { type: "function", signature: { parameters: [{}], returns: { type: "observe", value: {} } } },
+      selectUser: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "observe", value: {} } } },
       fetchData: { type: "function", signature: { parameters: [], returns: { type: "promise", value: {} } } }
     },
     required: ["allUsers", "selectUser", "fetchData"],
@@ -220,7 +220,7 @@ const validNonConformant = createLazy({
   schema: {
     type: "object",
     properties: {
-      fetch: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } },
+      fetch: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "promise", value: {} } } },
       count: { type: "observe", value: {} }
     },
     required: ["fetch", "count"],
@@ -245,7 +245,7 @@ const errorMissing = createLazy({
       showSignInDialog: { type: "function", signature: { parameters: [] } },
       hideSignInDialog: { type: "function", signature: { parameters: [] } },
       // Missing: refreshToken
-      signIn: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } },
+      signIn: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "promise", value: {} } } },
       signOut: { type: "function", signature: { parameters: [], returns: { type: "promise", value: {} } } }
     },
     required: ["isSignedIn", "accessToken", "userProfile", "showSignInDialog", "hideSignInDialog", "signIn", "signOut"],
@@ -266,7 +266,7 @@ const errorWrongType1 = createLazy({
       showSignInDialog: { type: "function", signature: { parameters: [] } },
       hideSignInDialog: { type: "function", signature: { parameters: [] } },
       refreshToken: { type: "function", signature: { parameters: [], returns: { type: "promise", value: {} } } },
-      signIn: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } },
+      signIn: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "promise", value: {} } } },
       signOut: { type: "function", signature: { parameters: [], returns: { type: "promise", value: {} } } }
     },
     required: ["isSignedIn", "accessToken", "userProfile", "showSignInDialog", "hideSignInDialog", "refreshToken", "signIn", "signOut"],
@@ -287,7 +287,7 @@ const errorWrongType2 = createLazy({
       showSignInDialog: { type: "function", signature: { parameters: [], returns: { type: "promise", value: {} } } }, // WRONG: should be void
       hideSignInDialog: { type: "function", signature: { parameters: [] } },
       refreshToken: { type: "function", signature: { parameters: [], returns: { type: "promise", value: {} } } },
-      signIn: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } },
+      signIn: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "promise", value: {} } } },
       signOut: { type: "function", signature: { parameters: [], returns: { type: "promise", value: {} } } }
     },
     required: ["isSignedIn", "accessToken", "userProfile", "showSignInDialog", "hideSignInDialog", "refreshToken", "signIn", "signOut"],
@@ -303,7 +303,7 @@ const errorExtra = createLazy({
     type: "object",
     properties: {
       allUsers: { type: "observe", value: {} },
-      selectUser: { type: "function", signature: { parameters: [{}], returns: { type: "observe", value: {} } } },
+      selectUser: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "observe", value: {} } } },
       fetchData: { type: "function", signature: { parameters: [], returns: { type: "promise", value: {} } } },
       unknownProperty: { type: "observe", value: {} } // EXTRA: doesn't exist in service
     },
@@ -373,7 +373,7 @@ const errorMalformedReturns = createLazy({
     type: "object",
     properties: {
       allUsers: { type: "observe", value: {} },
-      selectUser: { type: "function", signature: { parameters: [{}], returns: { type: "observe", value: {} } } },
+      selectUser: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "observe", value: {} } } },
       // @ts-expect-error - `returns` has no recognized type-constructor
       fetchData: { type: "function", signature: { parameters: [], returns: { value: {} } } },
     },
@@ -565,7 +565,7 @@ describe('createLazy', () => {
       load: createTestService,
       schema: {
         type: "object",
-        properties: { fetchData: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } } },
+        properties: { fetchData: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "promise", value: {} } } } },
         required: ["fetchData"],
         additionalProperties: false
       }
@@ -608,7 +608,7 @@ describe('createLazy', () => {
       load: createTestService,
       schema: {
         type: "object",
-        properties: { fetchData: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } } },
+        properties: { fetchData: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "promise", value: {} } } } },
         required: ["fetchData"],
         additionalProperties: false
       }
@@ -653,7 +653,7 @@ describe('createLazy', () => {
       load: createTestService,
       schema: {
         type: "object",
-        properties: { fetchData: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } } },
+        properties: { fetchData: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "promise", value: {} } } } },
         required: ["fetchData"],
         additionalProperties: false
       }
@@ -698,7 +698,7 @@ describe('createLazy', () => {
       }),
       schema: {
         type: "object",
-        properties: { fetchData: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } } },
+        properties: { fetchData: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "promise", value: {} } } } },
         required: ["fetchData"],
         additionalProperties: false
       }
@@ -729,7 +729,7 @@ describe('createLazy', () => {
       }),
       schema: {
         type: "object",
-        properties: { fetchData: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: {} } } } },
+        properties: { fetchData: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "promise", value: {} } } } },
         required: ["fetchData"],
         additionalProperties: false
       }
@@ -778,7 +778,7 @@ describe('createLazy', () => {
       load: createTestService,
       schema: {
         type: "object",
-        properties: { track: { type: "function", signature: { parameters: [{}] } } },
+        properties: { track: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }] } } },
         required: ["track"],
         additionalProperties: false
       }
@@ -819,7 +819,7 @@ describe('createLazy', () => {
       load: createTestService,
       schema: {
         type: "object",
-        properties: { selectUser: { type: "function", signature: { parameters: [{}], returns: { type: "observe", value: {} } } } },
+        properties: { selectUser: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "observe", value: {} } } } },
         required: ["selectUser"],
         additionalProperties: false
       }
@@ -861,7 +861,7 @@ describe('createLazy', () => {
       }),
       schema: {
         type: "object",
-        properties: { selectUser: { type: "function", signature: { parameters: [{}], returns: { type: "observe", value: {} } } } },
+        properties: { selectUser: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "observe", value: {} } } } },
         required: ["selectUser"],
         additionalProperties: false
       }
@@ -895,7 +895,7 @@ describe('createLazy', () => {
       }),
       schema: {
         type: "object",
-        properties: { selectUser: { type: "function", signature: { parameters: [{}], returns: { type: "observe", value: {} } } } },
+        properties: { selectUser: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "observe", value: {} } } } },
         required: ["selectUser"],
         additionalProperties: false
       }
@@ -937,7 +937,7 @@ describe('createLazy', () => {
       }),
       schema: {
         type: "object",
-        properties: { selectUser: { type: "function", signature: { parameters: [{}], returns: { type: "observe", value: {} } } } },
+        properties: { selectUser: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "observe", value: {} } } } },
         required: ["selectUser"],
         additionalProperties: false
       }
@@ -1126,7 +1126,7 @@ describe('createLazy', () => {
       }),
       schema: {
         type: "object",
-        properties: { streamData: { type: "function", signature: { parameters: [{}], returns: { type: "generator", value: {} } } } },
+        properties: { streamData: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }], returns: { type: "generator", value: {} } } } },
         required: ["streamData"],
         additionalProperties: false
       }
@@ -1175,7 +1175,7 @@ describe('createLazy', () => {
       }),
       schema: {
         type: "object",
-        properties: { track: { type: "function", signature: { parameters: [{}] } } },
+        properties: { track: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }] } } },
         required: ["track"],
         additionalProperties: false
       }
@@ -1226,7 +1226,7 @@ describe('createLazy preload option', () => {
 
   const trackSchema = {
     type: "object",
-    properties: { track: { type: "function", signature: { parameters: [{}] } } },
+    properties: { track: { type: "function", signature: { parameters: [{ name: "arg0", schema: {} }] } } },
     required: ["track"],
     additionalProperties: false
   } as const;

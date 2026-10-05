@@ -34,13 +34,13 @@ namespace ParentService {
                 type: "object",
                 properties: {
                     value: { type: "observe", value: { type: "number" } },
-                    add: { type: "function", signature: { parameters: [{ type: "number" }, { type: "number" }], returns: { type: "promise", value: { type: "number" } } } },
-                    stream: { type: "function", signature: { parameters: [{ type: "number" }], returns: { type: "generator", value: { type: "number" } } } },
+                    add: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "number" } }, { name: "arg1", schema: { type: "number" } }], returns: { type: "promise", value: { type: "number" } } } },
+                    stream: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "number" } }], returns: { type: "generator", value: { type: "number" } } } },
                     bump: { type: "function" },
                     deep: {
                         type: "object",
                         properties: {
-                            greet: { type: "function", signature: { parameters: [{ type: "string" }], returns: { type: "promise", value: { type: "string" } } } },
+                            greet: { type: "function", signature: { parameters: [{ name: "arg0", schema: { type: "string" } }], returns: { type: "promise", value: { type: "string" } } } },
                         },
                         required: ["greet"],
                         additionalProperties: false,

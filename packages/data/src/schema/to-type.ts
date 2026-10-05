@@ -3,7 +3,7 @@
 import { TypedBuffer } from "../typed-buffer/typed-buffer.js";
 import { DeepReadonly, EquivalentTypes, False, True } from "../types/types.js";
 import type { Observe } from "../observe/index.js";
-import { Schema } from "./schema.js";
+import { Parameter, Schema } from "./schema.js";
 
 export type ToType<T, Depth extends number = 5> =
   T extends false ? void :
@@ -74,10 +74,12 @@ type FromSchemaFunction<T, Depth extends number> =
 
 // The signature's parameters tuple; absent ⇒ no args.
 type SignatureParams<Sig> =
-  Sig extends { parameters: infer P } ? P extends readonly Schema[] ? P : readonly [] : readonly [];
+  Sig extends { parameters: infer P } ? P extends readonly Parameter[] ? P : readonly [] : readonly [];
 
-type FromSchemaArgs<P extends readonly Schema[], Depth extends number> = {
-  -readonly [K in keyof P]: ToType<P[K], Depth>;
+// Each parameter contributes its `schema` positionally; the parameter `name` and
+// `description` are metadata for tooling and do not affect the derived signature.
+type FromSchemaArgs<P extends readonly Parameter[], Depth extends number> = {
+  -readonly [K in keyof P]: ToType<P[K]["schema"], Depth>;
 };
 
 // Absent `returns` ⇒ void (a function that returns nothing meaningful).
@@ -330,7 +332,10 @@ type CheckGenerator = True<EquivalentTypes<TestGenerator, AsyncGenerator<boolean
 
 // function
 type TestFunction = ToType<{
-  type: 'function', signature: { parameters: [{ type: 'number' }, { type: 'string' }], returns: { type: 'boolean' } }
+  type: 'function', signature: {
+    parameters: [{ name: 'a', schema: { type: 'number' } }, { name: 'b', schema: { type: 'string' } }],
+    returns: { type: 'boolean' }
+  }
 }>; // (a: number, b: string) => boolean
 type CheckFunction = True<EquivalentTypes<TestFunction, (a: number, b: string) => boolean>>;
 
@@ -343,7 +348,7 @@ type CheckFunctionNoParams = True<EquivalentTypes<TestFunctionNoParams, () => vo
 // `external` invocation-policy metadata never affects the derived function type.
 type TestFunctionExternalIgnored = ToType<{
   type: 'function', signature: {
-    parameters: [{ type: 'number' }], returns: { type: 'promise', value: { type: 'number' } },
+    parameters: [{ name: 'a', schema: { type: 'number' } }], returns: { type: 'promise', value: { type: 'number' } },
     external: { link: true, agent: false }
   }
 }>; // (a: number) => Promise<number>
@@ -355,10 +360,13 @@ type TestStreamingAction = ToType<{
   type: 'function',
   signature: {
     parameters: [{
-      type: 'object',
-      properties: { chunks: { type: 'generator', value: { type: 'number' } } },
-      required: ['chunks'],
-      additionalProperties: false
+      name: 'arg',
+      schema: {
+        type: 'object',
+        properties: { chunks: { type: 'generator', value: { type: 'number' } } },
+        required: ['chunks'],
+        additionalProperties: false
+      }
     }],
     returns: { type: 'promise', value: { type: 'null' } }
   }

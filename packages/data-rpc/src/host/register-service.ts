@@ -52,7 +52,7 @@ function resolve(
         }
         memberSchema = props[key];
     }
-    const params = memberSchema.signature?.parameters;
+    const params = memberSchema.signature?.parameters?.map((p) => p.schema);
     if (params !== undefined) {
         const errors: string[] = [];
         params.forEach((p, i) => {

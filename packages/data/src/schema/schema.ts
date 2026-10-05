@@ -87,9 +87,15 @@ export interface Schema {
    * `{ type: "function", signature: { parameters, returns } }` →
    * `(...args) => ToType<returns>`. Absent `parameters` ⇒ no args; absent
    * `returns` ⇒ void; absent `signature` entirely ⇒ `() => void`.
+   *
+   * Each parameter is a named descriptor (`Parameter`) rather than a bare schema,
+   * so the argument's name and its own documentation are known independently of
+   * its type (`parameter.schema`). `parameter.description` documents the argument;
+   * `parameter.schema.description` documents the type. Neither affects `ToType`,
+   * which derives the call signature positionally from `parameter.schema`.
    */
   signature?: {
-    readonly parameters?: readonly Schema[];
+    readonly parameters?: readonly Parameter[];
     readonly returns?: Schema;
     /**
      * Invocation policy — who may call this function from an **untrusted
@@ -114,6 +120,12 @@ export interface Schema {
     readonly external?: { readonly agent?: boolean; readonly link?: boolean };
   };
   properties?: { readonly [key: string]: Schema };
+  // Per-property metadata kept OUT of `properties` so a property whose type is a
+  // shared/by-reference schema can carry field-level docs without mutating that
+  // shared type. Keyed by the same property name as `properties`. Pure metadata:
+  // does NOT affect `ToType` (a schema differing only in `propertyMeta` derives
+  // the same type). See `PropertyMeta`.
+  propertyMeta?: { readonly [key: string]: PropertyMeta };
   required?: readonly string[];
   additionalProperties?: boolean | Schema;
   oneOf?: readonly Schema[];
@@ -133,4 +145,24 @@ export interface Schema {
     readonly step?: string;
     readonly cubicSpline?: string;
   };
+}
+
+/**
+ * A named function parameter: the argument's `name` and `description` are known
+ * independently of its type (`schema`). `description` documents the argument;
+ * `schema.description` documents the type. Only `schema` affects `ToType`.
+ */
+export interface Parameter {
+  readonly name: string;
+  readonly description?: string;
+  readonly schema: Schema;
+}
+
+/**
+ * Field-level metadata for one object property, held in `Schema.propertyMeta` so it
+ * stays independent of the property's (possibly shared) type. This interface is the
+ * extension point for future per-field metadata that must not live on the type.
+ */
+export interface PropertyMeta {
+  readonly description?: string;
 }

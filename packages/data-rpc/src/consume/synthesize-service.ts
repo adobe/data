@@ -29,7 +29,7 @@ function buildMembers(
         const memberPath = [...path, key];
         if (member.type === "observe" || member.type === "function") {
             const kind = AsyncDataService.memberKind(member);
-            const params = member.signature?.parameters;
+            const params = member.signature?.parameters?.map((p) => p.schema);
             switch (kind) {
                 case "observe":
                     out[key] = makeObserve(ctx, service, memberPath, []);

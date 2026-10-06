@@ -2,6 +2,7 @@
 
 import { Database, SystemFunction, ServiceFactories, FromServiceFactories, FromComputedFactories, type PluginComputedFactories, type IndexDeclarations } from "./database.js";
 import type { ComponentSchemas } from "../component-schemas.js";
+import type { NoReservedNames } from "../reserved-names.js";
 import type { ResourceSchemas } from "../resource-schemas.js";
 import type { ArchetypeComponents } from "../store/archetype-components.js";
 import type { TransactionDeclarations, ToTransactionFunctions } from "../store/transaction-functions.js";
@@ -211,8 +212,8 @@ export function createPlugin<
         services?: SVF & {
             readonly [K: string]: (db: Database.FromPlugin<AmbientPlugin<XP, IP>>) => unknown
         },
-        components?: CS,
-        resources?: RS,
+        components?: CS & NoReservedNames<CS>,
+        resources?: RS & NoReservedNames<RS>,
         archetypes?: A,
         indexes?: IX,
         computed?: CVF & PluginComputedFactories<FullDBForPlugin<RemoveIndex<CS>, RemoveIndex<RS>, RemoveIndex<A>, {}, string, XP['actions'] & IP['actions'], AmbientPlugin<XP, IP>, RemoveIndex<SVF>, RemoveIndex<IX>>>,

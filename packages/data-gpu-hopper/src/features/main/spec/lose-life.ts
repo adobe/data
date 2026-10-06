@@ -7,12 +7,12 @@ import type { State } from "./state.js";
 // no-op once the game has finished. A `collision` sub-transition, not an operation of
 // its own.
 export const loseLife = (
-  state: Pick<State, "lives" | "status" | "frog" | "width">,
+  state: Pick<State, "lives" | "status" | "frog" | "boardWidth">,
 ): Pick<State, "lives" | "status" | "frog"> => {
   if (!GameStatus.isPlaying(state.status))
     return { lives: state.lives, status: state.status, frog: state.frog };
   const lives = state.lives - 1;
   return lives <= 0
     ? { lives: 0, status: "gameOver", frog: state.frog }
-    : { lives, status: state.status, frog: Frog.start(state.width) };
+    : { lives, status: state.status, frog: Frog.start(state.boardWidth) };
 };

@@ -27,6 +27,9 @@ export type Conditional = {
 const schemaTypes = { number: true, integer: true, string: true, boolean: true, null: true, array: true, object: true, 'typed-buffer': true, blob: true, observe: true, promise: true, generator: true, function: true } as const;
 
 export interface Schema {
+  // Never set: it keeps a `Parameter` (`{ name, schema }`) from being mistaken for
+  // the schema it wraps.
+  readonly schema?: never;
   type?: keyof typeof schemaTypes;
   title?: string;
   description?: string;
@@ -93,9 +96,11 @@ export interface Schema {
    * its type (`parameter.schema`). `parameter.description` documents the argument;
    * `parameter.schema.description` documents the type. Neither affects `ToType`,
    * which derives the call signature positionally from `parameter.schema`.
+   * A bare Schema entry is the deprecated positional form; read either with
+   * `Parameter.schemaOf`.
    */
   signature?: {
-    readonly parameters?: readonly Parameter[];
+    readonly parameters?: readonly (Parameter | Schema)[];
     readonly returns?: Schema;
     /**
      * Invocation policy — who may call this function from an **untrusted

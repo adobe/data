@@ -11,8 +11,8 @@ export const newGame = (t: CoreDatabase.Store) => {
   for (const arch of t.queryArchetypes(t.archetypes.Hazard.components)) {
     for (let row = arch.rowCount - 1; row >= 0; row--) t.delete(arch.columns.id.get(row));
   }
-  t.resources.width = width;
-  t.resources.height = height;
+  t.resources.boardWidth = width;
+  t.resources.boardHeight = height;
   t.resources.lanes = lanes;
   t.resources.frog = Frog.start(width);
   t.resources.lives = lives;

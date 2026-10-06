@@ -5,6 +5,8 @@ input: feature
 output: feature
 ---
 
+Legacy feature (has `data/state/` or `services/main-service/`)? Extend it in place per the legacy rules; don't migrate unless asked.
+
 Create the feature's `data/` layer: pure Data declarations, depending only on
 `@adobe/data` and the `data/` of features this one builds on.
 

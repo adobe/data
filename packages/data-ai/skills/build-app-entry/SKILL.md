@@ -5,6 +5,8 @@ input: app
 output: app
 ---
 
+A legacy feature (has `data/state/` or `services/main-service/`) exposes its `MainService` from `services/main-service/`; compose it from there.
+
 Create `src/app/`:
 
 - `schema.ts` — the composed plugin: the base feature's `MainService.plugin`, `imports`

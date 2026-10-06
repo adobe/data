@@ -1,0 +1,72 @@
+---
+paths:
+  - '**/features/*/services/main-service/action-database/actions/**/*.ts'
+---
+
+# services/main-service/actions/ — async orchestration
+
+> **Legacy state-based layout**, kept for existing features (`data/state/` + `services/main-service/`). New features use the layered layout in `../../index.md`.
+
+One action per file: a function taking the **whole database** as its first
+argument and pure `data/` args. Actions orchestrate anything *outside* a
+single transaction — awaiting a `services/` port, sequencing calls, deriving
+timing — and then commit the result through a transaction.
+
+**Every *app-facing, transaction-backed* transition has a corresponding
+same-named action** — the async realization the UI drives. It reads the same
+services the transition injects from `db.services`, so it reproduces both the
+transition's state change (through a transaction) and its side effects. It may
+reuse another transition's transaction (`createRandomTodo` reuses `createTodo`) —
+there need not be a same-named transaction; transactions are the looser layer.
+
+**Per-frame / system transitions are exempt.** In a real-time feature the `step*`
+/ physics / collision transitions are realized by the **systems** tick loop, not
+by an action, and are conformed by the tick-loop test (`systems.md`), not the
+action surface of `checkFeature`. Give an action only to transitions a user/UI invokes directly
+(and skip it too when the realization needs more than one transaction — e.g. a
+`newGame` that both sets bounds and resets is conformed via its transaction).
+
+```ts
+import type { ServiceDatabase } from "../../service-database/service-database.js";
+
+export const addRandomTodo = async (service: ServiceDatabase) => {
+    const name = await service.services.nameGenerator.generateName(); // await a services/ port
+    service.transactions.createTodo({ name });                        // then exactly one commit
+};
+```
+
+- Type the `service` parameter on the lowest database layer exposing what the
+  action touches — usually `ServiceDatabase` (services **and**
+  transactions). Never the action layer itself (that would be a cycle).
+- **Call at most one transaction** per action, so undo/redo stays one step
+  per operation.
+- **Fire-and-forget.** An action's return value is not consumed; results flow
+  back through observables. `service.services.*` calls are `void` or
+  awaited-internally, never surfaced to the caller.
+- Do the outside-world work here: await/sequence `services/` calls, and if a
+  slow call needs timing, compute it here around the call.
+- **Read current state synchronously from the store** (`db.resources` / `db.read`
+  / `db.select`, then a pure `data/` helper) — never from a cached `computed`.
+  Reactive computeds refresh only on a committed transaction, so an imperative
+  read of one can hand back a stale shared cache (and it's the UI's layer, not
+  the action's). This also keeps the action correct under the conformance seed.
+- **ECS-based feature (no `data/state/`):** no conformance cases exist, so **every
+  action carries its own unit test** — build a db, run the action with fake
+  `services`, and assert the committed state and the recorded service calls. The
+  bullet below applies only to **state-based** features (see `../../index.md`, Two modes).
+- **Conformance** is the action surface of the feature's single
+  `conformance/conformance.test.ts` `Conformance.checkFeature(spec)` call. It pulls
+  actions off **`plugin.actions`** and pairs each to the **same-named** `data/state`
+  transition. **The action is the primary seam** — it reads injected services from
+  `db.services`, so the runner synthesizes each recording double from the manifest's
+  `services` templates + the case's `responses` and builds
+  `Database.toSystemDatabase(Database.create(plugin, { services }))`; it runs the action
+  with the case's data `args`, then `Match.assert`s `toState ≡ after` **and** checks the
+  recorded calls against the case's `effects`. No per-op wiring, no coverage guard. A thin
+  **same-named** action gives a transaction-only or renamed transition something to
+  pair with (todo's `reorderTodo`). A streaming/capability action with no transition
+  is skipped. **A per-transition action kept out of the facet** (to bound the
+  plugin's type) is supplied via the manifest's `ops.actions` glob —
+  `ops: { actions: import.meta.glob([".../actions/*.ts", "!.../actions/index.ts"], { eager: true }) }`
+  (p2p negotiation). That is the *only* reason to set `ops` (see `conformance.md`).
+- An `index.ts` barrel feeds the `actions` plugin facet.

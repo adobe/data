@@ -57,8 +57,8 @@ const hopperRenderPlugin = Database.Plugin.create({
     // and a fresh game. Called once when the canvas connects.
     initializeScene(t) {
       newGame(t);
-      const w = t.resources.width;
-      const h = t.resources.height;
+      const w = t.resources.boardWidth;
+      const h = t.resources.boardHeight;
       const cx = (w - 1) / 2;
       const cz = -(h - 1) / 2;
       const d = Math.max(w, h) * 1.15;
@@ -163,7 +163,7 @@ const hopperRenderPlugin = Database.Plugin.create({
           ensure(HazardKind.hazardColor.car);
           ensure(HazardKind.hazardColor.log);
 
-          const w = db.store.resources.width;
+          const w = db.store.resources.boardWidth;
           const cx = (w - 1) / 2;
           for (const lane of db.store.resources.lanes) {
             const meshAsset = ensure(LaneKind.laneColor[lane.kind]);

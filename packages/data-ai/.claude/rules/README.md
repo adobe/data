@@ -26,6 +26,11 @@ features/
     core.md  indexes.md  transactions.md  computed.md  services.md  actions.md
     systems.md  conformance.md
   ui/                 # element / presentation / lazy-wrapper rules
+  data/state.md       # LEGACY state-based layout (existing features only)
+  services/main-service/
+    index.md  core-database.md  components.md  resources.md  archetypes.md
+    indexes.md  transactions.md  computed.md  services.md  actions.md
+    systems.md  conformance.md
 app.md                # src/app/: the composition root
 ```
 
@@ -34,9 +39,9 @@ etc.) apply everywhere, by design. Alongside `features/`, the remaining rules-ro
 `.md` files hold **cross-cutting** patterns the feature rules reference —
 `app.md`, `data-modelling.md`, `archetypes.md` (the query and iteration model),
 `plugin-modelling.md`, `versioning.md`, and the UI rules `element.md` and
-`lazy-element.md` (`features/ui/` holds `presentation.md` and the binding-element and
-lazy-wrapper rules). They live here so the bundle is
-self-contained; this repo symlinks them into its own `.claude/rules/`.
+`lazy-element.md` (`features/ui/` holds `presentation.md` and the lazy-wrapper rule).
+They live here so the bundle is self-contained; this repo symlinks them into its own
+`.claude/rules/`.
 
 Each feature rule's `paths:` glob is scoped to `**/features/*/<layer>/…`, so these
 rules apply once an application organizes its source under `features/<name>/`.

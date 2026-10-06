@@ -6,6 +6,8 @@ paths:
 
 # ui/ — user interface
 
+> **Legacy feature** (has `data/state/` or `services/main-service/`)? Its data and services follow the legacy rules; the ui rules here still apply.
+
 The top layer: UI that binds the feature's `MainService` database (`ecs/main-service.ts`)
 to what the user sees. It owns no business logic — it subscribes to state, hands it to
 a pure presentation, and wires user input to `service.actions.*`.

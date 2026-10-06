@@ -9,8 +9,8 @@ import { create } from "./create.js";
 export const samples: readonly State[] = [
   create(),
   {
-    width: 5,
-    height: 3,
+    boardWidth: 5,
+    boardHeight: 3,
     lanes: [
       { row: 0, kind: "grass" },
       { row: 1, kind: "river" },
@@ -26,8 +26,8 @@ export const samples: readonly State[] = [
     status: "playing",
   },
   {
-    width: 4,
-    height: 2,
+    boardWidth: 4,
+    boardHeight: 2,
     lanes: [
       { row: 0, kind: "grass" },
       { row: 1, kind: "goal" },

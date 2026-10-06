@@ -1,13 +1,16 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import type { Schema as SchemaType, Layout, Conditional, JSONPath, JSONMergePatch, Parameter, PropertyMeta } from "./schema.js";
+import type { Schema as SchemaType, Layout, Conditional, JSONPath, JSONMergePatch, Parameter as ParameterType, PropertyMeta } from "./schema.js";
 
 export type Schema = SchemaType;
 export * as Schema from "./public.js";
 
 export type { FromSchemas } from "./from-schemas.js";
 
-export type { Layout, Conditional, JSONPath, JSONMergePatch, Parameter, PropertyMeta };
+export type Parameter = ParameterType;
+export * as Parameter from "./parameter.js";
+
+export type { Layout, Conditional, JSONPath, JSONMergePatch, PropertyMeta };
 export type { getDynamicSchema } from "./dynamic/index.js";
 
 export * from "./validation/index.js";
@@ -20,3 +23,4 @@ export { toVertexBufferLayout, toVertexBufferLayoutForType } from "./to-vertex-b
 export type { GPUVertexBufferLayout, GPUVertexAttributeDescriptor, GPUVertexFormat } from "./to-vertex-buffer-layout.js";
 export * from "./fractional-index/fractional-index.js";
 export * from "./guid/index.js";
+export { Scope } from "./scope.js";

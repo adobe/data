@@ -24,6 +24,7 @@ export type {
   CaseModule,
   Spec,
   Implementation,
+  FeatureSpec,
   StateMatches,
   FrameCases,
   SystemCases,

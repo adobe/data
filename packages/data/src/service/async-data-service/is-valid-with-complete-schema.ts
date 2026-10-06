@@ -56,6 +56,18 @@ const _incompleteSchema = {
 // Positive: the schema matches the service exactly.
 type _CheckComplete = Assert<IsValidWithCompleteSchema<_AccountService, typeof _accountSchema>>;
 
+// The deprecated bare-Schema parameter form (including an untyped `{}` placeholder) validates too.
+const _bareParameterSchema = {
+  type: "object",
+  properties: {
+    balance: { type: "observe", value: { type: "number" } },
+    deposit: { type: "function", signature: { parameters: [{}], returns: { type: "promise", value: { type: "number" } } } },
+  },
+  required: ["balance", "deposit"],
+  additionalProperties: false,
+} as const satisfies Schema;
+type _CheckBareParameter = Assert<IsValidWithCompleteSchema<_AccountService, typeof _bareParameterSchema>>;
+
 // Negative: an incomplete schema is not a complete description (missing `deposit`).
 // @ts-expect-error — schema omits the `deposit` member
 type _CheckIncompleteFails = Assert<IsValidWithCompleteSchema<_AccountService, typeof _incompleteSchema>>;

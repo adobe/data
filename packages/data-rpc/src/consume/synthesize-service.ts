@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Observe } from "@adobe/data/observe";
-import type { Schema } from "@adobe/data/schema";
+import { Parameter, type Schema } from "@adobe/data/schema";
 import { AsyncDataService, type Service } from "@adobe/data/service";
 import { isPureDataSchema } from "../arg-marshal.js";
 import type { CallerContext } from "./caller-context.js";
@@ -29,7 +29,7 @@ function buildMembers(
         const memberPath = [...path, key];
         if (member.type === "observe" || member.type === "function") {
             const kind = AsyncDataService.memberKind(member);
-            const params = member.signature?.parameters?.map((p) => p.schema);
+            const params = member.signature?.parameters?.map(Parameter.schemaOf);
             switch (kind) {
                 case "observe":
                     out[key] = makeObserve(ctx, service, memberPath, []);

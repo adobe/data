@@ -6,7 +6,7 @@ paths:
 
 # Service authoring
 
-> Inside a feature, `features/services/index.md` governs the folder layout: a small service keeps `create.ts` and `create-fake.ts` flat beside the interface (the single-file exception below); one with helpers moves its implementation into a sub-folder. Database-bound factories in `ecs/services/` follow `features/ecs/services.md`.
+> Inside a feature, `features/services/index.md` covers the service layer; database-bound factories in `ecs/services/` follow `features/ecs/services.md`.
 
 Asynchronous data services. Live in the `services/` layer. Adhere to the namespace rule for type and function organization.
 
@@ -44,74 +44,26 @@ Compile-time check: `Assert<AsyncDataService.IsValid<ServiceInterface>>`.
 
 ---
 
-## Folder structure and cohesion
-
-**MUST NOT** place implementation files alongside the interface file. The `<name>-service/` folder MUST contain only the interface file and
-`public.ts`.
+## Folder structure
 
 ```
 services/<name>-service/
-  <name>-service.ts          ← interface + contract types; `export * as ServiceName from './public.js'` at bottom
-  public.ts                  ← re-exports factory (and other public exports) from the implementation sub-folder
-  <impl-name>/               ← REQUIRED sub-folder for all implementation files
-    create-<name>-service.ts ← factory function
-    *.ts                     ← helpers, utils, constants (implementation-private)
-    *.test.ts                ← tests live here alongside implementation
+  <name>-service.ts   ← interface + contract types; `export * as ServiceName from './public.js'` at bottom
+  create.ts           ← the implementation factory (or a factory that throws when the app must inject it)
+  create-fake.ts      ← an inert fake with every method present
+  public.ts           ← re-exports `create` and `createFake`
 ```
 
-**Single-file exception**: a bare factory with no helpers, no utilities, and no constants MAY live as a flat file alongside the interface.
-The moment any additional implementation file is needed, the factory MUST move into a sub-folder.
-
-**Interface file** (`<name>-service.ts`) — interface declaration and types that define the public service contract. MUST NOT import from any
-implementation file or sub-folder. At the bottom of the file, exports the namespace: `export * as ServiceName from './public.js'`. This
-merges the interface type and the factory namespace under one identifier — callers type against the interface and invoke factory functions
-through the same name.
-
-**Separate types file at the interface level** — only permitted if it contains exclusively public-contract types (types that appear in the
-interface's method signatures or `Observe<>` generic arguments). Implementation-detail types — third-party API shapes, `window.*` global
-augmentations, internal utilities — MUST live inside the implementation sub-folder.
-
-**`*.test.ts` files MUST NOT appear at the interface folder level.** Every test file belongs inside the implementation sub-folder next to
-the code it tests; there is nothing at the interface level to test.
-
-**Implementation sub-folder** — all implementation logic including the factory, utilities, constants, helpers, and their tests. MUST NOT
-depend on the interface file's types via the `public.js` re-export; import directly from `<name>-service.js`.
-
-**public.ts** — MUST re-export the factory function and any other public exports from the implementation sub-folder. Does NOT re-export the
-interface — the interface is exported directly from `<name>-service.ts`.
-
-**No classes** — factory function or static plain object only. `this` bindings are brittle and block higher-order composition.
-
----
-
-## Factory export shape — `singletonFactory` + dual export
-
-Every service factory MUST be wrapped with `singletonFactory` from `factory-functions.js`. This guarantees one instance per argument tuple
-when the same factory is called multiple times, preventing duplicate subscriptions and torn state.
-
-Export **both** the raw `factory` and the singleton-wrapped `create`:
-
-```ts
-// <name>-service/<impl-name>/create-<name>-service.ts
-import { singletonFactory } from 'factory-functions.js';
-
-export const factory = (deps: Deps): NameService => {
-  // implementation
-};
-
-// `factory` — for test injection (bypasses the singleton cache; each test gets a fresh instance)
-// `create`  — for production use (singleton per deps-tuple)
-export const create = singletonFactory(factory);
-```
-
-`public.ts` re-exports both:
-
-```ts
-export { create, factory } from './<impl-name>/create-<name>-service.js';
-```
-
-**Why:** Tests must create fresh instances without sharing a singleton cache. Production callers use `create`; tests that need isolation
-import `factory` directly.
+- **Interface file** (`<name>-service.ts`) — the interface and the types in its method
+  signatures. It never imports an implementation file. The namespace export at the
+  bottom merges the interface type and the factories under one name: callers type
+  against the interface and call `ServiceName.create`.
+- **An implementation that grows helpers** moves into a named sub-folder
+  (`create-<name>-service/` with its helpers and their tests); `public.ts` re-exports
+  its factory. Implementation-only types (third-party API shapes, `window.*`
+  augmentations) live there too, never in the interface file.
+- **No classes** — factory functions or plain objects only. `this` bindings are brittle
+  and block higher-order composition.
 
 ---
 
@@ -124,7 +76,7 @@ identifiers in any method signature, property name, or type parameter.
 
 ```ts
 interface SessionService extends Service {
-  readonly dunamis: DunamisSdk; // UI now knows Dunamis exists
+  readonly analyticsSdk: AnalyticsSdk; // UI now knows which SDK is used
 }
 ```
 
@@ -136,7 +88,7 @@ interface SessionService extends Service {
 }
 ```
 
-The interface is the contract between UI and data layers. If the underlying tool is swapped (Dunamis → another SDK, cookies → localStorage),
+The interface is the contract between UI and data layers. If the underlying tool is swapped (one SDK → another, cookies → localStorage),
 the interface must not change. Any leak of an internal tool name into the interface couples the UI to an implementation detail it must not
 know about.
 
@@ -146,21 +98,19 @@ know about.
 
 When creating or modifying a service:
 
-1. Place in `services/<name>-service/`.
+1. Place it in `services/<name>-service/`.
 2. Interface in `<name>-service.ts` — types only, extend `Service`, add `Assert<AsyncDataService.IsValid<>>`.
-3. All implementation files go inside a named sub-folder (e.g. `create-<name>-service/`).
+3. Add `create.ts`, `create-fake.ts` and `public.ts`; move the implementation into a sub-folder once it needs helpers.
 4. At the bottom of `<name>-service.ts`, add `export * as ServiceName from './public.js'`.
-5. In `public.ts`, re-export the factory (and any other public exports) from the implementation sub-folder.
-6. For front-end services: actions return void only; observables observe Data or Service only. For back-end services: functions return
+5. For front-end services: actions return void only; observables observe Data or Service only. For back-end services: functions return
    `Promise<Data>` or `AsyncGenerator<Data>`.
 
 ---
 
 ## Verify
 
-When any `src/**/services/**/*.ts` file is in the diff, confirm all three invariants:
+When any `services/**` file is in the diff, confirm:
 
-1. **Interface/implementation separation** — every `.ts` file added or modified in `<name>-service/` is either `<name>-service.ts`,
-   `public.ts`, or inside a named sub-folder. Any file at the root of the folder that is neither is a violation.
-2. **`public.ts` completeness** — `public.ts` re-exports the factory function (and any other public exports from the sub-folder).
-3. **Interface file purity** — `<name>-service.ts` contains no imports from implementation sub-folders.
+1. **Interface file purity** — `<name>-service.ts` imports no implementation file.
+2. **`public.ts` completeness** — it re-exports `create` and `createFake` (and any other public factory).
+3. **No implementation-only types in the interface** — they live with the implementation.

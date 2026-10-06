@@ -5,6 +5,8 @@ input: feature
 output: feature
 ---
 
+Legacy feature (has `data/state/` or `services/main-service/`)? Extend it in place per the legacy rules; don't migrate unless asked.
+
 Skip if the spec has no derivations and the UI needs no derived values.
 
 Create `ecs/computed/`: `computed-database.ts` (extends the previous layer, adds

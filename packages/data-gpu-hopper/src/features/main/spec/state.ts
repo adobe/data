@@ -12,8 +12,8 @@ import type { resources } from "../data/resources/index.js";
 // verified against. Every field but `entities` is a singleton (a resource);
 // `entities` holds the moving hazards keyed by a plain numeric id, the values id-less.
 export type State = {
-  readonly width: number;
-  readonly height: number;
+  readonly boardWidth: number;
+  readonly boardHeight: number;
   readonly lanes: readonly Lane[];
   readonly entities: ReadonlyMap<number, Hazard>;
   readonly frog: Frog;

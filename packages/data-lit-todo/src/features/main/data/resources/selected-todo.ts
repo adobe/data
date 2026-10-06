@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Entity, Scope } from "@adobe/data/ecs";
+import { Scope } from "@adobe/data/schema";
+import { Entity } from "@adobe/data/ecs";
 import type { ResourceSchema } from "@adobe/data/ecs";
 
 // The selected todo: a reference to one entity (`Entity.none` = no selection). The

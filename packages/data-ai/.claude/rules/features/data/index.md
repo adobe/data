@@ -5,6 +5,8 @@ paths:
 
 # data/ — the feature's pure Data declarations
 
+> **Legacy feature** (has `data/state/` or `services/main-service/`)? Follow `data/state.md` instead.
+
 The foundation layer. Everything here is a declaration about plain, serializable
 Data: JSON primitives/arrays/objects plus `ReadonlySet`, `ReadonlyMap`, and `Blob`
 (serialize with `Data.stringify` / `Data.parse`). No functions in values, no services,
@@ -26,4 +28,5 @@ fields, it takes them structurally
 (`Iterable<{ readonly mark: PlayerMark; readonly cellIndex: CellIndex }>`).
 
 Components and resources share **one namespace** across every feature in an app:
-a name is one column or one resource, never both, and has one owning feature.
+a name is one column or one resource, never both (the store warns on a clash, and the resource's schema replaces the component's), and
+has one owning feature.

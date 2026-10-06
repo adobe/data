@@ -2,7 +2,7 @@
 
 import type { Data } from "@adobe/data";
 import type { Observe } from "@adobe/data/observe";
-import { validate, type Schema } from "@adobe/data/schema";
+import { Parameter, validate, type Schema } from "@adobe/data/schema";
 import { isPureDataSchema } from "../arg-marshal.js";
 import { reconstructError } from "../consume/reconstruct-error.js";
 import type { RpcError, RpcMessage } from "../protocol.js";
@@ -52,7 +52,7 @@ function resolve(
         }
         memberSchema = props[key];
     }
-    const params = memberSchema.signature?.parameters?.map((p) => p.schema);
+    const params = memberSchema.signature?.parameters?.map(Parameter.schemaOf);
     if (params !== undefined) {
         const errors: string[] = [];
         params.forEach((p, i) => {

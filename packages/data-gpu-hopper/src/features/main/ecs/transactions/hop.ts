@@ -8,5 +8,5 @@ import type { CoreDatabase } from "../core/core-database.js";
 export const hop = (t: CoreDatabase.Store, { direction }: { readonly direction: Direction }) => {
   const { resources } = t;
   if (!GameStatus.isPlaying(resources.status)) return;
-  resources.frog = Frog.hop(resources.frog, direction, resources.width, resources.height);
+  resources.frog = Frog.hop(resources.frog, direction, resources.boardWidth, resources.boardHeight);
 };

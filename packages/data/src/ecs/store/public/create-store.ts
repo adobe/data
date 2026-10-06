@@ -26,6 +26,9 @@ import { DefaultFactoryKeys } from "../../default-factory-keys.js";
 import { IndexDeclarations } from "../index-types.js";
 import { MemoryAllocator } from "../../../cache/memory-allocator.js";
 
+// Names already reported by the component/resource clash warning (once per process).
+const warnedClashes = new Set<string>();
+
 export interface CreateStoreOptions {
     /**
      * Backing memory allocator for every numeric component column. Omit for the
@@ -377,6 +380,13 @@ export function createStore<
             // the built-in quadrant marker / identity column in the shared schema map.
             if (RESERVED_COMPONENT_NAMES.includes(name)) {
                 throw new Error(`Resource name "${name}" is reserved by the ECS and cannot be defined.`);
+            }
+            // Components and resources share one schema map, so a same-named resource
+            // replaces the component's schema there (its column takes on the resource's
+            // flags). Kept for compatibility; rename one of them.
+            if (name in componentSchemas && !warnedClashes.has(name)) {
+                warnedClashes.add(name);
+                console.warn(`@adobe/data: "${name}" is both a component and a resource; the resource schema replaces the component's. Rename one of them.`);
             }
             if (name in resourceSchemas) {
                 if (resourceSchemas[name as keyof typeof resourceSchemas] !== newResourceSchema) {

@@ -5,6 +5,8 @@ input: feature
 output: feature
 ---
 
+Legacy feature (has `data/state/` or `services/main-service/`)? Extend it in place per the legacy rules; don't migrate unless asked.
+
 Skip if the feature has no services.
 
 Create `ecs/services/service-database.ts` (extends the previous layer), registering

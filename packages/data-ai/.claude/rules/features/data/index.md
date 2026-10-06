@@ -5,6 +5,8 @@ paths:
 
 # data/ — the feature's pure Data declarations
 
+> **Legacy feature** (has `data/state/` or `services/main-service/`)? Follow `data/state.md` instead.
+
 The foundation layer. Everything here is a declaration about plain, serializable
 Data: JSON primitives/arrays/objects plus `ReadonlySet`, `ReadonlyMap`, and `Blob`
 (serialize with `Data.stringify` / `Data.parse`). No functions in values, no services,

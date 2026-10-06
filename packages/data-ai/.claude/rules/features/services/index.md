@@ -5,6 +5,8 @@ paths:
 
 # services/ — the feature's services
 
+> **Legacy feature** (has `data/state/` or `services/main-service/`)? Follow `services/main-service/` instead.
+
 A service is the boundary between the feature and the outside world (generation,
 analytics, networking). Each is a namespace folder (`global/namespace.md`) holding its
 interface, its implementation and a fake. Services depend only on `data/`.

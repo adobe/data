@@ -15,16 +15,23 @@ describe("createStore", () => {
     );
 
     describe("component/resource name clashes", () => {
-        const mode = { type: "number", default: 0 } as const;
-
-        it("throws when a resource reuses a component's name", () => {
-            const store = createStore({ components: { mode }, resources: {}, archetypes: {} });
-            expect(() => store.extend({ components: {}, resources: { mode }, archetypes: {} })).toThrow(/already a component/);
+        it("warns once and lets the resource schema replace the component's", () => {
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+            const component = { type: "number", default: 0 } as const;
+            const resource = { type: "number", default: 7, nonPersistent: true } as const;
+            const clash = "clashWarnsOnce";
+            const first = createStore({ components: { [clash]: component }, resources: {}, archetypes: {} });
+            first.extend({ components: {}, resources: { [clash]: resource }, archetypes: {} });
+            expect(first.componentSchemas[clash]).toBe(resource);
+            const second = createStore({ components: { [clash]: component }, resources: {}, archetypes: {} });
+            second.extend({ components: {}, resources: { [clash]: resource }, archetypes: {} });
+            expect(warn.mock.calls.filter(([message]) => String(message).includes(clash))).toHaveLength(1);
+            warn.mockRestore();
         });
 
-        it("throws when a component reuses a resource's name", () => {
-            const store = createStore({ components: {}, resources: { mode }, archetypes: {} });
-            expect(() => store.extend({ components: { mode }, resources: {}, archetypes: {} })).toThrow(/already a resource/);
+        it("throws when a component redefines a resource's name with a different schema", () => {
+            const store = createStore({ components: {}, resources: { mode: { type: "number", default: 0 } }, archetypes: {} });
+            expect(() => store.extend({ components: { mode: { type: "number", default: 1 } }, resources: {}, archetypes: {} })).toThrow(/must be identical/);
         });
     });
 

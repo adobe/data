@@ -26,6 +26,11 @@ features/
     core.md  indexes.md  transactions.md  computed.md  services.md  actions.md
     systems.md  conformance.md
   ui/                 # element / presentation / lazy-wrapper rules
+  data/state.md       # LEGACY state-based layout (existing features only)
+  services/main-service/
+    index.md  core-database.md  components.md  resources.md  archetypes.md
+    indexes.md  transactions.md  computed.md  services.md  actions.md
+    systems.md  conformance.md
 app.md                # src/app/: the composition root
 ```
 

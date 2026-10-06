@@ -96,9 +96,11 @@ export interface Schema {
    * its type (`parameter.schema`). `parameter.description` documents the argument;
    * `parameter.schema.description` documents the type. Neither affects `ToType`,
    * which derives the call signature positionally from `parameter.schema`.
+   * A bare Schema entry is the deprecated positional form; read either with
+   * `Parameter.schemaOf`.
    */
   signature?: {
-    readonly parameters?: readonly Parameter[];
+    readonly parameters?: readonly (Parameter | Schema)[];
     readonly returns?: Schema;
     /**
      * Invocation policy — who may call this function from an **untrusted

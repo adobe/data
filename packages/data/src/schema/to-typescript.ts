@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Schema } from "./schema.js";
+import { isNamed, schemaOf } from "./parameter.js";
 
 const indent = "  ";
 
@@ -115,7 +116,7 @@ function walk(schema: Schema, keyHint: string | undefined, multiplier: number, c
     case "function":
       if (schema.signature) {
         for (const parameter of schema.signature.parameters ?? []) {
-          walk(parameter.schema, undefined, multiplier, context);
+          walk(schemaOf(parameter), undefined, multiplier, context);
         }
         if (schema.signature.returns) walk(schema.signature.returns, undefined, multiplier, context);
       }
@@ -335,7 +336,10 @@ function valueExpression(schema: Schema, depth: number, context: Context): strin
 function functionExpression(schema: Schema, depth: number, context: Context): string {
   const { signature } = schema;
   if (!signature) return "() => void";
-  const parameters = signature.parameters ?? [];
+  // A bare Schema entry has no name; it renders positionally as `argN`.
+  const parameters = (signature.parameters ?? []).map((parameter, index) =>
+    isNamed(parameter) ? parameter : { name: `arg${index}`, schema: parameter },
+  );
   const returns = signature.returns ? typeExpression(signature.returns, depth, context) : "void";
 
   // With no argument docs, keep the compact single-line form; otherwise break each

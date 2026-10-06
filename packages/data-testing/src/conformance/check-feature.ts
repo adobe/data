@@ -6,6 +6,7 @@ import { adaptCases } from "./adapt-spec.js";
 import { withNoOp } from "./with-no-op.js";
 import type { SchemaSource } from "./refify.js";
 import type { Implementation } from "./implementation.js";
+import { checkLegacyFeature, type FeatureSpec } from "./legacy-feature.js";
 
 type AnyFn = (...args: never[]) => unknown;
 
@@ -21,7 +22,7 @@ const frameCasesOf = (frame: object | undefined, services: Readonly<Record<strin
 // The ecs conformance suite: the spec's cases drive the implementation's actions and
 // computeds (fresh doubles again, so the pure and ecs runs never share FIFO state).
 // A spec op with no same-named implementation is a named failure.
-export const checkFeature = <State extends object, Fns extends Record<string, AnyFn>, StoreT extends SchemaSource>(
+const checkImplementation = <State extends object, Fns extends Record<string, AnyFn>, StoreT extends SchemaSource>(
   impl: Implementation<State, Fns, StoreT>,
 ): void => {
   const { spec } = impl;
@@ -61,3 +62,23 @@ export const checkFeature = <State extends object, Fns extends Record<string, An
     });
   }
 };
+
+export function checkFeature<State extends object, Fns extends Record<string, AnyFn>, StoreT extends SchemaSource>(
+  impl: Implementation<State, Fns, StoreT>,
+): void;
+/** @deprecated Pass a `Conformance.implementation` manifest. */
+export function checkFeature<State extends object, Fns extends Record<string, AnyFn>, StoreT extends SchemaSource>(
+  spec: FeatureSpec<State, Fns, StoreT>,
+): void;
+export function checkFeature(
+  manifest: Implementation<object, Record<string, AnyFn>, SchemaSource> | FeatureSpec<object, Record<string, AnyFn>, SchemaSource>,
+): void {
+  if (isImplementation(manifest)) checkImplementation(manifest);
+  else checkLegacyFeature(manifest);
+}
+
+// Runtime invariant: a `Conformance.implementation` wraps its pure manifest in `spec`;
+// a `Conformance.feature` manifest is flat and has no `spec` member.
+const isImplementation = (
+  manifest: Implementation<object, Record<string, AnyFn>, SchemaSource> | FeatureSpec<object, Record<string, AnyFn>, SchemaSource>,
+): manifest is Implementation<object, Record<string, AnyFn>, SchemaSource> => "spec" in manifest;

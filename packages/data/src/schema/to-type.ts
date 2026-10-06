@@ -74,12 +74,13 @@ type FromSchemaFunction<T, Depth extends number> =
 
 // The signature's parameters tuple; absent ⇒ no args.
 type SignatureParams<Sig> =
-  Sig extends { parameters: infer P } ? P extends readonly Parameter[] ? P : readonly [] : readonly [];
+  Sig extends { parameters: infer P } ? P extends readonly (Parameter | Schema)[] ? P : readonly [] : readonly [];
 
-// Each parameter contributes its `schema` positionally; the parameter `name` and
-// `description` are metadata for tooling and do not affect the derived signature.
-type FromSchemaArgs<P extends readonly Parameter[], Depth extends number> = {
-  -readonly [K in keyof P]: ToType<P[K]["schema"], Depth>;
+// Each parameter contributes its `schema` positionally (a bare Schema entry is its own
+// schema); the parameter `name` and `description` are metadata for tooling and do not
+// affect the derived signature.
+type FromSchemaArgs<P extends readonly (Parameter | Schema)[], Depth extends number> = {
+  -readonly [K in keyof P]: ToType<P[K] extends { readonly schema: infer S } ? S : P[K], Depth>;
 };
 
 // Absent `returns` ⇒ void (a function that returns nothing meaningful).

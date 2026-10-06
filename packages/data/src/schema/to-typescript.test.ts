@@ -631,6 +631,14 @@ describe("Schema.toTypeScript", () => {
       expect(Schema.toTypeScript(schema, "F")).toBe("type F = (x: number, y: number) => null;");
     });
 
+    it("renders a deprecated bare-Schema parameter positionally as argN", () => {
+      const schema = {
+        type: "function",
+        signature: { parameters: [{ name: "x", schema: { type: "number" } }, { type: "string" }] },
+      } as const satisfies Schema;
+      expect(Schema.toTypeScript(schema, "F")).toBe("type F = (x: number, arg1: string) => void;");
+    });
+
     it("breaks parameters onto their own lines with independent descriptions", () => {
       const vec2 = {
         title: "Vec2",

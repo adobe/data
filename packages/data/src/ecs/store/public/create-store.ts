@@ -26,6 +26,9 @@ import { DefaultFactoryKeys } from "../../default-factory-keys.js";
 import { IndexDeclarations } from "../index-types.js";
 import { MemoryAllocator } from "../../../cache/memory-allocator.js";
 
+// Names already reported by the component/resource clash warning (once per process).
+const warnedClashes = new Set<string>();
+
 export interface CreateStoreOptions {
     /**
      * Backing memory allocator for every numeric component column. Omit for the
@@ -358,10 +361,6 @@ export function createStore<
             if (RESERVED_COMPONENT_NAMES.includes(name)) {
                 throw new Error(`Component name "${name}" is reserved by the ECS and cannot be defined.`);
             }
-            // Components and resources share one namespace (one schema map).
-            if (name in resourceSchemas) {
-                throw new Error(`"${name}" is already a resource; a component cannot share its name.`);
-            }
             if (name in componentAndResourceSchemas) {
                 if (componentAndResourceSchemas[name as keyof typeof componentAndResourceSchemas] !== newComponentSchema) {
                     throw new Error(`Component schema for "${name}" must be identical when extending.`);
@@ -382,8 +381,12 @@ export function createStore<
             if (RESERVED_COMPONENT_NAMES.includes(name)) {
                 throw new Error(`Resource name "${name}" is reserved by the ECS and cannot be defined.`);
             }
-            if (name in componentSchemas) {
-                throw new Error(`"${name}" is already a component; a resource cannot share its name.`);
+            // Components and resources share one schema map, so a same-named resource
+            // replaces the component's schema there (its column takes on the resource's
+            // flags). Kept for compatibility; rename one of them.
+            if (name in componentSchemas && !warnedClashes.has(name)) {
+                warnedClashes.add(name);
+                console.warn(`@adobe/data: "${name}" is both a component and a resource; the resource schema replaces the component's. Rename one of them.`);
             }
             if (name in resourceSchemas) {
                 if (resourceSchemas[name as keyof typeof resourceSchemas] !== newResourceSchema) {

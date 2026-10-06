@@ -26,9 +26,6 @@ import { DefaultFactoryKeys } from "../../default-factory-keys.js";
 import { IndexDeclarations } from "../index-types.js";
 import { MemoryAllocator } from "../../../cache/memory-allocator.js";
 
-// Names already reported by the component/resource clash warning (once per process).
-const warnedClashes = new Set<string>();
-
 export interface CreateStoreOptions {
     /**
      * Backing memory allocator for every numeric component column. Omit for the
@@ -46,6 +43,12 @@ export interface CreateStoreOptions {
      * archetype is resolved (fail fast, not per insert).
      */
     defaultFactories?: Record<string, () => unknown>;
+    /**
+     * Names acknowledged as both a component and a resource, so they don't warn. The
+     * resource schema replaces the component's (the 0.10.20 behaviour). Transitional:
+     * rename one side and drop it from this list; an unlisted clash warns.
+     */
+    nameClashes?: readonly string[];
 }
 
 export function createStore<
@@ -81,6 +84,7 @@ export function createStore<
     const resourceSchemas = {} as RS;
     const archetypeComponentNames = {} as A;
     const componentAndResourceSchemas: { [K in StringKeyof<C | R>]: Schema } = {} as any;
+    const acknowledgedClashes = new Set(options?.nameClashes);
 
     const core = createCore(
         componentAndResourceSchemas,
@@ -383,10 +387,9 @@ export function createStore<
             }
             // Components and resources share one schema map, so a same-named resource
             // replaces the component's schema there (its column takes on the resource's
-            // flags). Kept for compatibility; rename one of them.
-            if (name in componentSchemas && !warnedClashes.has(name)) {
-                warnedClashes.add(name);
-                console.warn(`@adobe/data: "${name}" is both a component and a resource; the resource schema replaces the component's. Rename one of them.`);
+            // flags). Kept for compatibility; rename one, or acknowledge it in `nameClashes`.
+            if (name in componentSchemas && !acknowledgedClashes.has(name)) {
+                console.warn(`@adobe/data: "${name}" is both a component and a resource; the resource schema replaces the component's. Rename one, or list it in the store's nameClashes option.`);
             }
             if (name in resourceSchemas) {
                 if (resourceSchemas[name as keyof typeof resourceSchemas] !== newResourceSchema) {

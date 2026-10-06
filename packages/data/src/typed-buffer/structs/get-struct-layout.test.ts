@@ -434,3 +434,20 @@ describe("getStructLayout", () => {
     });
 
 }); 
+describe("getStructLayout memoization", () => {
+    it("returns the same layout for the same schema, so struct read/write compile once", () => {
+        const schema = { type: "object", properties: { x: { type: "number", precision: 1 } }, required: ["x"] } as const;
+        expect(getStructLayout(schema)).toBe(getStructLayout(schema));
+        expect(getStructLayout(schema, false)).toBe(getStructLayout(schema));
+    });
+});
+
+describe("getStructLayout optional fields", () => {
+    it("gives a fill only to fields not listed in required", () => {
+        const vec2 = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } as const;
+        const layout = getStructLayout({ type: "object", properties: { a: vec2, b: { ...vec2, default: [1, 2] } }, required: ["a"] });
+        expect(layout.fields.a!.fill).toBeUndefined();
+        expect(layout.fields.b!.fill).toEqual([1, 2]);
+        expect(Object.isFrozen(layout.fields.b!.fill)).toBe(true);
+    });
+});

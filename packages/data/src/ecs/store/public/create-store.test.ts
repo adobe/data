@@ -15,23 +15,53 @@ describe("createStore", () => {
     );
 
     describe("component/resource name clashes", () => {
-        it("warns once and lets the resource schema replace the component's", () => {
+        const component = { type: "number", default: 0 } as const;
+        const resource = { type: "number", default: 7, nonPersistent: true } as const;
+        const clashWarnings = (warn: { mock: { calls: unknown[][] } }) =>
+            warn.mock.calls.filter(([message]) => String(message).includes("both a component and a resource"));
+
+        it("warns on every store with an unacknowledged clash and lets the resource schema win", () => {
             const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-            const component = { type: "number", default: 0 } as const;
-            const resource = { type: "number", default: 7, nonPersistent: true } as const;
-            const clash = "clashWarnsOnce";
-            const first = createStore({ components: { [clash]: component }, resources: {}, archetypes: {} });
-            first.extend({ components: {}, resources: { [clash]: resource }, archetypes: {} });
-            expect(first.componentSchemas[clash]).toBe(resource);
-            const second = createStore({ components: { [clash]: component }, resources: {}, archetypes: {} });
-            second.extend({ components: {}, resources: { [clash]: resource }, archetypes: {} });
-            expect(warn.mock.calls.filter(([message]) => String(message).includes(clash))).toHaveLength(1);
+            for (let i = 0; i < 2; i++) {
+                const store = createStore({ components: { mode: component }, resources: {}, archetypes: {} });
+                store.extend({ components: {}, resources: { mode: resource }, archetypes: {} });
+                expect(store.componentSchemas.mode).toBe(resource);
+            }
+            expect(clashWarnings(warn)).toHaveLength(2);
+            warn.mockRestore();
+        });
+
+        it("does not warn for a clash listed in nameClashes", () => {
+            const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+            const store = createStore({ components: { mode: component }, resources: {}, archetypes: {} }, { nameClashes: ["mode"] });
+            store.extend({ components: {}, resources: { mode: resource }, archetypes: {} });
+            expect(store.componentSchemas.mode).toBe(resource);
+            expect(clashWarnings(warn)).toHaveLength(0);
             warn.mockRestore();
         });
 
         it("throws when a component redefines a resource's name with a different schema", () => {
             const store = createStore({ components: {}, resources: { mode: { type: "number", default: 0 } }, archetypes: {} });
             expect(() => store.extend({ components: { mode: { type: "number", default: 1 } }, resources: {}, archetypes: {} })).toThrow(/must be identical/);
+        });
+    });
+
+    describe("struct schemas with optional fields", () => {
+        const vec2 = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 } as const;
+        const pair = { type: "object", properties: { a: vec2, b: vec2 }, default: {} } as const;
+
+        it("creates a resource whose default omits every field", () => {
+            const store = createStore({ components: {}, resources: { pair }, archetypes: {} });
+            expect(store.resources.pair).toEqual({ a: [0, 0], b: [0, 0] });
+        });
+
+        it("inserts a component with absent fields and round-trips it", () => {
+            const store = createStore({ components: { pair }, resources: {}, archetypes: { Pair: ["pair"] } });
+            const id = store.archetypes.Pair.insert({ pair: { a: [1, 2] } });
+            expect(store.read(id)?.pair).toEqual({ a: [1, 2], b: [0, 0] });
+            const restored = createStore({ components: { pair }, resources: {}, archetypes: { Pair: ["pair"] } });
+            restored.fromData(store.toData());
+            expect(restored.read(id)?.pair).toEqual({ a: [1, 2], b: [0, 0] });
         });
     });
 

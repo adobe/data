@@ -3,8 +3,8 @@
 import type { Schema } from "./schema.js";
 
 /**
- * Resolves a `function` schema's untrusted-channel invocation policy
- * (`schema.external`) into plain booleans, applying the two channels' opposite
+ * Resolves a schema's untrusted-channel exposure policy (`schema.external`, falling
+ * back to the deprecated `schema.signature.external`) into plain booleans, applying the two channels' opposite
  * default polarity in ONE place so call sites never re-derive it (getting the
  * `=== true` vs `!== false` polarity wrong on the link channel would be a
  * security hole):
@@ -19,7 +19,7 @@ import type { Schema } from "./schema.js";
  * (link denied, agent allowed).
  */
 export function resolveExternalInvocation(schema: Schema): { readonly link: boolean; readonly agent: boolean } {
-  const external = schema.signature?.external;
+  const external = schema.external ?? schema.signature?.external;
   return {
     link: external?.link === true,
     agent: external?.agent !== false,

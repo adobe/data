@@ -821,4 +821,59 @@ describe("Schema.toTypeScript", () => {
       );
     });
   });
+
+  describe("external audience", () => {
+    const point = { type: "object", properties: { x: { type: "number" } }, required: ["x"] } as const satisfies Schema;
+    const service = {
+      type: "object",
+      properties: {
+        count: { type: "observe", value: { type: "number" } },
+        secret: { type: "observe", value: point, external: { agent: false } },
+        reset: { type: "function", external: { agent: false } },
+        legacy: { type: "function", signature: { external: { agent: false } } },
+        share: { type: "function", external: { link: true } },
+        group: {
+          type: "object",
+          properties: {
+            at: point,
+            hidden: { type: "observe", value: { type: "string" }, external: { agent: false } },
+          },
+          required: ["at", "hidden"],
+        },
+      },
+      required: ["count", "secret", "reset", "legacy", "share", "group"],
+    } as const satisfies Schema;
+
+    it("omits agent-hidden members at any depth by default", () => {
+      // `point` appears once once `secret` is dropped, so it is no longer hoisted.
+      expect(Schema.toTypeScript(service, "Svc")).toBe(
+        [
+          "interface Svc {",
+          "  readonly count: Observe<number>;",
+          "  readonly share: () => void;",
+          "  readonly group: {",
+          "    readonly at: {",
+          "      readonly x: number;",
+          "    };",
+          "  };",
+          "}",
+        ].join("\n"),
+      );
+    });
+
+    it("link audience keeps only link-enabled members", () => {
+      expect(Schema.toTypeScript(service, "Svc", { audience: "link" })).toBe(
+        ["interface Svc {", "  readonly share: () => void;", "}"].join("\n"),
+      );
+    });
+
+    it("all audience emits every member", () => {
+      const out = Schema.toTypeScript(service, "Svc", { audience: "all" });
+      for (const key of ["count", "secret", "reset", "legacy", "share", "group", "hidden"]) {
+        expect(out).toContain(`readonly ${key}`);
+      }
+      // `point` now appears twice, so it is hoisted.
+      expect(out.startsWith("interface At {")).toBe(true);
+    });
+  });
 });

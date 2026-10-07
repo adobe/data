@@ -75,8 +75,6 @@ interface CreateDatabaseOptions<P extends Database.Plugin<any, any, any, any, an
      * absent from this map throws when its first archetype is resolved.
      */
     defaultFactories?: Record<string, () => unknown>;
-    /** Component/resource names acknowledged as clashing (see {@link CreateStoreOptions}). */
-    nameClashes?: readonly string[];
 }
 
 export function createDatabase(): Database<{}, {}, {}, {}, never, {}, {}, {}>
@@ -90,7 +88,7 @@ export function createDatabase(
     plugin?: Database.Plugin<any, any, any, any, any, any, any, any>,
     options?: CreateDatabaseOptions<any>,
 ): any {
-    const db = createEmptyDatabase({ concurrency: options?.concurrency, versioning: options?.versioning, allocator: options?.allocator, defaultFactories: options?.defaultFactories, nameClashes: options?.nameClashes });
+    const db = createEmptyDatabase({ concurrency: options?.concurrency, versioning: options?.versioning, allocator: options?.allocator, defaultFactories: options?.defaultFactories });
     if (plugin === undefined) {
         return db;
     }
@@ -143,18 +141,17 @@ function scopedSchemas(schemas: StoreSchemas, scope: PersistenceScope | undefine
  * Creates a database with empty store, no transactions, actions, services, computed, or systems.
  * All content is added via .extend(plugin). Single code path for extension.
  */
-function createEmptyDatabase({ concurrency, versioning, allocator, defaultFactories, nameClashes }: {
+function createEmptyDatabase({ concurrency, versioning, allocator, defaultFactories }: {
     concurrency: ConcurrencyStrategyFactory | undefined,
     versioning?: DatabaseVersioning,
     allocator?: MemoryAllocator,
     defaultFactories?: Record<string, () => unknown>,
-    nameClashes?: readonly string[],
 }): any {
     const store = Store.create({
         components: {},
         resources: {},
         archetypes: {},
-    }, { allocator, defaultFactories, nameClashes });
+    }, { allocator, defaultFactories });
 
     const observedDatabase = createObservedDatabase(store);
 

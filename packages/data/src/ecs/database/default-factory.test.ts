@@ -10,6 +10,10 @@
 import { describe, it, expect } from "vitest";
 import { Database } from "./database.js";
 import type { Schema } from "../../schema/index.js";
+import type { Store } from "../store/index.js";
+import { applyOperations } from "./transactional-store/apply-operations.js";
+import type { Assert } from "../../types/assert.js";
+import type { Equal } from "../../types/equal.js";
 
 // `guid` stands in for a cross-runtime identity: a value the archetype must have
 // at creation but that callers usually don't supply. `defaultFactory: "guid"`
@@ -83,4 +87,31 @@ describe("insert-time default-factory (full plugin chain)", () => {
         // @ts-expect-error - `value` is not a default-factory key, still required.
         t.archetypes.Node.insert({ guid: 2 });
     };
+}
+
+// A default-factory store must stay assignable to the any-row `Store<any, any, any>`
+// that generic helpers take. Otherwise a single such transaction member (e.g. the
+// library's own `applyOperations`) is rejected by the plugin's transaction constraint
+// and every transaction on that plugin silently vanishes from `db.transactions`.
+{
+    const anyStorePlugin = Database.Plugin.create({
+        components: { guid, value },
+        archetypes: { Node: ["guid", "value"] } as const,
+        transactions: {
+            applyOperations,
+            addNode(t, args: { value: number }) {
+                return t.archetypes.Node.insert(args);
+            },
+        },
+    });
+    const _transactionsKept = (db: Database.FromPlugin<typeof anyStorePlugin>) => {
+        db.transactions.addNode({ value: 1 });
+        db.transactions.applyOperations([]);
+    };
+
+    type NodeStore = Database.Plugin.ToStore<typeof nodePlugin>;
+    const _assignable = (t: NodeStore): Store<any, any, any> => t;
+    // Store's inference helpers match a default-factory store instead of yielding `never`.
+    type _CheckArchetypes = Assert<Equal<Store.Archetypes<NodeStore>, { readonly Node: readonly ["guid", "value"] }>>;
+    type _CheckResourcesNotNever = Assert<Equal<[Store.Resources<NodeStore>] extends [never] ? true : false, false>>;
 }

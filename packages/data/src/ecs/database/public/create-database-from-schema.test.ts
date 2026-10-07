@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { Database } from "../database.js";
 import { Store } from "../../store/index.js";
 import { F32 } from "../../../math/f32/index.js";
@@ -155,16 +155,17 @@ describe("Database.create from plugin", () => {
 });
 
 
-describe("Database.create nameClashes", () => {
-    it("passes the acknowledged clashes through to the store", () => {
-        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+describe("Database.create name clashes", () => {
+    it("throws when a plugin's resource reuses a component name from the plugin it extends", () => {
         const base = Database.Plugin.create({ components: { mode: { type: "number", default: 0 } } });
-        const plugin = Database.Plugin.create({ extends: base, resources: { mode: { type: "number", default: 7 } } });
-        const clashes = () => warn.mock.calls.filter(([message]) => String(message).includes("both a component and a resource"));
-        Database.create(plugin);
-        expect(clashes()).toHaveLength(1);
-        Database.create(plugin, { nameClashes: ["mode"] });
-        expect(clashes()).toHaveLength(1);
-        warn.mockRestore();
+        // @ts-expect-error — also a compile error; this covers the runtime check
+        const plugin = Database.Plugin.create({ extends: base, resources: { mode: { type: "number", default: 0 } } });
+        expect(() => Database.create(plugin)).toThrow(/"mode" is both a component and a resource/);
+    });
+
+    it("throws when combined plugins declare the name as a component and a resource", () => {
+        const a = Database.Plugin.create({ components: { size: { type: "number", default: 0 } } });
+        const b = Database.Plugin.create({ resources: { size: { type: "number", default: 0 } } });
+        expect(() => Database.create(Database.Plugin.combine(a, b))).toThrow(/"size" is both a component and a resource/);
     });
 });

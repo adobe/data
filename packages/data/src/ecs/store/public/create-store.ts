@@ -43,13 +43,13 @@ export interface CreateStoreOptions {
      * archetype is resolved (fail fast, not per insert).
      */
     defaultFactories?: Record<string, () => unknown>;
-    /**
-     * Names acknowledged as both a component and a resource, so they don't warn. The
-     * resource schema replaces the component's (the 0.10.20 behaviour). Transitional:
-     * rename one side and drop it from this list; an unlisted clash warns.
-     */
-    nameClashes?: readonly string[];
 }
+
+// A resource is stored as a same-named component column on its own entity, so a
+// name can't be both: the schemas would collide and the component's queries would
+// return the resource's entity.
+const nameClashMessage = (name: string) =>
+    `"${name}" is both a component and a resource. A name must be one or the other; rename one of them.`;
 
 export function createStore<
     CS extends ComponentSchemas = {},
@@ -84,7 +84,6 @@ export function createStore<
     const resourceSchemas = {} as RS;
     const archetypeComponentNames = {} as A;
     const componentAndResourceSchemas: { [K in StringKeyof<C | R>]: Schema } = {} as any;
-    const acknowledgedClashes = new Set(options?.nameClashes);
 
     const core = createCore(
         componentAndResourceSchemas,
@@ -365,8 +364,11 @@ export function createStore<
             if (RESERVED_COMPONENT_NAMES.includes(name)) {
                 throw new Error(`Component name "${name}" is reserved by the ECS and cannot be defined.`);
             }
-            if (name in componentAndResourceSchemas) {
-                if (componentAndResourceSchemas[name as keyof typeof componentAndResourceSchemas] !== newComponentSchema) {
+            if (name in resourceSchemas) {
+                throw new Error(nameClashMessage(name));
+            }
+            if (name in componentSchemas) {
+                if (componentSchemas[name as keyof typeof componentSchemas] !== newComponentSchema) {
                     throw new Error(`Component schema for "${name}" must be identical when extending.`);
                 }
                 continue;
@@ -385,11 +387,8 @@ export function createStore<
             if (RESERVED_COMPONENT_NAMES.includes(name)) {
                 throw new Error(`Resource name "${name}" is reserved by the ECS and cannot be defined.`);
             }
-            // Components and resources share one schema map, so a same-named resource
-            // replaces the component's schema there (its column takes on the resource's
-            // flags). Kept for compatibility; rename one, or acknowledge it in `nameClashes`.
-            if (name in componentSchemas && !acknowledgedClashes.has(name)) {
-                console.warn(`@adobe/data: "${name}" is both a component and a resource; the resource schema replaces the component's. Rename one, or list it in the store's nameClashes option.`);
+            if (name in componentSchemas) {
+                throw new Error(nameClashMessage(name));
             }
             if (name in resourceSchemas) {
                 if (resourceSchemas[name as keyof typeof resourceSchemas] !== newResourceSchema) {

@@ -15,34 +15,21 @@ describe("createStore", () => {
     );
 
     describe("component/resource name clashes", () => {
-        const component = { type: "number", default: 0 } as const;
-        const resource = { type: "number", default: 7, nonPersistent: true } as const;
-        const clashWarnings = (warn: { mock: { calls: unknown[][] } }) =>
-            warn.mock.calls.filter(([message]) => String(message).includes("both a component and a resource"));
+        const schema = { type: "number", default: 0 } as const;
+        const clash = /"mode" is both a component and a resource/;
 
-        it("warns on every store with an unacknowledged clash and lets the resource schema win", () => {
-            const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-            for (let i = 0; i < 2; i++) {
-                const store = createStore({ components: { mode: component }, resources: {}, archetypes: {} });
-                store.extend({ components: {}, resources: { mode: resource }, archetypes: {} });
-                expect(store.componentSchemas.mode).toBe(resource);
-            }
-            expect(clashWarnings(warn)).toHaveLength(2);
-            warn.mockRestore();
+        it("throws when a resource reuses a component's name, even with the same schema", () => {
+            const store = createStore({ components: { mode: schema }, resources: {}, archetypes: {} });
+            expect(() => store.extend({ components: {}, resources: { mode: schema }, archetypes: {} })).toThrow(clash);
         });
 
-        it("does not warn for a clash listed in nameClashes", () => {
-            const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-            const store = createStore({ components: { mode: component }, resources: {}, archetypes: {} }, { nameClashes: ["mode"] });
-            store.extend({ components: {}, resources: { mode: resource }, archetypes: {} });
-            expect(store.componentSchemas.mode).toBe(resource);
-            expect(clashWarnings(warn)).toHaveLength(0);
-            warn.mockRestore();
+        it("throws when a component reuses a resource's name, even with the same schema", () => {
+            const store = createStore({ components: {}, resources: { mode: schema }, archetypes: {} });
+            expect(() => store.extend({ components: { mode: schema }, resources: {}, archetypes: {} })).toThrow(clash);
         });
 
-        it("throws when a component redefines a resource's name with a different schema", () => {
-            const store = createStore({ components: {}, resources: { mode: { type: "number", default: 0 } }, archetypes: {} });
-            expect(() => store.extend({ components: { mode: { type: "number", default: 1 } }, resources: {}, archetypes: {} })).toThrow(/must be identical/);
+        it("throws when one schema declares the name as both", () => {
+            expect(() => createStore({ components: { mode: schema }, resources: { mode: schema }, archetypes: {} })).toThrow(clash);
         });
     });
 

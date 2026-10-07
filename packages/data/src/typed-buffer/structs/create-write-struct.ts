@@ -12,7 +12,8 @@ const generateStructBody = (
     parentOffset = '',
     valueRef = 'value',
     indent = '    ',
-    usedViews: ViewTypes = { f32: false, i32: false, u32: false }
+    usedViews: ViewTypes = { f32: false, i32: false, u32: false },
+    fills: unknown[] = [],
 ): [string, ViewTypes] => {
     if (typeof layout === 'string') {
         usedViews[layout as ViewType] = true;
@@ -26,13 +27,22 @@ const generateStructBody = (
     let body = '';
     for (const [name, field] of entries) {
         const fieldOffset = getFieldOffset(field, parentOffset);
-        const nextValueRef = layout.type === 'array' ? `${valueRef}[${name}]` : `${valueRef}.${name}`;
+        let nextValueRef = layout.type === 'array' ? `${valueRef}[${name}]` : `${valueRef}.${name}`;
 
         if (typeof field.type === 'string') {
             usedViews[field.type as ViewType] = true;
-            body += `\n${indent}__${field.type}[${fieldOffset}] = ${nextValueRef};`;
+            // An optional primitive falls back to its fill, inlined as a literal.
+            const value = field.fill === undefined ? nextValueRef : `(${nextValueRef} ?? ${JSON.stringify(field.fill)})`;
+            body += `\n${indent}__${field.type}[${fieldOffset}] = ${value};`;
         } else {
-            const [nestedBody] = generateStructBody(field.type, fieldOffset, nextValueRef, indent + '    ', usedViews);
+            // An optional nested field falls back to its fill, bound once in the closure.
+            if (field.fill !== undefined) {
+                const local = `__v${fills.length}`;
+                body += `\n${indent}const ${local} = ${nextValueRef} ?? __fill[${fills.length}];`;
+                fills.push(field.fill);
+                nextValueRef = local;
+            }
+            const [nestedBody] = generateStructBody(field.type, fieldOffset, nextValueRef, indent + '    ', usedViews, fills);
             body += `\n${indent}${nestedBody}`;
         }
     }
@@ -40,7 +50,8 @@ const generateStructBody = (
 };
 
 export const createWriteStruct = memoizeFactory(<T = unknown>(layout: StructLayout): WriteStruct<T> => {
-    const [body, usedViews] = generateStructBody(layout);
+    const fills: unknown[] = [];
+    const [body, usedViews] = generateStructBody(layout, '', 'value', '    ', { f32: false, i32: false, u32: false }, fills);
     const views = Object.entries(usedViews)
         .filter(([, used]) => used)
         .map(([type]) => `${type}: __${type}`)
@@ -49,5 +60,5 @@ export const createWriteStruct = memoizeFactory(<T = unknown>(layout: StructLayo
     const code = `const { ${views} } = data;
 index *= ${layout.size / 4};
 ${body};`;
-    return new Function('data', 'index', 'value', code) as WriteStruct<T>;
+    return new Function('__fill', `return function(data, index, value) {\n${code}\n}`)(fills) as WriteStruct<T>;
 });

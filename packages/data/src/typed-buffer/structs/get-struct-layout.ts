@@ -1,5 +1,4 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { memoizeFactory } from "../../internal/function/memoize-factory.js";
 import { I32 } from "../../math/i32/index.js";
 import { type Schema } from "../../schema/index.js";
 import { U32 } from "../../math/u32/index.js";
@@ -112,9 +111,33 @@ const getPrimitiveType = (schema: Schema): StructFieldPrimitiveType | null => {
  * Analyzes a Schema and returns a StructLayout.
  * Returns null if schema is not a valid struct schema.
  */
-const getStructLayoutInternal = memoizeFactory(
-    ({ schema, layout }: { schema: Schema; layout: Layout }): StructLayout | null => getStructLayoutInternalImpl(schema, layout, false)
-);
+// The value an unwritten struct field reads back as: zeros of the field's shape.
+const zeroValue = (type: StructFieldPrimitiveType | StructLayout): unknown => {
+    if (typeof type === "string") return 0;
+    if (type.type === "array") {
+        return Object.keys(type.fields).sort((a, b) => +a - +b).map((index) => zeroValue(type.fields[index]!.type));
+    }
+    return Object.fromEntries(Object.entries(type.fields).map(([name, field]) => [name, zeroValue(field.type)]));
+};
+
+const deepFreeze = <T>(value: T): T => {
+    if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+        for (const child of Object.values(value)) deepFreeze(child);
+        Object.freeze(value);
+    }
+    return value;
+};
+
+// Memoized per schema object and layout mode, so one schema always yields the same
+// layout and the read/write factories memoized on that layout compile once.
+const layoutCache = new WeakMap<Schema, Partial<Record<Layout, StructLayout | null>>>();
+const getStructLayoutInternal = ({ schema, layout }: { schema: Schema; layout: Layout }): StructLayout | null => {
+    let byLayout = layoutCache.get(schema);
+    if (byLayout === undefined) layoutCache.set(schema, (byLayout = {}));
+    const cached = byLayout[layout];
+    if (cached !== undefined) return cached;
+    return (byLayout[layout] = getStructLayoutInternalImpl(schema, layout, false));
+};
 
 const getStructLayoutInternalImpl = (schema: Schema, layout: Layout = "std140", throwsOnError: boolean = false): StructLayout | null => {
     // Handle root array/tuple case
@@ -194,6 +217,8 @@ const getStructLayoutInternalImpl = (schema: Schema, layout: Layout = "std140", 
 
     const fields: StructLayout["fields"] = {};
     let currentOffset = 0;
+    // Without `required`, every property is optional (as in `Schema.ToType`).
+    const required = schema.required ? new Set(schema.required) : undefined;
 
     // First pass: create all fields and calculate alignments
     for (const [name, fieldSchema] of Object.entries(schema.properties)) {
@@ -207,10 +232,9 @@ const getStructLayoutInternalImpl = (schema: Schema, layout: Layout = "std140", 
 
         // Align field to its required alignment
         currentOffset = roundUpToAlignment(currentOffset, alignment);
-        fields[name] = {
-            offset: currentOffset,
-            type: fieldType
-        };
+        fields[name] = required?.has(name)
+            ? { offset: currentOffset, type: fieldType }
+            : { offset: currentOffset, type: fieldType, fill: deepFreeze(structuredClone(fieldSchema.default ?? zeroValue(fieldType))) };
         currentOffset += getFieldSize(fieldType);
     }
 
@@ -234,11 +258,9 @@ export function getStructLayout(
     // Read layout from schema with fallback to "std140"
     const layout = schema.layout ?? "std140";
     
-    // If we need to throw errors, call the implementation directly with throwError=true
-    // Otherwise, use the memoized version for better performance
-    if (throwError) {
-        return getStructLayoutInternalImpl(schema, layout, true);
-    } else {
-        return getStructLayoutInternal({ schema, layout });
-    }
+    // Always return the memoized layout, so the read/write factories memoized on it are
+    // reused; only an invalid schema reruns the implementation to throw its reason.
+    const result = getStructLayoutInternal({ schema, layout });
+    if (result !== null || !throwError) return result;
+    return getStructLayoutInternalImpl(schema, layout, true);
 }

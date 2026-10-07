@@ -31,6 +31,14 @@ export interface Schema {
   // the schema it wraps.
   readonly schema?: never;
   type?: keyof typeof schemaTypes;
+  // Names a TypeScript type that JSON Schema cannot describe (`Response`,
+  // `HTMLElement`, `ReadableStream`, …), for service schemas only. Set it on a
+  // schema with no `type`. `toTypeScript` emits the name verbatim; `ToType`
+  // resolves a global class name to its instance type, and any other name to `any`.
+  typeName?: string;
+  // Not supported: OpenAPI's `nullable`. Use `oneOf: [schema, { type: "null" }]`
+  // (see `Nullable`).
+  nullable?: never;
   title?: string;
   description?: string;
   conditionals?: readonly Conditional[];

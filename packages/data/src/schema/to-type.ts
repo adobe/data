@@ -15,7 +15,8 @@ export type ToType<T, Depth extends number = 5> =
 
 type FromSchemaInternal<T, Depth extends number = 5> = T extends { const: infer Const } ? Const
   : T extends { enum: infer Enum } ? Enum extends ReadonlyArray<any> ? Enum[number] : never
-  : T extends { oneOf: infer Schemas }
+  // `anyOf` shares the `oneOf` branch: both are a union, and one branch adds no depth.
+  : T extends { oneOf: infer Schemas } | { anyOf: infer Schemas }
   ? Schemas extends ReadonlyArray<Schema> ? FromOneOfSchema<Schemas, Decrement<Depth>> : never
   : T extends { allOf: infer Schemas }
   ? Schemas extends ReadonlyArray<Schema> ? FromAllOfSchema<Schemas, Decrement<Depth>> : never
@@ -52,8 +53,17 @@ type FromSchemaInternal<T, Depth extends number = 5> = T extends { const: infer 
   ? AsyncGenerator<ToType<ValueSchema<T>, Decrement<Depth>>>
   : T extends { type: 'function' }
   ? FromSchemaFunction<T, Decrement<Depth>>
+  : T extends { typeName: infer N }
+  ? FromTypeName<N>
   : any
   ;
+
+// A global class name (`Response`, `HTMLElement`) resolves to its instance type;
+// any other name cannot be resolved here and is `any`.
+type FromTypeName<N> =
+  N extends keyof typeof globalThis
+  ? (typeof globalThis)[N] extends { prototype: infer P } ? P : any
+  : any;
 
 type Decrement<N extends number> = ((...x: any[]) => void) extends (
   arg: any,
@@ -305,6 +315,20 @@ type TestAllOfSingle = ToType<{
   allOf: [{ type: 'object'; properties: { name: { type: 'string' } } }]
 }>; // { name?: string }
 type CheckAllOfSingle = True<EquivalentTypes<TestAllOfSingle, { name?: string }>>;
+
+type TestAnyOf = ToType<{ anyOf: [{ type: 'string' }, { type: 'null' }] }>; // string | null
+type CheckAnyOf = True<EquivalentTypes<TestAnyOf, string | null>>;
+
+type TestTypeName = ToType<{ typeName: 'Response' }>; // Response
+type CheckTypeName = True<EquivalentTypes<TestTypeName, Response>>;
+
+type TestTypeNameNested = ToType<{
+  type: 'object', properties: { element: { typeName: 'HTMLElement' } }, required: ['element']
+}>; // { readonly element: HTMLElement }
+type CheckTypeNameNested = True<EquivalentTypes<TestTypeNameNested, { readonly element: HTMLElement }>>;
+
+type TestTypeNameUnknown = ToType<{ typeName: 'NotAGlobal' }>; // any
+type CheckTypeNameUnknown = True<EquivalentTypes<TestTypeNameUnknown, any>>;
 
 // ============================================================================
 // TYPE-CONSTRUCTOR SCHEMAS (data-adjacent types)

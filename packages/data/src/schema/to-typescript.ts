@@ -19,14 +19,15 @@ const indent = "  ";
  *   a fixed-length tuple of length ≥2) is pre-declared once at the top as a named
  *   `interface` and referenced by name everywhere it occurs. Shapes used exactly once
  *   stay inlined. The name is the shape's `title` (PascalCased) when present, else the
- *   referencing property key, else a generated `Shape<n>`.
+ *   referencing property key or parameter name, else a generated `Shape<n>`.
  * - **Emits `description`s as `//` comments** directly above the declaration, property,
  *   or function they annotate (one comment line per line of the description).
  *
  * A schema that resolves to an object is emitted as an `interface`; anything else as a
  * `type` alias. The result references the ambient names `Blob`, `Promise`,
  * `AsyncGenerator`, `TypedBuffer` (`@adobe/data`) and `Observe` (`@adobe/data/observe`)
- * for the corresponding schema constructors; the caller supplies those imports.
+ * for the corresponding schema constructors, and each `typeName` verbatim; the caller
+ * supplies those imports.
  *
  * @example
  * ```typescript
@@ -116,7 +117,7 @@ function walk(schema: Schema, keyHint: string | undefined, multiplier: number, c
     case "function":
       if (schema.signature) {
         for (const parameter of schema.signature.parameters ?? []) {
-          walk(schemaOf(parameter), undefined, multiplier, context);
+          walk(schemaOf(parameter), isNamed(parameter) ? parameter.name : undefined, multiplier, context);
         }
         if (schema.signature.returns) walk(schema.signature.returns, undefined, multiplier, context);
       }
@@ -270,6 +271,7 @@ function typeExpression(schema: Schema, depth: number, context: Context): string
       return functionExpression(schema, depth, context);
   }
 
+  if (schema.typeName !== undefined) return schema.typeName;
   return "any";
 }
 

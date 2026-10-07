@@ -213,6 +213,54 @@ describe("Schema.toTypeScript", () => {
       expect(Schema.toTypeScript({ type: "function" }, "F")).toBe("type F = () => void;");
     });
 
+    it("renders anyOf as a union, matching ToType", () => {
+      const schema = { anyOf: [{ type: "string" }, { type: "null" }] } as const satisfies Schema;
+      const typed: Schema.ToType<typeof schema> = null;
+      expect(typed).toBeNull();
+      expect(Schema.toTypeScript(schema, "X")).toBe("type X = string | null;");
+    });
+
+    it("names a repeated parameter shape after the parameter", () => {
+      const opts = { type: "object", properties: { x: { type: "number" } } } as const satisfies Schema;
+      const fn = { type: "function", signature: { parameters: [{ name: "opts", schema: opts }] } } as const satisfies Schema;
+      const schema = {
+        type: "object",
+        properties: { a: fn, b: fn },
+        required: ["a", "b"],
+      } as const satisfies Schema;
+      expect(Schema.toTypeScript(schema, "S")).toBe(
+        [
+          "interface Opts {",
+          "  readonly x?: number;",
+          "}",
+          "",
+          "interface S {",
+          "  readonly a: (opts: Opts) => void;",
+          "  readonly b: (opts: Opts) => void;",
+          "}",
+        ].join("\n"),
+      );
+    });
+
+    it("rejects OpenAPI nullable at compile time", () => {
+      // @ts-expect-error nullable is not supported; use oneOf with { type: "null" }
+      const schema: Schema = { type: "boolean", nullable: true };
+      expect(schema.type).toBe("boolean");
+    });
+
+    it("renders a typeName verbatim as a type reference", () => {
+      const schema = {
+        type: "function",
+        signature: {
+          parameters: [{ name: "host", schema: { typeName: "HTMLElement" } }],
+          returns: { type: "promise", value: { typeName: "Response" } },
+        },
+      } as const satisfies Schema;
+      const typed: Schema.ToType<typeof schema> = (host: HTMLElement) => fetch(host.id);
+      expect(typed).toBeTypeOf("function");
+      expect(Schema.toTypeScript(schema, "F")).toBe("type F = (host: HTMLElement) => Promise<Response>;");
+    });
+
     it("renders an action returning a promise inside a service interface", () => {
       const schema = {
         type: "object",

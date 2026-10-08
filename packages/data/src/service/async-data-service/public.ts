@@ -6,4 +6,4 @@ export * from "./is-valid-with-complete-schema.js";
 export * from "./member-kind.js";
 export * from "./create-lazy.js";
 export * from "./state.js";
-export * from "./to-state.js";
+export * from "./to-observe-state.js";

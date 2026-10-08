@@ -100,12 +100,12 @@ See [create-lazy.md](./create-lazy.md) for complete documentation.
 - **public.ts** - Public API exports
 - **index.ts** - Namespace export
 
-### `AsyncDataService.toState(service)`
+### `AsyncDataService.toObserveState(service)`
 
 Observes every `Observe` member a service's schema describes — recursing through nested organizational groups — in parallel, and emits one combined object with the service's nested shape, typed as `AsyncDataService.State<T>` (observe members become their values; actions and action-only groups are omitted). Nothing is emitted until every member has a value; the member set is re-derived when `service.schema` changes. The service must expose its `schema`.
 
 ```typescript
-const unobserve = AsyncDataService.toState(service)((state) => {
+const unobserve = AsyncDataService.toObserveState(service)((state) => {
   state.foo.state.b; // the current value of service.foo.state.b
 });
 ```

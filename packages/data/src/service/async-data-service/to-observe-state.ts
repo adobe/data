@@ -16,7 +16,7 @@ import { State } from "./state.js";
  * Every observe member the schema describes is included, regardless of its `external`
  * policy; members the schema describes but the instance lacks (optional) are skipped.
  */
-export function toState<T extends Service & { readonly schema: Observe<Schema> }>(service: T): Observe<State<T>> {
+export function toObserveState<T extends Service & { readonly schema: Observe<Schema> }>(service: T): Observe<State<T>> {
   return Observe.withUnwrap(Observe.withMap(service.schema, (schema) => observeState(service, schema)));
 }
 

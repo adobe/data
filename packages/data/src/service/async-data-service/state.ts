@@ -15,7 +15,7 @@ type StateValue<P> =
 /**
  * The current-value snapshot of a service: the same nested shape as `T`, keeping only
  * its `Observe<X>` members (converted to `X`) and the groups that contain them. Actions
- * and base-`Service` metadata are omitted. Produced at runtime by `toState`.
+ * and base-`Service` metadata are omitted. Produced at runtime by `toObserveState`.
  */
 export type State<T> = {
   readonly [K in keyof T as K extends keyof Service ? never

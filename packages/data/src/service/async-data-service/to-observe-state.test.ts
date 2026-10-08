@@ -78,11 +78,11 @@ function createTestService() {
   return { service, setCount, setA, setSchema };
 }
 
-describe("AsyncDataService.toState", () => {
+describe("AsyncDataService.toObserveState", () => {
   it("combines every nested observe member into the service's shape", () => {
     const { service } = createTestService();
     const values: unknown[] = [];
-    const unobserve = AsyncDataService.toState(service)((value) => values.push(value));
+    const unobserve = AsyncDataService.toObserveState(service)((value) => values.push(value));
     expect(values).toEqual([{ count: 1, foo: { state: { a: "x", b: true } }, "dotted.key": 7 }]);
     unobserve();
   });
@@ -90,7 +90,7 @@ describe("AsyncDataService.toState", () => {
   it("re-emits when any member changes and stops after unobserve", () => {
     const { service, setCount, setA } = createTestService();
     const values: AsyncDataService.State<TestService>[] = [];
-    const unobserve = AsyncDataService.toState(service)((value) => values.push(value));
+    const unobserve = AsyncDataService.toObserveState(service)((value) => values.push(value));
     setA("y");
     setCount(2);
     expect(values.map((value) => [value.count, value.foo.state.a])).toEqual([[1, "x"], [1, "y"], [2, "y"]]);
@@ -110,7 +110,7 @@ describe("AsyncDataService.toState", () => {
       late,
     };
     const values: unknown[] = [];
-    AsyncDataService.toState(service)((value) => values.push(value));
+    AsyncDataService.toObserveState(service)((value) => values.push(value));
     expect(values).toEqual([]);
     setLate(2);
     expect(values).toEqual([{ now: 1, late: 2 }]);
@@ -125,21 +125,21 @@ describe("AsyncDataService.toState", () => {
       present: Observe.fromConstant("here"),
     };
     const values: unknown[] = [];
-    AsyncDataService.toState(service)((value) => values.push(value));
+    AsyncDataService.toObserveState(service)((value) => values.push(value));
     expect(values).toEqual([{ present: "here" }]);
   });
 
   it("emits an empty object for a service with no observe members", () => {
     const service = { schema: Observe.fromConstant<Schema>({ type: "object", properties: { go: { type: "function" } } }), go: () => {} };
     const values: unknown[] = [];
-    AsyncDataService.toState(service)((value) => values.push(value));
+    AsyncDataService.toObserveState(service)((value) => values.push(value));
     expect(values).toEqual([{}]);
   });
 
   it("re-derives the member set when the schema changes", () => {
     const { service, setSchema, setA } = createTestService();
     const values: unknown[] = [];
-    const unobserve = AsyncDataService.toState(service)((value) => values.push(value));
+    const unobserve = AsyncDataService.toObserveState(service)((value) => values.push(value));
     setSchema({ type: "object", properties: { count: { type: "observe" } } });
     expect(values.at(-1)).toEqual({ count: 1 });
     // The previous member set's subscriptions were released.

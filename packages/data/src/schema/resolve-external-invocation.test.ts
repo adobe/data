@@ -2,11 +2,14 @@
 
 import { describe, it, expect } from "vitest";
 import { resolveExternalInvocation } from "./resolve-external-invocation.js";
-import type { External, Schema } from "./schema.js";
+import type { Schema } from "./schema.js";
+
+type External = Schema["external"];
 
 const fn = (external?: External): Schema => ({
   type: "function",
-  signature: { parameters: [], ...(external ? { external } : {}) },
+  signature: { parameters: [] },
+  ...(external ? { external } : {}),
 });
 
 describe("resolveExternalInvocation", () => {
@@ -37,14 +40,5 @@ describe("resolveExternalInvocation", () => {
     expect(resolveExternalInvocation(hiddenState)).toEqual({ link: false, agent: false });
     const linkedGroup: Schema = { type: "object", properties: {}, external: { link: true } };
     expect(resolveExternalInvocation(linkedGroup)).toEqual({ link: true, agent: true });
-  });
-
-  it("schema-level policy takes precedence over the deprecated signature.external", () => {
-    const schema: Schema = {
-      type: "function",
-      signature: { parameters: [], external: { agent: false } },
-      external: { link: true },
-    };
-    expect(resolveExternalInvocation(schema)).toEqual({ link: true, agent: true });
   });
 });

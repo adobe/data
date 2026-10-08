@@ -110,8 +110,6 @@ export interface Schema {
   signature?: {
     readonly parameters?: readonly (Parameter | Schema)[];
     readonly returns?: Schema;
-    /** @deprecated Use the schema-level `external` (on the function schema itself). Read only as a fallback. */
-    readonly external?: External;
   };
   /**
    * Exposure policy for **untrusted channels**, valid on any schema (an action, a
@@ -119,9 +117,17 @@ export interface Schema {
    * member it governs visibility (e.g. `toTypeScript` omits members hidden from the
    * agent). Pure metadata: does NOT affect `ToType` or service-schema validation.
    * Resolve it with `resolveExternalInvocation(schema)` — the single source of
-   * truth — rather than re-deriving per call site. See `External`.
+   * truth — rather than re-deriving per call site.
+   *
+   * The two channels have **deliberately opposite default polarity**, matching
+   * their trust level:
+   * - `link` — a deeplink / URL: the least-trusted channel (anyone can craft a URL
+   *   and get a victim to open it in their authenticated session).
+   *   **Default-deny whitelist**: exposed only when `link === true`.
+   * - `agent` — an agent acting on the user's behalf: more trusted.
+   *   **Default-allow blacklist**: exposed unless `agent === false`.
    */
-  external?: External;
+  external?: { readonly agent?: boolean; readonly link?: boolean };
   properties?: { readonly [key: string]: Schema };
   // Per-property metadata kept OUT of `properties` so a property whose type is a
   // shared/by-reference schema can carry field-level docs without mutating that
@@ -148,21 +154,6 @@ export interface Schema {
     readonly step?: string;
     readonly cubicSpline?: string;
   };
-}
-
-/**
- * Per-channel exposure policy (`Schema.external`). The two channels have
- * **deliberately opposite default polarity**, matching their trust level:
- *
- * - `link` — a deeplink / URL: the least-trusted channel (anyone can craft a URL
- *   and get a victim to open it in their authenticated session).
- *   **Default-deny whitelist**: exposed only when `link === true`.
- * - `agent` — an agent acting on the user's behalf: more trusted.
- *   **Default-allow blacklist**: exposed unless `agent === false`.
- */
-export interface External {
-  readonly agent?: boolean;
-  readonly link?: boolean;
 }
 
 /**

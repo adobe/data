@@ -830,7 +830,6 @@ describe("Schema.toTypeScript", () => {
         count: { type: "observe", value: { type: "number" } },
         secret: { type: "observe", value: point, external: { agent: false } },
         reset: { type: "function", external: { agent: false } },
-        legacy: { type: "function", signature: { external: { agent: false } } },
         share: { type: "function", external: { link: true } },
         group: {
           type: "object",
@@ -841,7 +840,7 @@ describe("Schema.toTypeScript", () => {
           required: ["at", "hidden"],
         },
       },
-      required: ["count", "secret", "reset", "legacy", "share", "group"],
+      required: ["count", "secret", "reset", "share", "group"],
     } as const satisfies Schema;
 
     it("omits agent-hidden members at any depth by default", () => {
@@ -869,7 +868,7 @@ describe("Schema.toTypeScript", () => {
 
     it("all audience emits every member", () => {
       const out = Schema.toTypeScript(service, "Svc", { audience: "all" });
-      for (const key of ["count", "secret", "reset", "legacy", "share", "group", "hidden"]) {
+      for (const key of ["count", "secret", "reset", "share", "group", "hidden"]) {
         expect(out).toContain(`readonly ${key}`);
       }
       // `point` now appears twice, so it is hoisted.

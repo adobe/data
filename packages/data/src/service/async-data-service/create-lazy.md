@@ -45,7 +45,7 @@ AsyncDataService.createLazy({
 - `{ type: "function", signature: { returns: { type: "promise", … } } }` → a function returning `Promise<T>`
 - `{ type: "function" }` (no `signature`) → a function returning `void`
 
-The function constructor groups its `parameters`/`returns` (and invocation-policy `external`) under a nested `signature`, so those members live only on function schemas. Use `value: {}` as a "don't-care" (resolves to `any`) when a member's precise value type doesn't matter for wrapping; fill in real value schemas when the schema is also a published contract. Function `signature.parameters` list only the **required** parameters. Publish the schema beside the service with the namespace pattern and validate it with `IsValidWithCompleteSchema`.
+The function constructor groups its `parameters`/`returns` under a nested `signature`, so those members live only on function schemas. The invocation policy `external` sits on the member schema itself (valid on any member). Use `value: {}` as a "don't-care" (resolves to `any`) when a member's precise value type doesn't matter for wrapping; fill in real value schemas when the schema is also a published contract. Function `signature.parameters` list only the **required** parameters. Publish the schema beside the service with the namespace pattern and validate it with `IsValidWithCompleteSchema`.
 
 ## Type Safety Guarantees
 

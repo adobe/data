@@ -373,9 +373,9 @@ type CheckFunctionNoParams = True<EquivalentTypes<TestFunctionNoParams, () => vo
 // `external` invocation-policy metadata never affects the derived function type.
 type TestFunctionExternalIgnored = ToType<{
   type: 'function', signature: {
-    parameters: [{ name: 'a', schema: { type: 'number' } }], returns: { type: 'promise', value: { type: 'number' } },
-    external: { link: true, agent: false }
-  }
+    parameters: [{ name: 'a', schema: { type: 'number' } }], returns: { type: 'promise', value: { type: 'number' } }
+  },
+  external: { link: true, agent: false }
 }>; // (a: number) => Promise<number>
 type CheckFunctionExternalIgnored = True<EquivalentTypes<TestFunctionExternalIgnored, (a: number) => Promise<number>>>;
 

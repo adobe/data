@@ -4,11 +4,12 @@ import { describe, it, expect } from "vitest";
 import { resolveExternalInvocation } from "./resolve-external-invocation.js";
 import type { Schema } from "./schema.js";
 
-type External = NonNullable<Schema["signature"]>["external"];
+type External = Schema["external"];
 
 const fn = (external?: External): Schema => ({
   type: "function",
-  signature: { parameters: [], ...(external ? { external } : {}) },
+  signature: { parameters: [] },
+  ...(external ? { external } : {}),
 });
 
 describe("resolveExternalInvocation", () => {
@@ -32,5 +33,12 @@ describe("resolveExternalInvocation", () => {
 
   it("channels resolve independently", () => {
     expect(resolveExternalInvocation(fn({ link: true, agent: false }))).toEqual({ link: true, agent: false });
+  });
+
+  it("reads the schema-level policy on any member, not just functions", () => {
+    const hiddenState: Schema = { type: "observe", value: { type: "number" }, external: { agent: false } };
+    expect(resolveExternalInvocation(hiddenState)).toEqual({ link: false, agent: false });
+    const linkedGroup: Schema = { type: "object", properties: {}, external: { link: true } };
+    expect(resolveExternalInvocation(linkedGroup)).toEqual({ link: true, agent: true });
   });
 });

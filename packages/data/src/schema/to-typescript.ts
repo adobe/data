@@ -2,6 +2,7 @@
 
 import { Schema } from "./schema.js";
 import { isNamed, schemaOf } from "./parameter.js";
+import { resolveExternalInvocation } from "./resolve-external-invocation.js";
 
 const indent = "  ";
 
@@ -22,6 +23,11 @@ const indent = "  ";
  *   referencing property key or parameter name, else a generated `Shape<n>`.
  * - **Emits `description`s as `//` comments** directly above the declaration, property,
  *   or function they annotate (one comment line per line of the description).
+ * - **Omits members hidden from the `audience`** (default `"agent"`): an object property
+ *   whose schema `external` policy denies that channel (see `resolveExternalInvocation`)
+ *   is left out entirely, at any depth. So by default a member marked
+ *   `external: { agent: false }` is never shown to an agent. `"link"` keeps only
+ *   `link: true` members (default-deny); `"all"` emits every member.
  *
  * A schema that resolves to an object is emitted as an `interface`; anything else as a
  * `type` alias. The result references the ambient names `Blob`, `Promise`,
@@ -55,8 +61,12 @@ const indent = "  ";
  * // }
  * ```
  */
-export function toTypeScript(schema: Schema, name: string): string {
-  const context = createContext();
+export function toTypeScript(
+  schema: Schema,
+  name: string,
+  options: { readonly audience?: "agent" | "link" | "all" } = {},
+): string {
+  const context = createContext(options.audience ?? "agent");
   walk(schema, undefined, 1, context);
   const hoisted = assignNames(schema, name, context);
 
@@ -77,10 +87,13 @@ interface Context {
   readonly keyHint: Map<string, string>;
   // Shape key → assigned interface name, for the shapes that are hoisted + shared.
   readonly names: Map<string, string>;
+  // Whether an object property is shown to the target audience.
+  readonly visible: (schema: Schema) => boolean;
 }
 
-function createContext(): Context {
+function createContext(audience: "agent" | "link" | "all"): Context {
   return {
+    visible: audience === "all" ? () => true : (schema) => resolveExternalInvocation(schema)[audience],
     counts: new Map(),
     discovery: [],
     firstSchema: new Map(),
@@ -134,7 +147,7 @@ function walk(schema: Schema, keyHint: string | undefined, multiplier: number, c
   if (schema.type === undefined && schema.default !== undefined) return;
   if (schema.type === "object" || schema.properties !== undefined) {
     for (const [key, child] of Object.entries(schema.properties ?? {})) {
-      walk(child, key, multiplier, context);
+      if (context.visible(child)) walk(child, key, multiplier, context);
     }
     const additional = schema.additionalProperties;
     if (additional !== undefined && typeof additional === "object") {
@@ -296,6 +309,7 @@ function objectBody(schema: Schema, depth: number, context: Context): string {
   const members: string[] = [];
 
   for (const [key, propSchema] of Object.entries(schema.properties ?? {})) {
+    if (!context.visible(propSchema)) continue;
     const optional = required.has(key) ? "" : "?";
     // A `propertyMeta` description is the author's explicit field doc — it wins and is
     // never suppressed; otherwise fall back to the property type's own description.

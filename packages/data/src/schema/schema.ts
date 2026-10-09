@@ -110,28 +110,24 @@ export interface Schema {
   signature?: {
     readonly parameters?: readonly (Parameter | Schema)[];
     readonly returns?: Schema;
-    /**
-     * Invocation policy — who may call this function from an **untrusted
-     * channel**. Read at runtime by the executor that performs the invocation;
-     * pure metadata that does NOT affect the type produced by `Schema.ToType`
-     * (a function differing only in `external` derives the same signature), nor
-     * service-schema validation or lazy wrapping.
-     *
-     * The two channels have **deliberately opposite default polarity**, matching
-     * their trust level. Resolve them with `resolveExternalInvocation(schema)`
-     * (see `resolve-external-invocation.ts`) — the single source of truth —
-     * rather than re-deriving per call site, because getting the `link` default
-     * wrong is a security hole.
-     *
-     * - `link` — a deeplink / URL: the least-trusted channel (anyone can craft a
-     *   URL and get a victim to open it in their authenticated session).
-     *   **Default-deny whitelist**: link-invocable only when `link === true`;
-     *   absent or `false` ⇒ not link-invocable.
-     * - `agent` — an agent acting on the user's behalf: more trusted.
-     *   **Default-allow blacklist**: agent-invocable unless `agent === false`.
-     */
-    readonly external?: { readonly agent?: boolean; readonly link?: boolean };
   };
+  /**
+   * Exposure policy for **untrusted channels**, valid on any schema (an action, a
+   * state, a nested group). For a function it governs invocation; for any other
+   * member it governs visibility (e.g. `toTypeScript` omits members hidden from the
+   * agent). Pure metadata: does NOT affect `ToType` or service-schema validation.
+   * Resolve it with `resolveExternalInvocation(schema)` — the single source of
+   * truth — rather than re-deriving per call site.
+   *
+   * The two channels have **deliberately opposite default polarity**, matching
+   * their trust level:
+   * - `link` — a deeplink / URL: the least-trusted channel (anyone can craft a URL
+   *   and get a victim to open it in their authenticated session).
+   *   **Default-deny whitelist**: exposed only when `link === true`.
+   * - `agent` — an agent acting on the user's behalf: more trusted.
+   *   **Default-allow blacklist**: exposed unless `agent === false`.
+   */
+  external?: { readonly agent?: boolean; readonly link?: boolean };
   properties?: { readonly [key: string]: Schema };
   // Per-property metadata kept OUT of `properties` so a property whose type is a
   // shared/by-reference schema can carry field-level docs without mutating that

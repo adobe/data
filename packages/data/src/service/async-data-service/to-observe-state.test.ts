@@ -51,13 +51,13 @@ interface TestService extends Service {
   readonly optional?: Observe<string>;
 }
 
-// Observe members become their values, actions and action-only groups are omitted,
-// optional members stay optional.
+// Observe members become their values (undefined until resolved), actions and
+// action-only groups are omitted, optional members stay optional.
 type _CheckState = Assert<EquivalentTypes<AsyncDataService.State<TestService>, {
-  readonly count: number;
-  readonly foo: { readonly state: { readonly a: string; readonly b: boolean } };
-  readonly "dotted.key": number;
-  readonly optional?: string;
+  readonly count: number | undefined;
+  readonly foo: { readonly state: { readonly a: string | undefined; readonly b: boolean | undefined } };
+  readonly "dotted.key": number | undefined;
+  readonly optional?: string | undefined;
 }>>;
 
 function createTestService() {
@@ -87,19 +87,21 @@ describe("AsyncDataService.toObserveState", () => {
     unobserve();
   });
 
-  it("re-emits when any member changes and stops after unobserve", () => {
+  it("re-emits once per microtask when members change and stops after unobserve", async () => {
     const { service, setCount, setA } = createTestService();
     const values: AsyncDataService.State<TestService>[] = [];
     const unobserve = AsyncDataService.toObserveState(service)((value) => values.push(value));
     setA("y");
     setCount(2);
-    expect(values.map((value) => [value.count, value.foo.state.a])).toEqual([[1, "x"], [1, "y"], [2, "y"]]);
+    await Promise.resolve();
+    expect(values.map((value) => [value.count, value.foo.state.a])).toEqual([[1, "x"], [2, "y"]]);
     unobserve();
     setCount(3);
-    expect(values).toHaveLength(3);
+    await Promise.resolve();
+    expect(values).toHaveLength(2);
   });
 
-  it("waits until every member has a value", () => {
+  it("emits without waiting for unresolved members, which read as undefined", async () => {
     const [late, setLate] = Observe.createState<number>();
     const service = {
       schema: Observe.fromConstant<Schema>({
@@ -111,9 +113,10 @@ describe("AsyncDataService.toObserveState", () => {
     };
     const values: unknown[] = [];
     AsyncDataService.toObserveState(service)((value) => values.push(value));
-    expect(values).toEqual([]);
+    expect(values).toEqual([{ now: 1, late: undefined }]);
     setLate(2);
-    expect(values).toEqual([{ now: 1, late: 2 }]);
+    await Promise.resolve();
+    expect(values).toEqual([{ now: 1, late: undefined }, { now: 1, late: 2 }]);
   });
 
   it("skips members the schema describes but the instance lacks", () => {

@@ -3,15 +3,17 @@
 import { Observe } from "../../observe/index.js";
 import { Schema } from "../../schema/index.js";
 import { Service } from "../service.js";
+import { fromPartialProperties } from "./from-partial-properties.js";
 import { State } from "./state.js";
 
 /**
  * Observes every `Observe` member of a service — found by recursively walking its
  * schema, through nested organizational groups — in parallel, and emits them combined
  * into one object with the service's nested shape (`foo.state.b` is read as
- * `state.foo.state.b`). Like `Observe.fromProperties`, nothing is emitted until every
- * member has a value, then once per change. When the service's schema changes, the
- * member set is re-derived.
+ * `state.foo.state.b`). It does not wait for every member: one that has not resolved
+ * yet reads as `undefined`. It emits once on subscribe, then at most once per microtask
+ * however many members change. When the service's schema changes, the member set is
+ * re-derived.
  *
  * Every observe member the schema describes is included, regardless of its `external`
  * policy; members the schema describes but the instance lacks (optional) are skipped.
@@ -24,7 +26,7 @@ function observeState<T extends Service>(service: T, schema: Schema): Observe<St
   const paths: (readonly string[])[] = [];
   const members: Record<string, Observe<unknown>> = {};
   collect(service, schema, [], paths, members);
-  return Observe.withMap(Observe.fromProperties(members), (values) => {
+  return Observe.withMap(fromPartialProperties(members), (values) => {
     const state: Record<string, unknown> = {};
     paths.forEach((path, index) => {
       let target = state;

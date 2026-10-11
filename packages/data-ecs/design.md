@@ -196,6 +196,25 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 
 ## Phase 2+: performance
 
+Measured with `pnpm perf` (benchmarks bundled as in production, on plain node) and `pnpm test:perf` (adds chromium with workers). vitest's node transform makes every imported binding a getter, so JS-heavy paths measure about twice as slow there.
+
+### In place
+
+- **Commands:** typed parallel arrays with explicit counts, reused per system across runs; ids resolved when issued. Kernels issue commands through `begin`/`value`/`component` by key index, allocating nothing. Workers post the same buffers back.
+- **Sync point:** plans straight over the queued buffers into reusable typed arrays, through cached archetype edges (arrays by component id), an eight-shape spawn cache, and per-pair move lists; archetypes grow once per sync point; common layouts are written inline rather than through layout closures.
+- **Chunk ticks:** every storage keeps the newest `added`/`changed` tick per 1024-row chunk, stamped with every row tick, so change filters skip unchanged chunks. Stamps every row reaches are made once per kernel call, per chunk.
+- **Ticks only where observed:** kernels drop `changed` stamps for components no registered system filters on; registering an observer reloads the affected kernels. It's exact: a new observer starts with `lastRun = 0` and sees every row once, and the sync point keeps maintaining ticks.
+- **Change filters inside WASM kernels:** one call per archetype or worker chunk; chunks and rows are skipped in WASM.
+- **Lookups in WASM kernels:** a directory per lookup in shared memory (per archetype: a match flag and column addresses), rebuilt at sync points; finds check index and generation against the shared entity table.
+- **Dispatch:** WASM chunks go through a per-worker task ring in shared memory, signalled with `Atomics.notify`; workers stay in that window across runs until a message must reach them.
+- **Kernels:** interleaved layouts, SIMD within rows (SLP) and across dense rows, 16-byte loads for three-lane rows with column slack, exact integer `%`.
+- **Main-thread reads:** `select`/`count` compile `where` once and resolve storages per archetype; single-component reads go straight to the storage.
+
+### Next
+
+- **U32 ticks.** Halves tick memory and the change-filter scan's bandwidth, which bounds uniformly sparse filters. Comparisons use wrapping subtraction relative to the current tick, with a periodic clamp pass at a sync point, like Bevy's `check_change_ticks`, covering cell, `lastRun` and chunk ticks.
+- **Compiled main-thread systems.** Accessor rows copy tuples out on every read and share one megamorphic body call site; compiling main-thread systems (or a JS-only kernel mode) would remove both.
+- **WASM commands.** Encode kernel commands into a shared-memory buffer from WASM, so command-issuing kernels get WASM and the fast dispatch path.
 - **Per-archetype query-match bitsets.** Compute stop/start for each move as `match(from) & ~match(to)` in O(Q/32). Memory scales with archetypes, not archetype-graph edges.
 - **Per-archetype rule-closure cache.**
 - **Main-thread fast path.** Main-thread structural changes may skip the command buffer, or be applied early, only when no system or finalizer could observe the difference before the next sync point.
@@ -203,21 +222,12 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 - **Bulk operations in the plan.** Keep (archetype, all rows) or entity-ID ranges, not one entry per entity, so million-entity despawns stay cheap. Despawning a pair target bulk-moves by (source archetype, target).
 - **Finalizer execution:** skip the phase when nothing is pending. Run on the main thread by default; move to workers only above a size threshold and only for linear-memory finalizers. Run main-thread and worker finalizers concurrently. That's at most one barrier per flush.
 - **Gather loops.** The compiler needs an indexed-row loop mode for scattered sets, such as rows about to be removed.
-- **Archetype-level ticks.** Each archetype stores the newest `added`/`changed` tick for each of its components, and a query skips the archetype when `archetypeTick <= lastRun`. Each of these ticks has one writer at a time (parallel systems' write sets don't overlap), so plain stores are enough, with no atomics.
-- **Logical chunks.** Fixed power-of-two row ranges over the contiguous SoA columns. They are not separate allocations. Chunks serve two roles:
-  - **Change summaries:** a per-component, per-chunk `added`/`changed` tick adds a level between archetype and row skipping. The compiler stamps the chunk tick once per chunk, behind a flag for conditional writes. Swap-remove sets the destination chunk's tick to the newer of its own and the moved row's at flush.
-  - **Work units:** they are how one system's work is split across workers. Compiled systems take a row range `(table, start, end)`. With 64-byte-aligned columns, workers never share a cache line.
-  - Chunk sizes 256, 512, 1024, 2048 and 4096 rows will be benchmarked.
 - **Sparse dirty lists.** A possible option for very large columns that change rarely.
-- **Ticks only where observed.** Allocate a component's `added`/`changed` columns only while a registered consumer (system filter, finalizer, persistence) uses them; untracked tags and components then cost nothing per row. It's exact: a new consumer starts with `lastRun = 0` and already sees every existing row as added and changed, so a column created at its registration can start at the current tick. Kernel writes to an untracked component stamp a scratch column or use a variant compiled without the stamp.
-- **U32 ticks.** Halves tick memory, which matters because ticks are stored for every component of every entity. Comparisons use wrapping subtraction relative to the current tick. A periodic clamp pass, run at a sync point, pulls ticks older than a max age forward, like Bevy's `check_change_ticks`. It covers cell, `lastRun`, archetype and chunk ticks.
 - **Archetype churn.** Derived components that toggle on and off move entities between tables. Candidates: sparse-set storage, or modeling the condition as a value.
 - **GPU residency.** Each column is valid on the CPU (SAB), on the GPU, or both, and transfers happen only when a system on the other side reads that column, as determined by the schedule's read/write sets.
   - GPU-to-GPU system chains and rendering never copy back.
   - Only changed chunks are uploaded.
   - The structural plan is uploaded as row-copy lists and applied by a move kernel. Table growth uses `copyBufferToBuffer`.
-  - Tick columns are GPU-resident too. Only the per-archetype and per-chunk summary ticks (reduced with `atomicMax`) are read back.
+  - Tick columns are GPU-resident too. Only the per-chunk summary ticks are read back.
   - Whole-plan consumers (persistence, sync) read back on demand.
   - Main-thread-only components never live on the GPU.
-- **System compilation** to linear-memory access, and later possibly WASM.
-- **Parallel execution on workers.** Phase 0 must still show it can be done under the contract.

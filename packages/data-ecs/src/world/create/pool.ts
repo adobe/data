@@ -1,7 +1,7 @@
 import { allocateArray } from './arrays.js';
 import { emptyBuffer, type CommandBuffer } from './buffer.js';
 import type { Memory } from './memory.js';
-import { controlWords, done, leave, posted, ringSize, signal, taskWords, type FromWorker, type ToWorker, type WorkerError } from './protocol.js';
+import { controlWords, done, epoch, posted, ringSize, signal, taskWords, type FromWorker, type ToWorker, type WorkerError } from './protocol.js';
 
 type Task = Extract<ToWorker, { task: number }>;
 type Request = Task extends infer T ? T extends Task ? Omit<T, "task"> : never : never;
@@ -79,23 +79,36 @@ export const createPool = (size: number, arena: Memory): Pool => {
         slot.worker.postMessage({ kind: "memory", memory } satisfies ToWorker);
         return slot;
     });
+    const wake = (worker: number): void => {
+        Atomics.add(control, worker * controlWords + signal, 1);
+        Atomics.notify(control, worker * controlWords + signal);
+    };
+
     const close = (): void => {
         for (let worker = 0; worker < size; worker++) {
             if (!open[worker]) continue;
             open[worker] = false;
-            Atomics.store(control, worker * controlWords + leave, 1);
-            Atomics.add(control, worker * controlWords + signal, 1);
-            Atomics.notify(control, worker * controlWords + signal);
+            Atomics.add(control, worker * controlWords + epoch, 1);
+            wake(worker);
         }
     };
 
-    /** Resolves once the worker has done `count` tasks: spins briefly, since tasks are short, then waits without blocking. */
+    /** Opens a worker's window for the current epoch, after any messages already posted to it. */
+    const ensureOpen = (worker: number): void => {
+        if (open[worker]) return;
+        open[worker] = true;
+        const current = Atomics.load(control, worker * controlWords + epoch);
+        slots[worker].worker.postMessage({ kind: "window", control: control.byteOffset, statuses: statuses.byteOffset, payloads: payloads.byteOffset, worker, epoch: current } satisfies ToWorker);
+    };
+
+    /** One brief spin for all waiters of a batch of tasks, which are short, before waiting without blocking. */
+    let spinUntil = 0;
+    /** Resolves once the worker has done `count` tasks. */
     const whenDone = async (worker: number, count: number): Promise<void> => {
         const index = worker * controlWords + done;
-        const deadline = performance.now() + 2;
         while (Atomics.load(control, index) < count) {
             if (slots[worker].dead !== null) return;
-            if (performance.now() < deadline) continue;
+            if (performance.now() < spinUntil) continue;
             const current = Atomics.load(control, index);
             if (current >= count) return;
             const waited = Atomics.waitAsync(control, index, current, 50);
@@ -106,19 +119,16 @@ export const createPool = (size: number, arena: Memory): Pool => {
     const fast = (worker: number, task: FastTask): Promise<TaskResult> => {
         const slot = slots[worker];
         if (slot.dead !== null) return Promise.resolve({ commands: emptyBuffer, error: slot.dead });
-        if (!open[worker]) {
-            open[worker] = true;
-            Atomics.store(control, worker * controlWords + leave, 0);
-            slot.worker.postMessage({ kind: "window", control: control.byteOffset, statuses: statuses.byteOffset, payloads: payloads.byteOffset, worker } satisfies ToWorker);
-        }
         const count = ++sent[worker];
         const ring = (count - 1) % ringSize;
+        spinUntil = performance.now() + 2;
         const write = (): void => {
-            payloads.set([task.kernel, task.archetype, task.start, task.end, task.tick, task.lastRun, task.scalars.length, ...task.scalars], (worker * ringSize + ring) * taskWords);
-            Atomics.store(statuses, worker * ringSize + ring, 0);
+            // A write held back past a close reopens the window, behind the messages posted since.
+            ensureOpen(worker);
+            const current = Atomics.load(control, worker * controlWords + epoch);
+            payloads.set([task.kernel, task.archetype, task.start, task.end, task.tick, task.lastRun, current, task.scalars.length, ...task.scalars], (worker * ringSize + ring) * taskWords);
             Atomics.store(control, worker * controlWords + posted, count);
-            Atomics.add(control, worker * controlWords + signal, 1);
-            Atomics.notify(control, worker * controlWords + signal);
+            wake(worker);
         };
         // Written now when there's room, so the worker starts at once; otherwise in order, once the worker frees a slot.
         let written: Promise<void>;
@@ -138,7 +148,8 @@ export const createPool = (size: number, arena: Memory): Pool => {
             await written;
             await whenDone(worker, count);
             if (slot.dead !== null) return { commands: emptyBuffer, error: slot.dead };
-            const failed = Atomics.load(statuses, worker * ringSize + ring) !== 0;
+            // The worker records each task's number, negated if it failed, so a reused slot can't hide a failure.
+            const failed = Atomics.load(statuses, worker * ringSize + ring) === -count;
             return failed ? { commands: emptyBuffer, error: new Error("A world worker's kernel failed.") } : { commands: emptyBuffer };
         })();
     };

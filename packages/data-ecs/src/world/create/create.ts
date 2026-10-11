@@ -58,13 +58,16 @@ export const createWorld = (options: WorldOptions = {}): World => {
         try {
             ensureResources(state, resources);
             await Promise.all(kernels.map(runner => runner.kernel?.load()));
-            if (workerCount === 0 || kernels.length === 0) return;
+            // Workers get every kernel whose main-thread load is newer than theirs, including ones a failed registration reloaded.
+            const behind = registrar.kernels().filter(runner => runner.kernel?.staleOnWorkers() === true);
+            if (workerCount === 0 || behind.length === 0) return;
             const workers = pool ?? startPool();
             context.publish();
-            const setups = kernels.flatMap(runner => runner.setup(registrar.kernelIndexOf(runner)) ?? []);
+            const setups = behind.flatMap(runner => runner.setup(registrar.kernelIndexOf(runner)) ?? []);
             const results = await Promise.all(Array.from({ length: workers.size }, (_, worker) => workers.request(worker, { kind: "kernels", kernels: setups })));
             const failed = results.find(result => result.error !== undefined);
             if (failed?.error !== undefined) throw failed.error;
+            for (const runner of behind) runner.kernel?.loadedOnWorkers();
         }
         catch (error) {
             registration.rollback();

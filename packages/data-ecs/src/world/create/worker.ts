@@ -3,7 +3,7 @@ import { locate, reserve, type Reservations } from './entities.js';
 import type { Kernel, KernelModule } from './kernel.js';
 import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../layout/layout.js';
 import { emptyViews } from './arrays.js';
-import { controlWords, done, leave, posted, ringSize, signal, taskWords, type ArchetypeLayout, type EntitiesLayout, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
+import { controlWords, done, epoch, posted, ringSize, signal, taskWords, type ArchetypeLayout, type EntitiesLayout, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
 import { createBuffer, createKernelCommands, type CommandBuffer } from './buffer.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
@@ -182,20 +182,24 @@ const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
         if (next < Atomics.load(control, posted)) {
             const ring = next % ringSize;
             const base = ring * taskWords;
+            // A task from a later window waits until this worker has handled the messages sent before it.
+            if (payloads[base + 6] !== message.epoch) return;
+            let status = next + 1;
             try {
                 const loaded = kernels.get(payloads[base]);
                 if (loaded === undefined || broken !== null) throw new Error("Worker can't run this task.");
-                runWasm(loaded, payloads[base + 1], payloads[base + 2], payloads[base + 3], payloads[base + 4], payloads[base + 5], Array.from(payloads.subarray(base + 7, base + 7 + payloads[base + 6])));
+                runWasm(loaded, payloads[base + 1], payloads[base + 2], payloads[base + 3], payloads[base + 4], payloads[base + 5], Array.from(payloads.subarray(base + 8, base + 8 + payloads[base + 7])));
             }
             catch {
-                Atomics.store(statuses, ring, 1);
+                status = -status;
             }
+            Atomics.store(statuses, ring, status);
             next++;
             Atomics.store(control, done, next);
             Atomics.notify(control, done);
             continue;
         }
-        if (Atomics.load(control, leave) === 1) return;
+        if (Atomics.load(control, epoch) !== message.epoch) return;
         // Tiers follow each other closely, so spin briefly before paying for a blocking wait's wake-up.
         const deadline = performance.now() + 0.05;
         while (Atomics.load(control, signal) === seen && performance.now() < deadline);

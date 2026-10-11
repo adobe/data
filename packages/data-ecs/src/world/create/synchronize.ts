@@ -199,9 +199,13 @@ const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Arche
                 break;
             default: writeCell(storage, toRow, value);
         }
-        storage.changed[toRow] = tick;
-        storage.chunkChanged[toRow >> chunkShift] = tick;
-        if (from === null || from.storageById[id] === undefined || (fresh !== undefined && fresh.includes(id))) {
+        const starts = from === null || from.storageById[id] === undefined || (fresh !== undefined && fresh.includes(id));
+        // A constant's `changed` ticks are its `added` ticks, and its value can't change: only a new start stamps it.
+        if (storage.changed !== storage.added || starts) {
+            storage.changed[toRow] = tick;
+            storage.chunkChanged[toRow >> chunkShift] = tick;
+        }
+        if (starts) {
             storage.added[toRow] = tick;
             storage.chunkAdded[toRow >> chunkShift] = tick;
         }
@@ -245,31 +249,34 @@ const presize = (state: State): void => {
 
 /** Applies every queued command as one sync point with a new tick, then empties the queue. */
 export const synchronize = (state: State): void => {
-    const queued = state.queued;
-    if (queued.every(({ buffer }) => buffer.count === 0) && !reserved(state.entities)) {
-        queued.length = 0;
-        return;
-    }
-    const reservations = materialize(state.memory, state.entities);
+    // Taken first, so a sync point that throws can't replay its commands into the next one.
+    const queued = state.queued.splice(0);
+    if (queued.every(({ buffer }) => buffer.count === 0) && !reserved(state.entities)) return;
     plan.count = 0;
     plan.spawned = 0;
-    planOf(state, queued);
-    presize(state);
-    const tick = ++state.tick;
-    for (let entry = 0; entry < plan.count; entry++) applyEntry(state, queued, entry, tick);
-    // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its index.
-    // Every spawn consumes one reservation, so only a shortfall needs the scan.
-    if (plan.spawned < reservations.reused.length + state.entities.length - reservations.firstNew) {
-        const leaked = (index: number): boolean => index >= slots.length || slots[index] < 0;
-        for (const index of reservations.reused) if (leaked(index)) release(state.entities, index);
-        for (let index = reservations.firstNew; index < state.entities.length; index++) if (leaked(index)) release(state.entities, index);
+    try {
+        const reservations = materialize(state.memory, state.entities);
+        planOf(state, queued);
+        presize(state);
+        const tick = ++state.tick;
+        for (let entry = 0; entry < plan.count; entry++) applyEntry(state, queued, entry, tick);
+        // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its index.
+        // Every spawn consumes one reservation, so only a shortfall needs the scan.
+        if (plan.spawned < reservations.reused.length + state.entities.length - reservations.firstNew) {
+            const leaked = (index: number): boolean => index >= slots.length || slots[index] < 0;
+            for (const index of reservations.reused) if (leaked(index)) release(state.entities, index);
+            for (let index = reservations.firstNew; index < state.entities.length; index++) if (leaked(index)) release(state.entities, index);
+        }
+        recycle(state.memory, state.entities);
     }
-    for (let entry = 0; entry < plan.count; entry++) slots[indexOf(plan.entity[entry])] = -1;
-    plan.more.clear();
-    plan.fresh.clear();
-    // Systems reuse their buffers next run.
-    for (const { buffer } of queued) clearBuffer(buffer);
-    queued.length = 0;
-    recycle(state.memory, state.entities);
-    refreshDirectories(state);
+    finally {
+        // The plan's arrays are shared by every world, so they're always left clean, even after a throw.
+        for (let entry = 0; entry < plan.count; entry++) slots[indexOf(plan.entity[entry])] = -1;
+        plan.count = 0;
+        plan.more.clear();
+        plan.fresh.clear();
+        // Systems reuse their buffers next run.
+        for (const { buffer } of queued) clearBuffer(buffer);
+        refreshDirectories(state);
+    }
 };

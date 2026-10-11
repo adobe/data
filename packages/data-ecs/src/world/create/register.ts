@@ -16,6 +16,8 @@ export type Registrar = {
     readonly runnerOf: (leaf: Leaf) => Runner;
     /** A kernel runner's index, as workers know it. */
     readonly kernelIndexOf: (runner: Runner) => number;
+    /** Every registered kernel runner. */
+    readonly kernels: () => readonly Runner[];
     readonly get: (name: Name) => System | null;
 };
 
@@ -79,6 +81,7 @@ export const createRegistrar = (state: State): Registrar => {
             if (runner.kernel !== null) kernelIndexes.set(runner, nextKernel++);
         }
         // New `changed` filters observe more components, so kernels that muted their stamps must load again.
+        const observedBefore = new Set(state.observed);
         for (const leaf of addedRunners.keys()) for (const key of leaf.declaration.query?.changed ?? []) state.observed.add(idOf(state, key));
         const kernels = [...kernelIndexes.keys()].filter(runner => runner.kernel?.stale() === true);
         const rollback = (): void => {
@@ -86,6 +89,8 @@ export const createRegistrar = (state: State): Registrar => {
             for (const system of addedSchedules.keys()) schedules.delete(system);
             for (const leaf of addedRunners.keys()) runners.delete(leaf);
             for (const runner of addedRunners.values()) kernelIndexes.delete(runner);
+            state.observed.clear();
+            for (const id of observedBefore) state.observed.add(id);
         };
         return { resources: [...resources], kernels, rollback };
     };
@@ -102,5 +107,5 @@ export const createRegistrar = (state: State): Registrar => {
         return runner;
     };
 
-    return { register, scheduleOf, runnerOf, kernelIndexOf: runner => kernelIndexes.get(runner) ?? -1, get: name => named.get(name) ?? null };
+    return { register, scheduleOf, runnerOf, kernelIndexOf: runner => kernelIndexes.get(runner) ?? -1, kernels: () => [...kernelIndexes.keys()], get: name => named.get(name) ?? null };
 };

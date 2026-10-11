@@ -558,19 +558,22 @@ export const generateWasm = (
         const found = handleLocal(handle, "found");
         const row = handleLocal(handle, "row");
         const record = handleLocal(handle, "record");
-        const wide = scratch(0x7e);
+        const value = scratch(f64Type);
         const index = scratch(i32Type);
         const archetype = scratch(i32Type);
         const words = 1 + lookups[lookup].reads;
         code.push(op.i32Const, 0, op.localSet, ...unsigned(found));
-        // An entity is `index + generation * 2^32`.
+        // As JS `locate`: the index is ToUint32 of the entity and the generation is floor(entity / 2^32), compared as
+        // numbers, so negative, fractional and NaN entities behave exactly as they do there.
         emit(entity);
-        code.push(...truncations.i64TruncSatF64U, op.localTee, ...unsigned(wide), op.i32WrapI64, op.localSet, ...unsigned(index));
+        code.push(op.localTee, ...unsigned(value));
+        emitToInt32();
+        code.push(op.localSet, ...unsigned(index));
         code.push(op.block, 0x40);
         labels.push("if");
         code.push(op.localGet, ...unsigned(index), op.localGet, ...unsigned(entityCount()), op.i32GeU, op.brIf, 0);
-        code.push(op.localGet, ...unsigned(entityGenerations()), op.localGet, ...unsigned(index), op.i32Const, 2, op.i32Shl, op.i32Add, op.i32Load, 2, 0);
-        code.push(op.localGet, ...unsigned(wide), op.i64Const, 32, op.i64ShrU, op.i32WrapI64, op.i32Ne, op.brIf, 0);
+        code.push(op.localGet, ...unsigned(entityGenerations()), op.localGet, ...unsigned(index), op.i32Const, 2, op.i32Shl, op.i32Add, op.i32Load, 2, 0, op.f64ConvertI32U);
+        code.push(op.localGet, ...unsigned(value), op.f64Const, ...float64(2 ** -32), op.f64Mul, op.f64Floor, op.f64Ne, op.brIf, 0);
         code.push(op.localGet, ...unsigned(entityArchetypes()), op.localGet, ...unsigned(index), op.i32Const, 2, op.i32Shl, op.i32Add, op.i32Load, 2, 0, op.localTee, ...unsigned(archetype));
         code.push(op.i32Const, 0, op.i32LtS, op.brIf, 0);
         code.push(op.localGet, ...unsigned(archetype), op.localGet, ...unsigned(directoryCount(lookup)), op.i32GeS, op.brIf, 0);

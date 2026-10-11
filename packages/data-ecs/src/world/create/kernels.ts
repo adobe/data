@@ -28,6 +28,9 @@ export type BoundKernel = {
     readonly load: () => Promise<void>;
     /** Whether the observed components changed since the last load, so its stamps need regenerating. */
     readonly stale: () => boolean;
+    /** Whether workers have an older load than the main thread; `loadedOnWorkers` records that they caught up. */
+    readonly staleOnWorkers: () => boolean;
+    readonly loadedOnWorkers: () => void;
     readonly kernel: () => Kernel;
     /** The WASM version, when the kernel has a program and the world shares its memory; replaced by each load. */
     wasm: WasmKernel | null;
@@ -156,6 +159,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     let muted = mutedNow();
     let loaded: Kernel | null = null;
     let loadedFor: string | null = null;
+    let workersFor: string | null = null;
     let compiled: { readonly module: WebAssembly.Module; readonly run: WasmRun } | null = null;
     const bound: BoundKernel = {
         description,
@@ -169,6 +173,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         compiled: () => compiled,
         kernel: () => loaded ?? fail("its module isn't loaded."),
         stale: () => loadedFor !== mutedNow().join(),
+        staleOnWorkers: () => workersFor !== loadedFor,
+        loadedOnWorkers: () => { workersFor = loadedFor; },
         load: async () => {
             muted = mutedNow();
             bound.wasm = generate(muted);

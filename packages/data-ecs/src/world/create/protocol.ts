@@ -56,7 +56,7 @@ export type KernelSetup = {
 export type ToWorker =
     | { readonly kind: "memory"; readonly memory: WebAssembly.Memory }
     /** Wait on this worker's task ring in shared memory until asked to leave. Offsets are bytes into the memory. */
-    | { readonly kind: "window"; readonly control: number; readonly statuses: number; readonly payloads: number; readonly worker: number }
+    | { readonly kind: "window"; readonly control: number; readonly statuses: number; readonly payloads: number; readonly worker: number; readonly epoch: number }
     | { readonly kind: "layout"; readonly schemas: readonly (readonly [number, Schema])[]; readonly entities: EntitiesLayout; readonly archetypes: readonly ArchetypeLayout[] }
     | { readonly kind: "kernels"; readonly task: number; readonly kernels: readonly KernelSetup[] }
     | {
@@ -80,16 +80,18 @@ export type FromWorker =
     | { readonly kind: "done"; readonly task: number; readonly commands: CommandBuffer }
     | { readonly kind: "failed"; readonly task: number; readonly commands: CommandBuffer; readonly error: WorkerError };
 
-/** Tasks a worker's ring holds, and f64 words per task: seven fields, then scalars. */
+/** Tasks a worker's ring holds, and f64 words per task: eight fields (the last is the window epoch), then scalars. */
 export const ringSize = 64;
 export const taskWords = 32;
-export const maximumScalars = taskWords - 7;
+export const maximumScalars = taskWords - 8;
 /**
- * Control words per worker: tasks posted, tasks done, a request to leave the window, and a signal bumped on every post
- * or leave request, which the worker waits on, so a wake-up between its check and its wait isn't lost.
+ * Control words per worker: tasks posted, tasks done, the window epoch, and a signal bumped on every post or close,
+ * which the worker waits on, so a wake-up between its check and its wait isn't lost. Closing a window bumps the
+ * epoch; a worker leaves its window when the epoch moves on, and runs only tasks posted in its own window's epoch,
+ * so a task posted after a close waits until the worker has handled the messages sent before it.
  */
 export const posted = 0;
 export const done = 1;
-export const leave = 2;
+export const epoch = 2;
 export const signal = 3;
 export const controlWords = 4;

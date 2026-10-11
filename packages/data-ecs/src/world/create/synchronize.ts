@@ -2,6 +2,7 @@ import { copyCell, ensureCapacity, insertRow, swapRemove, writeF32, writeF32Lane
 import { chunkShift } from './kernel.js';
 import { clearBuffer, despawnCommand, endOf, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { writeCell } from './cells.js';
+import { commitBatches } from './batches.js';
 import { refreshDirectories } from './directories.js';
 import { indexOf, locate, materialize, recycle, release, reserved } from './entities.js';
 import { archetypeOf, movesOf, withComponent, withoutComponent, type State } from './state.js';
@@ -260,14 +261,16 @@ export const synchronize = (state: State): void => {
     plan.spawned = 0;
     try {
         const reservations = materialize(state.memory, state.entities);
+        const tick = ++state.tick;
+        // Before the plan, so commands against staged entities find them, and before any growth, which copies `count` rows.
+        plan.spawned += commitBatches(state, tick);
         planOf(state, queued);
         presize(state);
-        const tick = ++state.tick;
         for (let entry = 0; entry < plan.count; entry++) applyEntry(state, queued, entry, tick);
         // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its index.
         // Every spawn consumes one reservation, so only a shortfall needs the scan.
         if (plan.spawned < reservations.reused.length + state.entities.length - reservations.firstNew) {
-            const leaked = (index: number): boolean => index >= slots.length || slots[index] < 0;
+            const leaked = (index: number): boolean => (index >= slots.length || slots[index] < 0) && state.entities.archetype[index] < 0;
             for (const index of reservations.reused) if (leaked(index)) release(state.entities, index);
             for (let index = reservations.firstNew; index < state.entities.length; index++) if (leaked(index)) release(state.entities, index);
         }

@@ -1,6 +1,7 @@
 import type { Commands } from '../../system/commands.js';
 import { addCommand, despawnCommand, pushCommand, pushComponent, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { hasSymbolNames } from '../../registry/create-registry.js';
+import { stageSpawn } from './batches.js';
 import { reserve } from './entities.js';
 import { idOf, type Key, type State } from './state.js';
 
@@ -32,7 +33,7 @@ export const pushValues = (state: State, buffer: CommandBuffer, kind: number, en
 export const createCommands = (state: State, target: { readonly buffer: CommandBuffer }): Commands => ({
     spawn: values => {
         const entity = reserve(state.entities);
-        pushValues(state, target.buffer, spawnCommand, entity, values);
+        if (!stageSpawn(state, entity, values)) pushValues(state, target.buffer, spawnCommand, entity, values);
         return entity;
     },
     despawn: entity => {

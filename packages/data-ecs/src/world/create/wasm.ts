@@ -1,4 +1,4 @@
-import type { Program } from './kernel.js';
+import { chunkShift, type Program } from './kernel.js';
 import type { View } from '../../layout/layout.js';
 
 type Expression = Program.Expression;
@@ -415,11 +415,20 @@ export const generateWasm = (
         }
     };
 
+    /** Sets the chunk tick of the row `rowOffset` rows past the current one. */
+    const stampChunk = (chunks: number, rowOffset: number): void => {
+        code.push(op.localGet, ...unsigned(columnParameter(chunks)), op.localGet, ...unsigned(rowLocal));
+        if (rowOffset !== 0) code.push(op.i32Const, ...signed(rowOffset), op.i32Add);
+        code.push(op.i32Const, ...signed(chunkShift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add, op.localGet, 2, op.f64Store, 3, 0);
+    };
+
     const statement = (current: Statement): void => {
         switch (current.kind) {
             case "set": emit(current.value); code.push(op.localSet, ...unsigned(local(current.local))); return;
             case "store": return store(current.column, current.value);
-            case "stamp": return store(current.column, "tick");
+            case "stamp":
+                store(current.column, "tick");
+                return stampChunk(current.chunks, 0);
             case "if":
                 emit(current.test);
                 emitTruthy(typeOf(current.test));
@@ -631,6 +640,9 @@ export const generateWasm = (
                     }
                     code.push(...simd(vop.store), 3, ...unsigned(16 * half));
                 }
+                // The group may straddle two chunks. Under a mask this can stamp a chunk no lane changed, which only costs a scan.
+                stampChunk(current.chunks, 0);
+                stampChunk(current.chunks, 3);
                 return;
             }
             case "if": {

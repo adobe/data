@@ -43,6 +43,8 @@ declare module "../../system/types.js" {
         "createTest/count": true;
         "createTest/probe": true;
         "createTest/missing": true;
+        "createTest/writer": true;
+        "createTest/observer": true;
     }
 }
 
@@ -232,6 +234,30 @@ describe("World.create", () => {
         await expect(world.systems.register(missing)).rejects.toThrow();
         expect(() => world.run(missing)).toThrow("isn't registered");
         expect(world.systems.get("createTest/missing")).toBeNull();
+    });
+
+    it("sees a change moved into an older chunk by a swap-remove", async () => {
+        const spawned: Entity[] = [];
+        const edit = System.create({ name: "createTest/edit", args: { type: "string" } }, (_, { args }, commands) => {
+            if (args === "spawn") for (let i = 0; i < 2100; i++) spawned.push(commands.spawn({ [velocity]: i }));
+            else commands.despawn(spawned[5]);
+        });
+        const writer = System.create({ name: "createTest/writer", query: { read: [velocity], write: [velocity] } }, row => {
+            if (row[velocity] === 2099) row[velocity] = -1;
+        });
+        const changes: number[] = [];
+        const observer = System.create({ name: "createTest/observer", query: { read: [velocity], changed: [velocity] } }, row => {
+            changes.push(row[velocity]);
+        });
+        const world = await World.create({ systems: [edit, writer, observer] });
+        await world.run(edit, "spawn");
+        await world.run(observer);
+        changes.length = 0;
+        // The last row (in the third chunk) changes; then a despawn moves it into row 5, in the first chunk.
+        await world.run(writer);
+        await world.run(edit, "despawn");
+        await world.run(observer);
+        expect(changes).toEqual([-1]);
     });
 
     it("spawns components named by symbols", async () => {

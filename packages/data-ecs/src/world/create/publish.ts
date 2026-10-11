@@ -14,6 +14,9 @@ const archetypeLayout = (archetype: Archetype): ArchetypeLayout => ({
         column: storage.layout.kind === "linear" ? storage.views.u8.byteOffset : -1,
         added: storage.added.byteOffset,
         changed: storage.changed.byteOffset,
+        chunkAdded: storage.chunkAdded.byteOffset,
+        chunkChanged: storage.chunkChanged.byteOffset,
+        chunks: storage.chunkAdded.length,
     })),
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { parseAst } from 'vite';
-import type { KernelDescription, KernelModule, Program } from '../world/create/kernel.js';
+import { chunkShift, type KernelDescription, type KernelModule, type Program } from '../world/create/kernel.js';
 import { transformKernels } from './transform.js';
 
 const header = `import { System } from "ecs";
@@ -139,7 +139,13 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
             switch (statement.kind) {
                 case "set": locals[statement.local] = evaluate(statement.value); return normal;
                 case "store": { const column = columns[statement.column]; if (column) column[at(statement.column, row)] = Number(evaluate(statement.value)); return normal; }
-                case "stamp": { const column = columns[statement.column]; if (column) column[at(statement.column, row)] = tick; return normal; }
+                case "stamp": {
+                    const column = columns[statement.column];
+                    const chunks = columns[statement.chunks];
+                    if (column) column[at(statement.column, row)] = tick;
+                    if (chunks) chunks[row >> chunkShift] = tick;
+                    return normal;
+                }
                 case "if": return execute(evaluate(statement.test) ? statement.consequent : statement.alternate);
                 case "block": return outward(execute(statement.body));
                 case "loop":
@@ -176,6 +182,7 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
         return description.columns.map((column, index) => {
             if (column.kind === "entity") return Float64Array.from({ length: rows }, (_, row) => 100 + row);
             if (column.kind === "changed") return new Uint32Array(rows);
+            if (column.kind === "chunks") return new Float64Array(Math.ceil(rows / 2 ** chunkShift));
             const component = String(column.component);
             const values = fields[component]?.[JSON.stringify(column.path)] ?? new Array<number>(rows).fill(0);
             const stride = interleaved[component]?.stride;
@@ -206,7 +213,7 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
     }
     const index = (kind: string, component: string, path: readonly (number | string)[] = []) => description.columns.findIndex(column =>
         column.kind === kind && column.kind !== "entity" && column.component === component
-        && (column.kind === "changed" || JSON.stringify(column.path) === JSON.stringify(path)));
+        && (column.kind !== "field" || JSON.stringify(column.path) === JSON.stringify(path)));
     return {
         field: (component: string, path: readonly (number | string)[] = []) => {
             const column = index("field", component, path);
@@ -215,6 +222,7 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
         /** A component's whole interleaved array, padding included. */
         array: (component: string) => [...columns[index("field", component, [0])] ?? []],
         changed: (component: string) => [...columns[index("changed", component)] ?? []],
+        chunks: (component: string) => [...columns[index("chunks", component)] ?? []],
         calls,
     };
 };
@@ -266,6 +274,20 @@ describe("layout", () => {
         });
         expect(result.array("velocity")).toEqual([3, 20, 1, padding, 6, 5, 4, padding]);
         expect(result.changed("velocity")).toEqual([tick, tick]);
+    });
+
+    test("stamps set the changed row and its chunk; each changed column is followed by its chunk column", async () => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [mass], write: [score] } }, (row) => {
+            if (row[mass] > 0) row[score] = 1;
+        });`);
+        const rows = 2 * 2 ** chunkShift + 5;
+        const mass = new Array<number>(rows).fill(0);
+        mass[2 ** chunkShift + 3] = 1;
+        const result = run(kernel, rows, { mass: { "[]": mass } });
+        const changed = kernel.columns.findIndex(column => column.kind === "changed");
+        expect(kernel.columns[changed + 1]).toEqual({ kind: "chunks", component: "score" });
+        expect(result.chunks("score")).toEqual([0, tick, 0]);
+        expect(result.changed("score").flatMap((value, row) => value === 0 ? [] : [row])).toEqual([2 ** chunkShift + 3]);
     });
 
     test("indices stay in step when return skips the rest of a row", async () => {

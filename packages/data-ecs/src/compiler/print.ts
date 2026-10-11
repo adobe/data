@@ -1,4 +1,4 @@
-import type { Path } from '../world/create/kernel.js';
+import { chunkShift, type Path } from '../world/create/kernel.js';
 import type { Expression, Statement } from './ir.js';
 import { resolve, type Out } from './out.js';
 import { rowLabel } from './statement.js';
@@ -53,7 +53,7 @@ const printStatement = (unit: Unit, statement: Statement, labels: Labels): strin
         }
         case "declare": return `let ${statement.locals.map(item => localName(unit, item)).join(", ")};`;
         case "store": return `c${statement.column}[x${statement.column}] = ${value(statement.value)};`;
-        case "stamp": return `c${statement.column}[x${statement.column}] = tick;`;
+        case "stamp": return `c${statement.column}[x${statement.column}] = tick;\nc${statement.chunks}[i >> ${chunkShift}] = tick;`;
         case "if": {
             const alternate = printStatements(unit, statement.alternate, labels);
             return `if (${value(statement.test)}) {\n${printStatements(unit, statement.consequent, labels)}\n}${alternate === "" ? "" : ` else {\n${alternate}\n}`}`;

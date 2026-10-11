@@ -133,14 +133,16 @@ describe("generateWasm with SIMD", () => {
         const kernel = generateWasm(program, columns, () => "number");
         if (kernel === null) throw new Error("expected a kernel");
         const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
-        const bases = columns.map(column => 4096 * (column.component + 1));
+        const bases = columns.map(column => 4096 * (Math.max(0, column.component) + 1));
         const floats = columns.map((_, k) => new Float32Array(memory.buffer, bases[k], 512));
         const ticks = new Float64Array(memory.buffer, 4096 * 8, 64);
+        const chunks = new Float64Array(memory.buffer, 4096 * 9, 4);
         fill(floats, ticks);
         const runKernel: unknown = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
         if (typeof runKernel !== "function") throw new Error("no run export");
-        runKernel(0, rows, tick, ...bases.map((base, k) => columns[k].view === "f64" ? 4096 * 8 : base));
-        return { kernel, floats, ticks };
+        // f64 columns are ticks, then their chunks.
+        runKernel(0, rows, tick, ...bases.map((base, k) => columns[k].view !== "f64" ? base : columns[k].component === -2 ? 4096 * 9 : 4096 * 8));
+        return { kernel, floats, ticks, chunks };
     };
     const column = (component: number, stride: number, offset: number): WasmColumn => ({ view: "f32", stride, offset, boolean: false, component });
     const read = (k: number): Expression => ({ kind: "column", column: k });
@@ -186,10 +188,11 @@ describe("generateWasm with SIMD", () => {
 
     it("blends stores and tick stamps under an if, per lane", () => {
         const positive: Expression = { kind: "binary", operator: ">", left: read(0), right: { kind: "number", value: 0 } };
-        const program: Program = { locals: 0, body: [{ kind: "if", test: positive, consequent: [{ kind: "store", column: 1, value: read(0) }, { kind: "stamp", column: 2 }], alternate: [] }] };
+        const program: Program = { locals: 0, body: [{ kind: "if", test: positive, consequent: [{ kind: "store", column: 1, value: read(0) }, { kind: "stamp", column: 2, chunks: 3 }], alternate: [] }] };
         const ticksColumn: WasmColumn = { view: "f64", stride: 8, offset: 0, boolean: false, component: -1 };
+        const chunksColumn: WasmColumn = { view: "f64", stride: 8, offset: 0, boolean: false, component: -2 };
         const inputs = [1, -1, 2, -2, 0, 3, NaN, 4, -5, 6];
-        const { kernel, floats, ticks } = runVector(program, [column(0, 4, 0), column(1, 4, 0), ticksColumn], ([input, out], tickValues) => {
+        const { kernel, floats, ticks, chunks } = runVector(program, [column(0, 4, 0), column(1, 4, 0), ticksColumn, chunksColumn], ([input, out], tickValues) => {
             input.set(inputs);
             out.fill(-7);
             tickValues.fill(1);
@@ -197,6 +200,7 @@ describe("generateWasm with SIMD", () => {
         expect(kernel.vectorized).toBe(true);
         expect([...floats[1].subarray(0, 10)]).toEqual(inputs.map(x => x > 0 ? x : -7));
         expect([...ticks.subarray(0, 10)]).toEqual(inputs.map(x => x > 0 ? 7 : 1));
+        expect(chunks[0]).toBe(7);
     });
 
     it("stays scalar for operations without an exact f32x4 equivalent", () => {

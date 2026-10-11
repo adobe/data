@@ -6,13 +6,19 @@ import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../
 import { emptyViews } from './arrays.js';
 import type { ArchetypeLayout, EntitiesLayout, FromWorker, KernelSetup, LookupSetup, ToWorker, WorkerError } from './protocol.js';
 import { addCommand, createBuffer, despawnCommand, pushCommand, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
-import { forEachPassingRange } from './ranges.js';
+import { forEachPassingRange, type Filter } from './ranges.js';
 import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
 
 /** A worker's views of one archetype's columns in the shared memory. */
 type ArchetypeViews = {
     readonly entities: Float64Array;
-    readonly storages: ReadonlyMap<number, { readonly views: Views; readonly added: Float64Array; readonly changed: Float64Array }>;
+    readonly storages: ReadonlyMap<number, {
+        readonly views: Views;
+        readonly added: Float64Array;
+        readonly changed: Float64Array;
+        readonly chunkAdded: Float64Array;
+        readonly chunkChanged: Float64Array;
+    }>;
 };
 
 type EntityViews = Reservations & { readonly archetype: Int32Array; readonly row: Uint32Array; readonly length: number };
@@ -45,6 +51,8 @@ const viewArchetype = (buffer: ArrayBufferLike, layout: ArchetypeLayout): Archet
             views: componentLayout.kind === "linear" && storage.column >= 0 ? viewsOf(buffer, storage.column, layout.capacity * componentLayout.stride) : emptyViews,
             added: new Float64Array(buffer, storage.added, layout.capacity),
             changed: new Float64Array(buffer, storage.changed, layout.capacity),
+            chunkAdded: new Float64Array(buffer, storage.chunkAdded, storage.chunks),
+            chunkChanged: new Float64Array(buffer, storage.chunkChanged, storage.chunks),
         }];
     })),
 });
@@ -114,6 +122,7 @@ const columnsOf = (loaded: LoadedKernel, archetypeId: number): readonly TypedArr
         const storage = archetype.storages.get(source.id);
         if (storage === undefined) throw new Error(`Archetype ${archetypeId} lacks component ${source.id}.`);
         if (source.kind === "changed") return storage.changed;
+        if (source.kind === "chunks") return storage.chunkChanged;
         const layout = layouts[source.id];
         if (layout.kind !== "linear") throw new Error(`Component ${source.id} isn't linear.`);
         return storage.views[layout.leaves[source.leaf].view];
@@ -131,16 +140,22 @@ const run = (message: RunMessage, buffer: CommandBuffer): void => {
     if (archetype === undefined) throw new Error(`Worker has no layout for archetype ${message.archetype}.`);
     const commands = createCommands(buffer);
     const kernelColumns = columnsOf(loaded, message.archetype);
-    const ticks = (ids: readonly number[], kind: "added" | "changed"): Float64Array[] =>
-        ids.map(id => archetype.storages.get(id)?.[kind] ?? new Float64Array(0));
-    const added = ticks(loaded.setup.added, "added");
-    const changed = ticks(loaded.setup.changed, "changed");
+    const filters: Filter[] = [
+        ...loaded.setup.added.flatMap(id => {
+            const storage = archetype.storages.get(id);
+            return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded }];
+        }),
+        ...loaded.setup.changed.flatMap(id => {
+            const storage = archetype.storages.get(id);
+            return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged }];
+        }),
+    ];
     const { wasm } = loaded;
     if (wasm !== null && loaded.setup.wasm !== null) {
         const parameters = [...kernelColumns.map(column => column.byteOffset), ...scalarValues(loaded.setup.wasm.scalars, message.resources, message.args)];
-        return forEachPassingRange(added, changed, message.lastRun, message.start, message.end, (start, end) => wasm(start, end, message.tick, ...parameters));
+        return forEachPassingRange(filters, message.lastRun, message.start, message.end, (start, end) => wasm(start, end, message.tick, ...parameters));
     }
-    forEachPassingRange(added, changed, message.lastRun, message.start, message.end, (start, end) =>
+    forEachPassingRange(filters, message.lastRun, message.start, message.end, (start, end) =>
         loaded.kernel(kernelColumns, start, end, message.resources, loaded.lookups, loaded.setup.keys, message.args, commands, message.tick));
 };
 

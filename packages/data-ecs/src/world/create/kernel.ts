@@ -16,7 +16,15 @@ export type Column =
     /** A view of one scalar leaf. Registration checks the path names a scalar leaf of the schema. */
     | { readonly kind: "field"; readonly component: Key; readonly path: Path }
     /** Float64Array of the component's changed ticks, stamped with `tick` on each write. */
-    | { readonly kind: "changed"; readonly component: Key };
+    | { readonly kind: "changed"; readonly component: Key }
+    /**
+     * Float64Array of the component's newest changed tick per chunk of `chunkRows` rows, so change filters can skip
+     * unchanged chunks. Every `changed` column is followed by one, and each stamp sets both: `chunks[row >> chunkShift] = tick`.
+     */
+    | { readonly kind: "chunks"; readonly component: Key };
+
+/** Rows per chunk of change ticks is `2 ** chunkShift`. */
+export const chunkShift = 10;
 
 /** A whole-value write assumed exactly these leaves. Registration checks they are all of the schema's leaves. */
 export type Shape = { readonly component: Key; readonly leaves: readonly Path[] };
@@ -70,8 +78,8 @@ export namespace Program {
         | { readonly kind: "set"; readonly local: number; readonly value: Expression }
         /** `columns[column][row] = value`, with typed-array conversion. */
         | { readonly kind: "store"; readonly column: number; readonly value: Expression }
-        /** `columns[column][row] = tick`, for a changed column. */
-        | { readonly kind: "stamp"; readonly column: number }
+        /** `columns[column][row] = tick` and `columns[chunks][row >> chunkShift] = tick`, for a changed column and its chunk column. */
+        | { readonly kind: "stamp"; readonly column: number; readonly chunks: number }
         | { readonly kind: "if"; readonly test: Expression; readonly consequent: readonly Statement[]; readonly alternate: readonly Statement[] }
         /** WASM `block`: a branch to it exits it. */
         | { readonly kind: "block"; readonly body: readonly Statement[] }

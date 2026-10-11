@@ -18,7 +18,12 @@ export const fieldColumn = (unit: Unit, component: string, path: Path): number =
 
 export const fieldRead = (unit: Unit, component: string, path: Path): Expression => ({ kind: "column", column: fieldColumn(unit, component, path) });
 
-export const changedColumn = (unit: Unit, component: string): number =>
-    column(unit, `changed ${component}`, `{ kind: "changed", component: ${component} }`);
+/** A component's changed column, immediately followed by its dense chunk column. */
+export const changedColumns = (unit: Unit, component: string): { readonly column: number; readonly chunks: number } => {
+    const changed = column(unit, `changed ${component}`, `{ kind: "changed", component: ${component} }`);
+    const chunks = column(unit, `chunks ${component}`, `{ kind: "chunks", component: ${component} }`);
+    unit.chunks.add(chunks);
+    return { column: changed, chunks };
+};
 
 export const entityRead = (unit: Unit): Expression => ({ kind: "column", column: column(unit, "entity", `{ kind: "entity" }`) });

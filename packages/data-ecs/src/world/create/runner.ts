@@ -8,7 +8,7 @@ import { bindKernel, type BoundKernel } from './kernels.js';
 import type { Pool } from './pool.js';
 import type { KernelSetup } from './protocol.js';
 import { createBuffer, type CommandBuffer } from './buffer.js';
-import { forEachPassingRange } from './ranges.js';
+import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
 import { createContext, createRow, type Cursor } from './rows.js';
 import { scalarValues } from './wasm.js';
@@ -71,8 +71,17 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }
     };
 
-    const ticksOf = (archetype: Archetype, ids: readonly number[], kind: "added" | "changed"): Float64Array[] =>
-        ids.map(id => archetype.storageOf.get(id)?.[kind] ?? new Float64Array(0));
+    /** The archetype's change filters: `added` then `changed`, rows and chunks. */
+    const filtersOf = (archetype: Archetype): Filter[] => [
+        ...addedIds.flatMap(id => {
+            const storage = archetype.storageById[id];
+            return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded }];
+        }),
+        ...changedIds.flatMap(id => {
+            const storage = archetype.storageById[id];
+            return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged }];
+        }),
+    ];
 
     const rowOf = (archetype: Archetype): { readonly row: object; readonly cursor: Cursor } => {
         let entry = rows.get(archetype);
@@ -86,7 +95,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
 
     const runBody = (archetype: Archetype, since: number): void => {
         const { row, cursor } = rowOf(archetype);
-        forEachPassingRange(ticksOf(archetype, addedIds, "added"), ticksOf(archetype, changedIds, "changed"), since, 0, archetype.count, (start, end) => {
+        forEachPassingRange(filtersOf(archetype), since, 0, archetype.count, (start, end) => {
             for (let index = start; index < end; index++) {
                 cursor.row = index;
                 system.body(row, context, commands);
@@ -96,15 +105,14 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
 
     const runKernelLocally = (bound: BoundKernel, archetype: Archetype, since: number, values: readonly unknown[], args: unknown, tick: number): void => {
         const columns = bound.columnsOf(archetype);
-        const added = ticksOf(archetype, addedIds, "added");
-        const changed = ticksOf(archetype, changedIds, "changed");
+        const filters = filtersOf(archetype);
         const compiled = bound.compiled();
         if (compiled !== null && bound.wasm !== null) {
             const parameters = [...columns.map(column => column.byteOffset), ...scalarValues(bound.wasm.scalars, values, args)];
-            return forEachPassingRange(added, changed, since, 0, archetype.count, (start, end) => compiled.run(start, end, tick, ...parameters));
+            return forEachPassingRange(filters, since, 0, archetype.count, (start, end) => compiled.run(start, end, tick, ...parameters));
         }
         const run = bound.kernel();
-        forEachPassingRange(added, changed, since, 0, archetype.count, (start, end) =>
+        forEachPassingRange(filters, since, 0, archetype.count, (start, end) =>
             run(columns, start, end, values, bound.lookups, bound.description.keys, args, commands, tick));
     };
 

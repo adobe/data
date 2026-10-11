@@ -1,7 +1,7 @@
 import type { Entity } from '../../entity/entity.js';
 import type { Declaration } from '../../system/declaration.js';
 import type { Lookup } from '../../system/query.js';
-import type { Archetype } from './archetype.js';
+import { stampChanged, type Archetype } from './archetype.js';
 import { readCell, writeCell } from './cells.js';
 import { locate } from './entities.js';
 import { resourceCell } from './resources.js';
@@ -20,11 +20,15 @@ export const createRow = (state: State, archetype: Archetype, reads: readonly Ke
     for (const key of new Set([...reads, ...writes])) {
         const storage = archetype.storageOf.get(idOf(state, key));
         if (storage === undefined) continue;
+        const { layout } = storage;
         Object.defineProperty(row, key, {
-            get: () => readCell(storage, cursor.row),
+            // Chosen once per storage, so a read doesn't dispatch on the layout.
+            get: layout.kind === "linear" ? () => layout.read(storage.views, cursor.row)
+                : layout.kind === "object" ? () => storage.values[cursor.row]
+                : () => layout.value,
             set: writes.includes(key) ? (value: unknown) => {
                 writeCell(storage, cursor.row, value);
-                storage.changed[cursor.row] = state.tick;
+                stampChanged(storage, cursor.row, state.tick);
             } : undefined,
             enumerable: true,
         });
@@ -79,7 +83,7 @@ export const createContext = (state: State, declaration: Declaration): { args?: 
             set: writes.includes(key) ? (value: unknown) => {
                 const { storage, row } = resourceCell(state, key);
                 writeCell(storage, row, value);
-                storage.changed[row] = state.tick;
+                stampChanged(storage, row, state.tick);
             } : undefined,
             enumerable: true,
         });

@@ -1,4 +1,4 @@
-import { copyCell, insertRow, swapRemove, type Archetype } from './archetype.js';
+import { copyCell, insertRow, stampAdded, stampChanged, swapRemove, type Archetype } from './archetype.js';
 import { despawnCommand, endOf, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { writeCell } from './cells.js';
 import { indexOf, locate, materialize, recycle, release, reserved } from './entities.js';
@@ -144,8 +144,8 @@ const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Arche
         const storage = to.storageById[id];
         if (storage === undefined) continue;
         writeCell(storage, toRow, values[k]);
-        storage.changed[toRow] = tick;
-        if (from === null || from.storageById[id] === undefined || (fresh !== undefined && fresh.includes(id))) storage.added[toRow] = tick;
+        stampChanged(storage, toRow, tick);
+        if (from === null || from.storageById[id] === undefined || (fresh !== undefined && fresh.includes(id))) stampAdded(storage, toRow, tick);
     }
 };
 

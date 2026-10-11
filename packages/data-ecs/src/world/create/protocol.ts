@@ -16,12 +16,20 @@ export type EntitiesLayout = {
 };
 
 /** `column` is the byte offset of the component's interleaved column, or -1 when it stores nothing in linear memory. */
-export type StorageLayout = { readonly id: number; readonly column: number; readonly added: number; readonly changed: number };
+export type StorageLayout = {
+    readonly id: number;
+    readonly column: number;
+    readonly added: number;
+    readonly changed: number;
+    readonly chunkAdded: number;
+    readonly chunkChanged: number;
+    readonly chunks: number;
+};
 
 export type ArchetypeLayout = { readonly id: number; readonly capacity: number; readonly entities: number; readonly storages: readonly StorageLayout[] };
 
 /** Where a kernel column comes from in any archetype it matches. */
-export type Source = { readonly kind: "entity" } | { readonly kind: "field" | "changed"; readonly id: number; readonly leaf: number };
+export type Source = { readonly kind: "entity" } | { readonly kind: "field" | "changed" | "chunks"; readonly id: number; readonly leaf: number };
 
 /** Component ids of one lookup. */
 export type LookupSetup = { readonly read: readonly number[]; readonly has: readonly number[]; readonly not: readonly number[] };

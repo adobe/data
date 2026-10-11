@@ -43,6 +43,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     const preludeCode = printStatements(unit, resolve(prelude));
     const program = toProgram(statements);
     const { signature: { resources, lookups }, columns, booleans, keys } = unit;
+    const strided = columns.flatMap((_, index) => unit.chunks.has(index) ? [] : [index]);
     const locals = [
         ...columns.map((_, index) => `const c${index} = columns[${index}];`),
         ...resources.map((_, index) => `const r${index} = resources[${index}];`),
@@ -66,11 +67,11 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         create: [
             "(booleans, strides, offsets) => {",
             ...[...booleans].map(index => `const b${index} = booleans[${index}];`),
-            ...columns.map((_, index) => `const s${index} = strides[${index}], o${index} = offsets[${index}];`),
+            ...strided.map(index => `const s${index} = strides[${index}], o${index} = offsets[${index}];`),
             "return (columns, start, end, resources, lookups, keys, args, commands, tick) => {",
             ...locals,
             preludeCode,
-            `${rowLabel}: for (let ${["i = start", ...columns.map((_, index) => `x${index} = start * s${index} + o${index}`)].join(", ")}; i < end; ${["i++", ...columns.map((_, index) => `x${index} += s${index}`)].join(", ")}) {`,
+            `${rowLabel}: for (let ${["i = start", ...strided.map(index => `x${index} = start * s${index} + o${index}`)].join(", ")}; i < end; ${["i++", ...strided.map(index => `x${index} += s${index}`)].join(", ")}) {`,
             kernel,
             "}",
             "};",

@@ -2,7 +2,7 @@ import type { AssignmentExpression, Expression as SourceExpression, Node, Patter
 import { access } from './access.js';
 import { failPattern } from './bind.js';
 import { set } from './booleans.js';
-import { changedColumn, fieldColumn, fieldRead } from './columns.js';
+import { changedColumns, fieldColumn, fieldRead } from './columns.js';
 import { leavesOf, toData, type Data } from './data.js';
 import { fail } from './failure.js';
 import { isBinary, local, number, references, type Expression } from './ir.js';
@@ -118,7 +118,7 @@ const emit = (stores: readonly Store[], scope: Scope, out: Out): void => {
         ? set(unit, store.target.local, values[index], undefined)
         : { kind: "store", column: store.target.column, value: values[index] }));
     for (const component of new Set(stores.flatMap(store => store.component === undefined ? [] : [store.component]))) {
-        out.push({ kind: "stamp", column: changedColumn(unit, component) });
+        out.push({ kind: "stamp", ...changedColumns(unit, component) });
     }
 };
 

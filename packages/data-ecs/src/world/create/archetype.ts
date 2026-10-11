@@ -1,6 +1,7 @@
 import type { Entity } from '../../entity/entity.js';
 import type { Layout, Views } from '../../layout/layout.js';
 import { allocateArray, allocateViews, emptyViews, freeViews, growArray } from './arrays.js';
+import { chunkShift } from './kernel.js';
 import type { Memory } from './memory.js';
 
 /** One component's storage in one archetype. Its views and ticks are replaced when the archetype grows. */
@@ -14,6 +15,23 @@ export type Storage = {
     /** Ticks are f64 so they never wrap; u32 ticks with a clamp pass are a phase 2 optimization. */
     added: Float64Array;
     changed: Float64Array;
+    /** The newest `added` and `changed` tick in each chunk of `2 ** chunkShift` rows, so change filters skip unchanged chunks. */
+    chunkAdded: Float64Array;
+    chunkChanged: Float64Array;
+};
+
+/** Chunks covering `capacity` rows. */
+const chunksFor = (capacity: number): number => Math.max(1, Math.ceil(capacity / 2 ** chunkShift));
+
+/** Stamps a row's `changed` tick and its chunk's. Ticks only increase, so the chunk's is the newest. */
+export const stampChanged = (storage: Storage, row: number, tick: number): void => {
+    storage.changed[row] = tick;
+    storage.chunkChanged[row >> chunkShift] = tick;
+};
+
+export const stampAdded = (storage: Storage, row: number, tick: number): void => {
+    storage.added[row] = tick;
+    storage.chunkAdded[row >> chunkShift] = tick;
 };
 
 /** A table of the entities that have exactly `components`. Rows are dense: `0` to `count`. */
@@ -44,6 +62,7 @@ const initialCapacity = 16;
 /** A constant's value can't change, so its `changed` ticks are its `added` ticks: tags cost one tick per row. */
 const createStorage = (memory: Memory, component: number, layout: Layout, capacity: number): Storage => {
     const added = allocateArray(memory, Float64Array, capacity);
+    const chunkAdded = allocateArray(memory, Float64Array, chunksFor(capacity)).fill(0);
     return {
         component,
         layout,
@@ -51,6 +70,8 @@ const createStorage = (memory: Memory, component: number, layout: Layout, capaci
         values: [],
         added,
         changed: layout.kind === "constant" ? added : allocateArray(memory, Float64Array, capacity),
+        chunkAdded,
+        chunkChanged: layout.kind === "constant" ? chunkAdded : allocateArray(memory, Float64Array, chunksFor(capacity)).fill(0),
     };
 };
 
@@ -92,6 +113,12 @@ const grow = (memory: Memory, archetype: Archetype): void => {
         const shared = storage.changed === storage.added;
         storage.added = growArray(memory, storage.added, Float64Array, capacity, count);
         storage.changed = shared ? storage.added : growArray(memory, storage.changed, Float64Array, capacity, count);
+        const chunks = chunksFor(capacity);
+        if (chunks > storage.chunkAdded.length) {
+            const used = storage.chunkAdded.length;
+            storage.chunkAdded = growArray(memory, storage.chunkAdded, Float64Array, chunks, used).fill(0, used);
+            storage.chunkChanged = shared ? storage.chunkAdded : growArray(memory, storage.chunkChanged, Float64Array, chunks, used).fill(0, used);
+        }
     }
     archetype.entities = growArray(memory, archetype.entities, Float64Array, capacity, count);
     archetype.capacity = capacity;
@@ -125,8 +152,14 @@ export const copyCell = (from: Storage, fromRow: number, to: Storage, toRow: num
     const { layout } = from;
     if (layout.kind === "linear") copyElement(from.views, fromRow, to.views, toRow, layout.stride);
     else if (layout.kind === "object") to.values[toRow] = from.values[fromRow];
-    to.added[toRow] = from.added[fromRow];
-    to.changed[toRow] = from.changed[fromRow];
+    const added = from.added[fromRow];
+    const changed = from.changed[fromRow];
+    to.added[toRow] = added;
+    to.changed[toRow] = changed;
+    // A chunk's tick is the newest of its rows, so a row moving in can raise it.
+    const chunk = toRow >> chunkShift;
+    if (added > to.chunkAdded[chunk]) to.chunkAdded[chunk] = added;
+    if (changed > to.chunkChanged[chunk]) to.chunkChanged[chunk] = changed;
 };
 
 /** Removes a row by moving the last row into it. Returns the moved entity, or -1 if the removed row was last. */

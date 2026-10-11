@@ -66,10 +66,10 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         }
         if (!queried.has(column.component)) return fail(`"${String(column.component)}" isn't in the query's read or write.`);
         const id = idOf(state, column.component);
-        if (column.kind === "changed") {
+        if (column.kind === "changed" || column.kind === "chunks") {
             if (!written.has(column.component)) return fail(`writes "${String(column.component)}", which isn't in the query's write.`);
             dense();
-            return { kind: "changed", id, leaf: 0 };
+            return { kind: column.kind, id, leaf: 0 };
         }
         const layout = state.layouts[id];
         if (layout.kind !== "linear") return fail(`"${String(column.component)}" isn't stored in linear memory.`);
@@ -115,6 +115,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             const storage = archetype.storageOf.get(source.id);
             if (storage === undefined) return fail(`column of "${String(state.keys[source.id])}" isn't in the query.`);
             if (source.kind === "changed") return storage.changed;
+            if (source.kind === "chunks") return storage.chunkChanged;
             const layout = state.layouts[source.id];
             return layout.kind === "linear" ? storage.views[layout.leaves[source.leaf].view] : fail("a field column isn't linear.");
         });

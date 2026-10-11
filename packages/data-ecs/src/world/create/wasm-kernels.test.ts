@@ -44,6 +44,7 @@ declare module "../../system/types.js" {
         "wasmTest/scale": true;
         "wasmTest/main": true;
         "wasmTest/drift": true;
+        "wasmTest/react": true;
     }
 }
 
@@ -135,7 +136,17 @@ const drift = System.create({
     row[position] = [x + vx * t, y + vy * t];
 });
 
-const main = System.composite({ name: "wasmTest/main", systems: [integrate, bounce, tally, drift] });
+/** Runs only for rows whose bounces changed since it last ran. */
+const react = System.create({
+    name: "wasmTest/react",
+    kernel: true,
+    query: { read: [score], write: [score], changed: [bounces] },
+    after: ["wasmTest/tally"],
+}, row => {
+    row[score] = row[score] + 1000;
+});
+
+const main = System.composite({ name: "wasmTest/main", systems: [integrate, bounce, tally, drift, react] });
 
 const snapshot = (world: World): unknown[] => world.query.select([position]).map(entity => world.read.entity(entity, [position, velocity, bounces, flipped, score]));
 

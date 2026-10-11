@@ -53,7 +53,10 @@ const printStatement = (unit: Unit, statement: Statement, labels: Labels): strin
         }
         case "declare": return `let ${statement.locals.map(item => localName(unit, item)).join(", ")};`;
         case "store": return `c${statement.column}[x${statement.column}] = ${value(statement.value)};`;
-        case "stamp": return `c${statement.column}[x${statement.column}] = tick;\nc${statement.chunks}[i >> ${chunkShift}] = tick;`;
+        case "stamp": {
+            const row = `c${statement.column}[x${statement.column}] = tick;`;
+            return unit.stampedPerCall.has(statement.chunks) ? row : `${row}\nc${statement.chunks}[i >> ${chunkShift}] = tick;`;
+        }
         case "if": {
             const alternate = printStatements(unit, statement.alternate, labels);
             return `if (${value(statement.test)}) {\n${printStatements(unit, statement.consequent, labels)}\n}${alternate === "" ? "" : ` else {\n${alternate}\n}`}`;

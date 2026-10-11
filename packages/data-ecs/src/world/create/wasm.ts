@@ -51,8 +51,8 @@ export const scalarValues = (scalars: readonly WasmScalar[], resources: readonly
         return Number(value);
     });
 
-/** The `run` export of an instantiated kernel module. */
-export type WasmRun = (start: number, end: number, tick: number, ...values: number[]) => void;
+/** The `run` export of an instantiated kernel module: `lastRun` below 0 passes every row. */
+export type WasmRun = (start: number, end: number, tick: number, lastRun: number, ...values: number[]) => void;
 
 export const instantiateWasm = async (module: WebAssembly.Module, memory: WebAssembly.Memory, imports: readonly string[]): Promise<WasmRun> => {
     const instance = await WebAssembly.instantiate(module, { env: { memory }, math: importsOf(imports) });
@@ -76,13 +76,13 @@ export const importsOf = (names: readonly string[]): { readonly [name: string]: 
 
 // Opcodes.
 const op = {
-    block: 0x02, loop: 0x03, if: 0x04, else: 0x05, end: 0x0b, br: 0x0c, brIf: 0x0d, call: 0x10, drop: 0x1a,
+    block: 0x02, loop: 0x03, if: 0x04, else: 0x05, end: 0x0b, br: 0x0c, brIf: 0x0d, call: 0x10, drop: 0x1a, select: 0x1b,
     localGet: 0x20, localSet: 0x21, localTee: 0x22,
     i32Load: 0x28, f32Load: 0x2a, f64Load: 0x2b, i32Load8u: 0x2d, i32Store: 0x36, f32Store: 0x38, f64Store: 0x39, i32Store8: 0x3a,
     i32Const: 0x41, f64Const: 0x44,
     i32Eqz: 0x45, i32GeS: 0x4e,
     f64Eq: 0x61, f64Ne: 0x62, f64Lt: 0x63, f64Gt: 0x64, f64Le: 0x65, f64Ge: 0x66,
-    i32Clz: 0x67, i32Add: 0x6a, i32Sub: 0x6b, i32Mul: 0x6c, i32And: 0x71, i32Or: 0x72, i32Xor: 0x73, i32Shl: 0x74, i32ShrS: 0x75, i32ShrU: 0x76,
+    i32Eq: 0x46, i32LtS: 0x48, i32LeS: 0x4c, i32Clz: 0x67, i32Add: 0x6a, i32Sub: 0x6b, i32Mul: 0x6c, i32And: 0x71, i32Or: 0x72, i32Xor: 0x73, i32Shl: 0x74, i32ShrS: 0x75, i32ShrU: 0x76,
     f64Abs: 0x99, f64Neg: 0x9a, f64Ceil: 0x9b, f64Floor: 0x9c, f64Trunc: 0x9d, f64Sqrt: 0x9f,
     f64Add: 0xa0, f64Sub: 0xa1, f64Mul: 0xa2, f64Div: 0xa3, f64Min: 0xa4, f64Max: 0xa5,
     i32WrapI64: 0xa7, f32DemoteF64: 0xb6, f64ConvertI32S: 0xb7, f64ConvertI32U: 0xb8, f64PromoteF32: 0xbb,
@@ -140,6 +140,7 @@ export const generateWasm = (
     columns: readonly WasmColumn[],
     scalarTypes: (scalar: WasmScalar) => Type | null,
     simdEnabled = true,
+    filters = 0,
 ): WasmKernel | null => {
     const scalars: WasmScalar[] = [];
     const scalarIndex = new Map<string, number>();
@@ -200,8 +201,11 @@ export const generateWasm = (
     for (let pass = 0; pass < program.locals + 2 && inferLocals(program.body); pass++);
 
     // Parameters: start, end, tick, then one address per column, then scalars. Locals follow.
-    const columnParameter = (column: number): number => 3 + column;
-    const scalarParameter = (index: number): number => 3 + columns.length + index;
+    // Parameters: start, end, tick, lastRun, column addresses, filter row tick addresses, filter chunk tick addresses, scalars.
+    const columnParameter = (column: number): number => 4 + column;
+    const filterRowParameter = (filter: number): number => 4 + columns.length + filter;
+    const filterChunkParameter = (filter: number): number => 4 + columns.length + filters + filter;
+    const scalarParameter = (index: number): number => 4 + columns.length + 2 * filters + index;
     const code: number[] = [];
     const extraLocals: number[] = [];
     let localBase = 0;
@@ -415,8 +419,39 @@ export const generateWasm = (
         }
     };
 
-    /** Sets the chunk tick of the row `rowOffset` rows past the current one. */
+    /**
+     * Chunk columns stamped by every row: top-level stamps with no `next` before them, in an unfiltered kernel.
+     * Their chunks are stamped once per call, for the whole range, instead of on each row.
+     */
+    const everyRow = new Set<number>();
+    if (filters === 0) {
+        const ends = (statement: Statement): boolean =>
+            statement.kind === "next" || (statement.kind === "if" && (statement.consequent.some(ends) || statement.alternate.some(ends)))
+            || ((statement.kind === "block" || statement.kind === "loop") && statement.body.some(ends));
+        for (const statement of program.body) {
+            if (ends(statement)) break;
+            if (statement.kind === "stamp") everyRow.add(statement.chunks);
+        }
+    }
+    /** Stamps every chunk from `start`'s to `end - 1`'s, for the chunk columns every row stamps. */
+    const stampRangeChunks = (): void => {
+        for (const chunks of everyRow) {
+            const chunk = scratch(i32Type);
+            const last = scratch(i32Type);
+            // if (start < end) for (chunk = start >> shift; chunk <= (end - 1) >> shift; chunk++) chunks[chunk] = tick
+            code.push(op.localGet, 0, op.localGet, 1, op.i32LtS, op.if, 0x40);
+            code.push(op.localGet, 0, op.i32Const, ...signed(chunkShift), op.i32ShrU, op.localSet, ...unsigned(chunk));
+            code.push(op.localGet, 1, op.i32Const, 1, op.i32Sub, op.i32Const, ...signed(chunkShift), op.i32ShrU, op.localSet, ...unsigned(last));
+            code.push(op.loop, 0x40);
+            code.push(op.localGet, ...unsigned(columnParameter(chunks)), op.localGet, ...unsigned(chunk), op.i32Const, 3, op.i32Shl, op.i32Add, op.localGet, 2, op.f64Store, 3, 0);
+            code.push(op.localGet, ...unsigned(chunk), op.i32Const, 1, op.i32Add, op.localTee, ...unsigned(chunk), op.localGet, ...unsigned(last), op.i32LeS, op.brIf, 0);
+            code.push(op.end, op.end);
+        }
+    };
+
+    /** Sets the chunk tick of the row `rowOffset` rows past the current one, unless every row's chunk is stamped up front. */
     const stampChunk = (chunks: number, rowOffset: number): void => {
+        if (everyRow.has(chunks)) return;
         code.push(op.localGet, ...unsigned(columnParameter(chunks)), op.localGet, ...unsigned(rowLocal));
         if (rowOffset !== 0) code.push(op.i32Const, ...signed(rowOffset), op.i32Add);
         code.push(op.i32Const, ...signed(chunkShift), op.i32ShrU, op.i32Const, 3, op.i32Shl, op.i32Add, op.localGet, 2, op.f64Store, 3, 0);
@@ -962,7 +997,28 @@ export const generateWasm = (
     };
 
     try {
-        const parameterCount = 3 + columns.length;
+        const parameterCount = 4 + columns.length + 2 * filters;
+        /** Leaves 1 if any filter's tick at `(row >> shift) * 8` in its `parameter` array is newer than `lastRun`. */
+        const anyNewer = (parameter: (filter: number) => number, shift: number): void => {
+            for (let filter = 0; filter < filters; filter++) {
+                code.push(op.localGet, ...unsigned(parameter(filter)), op.localGet, ...unsigned(rowLocal));
+                if (shift > 0) code.push(op.i32Const, ...signed(shift), op.i32ShrU);
+                code.push(op.i32Const, 3, op.i32Shl, op.i32Add, op.f64Load, 3, 0, op.localGet, 3, op.f64Gt);
+                if (filter > 0) code.push(op.i32Or);
+            }
+        };
+        /** At a chunk's first row, skips the whole chunk unless a filter's chunk tick is newer. */
+        const skipChunks = (): void => {
+            const next = scratch(i32Type);
+            code.push(op.localGet, ...unsigned(rowLocal), op.localGet, 0, op.i32Eq, op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(2 ** chunkShift - 1), op.i32And, op.i32Eqz, op.i32Or);
+            code.push(op.if, 0x40);
+            anyNewer(filterChunkParameter, chunkShift);
+            code.push(op.i32Eqz, op.if, 0x40);
+            // row = min(end, start of the next chunk)
+            code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(chunkShift), op.i32ShrU, op.i32Const, 1, op.i32Add, op.i32Const, ...signed(chunkShift), op.i32Shl, op.localSet, ...unsigned(next));
+            code.push(op.localGet, ...unsigned(next), op.localGet, 1, op.localGet, ...unsigned(next), op.localGet, 1, op.i32LtS, op.select, op.localSet, ...unsigned(rowLocal));
+            code.push(op.br, 2, op.end, op.end);
+        };
         // Scalars are discovered while generating, so code is generated first with locals placed after a provisional scalar count.
         /** `rows`: four rows at a time where every column is dense; `lanes`: fuse statements within each row. */
         let fused = false;
@@ -973,11 +1029,18 @@ export const generateWasm = (
             localBase = parameterCount + scalarCount;
             rowLocal = scratch(i32Type);
             code.push(op.localGet, 0, op.localSet, ...unsigned(rowLocal));
+            stampRangeChunks();
             if (mode === "rows") rowsLoop();
             // for (; row < end; row++) { block next { body } }
             code.push(op.block, 0x40, op.loop, 0x40);
             code.push(op.localGet, ...unsigned(rowLocal), op.localGet, 1, op.i32GeS, op.brIf, 1);
+            if (filters > 0) skipChunks();
             code.push(op.block, 0x40);
+            // A row that no filter passes goes to the next.
+            if (filters > 0) {
+                anyNewer(filterRowParameter, 0);
+                code.push(op.i32Eqz, op.brIf, 0);
+            }
             labels.length = 0;
             labels.push("next");
             if (mode === "lanes") fused = emitLaneBody();
@@ -987,7 +1050,8 @@ export const generateWasm = (
             code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, 1, op.i32Add, op.localSet, ...unsigned(rowLocal), op.br, 0);
             code.push(op.end, op.end, op.end);
         };
-        let mode: "rows" | "lanes" | "scalar" = simdEnabled ? "rows" : "scalar";
+        // Across-rows mode doesn't filter rows, so filtered kernels fuse within rows instead.
+        let mode: "rows" | "lanes" | "scalar" = !simdEnabled ? "scalar" : filters > 0 ? "lanes" : "rows";
         try {
             generate(0, mode);
         }
@@ -995,14 +1059,17 @@ export const generateWasm = (
             if (error !== notVectorizable) throw error;
             mode = "lanes";
             generate(0, mode);
-            if (!fused) mode = "scalar";
+        }
+        if (mode === "lanes" && !fused) {
+            mode = "scalar";
+            generate(0, mode);
         }
         const discovered = scalars.length;
         generate(discovered, mode);
         if (scalars.length !== discovered) throw unsupported;
         const vectorized = mode !== "scalar";
 
-        const parameterTypes = [i32Type, i32Type, f64Type, ...columns.map(() => i32Type), ...scalars.map(() => f64Type)];
+        const parameterTypes = [i32Type, i32Type, f64Type, f64Type, ...columns.map(() => i32Type), ...new Array<number>(2 * filters).fill(i32Type), ...scalars.map(() => f64Type)];
         const localTypesList = [...new Array<number>(program.locals).fill(f64Type)];
         // Locals in order: program locals, then extras in creation order; the row index was the first extra.
         const declared = [...localTypesList.map(type => [1, type]), ...extraLocals.map(type => [1, type])];

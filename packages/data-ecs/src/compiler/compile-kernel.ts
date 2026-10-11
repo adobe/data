@@ -7,6 +7,8 @@ import { resolve, type Out } from './out.js';
 import { printStatements } from './print.js';
 import { toProgram } from './program.js';
 import { serialize } from './serialize.js';
+import { unconditionalChunks } from './stamps.js';
+import { chunkShift } from '../world/create/kernel.js';
 import { rootScope } from './scope.js';
 import { signature } from './signature.js';
 import { rowLabel, statement } from './statement.js';
@@ -39,6 +41,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         statement({ type: "ExpressionStatement", expression: body.body, start: body.body.start, end: body.body.end }, scope, rows);
     }
     const statements = [...resolve(prelude), ...resolve(rows)];
+    for (const chunks of unconditionalChunks(resolve(rows))) unit.stampedPerCall.add(chunks);
     const kernel = printStatements(unit, resolve(rows));
     const preludeCode = printStatements(unit, resolve(prelude));
     const program = toProgram(statements);
@@ -71,6 +74,8 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             "return (columns, start, end, resources, lookups, keys, args, commands, tick) => {",
             ...locals,
             preludeCode,
+            ...[...unit.stampedPerCall].map(chunks =>
+                `if (start < end) for (let k = start >> ${chunkShift}, last = (end - 1) >> ${chunkShift}; k <= last; k++) c${chunks}[k] = tick;`),
             `${rowLabel}: for (let ${["i = start", ...strided.map(index => `x${index} = start * s${index} + o${index}`)].join(", ")}; i < end; ${["i++", ...strided.map(index => `x${index} += s${index}`)].join(", ")}) {`,
             kernel,
             "}",

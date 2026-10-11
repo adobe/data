@@ -33,6 +33,7 @@ declare module "../system/types.js" {
         "suite/retag": true;
         "suite/poke": true;
         "suite/observe": true;
+        "suite/pokeCluster": true;
         "suite/follow": true;
         "suite/emit": true;
         "suite/chain1": true;
@@ -84,6 +85,20 @@ export const poke = System.create({
     query: { read: [index, position], write: [position] },
 }, (row, { args }) => {
     if (row[index] % 100 === args) {
+        const [x, y, z] = row[position];
+        row[position] = [x + 1, y, z];
+    }
+});
+
+/** Writes 1% of positions, clustered in one contiguous run of rows. */
+export const pokeCluster = System.create({
+    name: "suite/pokeCluster",
+    kernel: true,
+    args: { type: "integer" },
+    query: { read: [index, position], write: [position] },
+}, (row, { args }) => {
+    const group = row[index] - args * 10_000;
+    if (group >= 0 && group < 10_000) {
         const [x, y, z] = row[position];
         row[position] = [x + 1, y, z];
     }

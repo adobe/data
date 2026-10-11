@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { World } from "../world/world.js";
 import { enabled, fastest as particlesFastest, move, position as particlePosition, spawn, visible } from "./particles.js";
-import { chain as chainSuite, churn as churnSuite, emit as emitSuite, fastest, follow, hits, index, observe, poke, position, report, retag, seeded, smalls, tag, totalOf } from "./suite.js";
+import { chain as chainSuite, churn as churnSuite, emit as emitSuite, fastest, follow, hits, index, observe, poke, pokeCluster, position, report, retag, seeded, smalls, tag, totalOf } from "./suite.js";
 
 it("create 100K", async () => {
     report("create 100K", await fastest(async () => {
@@ -46,6 +46,20 @@ it("sparse changed: observe 1% of 1M", async () => {
         if (i >= 10) best = Math.min(best, performance.now() - start);
     }
     report("sparse changed 1M", best);
+    await world.dispose();
+}, 120_000);
+
+it("sparse changed, clustered: observe 1% of 1M in one run of rows", async () => {
+    const world = await seeded(() => World.create(), 1_000_000, pokeCluster, observe);
+    let frame = 0;
+    let best = Infinity;
+    for (let i = 0; i < 60; i++) {
+        await world.run(pokeCluster, frame++ % 100);
+        const start = performance.now();
+        await world.run(observe);
+        if (i >= 10) best = Math.min(best, performance.now() - start);
+    }
+    report("sparse changed clustered 1M", best);
     await world.dispose();
 }, 120_000);
 

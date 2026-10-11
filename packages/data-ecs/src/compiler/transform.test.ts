@@ -45,6 +45,8 @@ type Options = {
     readonly booleans?: readonly string[];
     /** Whether the kernel has a `program`; when it does, the program must give the same results as the JS. */
     readonly program?: boolean;
+    /** The rows to run, `[start, end)`; all rows by default. */
+    readonly range?: readonly [number, number];
     readonly interleaved?: { readonly [component: string]: { readonly stride: number; readonly offsets: { readonly [path: string]: number } } };
 };
 
@@ -58,14 +60,14 @@ const normal: Signal = { kind: "normal" };
 type Layout = { readonly strides: readonly number[]; readonly offsets: readonly number[] };
 
 /** A reference interpreter for `Program`, indexing columns by the layout as the WASM generator does. */
-const interpret = (program: Program, columns: readonly (Float64Array | Uint32Array)[], booleans: readonly boolean[], layout: Layout, rows: number, resources: readonly unknown[], args: unknown): void => {
+const interpret = (program: Program, columns: readonly (Float64Array | Uint32Array)[], booleans: readonly boolean[], layout: Layout, start: number, end: number, resources: readonly unknown[], args: unknown): void => {
     const at = (column: number, row: number): number => row * (layout.strides[column] ?? 1) + (layout.offsets[column] ?? 0);
     const scalarAt = (root: unknown, path: readonly (number | string)[]): Scalar => {
         const value = path.reduce<unknown>((item, key) => Reflect.get(Object(item), key), root);
         if (typeof value !== "number" && typeof value !== "boolean") throw new Error(`not a scalar: ${String(value)}`);
         return value;
     };
-    for (let row = 0; row < rows; row++) {
+    for (let row = start; row < end; row++) {
         const locals: Scalar[] = new Array<Scalar>(program.locals).fill(0);
         const evaluate = (node: Program.Expression): Scalar => {
             switch (node.kind) {
@@ -202,11 +204,12 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
         remove: (entity: unknown, ...keys: unknown[]) => { calls.push(["remove", entity, ...keys]); },
     };
     const booleans = description.columns.map(column => column.kind === "field" && (options.booleans ?? []).includes(String(column.component)));
-    description.create(booleans, layout.strides, layout.offsets)(columns, 0, rows, options.resources ?? [], options.lookups ?? [], description.keys, options.args, commands, tick);
+    const [start, end] = options.range ?? [0, rows];
+    description.create(booleans, layout.strides, layout.offsets)(columns, start, end, options.resources ?? [], options.lookups ?? [], description.keys, options.args, commands, tick);
     expect(description.program !== null).toBe(options.program ?? true);
     if (description.program !== null) {
         const interpreted = build();
-        interpret(description.program, interpreted, booleans, layout, rows, options.resources ?? [], options.args);
+        interpret(description.program, interpreted, booleans, layout, start, end, options.resources ?? [], options.args);
         // Bit-identical, including NaN and -0.
         expect(interpreted.map(column => [...column].map(value => Object.is(value, -0) ? "-0" : String(value))))
             .toEqual(columns.map(column => [...column].map(value => Object.is(value, -0) ? "-0" : String(value))));
@@ -288,6 +291,21 @@ describe("layout", () => {
         expect(kernel.columns[changed + 1]).toEqual({ kind: "chunks", component: "score" });
         expect(result.chunks("score")).toEqual([0, tick, 0]);
         expect(result.changed("score").flatMap((value, row) => value === 0 ? [] : [row])).toEqual([2 ** chunkShift + 3]);
+    });
+
+    test("an unconditional stamp stamps the call's chunks once; a stamp after return stays per row", async () => {
+        const always = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [mass], write: [score] } }, (row) => {
+            row[score] = row[mass];
+        });`);
+        expect(String(always.create)).not.toContain(">> 10] = tick");
+        expect(run(always, 3200, {}, { range: [1000, 2100] }).chunks("score")).toEqual([tick, tick, tick, 0]);
+        const after = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [mass], write: [score] } }, (row) => {
+            if (row[mass] > 0) return;
+            row[score] = 1;
+        });`);
+        expect(String(after.create)).toContain("[i >> 10] = tick");
+        const mass = Array.from({ length: 3200 }, (_, row) => row >= 1024 && row < 2048 ? 1 : 0);
+        expect(run(after, 3200, { mass: { "[]": mass } }, { range: [1000, 2100] }).chunks("score")).toEqual([tick, 0, tick, 0]);
     });
 
     test("indices stay in step when return skips the rest of a row", async () => {

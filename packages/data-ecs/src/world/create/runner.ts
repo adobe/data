@@ -108,8 +108,13 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         const filters = filtersOf(archetype);
         const compiled = bound.compiled();
         if (compiled !== null && bound.wasm !== null) {
-            const parameters = [...columns.map(column => column.byteOffset), ...scalarValues(bound.wasm.scalars, values, args)];
-            return forEachPassingRange(filters, since, 0, archetype.count, (start, end) => compiled.run(start, end, tick, ...parameters));
+            // The kernel applies the change filters itself, chunk by chunk, so it runs over the whole archetype in one call.
+            compiled.run(0, archetype.count, tick, since,
+                ...columns.map(column => column.byteOffset),
+                ...filters.map(filter => filter.ticks.byteOffset),
+                ...filters.map(filter => filter.chunks.byteOffset),
+                ...scalarValues(bound.wasm.scalars, values, args));
+            return;
         }
         const run = bound.kernel();
         forEachPassingRange(filters, since, 0, archetype.count, (start, end) =>

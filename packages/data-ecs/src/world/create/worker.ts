@@ -152,8 +152,12 @@ const run = (message: RunMessage, buffer: CommandBuffer): void => {
     ];
     const { wasm } = loaded;
     if (wasm !== null && loaded.setup.wasm !== null) {
-        const parameters = [...kernelColumns.map(column => column.byteOffset), ...scalarValues(loaded.setup.wasm.scalars, message.resources, message.args)];
-        return forEachPassingRange(filters, message.lastRun, message.start, message.end, (start, end) => wasm(start, end, message.tick, ...parameters));
+        wasm(message.start, message.end, message.tick, message.lastRun,
+            ...kernelColumns.map(column => column.byteOffset),
+            ...filters.map(filter => filter.ticks.byteOffset),
+            ...filters.map(filter => filter.chunks.byteOffset),
+            ...scalarValues(loaded.setup.wasm.scalars, message.resources, message.args));
+        return;
     }
     forEachPassingRange(filters, message.lastRun, message.start, message.end, (start, end) =>
         loaded.kernel(kernelColumns, start, end, message.resources, loaded.lookups, loaded.setup.keys, message.args, commands, message.tick));

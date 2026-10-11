@@ -126,7 +126,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     const scalarType = (scalar: WasmScalar): Type | null => scalar.source === "args"
         ? argsLayout === null ? null : leafType(argsLayout, scalar.path)
         : scalar.index < description.resources.length ? leafType(state.layouts[idOf(state, description.resources[scalar.index])], scalar.path) : null;
-    const wasm = state.wasm && state.memory.shared && description.program !== null ? generateWasm(description.program, wasmColumns, scalarType, state.simd) : null;
+    const wasm = state.wasm && state.memory.shared && description.program !== null ? generateWasm(description.program, wasmColumns, scalarType, state.simd, (query?.added?.length ?? 0) + (query?.changed?.length ?? 0)) : null;
     let loaded: Kernel | null = null;
     let compiled: { readonly module: WebAssembly.Module; readonly run: WasmRun } | null = null;
     const load = async (): Promise<void> => {

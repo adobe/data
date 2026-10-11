@@ -1,4 +1,5 @@
-import { copyCell, insertRow, stampAdded, stampChanged, swapRemove, type Archetype } from './archetype.js';
+import { copyCell, insertRow, swapRemove, type Archetype } from './archetype.js';
+import { chunkShift } from './kernel.js';
 import { despawnCommand, endOf, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { writeCell } from './cells.js';
 import { indexOf, locate, materialize, recycle, release, reserved } from './entities.js';
@@ -13,6 +14,8 @@ export type Queued = { readonly buffer: CommandBuffer; readonly guarded: boolean
  */
 const plan = {
     count: 0,
+    /** Entries made by spawns; each consumed one reservation. */
+    spawned: 0,
     entity: new Float64Array(64),
     /** Archetype id, or -1 for an entity spawned in this sync point. */
     from: new Int32Array(64),
@@ -91,7 +94,10 @@ const planOf = (state: State, queued: readonly Queued[]): void => {
             if (guarded && entity === state.resourceEntity) continue;
             const index = indexOf(entity);
             let entry: number;
-            if (kind === spawnCommand) entry = addEntry(entity, index, -1, empty);
+            if (kind === spawnCommand) {
+                entry = addEntry(entity, index, -1, empty);
+                plan.spawned++;
+            }
             else {
                 entry = slots[index];
                 if (entry >= 0) {
@@ -144,8 +150,12 @@ const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Arche
         const storage = to.storageById[id];
         if (storage === undefined) continue;
         writeCell(storage, toRow, values[k]);
-        stampChanged(storage, toRow, tick);
-        if (from === null || from.storageById[id] === undefined || (fresh !== undefined && fresh.includes(id))) stampAdded(storage, toRow, tick);
+        storage.changed[toRow] = tick;
+        storage.chunkChanged[toRow >> chunkShift] = tick;
+        if (from === null || from.storageById[id] === undefined || (fresh !== undefined && fresh.includes(id))) {
+            storage.added[toRow] = tick;
+            storage.chunkAdded[toRow >> chunkShift] = tick;
+        }
     }
 };
 
@@ -183,13 +193,17 @@ export const synchronize = (state: State): void => {
     }
     const reservations = materialize(state.memory, state.entities);
     plan.count = 0;
+    plan.spawned = 0;
     planOf(state, queued);
     const tick = ++state.tick;
     for (let entry = 0; entry < plan.count; entry++) applyEntry(state, queued, entry, tick);
     // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its index.
-    const leaked = (index: number): boolean => index >= slots.length || slots[index] < 0;
-    for (const index of reservations.reused) if (leaked(index)) release(state.entities, index);
-    for (let index = reservations.firstNew; index < state.entities.length; index++) if (leaked(index)) release(state.entities, index);
+    // Every spawn consumes one reservation, so only a shortfall needs the scan.
+    if (plan.spawned < reservations.reused.length + state.entities.length - reservations.firstNew) {
+        const leaked = (index: number): boolean => index >= slots.length || slots[index] < 0;
+        for (const index of reservations.reused) if (leaked(index)) release(state.entities, index);
+        for (let index = reservations.firstNew; index < state.entities.length; index++) if (leaked(index)) release(state.entities, index);
+    }
     for (let entry = 0; entry < plan.count; entry++) slots[indexOf(plan.entity[entry])] = -1;
     plan.more.clear();
     plan.fresh.clear();

@@ -21,6 +21,8 @@ export type Unit = {
     readonly columnIndex: Map<string, number>;
     /** Chunk columns: dense, indexed by `i >> chunkShift` rather than a strided row index. */
     readonly chunks: Set<number>;
+    /** Chunk columns stamped once per call before the row loop, so their per-row stamps are dropped. */
+    readonly stampedPerCall: Set<number>;
     /** Columns read where a boolean's identity is observable, so they need conversion. */
     readonly booleans: Set<number>;
     /** Every value assigned to each local, to propagate observation. */
@@ -42,7 +44,7 @@ export type Unit = {
 export const createUnit = (signature: Signature, module: ModuleScope, expression: ExpressionCompiler, statement: StatementCompiler): Unit => {
     let counter = 0;
     return {
-        signature, module, columns: [], columnIndex: new Map(), chunks: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names: new Map(), shapes: new Set(), keys: [], active: new Set(),
+        signature, module, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names: new Map(), shapes: new Set(), keys: [], active: new Set(),
         next: () => counter++, expression, statement,
     };
 };

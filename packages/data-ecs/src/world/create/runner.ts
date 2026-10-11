@@ -6,7 +6,7 @@ import { readCell } from './cells.js';
 import { createCommands } from './commands.js';
 import { bindKernel, type BoundKernel } from './kernels.js';
 import type { Pool } from './pool.js';
-import type { KernelSetup } from './protocol.js';
+import { maximumScalars, type KernelSetup } from './protocol.js';
 import { createBuffer, type CommandBuffer } from './buffer.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
@@ -103,29 +103,51 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         });
     };
 
+    /** The kernel applies the change filters itself, chunk by chunk, so a range runs in one call. */
+    const runWasm = (bound: BoundKernel, archetype: Archetype, start: number, end: number, since: number, scalars: readonly number[], tick: number): void => {
+        const compiled = bound.compiled();
+        if (compiled === null) return;
+        const filters = filtersOf(archetype);
+        compiled.run(start, end, tick, since,
+            ...bound.columnsOf(archetype).map(column => column.byteOffset),
+            ...filters.map(filter => filter.ticks.byteOffset),
+            ...filters.map(filter => filter.chunks.byteOffset),
+            ...scalars);
+    };
+
     const runKernelLocally = (bound: BoundKernel, archetype: Archetype, since: number, values: readonly unknown[], args: unknown, tick: number): void => {
         const columns = bound.columnsOf(archetype);
         const filters = filtersOf(archetype);
-        const compiled = bound.compiled();
-        if (compiled !== null && bound.wasm !== null) {
-            // The kernel applies the change filters itself, chunk by chunk, so it runs over the whole archetype in one call.
-            compiled.run(0, archetype.count, tick, since,
-                ...columns.map(column => column.byteOffset),
-                ...filters.map(filter => filter.ticks.byteOffset),
-                ...filters.map(filter => filter.chunks.byteOffset),
-                ...scalarValues(bound.wasm.scalars, values, args));
-            return;
-        }
+        if (bound.compiled() !== null && bound.wasm !== null) return runWasm(bound, archetype, 0, archetype.count, since, scalarValues(bound.wasm.scalars, values, args), tick);
         const run = bound.kernel();
         forEachPassingRange(filters, since, 0, archetype.count, (start, end) =>
             run(columns, start, end, values, bound.lookups, bound.description.keys, args, commands, tick));
     };
 
     /** Splits an archetype's rows evenly across workers, in chunks of at least `minimumChunk` rows. */
+    /** WASM kernels with few enough scalars dispatch through shared memory. */
+    const isFast = (bound: BoundKernel | null): boolean =>
+        bound !== null && bound.wasm !== null && bound.compiled() !== null && bound.wasm.scalars.length <= maximumScalars;
+    /** Rows below which an archetype runs on the main thread. Shared-memory dispatch is cheap enough that half the size pays off. */
+    const minimumFor = (workers: Workers): number => isFast(kernel) ? workers.minimumChunk / 2 : workers.minimumChunk;
+
     const postChunks = (workers: Workers, index: number, archetype: Archetype, since: number, values: readonly unknown[], args: unknown, tick: number): Chunk[] => {
         const { count } = archetype;
         const { pool } = workers;
-        const size = Math.ceil(Math.ceil(count / Math.min(pool.size, Math.ceil(count / workers.minimumChunk))) / chunkAlignment) * chunkAlignment;
+        const bound = kernel;
+        const scalars = bound !== null && bound.wasm !== null ? scalarValues(bound.wasm.scalars, values, args) : [];
+        const fast = isFast(bound);
+        const size = Math.ceil(Math.ceil(count / Math.min(pool.size, Math.ceil(count / minimumFor(workers)))) / chunkAlignment) * chunkAlignment;
+        // WASM chunks go through shared memory. The main thread doesn't take one: measured, it finishes later than an idle worker.
+        if (fast) {
+            const chunks: Chunk[] = [];
+            for (let start = 0; start < count; start += size) {
+                const worker = workers.next;
+                workers.next = (worker + 1) % pool.size;
+                chunks.push(pool.fast(worker, { kernel: index, archetype: archetype.id, start, end: Math.min(count, start + size), tick, lastRun: since, scalars }));
+            }
+            return chunks;
+        }
         const chunks: Chunk[] = [];
         for (let start = 0; start < count; start += size) {
             const message = { kind: "run", kernel: index, archetype: archetype.id, start, end: Math.min(count, start + size), tick, lastRun: since, resources: values, args } as const;
@@ -162,7 +184,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             for (const archetype of matches) {
                 if (archetype.count === 0) continue;
                 if (kernel === null) runBody(archetype, since);
-                else if (workers !== null && archetype.count >= workers.minimumChunk) {
+                else if (workers !== null && archetype.count >= minimumFor(workers)) {
                     chunks.push(...postChunks(workers, index, archetype, since, values, args, tick));
                     holder.buffer = createBuffer();
                     chunks.push({ commands: holder.buffer });

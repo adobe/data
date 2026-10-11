@@ -1,5 +1,7 @@
+import { allocateArray } from './arrays.js';
 import { createBuffer, type CommandBuffer } from './buffer.js';
-import type { FromWorker, ToWorker, WorkerError } from './protocol.js';
+import type { Memory } from './memory.js';
+import { controlWords, done, leave, posted, ringSize, signal, taskWords, type FromWorker, type ToWorker, type WorkerError } from './protocol.js';
 
 type Task = Extract<ToWorker, { task: number }>;
 type Request = Task extends infer T ? T extends Task ? Omit<T, "task"> : never : never;
@@ -7,14 +9,33 @@ type Request = Task extends infer T ? T extends Task ? Omit<T, "task"> : never :
 /** A task's commands, plus its error if it failed partway; commands issued before the error still apply. */
 export type TaskResult = { readonly commands: CommandBuffer; readonly error?: Error };
 
-/** Workers sharing the world's memory. Messages to one worker are handled in the order they're posted. */
+/** A WASM kernel task: everything is a number, so it travels through shared memory instead of a message. */
+export type FastTask = {
+    readonly kernel: number;
+    readonly archetype: number;
+    readonly start: number;
+    readonly end: number;
+    readonly tick: number;
+    readonly lastRun: number;
+    readonly scalars: readonly number[];
+};
+
+/**
+ * Workers sharing the world's memory. Messages to one worker are handled in the order they're posted.
+ * `fast` tasks go through a ring in shared memory while workers wait on it in a window, which costs one message to
+ * open; a message, a broadcast or `close` ends the window, after the tasks already posted.
+ */
 export type Pool = {
     readonly size: number;
     readonly broadcast: (message: Exclude<ToWorker, { task: number }>) => void;
     /** Posts a task to one worker. Never rejects: a failed task or a dead worker resolves with an error. */
     readonly request: (worker: number, message: Request) => Promise<TaskResult>;
+    readonly fast: (worker: number, task: FastTask) => Promise<TaskResult>;
+    readonly close: () => void;
     readonly terminate: () => void;
 };
+
+
 
 /** Leaves one hardware thread for the main thread. Workers need shared memory, so none without it. */
 export const defaultWorkerCount = (shared: boolean): number =>
@@ -29,8 +50,17 @@ type Slot = {
     dead: Error | null;
 };
 
-export const createPool = (size: number, memory: WebAssembly.Memory): Pool => {
+export const createPool = (size: number, arena: Memory): Pool => {
+    const { memory } = arena;
     let nextTask = 0;
+    const control = allocateArray(arena, Int32Array, size * controlWords).fill(0);
+    const statuses = allocateArray(arena, Int32Array, size * ringSize).fill(0);
+    const payloads = allocateArray(arena, Float64Array, size * ringSize * taskWords);
+    const open = new Array<boolean>(size).fill(false);
+    const sent = new Array<number>(size).fill(0);
+    /** Writes held back by a full ring, chained so they stay in order. */
+    const waiting = new Array<number>(size).fill(0);
+    const chains = Array.from({ length: size }, (): Promise<void> => Promise.resolve());
     const kill = (slot: Slot, error: Error): void => {
         slot.dead ??= error;
         for (const settle of slot.pending.values()) settle({ commands: createBuffer(), error: slot.dead });
@@ -49,12 +79,80 @@ export const createPool = (size: number, memory: WebAssembly.Memory): Pool => {
         slot.worker.postMessage({ kind: "memory", memory } satisfies ToWorker);
         return slot;
     });
+    const close = (): void => {
+        for (let worker = 0; worker < size; worker++) {
+            if (!open[worker]) continue;
+            open[worker] = false;
+            Atomics.store(control, worker * controlWords + leave, 1);
+            Atomics.add(control, worker * controlWords + signal, 1);
+            Atomics.notify(control, worker * controlWords + signal);
+        }
+    };
+
+    /** Resolves once the worker has done `count` tasks: spins briefly, since tasks are short, then waits without blocking. */
+    const whenDone = async (worker: number, count: number): Promise<void> => {
+        const index = worker * controlWords + done;
+        const deadline = performance.now() + 2;
+        while (Atomics.load(control, index) < count) {
+            if (slots[worker].dead !== null) return;
+            if (performance.now() < deadline) continue;
+            const current = Atomics.load(control, index);
+            if (current >= count) return;
+            const waited = Atomics.waitAsync(control, index, current, 50);
+            if (waited.async) await waited.value;
+        }
+    };
+
+    const fast = (worker: number, task: FastTask): Promise<TaskResult> => {
+        const slot = slots[worker];
+        if (slot.dead !== null) return Promise.resolve({ commands: createBuffer(), error: slot.dead });
+        if (!open[worker]) {
+            open[worker] = true;
+            Atomics.store(control, worker * controlWords + leave, 0);
+            slot.worker.postMessage({ kind: "window", control: control.byteOffset, statuses: statuses.byteOffset, payloads: payloads.byteOffset, worker } satisfies ToWorker);
+        }
+        const count = ++sent[worker];
+        const ring = (count - 1) % ringSize;
+        const write = (): void => {
+            payloads.set([task.kernel, task.archetype, task.start, task.end, task.tick, task.lastRun, task.scalars.length, ...task.scalars], (worker * ringSize + ring) * taskWords);
+            Atomics.store(statuses, worker * ringSize + ring, 0);
+            Atomics.store(control, worker * controlWords + posted, count);
+            Atomics.add(control, worker * controlWords + signal, 1);
+            Atomics.notify(control, worker * controlWords + signal);
+        };
+        // Written now when there's room, so the worker starts at once; otherwise in order, once the worker frees a slot.
+        let written: Promise<void>;
+        if (waiting[worker] === 0 && count - Atomics.load(control, worker * controlWords + done) <= ringSize) {
+            write();
+            written = Promise.resolve();
+        }
+        else {
+            waiting[worker]++;
+            written = chains[worker] = chains[worker].then(async () => {
+                await whenDone(worker, count - ringSize);
+                write();
+                waiting[worker]--;
+            });
+        }
+        return (async (): Promise<TaskResult> => {
+            await written;
+            await whenDone(worker, count);
+            if (slot.dead !== null) return { commands: createBuffer(), error: slot.dead };
+            const failed = Atomics.load(statuses, worker * ringSize + ring) !== 0;
+            return failed ? { commands: createBuffer(), error: new Error("A world worker's kernel failed.") } : { commands: createBuffer() };
+        })();
+    };
+
     return {
         size,
         broadcast: message => {
+            close();
             for (const slot of slots) if (slot.dead === null) slot.worker.postMessage(message);
         },
+        fast,
+        close,
         request: (worker, message) => new Promise(settle => {
+            close();
             const slot = slots[worker];
             if (slot.dead !== null) return settle({ commands: createBuffer(), error: slot.dead });
             const task = nextTask++;
@@ -62,6 +160,7 @@ export const createPool = (size: number, memory: WebAssembly.Memory): Pool => {
             slot.worker.postMessage({ ...message, task });
         }),
         terminate: () => {
+            close();
             for (const slot of slots) {
                 slot.worker.terminate();
                 kill(slot, new Error("The world is disposed."));

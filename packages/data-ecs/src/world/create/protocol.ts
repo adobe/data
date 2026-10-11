@@ -53,6 +53,8 @@ export type KernelSetup = {
 /** Messages are handled in order, so a layout always arrives before the tasks that depend on it. */
 export type ToWorker =
     | { readonly kind: "memory"; readonly memory: WebAssembly.Memory }
+    /** Wait on this worker's task ring in shared memory until asked to leave. Offsets are bytes into the memory. */
+    | { readonly kind: "window"; readonly control: number; readonly statuses: number; readonly payloads: number; readonly worker: number }
     | { readonly kind: "layout"; readonly schemas: readonly (readonly [number, Schema])[]; readonly entities: EntitiesLayout; readonly archetypes: readonly ArchetypeLayout[] }
     | { readonly kind: "kernels"; readonly task: number; readonly kernels: readonly KernelSetup[] }
     | {
@@ -75,3 +77,17 @@ export type WorkerError = { readonly name: string; readonly message: string; rea
 export type FromWorker =
     | { readonly kind: "done"; readonly task: number; readonly commands: CommandBuffer }
     | { readonly kind: "failed"; readonly task: number; readonly commands: CommandBuffer; readonly error: WorkerError };
+
+/** Tasks a worker's ring holds, and f64 words per task: seven fields, then scalars. */
+export const ringSize = 64;
+export const taskWords = 32;
+export const maximumScalars = taskWords - 7;
+/**
+ * Control words per worker: tasks posted, tasks done, a request to leave the window, and a signal bumped on every post
+ * or leave request, which the worker waits on, so a wake-up between its check and its wait isn't lost.
+ */
+export const posted = 0;
+export const done = 1;
+export const leave = 2;
+export const signal = 3;
+export const controlWords = 4;

@@ -16,6 +16,7 @@ const target = "workersTest/target";
 const offset = "workersTest/offset";
 const spawned = "workersTest/spawned";
 const label = "workersTest/label";
+const tags = ["workersTest/tag-a", "workersTest/tag-b", "workersTest/tag-c", "workersTest/tag-d", "workersTest/tag-e", "workersTest/tag-f", "workersTest/tag-g"] as const;
 const seconds = "workersTest/seconds";
 
 declare module "../../component/types.js" {
@@ -26,6 +27,13 @@ declare module "../../component/types.js" {
         [offset]: number;
         [spawned]: true;
         [label]: string;
+        "workersTest/tag-a": true;
+        "workersTest/tag-b": true;
+        "workersTest/tag-c": true;
+        "workersTest/tag-d": true;
+        "workersTest/tag-e": true;
+        "workersTest/tag-f": true;
+        "workersTest/tag-g": true;
     }
 }
 declare module "../../resource/types.js" {
@@ -43,6 +51,7 @@ declare module "../../system/types.js" {
         "workersTest/stamp": true;
         "workersTest/unlink": true;
         "workersTest/labels": true;
+        "workersTest/scatter": true;
     }
 }
 
@@ -52,6 +61,16 @@ Component.register(target, { type: "integer" });
 Component.register(offset, { type: "number", precision: 1 });
 Component.register(spawned, { const: true });
 Component.register(label, { type: "string" });
+for (const tag of tags) Component.register(tag, { const: true });
+
+/** 64 entities in each of the 128 archetypes the tags combine into. */
+const scatter = System.create({ name: "workersTest/scatter" }, (_, __, commands) => {
+    for (let i = 0; i < 128 * 64; i++) {
+        const values: { [key: string]: unknown } = { [position]: [i, 0], [velocity]: [1, i % 5] };
+        tags.forEach((tag, bit) => { if (((i >> 6) & (1 << bit)) !== 0) values[tag] = true; });
+        commands.spawn(values);
+    }
+});
 Resource.register(seconds, { type: "number", default: 0.25 });
 
 /** Spawns `args` moving entities, each following the one before it. */
@@ -180,6 +199,19 @@ describe("workers", () => {
 
     it("give the same SIMD results as the main thread alone, since chunks start on 16-row boundaries", async () => {
         expect(await simulate(3, true, true)).toEqual(await simulate(0, true, true));
+    });
+
+    it("keep tasks in order when a worker's ring overflows", async () => {
+        const run = async (workers: number): Promise<unknown[]> => {
+            const world = createWorld({ workers, minimumChunk: 64 });
+            disposals.push(world);
+            await world.systems.register(scatter, integrate);
+            await world.run(scatter);
+            for (let frame = 0; frame < 3; frame++) await world.run(integrate);
+            return snapshot(world);
+        };
+        // One worker gets a task per archetype: 128, twice its ring.
+        expect(await run(1)).toEqual(await run(0));
     });
 
     it("merge chunk commands in the same order as the main thread", async () => {

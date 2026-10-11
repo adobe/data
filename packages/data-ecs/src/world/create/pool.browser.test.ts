@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createMemory } from "./memory.js";
 import { createPool } from "./pool.js";
 
 /** Workers whose script doesn't exist, so they fail to load. */
@@ -13,7 +14,7 @@ describe("createPool", () => {
         const original = globalThis.Worker;
         globalThis.Worker = BrokenWorker;
         try {
-            const pool = createPool(1, new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true }));
+            const pool = createPool(1, createMemory(true));
             const first = await pool.request(0, { kind: "kernels", kernels: [] });
             expect(first.error?.message).toContain("failed");
             // Later tasks fail immediately too.

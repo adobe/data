@@ -4,7 +4,7 @@ import { locate, reserve, type Reservations } from './entities.js';
 import type { Kernel, KernelModule } from './kernel.js';
 import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../layout/layout.js';
 import { emptyViews } from './arrays.js';
-import type { ArchetypeLayout, EntitiesLayout, FromWorker, KernelSetup, LookupSetup, ToWorker, WorkerError } from './protocol.js';
+import { controlWords, done, leave, posted, ringSize, signal, taskWords, type ArchetypeLayout, type EntitiesLayout, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
 import { addCommand, createBuffer, despawnCommand, pushCommand, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
@@ -133,6 +133,18 @@ const columnsOf = (loaded: LoadedKernel, archetypeId: number): readonly TypedArr
 
 type RunMessage = Extract<ToWorker, { kind: "run" }>;
 
+/** A kernel's change filters in an archetype: `added` then `changed`, rows and chunks. */
+const filtersOf = (loaded: LoadedKernel, archetype: ArchetypeViews): Filter[] => [
+    ...loaded.setup.added.flatMap(id => {
+        const storage = archetype.storages.get(id);
+        return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded }];
+    }),
+    ...loaded.setup.changed.flatMap(id => {
+        const storage = archetype.storages.get(id);
+        return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged }];
+    }),
+];
+
 const run = (message: RunMessage, buffer: CommandBuffer): void => {
     const loaded = kernels.get(message.kernel);
     if (loaded === undefined) throw new Error(`Worker has no kernel ${message.kernel}.`);
@@ -140,16 +152,7 @@ const run = (message: RunMessage, buffer: CommandBuffer): void => {
     if (archetype === undefined) throw new Error(`Worker has no layout for archetype ${message.archetype}.`);
     const commands = createCommands(buffer);
     const kernelColumns = columnsOf(loaded, message.archetype);
-    const filters: Filter[] = [
-        ...loaded.setup.added.flatMap(id => {
-            const storage = archetype.storages.get(id);
-            return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded }];
-        }),
-        ...loaded.setup.changed.flatMap(id => {
-            const storage = archetype.storages.get(id);
-            return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged }];
-        }),
-    ];
+    const filters = filtersOf(loaded, archetype);
     const { wasm } = loaded;
     if (wasm !== null && loaded.setup.wasm !== null) {
         wasm(message.start, message.end, message.tick, message.lastRun,
@@ -173,6 +176,56 @@ const load = async (setups: readonly KernelSetup[]): Promise<void> => {
     setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides, setup.offsets), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup) }));
 };
 
+/** Runs a loaded kernel's WASM over rows `start` to `end` of an archetype; it applies the change filters itself. */
+const runWasm = (loaded: LoadedKernel, archetypeId: number, start: number, end: number, tick: number, lastRun: number, scalars: readonly number[]): void => {
+    const { wasm } = loaded;
+    if (wasm === null) throw new Error(`Worker kernel ${loaded.setup.index} has no WASM.`);
+    const archetype = archetypes.get(archetypeId);
+    if (archetype === undefined) throw new Error(`Worker has no layout for archetype ${archetypeId}.`);
+    const filters = filtersOf(loaded, archetype);
+    wasm(start, end, tick, lastRun,
+        ...columnsOf(loaded, archetypeId).map(column => column.byteOffset),
+        ...filters.map(filter => filter.ticks.byteOffset),
+        ...filters.map(filter => filter.chunks.byteOffset),
+        ...scalars);
+};
+
+/**
+ * Runs tasks from this worker's ring in shared memory, blocking between them, until the main thread asks it to leave;
+ * then it returns to handling messages.
+ */
+const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
+    const buffer = required(memory, "memory").buffer;
+    const control = new Int32Array(buffer, message.control + message.worker * controlWords * 4, controlWords);
+    const statuses = new Int32Array(buffer, message.statuses + message.worker * ringSize * 4, ringSize);
+    const payloads = new Float64Array(buffer, message.payloads + message.worker * ringSize * taskWords * 8, ringSize * taskWords);
+    let next = Atomics.load(control, done);
+    for (;;) {
+        const seen = Atomics.load(control, signal);
+        if (next < Atomics.load(control, posted)) {
+            const ring = next % ringSize;
+            const base = ring * taskWords;
+            try {
+                const loaded = kernels.get(payloads[base]);
+                if (loaded === undefined || broken !== null) throw new Error("Worker can't run this task.");
+                runWasm(loaded, payloads[base + 1], payloads[base + 2], payloads[base + 3], payloads[base + 4], payloads[base + 5], Array.from(payloads.subarray(base + 7, base + 7 + payloads[base + 6])));
+            }
+            catch {
+                Atomics.store(statuses, ring, 1);
+            }
+            next++;
+            Atomics.store(control, done, next);
+            Atomics.notify(control, done);
+            continue;
+        }
+        if (Atomics.load(control, leave) === 1) return;
+        // Tiers follow each other closely, so spin briefly before paying for a blocking wait's wake-up.
+        const deadline = performance.now() + 0.05;
+        while (Atomics.load(control, signal) === seen && performance.now() < deadline);
+        if (Atomics.load(control, signal) === seen) Atomics.wait(control, signal, seen);
+    }
+};
+
 const applyLayout = (message: Extract<ToWorker, { kind: "layout" }>): void => {
     const buffer = required(memory, "memory").buffer;
     for (const [id, schema] of message.schemas) layouts[id] = layoutOf(schema);
@@ -190,6 +243,10 @@ let broken: WorkerError | null = null;
 const handle = async (message: ToWorker): Promise<void> => {
     if (message.kind === "memory") {
         memory = message.memory;
+        return;
+    }
+    if (message.kind === "window") {
+        runWindow(message);
         return;
     }
     if (message.kind === "layout") {

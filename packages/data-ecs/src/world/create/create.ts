@@ -45,7 +45,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
     let disposed = false;
 
     const startPool = (): Pool => {
-        const started = createPool(workerCount, state.memory.memory);
+        const started = createPool(workerCount, state.memory);
         pool = started;
         context.workers = { pool: started, minimumChunk: options.minimumChunk ?? defaultMinimumChunk, next: 0 };
         context.publish = createPublisher(state, started);

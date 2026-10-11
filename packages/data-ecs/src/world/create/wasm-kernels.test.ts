@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
+import type { Entity } from "../../entity/entity.js";
 import { Resource } from "../../resource/resource.js";
 import type { Schema } from "../../schema/schema.js";
 import { System } from "../../system/system.js";
@@ -19,6 +20,7 @@ const flipped = "wasmTest/flipped";
 const score = "wasmTest/score";
 const seconds = "wasmTest/seconds";
 const floor = "wasmTest/floor";
+const target = "wasmTest/target";
 
 declare module "../../component/types.js" {
     export interface Types {
@@ -27,6 +29,7 @@ declare module "../../component/types.js" {
         [bounces]: number;
         [flipped]: boolean;
         [score]: number;
+        [target]: Entity;
     }
 }
 declare module "../../resource/types.js" {
@@ -45,6 +48,8 @@ declare module "../../system/types.js" {
         "wasmTest/main": true;
         "wasmTest/drift": true;
         "wasmTest/react": true;
+        "wasmTest/chase": true;
+        "wasmTest/cull": true;
     }
 }
 
@@ -53,13 +58,22 @@ Component.register(velocity, vec2);
 Component.register(bounces, { type: "integer", minimum: -2147483648, maximum: 2147483647 });
 Component.register(flipped, { type: "boolean" });
 Component.register(score, { type: "number" });
+Component.register(target, { type: "integer" });
 Resource.register(seconds, { type: "number", default: 1 / 60 });
 Resource.register(floor, { type: "number", precision: 1, default: -2.5 });
 
 const seed = System.create({ name: "wasmTest/seed", args: { type: "integer" } }, (_, { args }, commands) => {
+    let previous = -1;
     for (let i = 0; i < args; i++) {
-        commands.spawn({ [position]: [i * 0.37, (i % 13) * 0.71], [velocity]: [Math.sin(i) * 3, Math.cos(i) * 5], [bounces]: 0, [flipped]: false, [score]: 0 });
+        previous = commands.spawn({ [position]: [i * 0.37, (i % 13) * 0.71], [velocity]: [Math.sin(i) * 3, Math.cos(i) * 5], [bounces]: 0, [flipped]: false, [score]: 0, [target]: previous });
     }
+});
+
+/** Despawns every seventh entity and spawns replacements, so some targets go stale and their indexes are reused. */
+const cull = System.create({ name: "wasmTest/cull", args: { type: "integer" }, query: { read: [bounces, position] } }, (row, { args }, commands) => {
+    if ((row.entity >>> 0) % 7 !== args % 7) return;
+    commands.despawn(row.entity);
+    commands.spawn({ [position]: row[position], [velocity]: [1, 1], [bounces]: 0, [flipped]: true, [score]: 0, [target]: row.entity });
 });
 
 const halve = (value: number) => value * 0.5;
@@ -146,17 +160,36 @@ const react = System.create({
     row[score] = row[score] + 1000;
 });
 
-const main = System.composite({ name: "wasmTest/main", systems: [integrate, bounce, tally, drift, react] });
+/** A lookup per row: found targets pull, missing or stale ones cost a point. */
+const chase = System.create({
+    name: "wasmTest/chase",
+    kernel: true,
+    query: { read: [target, score], write: [score] },
+    lookup: { targets: { read: [position, flipped] } },
+    after: ["wasmTest/react", "wasmTest/drift"],
+}, (row, { targets }) => {
+    const other = targets(row[target]);
+    if (other === null) {
+        row[score] = row[score] - 1;
+        return;
+    }
+    const [x, y] = other[position];
+    row[score] = row[score] + (other[flipped] ? x : y);
+});
+
+const main = System.composite({ name: "wasmTest/main", systems: [integrate, bounce, tally, drift, react, chase] });
 
 const snapshot = (world: World): unknown[] => world.query.select([position]).map(entity => world.read.entity(entity, [position, velocity, bounces, flipped, score]));
 
+
 const simulate = async (wasm: boolean, simd = false): Promise<unknown[]> => {
     const world = createWorld({ wasm, simd });
-    await world.systems.register(seed, main, scale);
+    await world.systems.register(seed, main, scale, cull);
     await world.run(seed, 300);
     for (let frame = 0; frame < 120; frame++) {
         await world.run(main);
         if (frame % 30 === 0) await world.run(scale, 1.5);
+        if (frame % 20 === 10) await world.run(cull, frame);
     }
     const result = snapshot(world);
     await world.dispose();
@@ -165,12 +198,13 @@ const simulate = async (wasm: boolean, simd = false): Promise<unknown[]> => {
 
 describe("WASM kernels", () => {
     it("are generated for every kernel here, with SIMD only where lanes line up", () => {
-        const wasmOf = (system: typeof integrate | typeof bounce | typeof tally | typeof scale | typeof drift) => {
+        const wasmOf = (system: typeof integrate | typeof bounce | typeof tally | typeof scale | typeof drift | typeof chase) => {
             const description = kernelOf(system);
             if (description === undefined) throw new Error("not compiled");
             return bindKernel(createState(), system, description).wasm;
         };
         expect([integrate, bounce, tally, scale, drift].map(system => wasmOf(system)?.vectorized)).toEqual([false, false, false, false, true]);
+        expect(wasmOf(chase)).not.toBeNull();
     });
 
     it("give bit-identical results to the JS kernels without SIMD", async () => {

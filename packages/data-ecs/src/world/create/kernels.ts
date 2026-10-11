@@ -5,7 +5,8 @@ import { layoutOf, samePath, type Layout, type TypedArray } from '../../layout/l
 import type { LookupSetup, Source } from './protocol.js';
 import { createArrayLookup } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
-import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmRun, type WasmScalar } from './wasm.js';
+import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
+import { createDirectory, lookupParameters } from './directories.js';
 
 export type BoundKernel = {
     readonly description: KernelDescription;
@@ -28,6 +29,8 @@ export type BoundKernel = {
     readonly wasm: WasmKernel | null;
     /** The compiled module and the main thread's instance, once loaded. */
     readonly compiled: () => { readonly module: WebAssembly.Module; readonly run: WasmRun } | null;
+    /** For a WASM kernel with lookups: the entity table and directories, passed ahead of the scalars. */
+    readonly lookupParameters: () => number[];
 };
 
 /** Whether a scalar leaf at `path` is a boolean, a number, or not a scalar leaf. */
@@ -126,7 +129,21 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     const scalarType = (scalar: WasmScalar): Type | null => scalar.source === "args"
         ? argsLayout === null ? null : leafType(argsLayout, scalar.path)
         : scalar.index < description.resources.length ? leafType(state.layouts[idOf(state, description.resources[scalar.index])], scalar.path) : null;
-    const wasm = state.wasm && state.memory.shared && description.program !== null ? generateWasm(description.program, wasmColumns, scalarType, state.simd, (query?.added?.length ?? 0) + (query?.changed?.length ?? 0)) : null;
+    const useWasm = state.wasm && state.memory.shared && description.program !== null;
+    const directories = useWasm ? setup.lookups.map(lookupSetup => createDirectory(state, lookupSetup.read, lookupSetup.has, lookupSetup.not)) : [];
+    const wasmLookups: WasmLookup[] = setup.lookups.map(lookupSetup => ({
+        reads: lookupSetup.read.length,
+        leaf: (read, path) => {
+            const component = lookupSetup.read[read];
+            const layout = component === undefined ? undefined : state.layouts[component];
+            if (layout?.kind !== "linear") return null;
+            const found = layout.leaves.find(leaf => samePath(leaf.path, path));
+            return found === undefined ? null : { view: found.view, stride: layout.stride, offset: found.offset, boolean: found.scalar === "boolean" };
+        },
+    }));
+    const wasm = useWasm && description.program !== null
+        ? generateWasm(description.program, wasmColumns, scalarType, state.simd, (query?.added?.length ?? 0) + (query?.changed?.length ?? 0), wasmLookups)
+        : null;
     let loaded: Kernel | null = null;
     let compiled: { readonly module: WebAssembly.Module; readonly run: WasmRun } | null = null;
     const load = async (): Promise<void> => {
@@ -137,5 +154,5 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         compiled = { module: wasmModule, run: await instantiateWasm(wasmModule, state.memory.memory, wasm.imports) };
     };
     const kernel = (): Kernel => loaded ?? fail("its module isn't loaded.");
-    return { description, lookups, setup, columnsOf, load, kernel, wasm, compiled: () => compiled };
+    return { description, lookups, setup, columnsOf, load, kernel, wasm, compiled: () => compiled, lookupParameters: () => directories.length === 0 ? [] : lookupParameters(state, directories) };
 };

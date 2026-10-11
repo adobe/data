@@ -72,7 +72,14 @@ export namespace Program {
         | { readonly kind: "logical"; readonly operator: "&&" | "||"; readonly left: Expression; readonly right: Expression }
         | { readonly kind: "conditional"; readonly test: Expression; readonly consequent: Expression; readonly alternate: Expression }
         /** `Math[name](...arguments)`; Math constants are emitted as numbers. */
-        | { readonly kind: "math"; readonly name: string; readonly arguments: readonly Expression[] };
+        | { readonly kind: "math"; readonly name: string; readonly arguments: readonly Expression[] }
+        /** Whether the last `find` into `handle` found a matching entity. */
+        | { readonly kind: "found"; readonly handle: number }
+        /**
+         * A scalar leaf of a found entity: component `read` (an index into the lookup's `read` list), at `path` within it.
+         * Reads NaN if nothing was found, as `undefined` does in arithmetic.
+         */
+        | { readonly kind: "lookupLeaf"; readonly handle: number; readonly read: number; readonly path: Path };
 
     export type Statement =
         | { readonly kind: "set"; readonly local: number; readonly value: Expression }
@@ -89,11 +96,13 @@ export namespace Program {
         | { readonly kind: "branch"; readonly depth: number }
         | { readonly kind: "branchIf"; readonly depth: number; readonly test: Expression }
         /** Ends the current row. */
-        | { readonly kind: "next" };
+        | { readonly kind: "next" }
+        /** Looks `entity` up through lookup `lookup` (an index into `KernelDescription.lookups`), into `handle`. */
+        | { readonly kind: "find"; readonly handle: number; readonly lookup: number; readonly entity: Expression };
 }
 
-/** Scalar locals and the row body, in the order JS evaluates it. */
-export type Program = { readonly locals: number; readonly body: readonly Program.Statement[] };
+/** Scalar locals, lookup handles, and the row body, in the order JS evaluates it. */
+export type Program = { readonly locals: number; readonly handles?: number; readonly body: readonly Program.Statement[] };
 
 /** What the compiler emits for one kernel system. */
 export type KernelDescription = {
@@ -104,7 +113,7 @@ export type KernelDescription = {
     readonly keys: readonly Key[];
     /** A module exporting `create`, importable from the main thread and from workers. */
     readonly url: string;
-    /** The same body for WASM, or `null` when it uses what WASM kernels don't support: commands, lookups, or non-scalar values. */
+    /** The same body for WASM, or `null` when it uses what WASM kernels don't support: commands, or non-scalar values. */
     readonly program: Program | null;
 };
 

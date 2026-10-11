@@ -118,7 +118,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const runKernelLocally = (bound: BoundKernel, archetype: Archetype, since: number, values: readonly unknown[], args: unknown, tick: number): void => {
         const columns = bound.columnsOf(archetype);
         const filters = filtersOf(archetype);
-        if (bound.compiled() !== null && bound.wasm !== null) return runWasm(bound, archetype, 0, archetype.count, since, scalarValues(bound.wasm.scalars, values, args), tick);
+        if (bound.compiled() !== null && bound.wasm !== null) return runWasm(bound, archetype, 0, archetype.count, since, [...bound.lookupParameters(), ...scalarValues(bound.wasm.scalars, values, args)], tick);
         const run = bound.kernel();
         forEachPassingRange(filters, since, 0, archetype.count, (start, end) =>
             run(columns, start, end, values, bound.lookups, bound.description.keys, args, commands, tick));
@@ -127,7 +127,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     /** Splits an archetype's rows evenly across workers, in chunks of at least `minimumChunk` rows. */
     /** WASM kernels with few enough scalars dispatch through shared memory. */
     const isFast = (bound: BoundKernel | null): boolean =>
-        bound !== null && bound.wasm !== null && bound.compiled() !== null && bound.wasm.scalars.length <= maximumScalars;
+        bound !== null && bound.wasm !== null && bound.compiled() !== null && bound.lookupParameters().length + bound.wasm.scalars.length <= maximumScalars;
     /** Rows below which an archetype runs on the main thread. Shared-memory dispatch is cheap enough that half the size pays off. */
     const minimumFor = (workers: Workers): number => isFast(kernel) ? workers.minimumChunk / 2 : workers.minimumChunk;
 
@@ -135,7 +135,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         const { count } = archetype;
         const { pool } = workers;
         const bound = kernel;
-        const scalars = bound !== null && bound.wasm !== null ? scalarValues(bound.wasm.scalars, values, args) : [];
+        const scalars = bound !== null && bound.wasm !== null ? [...bound.lookupParameters(), ...scalarValues(bound.wasm.scalars, values, args)] : [];
         const fast = isFast(bound);
         const size = Math.ceil(Math.ceil(count / Math.min(pool.size, Math.ceil(count / minimumFor(workers)))) / chunkAlignment) * chunkAlignment;
         // WASM chunks go through shared memory. The main thread doesn't take one: measured, it finishes later than an idle worker.

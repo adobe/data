@@ -2,6 +2,7 @@ import type { Entity } from '../../entity/entity.js';
 import { schemaOf } from '../../registry/create-registry.js';
 import { kindOf } from '../../registry/declare-name.js';
 import { createArchetype, type Archetype, type Storage } from './archetype.js';
+import type { Directory } from './directories.js';
 import type { Queued } from './synchronize.js';
 import { createEntities, type Entities } from './entities.js';
 import { layoutOf, type Layout } from '../../layout/layout.js';
@@ -24,6 +25,8 @@ export type State = {
     /** Command buffers for the next sync point, in merge order. */
     readonly queued: Queued[];
     resourceEntity: Entity;
+    /** Lookup directories for WASM kernels, kept up to date at sync points. */
+    readonly directories: Set<Directory>;
     /** Whether kernels with a program run as WASM, and as SIMD where they can; tests turn these off to compare with JS. */
     readonly wasm: boolean;
     readonly simd: boolean;
@@ -43,6 +46,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true): State =
         tick: 0,
         queued: [],
         resourceEntity: -1,
+        directories: new Set(),
         wasm,
         simd,
     };

@@ -2,6 +2,7 @@ import { copyCell, insertRow, swapRemove, type Archetype } from './archetype.js'
 import { chunkShift } from './kernel.js';
 import { despawnCommand, endOf, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { writeCell } from './cells.js';
+import { refreshDirectories } from './directories.js';
 import { indexOf, locate, materialize, recycle, release, reserved } from './entities.js';
 import { archetypeOf, movesOf, withComponent, withoutComponent, type State } from './state.js';
 
@@ -209,4 +210,5 @@ export const synchronize = (state: State): void => {
     plan.fresh.clear();
     queued.length = 0;
     recycle(state.memory, state.entities);
+    refreshDirectories(state);
 };

@@ -60,7 +60,8 @@ const normal: Signal = { kind: "normal" };
 type Layout = { readonly strides: readonly number[]; readonly offsets: readonly number[] };
 
 /** A reference interpreter for `Program`, indexing columns by the layout as the WASM generator does. */
-const interpret = (program: Program, columns: readonly (Float64Array | Uint32Array)[], booleans: readonly boolean[], layout: Layout, start: number, end: number, resources: readonly unknown[], args: unknown): void => {
+const interpret = (program: Program, columns: readonly (Float64Array | Uint32Array)[], booleans: readonly boolean[], layout: Layout, start: number, end: number, resources: readonly unknown[], args: unknown,
+    lookups: readonly ((entity: number) => readonly unknown[] | null)[]): void => {
     const at = (column: number, row: number): number => row * (layout.strides[column] ?? 1) + (layout.offsets[column] ?? 0);
     const scalarAt = (root: unknown, path: readonly (number | string)[]): Scalar => {
         const value = path.reduce<unknown>((item, key) => Reflect.get(Object(item), key), root);
@@ -69,6 +70,7 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
     };
     for (let row = start; row < end; row++) {
         const locals: Scalar[] = new Array<Scalar>(program.locals).fill(0);
+        const handles: (readonly unknown[] | null)[] = new Array<readonly unknown[] | null>(program.handles ?? 0).fill(null);
         const evaluate = (node: Program.Expression): Scalar => {
             switch (node.kind) {
                 case "number": case "boolean": return node.value;
@@ -121,6 +123,13 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
                     return node.operator === "&&" ? (left ? evaluate(node.right) : left) : (left ? left : evaluate(node.right));
                 }
                 case "conditional": return evaluate(node.test) ? evaluate(node.consequent) : evaluate(node.alternate);
+                case "found": return handles[node.handle] !== null;
+                case "lookupLeaf": {
+                    // Not found reads NaN, as the WASM generator does.
+                    const values = handles[node.handle];
+                    if (values === null || values === undefined) return NaN;
+                    return scalarAt(values[node.read], node.path);
+                }
                 case "math": {
                     const method: unknown = Reflect.get(Math, node.name);
                     if (typeof method !== "function") throw new Error(`no Math.${node.name}`);
@@ -160,6 +169,12 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
                 case "branch": return { kind: "branch", depth: statement.depth };
                 case "branchIf": return evaluate(statement.test) ? { kind: "branch", depth: statement.depth } : normal;
                 case "next": return { kind: "next" };
+                case "find": {
+                    const lookup = lookups[statement.lookup];
+                    if (lookup === undefined) throw new Error(`no lookup ${statement.lookup}`);
+                    handles[statement.handle] = lookup(Number(evaluate(statement.entity)));
+                    return normal;
+                }
             }
         };
         execute(program.body);
@@ -209,7 +224,7 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
     expect(description.program !== null).toBe(options.program ?? true);
     if (description.program !== null) {
         const interpreted = build();
-        interpret(description.program, interpreted, booleans, layout, start, end, options.resources ?? [], options.args);
+        interpret(description.program, interpreted, booleans, layout, start, end, options.resources ?? [], options.args, options.lookups ?? []);
         // Bit-identical, including NaN and -0.
         expect(interpreted.map(column => [...column].map(value => Object.is(value, -0) ? "-0" : String(value))))
             .toEqual(columns.map(column => [...column].map(value => Object.is(value, -0) ? "-0" : String(value))));
@@ -516,6 +531,52 @@ describe("program", () => {
             row[score] = d[row[mass]];
         });`);
         expect(run(kernel, 1, { mass: { "[]": [1] } }, { resources: [[5, 6]], program: false }).field("score")).toEqual([6]);
+    });
+});
+
+describe("lookups in the program", () => {
+    const targets = (entity: number) => entity === 1 ? [3, [10, 20, 30]] : entity === 2 ? [4, [40, 50, 60]] : null;
+    const declaration = (body: string) => `const kernel = System.create({ name: "a", kernel: true,
+        query: { read: [target, mass], write: [score] }, lookup: { targets: { read: [mass, position] }, others: { read: [position] } } },
+        (row, { targets, others }) => { ${body} });`;
+
+    test("guarded leaf access, early return and a second lookup in its own handle", async () => {
+        const kernel = await compile(declaration(`
+            const other = targets(row[target]);
+            if (other === null) return;
+            const [tx, ty] = other[position];
+            const second = others(row[mass]);
+            const extra = second !== null ? second[position][2] : 0;
+            row[score] = tx - other[mass] + ty * 0 + extra;
+        `));
+        expect(kernel.program?.handles).toBe(2);
+        const others = (entity: number) => entity === 2 ? [[0, 0, 7]] : null;
+        expect(run(kernel, 3, { target: { "[]": [1, 2, 3] }, mass: { "[]": [2, 0, 0] }, score: { "[]": [-1, -1, -1] } }, { lookups: [targets, others] }).field("score"))
+            .toEqual([10 - 3 + 7, 40 - 4, -1]);
+    });
+
+    test("optional chains read NaN when nothing was found, anywhere", async () => {
+        const kernel = await compile(declaration(`row[score] = targets(row[target])?.[position]?.[1] * 2;`));
+        expect(kernel.program).not.toBeNull();
+        expect(run(kernel, 2, { target: { "[]": [1, 5] } }, { lookups: [targets, () => null] }).field("score")).toEqual([40, NaN]);
+    });
+
+    test("guards through && and conditional tests", async () => {
+        const kernel = await compile(declaration(`
+            const other = targets(row[target]);
+            row[score] = other && other[mass] > 3 ? other[position][0] : -other?.[mass];
+        `));
+        expect(kernel.program).not.toBeNull();
+        expect(run(kernel, 3, { target: { "[]": [1, 2, 3] } }, { lookups: [targets, () => null] }).field("score")).toEqual([-3, 40, NaN]);
+    });
+
+    test.each([
+        ["an unguarded leaf access", `const other = targets(row[target]); row[score] = other[mass];`],
+        ["a lookup result used whole", `const other = targets(row[target]); row[score] = other;`],
+        ["a leaf access after the guard's scope", `const other = targets(row[target]); if (other !== null) { row[score] = 1; } row[score] = other[mass];`],
+    ])("no program for %s", async (_, body) => {
+        const kernel = await compile(declaration(body));
+        expect(kernel.program).toBeNull();
     });
 });
 

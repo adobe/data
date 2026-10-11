@@ -23,6 +23,15 @@ export type WasmColumn = {
 /** A scalar parameter: a leaf of a resource or of `args`, in `scalars` order. */
 export type WasmScalar = { readonly source: "resource"; readonly index: number; readonly path: readonly (number | string)[] } | { readonly source: "args"; readonly path: readonly (number | string)[] };
 
+/**
+ * A lookup's directory in shared memory: one record of `1 + reads` i32 words per archetype id, a match flag, then the
+ * column address of each component the lookup reads. `leaf` places a scalar leaf of read component `read`.
+ */
+export type WasmLookup = {
+    readonly reads: number;
+    readonly leaf: (read: number, path: readonly (number | string)[]) => Omit<WasmColumn, "component"> | null;
+};
+
 export type WasmKernel = {
     /** Compile asynchronously: browsers limit synchronous compiles on the main thread. */
     readonly bytes: Uint8Array;
@@ -85,12 +94,13 @@ const op = {
     i32Eq: 0x46, i32LtS: 0x48, i32LeS: 0x4c, i32Clz: 0x67, i32Add: 0x6a, i32Sub: 0x6b, i32Mul: 0x6c, i32And: 0x71, i32Or: 0x72, i32Xor: 0x73, i32Shl: 0x74, i32ShrS: 0x75, i32ShrU: 0x76,
     f64Abs: 0x99, f64Neg: 0x9a, f64Ceil: 0x9b, f64Floor: 0x9c, f64Trunc: 0x9d, f64Sqrt: 0x9f,
     f64Add: 0xa0, f64Sub: 0xa1, f64Mul: 0xa2, f64Div: 0xa3, f64Min: 0xa4, f64Max: 0xa5,
-    i32WrapI64: 0xa7, f32DemoteF64: 0xb6, f64ConvertI32S: 0xb7, f64ConvertI32U: 0xb8, f64PromoteF32: 0xbb,
+    i32WrapI64: 0xa7, i32GeU: 0x4f, i32Ne: 0x47, i64Const: 0x42, i64ShrU: 0x88, f32DemoteF64: 0xb6, f64ConvertI32S: 0xb7, f64ConvertI32U: 0xb8, f64PromoteF32: 0xbb,
 } as const;
 const f64Type = 0x7c;
 const i32Type = 0x7f;
-/** `i64.trunc_sat_f64_s`, a 0xfc-prefixed opcode. */
+/** Saturating truncations, 0xfc-prefixed opcodes. */
 const i64TruncSatF64S = [0xfc, 0x06];
+const truncations = { i32TruncSatF64U: [0xfc, 0x03], i64TruncSatF64U: [0xfc, 0x07] } as const;
 
 const unsigned = (value: number): number[] => {
     const bytes: number[] = [];
@@ -141,6 +151,7 @@ export const generateWasm = (
     scalarTypes: (scalar: WasmScalar) => Type | null,
     simdEnabled = true,
     filters = 0,
+    lookups: readonly WasmLookup[] = [],
 ): WasmKernel | null => {
     const scalars: WasmScalar[] = [];
     const scalarIndex = new Map<string, number>();
@@ -165,6 +176,20 @@ export const generateWasm = (
         return index;
     };
 
+    /** Each handle's lookup, from the `find`s into it; a handle used by two lookups isn't supported. */
+    const lookupOfHandle = new Map<number, number>();
+    const collectFinds = (statements: readonly Statement[]): void => {
+        for (const statement of statements) {
+            if (statement.kind === "find") {
+                const existing = lookupOfHandle.get(statement.handle);
+                if ((existing !== undefined && existing !== statement.lookup) || statement.lookup >= lookups.length) throw unsupported;
+                lookupOfHandle.set(statement.handle, statement.lookup);
+            }
+            else if (statement.kind === "if") { collectFinds(statement.consequent); collectFinds(statement.alternate); }
+            else if (statement.kind === "block" || statement.kind === "loop") collectFinds(statement.body);
+        }
+    };
+
     // Local types, to a fixed point over assignments.
     const localTypes: (Type | undefined)[] = new Array(program.locals);
     const typeOf = (expression: Expression): Type => {
@@ -179,6 +204,12 @@ export const generateWasm = (
             case "logical": return join(typeOf(expression.left), typeOf(expression.right));
             case "conditional": return join(typeOf(expression.consequent), typeOf(expression.alternate));
             case "math": return "number";
+            case "found": return "boolean";
+            case "lookupLeaf": {
+                const lookup = lookupOfHandle.get(expression.handle);
+                const leaf = lookup === undefined ? null : lookups[lookup]?.leaf(expression.read, expression.path);
+                return leaf?.boolean === true ? "boolean" : "number";
+            }
         }
     };
     const inferLocals = (statements: readonly Statement[]): boolean => {
@@ -205,7 +236,13 @@ export const generateWasm = (
     const columnParameter = (column: number): number => 4 + column;
     const filterRowParameter = (filter: number): number => 4 + columns.length + filter;
     const filterChunkParameter = (filter: number): number => 4 + columns.length + filters + filter;
-    const scalarParameter = (index: number): number => 4 + columns.length + 2 * filters + index;
+    /**
+     * With lookups: the entity table (archetype, row and generation addresses, then its length), then each lookup's
+     * directory address and record count, all as f64 so workers pass them like scalars.
+     */
+    const lookupParameters = lookups.length === 0 ? 0 : 4 + 2 * lookups.length;
+    const lookupParameter = (index: number): number => 4 + columns.length + 2 * filters + index;
+    const scalarParameter = (index: number): number => 4 + columns.length + 2 * filters + lookupParameters + index;
     const code: number[] = [];
     const extraLocals: number[] = [];
     let localBase = 0;
@@ -305,6 +342,10 @@ export const generateWasm = (
                 code.push(op.end);
                 return;
             case "math": return emitMath(expression.name, expression.arguments);
+            case "found":
+                code.push(op.localGet, ...unsigned(handleLocal(expression.handle, "found")), op.f64ConvertI32U);
+                return;
+            case "lookupLeaf": return emitLookupLeaf(expression.handle, expression.read, expression.path);
         }
     };
 
@@ -449,6 +490,83 @@ export const generateWasm = (
         }
     };
 
+    // ---- Lookups: a find checks the entity table and the lookup's directory record; leaves read through the record. ----
+
+    /** i32 locals holding the lookup parameters, converted once per call. */
+    let lookupLocals: number[] = [];
+    const convertLookupParameters = (): void => {
+        lookupLocals = [];
+        for (let index = 0; index < lookupParameters; index++) {
+            const target = scratch(i32Type);
+            code.push(op.localGet, ...unsigned(lookupParameter(index)), ...truncations.i32TruncSatF64U, op.localSet, ...unsigned(target));
+            lookupLocals.push(target);
+        }
+    };
+    const entityArchetypes = (): number => lookupLocals[0];
+    const entityRows = (): number => lookupLocals[1];
+    const entityGenerations = (): number => lookupLocals[2];
+    const entityCount = (): number => lookupLocals[3];
+    const directory = (lookup: number): number => lookupLocals[4 + 2 * lookup];
+    const directoryCount = (lookup: number): number => lookupLocals[5 + 2 * lookup];
+
+    /** Per handle: whether found, the row, and the address of its directory record. */
+    const handleLocals = new Map<string, number>();
+    const handleLocal = (handle: number, part: "found" | "row" | "record"): number => {
+        const key = `${handle}:${part}`;
+        let index = handleLocals.get(key);
+        if (index === undefined) handleLocals.set(key, index = scratch(i32Type));
+        return index;
+    };
+
+    const emitFind = (handle: number, lookup: number, entity: Expression): void => {
+        const found = handleLocal(handle, "found");
+        const row = handleLocal(handle, "row");
+        const record = handleLocal(handle, "record");
+        const wide = scratch(0x7e);
+        const index = scratch(i32Type);
+        const archetype = scratch(i32Type);
+        const words = 1 + lookups[lookup].reads;
+        code.push(op.i32Const, 0, op.localSet, ...unsigned(found));
+        // An entity is `index + generation * 2^32`.
+        emit(entity);
+        code.push(...truncations.i64TruncSatF64U, op.localTee, ...unsigned(wide), op.i32WrapI64, op.localSet, ...unsigned(index));
+        code.push(op.block, 0x40);
+        labels.push("if");
+        code.push(op.localGet, ...unsigned(index), op.localGet, ...unsigned(entityCount()), op.i32GeU, op.brIf, 0);
+        code.push(op.localGet, ...unsigned(entityGenerations()), op.localGet, ...unsigned(index), op.i32Const, 2, op.i32Shl, op.i32Add, op.i32Load, 2, 0);
+        code.push(op.localGet, ...unsigned(wide), op.i64Const, 32, op.i64ShrU, op.i32WrapI64, op.i32Ne, op.brIf, 0);
+        code.push(op.localGet, ...unsigned(entityArchetypes()), op.localGet, ...unsigned(index), op.i32Const, 2, op.i32Shl, op.i32Add, op.i32Load, 2, 0, op.localTee, ...unsigned(archetype));
+        code.push(op.i32Const, 0, op.i32LtS, op.brIf, 0);
+        code.push(op.localGet, ...unsigned(archetype), op.localGet, ...unsigned(directoryCount(lookup)), op.i32GeS, op.brIf, 0);
+        code.push(op.localGet, ...unsigned(directory(lookup)), op.localGet, ...unsigned(archetype), op.i32Const, ...signed(4 * words), op.i32Mul, op.i32Add, op.localTee, ...unsigned(record));
+        code.push(op.i32Load, 2, 0, op.i32Eqz, op.brIf, 0);
+        code.push(op.localGet, ...unsigned(entityRows()), op.localGet, ...unsigned(index), op.i32Const, 2, op.i32Shl, op.i32Add, op.i32Load, 2, 0, op.localSet, ...unsigned(row));
+        code.push(op.i32Const, 1, op.localSet, ...unsigned(found));
+        labels.pop();
+        code.push(op.end);
+    };
+
+    const emitLookupLeaf = (handle: number, read: number, path: readonly (number | string)[]): void => {
+        const lookup = lookupOfHandle.get(handle);
+        const leaf = lookup === undefined ? null : lookups[lookup].leaf(read, path);
+        if (leaf === null) throw unsupported;
+        const { view, stride, offset, boolean } = leaf;
+        code.push(op.localGet, ...unsigned(handleLocal(handle, "found")), op.if, f64Type);
+        labels.push("if");
+        // The column's address from the record, then the row's element.
+        code.push(op.localGet, ...unsigned(handleLocal(handle, "record")), op.i32Load, 2, ...unsigned(4 * (1 + read)));
+        code.push(op.localGet, ...unsigned(handleLocal(handle, "row")), op.i32Const, ...signed(stride), op.i32Mul, op.i32Add);
+        const memory = (align: number): number[] => [align, ...unsigned(offset)];
+        if (boolean) code.push(view === "u8" ? op.i32Load8u : op.i32Load, ...memory(view === "u8" ? 0 : 2), op.i32Const, 0, op.i32Ne, op.f64ConvertI32U);
+        else if (view === "f32") code.push(op.f32Load, ...memory(2), op.f64PromoteF32);
+        else if (view === "i32") code.push(op.i32Load, ...memory(2), op.f64ConvertI32S);
+        else if (view === "u32") code.push(op.i32Load, ...memory(2), op.f64ConvertI32U);
+        else if (view === "u8") code.push(op.i32Load8u, ...memory(0), op.f64ConvertI32U);
+        else code.push(op.f64Load, ...memory(3));
+        code.push(op.else, op.f64Const, ...float64(NaN), op.end);
+        labels.pop();
+    };
+
     /** Sets the chunk tick of the row `rowOffset` rows past the current one, unless every row's chunk is stamped up front. */
     const stampChunk = (chunks: number, rowOffset: number): void => {
         if (everyRow.has(chunks)) return;
@@ -491,6 +609,7 @@ export const generateWasm = (
                 code.push(op.brIf, ...unsigned(wasmDepth(current.depth)));
                 return;
             case "next": code.push(op.br, ...unsigned(labels.length - 1 - labels.lastIndexOf("next"))); return;
+            case "find": return emitFind(current.handle, current.lookup, current.entity);
         }
     };
 
@@ -629,6 +748,7 @@ export const generateWasm = (
                 for (const parameter of expression.arguments) rowsEmit(parameter);
                 emitVectorMath(expression.name, expression.arguments.length);
                 return;
+            case "found": case "lookupLeaf": throw notVectorizable;
         }
     };
 
@@ -794,6 +914,7 @@ export const generateWasm = (
                     case "set": assignments.set(statement.local, (assignments.get(statement.local) ?? 0) + 1); countExpression(statement.value); break;
                     case "store": countExpression(statement.value); break;
                     case "branchIf": countExpression(statement.test); break;
+                    case "find": countExpression(statement.entity); break;
                     case "if": countExpression(statement.test); countStatements(statement.consequent); countStatements(statement.alternate); break;
                     case "block": case "loop": countStatements(statement.body); break;
                     default: break;
@@ -997,7 +1118,8 @@ export const generateWasm = (
     };
 
     try {
-        const parameterCount = 4 + columns.length + 2 * filters;
+        const parameterCount = 4 + columns.length + 2 * filters + lookupParameters;
+        collectFinds(program.body);
         /** Leaves 1 if any filter's tick at `(row >> shift) * 8` in its `parameter` array is newer than `lastRun`. */
         const anyNewer = (parameter: (filter: number) => number, shift: number): void => {
             for (let filter = 0; filter < filters; filter++) {
@@ -1029,6 +1151,8 @@ export const generateWasm = (
             localBase = parameterCount + scalarCount;
             rowLocal = scratch(i32Type);
             code.push(op.localGet, 0, op.localSet, ...unsigned(rowLocal));
+            handleLocals.clear();
+            if (lookupParameters > 0) convertLookupParameters();
             stampRangeChunks();
             if (mode === "rows") rowsLoop();
             // for (; row < end; row++) { block next { body } }
@@ -1069,7 +1193,7 @@ export const generateWasm = (
         if (scalars.length !== discovered) throw unsupported;
         const vectorized = mode !== "scalar";
 
-        const parameterTypes = [i32Type, i32Type, f64Type, f64Type, ...columns.map(() => i32Type), ...new Array<number>(2 * filters).fill(i32Type), ...scalars.map(() => f64Type)];
+        const parameterTypes = [i32Type, i32Type, f64Type, f64Type, ...columns.map(() => i32Type), ...new Array<number>(2 * filters).fill(i32Type), ...new Array<number>(lookupParameters).fill(f64Type), ...scalars.map(() => f64Type)];
         const localTypesList = [...new Array<number>(program.locals).fill(f64Type)];
         // Locals in order: program locals, then extras in creation order; the row index was the first extra.
         const declared = [...localTypesList.map(type => [1, type]), ...extraLocals.map(type => [1, type])];

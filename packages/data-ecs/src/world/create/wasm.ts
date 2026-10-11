@@ -655,7 +655,7 @@ export const generateWasm = (
         load: 0, store: 11, const: 12, f32Splat: 19, f64Splat: 20,
         f32Eq: 65, f32Ne: 66, f32Lt: 67, f32Gt: 68, f32Le: 69, f32Ge: 70,
         not: 77, and: 78, andNot: 79, bitselect: 82,
-        load32Lane: 86, store32Lane: 90, store64Lane: 91, load32Zero: 92, load64Zero: 93,
+        store32Lane: 90, store64Lane: 91, load32Zero: 92, load64Zero: 93,
         f32Ceil: 103, f32Floor: 104, f32Trunc: 105, i64ExtendLowS: 199, i64ExtendHighS: 200,
         f32Abs: 224, f32Neg: 225, f32Sqrt: 227, f32Add: 228, f32Sub: 229, f32Mul: 230, f32Div: 231, f32Min: 232, f32Max: 233,
     } as const;
@@ -905,16 +905,14 @@ export const generateWasm = (
     const elementAddress = (column: number): void => {
         code.push(op.localGet, ...unsigned(columnParameter(column)), op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(columns[column].stride), op.i32Mul, op.i32Add);
     };
-    /** Loads a window's lanes without reading past them, so the last row never reads beyond its column. */
+    /**
+     * Loads a window's lanes. Three or four lanes load 16 bytes, which can read up to 12 past the element:
+     * columns keep `columnSlack` bytes after their last row for that. Two or one load only their lanes.
+     */
     const loadWindow = (column: number, { base, lanes }: Window): void => {
         elementAddress(column);
-        if (lanes === 4) return void code.push(...simd(vop.load), 2, ...unsigned(base));
+        if (lanes >= 3) return void code.push(...simd(vop.load), 2, ...unsigned(base));
         code.push(...simd(lanes === 1 ? vop.load32Zero : vop.load64Zero), 2, ...unsigned(base));
-        if (lanes !== 3) return;
-        const partial = scratch(v128Type);
-        code.push(op.localSet, ...unsigned(partial));
-        elementAddress(column);
-        code.push(op.localGet, ...unsigned(partial), ...simd(vop.load32Lane), 2, ...unsigned(base + 8), 2);
     };
     /** Stores a window's lanes from a v128 local, without touching the rest of the element. */
     const storeWindow = (column: number, { base, lanes }: Window, value: number): void => {

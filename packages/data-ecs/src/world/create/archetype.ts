@@ -20,6 +20,9 @@ export type Storage = {
     chunkChanged: Float64Array;
 };
 
+/** Bytes after a column's last row, so a WASM kernel's 16-byte load of a row's leaves never reads past the column. */
+export const columnSlack = 16;
+
 /** Chunks covering `capacity` rows. */
 const chunksFor = (capacity: number): number => Math.max(1, Math.ceil(capacity / 2 ** chunkShift));
 
@@ -66,7 +69,7 @@ const createStorage = (memory: Memory, component: number, layout: Layout, capaci
     return {
         component,
         layout,
-        views: layout.kind === "linear" ? allocateViews(memory, capacity * layout.stride) : emptyViews,
+        views: layout.kind === "linear" ? allocateViews(memory, capacity * layout.stride + columnSlack) : emptyViews,
         values: [],
         added,
         changed: layout.kind === "constant" ? added : allocateArray(memory, Float64Array, capacity),
@@ -99,7 +102,7 @@ export const createArchetype = (memory: Memory, id: number, components: readonly
 const growViews = (memory: Memory, storage: Storage, capacity: number, count: number): void => {
     const { layout } = storage;
     if (layout.kind !== "linear") return;
-    const grown = allocateViews(memory, capacity * layout.stride);
+    const grown = allocateViews(memory, capacity * layout.stride + columnSlack);
     grown.u8.set(storage.views.u8.subarray(0, count * layout.stride));
     freeViews(memory, storage.views);
     storage.views = grown;

@@ -42,16 +42,19 @@ const required = <T>(value: T | null, what: string): T => {
     return value;
 };
 
+/** The tick arrays of a component without ticks. */
+const noTicks = new Float64Array(0);
+
 const viewArchetype = (buffer: ArrayBufferLike, layout: ArchetypeLayout): ArchetypeViews => ({
     entities: new Float64Array(buffer, layout.entities, layout.capacity),
     storages: new Map(layout.storages.map(storage => {
         const componentLayout = layouts[storage.id];
         return [storage.id, {
             views: componentLayout.kind === "linear" && storage.column >= 0 ? viewsOf(buffer, storage.column, layout.capacity * componentLayout.stride) : emptyViews,
-            added: new Float64Array(buffer, storage.added, layout.capacity),
-            changed: new Float64Array(buffer, storage.changed, layout.capacity),
-            chunkAdded: new Float64Array(buffer, storage.chunkAdded, storage.chunks),
-            chunkChanged: new Float64Array(buffer, storage.chunkChanged, storage.chunks),
+            added: storage.ticked ? new Float64Array(buffer, storage.added, layout.capacity) : noTicks,
+            changed: storage.ticked ? new Float64Array(buffer, storage.changed, layout.capacity) : noTicks,
+            chunkAdded: storage.ticked ? new Float64Array(buffer, storage.chunkAdded, storage.chunks) : noTicks,
+            chunkChanged: storage.ticked ? new Float64Array(buffer, storage.chunkChanged, storage.chunks) : noTicks,
         }];
     })),
 });

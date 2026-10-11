@@ -199,6 +199,7 @@ const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Arche
                 break;
             default: writeCell(storage, toRow, value);
         }
+        if (!storage.ticked) continue;
         const starts = from === null || from.storageById[id] === undefined || (fresh !== undefined && fresh.includes(id));
         // A constant's `changed` ticks are its `added` ticks, and its value can't change: only a new start stamps it.
         if (storage.changed !== storage.added || starts) {

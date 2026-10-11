@@ -11,7 +11,7 @@ import { createPublisher } from './publish.js';
 import { count, readComponent, readEntity, select } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
 import { defaultOf, ensureResources, findResource } from './resources.js';
-import { createState, type Key } from './state.js';
+import { createState, startTicking, type Key } from './state.js';
 
 type Queue = <T>(task: () => T | Promise<T>) => Promise<T>;
 
@@ -54,9 +54,13 @@ export const createWorld = (options: WorldOptions = {}): World => {
 
     /** Adds resources, then loads kernels on the main thread and in every worker. Undoes the registration if loading fails. */
     const complete = async (registration: Registration): Promise<void> => {
-        const { resources, kernels } = registration;
+        const { resources, ticked, kernels } = registration;
         try {
             ensureResources(state, resources);
+            // Kept after a rollback: ticks nothing reads cost only memory.
+            startTicking(state, ticked);
+            // Workers see the new tick arrays before the next run's tasks.
+            context.publish();
             await Promise.all(kernels.map(runner => runner.kernel?.load()));
             // Workers get every kernel whose main-thread load is newer than theirs, including ones a failed registration reloaded.
             const behind = registrar.kernels().filter(runner => runner.kernel?.staleOnWorkers() === true);

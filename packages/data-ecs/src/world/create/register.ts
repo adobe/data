@@ -6,7 +6,8 @@ import { checkLeaf, createSchedule, isLeaf, type Schedule } from './schedule.js'
 import { idOf, type Key, type State } from './state.js';
 
 /** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */
-export type Registration = { readonly resources: readonly Key[]; readonly kernels: readonly Runner[]; readonly rollback: () => void };
+/** `ticked`: components the new systems filter on, which must keep ticks before they run. */
+export type Registration = { readonly resources: readonly Key[]; readonly ticked: readonly number[]; readonly kernels: readonly Runner[]; readonly rollback: () => void };
 
 export type Registrar = {
     /** Validates and records systems and all their members. Throws without recording anything on failure. */
@@ -92,7 +93,8 @@ export const createRegistrar = (state: State): Registrar => {
             state.observed.clear();
             for (const id of observedBefore) state.observed.add(id);
         };
-        return { resources: [...resources], kernels, rollback };
+        const ticked = [...addedRunners.keys()].flatMap(leaf => [...leaf.declaration.query?.added ?? [], ...leaf.declaration.query?.changed ?? []].map(key => idOf(state, key)));
+        return { resources: [...resources], ticked, kernels, rollback };
     };
 
     const scheduleOf = (system: System): Schedule => {

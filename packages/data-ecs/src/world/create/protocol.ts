@@ -15,10 +15,14 @@ export type EntitiesLayout = {
     readonly length: number;
 };
 
-/** `column` is the byte offset of the component's interleaved column, or -1 when it stores nothing in linear memory. */
+/**
+ * `column` is the byte offset of the component's interleaved column, or -1 when it stores nothing in linear memory.
+ * Tick offsets mean something only when `ticked`.
+ */
 export type StorageLayout = {
     readonly id: number;
     readonly column: number;
+    readonly ticked: boolean;
     readonly added: number;
     readonly changed: number;
     readonly chunkAdded: number;

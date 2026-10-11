@@ -17,7 +17,11 @@ export type Storage = {
     readonly unitStride: number;
     readonly unitOffset: number;
     readonly lanes: number;
-    /** Ticks are f64 so they never wrap; u32 ticks with a clamp pass are a phase 2 optimization. */
+    /**
+     * Whether this component keeps ticks: only once some system filters on its `added` or `changed`, and always for
+     * resources. Without them the tick arrays are empty and nothing stamps. Ticks are f64 so they never wrap.
+     */
+    ticked: boolean;
     added: Float64Array;
     changed: Float64Array;
     /** The newest `added` and `changed` tick in each chunk of `2 ** chunkShift` rows, so change filters skip unchanged chunks. */
@@ -54,11 +58,13 @@ const chunksFor = (capacity: number): number => Math.max(1, Math.ceil(capacity /
 
 /** Stamps a row's `changed` tick and its chunk's. Ticks only increase, so the chunk's is the newest. */
 export const stampChanged = (storage: Storage, row: number, tick: number): void => {
+    if (!storage.ticked) return;
     storage.changed[row] = tick;
     storage.chunkChanged[row >> chunkShift] = tick;
 };
 
 export const stampAdded = (storage: Storage, row: number, tick: number): void => {
+    if (!storage.ticked) return;
     storage.added[row] = tick;
     storage.chunkAdded[row >> chunkShift] = tick;
 };
@@ -88,25 +94,50 @@ export type Archetype = {
 
 const initialCapacity = 16;
 
-/** A constant's value can't change, so its `changed` ticks are its `added` ticks: tags cost one tick per row. */
-const createStorage = (memory: Memory, component: number, layout: Layout, capacity: number): Storage => {
-    const added = allocateArray(memory, Float64Array, capacity);
-    const chunkAdded = allocateArray(memory, Float64Array, chunksFor(capacity)).fill(0);
-    return {
+/** The tick arrays of a storage without ticks. */
+const noTicks = new Float64Array(0);
+
+/**
+ * Gives a storage tick arrays for `capacity` rows, every tick set to `tick`. A constant's value can't change, so its
+ * `changed` ticks are its `added` ticks: tags cost one tick per row.
+ */
+const allocateTicks = (memory: Memory, storage: Storage, capacity: number, tick: number): void => {
+    storage.ticked = true;
+    storage.added = allocateArray(memory, Float64Array, capacity).fill(tick);
+    storage.changed = storage.layout.kind === "constant" ? storage.added : allocateArray(memory, Float64Array, capacity).fill(tick);
+    storage.chunkAdded = allocateArray(memory, Float64Array, chunksFor(capacity)).fill(tick);
+    storage.chunkChanged = storage.layout.kind === "constant" ? storage.chunkAdded : allocateArray(memory, Float64Array, chunksFor(capacity)).fill(tick);
+};
+
+const createStorage = (memory: Memory, component: number, layout: Layout, capacity: number, ticked: boolean): Storage => {
+    const storage: Storage = {
         component,
         layout,
         views: layout.kind === "linear" ? allocateViews(memory, capacity * layout.stride + columnSlack) : emptyViews,
         values: [],
         ...writeOf(layout),
-        added,
-        changed: layout.kind === "constant" ? added : allocateArray(memory, Float64Array, capacity),
-        chunkAdded,
-        chunkChanged: layout.kind === "constant" ? chunkAdded : allocateArray(memory, Float64Array, chunksFor(capacity)).fill(0),
+        ticked: false,
+        added: noTicks,
+        changed: noTicks,
+        chunkAdded: noTicks,
+        chunkChanged: noTicks,
     };
+    if (ticked) allocateTicks(memory, storage, capacity, 0);
+    return storage;
 };
 
-export const createArchetype = (memory: Memory, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean): Archetype => {
-    const storages = components.map(component => createStorage(memory, component, layouts[component], initialCapacity));
+/**
+ * Starts keeping ticks for a storage, as if every row was added and changed at `tick`, so a system registered now sees
+ * every row on its first run, as it would had the ticks always been kept.
+ */
+export const startTicks = (memory: Memory, archetype: Archetype, storage: Storage, tick: number): void => {
+    if (storage.ticked) return;
+    allocateTicks(memory, storage, archetype.capacity, tick);
+    archetype.version++;
+};
+
+export const createArchetype = (memory: Memory, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean, ticked: ReadonlySet<number>): Archetype => {
+    const storages = components.map(component => createStorage(memory, component, layouts[component], initialCapacity, resource || ticked.has(component)));
     const storageById: (Storage | undefined)[] = [];
     for (const storage of storages) storageById[storage.component] = storage;
     return {
@@ -139,6 +170,7 @@ const grow = (memory: Memory, archetype: Archetype, capacity = archetype.capacit
     const { count } = archetype;
     for (const storage of archetype.storages) {
         growViews(memory, storage, capacity, count);
+        if (!storage.ticked) continue;
         const shared = storage.changed === storage.added;
         storage.added = growArray(memory, storage.added, Float64Array, capacity, count);
         storage.changed = shared ? storage.added : growArray(memory, storage.changed, Float64Array, capacity, count);
@@ -189,6 +221,8 @@ export const copyCell = (from: Storage, fromRow: number, to: Storage, toRow: num
     const { layout } = from;
     if (layout.kind === "linear") copyElement(from.views, fromRow, to.views, toRow, layout.stride);
     else if (layout.kind === "object") to.values[toRow] = from.values[fromRow];
+    // A component keeps ticks in every archetype or in none.
+    if (!to.ticked) return;
     const added = from.added[fromRow];
     const changed = from.changed[fromRow];
     to.added[toRow] = added;

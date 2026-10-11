@@ -1,7 +1,7 @@
 import type { Entity } from '../../entity/entity.js';
 import { schemaOf } from '../../registry/create-registry.js';
 import { kindOf } from '../../registry/declare-name.js';
-import { createArchetype, type Archetype, type Storage } from './archetype.js';
+import { createArchetype, startTicks, type Archetype, type Storage } from './archetype.js';
 import type { Directory } from './directories.js';
 import type { Queued } from './synchronize.js';
 import { createEntities, type Entities } from './entities.js';
@@ -28,6 +28,8 @@ export type State = {
     resourceEntity: Entity;
     /** Components some registered system filters on with `changed`; only their kernel stamps are kept. */
     readonly observed: Set<number>;
+    /** Components some registered system filters on with `added` or `changed`; only they keep ticks. */
+    readonly ticked: Set<number>;
     /** Lookup directories for WASM kernels, kept up to date at sync points. */
     readonly directories: Set<Directory>;
     /** Accessor rows for main-thread systems, by the component ids they read and write. */
@@ -52,6 +54,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true): State =
         queued: [],
         resourceEntity: -1,
         observed: new Set(),
+        ticked: new Set(),
         directories: new Set(),
         rows: new Map(),
         wasm,
@@ -78,10 +81,22 @@ export const archetypeOf = (state: State, components: readonly number[]): Archet
     const key = components.join(",");
     const existing = state.archetypeByKey.get(key);
     if (existing !== undefined) return existing;
-    const archetype = createArchetype(state.memory, state.archetypes.length, components, state.layouts, components.some(id => state.resources.has(id)));
+    const archetype = createArchetype(state.memory, state.archetypes.length, components, state.layouts, components.some(id => state.resources.has(id)), state.ticked);
     state.archetypes.push(archetype);
     state.archetypeByKey.set(key, archetype);
     return archetype;
+};
+
+/** Starts keeping ticks for components, in every archetype. Allocates, so it runs only between runs. */
+export const startTicking = (state: State, components: readonly number[]): void => {
+    for (const id of components) {
+        if (state.ticked.has(id)) continue;
+        state.ticked.add(id);
+        for (const archetype of state.archetypes) {
+            const storage = archetype.storageById[id];
+            if (storage !== undefined) startTicks(state.memory, archetype, storage, state.tick);
+        }
+    }
 };
 
 /** The archetype with `id` added, through a cached edge. Creating one allocates, so this runs only at sync points. */

@@ -213,6 +213,8 @@ Measured with `pnpm perf` (benchmarks bundled as in production, on plain node) a
 
 ### Next
 
+- **Precompiled spawn staging.** The plugin emits a staging function for each `commands.spawn` site with literal keys in any `System.create` body, kernel or not, and attaches its shape to the call, so spawns need no `new Function` (no `'unsafe-eval'` under a content security policy), no `Object.keys` and no shape match. This replaces the runtime generator and `commands.spawner`. Offsets stay runtime data; other sites use the plain loop.
+- **JS fallback when WASM can't compile.** Under a content security policy without `'wasm-unsafe-eval'`, `WebAssembly.compile` throws and registration rejects; kernels should run their compiled JS instead.
 - **U32 ticks,** if tick bandwidth matters for observed components. Halves tick memory and the change-filter scan's bandwidth, which bounds uniformly sparse filters. Comparisons use wrapping subtraction relative to the current tick, with a periodic clamp pass at a sync point, like Bevy's `check_change_ticks`, covering cell, `lastRun` and chunk ticks.
 - **Compiled main-thread systems.** Accessor rows copy tuples out on every read and share one megamorphic body call site; compiling main-thread systems (or a JS-only kernel mode) would remove both. A per-system loop alone measured 5–10%.
 - **Kernel fusion, once real workloads show fusable pipelines.** Consecutive per-row kernels over the same archetypes, each reading what the previous one wrote at the same row, become one pass. It cuts dispatch and memory passes: chain 6×1M spends its time streaming 12 MB six times. Fusion must keep each system's tick, `lastRun`, change filters and command order.

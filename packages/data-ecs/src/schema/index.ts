@@ -1,3 +1,1 @@
-
-export * from './false.js';
-export * from './true.js';
+export * from './schema.js';

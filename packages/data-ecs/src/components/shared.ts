@@ -1,6 +1,6 @@
 import { Component } from '../component/component.js';
 
-export const shared = Symbol('shared');
+export const shared = 'shared';
 
 declare module '../component/types.js' {
     export interface Types {
@@ -8,5 +8,4 @@ declare module '../component/types.js' {
     }
 }
 
-Component.schemas[shared] = { type: 'boolean', const: true };;
-
+Component.register(shared, { const: true });

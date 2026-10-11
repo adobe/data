@@ -1,63 +1,106 @@
 
+/** Any value representable in JSON. */
+type JSONValue = string | number | boolean | null | readonly JSONValue[] | { readonly [key: string]: JSONValue };
+
 interface ObjectSchema<K extends string = string> {
-    type: 'object',
-    const?: Record<K, Schema>;
-    properties: Record<K, Schema>;
-    required?: K[];
+    readonly type: 'object',
+    readonly properties: { readonly [P in K]: Schema };
+    readonly required?: readonly K[];
 }
 
 interface StringSchema {
-    type: 'string';
-    const?: string;
-    minLength?: number;
-    maxLength?: number;
+    readonly type: 'string';
+    readonly minLength?: number;
+    readonly maxLength?: number;
 }
 
 interface ArraySchema<T extends Schema> {
-    type: 'array';
-    const?: readonly T[];
-    items: T;
+    readonly type: 'array';
+    readonly items: T;
+    readonly minItems?: number;
+    readonly maxItems?: number;
 }
 
 interface NumberSchema {
-    type: 'number';
-    const?: number;
-    minimum?: number;
-    maximum?: number;
-    precision?: 1 | 2;
+    readonly type: 'number';
+    readonly minimum?: number;
+    readonly maximum?: number;
+    readonly precision?: 1 | 2;
 }
 
 interface IntegerSchema {
-    type: 'integer';
-    const?: number;
-    minimum?: number;
-    maximum?: number;
+    readonly type: 'integer';
+    readonly minimum?: number;
+    readonly maximum?: number;
 }
 
 interface BooleanSchema {
-    type: 'boolean';
-    const?: boolean;
+    readonly type: 'boolean';
 }
 
-export type Schema = ObjectSchema | StringSchema | ArraySchema<Schema> | NumberSchema | IntegerSchema | BooleanSchema;
+interface NullSchema {
+    readonly type: 'null';
+}
+
+/** Matches exactly one JSON value of any shape. */
+interface ConstSchema {
+    /** The value alone fully describes the schema; combining it with `type` is redundant and disallowed. */
+    readonly type?: never;
+    readonly const: JSONValue;
+}
+
+interface AndSchema {
+    readonly allOf: readonly Schema[];
+}
+
+interface OrSchema {
+    readonly anyOf: readonly Schema[];
+}
+
+export type Schema = ObjectSchema | StringSchema | ArraySchema<Schema> | NumberSchema | IntegerSchema | BooleanSchema | NullSchema | ConstSchema | AndSchema | OrSchema;
+
+type UnionToIntersection<U> = (U extends unknown ? (x: U) => void : never) extends (x: infer I) => void ? I : never;
 
 export namespace Schema {
-    export type ToType<T extends Schema> = 
-        T extends ObjectSchema<infer K> ? { readonly [P in K]: Schema.ToType<T['properties'][P]> } :
+    /** Object properties are all required unless `required` is present, then only those listed are. */
+    type ObjectToType<T extends ObjectSchema> =
+        T extends { required: readonly (infer R)[] }
+            ? { readonly [P in Extract<R, keyof T['properties']>]: Schema.ToType<T['properties'][P]> }
+              & { readonly [P in Exclude<keyof T['properties'], R>]?: Schema.ToType<T['properties'][P]> }
+            : { readonly [P in keyof T['properties']]: Schema.ToType<T['properties'][P]> };
+
+    /** A literal `const` narrows the type; otherwise the structural type is used. */
+    export type ToType<T extends Schema> =
+        T extends AndSchema ? UnionToIntersection<Schema.ToType<T['allOf'][number]>> :
+        T extends OrSchema ? Schema.ToType<T['anyOf'][number]> :
+        T extends { const: infer C } ? C :
+        T extends ObjectSchema ? ObjectToType<T> :
         T extends StringSchema ? string :
         T extends ArraySchema<infer U> ? readonly Schema.ToType<U>[] :
         T extends NumberSchema ? number :
         T extends IntegerSchema ? number :
         T extends BooleanSchema ? boolean :
+        T extends NullSchema ? null :
         never;
 
     /** The schemas whose `ToType` is `T`; constrains a schema to describe a known type. */
-    export type ForType<T> =
-        [T] extends [true] ? BooleanSchema & { const: T } :
-        [T] extends [false] ? BooleanSchema & { const: T } :
+    export type ForType<T> = Schema &
+    (
+        [T] extends [boolean] ? ForNonUnion<T> :
+        IsUnion<T> extends true ? OrSchema & { anyOf: readonly ForTypeEach<T>[] } :
+        ForNonUnion<T>
+    );
+
+    type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
+    type ForTypeEach<T> = T extends unknown ? ForType<T> : never;
+
+    type ForNonUnion<T> =
+        [T] extends [null] ? NullSchema :
+        [T] extends [true] ? ConstSchema & { const: T } :
+        [T] extends [false] ? ConstSchema & { const: T } :
         [T] extends [boolean] ? BooleanSchema :
         [T] extends [string] ? StringSchema :
-        [T] extends readonly [number] ? (NumberSchema | IntegerSchema) :
+        [T] extends [number] ? (NumberSchema | IntegerSchema) :
         T extends readonly (infer U)[] ? ArraySchema<ForType<U> & Schema> :
         T extends object ? ObjectSchema<Extract<keyof T, string>> & { properties: { [P in keyof T]-?: ForType<T[P]> } } :
         never;

@@ -11,15 +11,25 @@
   "scripts": {
     "build": "tsc -b",
     "dev": "tsc -b -w --preserveWatchOutput",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "test": "vitest --run",
+    "test:perf": "vitest --run --config vitest.perf.config.ts"
   },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "@types/estree": "^1.0.5",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.8.3",
+    "vite": "^5.1.1",
+    "vitest": "^1.6.0"
   },
   "exports": {
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./compiler": {
+      "import": "./dist/compiler/index.js",
+      "types": "./dist/compiler/index.d.ts"
     }
   }
 }

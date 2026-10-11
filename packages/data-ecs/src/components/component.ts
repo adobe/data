@@ -8,5 +8,4 @@ declare module '../component/types.js' {
     }
 }
 
-Component.schemas[component] = { type: 'boolean', const: true };;
-
+Component.register(component, { const: true });

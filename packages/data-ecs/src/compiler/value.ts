@@ -1,0 +1,35 @@
+import type { BlockStatement, Expression, Pattern } from 'estree';
+import type { Path } from '../world/create/kernel.js';
+import type { Snapshot } from './snapshot.js';
+
+/**
+ * A compile-time value. `scalar` and `dynamic` hold JS expression code; `dynamic` is a plain JS value
+ * (resource, `args`, lookup element) that may be indexed at runtime. Tuples and structs are scalarized.
+ * `component` is an unread `row[component]` reference; `snapshot` is a local copy of one, read lazily per leaf.
+ */
+export type Value =
+    | { readonly kind: "scalar"; readonly code: string }
+    | { readonly kind: "dynamic"; readonly code: string }
+    | { readonly kind: "tuple"; readonly items: readonly Value[] }
+    | { readonly kind: "struct"; readonly fields: readonly (readonly [string, Value])[] }
+    | { readonly kind: "component"; readonly component: string; readonly path: Path }
+    | { readonly kind: "snapshot"; readonly snapshot: Snapshot; readonly path: Path }
+    | { readonly kind: "found"; readonly lookup: number; readonly code: string }
+    | { readonly kind: "lookup"; readonly lookup: number }
+    | { readonly kind: "function"; readonly name: string; readonly params: readonly Pattern[]; readonly body: BlockStatement | Expression }
+    | { readonly kind: "method"; readonly owner: "math" | "commands"; readonly name: string }
+    | { readonly kind: "row" }
+    | { readonly kind: "context" }
+    | { readonly kind: "commands" }
+    | { readonly kind: "math" };
+
+export const scalarValue = (code: string): Value => ({ kind: "scalar", code });
+
+const describe: { readonly [K in Value["kind"]]: string } = {
+    scalar: "a number", dynamic: "a value", tuple: "a tuple", struct: "a struct", component: "a component value",
+    snapshot: "a component value", found: "a lookup result", lookup: "a lookup", function: "a helper",
+    method: "a method", row: "row", context: "the context", commands: "commands", math: "Math",
+};
+
+/** A short description of a value's kind, for error messages. */
+export const describeValue = (value: Value): string => describe[value.kind];

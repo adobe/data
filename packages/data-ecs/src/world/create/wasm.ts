@@ -94,7 +94,7 @@ const op = {
     i32Eq: 0x46, i32LtS: 0x48, i32LeS: 0x4c, i32Clz: 0x67, i32Add: 0x6a, i32Sub: 0x6b, i32Mul: 0x6c, i32And: 0x71, i32Or: 0x72, i32Xor: 0x73, i32Shl: 0x74, i32ShrS: 0x75, i32ShrU: 0x76,
     f64Abs: 0x99, f64Neg: 0x9a, f64Ceil: 0x9b, f64Floor: 0x9c, f64Trunc: 0x9d, f64Sqrt: 0x9f,
     f64Add: 0xa0, f64Sub: 0xa1, f64Mul: 0xa2, f64Div: 0xa3, f64Min: 0xa4, f64Max: 0xa5,
-    i32WrapI64: 0xa7, i32GeU: 0x4f, i32Ne: 0x47, i64Const: 0x42, i64ShrU: 0x88, f32DemoteF64: 0xb6, f64ConvertI32S: 0xb7, f64ConvertI32U: 0xb8, f64PromoteF32: 0xbb,
+    i32WrapI64: 0xa7, i32GeU: 0x4f, i32Ne: 0x47, i64Const: 0x42, i64ShrU: 0x88, i64RemS: 0x81, f64ConvertI64S: 0xb9, f64Copysign: 0xa6, f32DemoteF64: 0xb6, f64ConvertI32S: 0xb7, f64ConvertI32U: 0xb8, f64PromoteF32: 0xbb,
 } as const;
 const f64Type = 0x7c;
 const i32Type = 0x7f;
@@ -230,6 +230,33 @@ export const generateWasm = (
         return changed;
     };
     for (let pass = 0; pass < program.locals + 2 && inferLocals(program.body); pass++);
+
+    /** Whether a value is an integer below 2^32 in magnitude: integer column reads, small integer literals, and locals of only those. */
+    const integralLocals = new Array<boolean>(program.locals).fill(true);
+    const integral = (expression: Expression): boolean => {
+        switch (expression.kind) {
+            case "column": {
+                const { view, boolean } = columns[expression.column];
+                return !boolean && (view === "i32" || view === "u32" || view === "u8");
+            }
+            case "number": return Number.isInteger(expression.value) && Math.abs(expression.value) <= 0x7FFFFFFF;
+            case "local": return integralLocals[expression.local];
+            default: return false;
+        }
+    };
+    const inferIntegral = (statements: readonly Statement[]): boolean => {
+        let changed = false;
+        for (const statement of statements) {
+            if (statement.kind === "set" && integralLocals[statement.local] && !integral(statement.value)) {
+                integralLocals[statement.local] = false;
+                changed = true;
+            }
+            else if (statement.kind === "if") changed = inferIntegral(statement.consequent) || inferIntegral(statement.alternate) || changed;
+            else if (statement.kind === "block" || statement.kind === "loop") changed = inferIntegral(statement.body) || changed;
+        }
+        return changed;
+    };
+    while (inferIntegral(program.body));
 
     // Parameters: start, end, tick, then one address per column, then scalars. Locals follow.
     // Parameters: start, end, tick, lastRun, column addresses, filter row tick addresses, filter chunk tick addresses, scalars.
@@ -412,6 +439,13 @@ export const generateWasm = (
                 code.push(op.f64Const, ...float64(operator === "===" ? 0 : 1));
                 return;
             }
+        }
+        // Integers by a nonzero literal: i64 remainder is exact, and copysign gives JS's -0 for a negative dividend.
+        if (operator === "%" && integral(left) && right.kind === "number" && right.value !== 0 && integral(right)) {
+            const dividend = scratch(f64Type);
+            emit(left);
+            code.push(op.localTee, ...unsigned(dividend), ...i64TruncSatF64S, op.i64Const, ...signed(right.value), op.i64RemS, op.f64ConvertI64S, op.localGet, ...unsigned(dividend), op.f64Copysign);
+            return;
         }
         if (operator === "%" || operator === "**") {
             emit(left);

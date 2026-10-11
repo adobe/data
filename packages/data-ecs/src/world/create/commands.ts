@@ -1,7 +1,7 @@
 import type { Commands } from '../../system/commands.js';
 import { addCommand, despawnCommand, pushCommand, pushComponent, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { hasSymbolNames } from '../../registry/create-registry.js';
-import { stageSpawn } from './batches.js';
+import { spawnShapeOf, stageShape, stageSpawn } from './batches.js';
 import { reserve } from './entities.js';
 import { idOf, type Key, type State } from './state.js';
 
@@ -35,6 +35,14 @@ export const createCommands = (state: State, target: { readonly buffer: CommandB
         const entity = reserve(state.entities);
         if (!stageSpawn(state, entity, values)) pushValues(state, target.buffer, spawnCommand, entity, values);
         return entity;
+    },
+    spawner: components => {
+        const shape = spawnShapeOf(state, components);
+        return values => {
+            const entity = reserve(state.entities);
+            if (shape === null || !stageShape(shape, entity, values)) pushValues(state, target.buffer, spawnCommand, entity, values);
+            return entity;
+        };
     },
     despawn: entity => {
         pushCommand(target.buffer, despawnCommand, entity);

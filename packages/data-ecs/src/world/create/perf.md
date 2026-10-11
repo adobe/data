@@ -33,8 +33,9 @@ At 1M entities, against commit `d6373560` (claimed splits in place):
 
 | Benchmark | Before | Now |
 |---|---|---|
-| create 1M | 325 ms | 296–316 ms |
-| churn 1M | 54 ms | 29 ms |
+| create 1M | 325 ms | 88 ms |
+| create flat 1M (ecs2's test: 8 scalars per entity) | | 112 ms; 83 ms through `commands.spawner` |
+| churn 1M | 54 ms | 16 ms |
 | retag 1M | 79 ms | 42 ms |
 | emit 1M | 11.2 ms | 10.6 ms |
 | move 1M | 0.177 ms | 0.091 ms |
@@ -77,6 +78,8 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 **Claimed splits.** Workers claim pieces of a WASM kernel's rows from a shared counter instead of taking even shares, so the slowest core no longer sets the finish time: on the default pool, move 0.055 → 0.030 ms, follow 0.15 → 0.075 ms, chain 0.16 → 0.115 ms, sparse changed 0.30 → ~0.22 ms.
 
 **Affinity claims.** Each worker owns a home range of a split's pieces, the same one every run, takes them from the front, and steals from the back of the fullest other range once its own is empty. Pieces stay on the same worker from one tier to the next 75% of the time instead of 13% (no better than chance), so tier N+1 finds its rows in the cache tier N warmed: chain 6×1M on workers 0.79–0.87 → 0.275 ms, per tier 230 → 170 µs in traced medians; move 1M on workers 0.020 → 0.015 ms. Control words, claim words and status slots each take whole 128-byte cache lines, so a store by one thread doesn't invalidate the line another polls.
+
+**Staged spawns.** A main-thread `commands.spawn` writes its values into a private batch per component set, in the target archetype's layout, and the sync point block-copies each batch into its archetype before the plan, placing entities and stamping ticks with the sync tick. The issuer's tuples are read while fresh and die young, and the plan, shape match and per-component writes at the sync point go away: create 1M 300 → 153 ms, churn 29 → 21 ms. Each key list gets a generated staging function (`new Function`, as adobe/data's archetype insert does, with a plain loop where a content security policy forbids it), so each value is a read of a fixed property name and a store at baked-in offsets: create 1M 153 → 88 ms, flat 181 → 112 ms. `commands.spawner(components)` resolves the shape once, skipping `Object.keys` and the shape match: flat 112 → 83 ms. adobe/data's ecs2 inserts the flat particles at about 57 ns each, immediately and without deferral; about 35 ns of either is building the value object.
 
 **Archetype moves.** Each storage knows its element size in 32-bit words, so a cell copy doesn't dispatch on the layout, and move lists are cached in an array by target archetype id rather than a map: retag 1M 46.5–48.8 → 41.8–44.2 ms.
 

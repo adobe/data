@@ -32,8 +32,18 @@ export type SpawnBatch = {
     capacity: number;
 };
 
-/** A spawn's own key order, resolved to its batch's columns; `batch` is null when spawns of these keys use commands. */
-type Shape = { readonly keys: readonly string[]; readonly batch: SpawnBatch | null; readonly columns: readonly number[] };
+/**
+ * Writes one spawn's values into row `row` of its batch's columns; false, at the first `undefined` value, when the
+ * spawn must use commands instead.
+ */
+type Stage = (values: { readonly [key: string]: unknown }, row: number, columns: readonly Column[], write: typeof writeColumn) => boolean;
+
+/**
+ * A spawn's own key order, resolved to its batch's columns; `batch` is null when spawns of these keys use commands.
+ * `stage` is generated for the shape when the platform allows it, so each value is a read of a fixed property name and
+ * a store at baked-in offsets.
+ */
+export type Shape = { readonly keys: readonly string[]; readonly batch: SpawnBatch | null; readonly columns: readonly number[]; readonly stage: Stage | null };
 
 const initialCapacity = 64;
 
@@ -59,19 +69,50 @@ const batchOf = (state: State, ids: readonly number[]): SpawnBatch => {
 const shapeOf = (state: State, keys: readonly string[]): Shape => {
     const ids = keys.map(key => idOf(state, key));
     // The resource entity's components never take part in spawns.
-    if (ids.some(id => state.resources.has(id))) return { keys, batch: null, columns: [] };
+    if (ids.some(id => state.resources.has(id))) return { keys, batch: null, columns: [], stage: null };
     const batch = batchOf(state, ids);
-    return { keys, batch, columns: ids.map(id => batch.ids.indexOf(id)) };
+    const columns = ids.map(id => batch.ids.indexOf(id));
+    return { keys, batch, columns, stage: generateStage(keys, columns.map(c => batch.columns[c]), columns) };
+};
+
+const views: { readonly [write: number]: string } = { [writeF32]: "f32", [writeU32]: "u32", [writeI32]: "i32", [writeF64]: "f64" };
+
+/** Straight-line staging for one key list, or null where code generation isn't allowed (a content security policy). */
+const generateStage = (keys: readonly string[], columns: readonly Column[], indexes: readonly number[]): Stage | null => {
+    const lines = keys.map((key, k) => {
+        const column = columns[k];
+        const value = `v${k}`;
+        const target = `columns[${indexes[k]}]`;
+        const index = `row * ${column.unitStride} + ${column.unitOffset}`;
+        const read = `const ${value} = values[${JSON.stringify(key)}]; if (${value} === undefined) return false;`;
+        const view = views[column.write];
+        if (view !== undefined) return `${read} if (typeof ${value} === "number") ${target}.views.${view}[${index}] = ${value}; else write(${target}, row, ${value});`;
+        if (column.write === writeF32Lanes) {
+            const lanes = Array.from({ length: column.lanes }, (_, lane) => `t[i + ${lane}] = Number(${value}[${lane}]);`).join(" ");
+            return `${read} if (Array.isArray(${value})) { const t = ${target}.views.f32; const i = ${index}; ${lanes} } else write(${target}, row, ${value});`;
+        }
+        return `${read} write(${target}, row, ${value});`;
+    });
+    try {
+        // Generated from registered keys, escaped as string literals, and layout numbers.
+        const stage: Stage = new Function("values", "row", "columns", "write", `${lines.join("\n")}\nreturn true;`) as Stage;
+        return stage;
+    }
+    catch {
+        return null;
+    }
 };
 
 /** The last eight key lists spawned, replaced round-robin: spawn sites name the same keys in the same order. */
 const shapeFor = (state: State, keys: readonly string[]): Shape => {
     const { spawnShapes } = state;
+    const last = keys.length - 1;
     for (let s = 0; s < spawnShapes.length; s++) {
         const cached = spawnShapes[s].keys;
-        if (cached.length !== keys.length) continue;
+        // Shapes of one spawn site often differ only in a trailing tag, so the last key rules most out at once.
+        if (cached.length !== keys.length || cached[last] !== keys[last]) continue;
         let same = true;
-        for (let k = 0; k < keys.length && same; k++) same = cached[k] === keys[k];
+        for (let k = 0; k < last && same; k++) same = cached[k] === keys[k];
         if (same) return spawnShapes[s];
     }
     const shape = shapeOf(state, keys);
@@ -118,17 +159,41 @@ const writeColumn = (column: Column, row: number, value: unknown): void => {
  * symbol key, a resource component, or an `undefined` value, which leaves the component out. A row is claimed only
  * once every value is written, so a value that throws leaves nothing behind.
  */
-export const stageSpawn = (state: State, entity: Entity, values: object): boolean => {
+export const stageSpawn = (state: State, entity: Entity, values: { readonly [key: string]: unknown }): boolean => {
     if (hasSymbolNames()) return false;
     const keys = Object.keys(values);
-    const { batch, columns } = shapeFor(state, keys);
+    return stageShape(shapeFor(state, keys), entity, values);
+};
+
+/** The shape of spawns of exactly `keys`, resolved now, or null when they must use commands: a symbol key. */
+export const spawnShapeOf = (state: State, keys: readonly (string | symbol)[]): Shape | null => {
+    const names: string[] = [];
+    for (const key of keys) {
+        if (typeof key !== "string") return null;
+        names.push(key);
+    }
+    return shapeFor(state, names);
+};
+
+/** Adds a spawn of a resolved shape to its batch; false, having claimed nothing, when it must use commands. */
+export const stageShape = ({ keys, batch, columns, stage }: Shape, entity: Entity, values: { readonly [key: string]: unknown }): boolean => {
     if (batch === null) return false;
     if (batch.count === batch.capacity) grow(batch);
     const row = batch.count;
+    if (stage !== null) {
+        if (!stage(values, row, batch.columns, writeColumn)) return false;
+        batch.entities[row] = entity;
+        batch.count++;
+        return true;
+    }
     for (let k = 0; k < keys.length; k++) {
-        const value: unknown = Reflect.get(values, keys[k]);
+        const value = values[keys[k]];
         if (value === undefined) return false;
-        writeColumn(batch.columns[columns[k]], row, value);
+        const column = batch.columns[columns[k]];
+        // Plain numbers inline; everything else through `writeColumn`.
+        if (typeof value === "number" && column.write === writeF32) column.views.f32[row * column.unitStride + column.unitOffset] = value;
+        else if (typeof value === "number" && column.write === writeU32) column.views.u32[row * column.unitStride + column.unitOffset] = value;
+        else writeColumn(column, row, value);
     }
     batch.entities[row] = entity;
     batch.count++;

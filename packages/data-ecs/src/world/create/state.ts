@@ -2,7 +2,7 @@ import type { Entity } from '../../entity/entity.js';
 import { schemaOf } from '../../registry/create-registry.js';
 import { kindOf } from '../../registry/declare-name.js';
 import { createArchetype, startTicks, type Archetype, type Storage } from './archetype.js';
-import type { SpawnBatch } from './batches.js';
+import type { Shape, SpawnBatch } from './batches.js';
 import type { Directory } from './directories.js';
 import type { Queued } from './synchronize.js';
 import { createEntities, type Entities } from './entities.js';
@@ -34,7 +34,7 @@ export type State = {
     /** Main-thread spawns since the last sync point, by component set; `spawnShapes` caches key lists resolved to them. */
     readonly batches: SpawnBatch[];
     readonly batchByKey: Map<string, SpawnBatch>;
-    readonly spawnShapes: { readonly keys: readonly string[]; readonly batch: SpawnBatch | null; readonly columns: readonly number[] }[];
+    readonly spawnShapes: Shape[];
     nextShape: number;
     /** Lookup directories for WASM kernels, kept up to date at sync points. */
     readonly directories: Set<Directory>;

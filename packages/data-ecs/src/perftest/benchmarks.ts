@@ -1,4 +1,5 @@
 import { World } from "../world/world.js";
+import { enabled as flatEnabled, spawnFlat, spawnFlatPrepared, visible as flatVisible } from "./flat.js";
 import { enabled, fastest as particlesFastest, move, position as particlePosition, spawn, visible } from "./particles.js";
 import { chain, churn, emit, fastest, follow, hits, index, observe, poke, pokeCluster, position, retag, seeded, smalls, tag, totalOf } from "./suite.js";
 
@@ -28,6 +29,24 @@ export const benchmarks: readonly Benchmark[] = [
         run: () => fastest(async () => {
             const world = await World.create({ systems: [spawn] });
             await world.run(spawn, 1_000_000);
+            await world.dispose();
+        }, 5000, 2),
+    },
+    {
+        name: "create flat 1M",
+        run: () => fastest(async () => {
+            const world = await World.create({ systems: [spawnFlat] });
+            await world.run(spawnFlat, 1_000_000);
+            check(world.query.count([flatVisible, flatEnabled]) === 250_000, "create flat: wrong count");
+            await world.dispose();
+        }, 5000, 2),
+    },
+    {
+        name: "create flat spawner 1M",
+        run: () => fastest(async () => {
+            const world = await World.create({ systems: [spawnFlatPrepared] });
+            await world.run(spawnFlatPrepared, 1_000_000);
+            check(world.query.count([flatVisible, flatEnabled]) === 250_000, "create flat spawner: wrong count");
             await world.dispose();
         }, 5000, 2),
     },

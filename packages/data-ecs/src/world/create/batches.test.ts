@@ -94,4 +94,42 @@ describe("staged spawns", () => {
         expect(spawned.map(entity => world.read.component(entity, score))).toEqual([0, 1, 2, 0, 1, 2]);
         await world.dispose();
     });
+
+    it("spawn through a spawner, and through commands when a value is missing", async () => {
+        const spawned: Entity[] = [];
+        const spawn = System.create({ name: "batchesTest/spawn" }, (_, __, commands) => {
+            const make = commands.spawner([position, score, tag]);
+            for (let i = 0; i < 50; i++) spawned.push(make({ [position]: [i, i, i], [score]: i, [tag]: true }));
+            // Leaving a component out goes through commands, so the entity has only what it names.
+            spawned.push(make({ [position]: [9, 9, 9], [score]: undefined as unknown as number, [tag]: true }));
+        });
+        const world = createWorld({ workers: 0 });
+        await world.systems.register(spawn);
+        await world.run(spawn);
+        expect(spawned.slice(0, 50).map(entity => world.read.entity(entity, [position, score, tag]))).toEqual(
+            spawned.slice(0, 50).map((_, i) => ({ [position]: [i, i, i], [score]: i, [tag]: true })));
+        expect([world.read.component(spawned[50], position), world.read.component(spawned[50], score)]).toEqual([[9, 9, 9], null]);
+        await world.dispose();
+    });
+
+    it("stage without generated code where it isn't allowed", async () => {
+        const original = globalThis.Function;
+        // A content security policy without `unsafe-eval` makes `new Function` throw.
+        globalThis.Function = function () { throw new EvalError("blocked"); } as unknown as FunctionConstructor;
+        try {
+            const spawned: Entity[] = [];
+            const spawn = System.create({ name: "batchesTest/spawn" }, (_, __, commands) => {
+                for (let i = 0; i < 20; i++) spawned.push(commands.spawn({ [position]: [i, 0, 1], [score]: i, [name]: `${i}`, [tag]: true }));
+            });
+            const world = createWorld({ workers: 0 });
+            await world.systems.register(spawn);
+            await world.run(spawn);
+            expect(spawned.map(entity => world.read.entity(entity, [position, score, name]))).toEqual(
+                spawned.map((_, i) => ({ [position]: [i, 0, 1], [score]: i, [name]: `${i}` })));
+            await world.dispose();
+        }
+        finally {
+            globalThis.Function = original;
+        }
+    });
 });

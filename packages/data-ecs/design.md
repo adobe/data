@@ -215,6 +215,7 @@ Measured with `pnpm perf` (benchmarks bundled as in production, on plain node) a
 
 - **U32 ticks,** if tick bandwidth matters for observed components. Halves tick memory and the change-filter scan's bandwidth, which bounds uniformly sparse filters. Comparisons use wrapping subtraction relative to the current tick, with a periodic clamp pass at a sync point, like Bevy's `check_change_ticks`, covering cell, `lastRun` and chunk ticks.
 - **Compiled main-thread systems.** Accessor rows copy tuples out on every read and share one megamorphic body call site; compiling main-thread systems (or a JS-only kernel mode) would remove both. A per-system loop alone measured 5–10%.
+- **Kernel fusion, once real workloads show fusable pipelines.** Consecutive per-row kernels over the same archetypes, each reading what the previous one wrote at the same row, become one pass. It cuts dispatch and memory passes: chain 6×1M spends its time streaming 12 MB six times. Fusion must keep each system's tick, `lastRun`, change filters and command order.
 - **WASM commands.** Encode kernel commands into a shared-memory buffer from WASM, so command-issuing kernels get WASM and the fast dispatch path. Measured at 18% on emit for a large change while the sync point dominates, so it waits for a faster sync point.
 - **Per-archetype query-match bitsets.** Compute stop/start for each move as `match(from) & ~match(to)` in O(Q/32). Memory scales with archetypes, not archetype-graph edges.
 - **Per-archetype rule-closure cache.**

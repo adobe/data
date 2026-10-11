@@ -226,7 +226,10 @@ const applyEntry = (state: State, queued: readonly Queued[], entry: number, tick
     const to = archetypes[plan.to[entry]];
     const fromRow = from === null ? -1 : entities.row[index];
     const toRow = to === from ? fromRow : insertRow(state.memory, to, entity);
-    if (from !== null && to !== from) for (const [source, target] of movesOf(from, to)) copyCell(source, fromRow, target, toRow);
+    if (from !== null && to !== from) {
+        const moves = movesOf(from, to);
+        for (let m = 0; m < moves.length; m += 2) copyCell(moves[m], fromRow, moves[m + 1], toRow);
+    }
     if (plan.start[entry] >= 0) {
         const fresh = plan.fresh.size === 0 ? undefined : plan.fresh.get(entry);
         writeRange(queued[plan.buffer[entry]].buffer, plan.start[entry], plan.end[entry], to, toRow, from, fresh, tick);

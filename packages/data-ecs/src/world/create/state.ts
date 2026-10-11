@@ -121,14 +121,14 @@ export const withoutComponent = (state: State, archetype: Archetype, id: number)
 };
 
 /** The storages two archetypes share, as source and target pairs, cached per pair. */
-export const movesOf = (from: Archetype, to: Archetype): readonly (readonly [Storage, Storage])[] => {
-    let moves = from.moves.get(to);
+export const movesOf = (from: Archetype, to: Archetype): readonly Storage[] => {
+    let moves = from.moves[to.id];
     if (moves === undefined) {
         moves = to.storages.flatMap(storage => {
             const source = from.storageById[storage.component];
-            return source === undefined ? [] : [[source, storage] as const];
+            return source === undefined ? [] : [source, storage];
         });
-        from.moves.set(to, moves);
+        from.moves[to.id] = moves;
     }
     return moves;
 };

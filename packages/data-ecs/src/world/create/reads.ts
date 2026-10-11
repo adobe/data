@@ -1,5 +1,5 @@
 import type { Entity } from '../../entity/entity.js';
-import type { Archetype } from './archetype.js';
+import type { Archetype, Storage } from './archetype.js';
 import { readCell } from './cells.js';
 import { locate } from './entities.js';
 import { entriesOf, type Key, type State } from './state.js';
@@ -83,9 +83,30 @@ const compile = (state: State, include: readonly Key[], options: Options): Compi
 const matches = (archetype: Archetype, compiled: Compiled): boolean =>
     archetype.count > 0 && !archetype.resource && hasAll(archetype, compiled.include) && !hasAny(archetype, compiled.not);
 
-const passes = (archetype: Archetype, compiled: Compiled, row: number): boolean => {
-    for (const { id, test } of compiled.where) if (!test(cellAt(archetype, id, row))) return false;
-    return true;
+/** Reads one storage's cells; a plain number straight from its view, which can't change while a query runs. */
+const readerOf = (storage: Storage | undefined): ((row: number) => unknown) => {
+    if (storage === undefined) return () => undefined;
+    const { layout } = storage;
+    const [leaf] = layout.kind === "linear" ? layout.leaves : [];
+    if (layout.kind === "linear" && layout.leaves.length === 1 && leaf.path.length === 0 && leaf.scalar !== "boolean") {
+        const target = storage.views[leaf.view];
+        const { unitStride, unitOffset } = leaf;
+        return row => target[row * unitStride + unitOffset];
+    }
+    return row => readCell(storage, row);
+};
+
+/** A compiled query's `where` tests over one archetype's rows. */
+const passerOf = (archetype: Archetype, compiled: Compiled): ((row: number) => boolean) => {
+    const tests = compiled.where.map(({ id, test }) => ({ read: readerOf(id < 0 ? undefined : archetype.storageById[id]), test }));
+    if (tests.length === 1) {
+        const [{ read, test }] = tests;
+        return row => test(read(row));
+    }
+    return row => {
+        for (const { read, test } of tests) if (!test(read(row))) return false;
+        return true;
+    };
 };
 
 /** Entities with every included component and none of `not`, filtered by `where` and sorted by `order`. */
@@ -97,8 +118,9 @@ export const select = (state: State, include: readonly Key[], options: Options =
     for (const archetype of state.archetypes) {
         if (!matches(archetype, compiled)) continue;
         const { entities } = archetype;
+        const passes = compiled.where.length === 0 ? null : passerOf(archetype, compiled);
         for (let row = 0; row < archetype.count; row++) {
-            if (compiled.where.length > 0 && !passes(archetype, compiled, row)) continue;
+            if (passes !== null && !passes(row)) continue;
             selected.push(entities[row]);
             if (order.length > 0) keys.push(order.map(({ id }) => cellAt(archetype, id, row)));
         }
@@ -125,7 +147,8 @@ export const count = (state: State, include: readonly Key[], options: Options = 
             total += archetype.count;
             continue;
         }
-        for (let row = 0; row < archetype.count; row++) if (passes(archetype, compiled, row)) total++;
+        const passes = passerOf(archetype, compiled);
+        for (let row = 0; row < archetype.count; row++) if (passes(row)) total++;
     }
     return total;
 };

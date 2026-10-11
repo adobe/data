@@ -17,6 +17,8 @@ export type Storage = {
     readonly unitStride: number;
     readonly unitOffset: number;
     readonly lanes: number;
+    /** 32-bit words per element of a linear layout whose stride is a multiple of 4, which every GPU layout is; else 0. */
+    readonly words: number;
     /**
      * Whether this component keeps ticks: only once some system filters on its `added` or `changed`, and always for
      * resources. Without them the tick arrays are empty and nothing stamps. Ticks are f64 so they never wrap.
@@ -82,7 +84,8 @@ export type Archetype = {
     readonly adding: (Archetype | undefined)[];
     readonly removing: (Archetype | undefined)[];
     /** For a move to another archetype: each component they share, as source and target storages. */
-    readonly moves: Map<Archetype, readonly (readonly [Storage, Storage])[]>;
+    /** By target archetype id: the storages they share, as source and target pairs, flattened. */
+    readonly moves: (readonly Storage[] | undefined)[];
     entities: Float64Array;
     count: number;
     capacity: number;
@@ -116,6 +119,7 @@ const createStorage = (memory: Memory, component: number, layout: Layout, capaci
         views: layout.kind === "linear" ? allocateViews(memory, capacity * layout.stride + columnSlack) : emptyViews,
         values: [],
         ...writeOf(layout),
+        words: layout.kind === "linear" && (layout.stride & 3) === 0 ? layout.stride >> 2 : 0,
         ticked: false,
         added: noTicks,
         changed: noTicks,
@@ -148,7 +152,7 @@ export const createArchetype = (memory: Memory, id: number, components: readonly
         storageById,
         adding: [],
         removing: [],
-        moves: new Map(),
+        moves: [],
         entities: allocateArray(memory, Float64Array, initialCapacity),
         count: 0,
         capacity: initialCapacity,
@@ -218,8 +222,15 @@ const copyElement = (from: Views, fromRow: number, to: Views, toRow: number, str
 
 /** Copies one component's value and ticks between rows of storages with the same layout. */
 export const copyCell = (from: Storage, fromRow: number, to: Storage, toRow: number): void => {
-    const { layout } = from;
-    if (layout.kind === "linear") copyElement(from.views, fromRow, to.views, toRow, layout.stride);
+    const { layout, words } = from;
+    if (words > 0) {
+        const source = from.views.u32;
+        const target = to.views.u32;
+        const s = fromRow * words;
+        const t = toRow * words;
+        for (let i = 0; i < words; i++) target[t + i] = source[s + i];
+    }
+    else if (layout.kind === "linear") copyElement(from.views, fromRow, to.views, toRow, layout.stride);
     else if (layout.kind === "object") to.values[toRow] = from.values[fromRow];
     // A component keeps ticks in every archetype or in none.
     if (!to.ticked) return;

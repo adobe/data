@@ -34,13 +34,14 @@ At 1M entities, against commit `d6373560` (claimed splits in place):
 | Benchmark | Before | Now |
 |---|---|---|
 | create 1M | 325 ms | 296–316 ms |
-| churn 1M | 54 ms | 30 ms |
-| retag 1M | 79 ms | 48.5 ms |
+| churn 1M | 54 ms | 29 ms |
+| retag 1M | 79 ms | 42 ms |
 | emit 1M | 11.2 ms | 10.6 ms |
 | move 1M | 0.177 ms | 0.091 ms |
 | chain 6×1M | 3.42 ms | 1.51 ms |
 | main thread 50×1K | 1.65 ms | 0.48 ms |
-| follow 1M, select 1M, sparse changed 1M | | unchanged |
+| select 1M | 37.5 ms | 24 ms |
+| follow 1M, sparse changed 1M | | unchanged |
 | chromium move 1M, main / workers | 0.20 / 0.030 ms | 0.095 / 0.015 ms |
 | chromium chain 6×1M, main / workers | 4.47 / 0.725 ms | 1.72 / 0.275 ms |
 
@@ -77,7 +78,9 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 
 **Affinity claims.** Each worker owns a home range of a split's pieces, the same one every run, takes them from the front, and steals from the back of the fullest other range once its own is empty. Pieces stay on the same worker from one tier to the next 75% of the time instead of 13% (no better than chance), so tier N+1 finds its rows in the cache tier N warmed: chain 6×1M on workers 0.79–0.87 → 0.275 ms, per tier 230 → 170 µs in traced medians; move 1M on workers 0.020 → 0.015 ms. Control words, claim words and status slots each take whole 128-byte cache lines, so a store by one thread doesn't invalidate the line another polls.
 
-**Main thread.** Compiled `select` predicates: 18 → ~3.5 ms. Row getters chosen once, and tuple reads and writes in one loop: 50 systems 3.2 → 1.63 ms (vitest).
+**Archetype moves.** Each storage knows its element size in 32-bit words, so a cell copy doesn't dispatch on the layout, and move lists are cached in an array by target archetype id rather than a map: retag 1M 46.5–48.8 → 41.8–44.2 ms.
+
+**Main thread.** Compiled `select` predicates: 18 → ~3.5 ms. `where` tests resolve each archetype's storage once and read plain numbers straight from the view, and tuples of 2–4 adjacent same-typed lanes read as array literals: select 1M 37.5 → 24 ms. Row getters chosen once, and tuple reads and writes in one loop: 50 systems 3.2 → 1.63 ms (vitest).
 - Accessor rows each get their own prototype. Built from `{}`, every row after the first that defines an accessor with another getter went to V8 dictionary properties. One row per set of reads and writes, shared across systems and archetypes and rebound per pass, so a body sees one shape; f32-lane tuples read as array literals, and scalars and f32 lanes written directly. Resource cells in a context are resolved once per run. On node: 50 systems 1.1 → 0.45 ms, churn 55 → 32 ms, retag 74 → 59 ms; 50 distinct bodies over three row shapes 1.75 → 0.53 ms; two writing systems over 100K 19.5 → 1.9 ms; 20 systems reading a resource per row 1.26 → 0.22 ms.
 
 ## Worker scaling
@@ -107,6 +110,7 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **Workers spinning 0.15 ms instead of 0.05 ms before waiting:** chain 6×1M on workers 0.83 → 0.525 ms back to back, but only because it bridges the gap between consecutive benchmark runs; per frame it measured the same.
 - **Holding workers spinning while a later tier of the run has kernels,** with no time constant: per frame the same, and move's best case on workers 0.020 → 0.040 ms. Traces showed the 0.05 ms spin already keeps workers awake across tiers (each tier is seen within about 5 µs).
 - **Home ranges sized by each worker's recent share of pieces:** no gain (chain 0.275 → 0.29 ms). Shares never settle: apart from the slowest few workers, each swings by about 40% between rounds, so the sizing chases noise and moves range boundaries, which costs affinity.
+- **Copying numbers and f32 tuples out of command values when issued,** into a typed array the sync point reads, so the issuer's arrays die young: the sync point got 27 ms faster and garbage collection 12 ms, but issuing got 96 ms slower per million spawns (create 1M 294 → ~357 ms). Reading the tuples costs as much at issue time as later, and the extra bookkeeping is more than the sync point saved.
 - **The main thread claiming pieces too:** no gain; workers that wake late are slow at first, so the main thread does about what it would alone.
 - **A loop per main-thread system** (eval or emitted by the plugin): 5–10% on top of fast-property rows.
 

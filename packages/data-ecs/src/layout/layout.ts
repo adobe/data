@@ -170,6 +170,40 @@ type Node = {
 const element = (value: unknown, key: number | string): unknown =>
     typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
 
+/** A tuple of 2 to 4 same-typed scalars in consecutive elements of one view. */
+const lanesNode = (view: View, unitStride: number, unitOffset: number, length: number): Node => {
+    const write = (views: Views, row: number, value: unknown): void => {
+        const target = views[view];
+        const index = row * unitStride + unitOffset;
+        if (Array.isArray(value)) for (let i = 0; i < length; i++) target[index + i] = Number(value[i]);
+        else for (let i = 0; i < length; i++) target[index + i] = Number(element(value, i));
+    };
+    if (length === 2) return {
+        read: (views, row) => {
+            const target = views[view];
+            const index = row * unitStride + unitOffset;
+            return [target[index], target[index + 1]];
+        },
+        write,
+    };
+    if (length === 3) return {
+        read: (views, row) => {
+            const target = views[view];
+            const index = row * unitStride + unitOffset;
+            return [target[index], target[index + 1], target[index + 2]];
+        },
+        write,
+    };
+    return {
+        read: (views, row) => {
+            const target = views[view];
+            const index = row * unitStride + unitOffset;
+            return [target[index], target[index + 1], target[index + 2], target[index + 3]];
+        },
+        write,
+    };
+};
+
 /** Builds read/write closures over placed leaves, consuming them in shape order. */
 const nodeOf = (shape: Shape, leaves: readonly Leaf[], next: { index: number }): Node => {
     if (shape.kind === "scalar") {
@@ -187,6 +221,9 @@ const nodeOf = (shape: Shape, leaves: readonly Leaf[], next: { index: number }):
         const strides = tupleLeaves.map(leaf => leaf.unitStride);
         const offsets = tupleLeaves.map(leaf => leaf.unitOffset);
         const length = tupleLeaves.length;
+        const [{ unitStride, unitOffset }] = tupleLeaves;
+        // Lanes next to each other, as in a vec2, vec3 or vec4: array literals and straight-line stores.
+        if (length >= 2 && length <= 4 && tupleLeaves.every((leaf, i) => leaf.unitStride === unitStride && leaf.unitOffset === unitOffset + i)) return lanesNode(view, unitStride, unitOffset, length);
         return {
             read: (views, row) => {
                 const target = views[view];

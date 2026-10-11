@@ -71,6 +71,7 @@ All of the runtime lives here. The only export is `create`, which moves here fro
 - **Registration generates WASM** from the IR and the schemas' storage types: f64 arithmetic with typed-array store conversion, so scalar WASM is bit-identical to JS. It compiles once, and every worker instantiates the module against the shared `Memory`.
 - **SIMD**, in f32 lanes at storage precision:
   - *Across rows*, four at a time, when every column is a dense f32 scalar.
+  - *Across rows of whole elements*, four at a time as `stride / 4` full vectors, when every store fuses into whole-element writes of components that read only same-stride components lane for lane (`p = p + v` on tight vec2 or vec3). The per-row loop takes the tail.
   - *Within a row* otherwise: consecutive snapshot loads of a component's leaves become one vector load, and stores to its leaves whose values match lane for lane become one f32x4 operation and store. Loads and stores cover only the element's lanes.
   - Anything else runs as scalar WASM, in the same row.
 - **Tests:** scalar WASM is bit-identical to JS; SIMD is within storage precision of JS; 0 and N workers stay identical with SIMD, since chunks start on 16-row boundaries.

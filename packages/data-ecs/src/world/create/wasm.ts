@@ -1168,6 +1168,126 @@ export const generateWasm = (
         return groups.size > 0;
     };
 
+    // ---- Across rows for interleaved elements: four rows of a `stride`-byte element are `stride / 4` whole vectors. ----
+
+    type LanePlan = ReturnType<typeof planLanes>;
+    /** Whether a value is the same for every row. */
+    const rowIndependent = (expression: Expression): boolean => {
+        switch (expression.kind) {
+            case "number": case "boolean": case "resource": case "args": return true;
+            case "unary": return rowIndependent(expression.operand);
+            case "binary": case "logical": return rowIndependent(expression.left) && rowIndependent(expression.right);
+            case "conditional": return rowIndependent(expression.test) && rowIndependent(expression.consequent) && rowIndependent(expression.alternate);
+            case "math": return expression.arguments.every(rowIndependent);
+            default: return false;
+        }
+    };
+    /**
+     * Whether the planned groups are the whole body and run unchanged on flat vectors of four rows: each group stores
+     * whole elements and reads windows from byte 0 of components with the same stride, so lane `l` of vector `j` is the
+     * same leaf in every operand. Snapshot sets must be skipped, and stamps run as in the across-rows loop.
+     */
+    const acrossElements = ({ groups, skipped }: LanePlan): boolean => {
+        if (filters > 0 || groups.size === 0) return false;
+        const whole = (column: number, window: Window, stride: number): boolean => window.base === 0 && columns[column].stride === stride;
+        const fits = (expression: VectorExpression, stride: number): boolean => {
+            switch (expression.kind) {
+                case "pack": return whole(expression.pack.column, expression.pack.window, stride);
+                case "load": return whole(expression.column, expression.window, stride);
+                case "constant": return true;
+                case "splat": return rowIndependent(expression.expression);
+                case "binary": return fits(expression.left, stride) && fits(expression.right, stride);
+                case "negate": return fits(expression.operand, stride);
+                case "math": return expression.arguments.every(parameter => fits(parameter, stride));
+            }
+        };
+        const body = program.body;
+        for (let index = 0; index < body.length; index++) {
+            const group = groups.get(index);
+            if (group !== undefined) {
+                const { stride } = columns[group.column];
+                if (group.window.base !== 0 || group.window.lanes * 4 !== stride || !fits(group.value, stride)) return false;
+                index += group.length - 1;
+            }
+            else if (!skipped.has(index) && body[index].kind !== "stamp") return false;
+        }
+        return true;
+    };
+
+    /** Vector `vector` of an expression over four rows of `stride`-byte elements; packs are in `packVectors`. */
+    const emitElementExpression = (expression: VectorExpression, vector: number, stride: number, packVectors: ReadonlyMap<Pack, readonly number[]>): void => {
+        switch (expression.kind) {
+            case "pack": {
+                // Every pack a group uses is loaded at its first set, before the group.
+                const local = packVectors.get(expression.pack)?.[vector];
+                if (local === undefined) throw new Error("A pack is used before it's loaded.");
+                code.push(op.localGet, ...unsigned(local));
+                return;
+            }
+            case "load":
+                elementAddress(expression.column);
+                code.push(...simd(vop.load), 2, ...unsigned(16 * vector));
+                return;
+            case "constant": code.push(...vectorConstant([0, 1, 2, 3].map(lane => expression.values[((16 * vector + 4 * lane) % stride) / 4]))); return;
+            case "splat": return emitSplat(expression.expression);
+            case "binary":
+                emitElementExpression(expression.left, vector, stride, packVectors);
+                emitElementExpression(expression.right, vector, stride, packVectors);
+                code.push(...simd(arithmeticVector[expression.operator]));
+                return;
+            case "negate":
+                emitElementExpression(expression.operand, vector, stride, packVectors);
+                code.push(...simd(vop.f32Neg));
+                return;
+            case "math":
+                for (const parameter of expression.arguments) emitElementExpression(parameter, vector, stride, packVectors);
+                emitVectorMath(expression.name, expression.arguments.length);
+                return;
+        }
+    };
+
+    /**
+     * Rows from `start` in groups of four, up to the last whole group, with every group as `stride / 4` full-vector loads,
+     * operations and stores; leaves the row local at the first row not done. Vectors stay inside the four rows' elements,
+     * and each vector's store only touches bytes no other vector reads.
+     */
+    const elementsLoop = ({ groups, packs }: LanePlan): void => {
+        const vectorEnd = scratch(i32Type);
+        code.push(op.localGet, 1, op.localGet, 0, op.i32Sub, op.i32Const, ...signed(-4), op.i32And, op.localGet, 0, op.i32Add, op.localSet, ...unsigned(vectorEnd));
+        code.push(op.block, 0x40, op.loop, 0x40);
+        code.push(op.localGet, ...unsigned(rowLocal), op.localGet, ...unsigned(vectorEnd), op.i32GeS, op.brIf, 1);
+        mask = null;
+        const packVectors = new Map<Pack, number[]>();
+        const body = program.body;
+        for (let index = 0; index < body.length; index++) {
+            const pack = packs.get(index);
+            if (pack?.used === true) {
+                const vectors = Array.from({ length: columns[pack.column].stride / 4 }, (_, vector) => {
+                    const local = scratch(v128Type);
+                    elementAddress(pack.column);
+                    code.push(...simd(vop.load), 2, ...unsigned(16 * vector), op.localSet, ...unsigned(local));
+                    return local;
+                });
+                packVectors.set(pack, vectors);
+            }
+            const group = groups.get(index);
+            if (group !== undefined) {
+                const { stride } = columns[group.column];
+                for (let vector = 0; vector < stride / 4; vector++) {
+                    const value = scratch(v128Type);
+                    emitElementExpression(group.value, vector, stride, packVectors);
+                    code.push(op.localSet, ...unsigned(value));
+                    elementAddress(group.column);
+                    code.push(op.localGet, ...unsigned(value), ...simd(vop.store), 2, ...unsigned(16 * vector));
+                }
+                index += group.length - 1;
+            }
+            else if (body[index].kind === "stamp") rowsStatement(body[index]);
+        }
+        code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, 4, op.i32Add, op.localSet, ...unsigned(rowLocal), op.br, 0);
+        code.push(op.end, op.end);
+    };
+
     try {
         const parameterCount = 4 + columns.length + 2 * filters + lookupParameters;
         collectFinds(program.body);
@@ -1206,6 +1326,10 @@ export const generateWasm = (
             if (lookupParameters > 0) convertLookupParameters();
             stampRangeChunks();
             if (mode === "rows") rowsLoop();
+            if (mode === "lanes") {
+                const plan = planLanes();
+                if (acrossElements(plan)) elementsLoop(plan);
+            }
             // for (; row < end; row++) { block next { body } }
             code.push(op.block, 0x40, op.loop, 0x40);
             code.push(op.localGet, ...unsigned(rowLocal), op.localGet, 1, op.i32GeS, op.brIf, 1);

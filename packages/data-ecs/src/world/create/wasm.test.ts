@@ -186,6 +186,47 @@ describe("generateWasm with SIMD", () => {
         });
     }
 
+    for (const [name, stride] of [["vec2", 8], ["tight vec3", 12]] as const) {
+        it(`runs whole ${name} elements four rows at a time from any start, then the tail`, () => {
+            const leaves = stride / 4;
+            const local = (index: number): Expression => ({ kind: "local", local: index });
+            // const [p…] = p; const [v…] = v; p = [p + v * args + (leaf + 1), …]; stamp p's ticks.
+            const program: Program = {
+                locals: 2 * leaves,
+                body: [
+                    ...Array.from({ length: 2 * leaves }, (_, index): Program.Statement => ({ kind: "set", local: index, value: read(index) })),
+                    ...Array.from({ length: leaves }, (_, leaf): Program.Statement => ({
+                        kind: "store",
+                        column: leaf,
+                        value: add(add(local(leaf), { kind: "binary", operator: "*", left: local(leaves + leaf), right: { kind: "args", path: [] } }), { kind: "number", value: leaf + 1 }),
+                    })),
+                    { kind: "stamp", column: 2 * leaves, chunks: 2 * leaves + 1 },
+                ],
+            };
+            const columns: WasmColumn[] = [
+                ...Array.from({ length: leaves }, (_, leaf) => column(0, stride, 4 * leaf)),
+                ...Array.from({ length: leaves }, (_, leaf) => column(1, stride, 4 * leaf)),
+                { view: "f64", stride: 8, offset: 0, boolean: false, component: -1 },
+                { view: "f64", stride: 8, offset: 0, boolean: false, component: -2 },
+            ];
+            const kernel = generateWasm(program, columns, () => "number");
+            if (kernel === null) throw new Error("expected a kernel");
+            expect(kernel.vectorized).toBe(true);
+            const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+            const p = new Float32Array(memory.buffer, 4096, 32 * leaves);
+            const v = new Float32Array(memory.buffer, 8192, 32 * leaves);
+            const ticks = new Float64Array(memory.buffer, 16384, 32).fill(1);
+            for (let i = 0; i < p.length; i++) { p[i] = i; v[i] = 2 * i + 100; }
+            const runKernel: unknown = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+            if (typeof runKernel !== "function") throw new Error("no run export");
+            const [start, end] = [3, 22];
+            runKernel(start, end, 7, -1, ...columns.slice(0, leaves).map(() => 4096), ...columns.slice(0, leaves).map(() => 8192), 16384, 20480, 0.5);
+            const row = (index: number): number => Math.floor(index / leaves);
+            expect([...p]).toEqual([...p].map((_, i) => row(i) >= start && row(i) < end ? i + (2 * i + 100) * 0.5 + (i % leaves) + 1 : i));
+            expect([...ticks]).toEqual([...ticks].map((_, i) => i >= start && i < end ? 7 : 1));
+        });
+    }
+
     it("blends stores and tick stamps under an if, per lane", () => {
         const positive: Expression = { kind: "binary", operator: ">", left: read(0), right: { kind: "number", value: 0 } };
         const program: Program = { locals: 0, body: [{ kind: "if", test: positive, consequent: [{ kind: "store", column: 1, value: read(0) }, { kind: "stamp", column: 2, chunks: 3 }], alternate: [] }] };

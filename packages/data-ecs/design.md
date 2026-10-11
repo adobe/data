@@ -207,7 +207,7 @@ Measured with `pnpm perf` (benchmarks bundled as in production, on plain node) a
 - **Change filters inside WASM kernels:** one call per archetype or worker chunk; chunks and rows are skipped in WASM.
 - **Lookups in WASM kernels:** a directory per lookup in shared memory (per archetype: a match flag and column addresses), rebuilt at sync points; finds check index and generation against the shared entity table.
 - **Dispatch:** WASM chunks go through a per-worker task ring in shared memory, signalled with `Atomics.notify`; workers stay in that window across runs until a message must reach them.
-- **Kernels:** interleaved layouts, SIMD within rows (SLP) and across dense rows, 16-byte loads for three-lane rows with column slack, exact integer `%`.
+- **Kernels:** interleaved layouts, SIMD within rows (SLP), across dense rows, and across rows of whole interleaved elements (four tight vec3 rows are three vectors), 16-byte loads for three-lane rows with column slack, exact integer `%`.
 - **Main-thread reads:** `select`/`count` compile `where` once and resolve storages per archetype; single-component reads go straight to the storage.
 
 ### Next

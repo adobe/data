@@ -36,36 +36,65 @@ export const createRow = (state: State, archetype: Archetype, reads: readonly Ke
     return row;
 };
 
-/** The archetype of a live entity that matches a lookup, or `null`. */
-const matching = (state: State, lookup: Lookup, entity: Entity): { readonly archetype: Archetype; readonly row: number } | null => {
-    const index = locate(state.entities, entity);
-    if (index < 0) return null;
-    const archetype = state.archetypes[state.entities.archetype[index]];
-    if (archetype.resource) return null;
-    for (const key of lookup.read ?? []) if (!archetype.storageOf.has(idOf(state, key))) return null;
-    for (const key of lookup.has ?? []) if (!archetype.storageOf.has(idOf(state, key))) return null;
-    for (const key of lookup.not ?? []) if (archetype.storageOf.has(idOf(state, key))) return null;
-    return { archetype, row: state.entities.row[index] };
+/**
+ * A lookup's matcher, with its component ids resolved once. `find` returns the row of a live entity that matches, or -1,
+ * leaving its archetype in `archetype`.
+ */
+const createMatcher = (state: State, lookup: Lookup) => {
+    const ids = (keys: readonly Key[] | undefined): number[] => (keys ?? []).map(key => idOf(state, key));
+    const read = ids(lookup.read);
+    const has = ids(lookup.has);
+    const not = ids(lookup.not);
+    const matcher = {
+        read,
+        archetype: null as Archetype | null,
+        find: (entity: Entity): number => {
+            const index = locate(state.entities, entity);
+            if (index < 0) return -1;
+            const archetype = state.archetypes[state.entities.archetype[index]];
+            if (archetype.resource) return -1;
+            const { storageById } = archetype;
+            for (let i = 0; i < read.length; i++) if (storageById[read[i]] === undefined) return -1;
+            for (let i = 0; i < has.length; i++) if (storageById[has[i]] === undefined) return -1;
+            for (let i = 0; i < not.length; i++) if (storageById[not[i]] !== undefined) return -1;
+            matcher.archetype = archetype;
+            return state.entities.row[index];
+        },
+    };
+    return matcher;
 };
 
-const valueOf = (state: State, archetype: Archetype, row: number, key: Key): unknown => {
-    const storage = archetype.storageOf.get(idOf(state, key));
+const readAt = (archetype: Archetype, row: number, id: number): unknown => {
+    const storage = archetype.storageById[id];
     return storage === undefined ? undefined : readCell(storage, row);
 };
 
 /** A lookup returning `read` values keyed by component, for main-thread systems. */
-export const createObjectLookup = (state: State, lookup: Lookup) => (entity: Entity): object | null => {
-    const found = matching(state, lookup, entity);
-    if (found === null) return null;
-    const values: { [key: Key]: unknown } = {};
-    for (const key of lookup.read ?? []) values[key] = valueOf(state, found.archetype, found.row, key);
-    return values;
+export const createObjectLookup = (state: State, lookup: Lookup) => {
+    const matcher = createMatcher(state, lookup);
+    const keys = lookup.read ?? [];
+    return (entity: Entity): object | null => {
+        const row = matcher.find(entity);
+        const { archetype } = matcher;
+        if (row < 0 || archetype === null) return null;
+        const values: { [key: Key]: unknown } = {};
+        for (let i = 0; i < keys.length; i++) values[keys[i]] = readAt(archetype, row, matcher.read[i]);
+        return values;
+    };
 };
 
 /** A lookup returning `read` values in declared order, for kernels. */
-export const createArrayLookup = (state: State, lookup: Lookup) => (entity: Entity): readonly unknown[] | null => {
-    const found = matching(state, lookup, entity);
-    return found === null ? null : (lookup.read ?? []).map(key => valueOf(state, found.archetype, found.row, key));
+export const createArrayLookup = (state: State, lookup: Lookup) => {
+    const matcher = createMatcher(state, lookup);
+    const { read } = matcher;
+    return (entity: Entity): readonly unknown[] | null => {
+        const row = matcher.find(entity);
+        const { archetype } = matcher;
+        if (row < 0 || archetype === null) return null;
+        const values = new Array<unknown>(read.length);
+        for (let i = 0; i < read.length; i++) values[i] = readAt(archetype, row, read[i]);
+        return values;
+    };
 };
 
 /** Lookups, resources and `args` in one object. Resource accessors resolve the resource on each access. */

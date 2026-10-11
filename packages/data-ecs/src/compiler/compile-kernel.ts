@@ -1,10 +1,12 @@
 import type { Node, ObjectExpression } from 'estree';
 import { bind } from './bind.js';
-import { plainReads } from './booleans.js';
 import { expression } from './expression.js';
 import { fail } from './failure.js';
 import type { ModuleScope } from './module-scope.js';
-import { render, type Out } from './out.js';
+import { resolve, type Out } from './out.js';
+import { printStatements } from './print.js';
+import { toProgram } from './program.js';
+import { serialize } from './serialize.js';
 import { rootScope } from './scope.js';
 import { signature } from './signature.js';
 import { rowLabel, statement } from './statement.js';
@@ -15,8 +17,8 @@ const parameterValues: readonly Value[] = [{ kind: "row" }, { kind: "context" },
 
 /**
  * One compiled kernel: `description(url)` is the source of its `KernelDescription`, with keys as the declaration's
- * identifiers; `create` is the source of `KernelModule.create`, which references no module bindings and uses
- * `keys[k]` only as opaque property keys.
+ * identifiers and `program` lowered from the same statements as the JS; `create` is the source of
+ * `KernelModule.create`, which references no module bindings and uses `keys[k]` only as opaque property keys.
  */
 export type CompiledKernel = { readonly description: (url: string) => string; readonly create: string };
 
@@ -36,8 +38,10 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     } else {
         statement({ type: "ExpressionStatement", expression: body.body, start: body.body.start, end: body.body.end }, scope, rows);
     }
-    const kernel = plainReads(render(rows));
-    const preludeCode = plainReads(render(prelude));
+    const statements = [...resolve(prelude), ...resolve(rows)];
+    const kernel = printStatements(unit, resolve(rows));
+    const preludeCode = printStatements(unit, resolve(prelude));
+    const program = toProgram(statements);
     const { signature: { resources, lookups }, columns, booleans, keys } = unit;
     const locals = [
         ...columns.map((_, index) => `const c${index} = columns[${index}];`),
@@ -55,6 +59,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             `lookups: [${lookups.map(lookup => JSON.stringify(lookup.name)).join(", ")}],`,
             `keys: [${keys.join(", ")}],`,
             `url: ${url},`,
+            `program: ${serialize(program)},`,
             "}",
         ].join("\n"),
         create: [

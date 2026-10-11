@@ -2,6 +2,7 @@ import type { Node } from 'estree';
 import { entityRead } from './columns.js';
 import { fail } from './failure.js';
 import type { Key } from './key.js';
+import { number, type Expression } from './ir.js';
 import { mathConstants, mathFunctions } from './math.js';
 import { scalar } from './scalar.js';
 import type { Scope } from './scope.js';
@@ -11,11 +12,21 @@ const commandNames: ReadonlySet<string> = new Set(["spawn", "despawn", "add", "r
 
 const literal = (key: Key): number | string | undefined => key.kind === "static" ? key.name : undefined;
 
-const element = (node: Node, scope: Scope, code: string, key: Key, optional: boolean): string => {
-    const index = key.kind === "static" ? JSON.stringify(key.name)
+/** Indexes a plain JS value. A static index into a resource or `args` extends its path. */
+const element = (node: Node, scope: Scope, object: Expression, key: Key, optional: boolean): Expression => {
+    if (key.kind === "static" && !optional && (object.kind === "resource" || object.kind === "args")) {
+        return { ...object, path: [...object.path, key.name] };
+    }
+    const index: Expression = key.kind === "static"
+        ? typeof key.name === "number" ? number(key.name) : { kind: "string", value: key.name }
         : key.kind === "value" ? scalar(key.value, node, scope)
         : fail(node, `${key.name} is not an index here`);
-    return `${code}${optional ? "?." : ""}[${index}]`;
+    return { kind: "element", object, index, optional };
+};
+
+const mathConstant = (name: string): Expression => {
+    const value: unknown = Reflect.get(Math, name);
+    return number(typeof value === "number" ? value : NaN);
 };
 
 /** `value[key]`, resolved at compile time where the kernel subset allows. */
@@ -33,9 +44,9 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
         case "context": {
             if (key.kind === "binding") {
                 const index = signature.resources.indexOf(key.name);
-                return index >= 0 ? { kind: "dynamic", code: `r${index}` } : fail(node, `${key.name} is not in resources read`);
+                return index >= 0 ? { kind: "dynamic", expression: { kind: "resource", index, path: [] } } : fail(node, `${key.name} is not in resources read`);
             }
-            if (name === "args" && signature.args) return { kind: "dynamic", code: "args" };
+            if (name === "args" && signature.args) return { kind: "dynamic", expression: { kind: "args", path: [] } };
             const lookup = signature.lookups.findIndex(entry => entry.name === name);
             return lookup >= 0 ? { kind: "lookup", lookup } : fail(node, "the context holds declared resources, lookups and args");
         }
@@ -43,10 +54,10 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
             const read = signature.lookups[value.lookup]?.read ?? [];
             const index = key.kind === "binding" ? read.indexOf(key.name) : -1;
             if (index < 0) return fail(node, "a lookup result is indexed by a component in that lookup's read");
-            return { kind: "dynamic", code: `${value.code}${optional ? "?." : ""}[${index}]` };
+            return { kind: "dynamic", expression: { kind: "element", object: value.expression, index: number(index), optional } };
         }
         case "dynamic":
-            return { kind: "dynamic", code: element(node, scope, value.code, key, optional) };
+            return { kind: "dynamic", expression: element(node, scope, value.expression, key, optional) };
         case "tuple":
             return typeof name === "number" && value.items[name] !== undefined
                 ? value.items[name]
@@ -61,7 +72,7 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
                 ? fail(node, "component values are indexed by literal elements or field names")
                 : { ...value, path: [...value.path, name] };
         case "math":
-            if (typeof name === "string" && mathConstants.has(name)) return scalarValue(`Math.${name}`);
+            if (typeof name === "string" && mathConstants.has(name)) return scalarValue(mathConstant(name));
             if (typeof name === "string" && mathFunctions.has(name)) return { kind: "method", owner: "math", name };
             return fail(node, `Math.${String(name)} is not in the kernel subset`);
         case "commands":

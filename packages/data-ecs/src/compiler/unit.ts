@@ -1,4 +1,5 @@
 import type { Node } from 'estree';
+import type { Expression } from './ir.js';
 import type { ModuleScope } from './module-scope.js';
 import type { Out } from './out.js';
 import type { Scope } from './scope.js';
@@ -20,10 +21,12 @@ export type Unit = {
     readonly columnIndex: Map<string, number>;
     /** Columns read where a boolean's identity is observable, so they need conversion. */
     readonly booleans: Set<number>;
-    /** Every code assigned to each emitted local, to propagate observation. */
-    readonly assignments: Map<string, string[]>;
+    /** Every value assigned to each local, to propagate observation. */
+    readonly assignments: Map<number, Expression[]>;
     /** Locals whose value reaches an observable position. */
-    readonly observed: Set<string>;
+    readonly observed: Set<number>;
+    /** Source names of locals, for readable JS. */
+    readonly names: Map<number, string>;
     /** Shape descriptions as source text. */
     readonly shapes: Set<string>;
     readonly keys: string[];
@@ -37,18 +40,25 @@ export type Unit = {
 export const createUnit = (signature: Signature, module: ModuleScope, expression: ExpressionCompiler, statement: StatementCompiler): Unit => {
     let counter = 0;
     return {
-        signature, module, columns: [], columnIndex: new Map(), booleans: new Set(), assignments: new Map(), observed: new Set(), shapes: new Set(), keys: [], active: new Set(),
+        signature, module, columns: [], columnIndex: new Map(), booleans: new Set(), assignments: new Map(), observed: new Set(), names: new Map(), shapes: new Set(), keys: [], active: new Set(),
         next: () => counter++, expression, statement,
     };
 };
 
-/** A fresh local name. Source names get a `_n` suffix, so they never collide with fixed generated names. */
-export const fresh = (unit: Unit, hint: string): string => `${hint}_${unit.next()}`;
+/** A fresh local, printed as `hint_n` so it never collides with fixed generated names. */
+export const fresh = (unit: Unit, hint: string): number => {
+    const local = unit.next();
+    unit.names.set(local, hint);
+    return local;
+};
 
-/** The local holding the key for a component named in a command. */
-export const keyLocal = (unit: Unit, name: string): string => {
+/** A fresh block or loop label. */
+export const label = (unit: Unit): number => unit.next();
+
+/** The `keys` index for a component named in a command. */
+export const keyIndex = (unit: Unit, name: string): number => {
     const index = unit.keys.indexOf(name);
-    if (index >= 0) return `k${index}`;
+    if (index >= 0) return index;
     unit.keys.push(name);
-    return `k${unit.keys.length - 1}`;
+    return unit.keys.length - 1;
 };

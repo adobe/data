@@ -3,8 +3,8 @@ import type { Value } from './value.js';
 
 export type Local = { readonly value: Value; readonly mutable: boolean };
 
-/** `label` names the block a `continue` breaks out of. */
-export type Loop = { readonly label: string };
+/** The labels `break` and `continue` branch to. */
+export type Loop = { readonly exit: number; readonly next: number };
 
 /** A lexical scope. A helper's scope has no parent, so it sees only its parameters and module scope. */
 export type Scope = {

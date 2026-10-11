@@ -1,10 +1,11 @@
-import type { AssignmentExpression, Expression, Node, Pattern, UpdateExpression } from 'estree';
+import type { AssignmentExpression, Expression as SourceExpression, Node, Pattern, UpdateExpression } from 'estree';
 import { access } from './access.js';
 import { failPattern } from './bind.js';
-import { assignment, plainReads } from './booleans.js';
-import { changedTarget, fieldRead, fieldTarget } from './columns.js';
+import { set } from './booleans.js';
+import { changedColumn, fieldColumn, fieldRead } from './columns.js';
 import { leavesOf, toData, type Data } from './data.js';
 import { fail } from './failure.js';
+import { isBinary, local, number, references, type Expression } from './ir.js';
 import { propertyKey } from './key.js';
 import type { Out } from './out.js';
 import { requireReadable } from './scalar.js';
@@ -13,8 +14,12 @@ import { snapshotLeaf } from './snapshot.js';
 import { fresh } from './unit.js';
 import { describeValue, type Value } from './value.js';
 
-/** One scalar store: `target = code`. `component` is set for row writes, which stamp the changed column. */
-type Store = { readonly target: string; readonly code: string; readonly component: string | undefined };
+/** One scalar store. `component` is set for row writes, which stamp the changed column. */
+type Target = { readonly kind: "local"; readonly local: number } | { readonly kind: "column"; readonly column: number };
+type Store = { readonly target: Target; readonly value: Expression; readonly component: string | undefined };
+
+const localTarget = (node: Node, expression: Expression): Target =>
+    expression.kind === "local" ? { kind: "local", local: expression.local } : fail(node, "this can't be assigned in a kernel");
 
 const root = (node: Node): string | undefined =>
     node.type === "Identifier" ? node.name : node.type === "MemberExpression" ? root(node.object) : undefined;
@@ -24,7 +29,7 @@ const requireWritable = (node: Node, scope: Scope, component: string): void => {
 };
 
 /** Resolves an assignment target to a value whose scalar leaves are assignable. */
-const targetValue = (node: Expression | Pattern, scope: Scope, out: Out): Value => {
+const targetValue = (node: SourceExpression | Pattern, scope: Scope, out: Out): Value => {
     const value = scope.unit.expression(node, scope, out);
     if (value.kind === "component") {
         requireWritable(node, scope, value.component);
@@ -51,15 +56,15 @@ const pair = (node: Node, target: Value, data: Data, scope: Scope): readonly Sto
                 unit.shapes.add(`{ component: ${target.component}, leaves: ${JSON.stringify(leaves.map(leaf => leaf.path))} }`);
             }
             return leaves.map(leaf => ({
-                target: fieldTarget(unit, target.component, [...target.path, ...leaf.path]), code: leaf.code, component: target.component,
+                target: { kind: "column", column: fieldColumn(unit, target.component, [...target.path, ...leaf.path]) }, value: leaf.expression, component: target.component,
             }));
         }
         case "snapshot":
             return leavesOf(data).map(leaf => ({
-                target: snapshotLeaf(unit, target.snapshot, [...target.path, ...leaf.path]), code: leaf.code, component: undefined,
+                target: { kind: "local", local: snapshotLeaf(unit, target.snapshot, [...target.path, ...leaf.path]) }, value: leaf.expression, component: undefined,
             }));
         case "scalar": case "dynamic":
-            return data.kind === "leaf" ? [{ target: target.code, code: data.code, component: undefined }] : fail(node, "can't assign a tuple or struct to a scalar");
+            return data.kind === "leaf" ? [{ target: localTarget(node, target.expression), value: data.expression, component: undefined }] : fail(node, "can't assign a tuple or struct to a scalar");
         case "tuple":
             return data.kind === "tuple" && data.items.length === target.items.length
                 ? target.items.flatMap((item, index) => pair(node, item, data.items[index], scope))
@@ -92,47 +97,50 @@ const collect = (pattern: Pattern, value: Value, scope: Scope, out: Out): readon
     }
 };
 
-const escape = (text: string): string => text.replace(/[[\]$]/g, match => `\\${match}`);
-
-/** Whether `code` reads `target`, a local name or a `c0[i]` column element. */
-const reads = (code: string, target: string): boolean => new RegExp(`(^|[^\\w$])${escape(target)}($|[^\\w$])`).test(code);
+/** Whether `value` reads what `target` writes. */
+const reads = (value: Expression, target: Target): boolean => references(value, node => target.kind === "local"
+    ? node.kind === "local" && node.local === target.local
+    : node.kind === "column" && node.column === target.column);
 
 /**
- * Emits stores as if every right-hand leaf were evaluated first, so `row[v] = [row[v][1], row[v][0]]` swaps:
- * a leaf that reads an earlier store's target is copied to a temporary first. Each written component is stamped once.
+ * Emits stores as if every right-hand leaf were evaluated first, so `[a, b] = [b, a]` swaps: a leaf that reads an
+ * earlier store's target is copied to a temporary first. Each written component is stamped once.
  */
 const emit = (stores: readonly Store[], scope: Scope, out: Out): void => {
-    const codes = stores.map((store, index) => {
-        if (!stores.slice(0, index).some(earlier => reads(plainReads(store.code), earlier.target))) return store.code;
-        const name = fresh(scope.unit, "t");
-        out.push(assignment(scope.unit, "const ", name, store.code));
-        return name;
+    const unit = scope.unit;
+    const values = stores.map((store, index) => {
+        if (!stores.slice(0, index).some(earlier => reads(store.value, earlier.target))) return store.value;
+        const temporary = fresh(unit, "t");
+        out.push(set(unit, temporary, store.value, "const"));
+        return local(temporary);
     });
-    stores.forEach((store, index) => out.push(store.component === undefined
-        ? assignment(scope.unit, "", store.target, codes[index])
-        : `${store.target} = ${codes[index]};`));
+    stores.forEach((store, index) => out.push(store.target.kind === "local"
+        ? set(unit, store.target.local, values[index], undefined)
+        : { kind: "store", column: store.target.column, value: values[index] }));
     for (const component of new Set(stores.flatMap(store => store.component === undefined ? [] : [store.component]))) {
-        out.push(`${changedTarget(scope.unit, component)} = tick;`);
+        out.push({ kind: "stamp", column: changedColumn(unit, component) });
     }
 };
 
 /** A scalar read-modify-write target. */
-const compoundStore = (node: Expression | Pattern, operator: string, operand: string, scope: Scope, out: Out): Store => {
+const compoundStore = (node: SourceExpression | Pattern, operator: string, operand: Expression, scope: Scope, out: Out): Store => {
+    if (!isBinary(operator)) return fail(node, `${operator}= is not in the kernel subset`);
     const target = targetValue(node, scope, out);
     const unit = scope.unit;
+    const combine = (current: Expression): Expression => ({ kind: "binary", operator, left: current, right: operand });
     switch (target.kind) {
         case "component":
             requireReadable(node, scope, target.component);
             return {
-                target: fieldTarget(unit, target.component, target.path),
-                code: `(${fieldRead(unit, target.component, target.path)} ${operator} ${operand})`, component: target.component,
+                target: { kind: "column", column: fieldColumn(unit, target.component, target.path) },
+                value: combine(fieldRead(unit, target.component, target.path)), component: target.component,
             };
         case "snapshot": {
             const leaf = snapshotLeaf(unit, target.snapshot, target.path);
-            return { target: leaf, code: `(${leaf} ${operator} ${operand})`, component: undefined };
+            return { target: { kind: "local", local: leaf }, value: combine(local(leaf)), component: undefined };
         }
         case "scalar": case "dynamic":
-            return { target: target.code, code: `(${target.code} ${operator} ${operand})`, component: undefined };
+            return { target: localTarget(node, target.expression), value: combine(target.expression), component: undefined };
         default:
             return fail(node, `compound assignment needs a scalar, not ${describeValue(target)}`);
     }
@@ -149,9 +157,9 @@ export const assign = (node: AssignmentExpression, scope: Scope, out: Out): void
     if (logical.has(node.operator)) return fail(node, `${node.operator} is not in the kernel subset`);
     const operand = toData(scope.unit.expression(node.right, scope, out), node.right, scope);
     if (operand.kind !== "leaf") return fail(node.right, "compound assignment needs a scalar");
-    emit([compoundStore(node.left, node.operator.slice(0, -1), operand.code, scope, out)], scope, out);
+    emit([compoundStore(node.left, node.operator.slice(0, -1), operand.expression, scope, out)], scope, out);
 };
 
 /** Compiles `x++`, `--x` and friends as statements. */
 export const update = (node: UpdateExpression, scope: Scope, out: Out): void =>
-    emit([compoundStore(node.argument, node.operator === "++" ? "+" : "-", "1", scope, out)], scope, out);
+    emit([compoundStore(node.argument, node.operator === "++" ? "+" : "-", number(1), scope, out)], scope, out);

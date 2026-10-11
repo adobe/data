@@ -29,9 +29,11 @@ export type State = {
     /** Commands for the next sync point, in system order. */
     readonly commands: Command[];
     resourceEntity: Entity;
+    /** Whether kernels with a program run as WASM; tests turn it off to compare with JS. */
+    readonly wasm: boolean;
 };
 
-export const createState = (shared?: boolean): State => {
+export const createState = (shared?: boolean, wasm = true): State => {
     const memory = createMemory(shared);
     return {
         memory,
@@ -45,6 +47,7 @@ export const createState = (shared?: boolean): State => {
         tick: 0,
         commands: [],
         resourceEntity: -1,
+        wasm,
     };
 };
 

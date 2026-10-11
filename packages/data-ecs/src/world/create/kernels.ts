@@ -1,10 +1,11 @@
 import type { Leaf } from '../../system/leaf.js';
 import type { Archetype } from './archetype.js';
 import type { Kernel, KernelDescription, KernelModule } from './kernel.js';
-import { samePath, type TypedArray } from './layout.js';
+import { layoutOf, samePath, type Layout, type TypedArray } from './layout.js';
 import type { LookupSetup, Source } from './protocol.js';
 import { createArrayLookup } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
+import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmRun, type WasmScalar } from './wasm.js';
 
 export type BoundKernel = {
     readonly description: KernelDescription;
@@ -13,9 +14,20 @@ export type BoundKernel = {
     readonly setup: { readonly sources: readonly Source[]; readonly booleans: readonly boolean[]; readonly lookups: readonly LookupSetup[]; readonly keys: readonly number[] };
     /** The kernel's columns for an archetype, rebuilt after the archetype grows. */
     readonly columnsOf: (archetype: Archetype) => readonly TypedArray[];
-    /** Imports the kernel module; `kernel` throws until it resolves. */
+    /** Imports the kernel module, and compiles its WASM; `kernel` throws until it resolves. */
     readonly load: () => Promise<void>;
     readonly kernel: () => Kernel;
+    /** The WASM version, when the kernel has a program and the world shares its memory. */
+    readonly wasm: WasmKernel | null;
+    /** The compiled module and the main thread's instance, once loaded. */
+    readonly compiled: () => { readonly module: WebAssembly.Module; readonly run: WasmRun } | null;
+};
+
+/** Whether a scalar leaf at `path` is a boolean, a number, or not a scalar leaf. */
+const leafType = (layout: Layout, path: readonly (number | string)[]): Type | null => {
+    if (layout.kind !== "linear") return null;
+    const leaf = layout.leaves.find(candidate => samePath(candidate.path, path));
+    return leaf === undefined ? null : leaf.scalar === "boolean" ? "boolean" : "number";
 };
 
 /**
@@ -84,11 +96,25 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         cache.set(archetype, { version: archetype.version, columns });
         return columns;
     };
+    const columnKinds: WasmColumn[] = sources.map(source => {
+        if (source.kind !== "field") return source.kind;
+        const layout = state.layouts[source.id];
+        return layout.kind === "linear" ? layout.leaves[source.leaf].scalar : fail("a field column isn't linear.");
+    });
+    const argsLayout = leaf.declaration.args === undefined ? null : layoutOf(leaf.declaration.args);
+    const scalarType = (scalar: WasmScalar): Type | null => scalar.source === "args"
+        ? argsLayout === null ? null : leafType(argsLayout, scalar.path)
+        : scalar.index < description.resources.length ? leafType(state.layouts[idOf(state, description.resources[scalar.index])], scalar.path) : null;
+    const wasm = state.wasm && state.memory.shared && description.program !== null ? generateWasm(description.program, columnKinds, scalarType) : null;
     let loaded: Kernel | null = null;
+    let compiled: { readonly module: WebAssembly.Module; readonly run: WasmRun } | null = null;
     const load = async (): Promise<void> => {
         const module: KernelModule = await import(/* @vite-ignore */ description.url);
         loaded = module.create(booleans);
+        if (wasm === null) return;
+        const wasmModule = await WebAssembly.compile(wasm.bytes);
+        compiled = { module: wasmModule, run: await instantiateWasm(wasmModule, state.memory.memory, wasm.imports) };
     };
     const kernel = (): Kernel => loaded ?? fail("its module isn't loaded.");
-    return { description, lookups, setup, columnsOf, load, kernel };
+    return { description, lookups, setup, columnsOf, load, kernel, wasm, compiled: () => compiled };
 };

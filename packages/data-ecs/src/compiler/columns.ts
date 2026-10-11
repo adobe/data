@@ -1,5 +1,5 @@
 import type { Path } from '../world/create/kernel.js';
-import { readMarker } from './booleans.js';
+import type { Expression } from './ir.js';
 import type { Unit } from './unit.js';
 
 const column = (unit: Unit, identity: string, description: string): number => {
@@ -10,18 +10,15 @@ const column = (unit: Unit, identity: string, description: string): number => {
     return unit.columns.length - 1;
 };
 
-const field = (unit: Unit, component: string, path: Path): number => {
+/** The column of a scalar leaf of a component. */
+export const fieldColumn = (unit: Unit, component: string, path: Path): number => {
     const json = JSON.stringify(path);
     return column(unit, `field ${component} ${json}`, `{ kind: "field", component: ${component}, path: ${json} }`);
 };
 
-/** The store target for a scalar leaf of a component in row `i`. */
-export const fieldTarget = (unit: Unit, component: string, path: Path): string => `c${field(unit, component, path)}[i]`;
+export const fieldRead = (unit: Unit, component: string, path: Path): Expression => ({ kind: "column", column: fieldColumn(unit, component, path) });
 
-/** Reads a scalar leaf of a component in row `i`, as a marker that `booleans.ts` renders. */
-export const fieldRead = (unit: Unit, component: string, path: Path): string => readMarker(field(unit, component, path));
+export const changedColumn = (unit: Unit, component: string): number =>
+    column(unit, `changed ${component}`, `{ kind: "changed", component: ${component} }`);
 
-export const changedTarget = (unit: Unit, component: string): string =>
-    `c${column(unit, `changed ${component}`, `{ kind: "changed", component: ${component} }`)}[i]`;
-
-export const entityRead = (unit: Unit): string => `c${column(unit, "entity", `{ kind: "entity" }`)}[i]`;
+export const entityRead = (unit: Unit): Expression => ({ kind: "column", column: column(unit, "entity", `{ kind: "entity" }`) });

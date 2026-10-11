@@ -148,8 +148,8 @@ const snapshot = (world: World): unknown[] => {
     return rows.map(row => JSON.stringify(row)).sort();
 };
 
-const simulate = async (workers: number): Promise<unknown[]> => {
-    const world = createWorld({ workers, minimumChunk: 64 });
+const simulate = async (workers: number, wasm = true): Promise<unknown[]> => {
+    const world = createWorld({ workers, minimumChunk: 64, wasm });
     disposals.push(world);
     await world.systems.register(seed, main);
     await world.run(seed, 2000);
@@ -159,7 +159,8 @@ const simulate = async (workers: number): Promise<unknown[]> => {
 
 describe("workers", () => {
     it("give the same results as the main thread alone", async () => {
-        const alone = await simulate(0);
+        // JS kernels on the main thread alone, against WASM kernels (where a kernel has one) on workers.
+        const alone = await simulate(0, false);
         expect(alone.some(row => String(row).includes("true"))).toBe(true);
         let tasks = 0;
         const original = Worker.prototype.postMessage;

@@ -1,5 +1,6 @@
 import type { Entity } from '../../entity/entity.js';
 import type { Schema } from '../../schema/schema.js';
+import type { WasmScalar } from './wasm.js';
 
 /** Byte offsets into the shared memory; the worker builds its own views over them. */
 export type EntitiesLayout = {
@@ -33,6 +34,8 @@ export type KernelSetup = {
     readonly keys: readonly number[];
     readonly added: readonly number[];
     readonly changed: readonly number[];
+    /** The compiled WASM version, which workers instantiate against the shared memory and prefer. */
+    readonly wasm: { readonly module: WebAssembly.Module; readonly scalars: readonly WasmScalar[]; readonly imports: readonly string[] } | null;
 };
 
 /** A command from a worker. Values and components are keyed by component id. */

@@ -5,6 +5,7 @@ import type { Kernel, KernelModule } from './kernel.js';
 import { layoutOf, leafView, type Layout, type TypedArray } from './layout.js';
 import type { ArchetypeLayout, EntitiesLayout, FromWorker, KernelSetup, LookupSetup, ToWorker, WorkerCommand, WorkerError } from './protocol.js';
 import { forEachPassingRange } from './ranges.js';
+import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
 
 /** A worker's views of one archetype's columns in the shared memory. */
 type ArchetypeViews = {
@@ -14,7 +15,12 @@ type ArchetypeViews = {
 
 type EntityViews = Reservations & { readonly archetype: Int32Array; readonly row: Uint32Array; readonly length: number };
 
-type LoadedKernel = { readonly setup: KernelSetup; readonly kernel: Kernel; readonly lookups: readonly ((entity: Entity) => readonly unknown[] | null)[] };
+type LoadedKernel = {
+    readonly setup: KernelSetup;
+    readonly kernel: Kernel;
+    readonly wasm: WasmRun | null;
+    readonly lookups: readonly ((entity: Entity) => readonly unknown[] | null)[];
+};
 
 let memory: WebAssembly.Memory | null = null;
 const layouts: Layout[] = [];
@@ -107,16 +113,25 @@ const run = (message: RunMessage, buffer: WorkerCommand[]): void => {
     const kernelColumns = columnsOf(loaded, message.archetype);
     const ticks = (ids: readonly number[], kind: "added" | "changed"): Float64Array[] =>
         ids.map(id => archetype.storages.get(id)?.[kind] ?? new Float64Array(0));
-    forEachPassingRange(ticks(loaded.setup.added, "added"), ticks(loaded.setup.changed, "changed"), message.lastRun, message.start, message.end, (start, end) =>
+    const added = ticks(loaded.setup.added, "added");
+    const changed = ticks(loaded.setup.changed, "changed");
+    const { wasm } = loaded;
+    if (wasm !== null && loaded.setup.wasm !== null) {
+        const parameters = [...kernelColumns.map(column => column.byteOffset), ...scalarValues(loaded.setup.wasm.scalars, message.resources, message.args)];
+        return forEachPassingRange(added, changed, message.lastRun, message.start, message.end, (start, end) => wasm(start, end, message.tick, ...parameters));
+    }
+    forEachPassingRange(added, changed, message.lastRun, message.start, message.end, (start, end) =>
         loaded.kernel(kernelColumns, start, end, message.resources, loaded.lookups, loaded.setup.keys, message.args, commands, message.tick));
 };
 
 const load = async (setups: readonly KernelSetup[]): Promise<void> => {
-    const modules = await Promise.all(setups.map(async setup => {
+    const shared = required(memory, "memory");
+    const loaded = await Promise.all(setups.map(async setup => {
         const module: KernelModule = await import(/* @vite-ignore */ setup.url);
-        return module;
+        const wasm = setup.wasm === null ? null : await instantiateWasm(setup.wasm.module, shared, setup.wasm.imports);
+        return { module, wasm };
     }));
-    setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: modules[i].create(setup.booleans), lookups: setup.lookups.map(createLookup) }));
+    setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup) }));
 };
 
 const applyLayout = (message: Extract<ToWorker, { kind: "layout" }>): void => {

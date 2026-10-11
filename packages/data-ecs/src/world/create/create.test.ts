@@ -80,7 +80,7 @@ const watch = System.create({
 /** A kernel whose module can't be imported. */
 const missing = attachKernel(
     System.create({ name: "createTest/missing", kernel: true, query: { read: [velocity] } }, () => {}),
-    { columns: [], shapes: [], resources: [], lookups: [], keys: [], url: "/@missing/kernel.js" },
+    { columns: [], shapes: [], resources: [], lookups: [], keys: [], url: "/@missing/kernel.js", program: null },
 );
 
 const main = System.composite({ name: "createTest/main", systems: [spawn, move, watch] });

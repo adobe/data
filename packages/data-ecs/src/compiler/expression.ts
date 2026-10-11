@@ -1,9 +1,10 @@
 import type { ConditionalExpression, Identifier, LogicalExpression, Node } from 'estree';
 import { access } from './access.js';
-import { assignment, observe } from './booleans.js';
+import { observe, set } from './booleans.js';
 import { call } from './calls.js';
 import { dataValue, leavesOf, mapLeaves, sameShape, toData, type Data } from './data.js';
 import { fail } from './failure.js';
+import { isBinary, isUnary, local, not, number, type Expression } from './ir.js';
 import { memberKey } from './key.js';
 import type { ModuleBinding } from './module-scope.js';
 import type { Out } from './out.js';
@@ -12,8 +13,8 @@ import { findLocal, rootScope, type Scope } from './scope.js';
 import { fresh } from './unit.js';
 import { scalarValue, type Value } from './value.js';
 
-const unaryOperators: ReadonlySet<string> = new Set(["-", "+", "!", "~"]);
-const isTrivial = (code: string): boolean => /^[\w$.]+$/.test(code);
+const isTrivial = (expression: Expression): boolean =>
+    expression.kind === "local" || expression.kind === "number" || expression.kind === "boolean";
 
 const isKey = (scope: Scope, name: string): boolean => {
     const signature = scope.unit.signature;
@@ -53,17 +54,20 @@ const identifier = (node: Identifier, scope: Scope, out: Out): Value => {
     if (binding !== undefined) return moduleValue(node, binding, scope, out);
     switch (node.name) {
         case "Math": return { kind: "math" };
-        case "Infinity": case "NaN": case "undefined": return scalarValue(node.name);
+        case "Infinity": return scalarValue(number(Infinity));
+        case "NaN": return scalarValue(number(NaN));
+        case "undefined": return scalarValue({ kind: "nullish", value: "undefined" });
         default: return fail(node, `${node.name} is not defined in the kernel`);
     }
 };
 
 /** Declares `let` locals for data's leaves, and returns them as data plus an assignment of other data to them. */
 const temporaries = (data: Data, scope: Scope, out: Out): { readonly result: Data; readonly assign: (source: Data) => Out } => {
-    const result = mapLeaves(data, () => fresh(scope.unit, "t"));
-    const names = leavesOf(result).map(leaf => leaf.code);
-    out.push(`let ${names.join(", ")};`);
-    return { result, assign: source => leavesOf(source).map((leaf, index) => assignment(scope.unit, "", names[index], leaf.code)) };
+    const locals = leavesOf(data).map(() => fresh(scope.unit, "t"));
+    let index = 0;
+    const result = mapLeaves(data, () => local(locals[index++]));
+    out.push({ kind: "declare", locals });
+    return { result, assign: source => leavesOf(source).map((leaf, leafIndex) => set(scope.unit, locals[leafIndex], leaf.expression, undefined)) };
 };
 
 /** `test ? a : b` over any matching shapes. Branches that emit statements become an `if`. */
@@ -78,15 +82,17 @@ const conditional = (node: ConditionalExpression, scope: Scope, out: Out): Value
     if (consequentOut.length === 0 && alternateOut.length === 0) {
         if (consequent.kind !== "leaf" && !isTrivial(test)) {
             const name = fresh(unit, "test");
-            out.push(`const ${name} = ${test};`);
-            test = name;
+            out.push(set(unit, name, test, "const"));
+            test = local(name);
         }
         const alternateLeaves = leavesOf(alternate);
         let index = 0;
-        return dataValue(mapLeaves(consequent, code => `(${test} ? ${code} : ${alternateLeaves[index++]?.code})`));
+        const condition = test;
+        return dataValue(mapLeaves(consequent, expression =>
+            ({ kind: "conditional", test: condition, consequent: expression, alternate: alternateLeaves[index++].expression })));
     }
     const { result, assign } = temporaries(consequent, scope, out);
-    out.push(`if (${test}) {`, ...consequentOut, ...assign(consequent), "} else {", ...alternateOut, ...assign(alternate), "}");
+    out.push({ kind: "if", test, consequent: [...consequentOut, ...assign(consequent)], alternate: [...alternateOut, ...assign(alternate)] });
     return dataValue(result);
 };
 
@@ -96,16 +102,19 @@ const logical = (node: LogicalExpression, scope: Scope, out: Out): Value => {
     const left = scalar(unit.expression(node.left, scope, out), node.left, scope);
     const rightOut: Out = [];
     const right = scalar(unit.expression(node.right, scope, rightOut), node.right, scope);
-    if (rightOut.length === 0) return scalarValue(`(${left} ${node.operator} ${right})`);
+    if (rightOut.length === 0) return scalarValue({ kind: "logical", operator: node.operator, left, right });
     const name = fresh(unit, "t");
-    const condition = node.operator === "&&" ? name : node.operator === "||" ? `!${name}` : `${name} == null`;
-    out.push(assignment(unit, "let ", name, left), `if (${condition}) {`, ...rightOut, assignment(unit, "", name, right), "}");
-    return scalarValue(name);
+    const current = local(name);
+    const condition: Expression = node.operator === "&&" ? current : node.operator === "||" ? not(current)
+        : { kind: "binary", operator: "==", left: current, right: { kind: "nullish", value: "null" } };
+    out.push(set(unit, name, left, "let"), { kind: "if", test: condition, consequent: [...rightOut, set(unit, name, right, undefined)], alternate: [] });
+    return scalarValue(current);
 };
 
 const literal = (node: Extract<Node, { type: "Literal" }>): Value => {
-    if (typeof node.value === "number") return scalarValue(node.raw ?? String(node.value));
-    if (typeof node.value === "boolean" || node.value === null) return scalarValue(String(node.value));
+    if (typeof node.value === "number") return scalarValue(number(node.value));
+    if (typeof node.value === "boolean") return scalarValue({ kind: "boolean", value: node.value });
+    if (node.value === null) return scalarValue({ kind: "nullish", value: "null" });
     return fail(node, "only number, boolean and null literals are in the kernel subset");
 };
 
@@ -135,17 +144,18 @@ export const expression = (node: Node, scope: Scope, out: Out): Value => {
                 }),
             };
         case "UnaryExpression":
-            if (!unaryOperators.has(node.operator)) return fail(node, `${node.operator} is not in the kernel subset`);
-            return scalarValue(`(${node.operator}${scalar(expression(node.argument, scope, out), node.argument, scope)})`);
+            if (!isUnary(node.operator)) return fail(node, `${node.operator} is not in the kernel subset`);
+            return scalarValue({ kind: "unary", operator: node.operator, operand: scalar(expression(node.argument, scope, out), node.argument, scope) });
         case "BinaryExpression": {
-            if (node.operator === "in" || node.operator === "instanceof" || node.left.type === "PrivateIdentifier") {
-                return fail(node, `${node.operator} is not in the kernel subset`);
-            }
+            const operator = node.operator;
+            if (!isBinary(operator) || node.left.type === "PrivateIdentifier") return fail(node, `${node.operator} is not in the kernel subset`);
             const left = scalar(expression(node.left, scope, out), node.left, scope);
             const right = scalar(expression(node.right, scope, out), node.right, scope);
             // Strict equality tells true from 1, so boolean reads are converted here.
-            const strict = node.operator === "===" || node.operator === "!==";
-            return scalarValue(strict ? `(${observe(scope.unit, left)} ${node.operator} ${observe(scope.unit, right)})` : `(${left} ${node.operator} ${right})`);
+            const strict = operator === "===" || operator === "!==";
+            return scalarValue(strict
+                ? { kind: "binary", operator, left: observe(scope.unit, left), right: observe(scope.unit, right) }
+                : { kind: "binary", operator, left, right });
         }
         case "LogicalExpression":
             return logical(node, scope, out);

@@ -1,59 +1,63 @@
-import type { SimpleCallExpression, Expression, Node, SpreadElement } from 'estree';
+import type { SimpleCallExpression, Expression as SourceExpression, Node, SpreadElement } from 'estree';
 import { bind } from './bind.js';
 import { observe } from './booleans.js';
 import { materialize, toData } from './data.js';
 import { fail } from './failure.js';
+import { local, type Expression } from './ir.js';
 import type { Out } from './out.js';
 import { scalar } from './scalar.js';
 import { findLocal, rootScope, type Scope } from './scope.js';
-import { fresh, keyLocal } from './unit.js';
+import { fresh, keyIndex } from './unit.js';
 import { scalarValue, type Value } from './value.js';
 
-const argument = (node: Expression | SpreadElement): Expression =>
+const argument = (node: SourceExpression | SpreadElement): SourceExpression =>
     node.type === "SpreadElement" ? fail(node, "spread arguments are not in the kernel subset") : node;
 
-const scalarArgument = (node: Expression | SpreadElement, scope: Scope, out: Out): string => {
+const scalarArgument = (node: SourceExpression | SpreadElement, scope: Scope, out: Out): Expression => {
     const expression = argument(node);
     return scalar(scope.unit.expression(expression, scope, out), expression, scope);
 };
 
 /** A module-scope key named in a command, such as a component in `remove` or a computed key in `spawn` values. */
-const commandKey = (node: Node, scope: Scope): string =>
+const commandKey = (node: Node, scope: Scope): number =>
     node.type === "Identifier" && findLocal(scope, node.name) === undefined && scope.unit.module.has(node.name)
-        ? keyLocal(scope.unit, node.name)
+        ? keyIndex(scope.unit, node.name)
         : fail(node, "commands name components by identifiers bound at module scope");
 
-const commandValues = (node: Expression | SpreadElement | undefined, call: Node, scope: Scope, out: Out): string => {
+const commandValues = (node: SourceExpression | SpreadElement | undefined, call: Node, scope: Scope, out: Out): Expression => {
     if (node?.type !== "ObjectExpression") return fail(node ?? call, "command values must be an object literal like { [position]: value }");
-    const entries = node.properties.map(property => {
+    const entries = node.properties.map((property): readonly [number, Expression] => {
         if (property.type === "SpreadElement" || !property.computed) return fail(property, "command value keys must be computed component identifiers like [position]");
         const value = scope.unit.expression(property.value, scope, out);
-        return `[${commandKey(property.key, scope)}]: ${observe(scope.unit, materialize(toData(value, property.value, scope)))}`;
+        return [commandKey(property.key, scope), observe(scope.unit, materialize(toData(value, property.value, scope)))];
     });
-    return `{ ${entries.join(", ")} }`;
+    return { kind: "components", entries };
 };
+
+const none = scalarValue({ kind: "nullish", value: "undefined" });
 
 const command = (name: string, node: SimpleCallExpression, scope: Scope, out: Out): Value => {
     const [entity, ...rest] = node.arguments;
     if (entity === undefined) return fail(node, `commands.${name} needs arguments`);
     switch (name) {
         case "spawn": {
+            const values = commandValues(entity, node, scope, out);
             const result = fresh(scope.unit, "spawned");
-            out.push(`const ${result} = commands.spawn(${commandValues(entity, node, scope, out)});`);
-            return scalarValue(result);
+            out.push({ kind: "spawn", local: result, values });
+            return scalarValue(local(result));
         }
         case "despawn":
-            out.push(`commands.despawn(${scalarArgument(entity, scope, out)});`);
-            return scalarValue("undefined");
+            out.push({ kind: "despawn", entity: scalarArgument(entity, scope, out) });
+            return none;
         case "add": {
             const target = scalarArgument(entity, scope, out);
-            out.push(`commands.add(${target}, ${commandValues(rest[0], node, scope, out)});`);
-            return scalarValue("undefined");
+            out.push({ kind: "add", entity: target, values: commandValues(rest[0], node, scope, out) });
+            return none;
         }
         default: {
             const target = scalarArgument(entity, scope, out);
-            out.push(`commands.remove(${[target, ...rest.map(key => commandKey(argument(key), scope))].join(", ")});`);
-            return scalarValue("undefined");
+            out.push({ kind: "remove", entity: target, keys: rest.map(key => commandKey(argument(key), scope)) });
+            return none;
         }
     }
 };
@@ -92,13 +96,13 @@ export const call = (node: SimpleCallExpression, scope: Scope, out: Out): Value 
     switch (callee.kind) {
         case "method":
             if (callee.owner === "commands") return command(callee.name, node, scope, out);
-            return scalarValue(`Math.${callee.name}(${node.arguments.map(item => scalarArgument(item, scope, out)).join(", ")})`);
+            return scalarValue({ kind: "math", name: callee.name, arguments: node.arguments.map(item => scalarArgument(item, scope, out)) });
         case "lookup": {
             if (node.arguments.length !== 1) return fail(node, "a lookup takes one entity");
             const entity = scalarArgument(node.arguments[0], scope, out);
             const found = fresh(scope.unit, "found");
-            out.push(`const ${found} = l${callee.lookup}(${entity});`);
-            return { kind: "found", lookup: callee.lookup, code: found };
+            out.push({ kind: "lookup", local: found, lookup: callee.lookup, entity });
+            return { kind: "found", lookup: callee.lookup, expression: local(found) };
         }
         case "function":
             return inline(callee, node, scope, out);

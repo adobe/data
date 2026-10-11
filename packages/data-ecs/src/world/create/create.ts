@@ -26,14 +26,14 @@ const createQueue = (): Queue => {
 };
 
 /** Internal: tests choose the worker count and chunk size; apps get the platform default. */
-export type WorldOptions = { readonly workers?: number; readonly minimumChunk?: number };
+export type WorldOptions = { readonly workers?: number; readonly minimumChunk?: number; readonly wasm?: boolean };
 
 /** Rows below which a kernel's archetype runs on the main thread rather than paying for a round trip. */
 const defaultMinimumChunk = 16384;
 
 export const createWorld = (options: WorldOptions = {}): World => {
     const shared = sharedMemoryAvailable();
-    const state = createState(shared);
+    const state = createState(shared, options.wasm ?? true);
     const registrar = createRegistrar(state);
     const enqueue = createQueue();
     const workerCount = shared ? options.workers ?? defaultWorkerCount(shared) : 0;

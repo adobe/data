@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { parseAst } from 'vite';
-import type { KernelDescription, KernelModule } from '../world/create/kernel.js';
+import type { KernelDescription, KernelModule, Program } from '../world/create/kernel.js';
 import { transformKernels } from './transform.js';
 
 const header = `import { System } from "ecs";
@@ -43,15 +43,122 @@ type Options = {
     readonly lookups?: readonly ((entity: number) => readonly unknown[] | null)[];
     readonly args?: unknown;
     readonly booleans?: readonly string[];
+    /** Whether the kernel has a `program`; when it does, the program must give the same results as the JS. */
+    readonly program?: boolean;
 };
 
 const tick = 7;
 
+type Scalar = number | boolean;
+type Signal = { readonly kind: "normal" } | { readonly kind: "branch"; readonly depth: number } | { readonly kind: "next" };
+const normal: Signal = { kind: "normal" };
+
+/** A reference interpreter for `Program`: JS number semantics, boolean typing of columns from `booleans`. */
+const interpret = (program: Program, columns: readonly (Float64Array | Uint32Array)[], booleans: readonly boolean[], rows: number, resources: readonly unknown[], args: unknown): void => {
+    const scalarAt = (root: unknown, path: readonly (number | string)[]): Scalar => {
+        const value = path.reduce<unknown>((item, key) => Reflect.get(Object(item), key), root);
+        if (typeof value !== "number" && typeof value !== "boolean") throw new Error(`not a scalar: ${String(value)}`);
+        return value;
+    };
+    for (let row = 0; row < rows; row++) {
+        const locals: Scalar[] = new Array<Scalar>(program.locals).fill(0);
+        const evaluate = (node: Program.Expression): Scalar => {
+            switch (node.kind) {
+                case "number": case "boolean": return node.value;
+                case "column": {
+                    const value = columns[node.column]?.[row] ?? NaN;
+                    return booleans[node.column] === true ? value !== 0 : value;
+                }
+                case "resource": return scalarAt(resources[node.index], node.path);
+                case "args": return scalarAt(args, node.path);
+                case "local": return locals[node.local] ?? NaN;
+                case "unary": {
+                    const operand = evaluate(node.operand);
+                    switch (node.operator) {
+                        case "-": return -Number(operand);
+                        case "+": return Number(operand);
+                        case "!": return !operand;
+                        case "~": return ~Number(operand);
+                    }
+                }
+                case "binary": {
+                    const left = evaluate(node.left);
+                    const right = evaluate(node.right);
+                    const a = Number(left);
+                    const b = Number(right);
+                    switch (node.operator) {
+                        case "+": return a + b;
+                        case "-": return a - b;
+                        case "*": return a * b;
+                        case "/": return a / b;
+                        case "%": return a % b;
+                        case "**": return a ** b;
+                        case "<": return a < b;
+                        case ">": return a > b;
+                        case "<=": return a <= b;
+                        case ">=": return a >= b;
+                        case "==": return a === b;
+                        case "!=": return a !== b;
+                        case "===": return left === right;
+                        case "!==": return left !== right;
+                        case "&": return a & b;
+                        case "|": return a | b;
+                        case "^": return a ^ b;
+                        case "<<": return a << b;
+                        case ">>": return a >> b;
+                        case ">>>": return a >>> b;
+                    }
+                }
+                case "logical": {
+                    const left = evaluate(node.left);
+                    return node.operator === "&&" ? (left ? evaluate(node.right) : left) : (left ? left : evaluate(node.right));
+                }
+                case "conditional": return evaluate(node.test) ? evaluate(node.consequent) : evaluate(node.alternate);
+                case "math": {
+                    const method: unknown = Reflect.get(Math, node.name);
+                    if (typeof method !== "function") throw new Error(`no Math.${node.name}`);
+                    const result: unknown = Reflect.apply(method, Math, node.arguments.map(item => Number(evaluate(item))));
+                    return typeof result === "number" ? result : NaN;
+                }
+            }
+        };
+        const execute = (statements: readonly Program.Statement[]): Signal => {
+            for (const statement of statements) {
+                const signal = step(statement);
+                if (signal.kind !== "normal") return signal;
+            }
+            return normal;
+        };
+        const outward = (signal: Signal): Signal => signal.kind === "branch" ? (signal.depth === 0 ? normal : { kind: "branch", depth: signal.depth - 1 }) : signal;
+        const step = (statement: Program.Statement): Signal => {
+            switch (statement.kind) {
+                case "set": locals[statement.local] = evaluate(statement.value); return normal;
+                case "store": { const column = columns[statement.column]; if (column) column[row] = Number(evaluate(statement.value)); return normal; }
+                case "stamp": { const column = columns[statement.column]; if (column) column[row] = tick; return normal; }
+                case "if": return execute(evaluate(statement.test) ? statement.consequent : statement.alternate);
+                case "block": return outward(execute(statement.body));
+                case "loop":
+                    for (let iteration = 0; iteration < 1e6; iteration++) {
+                        const signal = execute(statement.body);
+                        if (signal.kind === "branch" && signal.depth === 0) continue;
+                        return signal.kind === "normal" ? normal : outward(signal);
+                    }
+                    throw new Error("runaway loop");
+                case "branch": return { kind: "branch", depth: statement.depth };
+                case "branchIf": return evaluate(statement.test) ? { kind: "branch", depth: statement.depth } : normal;
+                case "next": return { kind: "next" };
+            }
+        };
+        execute(program.body);
+    }
+};
+
 /** Runs a kernel over hand-built columns; `fields` maps a component to its leaves by JSON path. */
 const run = (description: Compiled, rows: number, fields: Fields, options: Options = {}) => {
-    const columns = description.columns.map(column => column.kind === "entity" ? Float64Array.from({ length: rows }, (_, row) => 100 + row)
+    const build = () => description.columns.map(column => column.kind === "entity" ? Float64Array.from({ length: rows }, (_, row) => 100 + row)
         : column.kind === "changed" ? new Uint32Array(rows)
         : Float64Array.from(fields[String(column.component)]?.[JSON.stringify(column.path)] ?? new Array<number>(rows).fill(0)));
+    const columns = build();
     const calls: Call[] = [];
     const commands = {
         spawn: (values: unknown) => { calls.push(["spawn", values]); return 999; },
@@ -61,6 +168,14 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
     };
     const booleans = description.columns.map(column => column.kind === "field" && (options.booleans ?? []).includes(String(column.component)));
     description.create(booleans)(columns, 0, rows, options.resources ?? [], options.lookups ?? [], description.keys, options.args, commands, tick);
+    expect(description.program !== null).toBe(options.program ?? true);
+    if (description.program !== null) {
+        const interpreted = build();
+        interpret(description.program, interpreted, booleans, rows, options.resources ?? [], options.args);
+        // Bit-identical, including NaN and -0.
+        expect(interpreted.map(column => [...column].map(value => Object.is(value, -0) ? "-0" : String(value))))
+            .toEqual(columns.map(column => [...column].map(value => Object.is(value, -0) ? "-0" : String(value))));
+    }
     const index = (kind: string, component: string, path: readonly (number | string)[] = []) => description.columns.findIndex(column =>
         column.kind === kind && column.kind !== "entity" && column.component === component
         && (column.kind === "changed" || JSON.stringify(column.path) === JSON.stringify(path)));
@@ -233,7 +348,7 @@ describe("context", () => {
         });`);
         expect(kernel.lookups).toEqual(["targets"]);
         const found = (entity: number) => entity === 1 ? [3, 10] : null;
-        const result = run(kernel, 2, { target: { "[]": [1, 2] }, position: { "[]": [0, 0] } }, { lookups: [found] });
+        const result = run(kernel, 2, { target: { "[]": [1, 2] }, position: { "[]": [0, 0] } }, { lookups: [found], program: false });
         expect(result.field("position")).toEqual([7, 0]);
         expect(result.field("score")).toEqual([5, -1]);
     });
@@ -243,7 +358,7 @@ describe("context", () => {
             row[score] = (targets(row[target])?.[mass] ?? 0) + d + args;
         });`);
         const found = (entity: number) => entity === 1 ? [3] : null;
-        expect(run(kernel, 2, { target: { "[]": [1, 2] } }, { lookups: [found], resources: [10], args: 100 }).field("score")).toEqual([113, 110]);
+        expect(run(kernel, 2, { target: { "[]": [1, 2] } }, { lookups: [found], resources: [10], args: 100, program: false }).field("score")).toEqual([113, 110]);
     });
 
     test("boolean columns read as booleans", async () => {
@@ -261,7 +376,7 @@ describe("context", () => {
             row[score] = (copy === true ? 10 : 20) + row[mass] * 2 + (flag ? 1 : 0);
             commands.spawn({ [alive]: flag, [mass]: row[mass] });
         });`);
-        const result = run(kernel, 2, { alive: { "[]": [1, 0] }, mass: { "[]": [3, 4] } }, { booleans: ["alive"] });
+        const result = run(kernel, 2, { alive: { "[]": [1, 0] }, mass: { "[]": [3, 4] } }, { booleans: ["alive"], program: false });
         expect(result.field("score")).toEqual([17, 28]);
         expect(result.calls).toEqual([["spawn", { alive: true, mass: 3 }], ["spawn", { alive: false, mass: 4 }]]);
         const source = String(kernel.create);
@@ -277,11 +392,31 @@ describe("context", () => {
             commands.remove(row.entity, alive, score);
         });`);
         expect(kernel.keys).toEqual(["position", "alive", "score"]);
-        expect(run(kernel, 1, { position: { "[0]": [5] } }).calls).toEqual([
+        expect(run(kernel, 1, { position: { "[0]": [5] } }, { program: false }).calls).toEqual([
             ["spawn", { position: [5, 1], alive: true }],
             ["add", 999, { score: 100 }],
             ["remove", 100, "alive", "score"],
         ]);
+    });
+});
+
+describe("program", () => {
+    test("args and resource paths are scalars in the program", async () => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, args: { type: "object" }, query: { write: [score] }, resources: { read: [delta] } }, (row, { [delta]: d, args }) => {
+            const [, y] = d;
+            row[score] = y * args.scale + Math.max(args.scale, Math.PI) + (args.flag ? 1 : 0);
+        });`);
+        const result = run(kernel, 1, {}, { resources: [[1, 2]], args: { scale: 3, flag: true } });
+        expect(result.field("score")).toEqual([2 * 3 + Math.PI + 1]);
+        expect(JSON.stringify(kernel.program)).toContain(`{"kind":"resource","index":0,"path":[1]}`);
+        expect(JSON.stringify(kernel.program)).toContain(`{"kind":"args","path":["scale"]}`);
+    });
+
+    test("runtime indexing into a resource has no program", async () => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [mass], write: [score] }, resources: { read: [delta] } }, (row, { [delta]: d }) => {
+            row[score] = d[row[mass]];
+        });`);
+        expect(run(kernel, 1, { mass: { "[]": [1] } }, { resources: [[5, 6]], program: false }).field("score")).toEqual([6]);
     });
 });
 

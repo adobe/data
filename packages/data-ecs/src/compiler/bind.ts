@@ -1,9 +1,10 @@
 import type { Identifier, Node, Pattern } from 'estree';
 import { access } from './access.js';
-import { assignment } from './booleans.js';
+import { set } from './booleans.js';
+import { fieldRead } from './columns.js';
 import { dataValue, mapLeaves, toData } from './data.js';
 import { fail } from './failure.js';
-import { fieldRead } from './columns.js';
+import { local, type Expression } from './ir.js';
 import { propertyKey } from './key.js';
 import type { Out } from './out.js';
 import { requireReadable } from './scalar.js';
@@ -15,36 +16,39 @@ import { describeValue, type Value } from './value.js';
 /** How a local is bound. Parameters are mutable data, but may also alias non-data values like `row`. */
 export type Binding = "const" | "let" | "parameter";
 
-const isLiteral = (code: string): boolean => /^(\d[\d.e+-]*|true|false|null)$/.test(code);
+const isLiteral = (expression: Expression): boolean =>
+    expression.kind === "number" || expression.kind === "boolean" || expression.kind === "nullish";
 
 /** The value a new local holds: data is copied into fresh locals, so later writes elsewhere don't change it. */
 const declared = (node: Identifier, value: Value, binding: Binding, scope: Scope, out: Out): Value => {
     const keyword = binding === "const" ? "const" : "let";
     const unit = scope.unit;
+    const copy = (expression: Expression): Expression => {
+        if (binding === "const" && isLiteral(expression)) return expression;
+        const target = fresh(unit, node.name);
+        out.push(set(unit, target, expression, keyword));
+        return local(target);
+    };
     switch (value.kind) {
-        case "scalar": case "dynamic": {
-            if (binding === "const" && isLiteral(value.code)) return value;
-            const name = fresh(unit, node.name);
-            out.push(assignment(unit, `${keyword} `, name, value.code));
-            return { kind: value.kind, code: name };
+        case "scalar":
+            return { kind: "scalar", expression: copy(value.expression) };
+        case "dynamic": {
+            // Resources and args don't change while a kernel runs, so a const can alias them.
+            const constant = value.expression.kind === "resource" || value.expression.kind === "args";
+            return binding === "const" && constant ? value : { kind: "dynamic", expression: copy(value.expression) };
         }
         case "tuple": case "struct":
-            return dataValue(mapLeaves(toData(value, node, scope), code => {
-                if (binding === "const" && isLiteral(code)) return code;
-                const name = fresh(unit, node.name);
-                out.push(assignment(unit, `${keyword} `, name, code));
-                return name;
-            }));
+            return dataValue(mapLeaves(toData(value, node, scope), copy));
         case "component": {
             requireReadable(node, scope, value.component);
             const snapshot = createSnapshot(keyword, node.name, path => fieldRead(unit, value.component, [...value.path, ...path]));
-            out.push(snapshotDeclaration(unit, snapshot));
+            out.push(snapshotDeclaration(snapshot));
             return { kind: "snapshot", snapshot, path: [] };
         }
         case "snapshot": {
             const source = value;
-            const snapshot = createSnapshot(keyword, node.name, path => snapshotLeaf(unit, source.snapshot, [...source.path, ...path]));
-            out.push(snapshotDeclaration(unit, snapshot));
+            const snapshot = createSnapshot(keyword, node.name, path => local(snapshotLeaf(unit, source.snapshot, [...source.path, ...path])));
+            out.push(snapshotDeclaration(snapshot));
             return { kind: "snapshot", snapshot, path: [] };
         }
         default:

@@ -1,4 +1,6 @@
-/** Emitted statements. A function is rendered last, so it can see what the rest of the body needed. */
-export type Out = (string | (() => string))[];
+import type { Statement } from './ir.js';
 
-export const render = (out: Out): string => out.map(line => typeof line === "string" ? line : line()).filter(line => line !== "").join("\n");
+/** Emitted statements. A function is resolved last, so it can see what the rest of the body needed. */
+export type Out = (Statement | (() => readonly Statement[]))[];
+
+export const resolve = (out: Out): readonly Statement[] => out.flatMap(item => typeof item === "function" ? item() : [item]);

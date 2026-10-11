@@ -10,6 +10,7 @@ import type { KernelSetup, WorkerCommand } from './protocol.js';
 import { forEachPassingRange } from './ranges.js';
 import { resourceCell } from './resources.js';
 import { createContext, createRow, type Cursor } from './rows.js';
+import { scalarValues } from './wasm.js';
 import { idOf, type Command, type State } from './state.js';
 
 /** One unit of a system's work for a run: the commands it issued, plus its error if it failed partway. */
@@ -103,8 +104,15 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
 
     const runKernelLocally = (bound: BoundKernel, archetype: Archetype, since: number, values: readonly unknown[], args: unknown, tick: number): void => {
         const columns = bound.columnsOf(archetype);
+        const added = ticksOf(archetype, addedIds, "added");
+        const changed = ticksOf(archetype, changedIds, "changed");
+        const compiled = bound.compiled();
+        if (compiled !== null && bound.wasm !== null) {
+            const parameters = [...columns.map(column => column.byteOffset), ...scalarValues(bound.wasm.scalars, values, args)];
+            return forEachPassingRange(added, changed, since, 0, archetype.count, (start, end) => compiled.run(start, end, tick, ...parameters));
+        }
         const run = bound.kernel();
-        forEachPassingRange(ticksOf(archetype, addedIds, "added"), ticksOf(archetype, changedIds, "changed"), since, 0, archetype.count, (start, end) =>
+        forEachPassingRange(added, changed, since, 0, archetype.count, (start, end) =>
             run(columns, start, end, values, bound.lookups, bound.description.keys, args, commands, tick));
     };
 
@@ -168,12 +176,17 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }
     };
 
-    const setup = (index: number): KernelSetup | null => kernel === null ? null : {
-        index,
-        url: kernel.description.url,
-        ...kernel.setup,
-        added: addedIds,
-        changed: changedIds,
+    const setup = (index: number): KernelSetup | null => {
+        if (kernel === null) return null;
+        const compiled = kernel.compiled();
+        return {
+            index,
+            url: kernel.description.url,
+            ...kernel.setup,
+            added: addedIds,
+            changed: changedIds,
+            wasm: compiled === null || kernel.wasm === null ? null : { module: compiled.module, scalars: kernel.wasm.scalars, imports: kernel.wasm.imports },
+        };
     };
 
     return { kernel, setup, start };

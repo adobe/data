@@ -156,6 +156,12 @@ importers:
       '@types/node':
         specifier: ^20.11.0
         version: 20.19.43
+      '@vitest/browser':
+        specifier: ^1.6.0
+        version: 1.6.0(playwright@1.46.1)(vitest@1.6.0)
+      playwright:
+        specifier: ^1.46.1
+        version: 1.46.1
       typescript:
         specifier: ^5.8.3
         version: 5.8.3
@@ -164,7 +170,7 @@ importers:
         version: 5.1.1(@types/node@20.19.43)
       vitest:
         specifier: ^1.6.0
-        version: 1.6.0(@types/node@20.19.43)
+        version: 1.6.0(@types/node@20.19.43)(@vitest/browser@1.6.0)
 
   packages/data-gpu:
     dependencies:
@@ -2253,7 +2259,7 @@ packages:
       magic-string: 0.30.21
       playwright: 1.46.1
       sirv: 2.0.4
-      vitest: 1.6.0(@types/node@25.6.0)(@vitest/browser@1.6.0)
+      vitest: 1.6.0(@types/node@20.19.43)(@vitest/browser@1.6.0)
     dev: true
 
   /@vitest/browser@1.6.0(playwright@1.46.1)(vitest@1.6.0)(webdriverio@9.0.9):
@@ -7868,7 +7874,7 @@ packages:
       vite: 5.1.1(@types/node@25.6.0)
     dev: true
 
-  /vitest@1.6.0(@types/node@20.19.43):
+  /vitest@1.6.0(@types/node@20.19.43)(@vitest/browser@1.6.0):
     resolution: {integrity: sha512-H5r/dN06swuFnzNFhq/dnz37bPXnq8xB2xB5JOVk8K09rUtoeNN+LHWkoQ0A/i3hvbUKKcCei9KpbxqHMLhLLA==}
     engines: {node: ^18.0.0 || >=20.0.0}
     hasBin: true
@@ -7894,6 +7900,7 @@ packages:
         optional: true
     dependencies:
       '@types/node': 20.19.43
+      '@vitest/browser': 1.6.0(playwright@1.46.1)(vitest@1.6.0)
       '@vitest/expect': 1.6.0
       '@vitest/runner': 1.6.0
       '@vitest/snapshot': 1.6.0

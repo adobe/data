@@ -1,23 +1,25 @@
 import type { Leaf } from '../../system/leaf.js';
 import type { Archetype } from './archetype.js';
-import type { Kernel, KernelDescription } from './kernel.js';
+import type { Kernel, KernelDescription, KernelModule } from './kernel.js';
 import { samePath, type TypedArray } from './layout.js';
+import type { LookupSetup, Source } from './protocol.js';
 import { createArrayLookup } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
 
 export type BoundKernel = {
-    readonly kernel: Kernel;
-    readonly lookups: readonly ReturnType<typeof createArrayLookup>[];
     readonly description: KernelDescription;
+    readonly lookups: readonly ReturnType<typeof createArrayLookup>[];
+    /** What a worker needs to run the kernel, with component ids in place of keys. */
+    readonly setup: { readonly sources: readonly Source[]; readonly booleans: readonly boolean[]; readonly lookups: readonly LookupSetup[]; readonly keys: readonly number[] };
     /** The kernel's columns for an archetype, rebuilt after the archetype grows. */
     readonly columnsOf: (archetype: Archetype) => readonly TypedArray[];
+    /** Imports the kernel module; `kernel` throws until it resolves. */
+    readonly load: () => Promise<void>;
+    readonly kernel: () => Kernel;
 };
 
-/** Where each column comes from in any archetype the system matches: a component id and a leaf index. */
-type Source = { readonly kind: "entity" } | { readonly kind: "field" | "changed"; readonly id: number; readonly leaf: number };
-
 /**
- * Checks the compiler's shape assumptions against the registered schemas and creates the kernel.
+ * Checks the compiler's shape assumptions against the registered schemas.
  * Throws if a column names a missing leaf or a whole-value write doesn't cover every leaf.
  */
 export const bindKernel = (state: State, leaf: Leaf, description: KernelDescription): BoundKernel => {
@@ -54,10 +56,21 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         const exact = leaves.length === shape.leaves.length && leaves.every(leaf => shape.leaves.some(path => samePath(path, leaf.path)));
         if (!exact) fail(`a whole-value write of "${String(shape.component)}" doesn't match its schema.`);
     }
-    const lookups = description.lookups.map(lookupName => {
-        const declared = lookup?.[lookupName];
-        return declared === undefined ? fail(`unknown lookup "${lookupName}".`) : createArrayLookup(state, declared);
-    });
+    const declaredLookups = description.lookups.map(lookupName => lookup?.[lookupName] ?? fail(`unknown lookup "${lookupName}".`));
+    // Workers read lookups from shared memory, so their values must be linear there too.
+    for (const declared of declaredLookups) {
+        for (const key of declared.read ?? []) {
+            if (state.layouts[idOf(state, key)].kind === "object") fail(`a lookup reads "${String(key)}", which isn't stored in linear memory.`);
+        }
+    }
+    const lookups = declaredLookups.map(declared => createArrayLookup(state, declared));
+    const ids = (keys: readonly Key[] | undefined): number[] => (keys ?? []).map(key => idOf(state, key));
+    const setup = {
+        sources,
+        booleans,
+        lookups: declaredLookups.map(declared => ({ read: ids(declared.read), has: ids(declared.has), not: ids(declared.not) })),
+        keys: ids(description.keys),
+    };
     const cache = new Map<Archetype, { version: number; columns: readonly TypedArray[] }>();
     const columnsOf = (archetype: Archetype): readonly TypedArray[] => {
         const cached = cache.get(archetype);
@@ -71,5 +84,11 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         cache.set(archetype, { version: archetype.version, columns });
         return columns;
     };
-    return { kernel: description.create(booleans), lookups, description, columnsOf };
+    let loaded: Kernel | null = null;
+    const load = async (): Promise<void> => {
+        const module: KernelModule = await import(/* @vite-ignore */ description.url);
+        loaded = module.create(booleans);
+    };
+    const kernel = (): Kernel => loaded ?? fail("its module isn't loaded.");
+    return { description, lookups, setup, columnsOf, load, kernel };
 };

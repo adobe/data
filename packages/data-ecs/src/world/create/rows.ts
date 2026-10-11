@@ -37,6 +37,7 @@ const matching = (state: State, lookup: Lookup, entity: Entity): { readonly arch
     const index = locate(state.entities, entity);
     if (index < 0) return null;
     const archetype = state.archetypes[state.entities.archetype[index]];
+    if (archetype.resource) return null;
     for (const key of lookup.read ?? []) if (!archetype.storageOf.has(idOf(state, key))) return null;
     for (const key of lookup.has ?? []) if (!archetype.storageOf.has(idOf(state, key))) return null;
     for (const key of lookup.not ?? []) if (archetype.storageOf.has(idOf(state, key))) return null;

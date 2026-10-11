@@ -9,12 +9,15 @@ type View = { readonly byteOffset: number; readonly byteLength: number };
 
 /** A typed array over a new arena block. Contents are unspecified. */
 export const allocateArray = <T>(memory: Memory, constructor: ArrayConstructor<T>, length: number): T => {
+    if (!memory.shared) return new constructor(new ArrayBuffer(length * constructor.BYTES_PER_ELEMENT), 0, length);
     // Allocate first: it may grow memory, which replaces `memory.buffer`.
     const offset = memory.allocate(length * constructor.BYTES_PER_ELEMENT);
     return new constructor(memory.memory.buffer, offset, length);
 };
 
-export const freeArray = (memory: Memory, array: View): void => memory.free(array.byteOffset, array.byteLength);
+export const freeArray = (memory: Memory, array: View): void => {
+    if (memory.shared) memory.free(array.byteOffset, array.byteLength);
+};
 
 /** Moves the first `used` elements into a new block of `length` and frees the old one. */
 export const growArray = <T extends View & { set(source: ArrayLike<number>): void; subarray(start: number, end: number): ArrayLike<number> }>(

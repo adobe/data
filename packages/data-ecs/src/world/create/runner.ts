@@ -2,25 +2,51 @@ import type { Commands } from '../../system/commands.js';
 import type { Leaf } from '../../system/leaf.js';
 import type { Archetype } from './archetype.js';
 import { kernelOf } from './attach-kernel.js';
-import { bindKernel, type BoundKernel } from './kernels.js';
 import { readCell } from './cells.js';
+import { createCommands } from './commands.js';
+import { bindKernel, type BoundKernel } from './kernels.js';
+import type { Pool } from './pool.js';
+import type { KernelSetup, WorkerCommand } from './protocol.js';
+import { forEachPassingRange } from './ranges.js';
 import { resourceCell } from './resources.js';
 import { createContext, createRow, type Cursor } from './rows.js';
-import { idOf, type State } from './state.js';
+import { idOf, type Command, type State } from './state.js';
 
-/** Runs one leaf system against the current state. Each execution takes a new tick and becomes the system's `lastRun`. */
-export type Runner = { readonly execute: (args: unknown) => void };
+/** One unit of a system's work for a run: the commands it issued, plus its error if it failed partway. */
+export type ChunkResult = { readonly commands: readonly Command[]; readonly error?: unknown };
+export type Chunk = ChunkResult | Promise<ChunkResult>;
 
-type Filter = { readonly added: readonly Float64Array[]; readonly changed: readonly Float64Array[] };
+/**
+ * Where kernels may run. Archetypes with fewer than `minimumChunk` rows run on the main thread.
+ * `next` rotates the first worker of each split, so small archetypes don't all queue on one worker.
+ */
+export type Workers = { readonly pool: Pool; readonly minimumChunk: number; next: number };
 
-const passes = (filter: Filter, row: number, lastRun: number): boolean => {
-    for (const ticks of filter.added) if (ticks[row] > lastRun) return true;
-    for (const ticks of filter.changed) if (ticks[row] > lastRun) return true;
-    return false;
+/** 16 rows of f32 is a 64-byte line, so chunks of different workers never share one. */
+const chunkAlignment = 16;
+
+/**
+ * Runs one leaf system. Each run takes a new tick, which becomes the system's `lastRun`.
+ * `start` does main-thread work immediately and posts kernel chunks to workers; the chunks' commands merge in returned order.
+ */
+export type Runner = {
+    readonly kernel: BoundKernel | null;
+    /** What workers need to load this system's kernel, given its index. */
+    readonly setup: (index: number) => KernelSetup | null;
+    readonly start: (args: unknown, workers: Workers | null, index: number) => readonly Chunk[];
+};
+
+/** Translates a worker command, which names components by id, to keys. */
+const fromWorker = (state: State, command: WorkerCommand): Command => {
+    if (command.kind === "despawn") return command;
+    if (command.kind === "remove") return { kind: "remove", entity: command.entity, components: command.components.map(id => state.keys[id]) };
+    const values: { [key: string | symbol]: unknown } = {};
+    for (const id in command.values) values[state.keys[Number(id)]] = command.values[id];
+    return { kind: command.kind, entity: command.entity, values };
 };
 
 /** Throws if the leaf is a kernel that wasn't compiled or doesn't match its schemas. */
-export const createRunner = (state: State, leaf: Leaf, commands: Commands): Runner => {
+export const createRunner = (state: State, leaf: Leaf): Runner => {
     const { declaration } = leaf;
     // Method parameters are bivariant, so the runtime can see any leaf's body with erased row and context types.
     const system: { body(row: object | undefined, context: object, commands: Commands): void } = leaf;
@@ -31,12 +57,14 @@ export const createRunner = (state: State, leaf: Leaf, commands: Commands): Runn
     const changedIds = (query?.changed ?? []).map(key => idOf(state, key));
     const resourceChanged = resources?.changed ?? [];
     const filtered = addedIds.length + changedIds.length + resourceChanged.length > 0;
-    let bound: BoundKernel | null = null;
+    let kernel: BoundKernel | null = null;
     if (declaration.kernel === true) {
         const description = kernelOf(leaf);
         if (description === undefined) throw new Error(`System "${declaration.name}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
-        bound = bindKernel(state, leaf, description);
+        kernel = bindKernel(state, leaf, description);
     }
+    const holder: { buffer: Command[] } = { buffer: [] };
+    const commands = createCommands(state, holder);
     const context = createContext(state, declaration);
     const matches: Archetype[] = [];
     let checked = 0;
@@ -50,10 +78,8 @@ export const createRunner = (state: State, leaf: Leaf, commands: Commands): Runn
         }
     };
 
-    const filterOf = (archetype: Archetype): Filter => ({
-        added: addedIds.map(id => archetype.storageOf.get(id)?.added ?? new Float64Array(0)),
-        changed: changedIds.map(id => archetype.storageOf.get(id)?.changed ?? new Float64Array(0)),
-    });
+    const ticksOf = (archetype: Archetype, ids: readonly number[], kind: "added" | "changed"): Float64Array[] =>
+        ids.map(id => archetype.storageOf.get(id)?.[kind] ?? new Float64Array(0));
 
     const rowOf = (archetype: Archetype): { readonly row: object; readonly cursor: Cursor } => {
         let entry = rows.get(archetype);
@@ -65,64 +91,90 @@ export const createRunner = (state: State, leaf: Leaf, commands: Commands): Runn
         return entry;
     };
 
-    const runBody = (archetype: Archetype, all: boolean): void => {
+    const runBody = (archetype: Archetype, since: number): void => {
         const { row, cursor } = rowOf(archetype);
-        const filter = filterOf(archetype);
-        for (let index = 0; index < archetype.count; index++) {
-            if (!all && !passes(filter, index, lastRun)) continue;
-            cursor.row = index;
-            system.body(row, context, commands);
-        }
+        forEachPassingRange(ticksOf(archetype, addedIds, "added"), ticksOf(archetype, changedIds, "changed"), since, 0, archetype.count, (start, end) => {
+            for (let index = start; index < end; index++) {
+                cursor.row = index;
+                system.body(row, context, commands);
+            }
+        });
     };
 
-    const runKernel = (kernel: BoundKernel, archetype: Archetype, all: boolean, values: readonly unknown[], args: unknown): void => {
-        const columns = kernel.columnsOf(archetype);
+    const runKernelLocally = (bound: BoundKernel, archetype: Archetype, since: number, values: readonly unknown[], args: unknown, tick: number): void => {
+        const columns = bound.columnsOf(archetype);
+        const run = bound.kernel();
+        forEachPassingRange(ticksOf(archetype, addedIds, "added"), ticksOf(archetype, changedIds, "changed"), since, 0, archetype.count, (start, end) =>
+            run(columns, start, end, values, bound.lookups, bound.description.keys, args, commands, tick));
+    };
+
+    /** Splits an archetype's rows evenly across workers, in chunks of at least `minimumChunk` rows. */
+    const postChunks = (workers: Workers, index: number, archetype: Archetype, since: number, values: readonly unknown[], args: unknown, tick: number): Chunk[] => {
         const { count } = archetype;
-        const call = (start: number, end: number): void =>
-            kernel.kernel(columns, start, end, values, kernel.lookups, kernel.description.keys, args, commands, state.tick);
-        if (all) return call(0, count);
-        const filter = filterOf(archetype);
-        let start = -1;
-        for (let index = 0; index < count; index++) {
-            if (passes(filter, index, lastRun)) {
-                if (start < 0) start = index;
-            }
-            else if (start >= 0) {
-                call(start, index);
-                start = -1;
-            }
+        const { pool } = workers;
+        const size = Math.ceil(Math.ceil(count / Math.min(pool.size, Math.ceil(count / workers.minimumChunk))) / chunkAlignment) * chunkAlignment;
+        const chunks: Chunk[] = [];
+        for (let start = 0; start < count; start += size) {
+            const message = { kind: "run", kernel: index, archetype: archetype.id, start, end: Math.min(count, start + size), tick, lastRun: since, resources: values, args } as const;
+            const worker = workers.next;
+            workers.next = (worker + 1) % pool.size;
+            chunks.push(pool.request(worker, message).then(({ commands, error }) => ({ commands: commands.map(command => fromWorker(state, command)), error })));
         }
-        if (start >= 0) call(start, count);
+        return chunks;
     };
 
-    const execute = (args: unknown): void => {
+    const start = (args: unknown, workers: Workers | null, index: number): readonly Chunk[] => {
         const tick = ++state.tick;
+        holder.buffer = [];
+        const chunks: Chunk[] = [{ commands: holder.buffer }];
         try {
             const resourcesChanged = resourceChanged.some(key => {
                 const { storage, row } = resourceCell(state, key);
                 return storage.changed[row] > lastRun;
             });
-            const all = !filtered || resourcesChanged;
+            /** -1 passes every row. */
+            const since = !filtered || resourcesChanged ? -1 : lastRun;
             context.args = args;
             if (query === undefined) {
-                if (all) system.body(undefined, context, commands);
-                return;
+                if (since < 0) system.body(undefined, context, commands);
+                return chunks;
             }
+            // Only a resource filter, and no resource changed: no row passes.
+            if (since >= 0 && addedIds.length + changedIds.length === 0) return chunks;
             refreshMatches();
-            const values = bound?.description.resources.map(key => {
+            const values = kernel?.description.resources.map(key => {
                 const { storage, row } = resourceCell(state, key);
                 return readCell(storage, row);
             }) ?? [];
             for (const archetype of matches) {
                 if (archetype.count === 0) continue;
-                if (bound !== null) runKernel(bound, archetype, all, values, args);
-                else runBody(archetype, all);
+                if (kernel === null) runBody(archetype, since);
+                else if (workers !== null && archetype.count >= workers.minimumChunk) {
+                    chunks.push(...postChunks(workers, index, archetype, since, values, args, tick));
+                    holder.buffer = [];
+                    chunks.push({ commands: holder.buffer });
+                }
+                else runKernelLocally(kernel, archetype, since, values, args, tick);
             }
+            return chunks;
+        }
+        catch (error) {
+            // Chunks already posted still finish before the sync point.
+            chunks.push({ commands: [], error });
+            return chunks;
         }
         finally {
             lastRun = tick;
         }
     };
 
-    return { execute };
+    const setup = (index: number): KernelSetup | null => kernel === null ? null : {
+        index,
+        url: kernel.description.url,
+        ...kernel.setup,
+        added: addedIds,
+        changed: changedIds,
+    };
+
+    return { kernel, setup, start };
 };

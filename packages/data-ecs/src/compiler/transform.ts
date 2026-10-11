@@ -9,7 +9,13 @@ import { isKernel } from './signature.js';
 export type Parse = (code: string) => Program;
 /** Whether an import specifier, resolved from the module being transformed, is the package's `System` namespace. */
 export type ResolveSystemImport = (source: string) => Promise<boolean>;
-export type TransformResult = { readonly code: string } | { readonly failure: Failure };
+/**
+ * The JS expression for kernel `index`'s module url. `identity` is everything the description and module are
+ * compiled to (the description without its url, plus the module source), so it can version the url.
+ */
+export type KernelUrl = (index: number, identity: string) => string;
+/** `kernels[i]` is the source of kernel `i`'s module, which exports `create`. */
+export type TransformResult = { readonly code: string; readonly kernels: readonly string[] } | { readonly failure: Failure };
 
 type Edit = { readonly start: number; readonly end: number; readonly text: string };
 
@@ -38,10 +44,13 @@ const uniqueName = (code: string, base: string): string => {
 };
 
 /**
- * Wraps each kernel `System.create(declaration, body)` call as `attachKernel(call, description)`.
+ * Wraps each kernel `System.create(declaration, body)` call as `attachKernel(call, description)`, and returns each
+ * kernel's `create` as its own module, referenced by `description.url`.
  * Returns null when the module has no kernels, and a `Failure` when a kernel leaves the subset.
  */
-export const transformKernels = async (code: string, id: string, parse: Parse, resolveSystemImport: ResolveSystemImport): Promise<TransformResult | null> => {
+export const transformKernels = async (
+    code: string, id: string, parse: Parse, resolveSystemImport: ResolveSystemImport, kernelUrl: KernelUrl,
+): Promise<TransformResult | null> => {
     if (!code.includes("kernel") || id.includes("\0")) return null;
     const program = parse(code);
     const locals = await systemLocals(program, resolveSystemImport);
@@ -49,13 +58,17 @@ export const transformKernels = async (code: string, id: string, parse: Parse, r
     const module = moduleScope(program);
     const attach = uniqueName(code, "attachKernel$");
     const edits: Edit[] = [];
+    const kernels: string[] = [];
     const visit = (node: Node, nested: boolean): void => {
         if (node.type === "CallExpression" && isSystemCreate(node, locals)) {
             const [declaration, body] = node.arguments;
             if (declaration?.type === "ObjectExpression" && isKernel(declaration)) {
                 if (nested) fail(node, "kernel systems must be declared at module scope");
                 if (body === undefined || body.type === "SpreadElement") return fail(node, "a kernel needs an inline body");
-                const description = compileKernel(declaration, body, module);
+                const compiled = compileKernel(declaration, body, module);
+                const source = `export const create = ${compiled.create};\n`;
+                const description = compiled.description(kernelUrl(kernels.length, `${compiled.description("")}\n${source}`));
+                kernels.push(source);
                 edits.push({ start: node.start, end: node.end, text: `${attach}(${code.slice(node.start, node.end)}, ${description})` });
                 return;
             }
@@ -73,5 +86,5 @@ export const transformKernels = async (code: string, id: string, parse: Parse, r
     if (edits.length === 0) return null;
     let result = code;
     for (const edit of [...edits].sort((a, b) => b.start - a.start)) result = result.slice(0, edit.start) + edit.text + result.slice(edit.end);
-    return { code: `import { attachKernel as ${attach} } from ${JSON.stringify(attachKernelPath)};\n${result}` };
+    return { code: `import { attachKernel as ${attach} } from ${JSON.stringify(attachKernelPath)};\n${result}`, kernels };
 };

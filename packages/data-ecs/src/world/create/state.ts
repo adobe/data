@@ -31,8 +31,8 @@ export type State = {
     resourceEntity: Entity;
 };
 
-export const createState = (): State => {
-    const memory = createMemory();
+export const createState = (shared?: boolean): State => {
+    const memory = createMemory(shared);
     return {
         memory,
         entities: createEntities(memory),

@@ -1,4 +1,3 @@
-import type { Commands } from '../../system/commands.js';
 import type { Leaf } from '../../system/leaf.js';
 import type { Name } from '../../system/name.js';
 import type { System } from '../../system/system.js';
@@ -6,12 +5,17 @@ import { createRunner, type Runner } from './runner.js';
 import { checkLeaf, createSchedule, isLeaf, type Schedule } from './schedule.js';
 import { idOf, type Key, type State } from './state.js';
 
+/** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */
+export type Registration = { readonly resources: readonly Key[]; readonly kernels: readonly Runner[]; readonly rollback: () => void };
+
 export type Registrar = {
-    /** Validates and records systems and all their members. Returns the resources they use. Throws without recording anything on failure. */
-    readonly register: (systems: readonly System[]) => readonly Key[];
+    /** Validates and records systems and all their members. Throws without recording anything on failure. */
+    readonly register: (systems: readonly System[]) => Registration;
     /** Throws if the system isn't registered. */
     readonly scheduleOf: (system: System) => Schedule;
     readonly runnerOf: (leaf: Leaf) => Runner;
+    /** A kernel runner's index, as workers know it. */
+    readonly kernelIndexOf: (runner: Runner) => number;
     readonly get: (name: Name) => System | null;
 };
 
@@ -35,12 +39,15 @@ const keysOf = (leaf: Leaf): { readonly components: readonly Key[]; readonly res
     return { components, resources: [...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? []] };
 };
 
-export const createRegistrar = (state: State, commands: Commands): Registrar => {
+export const createRegistrar = (state: State): Registrar => {
     const named = new Map<Name, System>();
     const schedules = new Map<System, Schedule>();
     const runners = new Map<Leaf, Runner>();
+    const kernelIndexes = new Map<Runner, number>();
+    /** Never reused, so a rolled-back kernel's index can't alias a worker's loaded kernel. */
+    let nextKernel = 0;
 
-    const register = (roots: readonly System[]): readonly Key[] => {
+    const register = (roots: readonly System[]): Registration => {
         const added = new Map<Name, System>();
         const addedSchedules = new Map<System, Schedule>();
         const addedRunners = new Map<Leaf, Runner>();
@@ -61,14 +68,26 @@ export const createRegistrar = (state: State, commands: Commands): Registrar => 
                         idOf(state, key);
                         resources.add(key);
                     }
-                    addedRunners.set(system, createRunner(state, system, commands));
+                    addedRunners.set(system, createRunner(state, system));
                 }
             }
         }
         for (const [name, system] of added) named.set(name, system);
         for (const [system, schedule] of addedSchedules) schedules.set(system, schedule);
-        for (const [leaf, runner] of addedRunners) runners.set(leaf, runner);
-        return [...resources];
+        const kernels: Runner[] = [];
+        for (const [leaf, runner] of addedRunners) {
+            runners.set(leaf, runner);
+            if (runner.kernel === null) continue;
+            kernelIndexes.set(runner, nextKernel++);
+            kernels.push(runner);
+        }
+        const rollback = (): void => {
+            for (const name of added.keys()) named.delete(name);
+            for (const system of addedSchedules.keys()) schedules.delete(system);
+            for (const leaf of addedRunners.keys()) runners.delete(leaf);
+            for (const runner of kernels) kernelIndexes.delete(runner);
+        };
+        return { resources: [...resources], kernels, rollback };
     };
 
     const scheduleOf = (system: System): Schedule => {
@@ -83,5 +102,5 @@ export const createRegistrar = (state: State, commands: Commands): Registrar => 
         return runner;
     };
 
-    return { register, scheduleOf, runnerOf, get: name => named.get(name) ?? null };
+    return { register, scheduleOf, runnerOf, kernelIndexOf: runner => kernelIndexes.get(runner) ?? -1, get: name => named.get(name) ?? null };
 };

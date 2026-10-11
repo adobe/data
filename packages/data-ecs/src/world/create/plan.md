@@ -48,17 +48,21 @@ All of the runtime lives here. The only export is `create`, which moves here fro
 
 ## 1.2 Workers
 
-- **Pool:** sized from `navigator.hardwareConcurrency` minus the main thread. The worker entry script lives in this folder.
+- **Pool:** sized from `navigator.hardwareConcurrency` minus the main thread, and only with shared memory. The worker entry script (`worker.ts`) lives in this folder. Without cross-origin isolation, arrays use plain `ArrayBuffer`s and everything runs on the main thread, since growing unshared memory would detach every view.
+- **Kernel modules:** the plugin emits each kernel's `create` as its own module, an emitted chunk in builds and a virtual module in dev. The description carries its `url`, and the main thread and every worker `import()` it.
 - **Registration:**
-  - Post the shared `Memory` to each worker.
-  - Each worker runs `import()` on the kernel URLs and caches the kernels by system name.
+  - Post the shared `Memory` to each worker once.
+  - Each worker imports the kernel URLs and keeps the kernels by index, along with their column sources, lookups and keys as component ids.
   - Registration resolves once every worker has finished loading.
+- **Shared state:**
+  - The spawn cursor and free list live in shared memory, and `reserve` is atomic, so workers spawn real entities.
+  - After each sync point, workers receive what changed in the layout: new schemas, new or grown archetypes, and the entity table. Messages are ordered, so a worker always has the layout before the tasks that use it. Shared memory doesn't detach as it grows, so nothing else is reposted.
 - **Dispatch:**
-  - Within a tier, kernels split into chunks of rows. Non-kernel systems run on the main thread at the same time.
-  - Each chunk writes commands into its own buffer in shared memory, and the buffers are merged in (system, chunk) order.
-- **Memory growth:** after a sync point that grew memory, post the new buffer.
-- **Tests:** run the same world with zero workers and with N workers, using an internal option, and require identical results.
-- **`dispose`** terminates workers. Tests prove the workers are released.
+  - Within a tier, kernels start first: an archetype of at least `minimumChunk` rows is split evenly across workers, and smaller ones run on the main thread. Then non-kernel systems run on the main thread while the workers work.
+  - Each worker applies the change filter to its own chunk.
+  - Each system has its own command buffer per run. A worker returns its chunk's commands with its reply, naming components by id. Buffers merge in (tier order, chunk order), so results don't depend on timing. Encoding commands into shared memory is phase 2.
+  - A failing system or chunk rejects the run after its tier finishes. Later tiers are skipped, and the commands so far still apply.
+- **Tests:** a world with zero workers and with three gives identical results, including commands and lookups issued from workers (`workers.browser.test.ts`, chromium). `dispose` terminates every worker.
 
 ## 1.3 WASM
 

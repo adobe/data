@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { parseAst } from 'vite';
-import type { KernelDescription } from '../world/create/kernel.js';
+import type { KernelDescription, KernelModule } from '../world/create/kernel.js';
 import { transformKernels } from './transform.js';
 
 const header = `import { System } from "ecs";
@@ -13,15 +13,22 @@ const delta = "delta";
 const target = "target";
 `;
 
-const transform = (source: string) => transformKernels(`${header}${source}`, "/test.js", parseAst, async specifier => specifier === "ecs");
+const transform = (source: string) => transformKernels(`${header}${source}`, "/test.js", parseAst, async specifier => specifier === "ecs",
+    index => JSON.stringify(`kernel:${index}`));
 
-/** Compiles `source`, which assigns its kernel system to `kernel`, and returns the attached description. */
-const compile = async (source: string): Promise<KernelDescription> => {
+type Compiled = KernelDescription & KernelModule;
+
+/** Compiles `source`, which assigns its kernel system to `kernel`: the attached description plus its kernel module's `create`. */
+const compile = async (source: string): Promise<Compiled> => {
     const result = await transform(source);
     if (result === null || "failure" in result) throw new Error(result === null ? "no kernel" : result.failure.message);
     const module = result.code.split("\n").filter(line => !line.startsWith("import ")).join("\n");
     const evaluate = new Function("System", "attachKernel$", `${module}\nreturn kernel;`);
-    return evaluate({ create: (declaration: unknown, body: unknown) => ({ declaration, body }) }, (_: unknown, description: unknown) => description);
+    const description: KernelDescription = evaluate({ create: (declaration: unknown, body: unknown) => ({ declaration, body }) }, (_: unknown, attached: unknown) => attached);
+    const index = Number(description.url.slice("kernel:".length));
+    const kernelModule: KernelModule = new Function(`${result.kernels[index]?.replace("export const create =", "const create =")}\nreturn { create };`)();
+    expect(kernelModule.create.toString()).not.toMatch(/\b(position|velocity|mass|alive|score|delta|target)\b/);
+    return { ...description, ...kernelModule };
 };
 
 const failure = async (source: string): Promise<string> => {
@@ -41,7 +48,7 @@ type Options = {
 const tick = 7;
 
 /** Runs a kernel over hand-built columns; `fields` maps a component to its leaves by JSON path. */
-const run = (description: KernelDescription, rows: number, fields: Fields, options: Options = {}) => {
+const run = (description: Compiled, rows: number, fields: Fields, options: Options = {}) => {
     const columns = description.columns.map(column => column.kind === "entity" ? Float64Array.from({ length: rows }, (_, row) => 100 + row)
         : column.kind === "changed" ? new Uint32Array(rows)
         : Float64Array.from(fields[String(column.component)]?.[JSON.stringify(column.path)] ?? new Array<number>(rows).fill(0)));
@@ -321,6 +328,6 @@ describe("subset", () => {
 
     test("non-kernel systems and other modules are left untouched", async () => {
         expect(await transform(`const s = System.create({ name: "a", query: { read: [mass] } }, (row) => { const f = () => row; });`)).toBeNull();
-        expect(await transformKernels(`import { System } from "other";\nSystem.create({ name: "a", kernel: true }, () => {});`, "/x.js", parseAst, async () => false)).toBeNull();
+        expect(await transformKernels(`import { System } from "other";\nSystem.create({ name: "a", kernel: true }, () => {});`, "/x.js", parseAst, async () => false, () => "")).toBeNull();
     });
 });

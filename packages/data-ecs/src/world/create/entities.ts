@@ -10,20 +10,30 @@ const generationMask = 0x1FFFFF;
 export const indexOf = (entity: Entity): number => entity >>> 0;
 export const generationOf = (entity: Entity): number => Math.floor(entity / generationScale);
 
+/** `cursor` slots. */
+const taken = 0;
+const freeCount = 1;
+const tableLength = 2;
+
+/** What spawning needs, on the main thread or a worker. All of it lives in shared memory. */
+export type Reservations = {
+    /** `[reservations since the last sync point, free count, table length]`. */
+    readonly cursor: Int32Array;
+    readonly free: Int32Array;
+    readonly generation: Uint32Array;
+};
+
 /**
  * Where each entity index lives. `archetype` is -1 for an index that isn't alive.
- * Spawning reserves through a cursor: first indexes freed before the last sync point, then new indexes past `length`.
+ * Spawning reserves through one atomic cursor: first indexes freed before the last sync point, from the end of `free`,
+ * then new indexes past `length`.
  */
-export type Entities = {
+export type Entities = Reservations & {
     archetype: Int32Array;
     row: Uint32Array;
     generation: Uint32Array;
+    free: Int32Array;
     length: number;
-    readonly free: number[];
-    /** Free indexes taken by reservations since the last sync point, from the end of `free`. */
-    reused: number;
-    /** New indexes reserved since the last sync point, starting at `length`. */
-    created: number;
     /** Indexes freed during the current sync point, reusable after it. */
     readonly released: number[];
 };
@@ -31,38 +41,52 @@ export type Entities = {
 const initialCapacity = 64;
 
 export const createEntities = (memory: Memory): Entities => ({
+    cursor: allocateArray(memory, Int32Array, 4).fill(0),
+    free: allocateArray(memory, Int32Array, initialCapacity),
     archetype: allocateArray(memory, Int32Array, initialCapacity),
     row: allocateArray(memory, Uint32Array, initialCapacity),
     generation: allocateArray(memory, Uint32Array, initialCapacity),
     length: 0,
-    free: [],
-    reused: 0,
-    created: 0,
     released: [],
 });
 
-export const reserve = (entities: Entities): Entity => {
-    if (entities.reused < entities.free.length) {
-        const index = entities.free[entities.free.length - 1 - entities.reused++];
-        return index + entities.generation[index] * generationScale;
+/** Reserves an entity. Safe to call from any thread between sync points. */
+export const reserve = ({ cursor, free, generation }: Reservations): Entity => {
+    const position = Atomics.add(cursor, taken, 1);
+    const available = cursor[freeCount];
+    if (position < available) {
+        const index = free[available - 1 - position];
+        return index + generation[index] * generationScale;
     }
-    return entities.length + entities.created++;
+    return cursor[tableLength] + position - available;
 };
 
+/** Whether any entity was reserved since the last sync point. */
+export const reserved = (entities: Entities): boolean => Atomics.load(entities.cursor, taken) > 0;
+
 /** The index of a live entity, or -1. */
-export const locate = (entities: Entities, entity: Entity): number => {
+export const locate = (entities: Pick<Entities, "archetype" | "generation" | "length">, entity: Entity): number => {
     const index = indexOf(entity);
     return index < entities.length && entities.archetype[index] >= 0 && entities.generation[index] === generationOf(entity) ? index : -1;
 };
 
-/** At the start of a sync point: makes reserved indexes addressable, not yet alive. */
-export const materialize = (memory: Memory, entities: Entities): void => {
-    entities.free.length -= entities.reused;
-    entities.reused = 0;
-    const length = entities.length + entities.created;
+const capacityFor = (current: number, needed: number): number => {
+    let capacity = current;
+    while (capacity < needed) capacity *= 2;
+    return capacity;
+};
+
+/** At the start of a sync point: makes reserved indexes addressable, not yet alive. Returns them. */
+export const materialize = (memory: Memory, entities: Entities): number[] => {
+    const { cursor } = entities;
+    const count = Atomics.exchange(cursor, taken, 0);
+    const reused = Math.min(count, cursor[freeCount]);
+    const reserved = Array.from(entities.free.subarray(cursor[freeCount] - reused, cursor[freeCount]));
+    cursor[freeCount] -= reused;
+    const length = entities.length + count - reused;
+    for (let index = entities.length; index < length; index++) reserved.push(index);
     if (length > entities.archetype.length) {
-        let capacity = entities.archetype.length;
-        while (capacity < length) capacity *= 2;
+        const capacity = capacityFor(entities.archetype.length, length);
         entities.archetype = growArray(memory, entities.archetype, Int32Array, capacity, entities.length);
         entities.row = growArray(memory, entities.row, Uint32Array, capacity, entities.length);
         entities.generation = growArray(memory, entities.generation, Uint32Array, capacity, entities.length);
@@ -70,7 +94,8 @@ export const materialize = (memory: Memory, entities: Entities): void => {
     entities.archetype.fill(-1, entities.length, length);
     entities.generation.fill(0, entities.length, length);
     entities.length = length;
-    entities.created = 0;
+    cursor[tableLength] = length;
+    return reserved;
 };
 
 /** Kills an index; it becomes reusable after the current sync point. */
@@ -80,8 +105,12 @@ export const release = (entities: Entities, index: number): void => {
     entities.released.push(index);
 };
 
-/** At the end of a sync point. */
-export const recycle = (entities: Entities): void => {
-    for (const index of entities.released) entities.free.push(index);
-    entities.released.length = 0;
+/** At the end of a sync point: freed indexes become reservable. */
+export const recycle = (memory: Memory, entities: Entities): void => {
+    const { cursor, released } = entities;
+    const count = cursor[freeCount] + released.length;
+    if (count > entities.free.length) entities.free = growArray(memory, entities.free, Int32Array, capacityFor(entities.free.length, count), cursor[freeCount]);
+    entities.free.set(released, cursor[freeCount]);
+    cursor[freeCount] = count;
+    released.length = 0;
 };

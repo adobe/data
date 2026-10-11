@@ -22,7 +22,7 @@ export type Shape = { readonly component: Key; readonly leaves: readonly Path[] 
  * Processes rows `start` to `end` (exclusive). Change filters are applied by the caller, which passes only passing ranges.
  * - `resources`: values in `KernelDescription.resources` order.
  * - `lookups`: functions in `KernelDescription.lookups` order, returning the lookup's `read` values in declared order, or `null`.
- * - `keys`: `KernelDescription.keys`, so command values can name components without module bindings.
+ * - `keys`: what command values use to name components: `KernelDescription.keys` on the main thread, component ids in workers.
  */
 export type Kernel = (
     columns: readonly (Float64Array | Float32Array | Int32Array | Uint32Array | Uint8Array)[],
@@ -30,7 +30,7 @@ export type Kernel = (
     end: number,
     resources: readonly unknown[],
     lookups: readonly ((entity: Entity) => readonly unknown[] | null)[],
-    keys: readonly Key[],
+    keys: readonly (Key | number)[],
     args: unknown,
     commands: Commands,
     tick: number,
@@ -43,6 +43,12 @@ export type KernelDescription = {
     readonly resources: readonly Key[];
     readonly lookups: readonly string[];
     readonly keys: readonly Key[];
+    /** A module exporting `create`, importable from the main thread and from workers. */
+    readonly url: string;
+};
+
+/** What a kernel module at `KernelDescription.url` exports. */
+export type KernelModule = {
     /** Called once per registration. `booleans[k]` is true when column `k` stores booleans as 0 or 1, so reads convert them. */
     readonly create: (booleans: readonly boolean[]) => Kernel;
 };

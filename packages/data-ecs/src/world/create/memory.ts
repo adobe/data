@@ -8,9 +8,12 @@ const minimumBlockBytes = 64;
 /**
  * A shared `WebAssembly.Memory` arena with power-of-two size classes.
  * Grows only when called from a sync point; views over a shared buffer stay valid as it grows.
+ * Without shared memory (a page that isn't cross-origin isolated), each array gets its own `ArrayBuffer`
+ * instead, since growing unshared memory would detach every view; that world runs on the main thread only.
  */
 export type Memory = {
     readonly memory: WebAssembly.Memory;
+    readonly shared: boolean;
     /** Returns a 64-byte aligned offset of a block with at least `bytes`. Contents are unspecified. */
     readonly allocate: (bytes: number) => number;
     readonly free: (offset: number, bytes: number) => void;
@@ -18,8 +21,11 @@ export type Memory = {
 
 const sizeClass = (bytes: number): number => Math.max(0, Math.ceil(Math.log2(Math.max(bytes, minimumBlockBytes) / minimumBlockBytes)));
 
-export const createMemory = (): Memory => {
-    const memory = new WebAssembly.Memory({ initial: 1, maximum: maximumPages, shared: true });
+/** Shared memory is available in node and in cross-origin isolated pages. */
+export const sharedMemoryAvailable = (): boolean => globalThis.crossOriginIsolated !== false;
+
+export const createMemory = (shared = sharedMemoryAvailable()): Memory => {
+    const memory = new WebAssembly.Memory({ initial: 1, maximum: shared ? maximumPages : 1, shared });
     const freeBlocks: number[][] = [];
     let top = 0;
 
@@ -38,5 +44,5 @@ export const createMemory = (): Memory => {
         (freeBlocks[sizeClass(bytes)] ??= []).push(offset);
     };
 
-    return { memory, allocate, free };
+    return { memory, shared, allocate, free };
 };

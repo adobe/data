@@ -30,6 +30,17 @@ type Node = {
     readonly write: (fields: readonly TypedArray[], row: number, value: unknown) => void;
 };
 
+/** A view of a scalar leaf's column at a byte offset, for a worker that shares the memory. */
+export const leafView = (buffer: ArrayBufferLike, scalar: Scalar, offset: number, length: number): TypedArray => {
+    switch (scalar) {
+        case "f32": return new Float32Array(buffer, offset, length);
+        case "f64": return new Float64Array(buffer, offset, length);
+        case "i32": return new Int32Array(buffer, offset, length);
+        case "u32": return new Uint32Array(buffer, offset, length);
+        case "boolean": return new Uint8Array(buffer, offset, length);
+    }
+};
+
 /** A typed array for a scalar leaf over a new arena block. */
 export const allocateLeaf = (memory: Memory, scalar: Scalar, length: number): TypedArray => {
     switch (scalar) {

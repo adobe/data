@@ -4,12 +4,14 @@ import type { Resource } from '../../resource/resource.js';
 import type { System } from '../../system/system.js';
 import type { World } from '../world.js';
 import { readCell } from './cells.js';
-import { createCommands } from './commands.js';
+import { execute, type ExecuteContext } from './execute.js';
+import { sharedMemoryAvailable } from './memory.js';
+import { createPool, defaultWorkerCount, type Pool } from './pool.js';
+import { createPublisher } from './publish.js';
 import { count, readEntity, select } from './reads.js';
-import { createRegistrar } from './register.js';
+import { createRegistrar, type Registration } from './register.js';
 import { defaultOf, ensureResources, findResource } from './resources.js';
 import { createState, type Key } from './state.js';
-import { synchronize } from './synchronize.js';
 
 type Queue = <T>(task: () => T | Promise<T>) => Promise<T>;
 
@@ -23,12 +25,52 @@ const createQueue = (): Queue => {
     };
 };
 
-const createWorld = (): World => {
-    const state = createState();
-    const commands = createCommands(state);
-    const registrar = createRegistrar(state, commands);
+/** Internal: tests choose the worker count and chunk size; apps get the platform default. */
+export type WorldOptions = { readonly workers?: number; readonly minimumChunk?: number };
+
+/** Rows below which a kernel's archetype runs on the main thread rather than paying for a round trip. */
+const defaultMinimumChunk = 16384;
+
+export const createWorld = (options: WorldOptions = {}): World => {
+    const shared = sharedMemoryAvailable();
+    const state = createState(shared);
+    const registrar = createRegistrar(state);
     const enqueue = createQueue();
+    const workerCount = shared ? options.workers ?? defaultWorkerCount(shared) : 0;
+    /** Workers start with the first kernel, so worlds without kernels never spawn any. */
+    let pool: Pool | null = null;
+    const context: { -readonly [K in keyof ExecuteContext]: ExecuteContext[K] } = {
+        state, runnerOf: registrar.runnerOf, kernelIndexOf: registrar.kernelIndexOf, workers: null, publish: () => {},
+    };
     let disposed = false;
+
+    const startPool = (): Pool => {
+        const started = createPool(workerCount, state.memory.memory);
+        pool = started;
+        context.workers = { pool: started, minimumChunk: options.minimumChunk ?? defaultMinimumChunk, next: 0 };
+        context.publish = createPublisher(state, started);
+        return started;
+    };
+
+    /** Adds resources, then loads kernels on the main thread and in every worker. Undoes the registration if loading fails. */
+    const complete = async (registration: Registration): Promise<void> => {
+        const { resources, kernels } = registration;
+        try {
+            ensureResources(state, resources);
+            await Promise.all(kernels.map(runner => runner.kernel?.load()));
+            if (workerCount === 0 || kernels.length === 0) return;
+            const workers = pool ?? startPool();
+            context.publish();
+            const setups = kernels.flatMap(runner => runner.setup(registrar.kernelIndexOf(runner)) ?? []);
+            const results = await Promise.all(Array.from({ length: workers.size }, (_, worker) => workers.request(worker, { kind: "kernels", kernels: setups })));
+            const failed = results.find(result => result.error !== undefined);
+            if (failed?.error !== undefined) throw failed.error;
+        }
+        catch (error) {
+            registration.rollback();
+            throw error;
+        }
+    };
 
     const checkLive = (): void => {
         if (disposed) throw new Error("The world is disposed.");
@@ -45,27 +87,20 @@ const createWorld = (): World => {
             checkLive();
             const schedule = registrar.scheduleOf(system);
             const [value]: readonly unknown[] = args;
-            return enqueue(() => {
-                try {
-                    for (const tier of schedule.tiers) for (const leaf of tier) registrar.runnerOf(leaf).execute(value);
-                }
-                finally {
-                    synchronize(state);
-                }
-            });
+            return enqueue(() => execute(context, schedule, value));
         },
         dispose: () => {
             disposed = true;
-            return enqueue(() => {});
+            return enqueue(() => pool?.terminate());
         },
         [Symbol.asyncDispose]: () => world.dispose(),
         systems: {
             register: (...systems: readonly System[]) => {
                 try {
                     checkLive();
-                    const resources = registrar.register(systems);
-                    return enqueue(() => {
-                        ensureResources(state, resources);
+                    const registration = registrar.register(systems);
+                    return enqueue(async () => {
+                        await complete(registration);
                         return world;
                     });
                 }

@@ -1,33 +1,31 @@
-import type { Entity } from '../../entity/entity.js';
 import type { Commands } from '../../system/commands.js';
 import { reserve } from './entities.js';
-import { idOf, type State } from './state.js';
+import { idOf, type Command, type State } from './state.js';
 
-/** Commands that queue for the next sync point. Unregistered components throw here, inside the issuing system. Commands can't touch the resource entity. */
-export const createCommands = (state: State): Commands => {
+/** Commands that queue for the next sync point. Unregistered components throw here, inside the issuing system. */
+export const createCommands = (state: State, target: { readonly buffer: Command[] }): Commands => {
     /** Values are immutable by convention, so commands hold them without copying. */
     const check = (values: object): object => {
         for (const key of Reflect.ownKeys(values)) idOf(state, key);
         return values;
     };
-    const user = (entity: Entity): boolean => entity !== state.resourceEntity;
     return {
         spawn: values => {
             const copy = check(values);
             const entity = reserve(state.entities);
-            state.commands.push({ kind: "spawn", entity, values: copy });
+            target.buffer.push({ kind: "spawn", entity, values: copy });
             return entity;
         },
         despawn: entity => {
-            if (user(entity)) state.commands.push({ kind: "despawn", entity });
+            target.buffer.push({ kind: "despawn", entity });
         },
         add: (entity, values) => {
             const copy = check(values);
-            if (user(entity)) state.commands.push({ kind: "add", entity, values: copy });
+            target.buffer.push({ kind: "add", entity, values: copy });
         },
         remove: (entity, ...components) => {
             for (const key of components) idOf(state, key);
-            if (user(entity)) state.commands.push({ kind: "remove", entity, components: [...components] });
+            target.buffer.push({ kind: "remove", entity, components: [...components] });
         },
     };
 };

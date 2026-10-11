@@ -1,7 +1,7 @@
 import type { Entity } from '../../entity/entity.js';
 import { copyCell, insertRow, swapRemove, type Archetype } from './archetype.js';
 import { writeCell } from './cells.js';
-import { indexOf, locate, materialize, recycle, release } from './entities.js';
+import { indexOf, locate, materialize, recycle, release, reserved } from './entities.js';
 import { archetypeOf, entriesOf, idOf, type Command, type State } from './state.js';
 
 /** One entity's net change over a whole sync point. */
@@ -116,11 +116,13 @@ const applyPending = (state: State, pending: Pending, tick: number): void => {
 
 /** Applies every pending command as one sync point with a new tick. */
 export const synchronize = (state: State): void => {
-    if (state.commands.length === 0 && state.entities.created === 0 && state.entities.reused === 0) return;
-    materialize(state.memory, state.entities);
+    if (state.commands.length === 0 && !reserved(state.entities)) return;
+    const reservations = materialize(state.memory, state.entities);
     const plan = planOf(state, state.commands);
     state.commands.length = 0;
     const tick = ++state.tick;
     for (const pending of plan.values()) applyPending(state, pending, tick);
-    recycle(state.entities);
+    // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its index.
+    for (const index of reservations) if (!plan.has(index)) release(state.entities, index);
+    recycle(state.memory, state.entities);
 };

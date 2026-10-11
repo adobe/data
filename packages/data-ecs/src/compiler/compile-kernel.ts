@@ -14,10 +14,13 @@ import type { Value } from './value.js';
 const parameterValues: readonly Value[] = [{ kind: "row" }, { kind: "context" }, { kind: "commands" }];
 
 /**
- * Compiles one kernel system to the source of its `KernelDescription`. Keys in the description are the
- * declaration's identifiers; `create` references no module bindings.
+ * One compiled kernel: `description(url)` is the source of its `KernelDescription`, with keys as the declaration's
+ * identifiers; `create` is the source of `KernelModule.create`, which references no module bindings and uses
+ * `keys[k]` only as opaque property keys.
  */
-export const compileKernel = (declaration: ObjectExpression, body: Node, module: ModuleScope): string => {
+export type CompiledKernel = { readonly description: (url: string) => string; readonly create: string };
+
+export const compileKernel = (declaration: ObjectExpression, body: Node, module: ModuleScope): CompiledKernel => {
     if (body.type !== "ArrowFunctionExpression" && body.type !== "FunctionExpression") {
         return fail(body, "a kernel body must be an inline function");
     }
@@ -43,20 +46,25 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         ...lookups.map((_, index) => `const l${index} = lookups[${index}];`),
         ...keys.map((_, index) => `const k${index} = keys[${index}];`),
     ];
-    return [
-        "{",
-        `columns: [${columns.join(", ")}],`,
-        `shapes: [${[...unit.shapes].join(", ")}],`,
-        `resources: [${resources.join(", ")}],`,
-        `lookups: [${lookups.map(lookup => JSON.stringify(lookup.name)).join(", ")}],`,
-        `keys: [${keys.join(", ")}],`,
-        "create: (booleans) => (columns, start, end, resources, lookups, keys, args, commands, tick) => {",
-        ...locals,
-        preludeCode,
-        `${rowLabel}: for (let i = start; i < end; i++) {`,
-        kernel,
-        "}",
-        "}",
-        "}",
-    ].filter(line => line !== "").join("\n");
+    return {
+        description: url => [
+            "{",
+            `columns: [${columns.join(", ")}],`,
+            `shapes: [${[...unit.shapes].join(", ")}],`,
+            `resources: [${resources.join(", ")}],`,
+            `lookups: [${lookups.map(lookup => JSON.stringify(lookup.name)).join(", ")}],`,
+            `keys: [${keys.join(", ")}],`,
+            `url: ${url},`,
+            "}",
+        ].join("\n"),
+        create: [
+            "(booleans) => (columns, start, end, resources, lookups, keys, args, commands, tick) => {",
+            ...locals,
+            preludeCode,
+            `${rowLabel}: for (let i = start; i < end; i++) {`,
+            kernel,
+            "}",
+            "}",
+        ].filter(line => line !== "").join("\n"),
+    };
 };

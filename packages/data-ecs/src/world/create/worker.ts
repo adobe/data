@@ -3,7 +3,8 @@ import { locate, reserve, type Reservations } from './entities.js';
 import type { Kernel, KernelModule } from './kernel.js';
 import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../layout/layout.js';
 import { emptyViews } from './arrays.js';
-import { controlWords, counterCount, done, epoch, posted, ringSize, signal, taskFields, taskWords, type ArchetypeLayout, type EntitiesLayout, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
+import { claimPiece } from './claims.js';
+import { controlWords, done, epoch, lineWords, posted, ringSize, signal, taskFields, taskWords, type ArchetypeLayout, type EntitiesLayout, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
 import { createBuffer, createKernelCommands, type CommandBuffer } from './buffer.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
@@ -156,11 +157,14 @@ const load = async (setups: readonly KernelSetup[]): Promise<void> => {
     setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset)), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup) }));
 };
 
+/** A split's claims, as this worker sees them. */
+type Claims = { readonly words: Int32Array; readonly grain: number; readonly self: number; readonly participants: number };
+
 /**
  * Runs a loaded kernel's WASM over rows `start` to `end` of an archetype; it applies the change filters itself.
- * With a claim counter, runs only the `grain`-row pieces this worker claims from it.
+ * With claims, runs only the `grain`-row pieces this worker claims.
  */
-const runWasm = (loaded: LoadedKernel, archetypeId: number, start: number, end: number, tick: number, lastRun: number, scalars: readonly number[], claims: Int32Array | null, grain: number): void => {
+const runWasm = (loaded: LoadedKernel, archetypeId: number, start: number, end: number, tick: number, lastRun: number, scalars: readonly number[], claims: Claims | null): void => {
     const { wasm } = loaded;
     if (wasm === null) throw new Error(`Worker kernel ${loaded.setup.index} has no WASM.`);
     const archetype = archetypes.get(archetypeId);
@@ -173,8 +177,11 @@ const runWasm = (loaded: LoadedKernel, archetypeId: number, start: number, end: 
         ...scalars,
     ];
     if (claims === null) return void wasm(start, end, tick, lastRun, ...parameters);
-    for (let from = start + Atomics.add(claims, 0, 1) * grain; from < end; from = start + Atomics.add(claims, 0, 1) * grain)
+    const { words, grain, self, participants } = claims;
+    for (let piece = claimPiece(words, self, participants); piece >= 0; piece = claimPiece(words, self, participants)) {
+        const from = start + piece * grain;
         wasm(from, Math.min(end, from + grain), tick, lastRun, ...parameters);
+    }
 };
 
 /**
@@ -186,7 +193,6 @@ const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
     const control = new Int32Array(buffer, message.control + message.worker * controlWords * 4, controlWords);
     const statuses = new Int32Array(buffer, message.statuses + message.worker * ringSize * 4, ringSize);
     const payloads = new Float64Array(buffer, message.payloads + message.worker * ringSize * taskWords * 8, ringSize * taskWords);
-    const counters = new Int32Array(buffer, message.counters, counterCount);
     let next = Atomics.load(control, done);
     for (;;) {
         const seen = Atomics.load(control, signal);
@@ -199,10 +205,11 @@ const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
             try {
                 const loaded = kernels.get(payloads[base]);
                 if (loaded === undefined || broken !== null) throw new Error("Worker can't run this task.");
-                const counter = payloads[base + 8];
+                const line = payloads[base + 8];
+                const participants = payloads[base + 11];
                 runWasm(loaded, payloads[base + 1], payloads[base + 2], payloads[base + 3], payloads[base + 4], payloads[base + 5],
                     Array.from(payloads.subarray(base + taskFields, base + taskFields + payloads[base + 7])),
-                    counter < 0 ? null : counters.subarray(counter, counter + 1), payloads[base + 9]);
+                    line < 0 ? null : { words: new Int32Array(buffer, message.claims + line * lineWords * 4, participants * lineWords), grain: payloads[base + 9], self: payloads[base + 10], participants });
             }
             catch {
                 status = -status;

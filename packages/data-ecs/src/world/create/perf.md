@@ -1,6 +1,6 @@
 # Performance
 
-Measured on an Apple M1 Max (8 performance cores, 2 efficiency cores). Node numbers come from `pnpm perf`, a Vite bundle run on plain node; vitest's node transform turns imported bindings into getters and roughly doubles JS-heavy costs, so it is not used for comparisons. Browser numbers come from `pnpm test:perf` in chromium with real workers, where timers are quantized to 5 µs. Every number is the fastest run within a time budget.
+Measured on an Apple M1 Max (8 performance cores, 2 efficiency cores). Node numbers come from `pnpm perf`, a Vite bundle run on plain node; vitest's node transform turns imported bindings into getters and roughly doubles JS-heavy costs, so it is not used for comparisons. Browser numbers come from `pnpm test:perf` in chromium with real workers, where timers are quantized to 5 µs; "framed" numbers run once per animation frame and report the median and 90th percentile, which vary up to 2× between sessions. Every number is the fastest run within a time budget.
 
 ## Results
 
@@ -75,6 +75,8 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 
 **Claimed splits.** Workers claim pieces of a WASM kernel's rows from a shared counter instead of taking even shares, so the slowest core no longer sets the finish time: on the default pool, move 0.055 → 0.030 ms, follow 0.15 → 0.075 ms, chain 0.16 → 0.115 ms, sparse changed 0.30 → ~0.22 ms.
 
+**Affinity claims.** Each worker owns a home range of a split's pieces, the same one every run, takes them from the front, and steals from the back of the fullest other range once its own is empty. Pieces stay on the same worker from one tier to the next 75% of the time instead of 13% (no better than chance), so tier N+1 finds its rows in the cache tier N warmed: chain 6×1M on workers 0.79–0.87 → 0.48–0.52 ms, per-frame median 1.3–3.9 → 1.1–1.3 ms, per tier 230 → 170 µs. Control words, claim words and status slots each take whole 128-byte cache lines, so a store by one thread doesn't invalidate the line another polls.
+
 **Main thread.** Compiled `select` predicates: 18 → ~3.5 ms. Row getters chosen once, and tuple reads and writes in one loop: 50 systems 3.2 → 1.63 ms (vitest).
 - Accessor rows each get their own prototype. Built from `{}`, every row after the first that defines an accessor with another getter went to V8 dictionary properties. One row per set of reads and writes, shared across systems and archetypes and rebound per pass, so a body sees one shape; f32-lane tuples read as array literals, and scalars and f32 lanes written directly. Resource cells in a context are resolved once per run. On node: 50 systems 1.1 → 0.45 ms, churn 55 → 32 ms, retag 74 → 59 ms; 50 distinct bodies over three row shapes 1.75 → 0.53 ms; two writing systems over 100K 19.5 → 1.9 ms; 20 systems reading a resource per row 1.26 → 0.22 ms.
 
@@ -102,10 +104,14 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 
 - **U32 ticks:** no measurable gain on the non-sparse 1M benchmarks, 10% on uniformly sparse filters, and change filters go wrong past 2³² ticks unless a clamp pass is added. With ticks kept only where observed, it would help only observed components.
 - **Commands encoded from WASM:** emit 1M 11.2 → 9.2 ms on the main thread and no gain on workers, for about 800 lines across the compiler, code generation, runner, pool, worker and sync point. The sync point is most of emit's time.
-- **Workers spinning 0.15 ms instead of 0.05 ms before waiting:** chain 6×1M on workers 0.83 → 0.525 ms, but each worker burns up to 0.15 ms of a core after every task, and the right interval depends on the machine.
+- **Workers spinning 0.15 ms instead of 0.05 ms before waiting:** chain 6×1M on workers 0.83 → 0.525 ms back to back, but only because it bridges the gap between consecutive benchmark runs; per frame it measured the same.
+- **Holding workers spinning while a later tier of the run has kernels,** with no time constant: per frame the same, and move's best case on workers 0.020 → 0.040 ms. Traces showed the 0.05 ms spin already keeps workers awake across tiers (each tier is seen within about 5 µs).
+- **The main thread claiming pieces too:** no gain; workers that wake late are slow at first, so the main thread does about what it would alone.
 - **A loop per main-thread system** (eval or emitted by the plugin): 5–10% on top of fast-property rows.
 
 ## Next
 
-- Chain on workers: with faster kernels, tiers are short enough that workers sleep between them and pay a wake-up per tier (0.725 → 0.80 ms).
+- Single-tier runs on workers: workers asleep at the start of a run take 60–135 µs to see the task, and 2–4 of 9 find nothing left to claim.
+- Idle cores clock down: after 5 ms idle, even the main thread runs move 2–4× slower per frame, and keeping one other core busy removes most of it, at 10M too. That's the OS's power policy, not something dispatch can avoid without spending power.
+- Slower cores lose their home ranges to thieves every tier (pieces per worker range from about 7,000 to 3,600 over a run).
 - Emit and other command-heavy kernels: the sync point dominates.

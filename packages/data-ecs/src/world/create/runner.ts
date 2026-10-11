@@ -131,8 +131,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const minimumFor = (workers: Workers): number => isFast(kernel) ? workers.minimumChunk / 2 : workers.minimumChunk;
 
     /**
-     * Splits an archetype's rows across workers, at least `minimumChunk` rows each. WASM kernels claim pieces from a
-     * shared counter, so cores of different speeds finish together; others take even shares.
+     * Splits an archetype's rows across workers, at least `minimumChunk` rows each. WASM kernels claim pieces, from
+     * home ranges and then from each other, so cores of different speeds finish together; others take even shares.
      */
     const postChunks = (workers: Workers, index: number, archetype: Archetype, since: number, values: readonly unknown[], args: unknown, tick: number): Chunk[] => {
         const { count } = archetype;
@@ -144,8 +144,11 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         const aligned = (rows: number): number => Math.ceil(rows / chunkAlignment) * chunkAlignment;
         // WASM chunks go through shared memory. The main thread doesn't take one: measured, it finishes later than an idle worker.
         if (fast) {
-            const first = workers.next;
-            workers.next = (first + participants) % pool.size;
+            // A split over every worker maps home ranges the same way each run, so each worker gets back the rows it
+            // last ran and finds them in its cache; smaller splits rotate, so small archetypes don't queue on one worker.
+            const full = participants === pool.size;
+            const first = full ? 0 : workers.next;
+            if (!full) workers.next = (first + participants) % pool.size;
             const grain = aligned(Math.ceil(count / (participants * claimsPerWorker)));
             return pool.claimed(first, participants, { kernel: index, archetype: archetype.id, start: 0, end: count, tick, lastRun: since, scalars }, grain);
         }

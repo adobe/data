@@ -13,7 +13,8 @@
     "dev": "tsc -b -w --preserveWatchOutput",
     "typecheck": "tsc -b",
     "test": "pnpm exec playwright install chromium && vitest --run",
-    "test:perf": "pnpm exec playwright install chromium && vitest --run --workspace vitest.perf.workspace.ts"
+    "test:perf": "pnpm exec playwright install chromium && vitest --run --workspace vitest.perf.workspace.ts",
+    "perf": "vite build --config vite.perf.config.ts --logLevel warn && node dist/perf/run.js"
   },
   "devDependencies": {
     "@types/estree": "^1.0.5",

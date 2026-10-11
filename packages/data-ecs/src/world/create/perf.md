@@ -29,6 +29,21 @@ Chromium:
 | chain 6×100K | 0.67 → 0.405 ms | 0.455 → 0.115 ms |
 | sparse changed 1M | 4.78 → 1.095 ms | 0.74 → 0.19–0.25 ms |
 
+At 1M entities, against commit `d6373560` (claimed splits in place):
+
+| Benchmark | Before | Now |
+|---|---|---|
+| create 1M | 325 ms | 296–316 ms |
+| churn 1M | 54 ms | 30 ms |
+| retag 1M | 79 ms | 48.5 ms |
+| emit 1M | 11.2 ms | 10.6 ms |
+| move 1M | 0.177 ms | 0.091 ms |
+| chain 6×1M | 3.42 ms | 1.51 ms |
+| main thread 50×1K | 1.65 ms | 0.48 ms |
+| follow 1M, select 1M, sparse changed 1M | | unchanged |
+| chromium move 1M, main / workers | 0.20 / 0.030 ms | 0.095 / 0.020 ms |
+| chromium chain 6×1M, main / workers | 4.47 / 0.725 ms | 1.72 / 0.80 ms |
+
 The adobe/data ECS runs move 1M in 0.09 ms, single threaded with WASM SIMD, and creates 100K in 5.8 ms by inserting directly, with no command buffer or sync point.
 
 ## Where the gains came from
@@ -53,6 +68,7 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 - Full 16-byte loads for three-lane rows: move 0.262 → 0.204 ms.
 - Four rows of whole interleaved elements as full vectors (three for tight vec3) instead of one partial vector per row: move 0.177 → 0.095 ms, chain 6×1M 3.5 → 1.55 ms, chromium main thread move 0.200 → 0.105 ms.
 - `changed` stamps only for observed components: move 0.204 → 0.175 ms, chain 0.47 → 0.344 ms.
+- Tick columns only for components some system filters on, started at the current tick when the first one registers: create 1M 325 → 296 ms, retag 1M 79 → 68 ms, churn 1M 54 → 50 ms. For the particle fixture, ticks were 80 of 112 bytes per entity.
 - Exact integer `%` in WASM instead of a JS import.
 
 **Dispatch.** A task ring per worker in shared memory with `Atomics.notify`, and fast kernels split at half the minimum chunk: chain on workers 0.485 → 0.255 ms, then 0.16 ms with the kernel gains.
@@ -82,8 +98,14 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **At 10M the work is memory bound.** 2.5M rows read 24 bytes and write 12, about 90 MB per run; 0.5 ms is about 180 GB/s, near the chip's CPU bandwidth. It stops improving after 4 to 6 workers, and more entities would not change that.
 - **Single-threaded move matches the adobe/data ECS** (0.095 ms against 0.09 ms): four tight vec3 rows are three full vectors, as its separate x, y and z arrays are.
 
+## Tried and not kept
+
+- **U32 ticks:** no measurable gain on the non-sparse 1M benchmarks, 10% on uniformly sparse filters, and change filters go wrong past 2³² ticks unless a clamp pass is added. With ticks kept only where observed, it would help only observed components.
+- **Commands encoded from WASM:** emit 1M 11.2 → 9.2 ms on the main thread and no gain on workers, for about 800 lines across the compiler, code generation, runner, pool, worker and sync point. The sync point is most of emit's time.
+- **Workers spinning 0.15 ms instead of 0.05 ms before waiting:** chain 6×1M on workers 0.83 → 0.525 ms, but each worker burns up to 0.15 ms of a core after every task, and the right interval depends on the machine.
+- **A loop per main-thread system** (eval or emitted by the plugin): 5–10% on top of fast-property rows.
+
 ## Next
 
-- U32 ticks: uniformly sparse change filters are bound by memory bandwidth.
-- Compiled main-thread systems: the body call site is shared by every system, and tuple reads allocate unless inlined. A loop per system (eval or emitted by the plugin) measured only 5–10% faster.
-- Commands encoded from WASM: kernels that issue commands still run as JS.
+- Chain on workers: with faster kernels, tiers are short enough that workers sleep between them and pay a wake-up per tier (0.725 → 0.80 ms).
+- Emit and other command-heavy kernels: the sync point dominates.

@@ -203,7 +203,7 @@ Measured with `pnpm perf` (benchmarks bundled as in production, on plain node) a
 - **Commands:** typed parallel arrays with explicit counts, reused per system across runs; ids resolved when issued. Kernels issue commands through `begin`/`value`/`component` by key index, allocating nothing. Workers post the same buffers back.
 - **Sync point:** plans straight over the queued buffers into reusable typed arrays, through cached archetype edges (arrays by component id), an eight-shape spawn cache, and per-pair move lists; archetypes grow once per sync point; common layouts are written inline rather than through layout closures.
 - **Chunk ticks:** every storage keeps the newest `added`/`changed` tick per 1024-row chunk, stamped with every row tick, so change filters skip unchanged chunks. Stamps every row reaches are made once per kernel call, per chunk.
-- **Ticks only where observed:** kernels drop `changed` stamps for components no registered system filters on; registering an observer reloads the affected kernels. It's exact: a new observer starts with `lastRun = 0` and sees every row once, and the sync point keeps maintaining ticks.
+- **Ticks only where observed:** a component has tick columns only once some registered system filters on its `added` or `changed`, and resources always do; until then nothing allocates or stamps them. Columns start at the current tick, so a new observer, starting with `lastRun = 0`, sees every row once. Kernels also drop `changed` stamps for components no system filters on with `changed`; registering an observer reloads the affected kernels.
 - **Change filters inside WASM kernels:** one call per archetype or worker chunk; chunks and rows are skipped in WASM.
 - **Lookups in WASM kernels:** a directory per lookup in shared memory (per archetype: a match flag and column addresses), rebuilt at sync points; finds check index and generation against the shared entity table.
 - **Dispatch:** WASM chunks go through a per-worker task ring in shared memory, signalled with `Atomics.notify`; workers stay in that window across runs until a message must reach them.
@@ -213,9 +213,9 @@ Measured with `pnpm perf` (benchmarks bundled as in production, on plain node) a
 
 ### Next
 
-- **U32 ticks.** Halves tick memory and the change-filter scan's bandwidth, which bounds uniformly sparse filters. Comparisons use wrapping subtraction relative to the current tick, with a periodic clamp pass at a sync point, like Bevy's `check_change_ticks`, covering cell, `lastRun` and chunk ticks.
+- **U32 ticks,** if tick bandwidth matters for observed components. Halves tick memory and the change-filter scan's bandwidth, which bounds uniformly sparse filters. Comparisons use wrapping subtraction relative to the current tick, with a periodic clamp pass at a sync point, like Bevy's `check_change_ticks`, covering cell, `lastRun` and chunk ticks.
 - **Compiled main-thread systems.** Accessor rows copy tuples out on every read and share one megamorphic body call site; compiling main-thread systems (or a JS-only kernel mode) would remove both. A per-system loop alone measured 5–10%.
-- **WASM commands.** Encode kernel commands into a shared-memory buffer from WASM, so command-issuing kernels get WASM and the fast dispatch path.
+- **WASM commands.** Encode kernel commands into a shared-memory buffer from WASM, so command-issuing kernels get WASM and the fast dispatch path. Measured at 18% on emit for a large change while the sync point dominates, so it waits for a faster sync point.
 - **Per-archetype query-match bitsets.** Compute stop/start for each move as `match(from) & ~match(to)` in O(Q/32). Memory scales with archetypes, not archetype-graph edges.
 - **Per-archetype rule-closure cache.**
 - **Main-thread fast path.** Main-thread structural changes may skip the command buffer, or be applied early, only when no system or finalizer could observe the difference before the next sync point.

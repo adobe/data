@@ -4,6 +4,7 @@ import type { Entity } from "../../entity/entity.js";
 import { Resource } from "../../resource/resource.js";
 import { System } from "../../system/system.js";
 import { World } from "../world.js";
+import { attachKernel } from "./attach-kernel.js";
 
 type Vec2 = readonly [number, number];
 
@@ -37,6 +38,9 @@ declare module "../../system/types.js" {
         "createTest/main": true;
         "createTest/fail": true;
         "createTest/edit": true;
+        "createTest/count": true;
+        "createTest/probe": true;
+        "createTest/missing": true;
     }
 }
 
@@ -72,6 +76,12 @@ const watch = System.create({
 }, (_, context) => {
     context[seen] += 1;
 });
+
+/** A kernel whose module can't be imported. */
+const missing = attachKernel(
+    System.create({ name: "createTest/missing", kernel: true, query: { read: [velocity] } }, () => {}),
+    { columns: [], shapes: [], resources: [], lookups: [], keys: [], url: "/@missing/kernel.js" },
+);
 
 const main = System.composite({ name: "createTest/main", systems: [spawn, move, watch] });
 
@@ -185,6 +195,46 @@ describe("World.create", () => {
         const world = await World.create({ systems: [fail] });
         await expect(world.run(fail)).rejects.toThrow("boom");
         expect(world.query.count([velocity])).toBe(1);
+    });
+
+    it("skips every row when a system's only filter is an unchanged resource", async () => {
+        const count = System.create({
+            name: "createTest/count",
+            query: { read: [velocity] },
+            resources: { read: [seen], write: [seen], changed: [spawnCount] },
+        }, (_, context) => {
+            context[seen] += 1;
+        });
+        const world = await World.create({ systems: [spawn, count] });
+        await world.run(spawn);
+        await world.run(count);
+        expect(world.read.resource(seen)).toBe(3);
+        await world.run(count);
+        expect(world.read.resource(seen)).toBe(3);
+    });
+
+    it("doesn't let a lookup match the resource entity", async () => {
+        let found: object | null | undefined;
+        const probe = System.create({ name: "createTest/probe", lookup: { any: {} }, resources: { read: [seen] } }, (_, { any }) => {
+            // The resource entity is entity 0, since registration reserves it first.
+            found = any(0);
+        });
+        const world = await World.create({ systems: [probe] });
+        await world.run(probe);
+        expect(found).toBeNull();
+    });
+
+    it("undoes a registration whose kernels fail to load", async () => {
+        const world = World.create();
+        await expect(world.systems.register(missing)).rejects.toThrow();
+        expect(() => world.run(missing)).toThrow("isn't registered");
+        expect(world.systems.get("createTest/missing")).toBeNull();
+    });
+
+    it("refuses runs as soon as dispose is called", () => {
+        const world = World.create();
+        void world.dispose();
+        expect(() => world.run(main)).toThrow("disposed");
     });
 
     it("throws for an unregistered system and after dispose", async () => {

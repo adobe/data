@@ -36,7 +36,7 @@ export const writeF64 = 4;
 export const writeF32Lanes = 5;
 export const writeGeneral = 0;
 
-const writeOf = (layout: Layout): { readonly write: number; readonly unitStride: number; readonly unitOffset: number; readonly lanes: number } => {
+export const writeOf = (layout: Layout): { readonly write: number; readonly unitStride: number; readonly unitOffset: number; readonly lanes: number } => {
     const general = { write: writeGeneral, unitStride: 0, unitOffset: 0, lanes: 0 };
     if (layout.kind !== "linear") return general;
     const [first] = layout.leaves;

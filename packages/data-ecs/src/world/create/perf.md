@@ -60,6 +60,7 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 **Claimed splits.** Workers claim pieces of a WASM kernel's rows from a shared counter instead of taking even shares, so the slowest core no longer sets the finish time: on the default pool, move 0.055 → 0.030 ms, follow 0.15 → 0.075 ms, chain 0.16 → 0.115 ms, sparse changed 0.30 → ~0.22 ms.
 
 **Main thread.** Compiled `select` predicates: 18 → ~3.5 ms. Row getters chosen once, and tuple reads and writes in one loop: 50 systems 3.2 → 1.63 ms (vitest).
+- Accessor rows each get their own prototype. Built from `{}`, every row after the first that defines an accessor with another getter went to V8 dictionary properties. One row per set of reads and writes, shared across systems and archetypes and rebound per pass, so a body sees one shape; f32-lane tuples read as array literals, and scalars and f32 lanes written directly. Resource cells in a context are resolved once per run. On node: 50 systems 1.1 → 0.45 ms, churn 55 → 32 ms, retag 74 → 59 ms; 50 distinct bodies over three row shapes 1.75 → 0.53 ms; two writing systems over 100K 19.5 → 1.9 ms; 20 systems reading a resource per row 1.26 → 0.22 ms.
 
 ## Worker scaling
 
@@ -84,5 +85,5 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 ## Next
 
 - U32 ticks: uniformly sparse change filters are bound by memory bandwidth.
-- Compiled main-thread systems: accessor rows copy tuples on every read and share one call site.
+- Compiled main-thread systems: the body call site is shared by every system, and tuple reads allocate unless inlined. A loop per system (eval or emitted by the plugin) measured only 5–10% faster.
 - Commands encoded from WASM: kernels that issue commands still run as JS.

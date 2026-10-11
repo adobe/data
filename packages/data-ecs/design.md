@@ -209,11 +209,12 @@ Measured with `pnpm perf` (benchmarks bundled as in production, on plain node) a
 - **Dispatch:** WASM chunks go through a per-worker task ring in shared memory, signalled with `Atomics.notify`; workers stay in that window across runs until a message must reach them.
 - **Kernels:** interleaved layouts, SIMD within rows (SLP), across dense rows, and across rows of whole interleaved elements (four tight vec3 rows are three vectors), 16-byte loads for three-lane rows with column slack, exact integer `%`.
 - **Main-thread reads:** `select`/`count` compile `where` once and resolve storages per archetype; single-component reads go straight to the storage.
+- **Main-thread systems:** one accessor row per set of reads and writes, in fast properties, shared across systems and archetypes and rebound per pass; getters and setters specialized per layout; resource cells resolved once per run.
 
 ### Next
 
 - **U32 ticks.** Halves tick memory and the change-filter scan's bandwidth, which bounds uniformly sparse filters. Comparisons use wrapping subtraction relative to the current tick, with a periodic clamp pass at a sync point, like Bevy's `check_change_ticks`, covering cell, `lastRun` and chunk ticks.
-- **Compiled main-thread systems.** Accessor rows copy tuples out on every read and share one megamorphic body call site; compiling main-thread systems (or a JS-only kernel mode) would remove both.
+- **Compiled main-thread systems.** Accessor rows copy tuples out on every read and share one megamorphic body call site; compiling main-thread systems (or a JS-only kernel mode) would remove both. A per-system loop alone measured 5–10%.
 - **WASM commands.** Encode kernel commands into a shared-memory buffer from WASM, so command-issuing kernels get WASM and the fast dispatch path.
 - **Per-archetype query-match bitsets.** Compute stop/start for each move as `match(from) & ~match(to)` in O(Q/32). Memory scales with archetypes, not archetype-graph edges.
 - **Per-archetype rule-closure cache.**

@@ -7,6 +7,7 @@ import type { Queued } from './synchronize.js';
 import { createEntities, type Entities } from './entities.js';
 import { layoutOf, type Layout } from '../../layout/layout.js';
 import { createMemory, type Memory } from './memory.js';
+import type { Row } from './rows.js';
 
 export type Key = string | symbol;
 
@@ -29,6 +30,8 @@ export type State = {
     readonly observed: Set<number>;
     /** Lookup directories for WASM kernels, kept up to date at sync points. */
     readonly directories: Set<Directory>;
+    /** Accessor rows for main-thread systems, by the component ids they read and write. */
+    readonly rows: Map<string, Row>;
     /** Whether kernels with a program run as WASM, and as SIMD where they can; tests turn these off to compare with JS. */
     readonly wasm: boolean;
     readonly simd: boolean;
@@ -50,6 +53,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true): State =
         resourceEntity: -1,
         observed: new Set(),
         directories: new Set(),
+        rows: new Map(),
         wasm,
         simd,
     };

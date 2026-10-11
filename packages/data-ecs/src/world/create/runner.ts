@@ -11,7 +11,7 @@ import { createBuffer, createKernelCommands, emptyBuffer, type CommandBuffer } f
 import { reserve } from './entities.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
-import { createContext, createRow, type Cursor } from './rows.js';
+import { createContext, rowBinder } from './rows.js';
 import { scalarValues } from './wasm.js';
 import { idOf, type State } from './state.js';
 
@@ -69,7 +69,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const context = createContext(state, declaration);
     const matches: Archetype[] = [];
     let checked = 0;
-    const rows = new Map<Archetype, { readonly row: object; readonly cursor: Cursor }>();
+    const bindRow = rowBinder(state, query?.read ?? [], query?.write ?? []);
     let lastRun = 0;
 
     const refreshMatches = (): void => {
@@ -91,22 +91,14 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }),
     ];
 
-    const rowOf = (archetype: Archetype): { readonly row: object; readonly cursor: Cursor } => {
-        let entry = rows.get(archetype);
-        if (entry === undefined) {
-            const cursor: Cursor = { row: 0 };
-            entry = { row: createRow(state, archetype, query?.read ?? [], query?.write ?? [], cursor), cursor };
-            rows.set(archetype, entry);
-        }
-        return entry;
-    };
-
     const runBody = (archetype: Archetype, since: number): void => {
-        const { row, cursor } = rowOf(archetype);
+        const row = bindRow(archetype);
+        const { value } = row;
+        const values = context.value;
         forEachPassingRange(filtersOf(archetype), since, 0, archetype.count, (start, end) => {
             for (let index = start; index < end; index++) {
-                cursor.row = index;
-                system.body(row, context, commands);
+                row.index = index;
+                system.body(value, values, commands);
             }
         });
     };
@@ -180,9 +172,10 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             });
             /** -1 passes every row. */
             const since = !filtered || resourcesChanged ? -1 : lastRun;
-            context.args = args;
+            context.bind();
+            context.value.args = args;
             if (query === undefined) {
-                if (since < 0) system.body(undefined, context, commands);
+                if (since < 0) system.body(undefined, context.value, commands);
                 return chunks;
             }
             // Only a resource filter, and no resource changed: no row passes.

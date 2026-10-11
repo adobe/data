@@ -7,14 +7,15 @@ type Expression = Program.Expression;
 const views = { f32: Float32Array, f64: Float64Array, i32: Int32Array, u32: Uint32Array, boolean: Uint8Array } as const;
 type Output = keyof typeof views;
 
-const dense = (output: Output): WasmColumn => output === "boolean"
-    ? { view: "u8", stride: 1, offset: 0, boolean: true }
-    : { view: output, stride: output === "f64" ? 8 : 4, offset: 0, boolean: false };
+/** A dense column; each test column is its own component. */
+const dense = (output: Output, component: number): WasmColumn => output === "boolean"
+    ? { view: "u8", stride: 1, offset: 0, boolean: true, component }
+    : { view: output, stride: output === "f64" ? 8 : 4, offset: 0, boolean: false, component };
 
 /** Runs a program over one row per input value; column 0 is the input (f64), column 1 the output of kind `output`. */
 const run = (output: Output, value: Expression, inputs: readonly number[]): number[] | null => {
     const program: Program = { locals: 0, body: [{ kind: "store", column: 1, value }] };
-    const kernel = generateWasm(program, [dense("f64"), dense(output)], () => "number");
+    const kernel = generateWasm(program, [dense("f64", 0), dense(output, 1)], () => "number", false);
     if (kernel === null) return null;
     const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
     const input = new Float64Array(memory.buffer, 0, inputs.length);
@@ -82,7 +83,7 @@ describe("generateWasm", () => {
 
     it("addresses interleaved columns by stride and offset, leaving the rest of each element untouched", () => {
         // Column 1 is the z of a WGSL-storage vec3<f32>: 16-byte elements, at byte 8.
-        const kernel = generateWasm({ locals: 0, body: [{ kind: "store", column: 1, value: input }] }, [dense("f64"), { view: "f32", stride: 16, offset: 8, boolean: false }], () => "number");
+        const kernel = generateWasm({ locals: 0, body: [{ kind: "store", column: 1, value: input }] }, [dense("f64", 0), { view: "f32", stride: 16, offset: 8, boolean: false, component: 1 }], () => "number", false);
         if (kernel === null) throw new Error("expected a kernel");
         const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
         new Float64Array(memory.buffer, 0, 3).set([1.5, 2.5, 3.5]);
@@ -114,7 +115,7 @@ describe("generateWasm", () => {
                 { kind: "store", column: 1, value: local(0) },
             ],
         };
-        const kernel = generateWasm(program, [dense("f64"), dense("f64")], () => "number");
+        const kernel = generateWasm(program, [dense("f64", 0), dense("f64", 1)], () => "number");
         if (kernel === null) throw new Error("expected a kernel");
         const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
         new Float64Array(memory.buffer, 0, 3).set([4, -1, 10]);
@@ -123,5 +124,84 @@ describe("generateWasm", () => {
         if (typeof runKernel !== "function") throw new Error("no run export");
         runKernel(0, 3, 0, 0, 4096);
         expect([...output]).toEqual([10, 99, 55]);
+    });
+});
+
+describe("generateWasm with SIMD", () => {
+    /** Runs a program over `rows` rows; `layout` gives each column's element stride, offset and component. */
+    const runVector = (program: Program, columns: readonly WasmColumn[], fill: (views: Float32Array[], ticks: Float64Array) => void, rows: number, tick = 7) => {
+        const kernel = generateWasm(program, columns, () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+        const bases = columns.map(column => 4096 * (column.component + 1));
+        const floats = columns.map((_, k) => new Float32Array(memory.buffer, bases[k], 512));
+        const ticks = new Float64Array(memory.buffer, 4096 * 8, 64);
+        fill(floats, ticks);
+        const runKernel: unknown = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof runKernel !== "function") throw new Error("no run export");
+        runKernel(0, rows, tick, ...bases.map((base, k) => columns[k].view === "f64" ? 4096 * 8 : base));
+        return { kernel, floats, ticks };
+    };
+    const column = (component: number, stride: number, offset: number): WasmColumn => ({ view: "f32", stride, offset, boolean: false, component });
+    const read = (k: number): Expression => ({ kind: "column", column: k });
+    const add = (left: Expression, right: Expression): Expression => ({ kind: "binary", operator: "+", left, right });
+
+    it("adds dense f32 columns four rows at a time, then the tail", () => {
+        const { kernel, floats } = runVector(
+            { locals: 0, body: [{ kind: "store", column: 2, value: add(read(0), read(1)) }] },
+            [column(0, 4, 0), column(1, 4, 0), column(2, 4, 0)],
+            ([a, b, out]) => { a.set(Array.from({ length: 12 }, (_, i) => i + 0.1)); b.set(Array.from({ length: 12 }, (_, i) => i * 3.7)); out.fill(-1); },
+            10,
+        );
+        expect(kernel.vectorized).toBe(true);
+        const expected = Array.from({ length: 10 }, (_, i) => Math.fround(Math.fround(i + 0.1) + Math.fround(i * 3.7)));
+        expect([...floats[2].subarray(0, 12)]).toEqual([...expected, -1, -1]);
+    });
+
+    for (const [name, stride, leafCount] of [["vec2 (8-byte stride)", 8, 2], ["tight vec3 (12-byte stride)", 12, 3], ["WGSL storage vec3 (16-byte stride with padding)", 16, 3]] as const) {
+        it(`deinterleaves and reinterleaves a ${name}`, () => {
+            const words = stride / 4;
+            // p += v, leaf by leaf; columns 0..2 are p.x/y/z, 3..5 are v.x/y/z.
+            const leaves = Array.from({ length: leafCount }, (_, leaf) => leaf);
+            const program: Program = { locals: 0, body: leaves.map(leaf => ({ kind: "store", column: leaf, value: add(read(leaf), read(leafCount + leaf)) })) };
+            const columns = [...leaves.map(leaf => column(0, stride, 4 * leaf)), ...leaves.map(leaf => column(1, stride, 4 * leaf))];
+            const { kernel, floats } = runVector(program, columns, views => {
+                const p = views[0];
+                const v = views[leafCount];
+                for (let i = 0; i < 64; i++) p[i] = words === 4 && i % 4 === 3 ? -9 : i;
+                for (let i = 0; i < 64; i++) v[i] = 100 + i;
+            }, 10);
+            expect(kernel.vectorized).toBe(true);
+            const p = floats[0];
+            for (let row = 0; row < 12; row++) {
+                for (let word = 0; word < words; word++) {
+                    const index = row * words + word;
+                    const padding = word === 3;
+                    const expected = padding ? -9 : row < 10 ? index + 100 + index : index;
+                    expect([row, word, p[index]]).toEqual([row, word, expected]);
+                }
+            }
+        });
+    }
+
+    it("blends stores and tick stamps under an if, per lane", () => {
+        const positive: Expression = { kind: "binary", operator: ">", left: read(0), right: { kind: "number", value: 0 } };
+        const program: Program = { locals: 0, body: [{ kind: "if", test: positive, consequent: [{ kind: "store", column: 1, value: read(0) }, { kind: "stamp", column: 2 }], alternate: [] }] };
+        const ticksColumn: WasmColumn = { view: "f64", stride: 8, offset: 0, boolean: false, component: -1 };
+        const inputs = [1, -1, 2, -2, 0, 3, NaN, 4, -5, 6];
+        const { kernel, floats, ticks } = runVector(program, [column(0, 4, 0), column(1, 4, 0), ticksColumn], ([input, out], tickValues) => {
+            input.set(inputs);
+            out.fill(-7);
+            tickValues.fill(1);
+        }, 10);
+        expect(kernel.vectorized).toBe(true);
+        expect([...floats[1].subarray(0, 10)]).toEqual(inputs.map(x => x > 0 ? x : -7));
+        expect([...ticks.subarray(0, 10)]).toEqual(inputs.map(x => x > 0 ? 7 : 1));
+    });
+
+    it("stays scalar for operations without an exact f32x4 equivalent", () => {
+        const remainder: Expression = { kind: "binary", operator: "%", left: read(0), right: { kind: "number", value: 2 } };
+        const kernel = generateWasm({ locals: 0, body: [{ kind: "store", column: 1, value: remainder }] }, [column(0, 4, 0), column(1, 4, 0)], () => "number");
+        expect(kernel?.vectorized).toBe(false);
     });
 });

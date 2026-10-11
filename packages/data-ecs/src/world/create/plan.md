@@ -66,10 +66,15 @@ All of the runtime lives here. The only export is `create`, which moves here fro
 
 ## 1.3 WASM
 
-- **The compiler emits an IR** alongside the JS kernel.
-- **Registration generates WASM** from the IR, using the precision in the schemas. It compiles each module once and posts it to every worker, where it is instantiated against the shared `Memory`.
-- **Tests** require JS and WASM kernels to give the same results, within storage precision.
+- **Layout:** a linear component is one interleaved column per archetype, in its schema's layout: `storage` (WGSL storage-buffer rules), `vertex` (tight, 4-byte aligned), or by default tight for the CPU. A GPU layout is checked at registration. Kernels address a field as `row * stride + offset`.
+- **The compiler lowers each kernel once** and prints both the JS kernel and a `Program` IR from it. The IR is `null` for kernels with commands or lookups, which keep the JS kernel.
+- **Registration generates WASM** from the IR and the schemas' storage types: f64 arithmetic with typed-array store conversion, so scalar WASM is bit-identical to JS. It compiles once, and every worker instantiates the module against the shared `Memory`.
+- **SIMD**, in f32 lanes at storage precision:
+  - *Across rows*, four at a time, when every column is a dense f32 scalar.
+  - *Within a row* otherwise: consecutive snapshot loads of a component's leaves become one vector load, and stores to its leaves whose values match lane for lane become one f32x4 operation and store. Loads and stores cover only the element's lanes.
+  - Anything else runs as scalar WASM, in the same row.
+- **Tests:** scalar WASM is bit-identical to JS; SIMD is within storage precision of JS; 0 and N workers stay identical with SIMD, since chunks start on 16-row boundaries.
 
 ## Deferred
 
-Builtins, finalizers, rules, the ESLint rule, SIMD, and GPU.
+Builtins, finalizers, rules, the ESLint rule, and GPU.

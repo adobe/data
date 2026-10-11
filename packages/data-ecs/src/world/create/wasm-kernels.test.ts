@@ -43,6 +43,7 @@ declare module "../../system/types.js" {
         "wasmTest/tally": true;
         "wasmTest/scale": true;
         "wasmTest/main": true;
+        "wasmTest/drift": true;
     }
 }
 
@@ -120,12 +121,26 @@ const scale = System.create({
     row[score] = row[score] * args;
 });
 
-const main = System.composite({ name: "wasmTest/main", systems: [integrate, bounce, tally] });
+/** Component-wise vector math: one f32x4 operation per row. */
+const drift = System.create({
+    name: "wasmTest/drift",
+    kernel: true,
+    query: { read: [position, velocity], write: [position] },
+    resources: { read: [seconds] },
+    after: ["wasmTest/tally"],
+}, (row, context) => {
+    const [x, y] = row[position];
+    const [vx, vy] = row[velocity];
+    const t = context[seconds];
+    row[position] = [x + vx * t, y + vy * t];
+});
+
+const main = System.composite({ name: "wasmTest/main", systems: [integrate, bounce, tally, drift] });
 
 const snapshot = (world: World): unknown[] => world.query.select([position]).map(entity => world.read.entity(entity, [position, velocity, bounces, flipped, score]));
 
-const simulate = async (wasm: boolean): Promise<unknown[]> => {
-    const world = createWorld({ wasm });
+const simulate = async (wasm: boolean, simd = false): Promise<unknown[]> => {
+    const world = createWorld({ wasm, simd });
     await world.systems.register(seed, main, scale);
     await world.run(seed, 300);
     for (let frame = 0; frame < 120; frame++) {
@@ -138,17 +153,28 @@ const simulate = async (wasm: boolean): Promise<unknown[]> => {
 };
 
 describe("WASM kernels", () => {
-    it("are generated for every kernel here", () => {
-        for (const system of [integrate, bounce, tally, scale]) {
+    it("are generated for every kernel here, with SIMD only where lanes line up", () => {
+        const wasmOf = (system: typeof integrate | typeof bounce | typeof tally | typeof scale | typeof drift) => {
             const description = kernelOf(system);
             if (description === undefined) throw new Error("not compiled");
-            expect([system.declaration.name, bindKernel(createState(), system, description).wasm]).not.toEqual([system.declaration.name, null]);
-        }
+            return bindKernel(createState(), system, description).wasm;
+        };
+        expect([integrate, bounce, tally, scale, drift].map(system => wasmOf(system)?.vectorized)).toEqual([false, false, false, false, true]);
     });
 
-    it("give bit-identical results to the JS kernels", async () => {
+    it("give bit-identical results to the JS kernels without SIMD", async () => {
         const javascript = await simulate(false);
         expect(javascript.some(values => JSON.stringify(values).includes("true"))).toBe(true);
         expect(await simulate(true)).toEqual(javascript);
+    });
+
+    it("stay within storage precision of the JS kernels with SIMD", async () => {
+        const javascript = await simulate(false);
+        const vector = await simulate(true, true);
+        expect(vector).toHaveLength(javascript.length);
+        const leaves = (value: unknown): number[] => JSON.stringify(value).match(/-?[\d.]+(?:e[-+]?\d+)?/g)?.map(Number) ?? [];
+        const relative = leaves(vector).map((value, i) => Math.abs(value - leaves(javascript)[i]) / Math.max(1, Math.abs(leaves(javascript)[i])));
+        expect(Math.max(...relative)).toBeLessThan(1e-4);
+        expect(vector).not.toEqual(javascript);
     });
 });

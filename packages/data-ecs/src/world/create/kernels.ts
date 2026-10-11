@@ -57,7 +57,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         booleans.push(false);
         strides.push(1);
         offsets.push(0);
-        wasmColumns.push({ view: "f64", stride: 8, offset: 0, boolean: false });
+        wasmColumns.push({ view: "f64", stride: 8, offset: 0, boolean: false, component: -1 });
     };
     const sources: Source[] = description.columns.map(column => {
         if (column.kind === "entity") {
@@ -79,7 +79,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         booleans.push(found.scalar === "boolean");
         strides.push(found.unitStride);
         offsets.push(found.unitOffset);
-        wasmColumns.push({ view: found.view, stride: layout.stride, offset: found.offset, boolean: found.scalar === "boolean" });
+        wasmColumns.push({ view: found.view, stride: layout.stride, offset: found.offset, boolean: found.scalar === "boolean", component: id });
         return { kind: "field", id, leaf: index };
     });
     for (const shape of description.shapes) {
@@ -125,7 +125,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     const scalarType = (scalar: WasmScalar): Type | null => scalar.source === "args"
         ? argsLayout === null ? null : leafType(argsLayout, scalar.path)
         : scalar.index < description.resources.length ? leafType(state.layouts[idOf(state, description.resources[scalar.index])], scalar.path) : null;
-    const wasm = state.wasm && state.memory.shared && description.program !== null ? generateWasm(description.program, wasmColumns, scalarType) : null;
+    const wasm = state.wasm && state.memory.shared && description.program !== null ? generateWasm(description.program, wasmColumns, scalarType, state.simd) : null;
     let loaded: Kernel | null = null;
     let compiled: { readonly module: WebAssembly.Module; readonly run: WasmRun } | null = null;
     const load = async (): Promise<void> => {

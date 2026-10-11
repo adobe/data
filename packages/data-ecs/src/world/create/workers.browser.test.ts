@@ -148,8 +148,8 @@ const snapshot = (world: World): unknown[] => {
     return rows.map(row => JSON.stringify(row)).sort();
 };
 
-const simulate = async (workers: number, wasm = true): Promise<unknown[]> => {
-    const world = createWorld({ workers, minimumChunk: 64, wasm });
+const simulate = async (workers: number, wasm = true, simd = false): Promise<unknown[]> => {
+    const world = createWorld({ workers, minimumChunk: 64, wasm, simd });
     disposals.push(world);
     await world.systems.register(seed, main);
     await world.run(seed, 2000);
@@ -176,6 +176,10 @@ describe("workers", () => {
         }
         // Archetypes of at least 64 rows ran on the workers every frame.
         expect(tasks).toBeGreaterThanOrEqual(12 * 3);
+    });
+
+    it("give the same SIMD results as the main thread alone, since chunks start on 16-row boundaries", async () => {
+        expect(await simulate(3, true, true)).toEqual(await simulate(0, true, true));
     });
 
     it("merge chunk commands in the same order as the main thread", async () => {

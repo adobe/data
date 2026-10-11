@@ -1,6 +1,6 @@
 import { copyCell, insertRow, swapRemove, type Archetype } from './archetype.js';
 import { chunkShift } from './kernel.js';
-import { despawnCommand, endOf, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
+import { clearBuffer, despawnCommand, endOf, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { writeCell } from './cells.js';
 import { refreshDirectories } from './directories.js';
 import { indexOf, locate, materialize, recycle, release, reserved } from './entities.js';
@@ -86,10 +86,15 @@ const planOf = (state: State, queued: readonly Queued[]): void => {
     if (slots.length < state.entities.length) slots = new Int32Array(Math.max(state.entities.length, slots.length * 2)).fill(-1);
     const empty = archetypeOf(state, []).id;
     const { archetypes } = state;
+    // Spawns in a batch usually name the same components: the last spawn's ids and target are reused when they match.
+    let lastIds: Int32Array | null = null;
+    let lastStart = 0;
+    let lastEnd = 0;
+    let lastTarget = -1;
     for (let b = 0; b < queued.length; b++) {
         const { buffer, guarded } = queued[b];
         const { kinds, entities, starts, ids } = buffer;
-        for (let command = 0; command < kinds.length; command++) {
+        for (let command = 0; command < buffer.count; command++) {
             const kind = kinds[command];
             const entity = entities[command];
             if (guarded && entity === state.resourceEntity) continue;
@@ -98,6 +103,25 @@ const planOf = (state: State, queued: readonly Queued[]): void => {
             if (kind === spawnCommand) {
                 entry = addEntry(entity, index, -1, empty);
                 plan.spawned++;
+                const start = starts[command];
+                const end = endOf(buffer, command);
+                if (lastIds !== null && end - start === lastEnd - lastStart) {
+                    let same = true;
+                    for (let k = 0; k < end - start && same; k++) same = ids[start + k] === lastIds[lastStart + k];
+                    if (same) {
+                        plan.to[entry] = lastTarget;
+                        if (end > start) addRange(entry, b, start, end);
+                        continue;
+                    }
+                }
+                let to = archetypes[empty];
+                for (let k = start; k < end; k++) to = withComponent(state, to, ids[k]);
+                plan.to[entry] = lastTarget = to.id;
+                lastIds = ids;
+                lastStart = start;
+                lastEnd = end;
+                if (end > start) addRange(entry, b, start, end);
+                continue;
             }
             else {
                 entry = slots[index];
@@ -188,7 +212,7 @@ const applyEntry = (state: State, queued: readonly Queued[], entry: number, tick
 /** Applies every queued command as one sync point with a new tick, then empties the queue. */
 export const synchronize = (state: State): void => {
     const queued = state.queued;
-    if (queued.every(({ buffer }) => buffer.kinds.length === 0) && !reserved(state.entities)) {
+    if (queued.every(({ buffer }) => buffer.count === 0) && !reserved(state.entities)) {
         queued.length = 0;
         return;
     }
@@ -208,6 +232,8 @@ export const synchronize = (state: State): void => {
     for (let entry = 0; entry < plan.count; entry++) slots[indexOf(plan.entity[entry])] = -1;
     plan.more.clear();
     plan.fresh.clear();
+    // Systems reuse their buffers next run.
+    for (const { buffer } of queued) clearBuffer(buffer);
     queued.length = 0;
     recycle(state.memory, state.entities);
     refreshDirectories(state);

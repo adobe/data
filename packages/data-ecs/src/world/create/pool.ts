@@ -1,5 +1,5 @@
 import { allocateArray } from './arrays.js';
-import { createBuffer, type CommandBuffer } from './buffer.js';
+import { emptyBuffer, type CommandBuffer } from './buffer.js';
 import type { Memory } from './memory.js';
 import { controlWords, done, leave, posted, ringSize, signal, taskWords, type FromWorker, type ToWorker, type WorkerError } from './protocol.js';
 
@@ -63,7 +63,7 @@ export const createPool = (size: number, arena: Memory): Pool => {
     const chains = Array.from({ length: size }, (): Promise<void> => Promise.resolve());
     const kill = (slot: Slot, error: Error): void => {
         slot.dead ??= error;
-        for (const settle of slot.pending.values()) settle({ commands: createBuffer(), error: slot.dead });
+        for (const settle of slot.pending.values()) settle({ commands: emptyBuffer, error: slot.dead });
         slot.pending.clear();
     };
     const slots: Slot[] = Array.from({ length: size }, () => {
@@ -105,7 +105,7 @@ export const createPool = (size: number, arena: Memory): Pool => {
 
     const fast = (worker: number, task: FastTask): Promise<TaskResult> => {
         const slot = slots[worker];
-        if (slot.dead !== null) return Promise.resolve({ commands: createBuffer(), error: slot.dead });
+        if (slot.dead !== null) return Promise.resolve({ commands: emptyBuffer, error: slot.dead });
         if (!open[worker]) {
             open[worker] = true;
             Atomics.store(control, worker * controlWords + leave, 0);
@@ -137,9 +137,9 @@ export const createPool = (size: number, arena: Memory): Pool => {
         return (async (): Promise<TaskResult> => {
             await written;
             await whenDone(worker, count);
-            if (slot.dead !== null) return { commands: createBuffer(), error: slot.dead };
+            if (slot.dead !== null) return { commands: emptyBuffer, error: slot.dead };
             const failed = Atomics.load(statuses, worker * ringSize + ring) !== 0;
-            return failed ? { commands: createBuffer(), error: new Error("A world worker's kernel failed.") } : { commands: createBuffer() };
+            return failed ? { commands: emptyBuffer, error: new Error("A world worker's kernel failed.") } : { commands: emptyBuffer };
         })();
     };
 
@@ -154,7 +154,7 @@ export const createPool = (size: number, arena: Memory): Pool => {
         request: (worker, message) => new Promise(settle => {
             close();
             const slot = slots[worker];
-            if (slot.dead !== null) return settle({ commands: createBuffer(), error: slot.dead });
+            if (slot.dead !== null) return settle({ commands: emptyBuffer, error: slot.dead });
             const task = nextTask++;
             slot.pending.set(task, settle);
             slot.worker.postMessage({ ...message, task });

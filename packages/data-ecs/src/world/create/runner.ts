@@ -7,7 +7,7 @@ import { createCommands } from './commands.js';
 import { bindKernel, type BoundKernel } from './kernels.js';
 import type { Pool } from './pool.js';
 import { maximumScalars, type KernelSetup } from './protocol.js';
-import { createBuffer, createKernelCommands, type CommandBuffer } from './buffer.js';
+import { createBuffer, createKernelCommands, emptyBuffer, type CommandBuffer } from './buffer.js';
 import { reserve } from './entities.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
@@ -58,6 +58,10 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         kernel = bindKernel(state, leaf, description);
     }
     const holder: { buffer: CommandBuffer } = { buffer: createBuffer() };
+    /** This system's buffers, reused each run: the sync point clears them. */
+    const owned: CommandBuffer[] = [];
+    let used = 0;
+    const nextBuffer = (): CommandBuffer => owned[used++] ??= createBuffer();
     const commands = createCommands(state, holder);
     const kernelCommands = createKernelCommands(holder, kernel?.setup.keys ?? [], () => reserve(state.entities));
     const context = createContext(state, declaration);
@@ -162,7 +166,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
 
     const start = (args: unknown, workers: Workers | null, index: number): readonly Chunk[] => {
         const tick = ++state.tick;
-        holder.buffer = createBuffer();
+        used = 0;
+        holder.buffer = nextBuffer();
         const chunks: Chunk[] = [{ commands: holder.buffer }];
         try {
             const resourcesChanged = resourceChanged.some(key => {
@@ -188,7 +193,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
                 if (kernel === null) runBody(archetype, since);
                 else if (workers !== null && archetype.count >= minimumFor(workers)) {
                     chunks.push(...postChunks(workers, index, archetype, since, values, args, tick));
-                    holder.buffer = createBuffer();
+                    holder.buffer = nextBuffer();
                     chunks.push({ commands: holder.buffer });
                 }
                 else runKernelLocally(kernel, archetype, since, values, args, tick);
@@ -197,7 +202,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }
         catch (error) {
             // Chunks already posted still finish before the sync point.
-            chunks.push({ commands: createBuffer(), error });
+            chunks.push({ commands: emptyBuffer, error });
             return chunks;
         }
         finally {

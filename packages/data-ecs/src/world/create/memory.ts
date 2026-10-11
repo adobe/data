@@ -36,7 +36,11 @@ export const createMemory = (shared = sharedMemoryAvailable()): Memory => {
         const offset = top;
         top += minimumBlockBytes * 2 ** size;
         const shortfall = top - memory.buffer.byteLength;
-        if (shortfall > 0) memory.grow(Math.ceil(shortfall / pageBytes));
+        // Grow at least by half again, so filling a world grows memory a logarithmic number of times.
+        if (shortfall > 0) {
+            const pages = memory.buffer.byteLength / pageBytes;
+            memory.grow(Math.min(maximumPages - pages, Math.max(Math.ceil(shortfall / pageBytes), Math.ceil(pages / 2))));
+        }
         return offset;
     };
 

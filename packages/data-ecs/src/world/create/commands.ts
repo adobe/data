@@ -1,17 +1,11 @@
 import type { Commands } from '../../system/commands.js';
-import { addCommand, despawnCommand, pushCommand, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
+import { addCommand, despawnCommand, pushCommand, pushComponent, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { hasSymbolNames } from '../../registry/create-registry.js';
 import { reserve } from './entities.js';
 import { idOf, type Key, type State } from './state.js';
 
-/** Reused between commands: the ids and values being issued. */
-const scratchIds: number[] = [];
-const scratchValues: unknown[] = [];
-
-const collect = (state: State, key: Key, value: unknown): void => {
-    if (value === undefined) return;
-    scratchIds.push(idOf(state, key));
-    scratchValues.push(value);
+const collect = (state: State, buffer: CommandBuffer, key: Key, value: unknown): void => {
+    if (value !== undefined) pushComponent(buffer, idOf(state, key), value);
 };
 
 /**
@@ -19,15 +13,18 @@ const collect = (state: State, key: Key, value: unknown): void => {
  * component throws before anything is appended. Values are immutable by convention, so they aren't copied.
  */
 export const pushValues = (state: State, buffer: CommandBuffer, kind: number, entity: number, values: object): void => {
-    scratchIds.length = 0;
-    scratchValues.length = 0;
-    // `for...in` uses the engine's enumeration cache; symbol keys are read only when a symbol name exists.
-    for (const key in values) collect(state, key, Reflect.get(values, key));
-    if (hasSymbolNames()) for (const key of Object.getOwnPropertySymbols(values)) collect(state, key, Reflect.get(values, key));
+    const { count, named } = buffer;
     pushCommand(buffer, kind, entity);
-    for (let i = 0; i < scratchIds.length; i++) {
-        buffer.ids.push(scratchIds[i]);
-        buffer.values.push(scratchValues[i]);
+    try {
+        // `Object.keys` uses the engine's cached key list; symbol keys are read only when a symbol name exists.
+        for (const key of Object.keys(values)) collect(state, buffer, key, Reflect.get(values, key));
+        if (hasSymbolNames()) for (const key of Object.getOwnPropertySymbols(values)) collect(state, buffer, key, Reflect.get(values, key));
+    }
+    catch (error) {
+        // An unregistered component: the command is dropped whole.
+        buffer.count = count;
+        buffer.named = named;
+        throw error;
     }
 };
 
@@ -47,7 +44,6 @@ export const createCommands = (state: State, target: { readonly buffer: CommandB
     remove: (entity, ...components) => {
         const ids = components.map((key: Key) => idOf(state, key));
         pushCommand(target.buffer, removeCommand, entity);
-        for (const id of ids) target.buffer.ids.push(id);
-        for (let i = 0; i < ids.length; i++) target.buffer.values.push(undefined);
+        for (const id of ids) pushComponent(target.buffer, id, undefined);
     },
 });

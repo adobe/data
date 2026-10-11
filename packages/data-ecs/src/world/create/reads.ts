@@ -30,69 +30,113 @@ export const compare = (a: unknown, b: unknown): number => {
     return 0;
 };
 
-/** A plain value is equality; an object of only comparison operators is a comparison. */
-export const satisfies = (value: unknown, condition: unknown): boolean => {
-    if (typeof condition !== "object" || condition === null || Array.isArray(condition)) return equals(value, condition);
+/** Component ids, or -1 for a key no archetype in this world has. */
+const idsOf = (state: State, keys: readonly Key[]): number[] => keys.map(key => state.ids.get(key) ?? -1);
+
+const hasAll = (archetype: Archetype, ids: readonly number[]): boolean => {
+    for (let i = 0; i < ids.length; i++) if (ids[i] < 0 || archetype.storageById[ids[i]] === undefined) return false;
+    return true;
+};
+
+const hasAny = (archetype: Archetype, ids: readonly number[]): boolean => {
+    for (let i = 0; i < ids.length; i++) if (ids[i] >= 0 && archetype.storageById[ids[i]] !== undefined) return true;
+    return false;
+};
+
+const cellAt = (archetype: Archetype, id: number, row: number): unknown => {
+    const storage = id < 0 ? undefined : archetype.storageById[id];
+    return storage === undefined ? undefined : readCell(storage, row);
+};
+
+/** A `where` condition compiled once: a plain value is equality, an object of comparison operators is a comparison. */
+const predicateOf = (condition: unknown): ((value: unknown) => boolean) => {
+    if (typeof condition !== "object" || condition === null || Array.isArray(condition)) return value => equals(value, condition);
     const entries = Object.entries(condition);
-    if (entries.length === 0 || !entries.every(([operator]) => operators.has(operator))) return equals(value, condition);
-    return entries.every(([operator, operand]) => {
+    if (entries.length === 0 || !entries.every(([operator]) => operators.has(operator))) return value => equals(value, condition);
+    const tests = entries.map(([operator, operand]): ((value: unknown) => boolean) => {
         switch (operator) {
-            case "==": return equals(value, operand);
-            case "!=": return !equals(value, operand);
-            case "<": return compare(value, operand) < 0;
-            case ">": return compare(value, operand) > 0;
-            case "<=": return compare(value, operand) <= 0;
-            default: return compare(value, operand) >= 0;
+            case "==": return value => equals(value, operand);
+            case "!=": return value => !equals(value, operand);
+            case "<": return typeof operand === "number" ? value => typeof value === "number" ? value < operand : compare(value, operand) < 0 : value => compare(value, operand) < 0;
+            case ">": return typeof operand === "number" ? value => typeof value === "number" ? value > operand : compare(value, operand) > 0 : value => compare(value, operand) > 0;
+            case "<=": return value => compare(value, operand) <= 0;
+            default: return value => compare(value, operand) >= 0;
         }
     });
-};
-
-const has = (state: State, archetype: Archetype, key: Key): boolean => {
-    const id = state.ids.get(key);
-    return id !== undefined && archetype.storageOf.has(id);
-};
-
-const valueAt = (state: State, archetype: Archetype, row: number, key: Key): unknown => {
-    const id = state.ids.get(key);
-    const storage = id === undefined ? undefined : archetype.storageOf.get(id);
-    return storage === undefined ? undefined : readCell(storage, row);
+    return tests.length === 1 ? tests[0] : value => tests.every(test => test(value));
 };
 
 type Options = { readonly not?: readonly Key[]; readonly where?: object; readonly order?: object };
 
-const matches = (state: State, archetype: Archetype, include: readonly Key[], options: Options): boolean =>
-    archetype.count > 0 && !archetype.resource && include.every(key => has(state, archetype, key)) && !(options.not ?? []).some(key => has(state, archetype, key));
+type Compiled = {
+    readonly include: readonly number[];
+    readonly not: readonly number[];
+    readonly where: readonly { readonly id: number; readonly test: (value: unknown) => boolean }[];
+};
+
+const compile = (state: State, include: readonly Key[], options: Options): Compiled => ({
+    include: idsOf(state, include),
+    not: idsOf(state, options.not ?? []),
+    where: options.where === undefined ? [] : entriesOf(options.where).map(([key, condition]) => ({ id: state.ids.get(key) ?? -1, test: predicateOf(condition) })),
+});
+
+const matches = (archetype: Archetype, compiled: Compiled): boolean =>
+    archetype.count > 0 && !archetype.resource && hasAll(archetype, compiled.include) && !hasAny(archetype, compiled.not);
+
+const passes = (archetype: Archetype, compiled: Compiled, row: number): boolean => {
+    for (const { id, test } of compiled.where) if (!test(cellAt(archetype, id, row))) return false;
+    return true;
+};
 
 /** Entities with every included component and none of `not`, filtered by `where` and sorted by `order`. */
 export const select = (state: State, include: readonly Key[], options: Options = {}): Entity[] => {
-    const where = options.where === undefined ? [] : entriesOf(options.where);
-    const order = options.order === undefined ? [] : entriesOf(options.order);
-    const selected: { readonly entity: Entity; readonly keys: readonly unknown[] }[] = [];
+    const compiled = compile(state, include, options);
+    const order = options.order === undefined ? [] : entriesOf(options.order).map(([key, ascending]) => ({ id: state.ids.get(key) ?? -1, ascending: ascending !== false }));
+    const selected: Entity[] = [];
+    const keys: unknown[][] = [];
     for (const archetype of state.archetypes) {
-        if (!matches(state, archetype, include, options)) continue;
+        if (!matches(archetype, compiled)) continue;
+        const { entities } = archetype;
         for (let row = 0; row < archetype.count; row++) {
-            if (!where.every(([key, condition]) => satisfies(valueAt(state, archetype, row, key), condition))) continue;
-            selected.push({ entity: archetype.entities[row], keys: order.map(([key]) => valueAt(state, archetype, row, key)) });
+            if (compiled.where.length > 0 && !passes(archetype, compiled, row)) continue;
+            selected.push(entities[row]);
+            if (order.length > 0) keys.push(order.map(({ id }) => cellAt(archetype, id, row)));
         }
     }
-    if (order.length > 0) {
-        selected.sort((a, b) => {
-            for (let i = 0; i < order.length; i++) {
-                const result = compare(a.keys[i], b.keys[i]);
-                if (result !== 0) return order[i][1] === false ? -result : result;
-            }
-            return 0;
-        });
-    }
-    return selected.map(({ entity }) => entity);
+    if (order.length === 0) return selected;
+    const positions = selected.map((_, i) => i);
+    positions.sort((a, b) => {
+        for (let i = 0; i < order.length; i++) {
+            const result = compare(keys[a][i], keys[b][i]);
+            if (result !== 0) return order[i].ascending ? result : -result;
+        }
+        return 0;
+    });
+    return positions.map(position => selected[position]);
 };
 
-/** The number of entities `select` would return. */
+/** The number of entities `select` would return, without building them. */
 export const count = (state: State, include: readonly Key[], options: Options = {}): number => {
-    if (options.where !== undefined) return select(state, include, { not: options.not, where: options.where }).length;
+    const compiled = compile(state, include, options);
     let total = 0;
-    for (const archetype of state.archetypes) if (matches(state, archetype, include, options)) total += archetype.count;
+    for (const archetype of state.archetypes) {
+        if (!matches(archetype, compiled)) continue;
+        if (compiled.where.length === 0) {
+            total += archetype.count;
+            continue;
+        }
+        for (let row = 0; row < archetype.count; row++) if (passes(archetype, compiled, row)) total++;
+    }
     return total;
+};
+
+/** One component of a live entity, or `undefined` if it's dead or lacks it. */
+export const readComponent = (state: State, entity: Entity, key: Key): unknown => {
+    const index = locate(state.entities, entity);
+    if (index < 0) return undefined;
+    const id = state.ids.get(key);
+    const storage = id === undefined ? undefined : state.archetypes[state.entities.archetype[index]].storageById[id];
+    return storage === undefined ? undefined : readCell(storage, state.entities.row[index]);
 };
 
 /** The listed components of a live entity, or `null` if it's dead or lacks any. */
@@ -103,8 +147,10 @@ export const readEntity = (state: State, entity: Entity, components: readonly Ke
     const row = state.entities.row[index];
     const values: { [key: Key]: unknown } = {};
     for (const key of components) {
-        if (!has(state, archetype, key)) return null;
-        values[key] = valueAt(state, archetype, row, key);
+        const id = state.ids.get(key);
+        const storage = id === undefined ? undefined : archetype.storageById[id];
+        if (storage === undefined) return null;
+        values[key] = readCell(storage, row);
     }
     return values;
 };

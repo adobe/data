@@ -8,7 +8,7 @@ import { execute, type ExecuteContext } from './execute.js';
 import { sharedMemoryAvailable } from './memory.js';
 import { createPool, defaultWorkerCount, type Pool } from './pool.js';
 import { createPublisher } from './publish.js';
-import { count, readEntity, select } from './reads.js';
+import { count, readComponent, readEntity, select } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
 import { defaultOf, ensureResources, findResource } from './resources.js';
 import { createState, type Key } from './state.js';
@@ -118,8 +118,9 @@ export const createWorld = (options: WorldOptions = {}): World => {
             // Stored values match each component's registered schema, so they have its type.
             entity: <const C extends readonly Component.Name[]>(entity: Entity, components: C) => readEntity(state, entity, components) as Component.ValuesOf<C> | null,
             component: <C extends Component.Name>(entity: Entity, component: C) => {
-                const values = readEntity(state, entity, [component]);
-                return values === null ? null : Reflect.get(values, component) as Readonly<Component.Types[C]>;
+                const value = readComponent(state, entity, component);
+                // Stored values match each component's registered schema, so they have its type.
+                return value === undefined ? null : value as Readonly<Component.Types[C]>;
             },
             resource: <R extends Resource.Name>(key: R) => readResource(key) as Readonly<Resource.Types[R]>,
         },

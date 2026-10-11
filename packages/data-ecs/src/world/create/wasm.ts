@@ -18,6 +18,8 @@ export type WasmColumn = {
     readonly boolean: boolean;
     /** Columns of one component share its bytes; -1 for entity and tick columns. */
     readonly component: number;
+    /** A tick column nothing observes: its stamps are dropped. */
+    readonly muted?: boolean;
 };
 
 /** A scalar parameter: a leaf of a resource or of `args`, in `scalars` order. */
@@ -505,7 +507,7 @@ export const generateWasm = (
             || ((statement.kind === "block" || statement.kind === "loop") && statement.body.some(ends));
         for (const statement of program.body) {
             if (ends(statement)) break;
-            if (statement.kind === "stamp") everyRow.add(statement.chunks);
+            if (statement.kind === "stamp" && columns[statement.chunks].muted !== true) everyRow.add(statement.chunks);
         }
     }
     /** Stamps every chunk from `start`'s to `end - 1`'s, for the chunk columns every row stamps. */
@@ -614,6 +616,7 @@ export const generateWasm = (
             case "set": emit(current.value); code.push(op.localSet, ...unsigned(local(current.local))); return;
             case "store": return store(current.column, current.value);
             case "stamp":
+                if (columns[current.column].muted === true) return;
                 store(current.column, "tick");
                 return stampChunk(current.chunks, 0);
             case "if":
@@ -817,6 +820,7 @@ export const generateWasm = (
                 return;
             }
             case "stamp": {
+                if (columns[current.column].muted === true) return;
                 // Ticks are dense f64: four rows are two f64x2 stores.
                 for (let half = 0; half < 2; half++) {
                     const address = (): void => { code.push(op.localGet, ...unsigned(columnParameter(current.column)), op.localGet, ...unsigned(rowLocal), op.i32Const, 3, op.i32Shl, op.i32Add); };

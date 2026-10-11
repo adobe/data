@@ -41,6 +41,8 @@ export type KernelSetup = {
     readonly booleans: readonly boolean[];
     readonly strides: readonly number[];
     readonly offsets: readonly number[];
+    /** Tick columns nothing observes: they point at a dummy element. */
+    readonly muted: readonly boolean[];
     readonly lookups: readonly LookupSetup[];
     /** Component ids, used as `keys` so command values name components by id. */
     readonly keys: readonly number[];

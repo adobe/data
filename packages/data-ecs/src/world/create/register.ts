@@ -74,18 +74,18 @@ export const createRegistrar = (state: State): Registrar => {
         }
         for (const [name, system] of added) named.set(name, system);
         for (const [system, schedule] of addedSchedules) schedules.set(system, schedule);
-        const kernels: Runner[] = [];
         for (const [leaf, runner] of addedRunners) {
             runners.set(leaf, runner);
-            if (runner.kernel === null) continue;
-            kernelIndexes.set(runner, nextKernel++);
-            kernels.push(runner);
+            if (runner.kernel !== null) kernelIndexes.set(runner, nextKernel++);
         }
+        // New `changed` filters observe more components, so kernels that muted their stamps must load again.
+        for (const leaf of addedRunners.keys()) for (const key of leaf.declaration.query?.changed ?? []) state.observed.add(idOf(state, key));
+        const kernels = [...kernelIndexes.keys()].filter(runner => runner.kernel?.stale() === true);
         const rollback = (): void => {
             for (const name of added.keys()) named.delete(name);
             for (const system of addedSchedules.keys()) schedules.delete(system);
             for (const leaf of addedRunners.keys()) runners.delete(leaf);
-            for (const runner of kernels) kernelIndexes.delete(runner);
+            for (const runner of addedRunners.values()) kernelIndexes.delete(runner);
         };
         return { resources: [...resources], kernels, rollback };
     };

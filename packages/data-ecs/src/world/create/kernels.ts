@@ -11,22 +11,26 @@ import { createDirectory, lookupParameters } from './directories.js';
 export type BoundKernel = {
     readonly description: KernelDescription;
     readonly lookups: readonly ReturnType<typeof createArrayLookup>[];
-    /** What a worker needs to run the kernel, with component ids in place of keys. */
-    readonly setup: {
+    /** What a worker needs to run the kernel, with component ids in place of keys; replaced by each load. */
+    setup: {
         readonly sources: readonly Source[];
         readonly booleans: readonly boolean[];
         readonly strides: readonly number[];
         readonly offsets: readonly number[];
         readonly lookups: readonly LookupSetup[];
         readonly keys: readonly number[];
+        /** Tick columns whose stamps nothing observes. */
+        readonly muted: readonly boolean[];
     };
     /** The kernel's columns for an archetype, rebuilt after the archetype grows. */
     readonly columnsOf: (archetype: Archetype) => readonly TypedArray[];
-    /** Imports the kernel module, and compiles its WASM; `kernel` throws until it resolves. */
+    /** Imports the kernel module and compiles its WASM for the components observed now; `kernel` throws until it resolves. */
     readonly load: () => Promise<void>;
+    /** Whether the observed components changed since the last load, so its stamps need regenerating. */
+    readonly stale: () => boolean;
     readonly kernel: () => Kernel;
-    /** The WASM version, when the kernel has a program and the world shares its memory. */
-    readonly wasm: WasmKernel | null;
+    /** The WASM version, when the kernel has a program and the world shares its memory; replaced by each load. */
+    wasm: WasmKernel | null;
     /** The compiled module and the main thread's instance, once loaded. */
     readonly compiled: () => { readonly module: WebAssembly.Module; readonly run: WasmRun } | null;
     /** For a WASM kernel with lookups: the entity table and directories, passed ahead of the scalars. */
@@ -141,18 +145,46 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             return found === undefined ? null : { view: found.view, stride: layout.stride, offset: found.offset, boolean: found.scalar === "boolean" };
         },
     }));
-    const wasm = useWasm && description.program !== null
-        ? generateWasm(description.program, wasmColumns, scalarType, state.simd, (query?.added?.length ?? 0) + (query?.changed?.length ?? 0), wasmLookups)
+    /**
+     * Changed and chunk columns of components no registered system filters on are muted: nothing reads those ticks,
+     * so the WASM drops their stamps and the JS kernel stamps one dummy element.
+     */
+    const mutedNow = (): boolean[] => sources.map(source => (source.kind === "changed" || source.kind === "chunks") && !state.observed.has(source.id));
+    const generate = (muted: readonly boolean[]): WasmKernel | null => useWasm && description.program !== null
+        ? generateWasm(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, state.simd, (query?.added?.length ?? 0) + (query?.changed?.length ?? 0), wasmLookups)
         : null;
+    let muted = mutedNow();
     let loaded: Kernel | null = null;
+    let loadedFor: string | null = null;
     let compiled: { readonly module: WebAssembly.Module; readonly run: WasmRun } | null = null;
-    const load = async (): Promise<void> => {
-        const module: KernelModule = await import(/* @vite-ignore */ description.url);
-        loaded = module.create(booleans, strides, offsets);
-        if (wasm === null) return;
-        const wasmModule = await WebAssembly.compile(wasm.bytes);
-        compiled = { module: wasmModule, run: await instantiateWasm(wasmModule, state.memory.memory, wasm.imports) };
+    const bound: BoundKernel = {
+        description,
+        lookups,
+        setup: { ...setup, muted },
+        columnsOf: archetype => {
+            const columns = columnsOf(archetype);
+            return muted.some(Boolean) ? columns.map((column, k) => muted[k] ? mutedColumn : column) : columns;
+        },
+        wasm: generate(muted),
+        compiled: () => compiled,
+        kernel: () => loaded ?? fail("its module isn't loaded."),
+        stale: () => loadedFor !== mutedNow().join(),
+        load: async () => {
+            muted = mutedNow();
+            bound.wasm = generate(muted);
+            bound.setup = { ...setup, muted };
+            loadedFor = muted.join();
+            const module: KernelModule = await import(/* @vite-ignore */ description.url);
+            loaded = module.create(booleans, strides.map((stride, k) => muted[k] ? 0 : stride), offsets.map((offset, k) => muted[k] ? 0 : offset));
+            compiled = null;
+            if (bound.wasm === null) return;
+            const wasmModule = await WebAssembly.compile(bound.wasm.bytes);
+            compiled = { module: wasmModule, run: await instantiateWasm(wasmModule, state.memory.memory, bound.wasm.imports) };
+        },
+        lookupParameters: () => directories.length === 0 ? [] : lookupParameters(state, directories),
     };
-    const kernel = (): Kernel => loaded ?? fail("its module isn't loaded.");
-    return { description, lookups, setup, columnsOf, load, kernel, wasm, compiled: () => compiled, lookupParameters: () => directories.length === 0 ? [] : lookupParameters(state, directories) };
+    return bound;
 };
+
+/** The one element a muted tick column's stores land on. */
+const mutedColumn = new Float64Array(1);

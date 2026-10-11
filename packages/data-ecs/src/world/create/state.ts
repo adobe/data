@@ -25,6 +25,8 @@ export type State = {
     /** Command buffers for the next sync point, in merge order. */
     readonly queued: Queued[];
     resourceEntity: Entity;
+    /** Components some registered system filters on with `changed`; only their kernel stamps are kept. */
+    readonly observed: Set<number>;
     /** Lookup directories for WASM kernels, kept up to date at sync points. */
     readonly directories: Set<Directory>;
     /** Whether kernels with a program run as WASM, and as SIMD where they can; tests turn these off to compare with JS. */
@@ -46,6 +48,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true): State =
         tick: 0,
         queued: [],
         resourceEntity: -1,
+        observed: new Set(),
         directories: new Set(),
         wasm,
         simd,

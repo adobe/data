@@ -82,13 +82,17 @@ const createLookup = (lookup: LookupSetup) => (entity: Entity): readonly unknown
     });
 };
 
+/** The one element a muted tick column's stores land on. */
+const mutedColumn = new Float64Array(1);
+
 const columnsOf = (loaded: LoadedKernel, archetypeId: number): readonly TypedArray[] => {
     const key = `${loaded.setup.index}:${archetypeId}`;
     const cached = columns.get(key);
     if (cached !== undefined) return cached;
     const archetype = archetypes.get(archetypeId);
     if (archetype === undefined) throw new Error(`Worker has no layout for archetype ${archetypeId}.`);
-    const built = loaded.setup.sources.map(source => {
+    const built = loaded.setup.sources.map((source, k) => {
+        if (loaded.setup.muted[k]) return mutedColumn;
         if (source.kind === "entity") return archetype.entities;
         const storage = archetype.storages.get(source.id);
         if (storage === undefined) throw new Error(`Archetype ${archetypeId} lacks component ${source.id}.`);
@@ -144,7 +148,9 @@ const load = async (setups: readonly KernelSetup[]): Promise<void> => {
         const wasm = setup.wasm === null ? null : await instantiateWasm(setup.wasm.module, shared, setup.wasm.imports);
         return { module, wasm };
     }));
-    setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides, setup.offsets), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup) }));
+    // A kernel loaded again may have different columns, such as muted ones now stamped.
+    columns.clear();
+    setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset)), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup) }));
 };
 
 /** Runs a loaded kernel's WASM over rows `start` to `end` of an archetype; it applies the change filters itself. */

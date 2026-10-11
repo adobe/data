@@ -2,10 +2,19 @@
 /** Any value representable in JSON. */
 type JSONValue = string | number | boolean | null | readonly JSONValue[] | { readonly [key: string]: JSONValue };
 
+/**
+ * How a linear value is laid out in memory, and a promise that it's GPU compatible: registration throws if it isn't.
+ * - `storage`: WGSL storage-buffer layout, so a shader's matching `array<T>` reads the column directly.
+ * - `vertex`: tightly packed, as WebGPU vertex buffers expect.
+ * Without it, the value is packed tightly for the CPU and may use any linear type.
+ */
+type GpuLayout = 'storage' | 'vertex';
+
 interface ObjectSchema<K extends string = string> {
     readonly type: 'object',
     readonly properties: { readonly [P in K]: Schema };
     readonly required?: readonly K[];
+    readonly layout?: GpuLayout;
 }
 
 interface StringSchema {
@@ -17,6 +26,7 @@ interface StringSchema {
 interface ArraySchema<T extends Schema> {
     readonly type: 'array';
     readonly items: T;
+    readonly layout?: GpuLayout;
     readonly minItems?: number;
     readonly maxItems?: number;
 }

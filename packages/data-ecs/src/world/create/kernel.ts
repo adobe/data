@@ -6,11 +6,14 @@ type Key = string | symbol;
 /** A path from a component's value to one scalar leaf: `[]` for a scalar, `[1]` for a tuple element, `["x"]` for a struct field. */
 export type Path = readonly (number | string)[];
 
-/** One typed array the kernel receives, in `columns` order. */
+/**
+ * One typed array the kernel receives, in `columns` order. A row's element is at `row * strides[k] + offsets[k]`
+ * (see `KernelModule.create`): a component's values are interleaved in its column, so a field is a strided view of its bytes.
+ */
 export type Column =
     /** Float64Array of the row's entity. */
     | { readonly kind: "entity" }
-    /** The typed array of one scalar leaf. Registration checks the path names a scalar leaf of the schema. */
+    /** A view of one scalar leaf. Registration checks the path names a scalar leaf of the schema. */
     | { readonly kind: "field"; readonly component: Key; readonly path: Path }
     /** Float64Array of the component's changed ticks, stamped with `tick` on each write. */
     | { readonly kind: "changed"; readonly component: Key };
@@ -99,6 +102,9 @@ export type KernelDescription = {
 
 /** What a kernel module at `KernelDescription.url` exports. */
 export type KernelModule = {
-    /** Called once per registration. `booleans[k]` is true when column `k` stores booleans as 0 or 1, so reads convert them. */
-    readonly create: (booleans: readonly boolean[]) => Kernel;
+    /**
+     * Called once per registration. Per column `k`: `booleans[k]` is true when it stores booleans as 0 or 1, so reads convert them;
+     * a row's element is at `row * strides[k] + offsets[k]`, in elements of the column's array.
+     */
+    readonly create: (booleans: readonly boolean[], strides: readonly number[], offsets: readonly number[]) => Kernel;
 };

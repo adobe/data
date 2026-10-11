@@ -1,14 +1,14 @@
 import type { Entity } from '../../entity/entity.js';
-import { allocateArray, freeArray, growArray } from './arrays.js';
-import { allocateLeaf, type Layout, type TypedArray } from './layout.js';
+import type { Layout, Views } from '../../layout/layout.js';
+import { allocateArray, allocateViews, emptyViews, freeViews, growArray } from './arrays.js';
 import type { Memory } from './memory.js';
 
-/** One component's columns in one archetype. Arrays are replaced when the archetype grows. */
+/** One component's storage in one archetype. Its views and ticks are replaced when the archetype grows. */
 export type Storage = {
     readonly component: number;
     readonly layout: Layout;
-    /** One typed array per scalar leaf, for a linear layout. */
-    fields: TypedArray[];
+    /** Views of the interleaved column, for a linear layout: row `r` is `layout.stride` bytes at `r * stride`. */
+    views: Views;
     /** Values, for an object layout. */
     readonly values: unknown[];
     /** Ticks are f64 so they never wrap; u32 ticks with a clamp pass are a phase 2 optimization. */
@@ -40,7 +40,7 @@ const createStorage = (memory: Memory, component: number, layout: Layout, capaci
     return {
         component,
         layout,
-        fields: layout.kind === "linear" ? layout.leaves.map(leaf => allocateLeaf(memory, leaf.scalar, capacity)) : [],
+        views: layout.kind === "linear" ? allocateViews(memory, capacity * layout.stride) : emptyViews,
         values: [],
         added,
         changed: layout.kind === "constant" ? added : allocateArray(memory, Float64Array, capacity),
@@ -62,22 +62,20 @@ export const createArchetype = (memory: Memory, id: number, components: readonly
     };
 };
 
-const growFields = (memory: Memory, storage: Storage, capacity: number, count: number): void => {
+const growViews = (memory: Memory, storage: Storage, capacity: number, count: number): void => {
     const { layout } = storage;
     if (layout.kind !== "linear") return;
-    storage.fields = storage.fields.map((field, i) => {
-        const grown = allocateLeaf(memory, layout.leaves[i].scalar, capacity);
-        grown.set(field.subarray(0, count));
-        freeArray(memory, field);
-        return grown;
-    });
+    const grown = allocateViews(memory, capacity * layout.stride);
+    grown.u8.set(storage.views.u8.subarray(0, count * layout.stride));
+    freeViews(memory, storage.views);
+    storage.views = grown;
 };
 
 const grow = (memory: Memory, archetype: Archetype): void => {
     const capacity = archetype.capacity * 2;
     const { count } = archetype;
     for (const storage of archetype.storages) {
-        growFields(memory, storage, capacity, count);
+        growViews(memory, storage, capacity, count);
         const shared = storage.changed === storage.added;
         storage.added = growArray(memory, storage.added, Float64Array, capacity, count);
         storage.changed = shared ? storage.added : growArray(memory, storage.changed, Float64Array, capacity, count);
@@ -95,10 +93,25 @@ export const insertRow = (memory: Memory, archetype: Archetype, entity: Entity):
     return row;
 };
 
+/** Copies one element of `stride` bytes: by 32-bit words when it's a multiple of 4, which every GPU layout is. */
+const copyElement = (from: Views, fromRow: number, to: Views, toRow: number, stride: number): void => {
+    if ((stride & 3) === 0) {
+        const words = stride >> 2;
+        const source = fromRow * words;
+        const target = toRow * words;
+        for (let i = 0; i < words; i++) to.u32[target + i] = from.u32[source + i];
+        return;
+    }
+    const source = fromRow * stride;
+    const target = toRow * stride;
+    for (let i = 0; i < stride; i++) to.u8[target + i] = from.u8[source + i];
+};
+
 /** Copies one component's value and ticks between rows of storages with the same layout. */
 export const copyCell = (from: Storage, fromRow: number, to: Storage, toRow: number): void => {
-    for (let i = 0; i < from.fields.length; i++) to.fields[i][toRow] = from.fields[i][fromRow];
-    if (from.layout.kind === "object") to.values[toRow] = from.values[fromRow];
+    const { layout } = from;
+    if (layout.kind === "linear") copyElement(from.views, fromRow, to.views, toRow, layout.stride);
+    else if (layout.kind === "object") to.values[toRow] = from.values[fromRow];
     to.added[toRow] = from.added[fromRow];
     to.changed[toRow] = from.changed[fromRow];
 };

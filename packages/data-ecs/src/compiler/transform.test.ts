@@ -45,6 +45,7 @@ type Options = {
     readonly booleans?: readonly string[];
     /** Whether the kernel has a `program`; when it does, the program must give the same results as the JS. */
     readonly program?: boolean;
+    readonly interleaved?: { readonly [component: string]: { readonly stride: number; readonly offsets: { readonly [path: string]: number } } };
 };
 
 const tick = 7;
@@ -54,7 +55,11 @@ type Signal = { readonly kind: "normal" } | { readonly kind: "branch"; readonly 
 const normal: Signal = { kind: "normal" };
 
 /** A reference interpreter for `Program`: JS number semantics, boolean typing of columns from `booleans`. */
-const interpret = (program: Program, columns: readonly (Float64Array | Uint32Array)[], booleans: readonly boolean[], rows: number, resources: readonly unknown[], args: unknown): void => {
+type Layout = { readonly strides: readonly number[]; readonly offsets: readonly number[] };
+
+/** A reference interpreter for `Program`, indexing columns by the layout as the WASM generator does. */
+const interpret = (program: Program, columns: readonly (Float64Array | Uint32Array)[], booleans: readonly boolean[], layout: Layout, rows: number, resources: readonly unknown[], args: unknown): void => {
+    const at = (column: number, row: number): number => row * (layout.strides[column] ?? 1) + (layout.offsets[column] ?? 0);
     const scalarAt = (root: unknown, path: readonly (number | string)[]): Scalar => {
         const value = path.reduce<unknown>((item, key) => Reflect.get(Object(item), key), root);
         if (typeof value !== "number" && typeof value !== "boolean") throw new Error(`not a scalar: ${String(value)}`);
@@ -66,7 +71,7 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
             switch (node.kind) {
                 case "number": case "boolean": return node.value;
                 case "column": {
-                    const value = columns[node.column]?.[row] ?? NaN;
+                    const value = columns[node.column]?.[at(node.column, row)] ?? NaN;
                     return booleans[node.column] === true ? value !== 0 : value;
                 }
                 case "resource": return scalarAt(resources[node.index], node.path);
@@ -133,8 +138,8 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
         const step = (statement: Program.Statement): Signal => {
             switch (statement.kind) {
                 case "set": locals[statement.local] = evaluate(statement.value); return normal;
-                case "store": { const column = columns[statement.column]; if (column) column[row] = Number(evaluate(statement.value)); return normal; }
-                case "stamp": { const column = columns[statement.column]; if (column) column[row] = tick; return normal; }
+                case "store": { const column = columns[statement.column]; if (column) column[at(statement.column, row)] = Number(evaluate(statement.value)); return normal; }
+                case "stamp": { const column = columns[statement.column]; if (column) column[at(statement.column, row)] = tick; return normal; }
                 case "if": return execute(evaluate(statement.test) ? statement.consequent : statement.alternate);
                 case "block": return outward(execute(statement.body));
                 case "loop":
@@ -153,11 +158,34 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
     }
 };
 
-/** Runs a kernel over hand-built columns; `fields` maps a component to its leaves by JSON path. */
+/** Padding in interleaved components, which kernels must never touch. */
+const padding = -12345;
+
+/**
+ * Runs a kernel over hand-built columns; `fields` maps a component to its leaves by JSON path. A component in
+ * `options.interleaved` stores its leaves in one array with that stride, at the given offsets per path; others are dense.
+ */
 const run = (description: Compiled, rows: number, fields: Fields, options: Options = {}) => {
-    const build = () => description.columns.map(column => column.kind === "entity" ? Float64Array.from({ length: rows }, (_, row) => 100 + row)
-        : column.kind === "changed" ? new Uint32Array(rows)
-        : Float64Array.from(fields[String(column.component)]?.[JSON.stringify(column.path)] ?? new Array<number>(rows).fill(0)));
+    const interleaved = options.interleaved ?? {};
+    const layout: Layout = {
+        strides: description.columns.map(column => column.kind === "field" ? interleaved[String(column.component)]?.stride ?? 1 : 1),
+        offsets: description.columns.map(column => column.kind === "field" ? interleaved[String(column.component)]?.offsets[JSON.stringify(column.path)] ?? 0 : 0),
+    };
+    const build = () => {
+        const shared = new Map<string, Float64Array>();
+        return description.columns.map((column, index) => {
+            if (column.kind === "entity") return Float64Array.from({ length: rows }, (_, row) => 100 + row);
+            if (column.kind === "changed") return new Uint32Array(rows);
+            const component = String(column.component);
+            const values = fields[component]?.[JSON.stringify(column.path)] ?? new Array<number>(rows).fill(0);
+            const stride = interleaved[component]?.stride;
+            if (stride === undefined) return Float64Array.from(values);
+            const array = shared.get(component) ?? new Float64Array(rows * stride).fill(padding);
+            shared.set(component, array);
+            values.forEach((value, row) => { array[row * stride + (layout.offsets[index] ?? 0)] = value; });
+            return array;
+        });
+    };
     const columns = build();
     const calls: Call[] = [];
     const commands = {
@@ -167,11 +195,11 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
         remove: (entity: unknown, ...keys: unknown[]) => { calls.push(["remove", entity, ...keys]); },
     };
     const booleans = description.columns.map(column => column.kind === "field" && (options.booleans ?? []).includes(String(column.component)));
-    description.create(booleans)(columns, 0, rows, options.resources ?? [], options.lookups ?? [], description.keys, options.args, commands, tick);
+    description.create(booleans, layout.strides, layout.offsets)(columns, 0, rows, options.resources ?? [], options.lookups ?? [], description.keys, options.args, commands, tick);
     expect(description.program !== null).toBe(options.program ?? true);
     if (description.program !== null) {
         const interpreted = build();
-        interpret(description.program, interpreted, booleans, rows, options.resources ?? [], options.args);
+        interpret(description.program, interpreted, booleans, layout, rows, options.resources ?? [], options.args);
         // Bit-identical, including NaN and -0.
         expect(interpreted.map(column => [...column].map(value => Object.is(value, -0) ? "-0" : String(value))))
             .toEqual(columns.map(column => [...column].map(value => Object.is(value, -0) ? "-0" : String(value))));
@@ -180,7 +208,12 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
         column.kind === kind && column.kind !== "entity" && column.component === component
         && (column.kind === "changed" || JSON.stringify(column.path) === JSON.stringify(path)));
     return {
-        field: (component: string, path: readonly (number | string)[] = []) => [...columns[index("field", component, path)] ?? []],
+        field: (component: string, path: readonly (number | string)[] = []) => {
+            const column = index("field", component, path);
+            return Array.from({ length: rows }, (_, row) => columns[column]?.[row * (layout.strides[column] ?? 1) + (layout.offsets[column] ?? 0)]);
+        },
+        /** A component's whole interleaved array, padding included. */
+        array: (component: string) => [...columns[index("field", component, [0])] ?? []],
         changed: (component: string) => [...columns[index("changed", component)] ?? []],
         calls,
     };
@@ -218,6 +251,32 @@ describe("particles", () => {
         expect(integrate.columns.some(column => column.kind === "changed" && column.component === "velocity")).toBe(false);
         // Plain reads: no boolean conversion where it isn't observable.
         for (const kernel of [gravity, integrate]) expect(String(kernel.create)).not.toMatch(/\?|booleans\[/);
+    });
+});
+
+describe("layout", () => {
+    test("interleaved components are read and written at row * stride + offset, leaving padding untouched", async () => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [velocity, alive], write: [velocity] } }, (row) => {
+            const [x, y, z] = row[velocity];
+            row[velocity] = [z, row[alive] === true ? y * 10 : y, x];
+        });`);
+        const result = run(kernel, 2, { velocity: vec3([1, 4], [2, 5], [3, 6]), alive: { "[]": [1, 0] } }, {
+            booleans: ["alive"],
+            interleaved: { velocity: { stride: 4, offsets: { "[0]": 0, "[1]": 1, "[2]": 2 } }, alive: { stride: 3, offsets: { "[]": 2 } } },
+        });
+        expect(result.array("velocity")).toEqual([3, 20, 1, padding, 6, 5, 4, padding]);
+        expect(result.changed("velocity")).toEqual([tick, tick]);
+    });
+
+    test("indices stay in step when return skips the rest of a row", async () => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [velocity], write: [velocity] } }, (row) => {
+            const [x, y, z] = row[velocity];
+            if (x > 1 && x < 5) return;
+            row[velocity] = [z, y, x];
+        });`);
+        const result = run(kernel, 3, { velocity: vec3([1, 4, 7], [2, 5, 8], [3, 6, 9]) }, { interleaved: { velocity: { stride: 4, offsets: { "[0]": 1, "[1]": 2, "[2]": 3 } } } });
+        expect(result.array("velocity")).toEqual([padding, 3, 2, 1, padding, 4, 5, 6, padding, 9, 8, 7]);
+        expect(result.changed("velocity")).toEqual([tick, 0, tick]);
     });
 });
 
@@ -381,7 +440,7 @@ describe("context", () => {
         expect(result.calls).toEqual([["spawn", { alive: true, mass: 3 }], ["spawn", { alive: false, mass: 4 }]]);
         const source = String(kernel.create);
         // Converted: the snapshot of `flag` (observed through `copy ===` and spawn) and `mass` in the spawn value.
-        expect(source.match(/ \? c\d+\[i\] !== 0/g)?.length).toBe(2);
+        expect(source.match(/ \? c\d+\[x\d+\] !== 0/g)?.length).toBe(2);
         expect(source.match(/booleans\[/g)?.length).toBe(2);
     });
 

@@ -4,12 +4,17 @@ import { generateWasm, importsOf, type WasmColumn } from "./wasm.js";
 
 type Expression = Program.Expression;
 
-const views = { f32: Float32Array, f64: Float64Array, i32: Int32Array, u32: Uint32Array, boolean: Uint8Array, entity: Float64Array, changed: Float64Array } as const;
+const views = { f32: Float32Array, f64: Float64Array, i32: Int32Array, u32: Uint32Array, boolean: Uint8Array } as const;
+type Output = keyof typeof views;
+
+const dense = (output: Output): WasmColumn => output === "boolean"
+    ? { view: "u8", stride: 1, offset: 0, boolean: true }
+    : { view: output, stride: output === "f64" ? 8 : 4, offset: 0, boolean: false };
 
 /** Runs a program over one row per input value; column 0 is the input (f64), column 1 the output of kind `output`. */
-const run = (output: WasmColumn, value: Expression, inputs: readonly number[]): number[] | null => {
+const run = (output: Output, value: Expression, inputs: readonly number[]): number[] | null => {
     const program: Program = { locals: 0, body: [{ kind: "store", column: 1, value }] };
-    const kernel = generateWasm(program, ["f64", output], () => "number");
+    const kernel = generateWasm(program, [dense("f64"), dense(output)], () => "number");
     if (kernel === null) return null;
     const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
     const input = new Float64Array(memory.buffer, 0, inputs.length);
@@ -75,6 +80,19 @@ describe("generateWasm", () => {
         expect(run("f64", { kind: "binary", operator: "===", left: mixed, right: { kind: "boolean", value: true } }, [0])).toBeNull();
     });
 
+    it("addresses interleaved columns by stride and offset, leaving the rest of each element untouched", () => {
+        // Column 1 is the z of a WGSL-storage vec3<f32>: 16-byte elements, at byte 8.
+        const kernel = generateWasm({ locals: 0, body: [{ kind: "store", column: 1, value: input }] }, [dense("f64"), { view: "f32", stride: 16, offset: 8, boolean: false }], () => "number");
+        if (kernel === null) throw new Error("expected a kernel");
+        const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+        new Float64Array(memory.buffer, 0, 3).set([1.5, 2.5, 3.5]);
+        const output = new Float32Array(memory.buffer, 4096, 12).fill(-1);
+        const runKernel: unknown = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof runKernel !== "function") throw new Error("no run export");
+        runKernel(0, 3, 0, 0, 4096);
+        expect([...output]).toEqual([-1, -1, 1.5, -1, -1, -1, 2.5, -1, -1, -1, 3.5, -1]);
+    });
+
     it("branches like structured WASM: a loop summing 1 to the input, with next ending the row", () => {
         const local = (index: number): Expression => ({ kind: "local", local: index });
         const program: Program = {
@@ -96,7 +114,7 @@ describe("generateWasm", () => {
                 { kind: "store", column: 1, value: local(0) },
             ],
         };
-        const kernel = generateWasm(program, ["f64", "f64"], () => "number");
+        const kernel = generateWasm(program, [dense("f64"), dense("f64")], () => "number");
         if (kernel === null) throw new Error("expected a kernel");
         const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
         new Float64Array(memory.buffer, 0, 3).set([4, -1, 10]);

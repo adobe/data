@@ -46,7 +46,7 @@ declare module "../../system/types.js" {
     }
 }
 
-Component.register(position, vec2);
+Component.register(position, { ...vec2, layout: "storage" });
 Component.register(velocity, vec2);
 Component.register(bounces, { type: "integer", minimum: -2147483648, maximum: 2147483647 });
 Component.register(flipped, { type: "boolean" });

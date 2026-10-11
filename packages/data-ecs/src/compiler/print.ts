@@ -20,9 +20,9 @@ export const printExpression = (unit: Unit, expression: Expression, observed: bo
         case "boolean": return String(expression.value);
         case "column": {
             const column = expression.column;
-            if (!observed) return `c${column}[i]`;
+            if (!observed) return `c${column}[x${column}]`;
             unit.booleans.add(column);
-            return `(b${column} ? c${column}[i] !== 0 : c${column}[i])`;
+            return `(b${column} ? c${column}[x${column}] !== 0 : c${column}[x${column}])`;
         }
         case "resource": return `r${expression.index}${printPath(expression.path)}`;
         case "args": return `args${printPath(expression.path)}`;
@@ -52,8 +52,8 @@ const printStatement = (unit: Unit, statement: Statement, labels: Labels): strin
             return `${declare}${localName(unit, statement.local)} = ${printExpression(unit, statement.value, unit.observed.has(statement.local))};`;
         }
         case "declare": return `let ${statement.locals.map(item => localName(unit, item)).join(", ")};`;
-        case "store": return `c${statement.column}[i] = ${value(statement.value)};`;
-        case "stamp": return `c${statement.column}[i] = tick;`;
+        case "store": return `c${statement.column}[x${statement.column}] = ${value(statement.value)};`;
+        case "stamp": return `c${statement.column}[x${statement.column}] = tick;`;
         case "if": {
             const alternate = printStatements(unit, statement.alternate, labels);
             return `if (${value(statement.test)}) {\n${printStatements(unit, statement.consequent, labels)}\n}${alternate === "" ? "" : ` else {\n${alternate}\n}`}`;

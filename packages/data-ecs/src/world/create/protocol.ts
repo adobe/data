@@ -14,7 +14,8 @@ export type EntitiesLayout = {
     readonly length: number;
 };
 
-export type StorageLayout = { readonly id: number; readonly fields: readonly number[]; readonly added: number; readonly changed: number };
+/** `column` is the byte offset of the component's interleaved column, or -1 when it stores nothing in linear memory. */
+export type StorageLayout = { readonly id: number; readonly column: number; readonly added: number; readonly changed: number };
 
 export type ArchetypeLayout = { readonly id: number; readonly capacity: number; readonly entities: number; readonly storages: readonly StorageLayout[] };
 
@@ -29,6 +30,8 @@ export type KernelSetup = {
     readonly url: string;
     readonly sources: readonly Source[];
     readonly booleans: readonly boolean[];
+    readonly strides: readonly number[];
+    readonly offsets: readonly number[];
     readonly lookups: readonly LookupSetup[];
     /** Component ids, used as `keys` so command values name components by id. */
     readonly keys: readonly number[];

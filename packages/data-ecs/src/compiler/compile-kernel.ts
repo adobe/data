@@ -45,7 +45,6 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     const { signature: { resources, lookups }, columns, booleans, keys } = unit;
     const locals = [
         ...columns.map((_, index) => `const c${index} = columns[${index}];`),
-        ...[...booleans].map(index => `const b${index} = booleans[${index}];`),
         ...resources.map((_, index) => `const r${index} = resources[${index}];`),
         ...lookups.map((_, index) => `const l${index} = lookups[${index}];`),
         ...keys.map((_, index) => `const k${index} = keys[${index}];`),
@@ -62,13 +61,19 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             `program: ${serialize(program)},`,
             "}",
         ].join("\n"),
+        // Per-registration constants live in the closure. Each column's element index `i * s + o` is strength-reduced to
+        // an induction variable in the loop update, which `continue rows` still runs.
         create: [
-            "(booleans) => (columns, start, end, resources, lookups, keys, args, commands, tick) => {",
+            "(booleans, strides, offsets) => {",
+            ...[...booleans].map(index => `const b${index} = booleans[${index}];`),
+            ...columns.map((_, index) => `const s${index} = strides[${index}], o${index} = offsets[${index}];`),
+            "return (columns, start, end, resources, lookups, keys, args, commands, tick) => {",
             ...locals,
             preludeCode,
-            `${rowLabel}: for (let i = start; i < end; i++) {`,
+            `${rowLabel}: for (let ${["i = start", ...columns.map((_, index) => `x${index} = start * s${index} + o${index}`)].join(", ")}; i < end; ${["i++", ...columns.map((_, index) => `x${index} += s${index}`)].join(", ")}) {`,
             kernel,
             "}",
+            "};",
             "}",
         ].filter(line => line !== "").join("\n"),
     };

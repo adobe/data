@@ -1,3 +1,4 @@
+import { viewsOf, type Views } from '../../layout/layout.js';
 import type { Memory } from './memory.js';
 
 export type ArrayConstructor<T> = {
@@ -28,3 +29,15 @@ export const growArray = <T extends View & { set(source: ArrayLike<number>): voi
     freeArray(memory, array);
     return grown;
 };
+
+/** Views of a new arena block of `bytes`, for one component's interleaved column. Contents are unspecified. */
+export const allocateViews = (memory: Memory, bytes: number): Views => {
+    if (!memory.shared) return viewsOf(new ArrayBuffer(bytes), 0, bytes);
+    const offset = memory.allocate(bytes);
+    return viewsOf(memory.memory.buffer, offset, bytes);
+};
+
+export const freeViews = (memory: Memory, views: Views): void => freeArray(memory, views.u8);
+
+/** Views of no bytes, for components with nothing to store. */
+export const emptyViews: Views = viewsOf(new ArrayBuffer(0), 0, 0);

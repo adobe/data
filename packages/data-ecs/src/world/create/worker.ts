@@ -2,7 +2,8 @@ import type { Entity } from '../../entity/entity.js';
 import type { Commands } from '../../system/commands.js';
 import { locate, reserve, type Reservations } from './entities.js';
 import type { Kernel, KernelModule } from './kernel.js';
-import { layoutOf, leafView, type Layout, type TypedArray } from './layout.js';
+import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../layout/layout.js';
+import { emptyViews } from './arrays.js';
 import type { ArchetypeLayout, EntitiesLayout, FromWorker, KernelSetup, LookupSetup, ToWorker, WorkerCommand, WorkerError } from './protocol.js';
 import { forEachPassingRange } from './ranges.js';
 import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
@@ -10,7 +11,7 @@ import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
 /** A worker's views of one archetype's columns in the shared memory. */
 type ArchetypeViews = {
     readonly entities: Float64Array;
-    readonly storages: ReadonlyMap<number, { readonly fields: readonly TypedArray[]; readonly added: Float64Array; readonly changed: Float64Array }>;
+    readonly storages: ReadonlyMap<number, { readonly views: Views; readonly added: Float64Array; readonly changed: Float64Array }>;
 };
 
 type EntityViews = Reservations & { readonly archetype: Int32Array; readonly row: Uint32Array; readonly length: number };
@@ -39,9 +40,8 @@ const viewArchetype = (buffer: ArrayBufferLike, layout: ArchetypeLayout): Archet
     entities: new Float64Array(buffer, layout.entities, layout.capacity),
     storages: new Map(layout.storages.map(storage => {
         const componentLayout = layouts[storage.id];
-        const leaves = componentLayout.kind === "linear" ? componentLayout.leaves : [];
         return [storage.id, {
-            fields: storage.fields.map((offset, i) => leafView(buffer, leaves[i].scalar, offset, layout.capacity)),
+            views: componentLayout.kind === "linear" && storage.column >= 0 ? viewsOf(buffer, storage.column, layout.capacity * componentLayout.stride) : emptyViews,
             added: new Float64Array(buffer, storage.added, layout.capacity),
             changed: new Float64Array(buffer, storage.changed, layout.capacity),
         }];
@@ -70,7 +70,7 @@ const createLookup = (lookup: LookupSetup) => (entity: Entity): readonly unknown
     return lookup.read.map(id => {
         const layout = layouts[id];
         const storage = archetype.storages.get(id);
-        return layout.kind === "linear" && storage !== undefined ? layout.read(storage.fields, row) : layout.kind === "constant" ? layout.value : undefined;
+        return layout.kind === "linear" && storage !== undefined ? layout.read(storage.views, row) : layout.kind === "constant" ? layout.value : undefined;
     });
 };
 
@@ -96,7 +96,10 @@ const columnsOf = (loaded: LoadedKernel, archetypeId: number): readonly TypedArr
         if (source.kind === "entity") return archetype.entities;
         const storage = archetype.storages.get(source.id);
         if (storage === undefined) throw new Error(`Archetype ${archetypeId} lacks component ${source.id}.`);
-        return source.kind === "changed" ? storage.changed : storage.fields[source.leaf];
+        if (source.kind === "changed") return storage.changed;
+        const layout = layouts[source.id];
+        if (layout.kind !== "linear") throw new Error(`Component ${source.id} isn't linear.`);
+        return storage.views[layout.leaves[source.leaf].view];
     });
     columns.set(key, built);
     return built;
@@ -131,7 +134,7 @@ const load = async (setups: readonly KernelSetup[]): Promise<void> => {
         const wasm = setup.wasm === null ? null : await instantiateWasm(setup.wasm.module, shared, setup.wasm.imports);
         return { module, wasm };
     }));
-    setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup) }));
+    setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides, setup.offsets), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup) }));
 };
 
 const applyLayout = (message: Extract<ToWorker, { kind: "layout" }>): void => {

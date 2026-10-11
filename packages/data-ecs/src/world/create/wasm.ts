@@ -1,5 +1,5 @@
 import type { Program } from './kernel.js';
-import type { Scalar } from './layout.js';
+import type { View } from '../../layout/layout.js';
 
 type Expression = Program.Expression;
 type Statement = Program.Statement;
@@ -7,8 +7,11 @@ type Statement = Program.Statement;
 /** What a value is, for strict equality: JS `true === 1` is false, but both are 1 here. */
 export type Type = "number" | "boolean" | "mixed";
 
-/** Column `k` stores `scalar`, or the entity (f64) or a changed tick (f64). */
-export type WasmColumn = Scalar | "entity" | "changed";
+/**
+ * Where column `k`'s value for a row is: at its address plus `row * stride + offset` bytes, through `view`.
+ * Entity and tick columns are dense f64. `boolean` columns read as 0 or 1.
+ */
+export type WasmColumn = { readonly view: View; readonly stride: number; readonly offset: number; readonly boolean: boolean };
 
 /** A scalar parameter: a leaf of a resource or of `args`, in `scalars` order. */
 export type WasmScalar = { readonly source: "resource"; readonly index: number; readonly path: readonly (number | string)[] } | { readonly source: "args"; readonly path: readonly (number | string)[] };
@@ -109,8 +112,6 @@ const name = (text: string): number[] => {
 const vector = (items: readonly (readonly number[])[]): number[] => [...unsigned(items.length), ...items.flat()];
 const section = (id: number, content: readonly number[]): number[] => [id, ...unsigned(content.length), ...content];
 
-const bytesOf = (column: WasmColumn): number => column === "f32" || column === "i32" || column === "u32" ? 4 : column === "boolean" ? 1 : 8;
-const shiftOf = (column: WasmColumn): number => Math.log2(bytesOf(column));
 
 /** Thrown inside generation when a program needs something WASM can't match exactly; the JS kernel is used instead. */
 const unsupported = Symbol("unsupported");
@@ -157,7 +158,7 @@ export const generateWasm = (
         switch (expression.kind) {
             case "number": return "number";
             case "boolean": return "boolean";
-            case "column": return columns[expression.column] === "boolean" ? "boolean" : "number";
+            case "column": return columns[expression.column].boolean ? "boolean" : "number";
             case "resource": case "args": return scalarTypes(expression.kind === "args" ? { source: "args", path: expression.path } : { source: "resource", index: expression.index, path: expression.path }) ?? "mixed";
             case "local": return localTypes[expression.local] ?? "number";
             case "unary": return expression.operator === "!" ? "boolean" : "number";
@@ -199,7 +200,7 @@ export const generateWasm = (
     };
     let rowLocal = 0;
     const address = (column: number): void => {
-        code.push(op.localGet, ...unsigned(columnParameter(column)), op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(shiftOf(columns[column])), op.i32Shl, op.i32Add);
+        code.push(op.localGet, ...unsigned(columnParameter(column)), op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(columns[column].stride), op.i32Mul, op.i32Add);
     };
 
     /** Leaves the JS `ToInt32` of the f64 on the stack as an i32: exact for every finite value; NaN and infinities give 0. */
@@ -235,14 +236,19 @@ export const generateWasm = (
                 return;
             }
             case "column": {
-                const column = columns[expression.column];
+                const { view, offset, boolean } = columns[expression.column];
                 address(expression.column);
-                switch (column) {
-                    case "f32": code.push(op.f32Load, 2, 0, op.f64PromoteF32); return;
-                    case "i32": code.push(op.i32Load, 2, 0, op.f64ConvertI32S); return;
-                    case "u32": code.push(op.i32Load, 2, 0, op.f64ConvertI32U); return;
-                    case "boolean": code.push(op.i32Load8u, 0, 0, op.i32Const, 0, 0x47 /* i32.ne */, op.f64ConvertI32U); return;
-                    default: code.push(op.f64Load, 3, 0); return;
+                const memory = (align: number): number[] => [align, ...unsigned(offset)];
+                if (boolean) {
+                    code.push(view === "u8" ? op.i32Load8u : op.i32Load, ...memory(view === "u8" ? 0 : 2), op.i32Const, 0, 0x47 /* i32.ne */, op.f64ConvertI32U);
+                    return;
+                }
+                switch (view) {
+                    case "f32": code.push(op.f32Load, ...memory(2), op.f64PromoteF32); return;
+                    case "i32": code.push(op.i32Load, ...memory(2), op.f64ConvertI32S); return;
+                    case "u32": code.push(op.i32Load, ...memory(2), op.f64ConvertI32U); return;
+                    case "u8": code.push(op.i32Load8u, ...memory(0), op.f64ConvertI32U); return;
+                    default: code.push(op.f64Load, ...memory(3)); return;
                 }
             }
             case "unary":
@@ -384,15 +390,16 @@ export const generateWasm = (
     };
 
     const store = (column: number, value: Expression | "tick"): void => {
-        const kind = columns[column];
+        const { view, offset } = columns[column];
         address(column);
         if (value === "tick") code.push(op.localGet, 2);
         else emit(value);
-        switch (kind) {
-            case "f32": code.push(op.f32DemoteF64, op.f32Store, 2, 0); return;
-            case "i32": case "u32": emitToInt32(); code.push(op.i32Store, 2, 0); return;
-            case "boolean": emitToInt32(); code.push(op.i32Store8, 0, 0); return;
-            default: code.push(op.f64Store, 3, 0); return;
+        const memory = (align: number): number[] => [align, ...unsigned(offset)];
+        switch (view) {
+            case "f32": code.push(op.f32DemoteF64, op.f32Store, ...memory(2)); return;
+            case "i32": case "u32": emitToInt32(); code.push(op.i32Store, ...memory(2)); return;
+            case "u8": emitToInt32(); code.push(op.i32Store8, ...memory(0)); return;
+            default: code.push(op.f64Store, ...memory(3)); return;
         }
     };
 

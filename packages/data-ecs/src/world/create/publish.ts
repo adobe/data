@@ -11,7 +11,7 @@ const archetypeLayout = (archetype: Archetype): ArchetypeLayout => ({
     entities: archetype.entities.byteOffset,
     storages: archetype.storages.map(storage => ({
         id: storage.component,
-        fields: storage.fields.map(field => field.byteOffset),
+        column: storage.layout.kind === "linear" ? storage.views.u8.byteOffset : -1,
         added: storage.added.byteOffset,
         changed: storage.changed.byteOffset,
     })),

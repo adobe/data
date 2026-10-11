@@ -3,7 +3,7 @@ import { schemaOf } from '../../registry/create-registry.js';
 import { kindOf } from '../../registry/declare-name.js';
 import { createArchetype, type Archetype } from './archetype.js';
 import { createEntities, type Entities } from './entities.js';
-import { layoutOf, type Layout } from './layout.js';
+import { layoutOf, type Layout } from '../../layout/layout.js';
 import { createMemory, type Memory } from './memory.js';
 
 export type Key = string | symbol;

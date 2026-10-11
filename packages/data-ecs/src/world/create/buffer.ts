@@ -1,4 +1,5 @@
 import type { Entity } from '../../entity/entity.js';
+import type { KernelCommands } from './kernel.js';
 
 export const spawnCommand = 0;
 export const despawnCommand = 1;
@@ -38,15 +39,24 @@ export const pushCommand = (buffer: CommandBuffer, kind: number, entity: Entity)
 export const endOf = (buffer: CommandBuffer, command: number): number =>
     command + 1 < buffer.starts.length ? buffer.starts[command + 1] : buffer.ids.length;
 
-/** Appends `source`'s commands, except those naming `skipped`. */
-export const appendBuffer = (target: CommandBuffer, source: CommandBuffer, skipped: Entity): void => {
-    for (let command = 0; command < source.kinds.length; command++) {
-        const entity = source.entities[command];
-        if (entity === skipped) continue;
-        pushCommand(target, source.kinds[command], entity);
-        for (let k = source.starts[command], end = endOf(source, command); k < end; k++) {
-            target.ids.push(source.ids[k]);
-            target.values.push(source.values[k]);
-        }
-    }
-};
+/**
+ * Commands for a kernel, writing straight into a buffer: `ids` maps the kernel's key indexes to component ids.
+ * `target.buffer` may be replaced between calls.
+ */
+export const createKernelCommands = (target: { readonly buffer: CommandBuffer }, ids: readonly number[], reserve: () => Entity): KernelCommands => ({
+    spawn: () => {
+        const entity = reserve();
+        pushCommand(target.buffer, spawnCommand, entity);
+        return entity;
+    },
+    begin: (kind, entity) => pushCommand(target.buffer, kind, entity),
+    value: (key, value) => {
+        if (value === undefined) return;
+        target.buffer.ids.push(ids[key]);
+        target.buffer.values.push(value);
+    },
+    component: key => {
+        target.buffer.ids.push(ids[key]);
+        target.buffer.values.push(undefined);
+    },
+});

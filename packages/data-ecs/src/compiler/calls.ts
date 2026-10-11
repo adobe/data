@@ -1,9 +1,9 @@
 import type { SimpleCallExpression, Expression as SourceExpression, Node, SpreadElement } from 'estree';
 import { bind } from './bind.js';
-import { observe } from './booleans.js';
+import { observe, set } from './booleans.js';
 import { materialize, toData } from './data.js';
 import { fail } from './failure.js';
-import { local, type Expression } from './ir.js';
+import { local, type Expression, type Statement } from './ir.js';
 import type { Out } from './out.js';
 import { scalar } from './scalar.js';
 import { findLocal, rootScope, type Scope } from './scope.js';
@@ -24,14 +24,23 @@ const commandKey = (node: Node, scope: Scope): number =>
         ? keyIndex(scope.unit, node.name)
         : fail(node, "commands name components by identifiers bound at module scope");
 
-const commandValues = (node: SourceExpression | SpreadElement | undefined, call: Node, scope: Scope, out: Out): Expression => {
+/** A value as a temporary, so command arguments are evaluated in source order before the command starts. */
+const temporary = (scope: Scope, out: Out, hint: string, value: Expression): Expression => {
+    if (value.kind === "local" || value.kind === "number" || value.kind === "boolean") return value;
+    const name = fresh(scope.unit, hint);
+    out.push(set(scope.unit, name, value, "const"));
+    return local(name);
+};
+
+/** Command values as `(key index, value)` pairs, each evaluated into a temporary. */
+const commandValues = (node: SourceExpression | SpreadElement | undefined, call: Node, scope: Scope, out: Out): readonly Statement[] => {
     if (node?.type !== "ObjectExpression") return fail(node ?? call, "command values must be an object literal like { [position]: value }");
-    const entries = node.properties.map((property): readonly [number, Expression] => {
+    return node.properties.map((property): Statement => {
         if (property.type === "SpreadElement" || !property.computed) return fail(property, "command value keys must be computed component identifiers like [position]");
+        const key = commandKey(property.key, scope);
         const value = scope.unit.expression(property.value, scope, out);
-        return [commandKey(property.key, scope), observe(scope.unit, materialize(toData(value, property.value, scope)))];
+        return { kind: "value", key, value: temporary(scope, out, "value", observe(scope.unit, materialize(toData(value, property.value, scope)))) };
     });
-    return { kind: "components", entries };
 };
 
 const none = scalarValue({ kind: "nullish", value: "undefined" });
@@ -43,20 +52,22 @@ const command = (name: string, node: SimpleCallExpression, scope: Scope, out: Ou
         case "spawn": {
             const values = commandValues(entity, node, scope, out);
             const result = fresh(scope.unit, "spawned");
-            out.push({ kind: "spawn", local: result, values });
+            out.push({ kind: "spawn", local: result }, ...values);
             return scalarValue(local(result));
         }
         case "despawn":
-            out.push({ kind: "despawn", entity: scalarArgument(entity, scope, out) });
+            out.push({ kind: "begin", command: 1, entity: temporary(scope, out, "entity", scalarArgument(entity, scope, out)) });
             return none;
         case "add": {
-            const target = scalarArgument(entity, scope, out);
-            out.push({ kind: "add", entity: target, values: commandValues(rest[0], node, scope, out) });
+            const target = temporary(scope, out, "entity", scalarArgument(entity, scope, out));
+            const values = commandValues(rest[0], node, scope, out);
+            out.push({ kind: "begin", command: 2, entity: target }, ...values);
             return none;
         }
         default: {
-            const target = scalarArgument(entity, scope, out);
-            out.push({ kind: "remove", entity: target, keys: rest.map(key => commandKey(argument(key), scope)) });
+            const target = temporary(scope, out, "entity", scalarArgument(entity, scope, out));
+            const keys = rest.map(key => commandKey(argument(key), scope));
+            out.push({ kind: "begin", command: 3, entity: target }, ...keys.map((key): Statement => ({ kind: "component", key })));
             return none;
         }
     }

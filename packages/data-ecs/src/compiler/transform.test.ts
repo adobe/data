@@ -37,7 +37,7 @@ const failure = async (source: string): Promise<string> => {
 };
 
 type Fields = { readonly [component: string]: { readonly [path: string]: readonly number[] } };
-type Call = readonly [string, ...unknown[]];
+type Call = readonly unknown[];
 type Options = {
     readonly resources?: readonly unknown[];
     readonly lookups?: readonly ((entity: number) => readonly unknown[] | null)[];
@@ -212,11 +212,13 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
     };
     const columns = build();
     const calls: Call[] = [];
+    // Records each command start as [kind, entity], and each value or component as [kind, entity, key index, value?].
+    let current: readonly [number | "spawn", number] = ["spawn", 0];
     const commands = {
-        spawn: (values: unknown) => { calls.push(["spawn", values]); return 999; },
-        despawn: (entity: unknown) => { calls.push(["despawn", entity]); },
-        add: (entity: unknown, values: unknown) => { calls.push(["add", entity, values]); },
-        remove: (entity: unknown, ...keys: unknown[]) => { calls.push(["remove", entity, ...keys]); },
+        spawn: () => { current = ["spawn", 999]; calls.push(current); return 999; },
+        begin: (kind: number, entity: number) => { current = [kind, entity]; calls.push(current); },
+        value: (key: number, value: unknown) => { calls.push([...current, key, value]); },
+        component: (key: number) => { calls.push([...current, key]); },
     };
     const booleans = description.columns.map(column => column.kind === "field" && (options.booleans ?? []).includes(String(column.component)));
     const [start, end] = options.range ?? [0, rows];
@@ -492,11 +494,28 @@ describe("context", () => {
         });`);
         const result = run(kernel, 2, { alive: { "[]": [1, 0] }, mass: { "[]": [3, 4] } }, { booleans: ["alive"], program: false });
         expect(result.field("score")).toEqual([17, 28]);
-        expect(result.calls).toEqual([["spawn", { alive: true, mass: 3 }], ["spawn", { alive: false, mass: 4 }]]);
+        expect(result.calls).toEqual([
+            ["spawn", 999], ["spawn", 999, 0, true], ["spawn", 999, 1, 3],
+            ["spawn", 999], ["spawn", 999, 0, false], ["spawn", 999, 1, 4],
+        ]);
         const source = String(kernel.create);
         // Converted: the snapshot of `flag` (observed through `copy ===` and spawn) and `mass` in the spawn value.
         expect(source.match(/ \? c\d+\[x\d+\] !== 0/g)?.length).toBe(2);
         expect(source.match(/booleans\[/g)?.length).toBe(2);
+    });
+
+    test("a spawn nested in an add's value is issued before the add begins", async () => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [mass] } }, (row, context, commands) => {
+            commands.add(row.entity, { [target]: commands.spawn({ [mass]: row[mass] }), [score]: 1 });
+            commands.despawn(row.entity);
+        });`);
+        expect(kernel.keys).toEqual(["target", "mass", "score"]);
+        expect(String(kernel.create)).not.toMatch(/\bkeys\[/);
+        expect(run(kernel, 1, { mass: { "[]": [5] } }, { program: false }).calls).toEqual([
+            ["spawn", 999], ["spawn", 999, 1, 5],
+            [2, 100], [2, 100, 0, 999], [2, 100, 2, 1],
+            [1, 100],
+        ]);
     });
 
     test("commands name components through keys", async () => {
@@ -507,9 +526,9 @@ describe("context", () => {
         });`);
         expect(kernel.keys).toEqual(["position", "alive", "score"]);
         expect(run(kernel, 1, { position: { "[0]": [5] } }, { program: false }).calls).toEqual([
-            ["spawn", { position: [5, 1], alive: true }],
-            ["add", 999, { score: 100 }],
-            ["remove", 100, "alive", "score"],
+            ["spawn", 999], ["spawn", 999, 0, [5, 1]], ["spawn", 999, 1, true],
+            [2, 999], [2, 999, 2, 100],
+            [3, 100], [3, 100, 1], [3, 100, 2],
         ]);
     });
 });

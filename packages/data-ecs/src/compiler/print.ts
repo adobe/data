@@ -37,7 +37,6 @@ export const printExpression = (unit: Unit, expression: Expression, observed: bo
         case "element": return `${print(expression.object)}${expression.optional ? "?." : ""}[${print(expression.index)}]`;
         case "array": return `[${expression.items.map(print).join(", ")}]`;
         case "record": return `{ ${expression.fields.map(([name, item]) => `${JSON.stringify(name)}: ${print(item)}`).join(", ")} }`;
-        case "components": return `{ ${expression.entries.map(([key, item]) => `[k${key}]: ${print(item)}`).join(", ")} }`;
     }
 };
 
@@ -76,10 +75,10 @@ const printStatement = (unit: Unit, statement: Statement, labels: Labels): strin
         case "branchIf": return `if (${value(statement.test)}) ${branch(statement.label)}`;
         case "next": return `continue ${rowLabel};`;
         case "lookup": return `const ${localName(unit, statement.local)} = l${statement.lookup}(${value(statement.entity)});`;
-        case "spawn": return `const ${localName(unit, statement.local)} = commands.spawn(${value(statement.values)});`;
-        case "despawn": return `commands.despawn(${value(statement.entity)});`;
-        case "add": return `commands.add(${value(statement.entity)}, ${value(statement.values)});`;
-        case "remove": return `commands.remove(${[value(statement.entity), ...statement.keys.map(key => `k${key}`)].join(", ")});`;
+        case "spawn": return `const ${localName(unit, statement.local)} = commands.spawn();`;
+        case "begin": return `commands.begin(${statement.command}, ${value(statement.entity)});`;
+        case "value": return `commands.value(${statement.key}, ${value(statement.value)});`;
+        case "component": return `commands.component(${statement.key});`;
     }
 };
 

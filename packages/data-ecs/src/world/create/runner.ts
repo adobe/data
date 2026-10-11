@@ -7,7 +7,8 @@ import { createCommands } from './commands.js';
 import { bindKernel, type BoundKernel } from './kernels.js';
 import type { Pool } from './pool.js';
 import { maximumScalars, type KernelSetup } from './protocol.js';
-import { createBuffer, type CommandBuffer } from './buffer.js';
+import { createBuffer, createKernelCommands, type CommandBuffer } from './buffer.js';
+import { reserve } from './entities.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
 import { createContext, createRow, type Cursor } from './rows.js';
@@ -58,6 +59,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     }
     const holder: { buffer: CommandBuffer } = { buffer: createBuffer() };
     const commands = createCommands(state, holder);
+    const kernelCommands = createKernelCommands(holder, kernel?.setup.keys ?? [], () => reserve(state.entities));
     const context = createContext(state, declaration);
     const matches: Archetype[] = [];
     let checked = 0;
@@ -121,7 +123,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         if (bound.compiled() !== null && bound.wasm !== null) return runWasm(bound, archetype, 0, archetype.count, since, [...bound.lookupParameters(), ...scalarValues(bound.wasm.scalars, values, args)], tick);
         const run = bound.kernel();
         forEachPassingRange(filters, since, 0, archetype.count, (start, end) =>
-            run(columns, start, end, values, bound.lookups, bound.description.keys, args, commands, tick));
+            run(columns, start, end, values, bound.lookups, bound.description.keys, args, kernelCommands, tick));
     };
 
     /** Splits an archetype's rows evenly across workers, in chunks of at least `minimumChunk` rows. */

@@ -51,7 +51,6 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         ...columns.map((_, index) => `const c${index} = columns[${index}];`),
         ...resources.map((_, index) => `const r${index} = resources[${index}];`),
         ...lookups.map((_, index) => `const l${index} = lookups[${index}];`),
-        ...keys.map((_, index) => `const k${index} = keys[${index}];`),
     ];
     return {
         description: url => [

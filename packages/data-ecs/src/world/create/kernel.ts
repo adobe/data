@@ -1,5 +1,4 @@
 import type { Entity } from '../../entity/entity.js';
-import type { Commands } from '../../system/commands.js';
 
 type Key = string | symbol;
 
@@ -33,7 +32,9 @@ export type Shape = { readonly component: Key; readonly leaves: readonly Path[] 
  * Processes rows `start` to `end` (exclusive). Change filters are applied by the caller, which passes only passing ranges.
  * - `resources`: values in `KernelDescription.resources` order.
  * - `lookups`: functions in `KernelDescription.lookups` order, returning the lookup's `read` values in declared order, or `null`.
- * - `keys`: what command values use to name components: `KernelDescription.keys` on the main thread, component ids in workers.
+ * - `keys`: `KernelDescription.keys`, for anything that needs a component's key.
+ * - `commands`: issue commands without allocating: values are evaluated first, then `begin` (or `spawn`), then each `value`
+ *   or `component`, naming components by index into `keys`.
  */
 export type Kernel = (
     columns: readonly (Float64Array | Float32Array | Int32Array | Uint32Array | Uint8Array)[],
@@ -43,9 +44,20 @@ export type Kernel = (
     lookups: readonly ((entity: Entity) => readonly unknown[] | null)[],
     keys: readonly (Key | number)[],
     args: unknown,
-    commands: Commands,
+    commands: KernelCommands,
     tick: number,
 ) => void;
+
+/** How kernels issue commands. `kind` is 1 for despawn, 2 for add, 3 for remove; `key` indexes the kernel's `keys`. */
+export type KernelCommands = {
+    /** Reserves an entity and starts its spawn command. */
+    readonly spawn: () => Entity;
+    readonly begin: (kind: number, entity: Entity) => void;
+    /** A component and its value for the current spawn or add; `undefined` values are skipped. */
+    readonly value: (key: number, value: unknown) => void;
+    /** A component for the current remove. */
+    readonly component: (key: number) => void;
+};
 
 /**
  * A kernel's row body as data, for generating WASM at registration. Every value is a number: booleans are 0 or 1,

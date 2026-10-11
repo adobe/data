@@ -37,9 +37,7 @@ export type Expression =
     | { readonly kind: "string"; readonly value: string }
     | { readonly kind: "element"; readonly object: Expression; readonly index: Expression; readonly optional: boolean }
     | { readonly kind: "array"; readonly items: readonly Expression[] }
-    | { readonly kind: "record"; readonly fields: readonly (readonly [string, Expression])[] }
-    /** Command values: `{ [keys[key]]: value }`. */
-    | { readonly kind: "components"; readonly entries: readonly (readonly [number, Expression])[] };
+    | { readonly kind: "record"; readonly fields: readonly (readonly [string, Expression])[] };
 
 export type Statement =
     | { readonly kind: "set"; readonly local: number; readonly value: Expression; readonly declare: "const" | "let" | undefined }
@@ -56,10 +54,13 @@ export type Statement =
     | { readonly kind: "next" }
     // JS only:
     | { readonly kind: "lookup"; readonly local: number; readonly lookup: number; readonly entity: Expression }
-    | { readonly kind: "spawn"; readonly local: number; readonly values: Expression }
-    | { readonly kind: "despawn"; readonly entity: Expression }
-    | { readonly kind: "add"; readonly entity: Expression; readonly values: Expression }
-    | { readonly kind: "remove"; readonly entity: Expression; readonly keys: readonly number[] };
+    /** `KernelCommands`: `spawn` reserves an entity and starts its spawn; `begin` starts a despawn (1), add (2) or remove (3). */
+    | { readonly kind: "spawn"; readonly local: number }
+    | { readonly kind: "begin"; readonly command: 1 | 2 | 3; readonly entity: Expression }
+    /** A component (index into `keys`) and its value for the current spawn or add. */
+    | { readonly kind: "value"; readonly key: number; readonly value: Expression }
+    /** A component (index into `keys`) for the current remove. */
+    | { readonly kind: "component"; readonly key: number };
 
 export const number = (value: number): Expression => ({ kind: "number", value });
 export const local = (index: number): Expression => ({ kind: "local", local: index });
@@ -77,7 +78,6 @@ export const references = (expression: Expression, matches: (node: Expression) =
         case "element": return references(expression.object, matches) || references(expression.index, matches);
         case "array": return expression.items.some(item => references(item, matches));
         case "record": return expression.fields.some(([, item]) => references(item, matches));
-        case "components": return expression.entries.some(([, item]) => references(item, matches));
         default: return false;
     }
 };

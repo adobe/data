@@ -260,6 +260,22 @@ describe("World.create", () => {
         expect(changes).toEqual([-1]);
     });
 
+    it("selects with where and order", async () => {
+        const edit = System.create({ name: "createTest/edit" }, (_, __, commands) => {
+            for (let i = 0; i < 10; i++) commands.spawn({ [position]: [i % 3, i], [velocity]: i });
+        });
+        const world = await World.create({ systems: [edit] });
+        await world.run(edit);
+        const velocities = (entities: readonly Entity[]): (number | null)[] => entities.map(entity => world.read.component(entity, velocity));
+        expect(velocities(world.query.select([velocity], { where: { [velocity]: { "<": 3 } } }))).toEqual([0, 1, 2]);
+        expect(velocities(world.query.select([velocity], { where: { [velocity]: { ">=": 2, "!=": 4, "<": 6 } } }))).toEqual([2, 3, 5]);
+        expect(velocities(world.query.select([position, velocity], { where: { [position]: [1, 4] } }))).toEqual([4]);
+        expect(velocities(world.query.select([velocity], { order: { [velocity]: false } }))).toEqual([9, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
+        expect(velocities(world.query.select([position, velocity], { where: { [velocity]: { ">": 1 } }, order: { [position]: true } })))
+            .toEqual([3, 6, 9, 4, 7, 2, 5, 8]);
+        expect(world.query.count([velocity], { where: { [velocity]: { "<": 3 } } })).toBe(3);
+    });
+
     it("spawns components named by symbols", async () => {
         let spawned: Entity = -1;
         const edit = System.create({ name: "createTest/edit" }, (_, __, commands) => {

@@ -12,6 +12,11 @@ export type Storage = {
     views: Views;
     /** Values, for an object layout. */
     readonly values: unknown[];
+    /** How the sync point writes a value without a closure call: one of the `write` kinds, with its leaves' placement. */
+    readonly write: number;
+    readonly unitStride: number;
+    readonly unitOffset: number;
+    readonly lanes: number;
     /** Ticks are f64 so they never wrap; u32 ticks with a clamp pass are a phase 2 optimization. */
     added: Float64Array;
     changed: Float64Array;
@@ -22,6 +27,27 @@ export type Storage = {
 
 /** Bytes after a column's last row, so a WASM kernel's 16-byte load of a row's leaves never reads past the column. */
 export const columnSlack = 16;
+
+/** Write kinds: a scalar of one view, or a tuple of `lanes` consecutive f32s, like a vec3; anything else uses `layout.write`. */
+export const writeF32 = 1;
+export const writeU32 = 2;
+export const writeI32 = 3;
+export const writeF64 = 4;
+export const writeF32Lanes = 5;
+export const writeGeneral = 0;
+
+const writeOf = (layout: Layout): { readonly write: number; readonly unitStride: number; readonly unitOffset: number; readonly lanes: number } => {
+    const general = { write: writeGeneral, unitStride: 0, unitOffset: 0, lanes: 0 };
+    if (layout.kind !== "linear") return general;
+    const [first] = layout.leaves;
+    if (first === undefined || layout.leaves.some(leaf => leaf.scalar === "boolean")) return general;
+    if (layout.leaves.length === 1 && first.path.length === 0) {
+        const kinds: { readonly [view: string]: number } = { f32: writeF32, u32: writeU32, i32: writeI32, f64: writeF64 };
+        return { write: kinds[first.view] ?? writeGeneral, unitStride: first.unitStride, unitOffset: first.unitOffset, lanes: 1 };
+    }
+    const lanes = layout.leaves.every((leaf, i) => leaf.view === "f32" && leaf.path.length === 1 && leaf.path[0] === i && leaf.unitStride === first.unitStride && leaf.unitOffset === first.unitOffset + i);
+    return lanes ? { write: writeF32Lanes, unitStride: first.unitStride, unitOffset: first.unitOffset, lanes: layout.leaves.length } : general;
+};
 
 /** Chunks covering `capacity` rows. */
 const chunksFor = (capacity: number): number => Math.max(1, Math.ceil(capacity / 2 ** chunkShift));
@@ -46,9 +72,9 @@ export type Archetype = {
     readonly storageOf: ReadonlyMap<number, Storage>;
     /** Storages by component id, for hot paths. */
     readonly storageById: readonly (Storage | undefined)[];
-    /** The archetype with one more or one fewer component, cached as edges are first taken. */
-    readonly adding: Map<number, Archetype>;
-    readonly removing: Map<number, Archetype>;
+    /** The archetype with one more or one fewer component, by component id, cached as edges are first taken. */
+    readonly adding: (Archetype | undefined)[];
+    readonly removing: (Archetype | undefined)[];
     /** For a move to another archetype: each component they share, as source and target storages. */
     readonly moves: Map<Archetype, readonly (readonly [Storage, Storage])[]>;
     entities: Float64Array;
@@ -71,6 +97,7 @@ const createStorage = (memory: Memory, component: number, layout: Layout, capaci
         layout,
         views: layout.kind === "linear" ? allocateViews(memory, capacity * layout.stride + columnSlack) : emptyViews,
         values: [],
+        ...writeOf(layout),
         added,
         changed: layout.kind === "constant" ? added : allocateArray(memory, Float64Array, capacity),
         chunkAdded,
@@ -88,8 +115,8 @@ export const createArchetype = (memory: Memory, id: number, components: readonly
         storages,
         storageOf: new Map(storages.map(storage => [storage.component, storage])),
         storageById,
-        adding: new Map(),
-        removing: new Map(),
+        adding: [],
+        removing: [],
         moves: new Map(),
         entities: allocateArray(memory, Float64Array, initialCapacity),
         count: 0,
@@ -108,8 +135,7 @@ const growViews = (memory: Memory, storage: Storage, capacity: number, count: nu
     storage.views = grown;
 };
 
-const grow = (memory: Memory, archetype: Archetype): void => {
-    const capacity = archetype.capacity * 2;
+const grow = (memory: Memory, archetype: Archetype, capacity = archetype.capacity * 2): void => {
     const { count } = archetype;
     for (const storage of archetype.storages) {
         growViews(memory, storage, capacity, count);
@@ -126,6 +152,14 @@ const grow = (memory: Memory, archetype: Archetype): void => {
     archetype.entities = growArray(memory, archetype.entities, Float64Array, capacity, count);
     archetype.capacity = capacity;
     archetype.version++;
+};
+
+/** Grows once to fit `needed` rows, so a sync point adding many doesn't double over and over. */
+export const ensureCapacity = (memory: Memory, archetype: Archetype, needed: number): void => {
+    if (needed <= archetype.capacity) return;
+    let capacity = archetype.capacity;
+    while (capacity < needed) capacity *= 2;
+    grow(memory, archetype, capacity);
 };
 
 /** Appends a row for `entity`, growing if full. Component values and ticks are left for the caller to write. */

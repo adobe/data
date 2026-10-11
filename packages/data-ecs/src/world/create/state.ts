@@ -83,20 +83,20 @@ export const archetypeOf = (state: State, components: readonly number[]): Archet
 /** The archetype with `id` added, through a cached edge. Creating one allocates, so this runs only at sync points. */
 export const withComponent = (state: State, archetype: Archetype, id: number): Archetype => {
     if (archetype.storageById[id] !== undefined) return archetype;
-    let next = archetype.adding.get(id);
+    let next = archetype.adding[id];
     if (next === undefined) {
         next = archetypeOf(state, [...archetype.components, id].sort((a, b) => a - b));
-        archetype.adding.set(id, next);
+        archetype.adding[id] = next;
     }
     return next;
 };
 
 export const withoutComponent = (state: State, archetype: Archetype, id: number): Archetype => {
     if (archetype.storageById[id] === undefined) return archetype;
-    let next = archetype.removing.get(id);
+    let next = archetype.removing[id];
     if (next === undefined) {
         next = archetypeOf(state, archetype.components.filter(component => component !== id));
-        archetype.removing.set(id, next);
+        archetype.removing[id] = next;
     }
     return next;
 };

@@ -58,7 +58,7 @@ All of the runtime lives here. The only export is `create`, which moves here fro
   - The spawn cursor and free list live in shared memory, and `reserve` is atomic, so workers spawn real entities.
   - After each sync point, workers receive what changed in the layout: new schemas, new or grown archetypes, and the entity table. Messages are ordered, so a worker always has the layout before the tasks that use it. Shared memory doesn't detach as it grows, so nothing else is reposted.
 - **Dispatch:**
-  - Within a tier, kernels start first: an archetype of at least `minimumChunk` rows is split evenly across workers, and smaller ones run on the main thread. Then non-kernel systems run on the main thread while the workers work.
+  - Within a tier, kernels start first: an archetype of at least `minimumChunk` rows is split across workers, and smaller ones run on the main thread. WASM kernels claim pieces of about an eighth of a worker's share from a counter in shared memory, so performance and efficiency cores finish together; JS kernels take even shares. Then non-kernel systems run on the main thread while the workers work.
   - Each worker applies the change filter to its own chunk.
   - Each system has its own command buffer per run. A worker returns its chunk's commands with its reply, naming components by id. Buffers merge in (tier order, chunk order), so results don't depend on timing. Encoding commands into shared memory is phase 2.
   - A failing system or chunk rejects the run after its tier finishes. Later tiers are skipped, and the commands so far still apply.

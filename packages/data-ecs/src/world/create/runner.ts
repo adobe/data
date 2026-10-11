@@ -27,6 +27,8 @@ export type Workers = { readonly pool: Pool; readonly minimumChunk: number; next
 
 /** 16 rows of f32 is a 64-byte line, so chunks of different workers never share one. */
 const chunkAlignment = 16;
+/** Pieces per worker in a claimed split: enough that faster workers can take more of them. */
+const claimsPerWorker = 8;
 
 /**
  * Runs one leaf system. Each run takes a new tick, which becomes the system's `lastRun`.
@@ -130,30 +132,32 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             run(columns, start, end, values, bound.lookups, bound.description.keys, args, kernelCommands, tick));
     };
 
-    /** Splits an archetype's rows evenly across workers, in chunks of at least `minimumChunk` rows. */
     /** WASM kernels with few enough scalars dispatch through shared memory. */
     const isFast = (bound: BoundKernel | null): boolean =>
         bound !== null && bound.wasm !== null && bound.compiled() !== null && bound.lookupParameters().length + bound.wasm.scalars.length <= maximumScalars;
     /** Rows below which an archetype runs on the main thread. Shared-memory dispatch is cheap enough that half the size pays off. */
     const minimumFor = (workers: Workers): number => isFast(kernel) ? workers.minimumChunk / 2 : workers.minimumChunk;
 
+    /**
+     * Splits an archetype's rows across workers, at least `minimumChunk` rows each. WASM kernels claim pieces from a
+     * shared counter, so cores of different speeds finish together; others take even shares.
+     */
     const postChunks = (workers: Workers, index: number, archetype: Archetype, since: number, values: readonly unknown[], args: unknown, tick: number): Chunk[] => {
         const { count } = archetype;
         const { pool } = workers;
         const bound = kernel;
         const scalars = bound !== null && bound.wasm !== null ? [...bound.lookupParameters(), ...scalarValues(bound.wasm.scalars, values, args)] : [];
         const fast = isFast(bound);
-        const size = Math.ceil(Math.ceil(count / Math.min(pool.size, Math.ceil(count / minimumFor(workers)))) / chunkAlignment) * chunkAlignment;
+        const participants = Math.min(pool.size, Math.ceil(count / minimumFor(workers)));
+        const aligned = (rows: number): number => Math.ceil(rows / chunkAlignment) * chunkAlignment;
         // WASM chunks go through shared memory. The main thread doesn't take one: measured, it finishes later than an idle worker.
         if (fast) {
-            const chunks: Chunk[] = [];
-            for (let start = 0; start < count; start += size) {
-                const worker = workers.next;
-                workers.next = (worker + 1) % pool.size;
-                chunks.push(pool.fast(worker, { kernel: index, archetype: archetype.id, start, end: Math.min(count, start + size), tick, lastRun: since, scalars }));
-            }
-            return chunks;
+            const first = workers.next;
+            workers.next = (first + participants) % pool.size;
+            const grain = aligned(Math.ceil(count / (participants * claimsPerWorker)));
+            return pool.claimed(first, participants, { kernel: index, archetype: archetype.id, start: 0, end: count, tick, lastRun: since, scalars }, grain);
         }
+        const size = aligned(Math.ceil(count / participants));
         const chunks: Chunk[] = [];
         for (let start = 0; start < count; start += size) {
             const message = { kind: "run", kernel: index, archetype: archetype.id, start, end: Math.min(count, start + size), tick, lastRun: since, resources: values, args } as const;

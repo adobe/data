@@ -16,18 +16,18 @@ it("move 1M across workers", async () => {
     }
 }, 120_000);
 
-it("follow 100K across workers", async () => {
+it("follow 1M across workers", async () => {
     for (const workers of workerCounts) {
-        const world = await seeded(() => createWorld({ workers }), 100_000, follow);
-        report(`follow 100K ${label(workers)}`, await fastest(() => world.run(follow)));
+        const world = await seeded(() => createWorld({ workers }), 1_000_000, follow);
+        report(`follow 1M ${label(workers)}`, await fastest(() => world.run(follow)));
         await world.dispose();
     }
 }, 120_000);
 
-it("chain 6x100K across workers", async () => {
+it("chain 6x1M across workers", async () => {
     for (const workers of workerCounts) {
-        const world = await seeded(() => createWorld({ workers }), 100_000, chain);
-        report(`chain 6x100K ${label(workers)}`, await fastest(() => world.run(chain)));
+        const world = await seeded(() => createWorld({ workers }), 1_000_000, chain);
+        report(`chain 6x1M ${label(workers)}`, await fastest(() => world.run(chain)));
         await world.dispose();
     }
 }, 120_000);

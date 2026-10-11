@@ -24,12 +24,12 @@ const observed = async (world: World, writer: typeof poke | typeof pokeCluster):
 
 export const benchmarks: readonly Benchmark[] = [
     {
-        name: "create 100K",
+        name: "create 1M",
         run: () => fastest(async () => {
             const world = await World.create({ systems: [spawn] });
-            await world.run(spawn, 100_000);
+            await world.run(spawn, 1_000_000);
             await world.dispose();
-        }, 3000, 2),
+        }, 5000, 2),
     },
     {
         name: "move 1M",
@@ -43,20 +43,20 @@ export const benchmarks: readonly Benchmark[] = [
         },
     },
     {
-        name: "churn 100K",
+        name: "churn 1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 100_000, churn);
+            const world = await seeded(() => World.create(), 1_000_000, churn);
             let frame = 0;
             const best = await fastest(() => world.run(churn, frame++ % 10));
-            check(world.query.count([index]) === 100_000, "churn: wrong count");
+            check(world.query.count([index]) === 1_000_000, "churn: wrong count");
             await world.dispose();
             return best;
         },
     },
     {
-        name: "retag 100K",
+        name: "retag 1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 100_000, retag);
+            const world = await seeded(() => World.create(), 1_000_000, retag);
             let frame = 0;
             const best = await fastest(() => world.run(retag, frame++ % 10));
             check(world.query.count([tag]) > 0, "retag: no tags");
@@ -83,28 +83,28 @@ export const benchmarks: readonly Benchmark[] = [
         },
     },
     {
-        name: "follow 100K",
+        name: "follow 1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 100_000, follow);
+            const world = await seeded(() => World.create(), 1_000_000, follow);
             const best = await fastest(() => world.run(follow));
             await world.dispose();
             return best;
         },
     },
     {
-        name: "emit 100K",
+        name: "emit 1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 100_000, emit);
+            const world = await seeded(() => World.create(), 1_000_000, emit);
             const best = await fastest(() => world.run(emit));
-            check(world.query.count([hits]) === 10_000, "emit: wrong count");
+            check(world.query.count([hits]) === 100_000, "emit: wrong count");
             await world.dispose();
             return best;
         },
     },
     {
-        name: "chain 6x100K",
+        name: "chain 6x1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 100_000, chain);
+            const world = await seeded(() => World.create(), 1_000_000, chain);
             const best = await fastest(() => world.run(chain));
             await world.dispose();
             return best;
@@ -121,11 +121,11 @@ export const benchmarks: readonly Benchmark[] = [
         },
     },
     {
-        name: "select 100K",
+        name: "select 1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 100_000);
+            const world = await seeded(() => World.create(), 1_000_000);
             const best = await fastest(async () => {
-                const selected = world.query.select([position, index], { where: { [index]: { "<": 50_000 } } });
+                const selected = world.query.select([position, index], { where: { [index]: { "<": 500_000 } } });
                 let sum = 0;
                 for (const entity of selected) sum += world.read.component(entity, position)?.[0] ?? 0;
                 check(sum > 0, "select: nothing read");

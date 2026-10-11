@@ -23,6 +23,13 @@ export type Archetype = {
     readonly components: readonly number[];
     readonly storages: readonly Storage[];
     readonly storageOf: ReadonlyMap<number, Storage>;
+    /** Storages by component id, for hot paths. */
+    readonly storageById: readonly (Storage | undefined)[];
+    /** The archetype with one more or one fewer component, cached as edges are first taken. */
+    readonly adding: Map<number, Archetype>;
+    readonly removing: Map<number, Archetype>;
+    /** For a move to another archetype: each component they share, as source and target storages. */
+    readonly moves: Map<Archetype, readonly (readonly [Storage, Storage])[]>;
     entities: Float64Array;
     count: number;
     capacity: number;
@@ -49,11 +56,17 @@ const createStorage = (memory: Memory, component: number, layout: Layout, capaci
 
 export const createArchetype = (memory: Memory, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean): Archetype => {
     const storages = components.map(component => createStorage(memory, component, layouts[component], initialCapacity));
+    const storageById: (Storage | undefined)[] = [];
+    for (const storage of storages) storageById[storage.component] = storage;
     return {
         id,
         components,
         storages,
         storageOf: new Map(storages.map(storage => [storage.component, storage])),
+        storageById,
+        adding: new Map(),
+        removing: new Map(),
+        moves: new Map(),
         entities: allocateArray(memory, Float64Array, initialCapacity),
         count: 0,
         capacity: initialCapacity,

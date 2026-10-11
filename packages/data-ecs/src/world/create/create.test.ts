@@ -14,6 +14,7 @@ const label = "createTest/label";
 const frozen = "createTest/frozen";
 const spawnCount = "createTest/spawnCount";
 const seen = "createTest/seen";
+const marker = Symbol("createTest/marker");
 
 declare module "../../component/types.js" {
     export interface Types {
@@ -21,6 +22,7 @@ declare module "../../component/types.js" {
         [velocity]: number;
         [label]: string;
         [frozen]: true;
+        [marker]: number;
     }
 }
 declare module "../../resource/types.js" {
@@ -48,6 +50,7 @@ Component.register(position, { type: "array", items: { type: "number" }, minItem
 Component.register(velocity, { type: "number" });
 Component.register(label, { type: "string" });
 Component.register(frozen, { const: true });
+Component.register(marker, { type: "number" });
 Resource.register(spawnCount, { type: "integer", default: 3 });
 Resource.register(seen, { type: "integer", default: 0 });
 
@@ -229,6 +232,16 @@ describe("World.create", () => {
         await expect(world.systems.register(missing)).rejects.toThrow();
         expect(() => world.run(missing)).toThrow("isn't registered");
         expect(world.systems.get("createTest/missing")).toBeNull();
+    });
+
+    it("spawns components named by symbols", async () => {
+        let spawned: Entity = -1;
+        const edit = System.create({ name: "createTest/edit" }, (_, __, commands) => {
+            spawned = commands.spawn({ [velocity]: 2, [marker]: 7 });
+        });
+        const world = await World.create({ systems: [edit] });
+        await world.run(edit);
+        expect(world.read.entity(spawned, [velocity, marker])).toEqual({ [velocity]: 2, [marker]: 7 });
     });
 
     it("refuses runs as soon as dispose is called", () => {

@@ -34,7 +34,7 @@ export const execute = async ({ state, runnerOf, kernelIndexOf, workers, publish
             let failure: { readonly error: unknown } | null = null;
             for (const { commands, error } of results) {
                 // Systems can't touch the resource entity; only registration adds resources.
-                for (const command of commands) if (command.entity !== state.resourceEntity) state.commands.push(command);
+                if (commands.kinds.length > 0) state.queued.push({ buffer: commands, guarded: true });
                 if (error !== undefined) failure ??= { error };
             }
             if (failure !== null) throw failure.error;

@@ -1,18 +1,13 @@
 import type { Entity } from '../../entity/entity.js';
 import { schemaOf } from '../../registry/create-registry.js';
 import { kindOf } from '../../registry/declare-name.js';
-import { createArchetype, type Archetype } from './archetype.js';
+import { createArchetype, type Archetype, type Storage } from './archetype.js';
+import type { Queued } from './synchronize.js';
 import { createEntities, type Entities } from './entities.js';
 import { layoutOf, type Layout } from '../../layout/layout.js';
 import { createMemory, type Memory } from './memory.js';
 
 export type Key = string | symbol;
-
-export type Command =
-    | { readonly kind: "spawn"; readonly entity: Entity; readonly values: object }
-    | { readonly kind: "despawn"; readonly entity: Entity }
-    | { readonly kind: "add"; readonly entity: Entity; readonly values: object }
-    | { readonly kind: "remove"; readonly entity: Entity; readonly components: readonly Key[] };
 
 /** Everything a world stores. Components and resources share ids; resources live on `resourceEntity`. */
 export type State = {
@@ -26,8 +21,8 @@ export type State = {
     readonly resources: Set<number>;
     /** The newest tick handed out. Systems and sync points each take the next one. */
     tick: number;
-    /** Commands for the next sync point, in system order. */
-    readonly commands: Command[];
+    /** Command buffers for the next sync point, in merge order. */
+    readonly queued: Queued[];
     resourceEntity: Entity;
     /** Whether kernels with a program run as WASM, and as SIMD where they can; tests turn these off to compare with JS. */
     readonly wasm: boolean;
@@ -46,7 +41,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true): State =
         layouts: [],
         resources: new Set(),
         tick: 0,
-        commands: [],
+        queued: [],
         resourceEntity: -1,
         wasm,
         simd,
@@ -76,6 +71,40 @@ export const archetypeOf = (state: State, components: readonly number[]): Archet
     state.archetypes.push(archetype);
     state.archetypeByKey.set(key, archetype);
     return archetype;
+};
+
+/** The archetype with `id` added, through a cached edge. Creating one allocates, so this runs only at sync points. */
+export const withComponent = (state: State, archetype: Archetype, id: number): Archetype => {
+    if (archetype.storageById[id] !== undefined) return archetype;
+    let next = archetype.adding.get(id);
+    if (next === undefined) {
+        next = archetypeOf(state, [...archetype.components, id].sort((a, b) => a - b));
+        archetype.adding.set(id, next);
+    }
+    return next;
+};
+
+export const withoutComponent = (state: State, archetype: Archetype, id: number): Archetype => {
+    if (archetype.storageById[id] === undefined) return archetype;
+    let next = archetype.removing.get(id);
+    if (next === undefined) {
+        next = archetypeOf(state, archetype.components.filter(component => component !== id));
+        archetype.removing.set(id, next);
+    }
+    return next;
+};
+
+/** The storages two archetypes share, as source and target pairs, cached per pair. */
+export const movesOf = (from: Archetype, to: Archetype): readonly (readonly [Storage, Storage])[] => {
+    let moves = from.moves.get(to);
+    if (moves === undefined) {
+        moves = to.storages.flatMap(storage => {
+            const source = from.storageById[storage.component];
+            return source === undefined ? [] : [[source, storage] as const];
+        });
+        from.moves.set(to, moves);
+    }
+    return moves;
 };
 
 /** Own string and symbol keys whose value isn't `undefined`. */

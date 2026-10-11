@@ -6,15 +6,16 @@ import { readCell } from './cells.js';
 import { createCommands } from './commands.js';
 import { bindKernel, type BoundKernel } from './kernels.js';
 import type { Pool } from './pool.js';
-import type { KernelSetup, WorkerCommand } from './protocol.js';
+import type { KernelSetup } from './protocol.js';
+import { createBuffer, type CommandBuffer } from './buffer.js';
 import { forEachPassingRange } from './ranges.js';
 import { resourceCell } from './resources.js';
 import { createContext, createRow, type Cursor } from './rows.js';
 import { scalarValues } from './wasm.js';
-import { idOf, type Command, type State } from './state.js';
+import { idOf, type State } from './state.js';
 
 /** One unit of a system's work for a run: the commands it issued, plus its error if it failed partway. */
-export type ChunkResult = { readonly commands: readonly Command[]; readonly error?: unknown };
+export type ChunkResult = { readonly commands: CommandBuffer; readonly error?: unknown };
 export type Chunk = ChunkResult | Promise<ChunkResult>;
 
 /**
@@ -37,15 +38,6 @@ export type Runner = {
     readonly start: (args: unknown, workers: Workers | null, index: number) => readonly Chunk[];
 };
 
-/** Translates a worker command, which names components by id, to keys. */
-const fromWorker = (state: State, command: WorkerCommand): Command => {
-    if (command.kind === "despawn") return command;
-    if (command.kind === "remove") return { kind: "remove", entity: command.entity, components: command.components.map(id => state.keys[id]) };
-    const values: { [key: string | symbol]: unknown } = {};
-    for (const id in command.values) values[state.keys[Number(id)]] = command.values[id];
-    return { kind: command.kind, entity: command.entity, values };
-};
-
 /** Throws if the leaf is a kernel that wasn't compiled or doesn't match its schemas. */
 export const createRunner = (state: State, leaf: Leaf): Runner => {
     const { declaration } = leaf;
@@ -64,7 +56,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         if (description === undefined) throw new Error(`System "${declaration.name}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
         kernel = bindKernel(state, leaf, description);
     }
-    const holder: { buffer: Command[] } = { buffer: [] };
+    const holder: { buffer: CommandBuffer } = { buffer: createBuffer() };
     const commands = createCommands(state, holder);
     const context = createContext(state, declaration);
     const matches: Archetype[] = [];
@@ -126,14 +118,14 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             const message = { kind: "run", kernel: index, archetype: archetype.id, start, end: Math.min(count, start + size), tick, lastRun: since, resources: values, args } as const;
             const worker = workers.next;
             workers.next = (worker + 1) % pool.size;
-            chunks.push(pool.request(worker, message).then(({ commands, error }) => ({ commands: commands.map(command => fromWorker(state, command)), error })));
+            chunks.push(pool.request(worker, message));
         }
         return chunks;
     };
 
     const start = (args: unknown, workers: Workers | null, index: number): readonly Chunk[] => {
         const tick = ++state.tick;
-        holder.buffer = [];
+        holder.buffer = createBuffer();
         const chunks: Chunk[] = [{ commands: holder.buffer }];
         try {
             const resourcesChanged = resourceChanged.some(key => {
@@ -159,7 +151,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
                 if (kernel === null) runBody(archetype, since);
                 else if (workers !== null && archetype.count >= workers.minimumChunk) {
                     chunks.push(...postChunks(workers, index, archetype, since, values, args, tick));
-                    holder.buffer = [];
+                    holder.buffer = createBuffer();
                     chunks.push({ commands: holder.buffer });
                 }
                 else runKernelLocally(kernel, archetype, since, values, args, tick);
@@ -168,7 +160,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }
         catch (error) {
             // Chunks already posted still finish before the sync point.
-            chunks.push({ commands: [], error });
+            chunks.push({ commands: createBuffer(), error });
             return chunks;
         }
         finally {

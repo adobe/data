@@ -178,7 +178,29 @@ const nodeOf = (shape: Shape, leaves: readonly Leaf[], next: { index: number }):
             ? { read: (views, row) => views[view][row * unitStride + unitOffset] !== 0, write: (views, row, value) => { views[view][row * unitStride + unitOffset] = Number(value); } }
             : { read: (views, row) => views[view][row * unitStride + unitOffset], write: (views, row, value) => { views[view][row * unitStride + unitOffset] = Number(value); } };
     }
+    const first = next.index;
     const items = shape.items.map(item => nodeOf(item, leaves, next));
+    const tupleLeaves = leaves.slice(first, next.index);
+    // A tuple of same-typed non-boolean scalars, like a vec3: one loop over its leaves.
+    if (shape.kind === "tuple" && shape.items.every(item => item.kind === "scalar" && item.scalar !== "boolean") && tupleLeaves.every(leaf => leaf.view === tupleLeaves[0].view)) {
+        const view = tupleLeaves[0].view;
+        const strides = tupleLeaves.map(leaf => leaf.unitStride);
+        const offsets = tupleLeaves.map(leaf => leaf.unitOffset);
+        const length = tupleLeaves.length;
+        return {
+            read: (views, row) => {
+                const target = views[view];
+                const value = new Array<number>(length);
+                for (let i = 0; i < length; i++) value[i] = target[row * strides[i] + offsets[i]];
+                return value;
+            },
+            write: (views, row, value) => {
+                const target = views[view];
+                if (Array.isArray(value)) for (let i = 0; i < length; i++) target[row * strides[i] + offsets[i]] = Number(value[i]);
+                else for (let i = 0; i < length; i++) target[row * strides[i] + offsets[i]] = Number(element(value, i));
+            },
+        };
+    }
     if (shape.kind === "tuple") {
         return {
             read: (views, row) => {
@@ -187,7 +209,8 @@ const nodeOf = (shape: Shape, leaves: readonly Leaf[], next: { index: number }):
                 return value;
             },
             write: (views, row, value) => {
-                for (let i = 0; i < items.length; i++) items[i].write(views, row, element(value, i));
+                if (Array.isArray(value)) for (let i = 0; i < items.length; i++) items[i].write(views, row, value[i]);
+                else for (let i = 0; i < items.length; i++) items[i].write(views, row, element(value, i));
             },
         };
     }

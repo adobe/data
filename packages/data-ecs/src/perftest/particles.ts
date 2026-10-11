@@ -42,9 +42,14 @@ Component.register(enabled, { const: true });
 /** Interleaved like ecs2's seedSingle: entity i goes to archetype i % 4. */
 export const spawn = System.create({ name: "perf/spawn", args: { type: "integer" } }, (_, { args }, commands) => {
     for (let i = 0; i < args; i++) {
-        const values = { [color]: 0xff00ff, [mass]: 10, [position]: [i + 1, i + 1, i + 1], [velocity]: [-i, -i, -i] } as const;
-        const group = i % 4;
-        commands.spawn(group === 0 ? { ...values, [visible]: true, [enabled]: true } : group === 1 ? { ...values, [visible]: true } : group === 2 ? { ...values, [enabled]: true } : values);
+        const p = [i + 1, i + 1, i + 1] as const;
+        const v = [-i, -i, -i] as const;
+        switch (i % 4) {
+            case 0: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [position]: p, [velocity]: v, [visible]: true, [enabled]: true }); break;
+            case 1: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [position]: p, [velocity]: v, [visible]: true }); break;
+            case 2: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [position]: p, [velocity]: v, [enabled]: true }); break;
+            default: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [position]: p, [velocity]: v });
+        }
     }
 });
 

@@ -4,7 +4,8 @@ import { locate, reserve, type Reservations } from './entities.js';
 import type { Kernel, KernelModule } from './kernel.js';
 import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../layout/layout.js';
 import { emptyViews } from './arrays.js';
-import type { ArchetypeLayout, EntitiesLayout, FromWorker, KernelSetup, LookupSetup, ToWorker, WorkerCommand, WorkerError } from './protocol.js';
+import type { ArchetypeLayout, EntitiesLayout, FromWorker, KernelSetup, LookupSetup, ToWorker, WorkerError } from './protocol.js';
+import { addCommand, createBuffer, despawnCommand, pushCommand, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { forEachPassingRange } from './ranges.js';
 import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
 
@@ -74,16 +75,32 @@ const createLookup = (lookup: LookupSetup) => (entity: Entity): readonly unknown
     });
 };
 
-const createCommands = (buffer: WorkerCommand[]): Commands => ({
-    // Kernels name components by `keys[k]`, which workers set to component ids, so value keys are ids.
+/** Kernels name components by `keys[k]`, which workers set to component ids, so value keys are ids. */
+const pushIds = (buffer: CommandBuffer, kind: number, entity: number, values: object): void => {
+    pushCommand(buffer, kind, entity);
+    for (const key in values) {
+        const value: unknown = Reflect.get(values, key);
+        if (value === undefined) continue;
+        buffer.ids.push(Number(key));
+        buffer.values.push(value);
+    }
+};
+
+const createCommands = (buffer: CommandBuffer): Commands => ({
     spawn: values => {
         const entity = reserve(required(entities, "layout"));
-        buffer.push({ kind: "spawn", entity, values: { ...values } });
+        pushIds(buffer, spawnCommand, entity, values);
         return entity;
     },
-    despawn: entity => { buffer.push({ kind: "despawn", entity }); },
-    add: (entity, values) => { buffer.push({ kind: "add", entity, values: { ...values } }); },
-    remove: (entity, ...components) => { buffer.push({ kind: "remove", entity, components: components.map(Number) }); },
+    despawn: entity => { pushCommand(buffer, despawnCommand, entity); },
+    add: (entity, values) => { pushIds(buffer, addCommand, entity, values); },
+    remove: (entity, ...components) => {
+        pushCommand(buffer, removeCommand, entity);
+        for (const component of components) {
+            buffer.ids.push(Number(component));
+            buffer.values.push(undefined);
+        }
+    },
 });
 
 const columnsOf = (loaded: LoadedKernel, archetypeId: number): readonly TypedArray[] => {
@@ -107,7 +124,7 @@ const columnsOf = (loaded: LoadedKernel, archetypeId: number): readonly TypedArr
 
 type RunMessage = Extract<ToWorker, { kind: "run" }>;
 
-const run = (message: RunMessage, buffer: WorkerCommand[]): void => {
+const run = (message: RunMessage, buffer: CommandBuffer): void => {
     const loaded = kernels.get(message.kernel);
     if (loaded === undefined) throw new Error(`Worker has no kernel ${message.kernel}.`);
     const archetype = archetypes.get(message.archetype);
@@ -165,7 +182,7 @@ const handle = async (message: ToWorker): Promise<void> => {
         }
         return;
     }
-    const buffer: WorkerCommand[] = [];
+    const buffer = createBuffer();
     try {
         if (broken !== null) throw new Error(`Worker can't run tasks after a layout failed: ${broken.message}`);
         if (message.kind === "kernels") await load(message.kernels);

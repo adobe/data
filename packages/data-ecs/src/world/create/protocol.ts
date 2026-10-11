@@ -1,5 +1,6 @@
 import type { Entity } from '../../entity/entity.js';
 import type { Schema } from '../../schema/schema.js';
+import type { CommandBuffer } from './buffer.js';
 import type { WasmScalar } from './wasm.js';
 
 /** Byte offsets into the shared memory; the worker builds its own views over them. */
@@ -41,12 +42,6 @@ export type KernelSetup = {
     readonly wasm: { readonly module: WebAssembly.Module; readonly scalars: readonly WasmScalar[]; readonly imports: readonly string[] } | null;
 };
 
-/** A command from a worker. Values and components are keyed by component id. */
-export type WorkerCommand =
-    | { readonly kind: "spawn" | "add"; readonly entity: Entity; readonly values: { readonly [id: string]: unknown } }
-    | { readonly kind: "despawn"; readonly entity: Entity }
-    | { readonly kind: "remove"; readonly entity: Entity; readonly components: readonly number[] };
-
 /** Messages are handled in order, so a layout always arrives before the tasks that depend on it. */
 export type ToWorker =
     | { readonly kind: "memory"; readonly memory: WebAssembly.Memory }
@@ -70,5 +65,5 @@ export type WorkerError = { readonly name: string; readonly message: string; rea
 
 /** A failed task still returns the commands it issued before failing, as the main thread would apply them. */
 export type FromWorker =
-    | { readonly kind: "done"; readonly task: number; readonly commands: readonly WorkerCommand[] }
-    | { readonly kind: "failed"; readonly task: number; readonly commands: readonly WorkerCommand[]; readonly error: WorkerError };
+    | { readonly kind: "done"; readonly task: number; readonly commands: CommandBuffer }
+    | { readonly kind: "failed"; readonly task: number; readonly commands: CommandBuffer; readonly error: WorkerError };

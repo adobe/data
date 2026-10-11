@@ -76,15 +76,18 @@ const capacityFor = (current: number, needed: number): number => {
     return capacity;
 };
 
-/** At the start of a sync point: makes reserved indexes addressable, not yet alive. Returns them. */
-export const materialize = (memory: Memory, entities: Entities): number[] => {
+/** Indexes reserved since the last sync point: the reused ones, and new ones from `firstNew` up to the table's length. */
+export type Reserved = { readonly reused: readonly number[]; readonly firstNew: number };
+
+/** At the start of a sync point: makes reserved indexes addressable, not yet alive. */
+export const materialize = (memory: Memory, entities: Entities): Reserved => {
     const { cursor } = entities;
     const count = Atomics.exchange(cursor, taken, 0);
-    const reused = Math.min(count, cursor[freeCount]);
-    const reserved = Array.from(entities.free.subarray(cursor[freeCount] - reused, cursor[freeCount]));
-    cursor[freeCount] -= reused;
-    const length = entities.length + count - reused;
-    for (let index = entities.length; index < length; index++) reserved.push(index);
+    const reusedCount = Math.min(count, cursor[freeCount]);
+    const reused = Array.from(entities.free.subarray(cursor[freeCount] - reusedCount, cursor[freeCount]));
+    cursor[freeCount] -= reusedCount;
+    const firstNew = entities.length;
+    const length = entities.length + count - reusedCount;
     if (length > entities.archetype.length) {
         const capacity = capacityFor(entities.archetype.length, length);
         entities.archetype = growArray(memory, entities.archetype, Int32Array, capacity, entities.length);
@@ -95,7 +98,7 @@ export const materialize = (memory: Memory, entities: Entities): number[] => {
     entities.generation.fill(0, entities.length, length);
     entities.length = length;
     cursor[tableLength] = length;
-    return reserved;
+    return { reused, firstNew };
 };
 
 /** Kills an index; it becomes reusable after the current sync point. */

@@ -1,82 +1,135 @@
-import type { Entity } from '../../entity/entity.js';
 import { copyCell, insertRow, swapRemove, type Archetype } from './archetype.js';
+import { despawnCommand, endOf, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { writeCell } from './cells.js';
 import { indexOf, locate, materialize, recycle, release, reserved } from './entities.js';
-import { archetypeOf, entriesOf, idOf, type Command, type State } from './state.js';
+import { archetypeOf, movesOf, withComponent, withoutComponent, type State } from './state.js';
 
-/** One entity's net change over a whole sync point. */
-type Pending = {
-    readonly entity: Entity;
-    /** `null` for an entity spawned in this sync point. */
-    readonly from: Archetype | null;
-    readonly values: Map<number, unknown>;
-    readonly removed: Set<number>;
-    /** Components that start in this sync point, so their `added` tick is new: absent before, or removed then added again. */
-    readonly fresh: Set<number>;
-    despawned: boolean;
+/** Buffers queued for the next sync point, in merge order. Commands in guarded buffers can't touch the resource entity. */
+export type Queued = { readonly buffer: CommandBuffer; readonly guarded: boolean };
+
+/**
+ * The plan: each touched entity's net change over a sync point, as reusable parallel arrays rather than an object per entity.
+ * `to` is where it ends up; its values are command ranges, applied in issue order so later values win.
+ */
+const plan = {
+    count: 0,
+    entity: new Float64Array(64),
+    /** Archetype id, or -1 for an entity spawned in this sync point. */
+    from: new Int32Array(64),
+    to: new Int32Array(64),
+    despawned: new Uint8Array(64),
+    /** The first command range: queued buffer, start and end. Most entities have one. */
+    buffer: new Int32Array(64),
+    start: new Int32Array(64),
+    end: new Int32Array(64),
+    /** Further ranges, as buffer, start, end triples. */
+    more: new Map<number, number[]>(),
+    /** Components removed and added again here, so their `added` tick is new although `from` had them. */
+    fresh: new Map<number, number[]>(),
 };
 
-const pendingFor = (state: State, plan: Map<number, Pending>, entity: Entity): Pending | null => {
-    const index = indexOf(entity);
-    const pending = plan.get(index);
-    if (pending !== undefined) return pending.entity === entity && !pending.despawned ? pending : null;
-    if (locate(state.entities, entity) < 0) return null;
-    const created: Pending = {
-        entity,
-        from: state.archetypes[state.entities.archetype[index]],
-        values: new Map(),
-        removed: new Set(),
-        fresh: new Set(),
-        despawned: false,
-    };
-    plan.set(index, created);
-    return created;
+/** Where each entity index's entry is in the plan, or -1; reset after each sync point. */
+let slots = new Int32Array(0);
+
+const grownInt32 = (array: Int32Array<ArrayBuffer>, length: number): Int32Array<ArrayBuffer> => {
+    const grown = new Int32Array(length);
+    grown.set(array);
+    return grown;
 };
 
-const addValues = (state: State, pending: Pending, values: object): void => {
-    for (const [key, value] of entriesOf(values)) {
-        const id = idOf(state, key);
-        if (pending.from === null || !pending.from.storageOf.has(id) || pending.removed.has(id)) pending.fresh.add(id);
-        pending.removed.delete(id);
-        pending.values.set(id, value);
+const ensurePlanCapacity = (): void => {
+    if (plan.count < plan.entity.length) return;
+    const length = plan.entity.length * 2;
+    const entity = new Float64Array(length);
+    entity.set(plan.entity);
+    plan.entity = entity;
+    const despawned = new Uint8Array(length);
+    despawned.set(plan.despawned);
+    plan.despawned = despawned;
+    plan.from = grownInt32(plan.from, length);
+    plan.to = grownInt32(plan.to, length);
+    plan.buffer = grownInt32(plan.buffer, length);
+    plan.start = grownInt32(plan.start, length);
+    plan.end = grownInt32(plan.end, length);
+};
+
+const addEntry = (entity: number, index: number, from: number, to: number): number => {
+    ensurePlanCapacity();
+    const entry = plan.count++;
+    plan.entity[entry] = entity;
+    plan.from[entry] = from;
+    plan.to[entry] = to;
+    plan.despawned[entry] = 0;
+    plan.start[entry] = plan.end[entry] = -1;
+    slots[index] = entry;
+    return entry;
+};
+
+const addRange = (entry: number, buffer: number, start: number, end: number): void => {
+    if (plan.start[entry] < 0) {
+        plan.buffer[entry] = buffer;
+        plan.start[entry] = start;
+        plan.end[entry] = end;
+        return;
     }
+    let more = plan.more.get(entry);
+    if (more === undefined) plan.more.set(entry, more = []);
+    more.push(buffer, start, end);
 };
 
 /** Plan: the net change for each entity, in issue order. Commands against dead entities do nothing. */
-const planOf = (state: State, commands: readonly Command[]): Map<number, Pending> => {
-    const plan = new Map<number, Pending>();
-    for (const command of commands) {
-        if (command.kind === "spawn") {
-            const pending: Pending = { entity: command.entity, from: null, values: new Map(), removed: new Set(), fresh: new Set(), despawned: false };
-            plan.set(indexOf(command.entity), pending);
-            addValues(state, pending, command.values);
-            continue;
-        }
-        const pending = pendingFor(state, plan, command.entity);
-        if (pending === null) continue;
-        if (command.kind === "despawn") {
-            pending.despawned = true;
-        }
-        else if (command.kind === "add") {
-            addValues(state, pending, command.values);
-        }
-        else {
-            for (const key of command.components) {
-                const id = idOf(state, key);
-                pending.values.delete(id);
-                pending.fresh.delete(id);
-                if (pending.from?.storageOf.has(id) === true) pending.removed.add(id);
+const planOf = (state: State, queued: readonly Queued[]): void => {
+    if (slots.length < state.entities.length) slots = new Int32Array(Math.max(state.entities.length, slots.length * 2)).fill(-1);
+    const empty = archetypeOf(state, []).id;
+    const { archetypes } = state;
+    for (let b = 0; b < queued.length; b++) {
+        const { buffer, guarded } = queued[b];
+        const { kinds, entities, starts, ids } = buffer;
+        for (let command = 0; command < kinds.length; command++) {
+            const kind = kinds[command];
+            const entity = entities[command];
+            if (guarded && entity === state.resourceEntity) continue;
+            const index = indexOf(entity);
+            let entry: number;
+            if (kind === spawnCommand) entry = addEntry(entity, index, -1, empty);
+            else {
+                entry = slots[index];
+                if (entry >= 0) {
+                    if (plan.entity[entry] !== entity || plan.despawned[entry] === 1) continue;
+                }
+                else {
+                    if (locate(state.entities, entity) < 0) continue;
+                    const from = state.entities.archetype[index];
+                    entry = addEntry(entity, index, from, from);
+                }
             }
+            if (kind === despawnCommand) {
+                plan.despawned[entry] = 1;
+                continue;
+            }
+            const start = starts[command];
+            const end = endOf(buffer, command);
+            let to = archetypes[plan.to[entry]];
+            if (kind === removeCommand) {
+                for (let k = start; k < end; k++) to = withoutComponent(state, to, ids[k]);
+                plan.to[entry] = to.id;
+                continue;
+            }
+            const from = plan.from[entry] < 0 ? null : archetypes[plan.from[entry]];
+            for (let k = start; k < end; k++) {
+                const id = ids[k];
+                // Removed earlier in this sync point and added again: a new start, so a new `added` tick.
+                if (from !== null && to.storageById[id] === undefined && from.storageById[id] !== undefined) {
+                    let fresh = plan.fresh.get(entry);
+                    if (fresh === undefined) plan.fresh.set(entry, fresh = []);
+                    fresh.push(id);
+                }
+                to = withComponent(state, to, id);
+            }
+            plan.to[entry] = to.id;
+            if (end > start) addRange(entry, b, start, end);
         }
     }
-    return plan;
-};
-
-const componentsOf = (pending: Pending): readonly number[] => {
-    const components = new Set(pending.from?.components);
-    for (const id of pending.removed) components.delete(id);
-    for (const id of pending.values.keys()) components.add(id);
-    return [...components].sort((a, b) => a - b);
 };
 
 const remove = (state: State, archetype: Archetype, row: number): void => {
@@ -84,45 +137,62 @@ const remove = (state: State, archetype: Archetype, row: number): void => {
     if (moved !== -1) state.entities.row[indexOf(moved)] = row;
 };
 
-const applyPending = (state: State, pending: Pending, tick: number): void => {
-    const { entities } = state;
-    const index = indexOf(pending.entity);
-    const { from } = pending;
-    if (pending.despawned) {
+const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Archetype, toRow: number, from: Archetype | null, fresh: readonly number[] | undefined, tick: number): void => {
+    const { ids, values } = buffer;
+    for (let k = start; k < end; k++) {
+        const id = ids[k];
+        const storage = to.storageById[id];
+        if (storage === undefined) continue;
+        writeCell(storage, toRow, values[k]);
+        storage.changed[toRow] = tick;
+        if (from === null || from.storageById[id] === undefined || (fresh !== undefined && fresh.includes(id))) storage.added[toRow] = tick;
+    }
+};
+
+const applyEntry = (state: State, queued: readonly Queued[], entry: number, tick: number): void => {
+    const { entities, archetypes } = state;
+    const entity = plan.entity[entry];
+    const index = indexOf(entity);
+    const from = plan.from[entry] < 0 ? null : archetypes[plan.from[entry]];
+    if (plan.despawned[entry] === 1) {
         if (from !== null) remove(state, from, entities.row[index]);
         release(entities, index);
         return;
     }
-    const to = archetypeOf(state, componentsOf(pending));
+    const to = archetypes[plan.to[entry]];
     const fromRow = from === null ? -1 : entities.row[index];
-    const toRow = to === from ? fromRow : insertRow(state.memory, to, pending.entity);
-    if (to !== from) {
-        for (const storage of to.storages) {
-            const source = from?.storageOf.get(storage.component);
-            if (source !== undefined && !pending.values.has(storage.component)) copyCell(source, fromRow, storage, toRow);
-        }
-    }
-    for (const [id, value] of pending.values) {
-        const storage = to.storageOf.get(id);
-        if (storage === undefined) continue;
-        writeCell(storage, toRow, value);
-        storage.changed[toRow] = tick;
-        storage.added[toRow] = pending.fresh.has(id) || from === null ? tick : from.storageOf.get(id)?.added[fromRow] ?? tick;
+    const toRow = to === from ? fromRow : insertRow(state.memory, to, entity);
+    if (from !== null && to !== from) for (const [source, target] of movesOf(from, to)) copyCell(source, fromRow, target, toRow);
+    if (plan.start[entry] >= 0) {
+        const fresh = plan.fresh.get(entry);
+        writeRange(queued[plan.buffer[entry]].buffer, plan.start[entry], plan.end[entry], to, toRow, from, fresh, tick);
+        const more = plan.more.get(entry);
+        if (more !== undefined) for (let r = 0; r < more.length; r += 3) writeRange(queued[more[r]].buffer, more[r + 1], more[r + 2], to, toRow, from, fresh, tick);
     }
     if (from !== null && to !== from) remove(state, from, fromRow);
     entities.archetype[index] = to.id;
     entities.row[index] = toRow;
 };
 
-/** Applies every pending command as one sync point with a new tick. */
+/** Applies every queued command as one sync point with a new tick, then empties the queue. */
 export const synchronize = (state: State): void => {
-    if (state.commands.length === 0 && !reserved(state.entities)) return;
+    const queued = state.queued;
+    if (queued.every(({ buffer }) => buffer.kinds.length === 0) && !reserved(state.entities)) {
+        queued.length = 0;
+        return;
+    }
     const reservations = materialize(state.memory, state.entities);
-    const plan = planOf(state, state.commands);
-    state.commands.length = 0;
+    plan.count = 0;
+    planOf(state, queued);
     const tick = ++state.tick;
-    for (const pending of plan.values()) applyPending(state, pending, tick);
+    for (let entry = 0; entry < plan.count; entry++) applyEntry(state, queued, entry, tick);
     // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its index.
-    for (const index of reservations) if (!plan.has(index)) release(state.entities, index);
+    const leaked = (index: number): boolean => index >= slots.length || slots[index] < 0;
+    for (const index of reservations.reused) if (leaked(index)) release(state.entities, index);
+    for (let index = reservations.firstNew; index < state.entities.length; index++) if (leaked(index)) release(state.entities, index);
+    for (let entry = 0; entry < plan.count; entry++) slots[indexOf(plan.entity[entry])] = -1;
+    plan.more.clear();
+    plan.fresh.clear();
+    queued.length = 0;
     recycle(state.memory, state.entities);
 };

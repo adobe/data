@@ -1,10 +1,11 @@
-import type { FromWorker, ToWorker, WorkerCommand, WorkerError } from './protocol.js';
+import { createBuffer, type CommandBuffer } from './buffer.js';
+import type { FromWorker, ToWorker, WorkerError } from './protocol.js';
 
 type Task = Extract<ToWorker, { task: number }>;
 type Request = Task extends infer T ? T extends Task ? Omit<T, "task"> : never : never;
 
 /** A task's commands, plus its error if it failed partway; commands issued before the error still apply. */
-export type TaskResult = { readonly commands: readonly WorkerCommand[]; readonly error?: Error };
+export type TaskResult = { readonly commands: CommandBuffer; readonly error?: Error };
 
 /** Workers sharing the world's memory. Messages to one worker are handled in the order they're posted. */
 export type Pool = {
@@ -32,7 +33,7 @@ export const createPool = (size: number, memory: WebAssembly.Memory): Pool => {
     let nextTask = 0;
     const kill = (slot: Slot, error: Error): void => {
         slot.dead ??= error;
-        for (const settle of slot.pending.values()) settle({ commands: [], error: slot.dead });
+        for (const settle of slot.pending.values()) settle({ commands: createBuffer(), error: slot.dead });
         slot.pending.clear();
     };
     const slots: Slot[] = Array.from({ length: size }, () => {
@@ -55,7 +56,7 @@ export const createPool = (size: number, memory: WebAssembly.Memory): Pool => {
         },
         request: (worker, message) => new Promise(settle => {
             const slot = slots[worker];
-            if (slot.dead !== null) return settle({ commands: [], error: slot.dead });
+            if (slot.dead !== null) return settle({ commands: createBuffer(), error: slot.dead });
             const task = nextTask++;
             slot.pending.set(task, settle);
             slot.worker.postMessage({ ...message, task });

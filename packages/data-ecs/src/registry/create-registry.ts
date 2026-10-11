@@ -10,6 +10,10 @@ export type Registry<S> = {
 };
 
 const registered = new Map<string | symbol, Schema>();
+let symbolNames = false;
+
+/** Whether any component or resource is named by a symbol, so value objects need their symbol keys read too. */
+export const hasSymbolNames = (): boolean => symbolNames;
 
 /** The schema of any registered component or resource. */
 export const schemaOf = (name: string | symbol): Schema | undefined => registered.get(name);
@@ -21,6 +25,7 @@ export const createRegistry = <S extends { readonly [K in keyof S]: Schema }>(ki
         declareName(name, kind);
         schemas[name] = schema;
         registered.set(name, schema);
+        if (typeof name === "symbol") symbolNames = true;
     };
     return { schemas, register };
 };

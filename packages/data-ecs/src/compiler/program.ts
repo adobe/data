@@ -22,9 +22,10 @@ const none: Guards = new Set();
  * Derives a `Program` from the lowered body, or null if it uses what WASM kernels don't support. Locals are renumbered
  * densely, branch labels become depths counting enclosing blocks and loops, and each lookup call site gets a handle.
  * A lookup result may only be null-tested or read by a static leaf access; a non-optional access must be under a
- * guard proving the lookup found its entity, since JS would throw where WASM reads NaN.
+ * guard proving the lookup found its entity, since JS would throw where WASM reads NaN. With `nameOf`, the program
+ * carries each local's name.
  */
-export const toProgram = (statements: readonly Statement[]): Program | null => {
+export const toProgram = (statements: readonly Statement[], nameOf?: (local: number) => string): Program | null => {
     const locals = new Map<number, number>();
     const localIndex = (local: number): number => {
         const existing = locals.get(local);
@@ -181,5 +182,9 @@ export const toProgram = (statements: readonly Statement[]): Program | null => {
         }
     };
     const body = block(statements, [], none);
-    return body === undefined ? null : { locals: locals.size, handles: handles.size, body };
+    if (body === undefined) return null;
+    if (nameOf === undefined) return { locals: locals.size, handles: handles.size, body };
+    const names: string[] = [];
+    for (const [original, dense] of locals) names[dense] = nameOf(original);
+    return { locals: locals.size, handles: handles.size, names, body };
 };

@@ -15,6 +15,15 @@ export type WgslKernel = {
     readonly scalars: readonly WasmScalar[];
 };
 
+/**
+ * A local's WGSL identifier: its JS name with characters WGSL doesn't allow replaced. JS names end in `_<unique number>`,
+ * so they stay unique and never collide with WGSL keywords or the shader's other names.
+ */
+const identifier = (name: string): string => {
+    const safe = name.replace(/[^A-Za-z0-9_]/g, "_");
+    return safe.startsWith("_") ? `v${safe}` : safe;
+};
+
 /** Rows per workgroup, and workgroups per dispatch dimension: WebGPU's default limit. */
 export const workgroupSize = 64;
 export const maximumWorkgroups = 65535;
@@ -172,6 +181,7 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
     };
 
     const shift = (value: Value): string => `(${asUint(value)} & 31u)`;
+    const localName = (local: number): string => identifier(program.names?.[local] ?? `l_${local}`);
 
     /** Each local's type: an integer type when every assignment has it, else f32 (booleans as 0 or 1). */
     const localKinds: Kind[] = new Array<Kind>(program.locals).fill("f32");
@@ -249,7 +259,7 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
                 const scalar: WasmScalar = expression.kind === "args" ? { source: "args", path: expression.path } : { source: "resource", index: expression.index, path: expression.path };
                 return f32(`bitcast<f32>(parameters[${1 + columns.length + scalarOf(scalar)}])`);
             }
-            case "local": return { code: `l${expression.local}`, type: localKinds[expression.local] };
+            case "local": return { code: localName(expression.local), type: localKinds[expression.local] };
             case "unary": {
                 const operand = emit(expression.operand);
                 switch (expression.operator) {
@@ -323,7 +333,7 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
             case "set": {
                 const value = emit(statement.value);
                 const kind = localKinds[statement.local];
-                return `${indent}l${statement.local} = ${kind === "u32" ? asUint(value) : kind === "i32" ? asInt(value) : asNumber(value)};`;
+                return `${indent}${localName(statement.local)} = ${kind === "u32" ? asUint(value) : kind === "i32" ? asInt(value) : asNumber(value)};`;
             }
             case "store": return `${indent}${store(statement.column, emit(statement.value))}`;
             // The CPU stamps the whole column once per dispatch instead.
@@ -337,7 +347,7 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
 
     try {
         const zero: { readonly [kind: string]: string } = { f32: "0.0", i32: "0i", u32: "0u" };
-        const locals = localKinds.map((kind, local) => `    var l${local}: ${kind} = ${zero[kind]};`).join("\n");
+        const locals = localKinds.map((kind, local) => `    var ${localName(local)}: ${kind} = ${zero[kind]};`).join("\n");
         const body = statements(program.body, "    ");
         const code = `@group(0) @binding(0) var<storage, read_write> memory: array<u32>;
 @group(0) @binding(1) var<storage, read> parameters: array<u32>;

@@ -5,7 +5,7 @@ import { fail } from './failure.js';
 import type { Builtins } from './builtins.js';
 import type { ModuleScope } from './module-scope.js';
 import { resolve, type Out } from './out.js';
-import { printStatements } from './print.js';
+import { localName, printStatements } from './print.js';
 import { toProgram } from './program.js';
 import { serialize } from './serialize.js';
 import { unconditionalChunks } from './stamps.js';
@@ -55,7 +55,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     for (const chunks of unconditionalChunks(resolve(rows))) unit.stampedPerCall.add(chunks);
     const kernel = printStatements(unit, resolve(rows));
     const preludeCode = printStatements(unit, resolve(prelude));
-    const program = toProgram(statements);
+    const program = toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined);
     const { signature: { resources, lookups, filtered }, columns, booleans, keys } = unit;
     if (target === "gpu") {
         if (lookups.length > 0) fail(declaration, "a GPU kernel can't use lookups yet");

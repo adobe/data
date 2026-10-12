@@ -656,6 +656,14 @@ describe("subset", () => {
             .toBe(`kernel must be the literal "cpu" or "gpu"`);
     });
 
+    test("GPU programs carry their locals' names", async () => {
+        const body = "(row) => { const doubled = row[mass] * 2; row[score] = doubled; }";
+        const gpu = await compile(`const kernel = System.create({ name: "a", kernel: "gpu", query: { read: [mass], write: [score] } }, ${body});`);
+        const cpu = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, ${body});`);
+        expect(gpu.program?.names).toEqual([expect.stringMatching(/^doubled_\d+$/)]);
+        expect(cpu.program?.names).toBeUndefined();
+    });
+
     test("kernels inside functions", async () => {
         expect(await failure(`const make = () => System.create({ name: "a", kernel: "cpu", query: { write: [score] } }, (row) => {});`))
             .toBe("kernel systems must be declared at module scope");

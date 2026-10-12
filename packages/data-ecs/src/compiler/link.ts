@@ -46,47 +46,74 @@ export const createLinker = (host: LinkHost, parse: (code: string) => Program): 
     const loading = new Map<string, Promise<void>>();
     const resolutions = new Map<string, Resolution>();
     const resolving = new Map<string, Promise<void>>();
+    /** Bumped when a file changes, or every resolution is dropped, so loads and resolutions in flight are discarded. */
+    const versions = new Map<string, number>();
+    let resolutionVersion = 0;
+    /** Starts resolving `specifier` and loading its file, unless either is known or in flight. */
+    const prefetch = (specifier: string, importer: string): Promise<void> => {
+        const key = `${importer}\0${specifier}`;
+        const resolved = resolutions.get(key);
+        if (resolved !== undefined) return typeof resolved === "string" ? startLoad(resolved) : Promise.resolve();
+        let promise = resolving.get(key);
+        if (promise === undefined) {
+            const version = resolutionVersion;
+            promise = host.resolve(specifier, importer)
+                .catch((error: unknown) => ({ error: `${specifier} can't be resolved from ${importer}: ${reason(error)}` }))
+                .then(result => {
+                    if (version !== resolutionVersion) return;
+                    resolutions.set(key, result);
+                    if (typeof result === "string") void startLoad(result);
+                })
+                .finally(() => resolving.delete(key));
+            resolving.set(key, promise);
+        }
+        return promise;
+    };
+    const startLoad = (file: string): Promise<void> => {
+        if (modules.has(file)) return Promise.resolve();
+        let promise = loading.get(file);
+        if (promise === undefined) {
+            promise = load(file).finally(() => loading.delete(file));
+            loading.set(file, promise);
+        }
+        return promise;
+    };
+    /**
+     * Loads a module, then starts on the modules it re-exports: compiling stops at each module it doesn't have yet,
+     * and a namespace's members are usually found through re-exports.
+     */
     const load = async (file: string): Promise<void> => {
+        const version = versions.get(file) ?? 0;
         const loaded = await host.load(file).catch((error: unknown) => ({ error: `${file} can't be read: ${reason(error)}` }));
+        if (version !== (versions.get(file) ?? 0)) return;
         if ("error" in loaded) {
             modules.set(file, loaded);
             return;
         }
+        let module: Module;
         try {
-            modules.set(file, createModule(file, parse(loaded.code), loaded.locate ?? locateIn(loaded.code)));
+            module = createModule(file, parse(loaded.code), loaded.locate ?? locateIn(loaded.code));
         } catch (error) {
             modules.set(file, { error: `${file} can't be parsed: ${reason(error)}` });
+            return;
         }
+        modules.set(file, module);
+        for (const exported of module.exports.values()) if (exported.kind !== "local") void prefetch(exported.specifier, file);
+        for (const star of module.stars) void prefetch(star, file);
     };
     return {
-        module: file => {
-            const loaded = modules.get(file);
-            if (loaded !== undefined) return loaded;
-            let promise = loading.get(file);
-            if (promise === undefined) {
-                promise = load(file).finally(() => loading.delete(file));
-                loading.set(file, promise);
-            }
-            return pending(promise);
-        },
-        resolve: (specifier, importer) => {
-            const key = `${importer}\0${specifier}`;
-            const resolved = resolutions.get(key);
-            if (resolved !== undefined) return resolved;
-            let promise = resolving.get(key);
-            if (promise === undefined) {
-                promise = host.resolve(specifier, importer)
-                    .catch((error: unknown) => ({ error: `${specifier} can't be resolved from ${importer}: ${reason(error)}` }))
-                    .then(result => { resolutions.set(key, result); })
-                    .finally(() => resolving.delete(key));
-                resolving.set(key, promise);
-            }
-            return pending(promise);
-        },
+        module: file => modules.get(file) ?? pending(startLoad(file)),
+        resolve: (specifier, importer) => resolutions.get(`${importer}\0${specifier}`) ?? pending(prefetch(specifier, importer)),
         add: module => { modules.set(module.file, module); },
         forget: (file, all) => {
             modules.delete(file);
-            if (all) resolutions.clear();
+            loading.delete(file);
+            versions.set(file, (versions.get(file) ?? 0) + 1);
+            if (all) {
+                resolutions.clear();
+                resolving.clear();
+                resolutionVersion++;
+            }
         },
     };
 };
@@ -95,7 +122,8 @@ export const createLinker = (host: LinkHost, parse: (code: string) => Program): 
 export type Resolved =
     | { readonly kind: "binding"; readonly module: Module; readonly name: string; readonly binding: Exclude<ModuleBinding, { kind: "import" | "importNamespace" }> }
     | { readonly kind: "namespace"; readonly file: string }
-    | { readonly kind: "error"; readonly error: string };
+    /** `cause` tells a name a module doesn't export, and one several `export *` provide, from failing to tell. */
+    | { readonly kind: "error"; readonly error: string; readonly cause?: "missing" | "ambiguous" };
 
 const sameResolution = (a: Resolved, b: Resolved): boolean =>
     a.kind === "binding" && b.kind === "binding" ? a.module === b.module && a.name === b.name
@@ -118,7 +146,7 @@ export const resolveBinding = (link: Link, module: Module, name: string, binding
 export const resolveExport = (link: Link, file: string, name: string, seen: Set<string> = new Set()): Resolved => {
     const module = link.module(file);
     if ("error" in module) return { kind: "error", error: module.error };
-    const missing: Resolved = { kind: "error", error: `${name} isn't exported by ${file}` };
+    const missing: Resolved = { kind: "error", error: `${name} isn't exported by ${file}`, cause: "missing" };
     const key = `${file}\0${name}`;
     if (seen.has(key)) return missing;
     seen.add(key);
@@ -137,13 +165,26 @@ export const resolveExport = (link: Link, file: string, name: string, seen: Set<
         }
     }
     if (name === "default") return missing;
+    // Every star is searched, to find ambiguity; what isn't loaded yet is waited for together. A star that is
+    // ambiguous itself makes the name ambiguous, and one that fails is the reason when no other star exports it.
     const found: Resolved[] = [];
+    const failures: Resolved[] = [];
+    const waiting: Promise<void>[] = [];
     for (const star of module.stars) {
-        const target = link.resolve(star, file);
-        if (typeof target !== "string") continue;
-        const result = resolveExport(link, target, name, new Set(seen));
-        if (result.kind !== "error" && !found.some(item => sameResolution(item, result))) found.push(result);
+        try {
+            const target = link.resolve(star, file);
+            const result: Resolved = typeof target === "string" ? resolveExport(link, target, name, new Set(seen)) : { kind: "error", error: target.error };
+            if (result.kind !== "error") {
+                if (!found.some(item => sameResolution(item, result))) found.push(result);
+            }
+            else if (result.cause === "ambiguous") return result;
+            else if (result.cause !== "missing") failures.push(result);
+        } catch (error) {
+            if (!isPending(error)) throw error;
+            waiting.push(error.pending);
+        }
     }
-    if (found.length > 1) return { kind: "error", error: `${name} is exported by more than one export * of ${file}` };
-    return found[0] ?? missing;
+    if (waiting.length > 0) pending(Promise.all(waiting).then(() => undefined));
+    if (found.length > 1) return { kind: "error", error: `${name} is exported by more than one export * of ${file}`, cause: "ambiguous" };
+    return found[0] ?? failures[0] ?? missing;
 };

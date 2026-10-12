@@ -65,7 +65,8 @@ const declare = (scope: Map<string, ModuleBinding>, statement: Statement | Modul
         case "ExportDefaultDeclaration": {
             const declaration = statement.declaration;
             if (declaration.type === "FunctionDeclaration") scope.set(declaration.id?.name ?? defaultBinding, { kind: "function", node: declaration });
-            else if (declaration.type !== "ClassDeclaration") scope.set(defaultBinding, { kind: "const", init: declaration });
+            else if (declaration.type === "ClassDeclaration") scope.set(declaration.id?.name ?? defaultBinding, { kind: "other" });
+            else scope.set(defaultBinding, { kind: "const", init: declaration });
             return;
         }
         case "VariableDeclaration":
@@ -106,7 +107,8 @@ const exportsOf = (program: Program): { readonly exports: Map<string, Export>; r
         }
         else if (statement.type === "ExportDefaultDeclaration") {
             const declaration = statement.declaration;
-            const named = declaration.type === "FunctionDeclaration" ? declaration.id?.name : declaration.type === "Identifier" ? declaration.name : undefined;
+            const named = declaration.type === "FunctionDeclaration" || declaration.type === "ClassDeclaration" ? declaration.id?.name
+                : declaration.type === "Identifier" ? declaration.name : undefined;
             exports.set("default", { kind: "local", local: named ?? defaultBinding });
         }
         else if (statement.type === "ExportNamedDeclaration") {

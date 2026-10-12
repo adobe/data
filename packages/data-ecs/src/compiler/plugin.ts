@@ -27,10 +27,9 @@ const loadFile = async (file: string): Promise<{ readonly code: string; readonly
 };
 
 /** Resolves imports through the build, from whichever transform runs. */
-const buildHost = (resolver: () => Rollup.PluginContext | undefined): LinkHost => ({
+const buildHost = (resolver: () => Rollup.PluginContext): LinkHost => ({
     resolve: async (specifier, importer) => {
-        const context = resolver();
-        const resolved = context === undefined ? null : await context.resolve(specifier, importer, { skipSelf: true });
+        const resolved = await resolver().resolve(specifier, importer, { skipSelf: true });
         if (resolved === null) return { error: `${specifier} can't be resolved from ${importer}` };
         if (resolved.external) {
             return specifier === packageName ? packageIndex : { error: `${specifier} is external to the build, so kernels can't inline from it` };
@@ -56,8 +55,20 @@ const buildHost = (resolver: () => Rollup.PluginContext | undefined): LinkHost =
 export const kernelPlugin = (): Plugin => {
     let serve = true;
     let server: ViteDevServer | undefined;
-    let context: Rollup.PluginContext | undefined;
-    let linker: Linker | null = null;
+    /**
+     * A linker per environment, since client and SSR builds resolve imports under different conditions. Each resolves
+     * through its environment's latest transform.
+     */
+    const contexts = new Map<boolean, Rollup.PluginContext>();
+    const linkers = new Map<boolean, Linker>();
+    const linkerFor = (ssr: boolean, context: Rollup.PluginContext): Linker => {
+        contexts.set(ssr, context);
+        const existing = linkers.get(ssr);
+        if (existing !== undefined) return existing;
+        const linker = createLinker(buildHost(() => contexts.get(ssr) ?? context), input => (contexts.get(ssr) ?? context).parse(input));
+        linkers.set(ssr, linker);
+        return linker;
+    };
     /** Modules whose kernels inline each file, and the files each module's kernels inline. */
     const dependents = new Map<string, Set<string>>();
     const dependencies = new Map<string, readonly string[]>();
@@ -104,15 +115,14 @@ export const kernelPlugin = (): Plugin => {
         // Vite only soft-invalidates importers of a changed file, which doesn't transform them again, so kernels that
         // inline from it are invalidated here.
         watchChange(id, change) {
-            linker?.forget(id, change.event !== "update");
+            for (const linker of linkers.values()) linker.forget(id, change.event !== "update");
             for (const parent of dependents.get(id) ?? []) {
                 for (const module of server?.moduleGraph.getModulesByFile(parent) ?? []) server?.moduleGraph.invalidateModule(module);
             }
         },
-        async transform(code, id) {
+        async transform(code, id, options) {
             if (!scripts.test(id.split("?")[0] ?? id)) return null;
-            context = this;
-            linker ??= createLinker(buildHost(() => context), input => this.parse(input));
+            const linker = linkerFor(options?.ssr === true, this);
             const hashes: string[] = [];
             const result = await transformKernels(code, id, input => this.parse(input), async source => {
                 const resolved = await this.resolve(source, id);

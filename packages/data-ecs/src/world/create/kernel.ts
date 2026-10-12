@@ -1,4 +1,5 @@
 import type { Entity } from '../../entity/entity.js';
+import type { Reduction } from '../../system/query.js';
 
 type Key = string | symbol;
 
@@ -25,6 +26,9 @@ export type Column =
 /** Rows per chunk of change ticks is `2 ** chunkShift`. */
 export const chunkShift = 10;
 
+/** A leaf of a resource a kernel reduces into, folded with `operator`. */
+export type Reduced = { readonly resource: Key; readonly operator: Reduction; readonly path: Path };
+
 /** A whole-value write assumed exactly these leaves. Registration checks they are all of the schema's leaves. */
 export type Shape = { readonly component: Key; readonly leaves: readonly Path[] };
 
@@ -46,6 +50,9 @@ export type Kernel = (
     args: unknown,
     commands: KernelCommands,
     tick: number,
+    /** Each reduction's partial for this call, at `partial + k`: loaded first, folded into, and stored last. */
+    partials: Float64Array,
+    partial: number,
 ) => void;
 
 /** How kernels issue commands. `kind` is 1 for despawn, 2 for add, 3 for remove; `key` indexes the kernel's `keys`. */
@@ -144,6 +151,11 @@ export type Program = {
     readonly names?: readonly string[];
     /** Every intrinsic region's id is below it; absent when there are none. */
     readonly intrinsics?: number;
+    /**
+     * Accumulator locals, in `KernelDescription.reductions` order: each starts a call at its partial and ends it
+     * there, and the body folds values into it.
+     */
+    readonly reductions?: readonly number[];
     readonly body: readonly Program.Statement[];
 };
 
@@ -158,6 +170,10 @@ export type KernelDescription = {
     readonly url: string;
     /** The same body for WASM, or `null` when it uses what WASM kernels don't support: commands, or non-scalar values. */
     readonly program: Program | null;
+    /** The leaves of resources the kernel reduces into, one partial each, with their operators. */
+    readonly reductions: readonly Reduced[];
+    /** The leaves of each value contributed whole, by resource. Registration checks they are all of the schema's leaves. */
+    readonly reducedShapes: readonly Shape[];
 };
 
 /** What a kernel module at `KernelDescription.url` exports. */

@@ -75,6 +75,8 @@ export type ToWorker =
         readonly lastRun: number;
         readonly resources: readonly unknown[];
         readonly args: unknown;
+        /** The byte address of this chunk's reduction partials, or -1 for a kernel without reductions. */
+        readonly partials: number;
     };
 
 export type WorkerError = { readonly name: string; readonly message: string; readonly stack?: string };
@@ -92,7 +94,7 @@ export type FromWorker =
  */
 export const ringSize = 64;
 export const taskWords = 32;
-export const taskFields = 12;
+export const taskFields = 14;
 export const maximumScalars = taskWords - taskFields;
 /**
  * Int32 words per 128-byte cache line, the largest in use (Apple silicon). Words that different threads write each get

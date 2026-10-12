@@ -19,10 +19,14 @@ export type Row<D extends Declaration> =
 
 type LookupFunction<L> = (entity: Entity) => { readonly [K in Listed<L, "read"> & Component.Name]: Component.Types[K] } | null;
 
+/** Each resource a system reduces, as a function contributing a value to its fold. */
+type Reducers<R> = { readonly [K in keyof R & Resource.Name]: (value: Resource.Types[K]) => void };
+
 /** Lookups, resources and `args`, flattened into one object. */
 export type Context<D extends Declaration> =
     { readonly [K in keyof Property<D, "lookup">]: LookupFunction<Property<D, "lookup">[K]> }
     & Values<Listed<Property<D, "resources">, "read">, Listed<Property<D, "resources">, "write">, Resource.Name, Resource.Types>
+    & Reducers<Property<Property<D, "resources">, "reduce">>
     & (Property<D, "args"> extends Schema ? { readonly args: Schema.ToType<Property<D, "args">> } : {});
 
 export type Body<D extends Declaration> = (row: Row<D>, context: Context<D>, commands: Commands) => void;

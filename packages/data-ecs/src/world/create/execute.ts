@@ -55,12 +55,19 @@ const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }
                 if (runner.kernel === null) started[i] = runner.start(args, null, -1);
             });
             // Every chunk settles, even a failed one, so no worker is still writing at the sync point.
-            const results = await Promise.all(started.flat());
+            const settled = await Promise.all(started.map(chunks => Promise.all(chunks)));
             let failure: { readonly error: unknown } | null = null;
-            for (const { commands, error } of results) {
-                // Systems can't touch the resource entity; only registration adds resources.
-                if (commands.count > 0) state.queued.push({ buffer: commands, guarded: true });
-                if (error !== undefined) failure ??= { error };
+            for (let i = 0; i < settled.length; i++) {
+                let failed = false;
+                for (const { commands, error } of settled[i] ?? []) {
+                    // Systems can't touch the resource entity; only registration adds resources.
+                    if (commands.count > 0) state.queued.push({ buffer: commands, guarded: true });
+                    if (error !== undefined) {
+                        failed = true;
+                        failure ??= { error };
+                    }
+                }
+                runners[i]?.finish(failed);
             }
             if (gpu !== null) markWrites(gpu, runners);
             if (failure !== null) throw failure.error;

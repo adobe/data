@@ -39,7 +39,11 @@ export type Unit = {
     readonly names: Map<number, string>;
     /** Shape descriptions as source text. */
     readonly shapes: Set<string>;
+    /** The shapes of values contributed to reductions, as source text. */
+    readonly reducedShapes: Set<string>;
     readonly keys: string[];
+    /** Each leaf a reduction folds into: its resource (an index into `Signature.reduced`), path and accumulator local. */
+    readonly accumulators: { readonly reduced: number; readonly path: readonly (number | string)[]; readonly local: number }[];
     /** Helpers and constants being inlined, to reject recursion. */
     readonly active: Set<string>;
     readonly next: () => number;
@@ -50,7 +54,7 @@ export type Unit = {
 export const createUnit = (signature: Signature, module: Module, expression: ExpressionCompiler, statement: StatementCompiler, link: Link | null = null, target: "cpu" | "gpu" = "cpu"): Unit => {
     let counter = 0;
     return {
-        signature, module, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names: new Map(), shapes: new Set(), keys: [], active: new Set(),
+        signature, module, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names: new Map(), shapes: new Set(), reducedShapes: new Set(), keys: [], accumulators: [], active: new Set(),
         next: () => counter++, expression, statement,
     };
 };

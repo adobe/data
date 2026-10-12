@@ -18,6 +18,8 @@ export type Value =
     | { readonly kind: "snapshot"; readonly snapshot: Snapshot; readonly path: Path }
     | { readonly kind: "found"; readonly lookup: number; readonly expression: Expression }
     | { readonly kind: "lookup"; readonly lookup: number }
+    /** A resource the kernel reduces into, by its index in `Signature.reduced`. */
+    | { readonly kind: "reducer"; readonly reduced: number }
     /**
      * A helper, compiled in its own module. `identity` is unique per definition; `name` is for messages. `intrinsic` is
      * the WGSL builtin it matches, if its module declares one.
@@ -35,7 +37,7 @@ export const scalarValue = (expression: Expression): Value => ({ kind: "scalar",
 
 const describe: { readonly [K in Value["kind"]]: string } = {
     scalar: "a number", dynamic: "a value", tuple: "a tuple", struct: "a struct", component: "a component value",
-    snapshot: "a component value", found: "a lookup result", lookup: "a lookup", function: "a helper",
+    snapshot: "a component value", found: "a lookup result", lookup: "a lookup", reducer: "a reduction", function: "a helper",
     method: "a method", row: "row", context: "the context", commands: "commands", math: "Math", namespace: "a namespace",
 };
 

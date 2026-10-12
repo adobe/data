@@ -7,6 +7,7 @@ import { readCell, writeCell } from './cells.js';
 import { locate } from './entities.js';
 import { findResource, resourceCell, type ResourceCell } from './resources.js';
 import { idOf, type Key, type State } from './state.js';
+import { combine, contributed, identityOf, type ReductionTarget } from './reductions.js';
 
 /** One declared component's storage in the archetype a row is bound to, and the typed array its scalar leaves are read through. */
 type Slot = { storage: Storage; view: TypedArray };
@@ -207,10 +208,11 @@ export const createArrayLookup = (state: State, lookup: Lookup) => {
 };
 
 /** A system's context: lookups, resources and `args` in one object. `bind` resolves the resources' cells for a run. */
-export type Context = { readonly value: { args?: unknown }; readonly bind: () => void };
+/** A system's context. `reduced[t]` holds the leaves of the fold into its `t`th reduction target so far this run. */
+export type Context = { readonly value: { args?: unknown }; readonly bind: () => void; readonly reduced: readonly Float64Array[] };
 
 /** Resource cells are resolved once per run: they move only at sync points. An unresolved resource throws on access. */
-export const createContext = (state: State, declaration: Declaration): Context => {
+export const createContext = (state: State, declaration: Declaration, targets: readonly ReductionTarget[] = []): Context => {
     // Its own prototype gives the context its own root map, as for rows.
     const value: { args?: unknown } = Object.create({});
     const { lookup, resources } = declaration;
@@ -233,8 +235,22 @@ export const createContext = (state: State, declaration: Declaration): Context =
             enumerable: true,
         });
     });
+    // Each resource it reduces is a function folding a value into the run's accumulators, leaf by leaf.
+    const reduced = targets.map(target => new Float64Array(target.leaves.length));
+    targets.forEach((target, t) => {
+        const accumulators = reduced[t];
+        const { operator, leaves } = target;
+        Object.defineProperty(value, target.key, {
+            value: (contribution: unknown): void => {
+                if (accumulators === undefined) return;
+                for (let i = 0; i < leaves.length; i++) accumulators[i] = combine(operator, accumulators[i] ?? NaN, contributed(contribution, leaves[i]?.path ?? []));
+            },
+            enumerable: true,
+        });
+    });
     const bind = (): void => {
         for (let i = 0; i < keys.length; i++) cells[i] = findResource(state, keys[i]);
+        targets.forEach((target, t) => reduced[t]?.fill(identityOf(target.operator)));
     };
-    return { value, bind };
+    return { value, bind, reduced };
 };

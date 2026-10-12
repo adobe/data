@@ -54,7 +54,7 @@ const runs = (module: KernelModule, description: KernelDescription): readonly nu
     const entities = Float64Array.from([3, 4]);
     const columns = description.columns.map(column => column.kind === "entity" ? entities : column.kind === "changed" ? new Uint32Array(2) : new Float64Array(2));
     const commands = { spawn: () => 0, begin: () => {}, value: () => {}, component: () => {} };
-    module.create(columns.map(() => false), columns.map(() => 1), columns.map(() => 0))(columns, 0, 2, [], [], description.keys, undefined, commands, 1);
+    module.create(columns.map(() => false), columns.map(() => 1), columns.map(() => 0))(columns, 0, 2, [], [], description.keys, undefined, commands, 1, new Float64Array(0), 0);
     return [...columns[description.columns.findIndex(column => column.kind === "field")] ?? []];
 };
 

@@ -58,11 +58,14 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     for (const chunks of unconditionalChunks(resolve(rows))) unit.stampedPerCall.add(chunks);
     const kernel = printStatements(unit, resolve(rows));
     const preludeCode = printStatements(unit, resolve(prelude));
-    const program = toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined);
-    const { signature: { resources, lookups, filtered }, columns, booleans, keys } = unit;
+    const accumulators = unit.accumulators.map(entry => entry.local);
+    const program = toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined, accumulators);
+    const { signature: { resources, lookups, filtered, reduced, folds }, columns, booleans, keys } = unit;
+    if (reduced.length > 0 && !folds) fail(declaration, "a reduction folds every row, so its query can't use added or changed");
     if (target === "gpu") {
         if (lookups.length > 0) fail(declaration, "a GPU kernel can't use lookups yet");
         if (filtered) fail(declaration, "a GPU kernel can't use change filters yet");
+        if (reduced.length > 0) fail(declaration, "a GPU kernel can't use reductions yet");
         if (program === null) fail(body, "a GPU kernel can't issue commands or use values that aren't numbers or booleans");
         else if (loops(program.body)) fail(body, "a GPU kernel can't use loops or labeled blocks yet");
     }
@@ -82,6 +85,11 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             `keys: [${keys.join(", ")}],`,
             `url: ${url},`,
             `program: ${serialize(program)},`,
+            `reducedShapes: [${[...unit.reducedShapes].join(", ")}],`,
+            `reductions: [${unit.accumulators.map(entry => {
+                const { resource, operator } = reduced[entry.reduced] ?? fail(declaration, "unknown reduction");
+                return `{ resource: ${resource}, operator: ${JSON.stringify(operator)}, path: ${JSON.stringify(entry.path)} }`;
+            }).join(", ")}],`,
             "}",
         ].join("\n"),
         // Per-registration constants live in the closure. Each column's element index `i * s + o` is strength-reduced to
@@ -90,14 +98,16 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             "(booleans, strides, offsets) => {",
             ...[...booleans].map(index => `const b${index} = booleans[${index}];`),
             ...strided.map(index => `const s${index} = strides[${index}], o${index} = offsets[${index}];`),
-            "return (columns, start, end, resources, lookups, keys, args, commands, tick) => {",
+            "return (columns, start, end, resources, lookups, keys, args, commands, tick, partials, partial) => {",
             ...locals,
             preludeCode,
+            ...accumulators.map((local, k) => `let ${localName(unit, local)} = partials[partial + ${k}];`),
             ...[...unit.stampedPerCall].map(chunks =>
                 `if (start < end) for (let k = start >> ${chunkShift}, last = (end - 1) >> ${chunkShift}; k <= last; k++) c${chunks}[k] = tick;`),
             `${rowLabel}: for (let ${["i = start", ...strided.map(index => `x${index} = start * s${index} + o${index}`)].join(", ")}; i < end; ${["i++", ...strided.map(index => `x${index} += s${index}`)].join(", ")}) {`,
             kernel,
             "}",
+            ...accumulators.map((local, k) => `partials[partial + ${k}] = ${localName(unit, local)};`),
             "};",
             "}",
         ].filter(line => line !== "").join("\n"),

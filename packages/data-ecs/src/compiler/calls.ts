@@ -199,7 +199,33 @@ const inline = (helper: Extract<Value, { kind: "function" }>, node: SimpleCallEx
     return result;
 };
 
-/** Compiles a call: a `Math` function, a command, a lookup or a helper. */
+/** The accumulator local of one leaf of a reduction, made at its first contribution. */
+const accumulator = (scope: Scope, reduced: number, path: readonly (number | string)[]): number => {
+    const unit = scope.unit;
+    const existing = unit.accumulators.find(entry => entry.reduced === reduced && JSON.stringify(entry.path) === JSON.stringify(path));
+    if (existing !== undefined) return existing.local;
+    const created = fresh(unit, "reduced");
+    unit.accumulators.push({ reduced, path, local: created });
+    return created;
+};
+
+/** `context[resource](value)`: folds each leaf of the value into its accumulator with the resource's operator. */
+const contribute = (reduced: number, node: SimpleCallExpression, scope: Scope, out: Out): Value => {
+    const { resource, operator } = scope.unit.signature.reduced[reduced] ?? fail(node, "unknown reduction");
+    if (node.arguments.length !== 1) return fail(node, `${resource} takes the one value it reduces`);
+    const value = toData(scope.unit.expression(argument(node.arguments[0]), scope, out), node, scope);
+    scope.unit.reducedShapes.add(`{ component: ${resource}, leaves: ${JSON.stringify(leavesOf(value).map(leaf => leaf.path))} }`);
+    for (const { path, expression } of leavesOf(value)) {
+        const target = accumulator(scope, reduced, path);
+        const folded: Expression = operator === "min" || operator === "max"
+            ? { kind: "math", name: operator, arguments: [local(target), expression] }
+            : { kind: "binary", operator, left: local(target), right: expression };
+        out.push(set(scope.unit, target, folded, undefined));
+    }
+    return none;
+};
+
+/** Compiles a call: a `Math` function, a command, a lookup, a reduction or a helper. */
 export const call = (node: SimpleCallExpression, scope: Scope, out: Out): Value => {
     if (node.optional) return fail(node, "optional calls are not in the kernel subset");
     if (node.callee.type === "Super") return fail(node, "super is not in the kernel subset");
@@ -217,7 +243,9 @@ export const call = (node: SimpleCallExpression, scope: Scope, out: Out): Value 
         }
         case "function":
             return inline(callee, node, scope, out);
+        case "reducer":
+            return contribute(callee.reduced, node, scope, out);
         default:
-            return fail(node.callee, "only Math functions, commands, lookups and helpers can be called");
+            return fail(node.callee, "only Math functions, commands, lookups, reductions and helpers can be called");
     }
 };

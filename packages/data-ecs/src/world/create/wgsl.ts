@@ -166,6 +166,7 @@ fn roundHalfUp(x: f32) -> f32 { let down = floor(x); return select(down, down + 
  * entity columns, or byte stores.
  */
 export const generateWgsl = (program: Program, columns: readonly WasmColumn[], scalarTypes: (scalar: WasmScalar) => unknown): WgslKernel | string => {
+    if ((program.reductions?.length ?? 0) > 0) return "it uses reductions";
     const scalars: WasmScalar[] = [];
     const scalarIndex = new Map<string, number>();
     const scalarOf = (scalar: WasmScalar): number => {

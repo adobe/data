@@ -296,5 +296,6 @@ export const synchronize = (state: State): void => {
         // Systems reuse their buffers next run.
         for (const { buffer } of queued) clearBuffer(buffer);
         refreshDirectories(state);
+        for (const after of state.afterSync) after();
     }
 };

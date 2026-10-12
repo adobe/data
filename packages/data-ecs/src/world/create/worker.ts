@@ -124,6 +124,8 @@ const filtersOf = (loaded: LoadedKernel, archetype: ArchetypeViews): Filter[] =>
     }),
 ];
 
+const noPartials = new Float64Array(0);
+
 const run = (message: RunMessage, buffer: CommandBuffer): void => {
     const loaded = kernels.get(message.kernel);
     if (loaded === undefined) throw new Error(`Worker has no kernel ${message.kernel}.`);
@@ -138,11 +140,13 @@ const run = (message: RunMessage, buffer: CommandBuffer): void => {
             ...kernelColumns.map(column => column.byteOffset),
             ...filters.map(filter => filter.ticks.byteOffset),
             ...filters.map(filter => filter.chunks.byteOffset),
-            ...scalarValues(loaded.setup.wasm.scalars, message.resources, message.args));
+            ...scalarValues(loaded.setup.wasm.scalars, message.resources, message.args),
+            ...message.partials < 0 ? [] : [message.partials]);
         return;
     }
+    const partials = message.partials < 0 ? noPartials : new Float64Array(required(memory, "memory").buffer, message.partials);
     forEachPassingRange(filters, message.lastRun, message.start, message.end, (start, end) =>
-        loaded.kernel(kernelColumns, start, end, message.resources, loaded.lookups, loaded.setup.keys, message.args, commands, message.tick));
+        loaded.kernel(kernelColumns, start, end, message.resources, loaded.lookups, loaded.setup.keys, message.args, commands, message.tick, partials, 0));
 };
 
 const load = async (setups: readonly KernelSetup[]): Promise<void> => {
@@ -158,13 +162,13 @@ const load = async (setups: readonly KernelSetup[]): Promise<void> => {
 };
 
 /** A split's claims, as this worker sees them. */
-type Claims = { readonly words: Int32Array; readonly grain: number; readonly self: number; readonly participants: number };
+type Claims = { readonly words: Int32Array; readonly self: number; readonly participants: number };
 
 /**
  * Runs a loaded kernel's WASM over rows `start` to `end` of an archetype; it applies the change filters itself.
  * With claims, runs only the `grain`-row pieces this worker claims.
  */
-const runWasm = (loaded: LoadedKernel, archetypeId: number, start: number, end: number, tick: number, lastRun: number, scalars: readonly number[], claims: Claims | null): void => {
+const runWasm = (loaded: LoadedKernel, archetypeId: number, start: number, end: number, tick: number, lastRun: number, scalars: readonly number[], claims: Claims | null, grain: number, partials: number, partialBytes: number): void => {
     const { wasm } = loaded;
     if (wasm === null) throw new Error(`Worker kernel ${loaded.setup.index} has no WASM.`);
     const archetype = archetypes.get(archetypeId);
@@ -176,11 +180,16 @@ const runWasm = (loaded: LoadedKernel, archetypeId: number, start: number, end: 
         ...filters.map(filter => filter.chunks.byteOffset),
         ...scalars,
     ];
-    if (claims === null) return void wasm(start, end, tick, lastRun, ...parameters);
-    const { words, grain, self, participants } = claims;
+    if (claims === null) {
+        if (partials < 0) return void wasm(start, end, tick, lastRun, ...parameters);
+        // An even share with reductions runs piece by piece, each into its own partials, as claims would.
+        for (let from = start, piece = 0; from < end; from += grain, piece++) wasm(from, Math.min(end, from + grain), tick, lastRun, ...parameters, partials + piece * partialBytes);
+        return;
+    }
+    const { words, self, participants } = claims;
     for (let piece = claimPiece(words, self, participants); piece >= 0; piece = claimPiece(words, self, participants)) {
         const from = start + piece * grain;
-        wasm(from, Math.min(end, from + grain), tick, lastRun, ...parameters);
+        wasm(from, Math.min(end, from + grain), tick, lastRun, ...parameters, ...partials < 0 ? [] : [partials + piece * partialBytes]);
     }
 };
 
@@ -209,7 +218,8 @@ const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
                 const participants = payloads[base + 11];
                 runWasm(loaded, payloads[base + 1], payloads[base + 2], payloads[base + 3], payloads[base + 4], payloads[base + 5],
                     Array.from(payloads.subarray(base + taskFields, base + taskFields + payloads[base + 7])),
-                    line < 0 ? null : { words: new Int32Array(buffer, message.claims + line * lineWords * 4, participants * lineWords), grain: payloads[base + 9], self: payloads[base + 10], participants });
+                    line < 0 ? null : { words: new Int32Array(buffer, message.claims + line * lineWords * 4, participants * lineWords), self: payloads[base + 10], participants },
+                    payloads[base + 9], payloads[base + 12], payloads[base + 13]);
             }
             catch {
                 status = -status;

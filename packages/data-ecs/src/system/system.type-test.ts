@@ -16,10 +16,14 @@ declare module '../component/types.js' {
         [player]: true;
     }
 }
+const flagged = 'systemTest/flagged';
+const bounds = 'systemTest/bounds';
 declare module '../resource/types.js' {
     export interface Types {
         [time]: number;
         [score]: number;
+        [flagged]: boolean;
+        [bounds]: readonly [number, number, number];
     }
 }
 declare module './types.js' {
@@ -226,3 +230,46 @@ System.create({
     kernel: true,
     query: { read: [velocity] },
 }, () => {});
+
+// Reductions: each reduced resource is a function contributing a value of its type.
+System.create({
+    name: "test/tally",
+    query: { read: [velocity, vector] },
+    resources: { reduce: { [score]: "+", [bounds]: "min", [flagged]: "|" } },
+}, (row, context) => {
+    context[score](row[velocity]);
+    context[bounds](row[vector]);
+    context[flagged](row[velocity] > 1);
+    // @ts-expect-error a contribution has the resource's type
+    context[bounds](1);
+    // @ts-expect-error a reduced resource can't be read
+    void (context[score] + 1);
+});
+
+System.create({
+    name: "test/tally",
+    // @ts-expect-error booleans reduce bitwise
+    resources: { reduce: { [flagged]: "+" } },
+}, () => {});
+
+System.create({
+    name: "test/tally",
+    // @ts-expect-error a reduced resource can't also be read
+    resources: { read: [score], reduce: { [score]: "+" } },
+}, () => {});
+
+System.create({
+    name: "test/tally",
+    // @ts-expect-error a reduction folds every row, so its query has no change filters
+    query: { read: [velocity], changed: [velocity] },
+    resources: { reduce: { [score]: "+" } },
+}, () => {});
+
+System.create({
+    name: "test/integrate",
+    kernel: "gpu",
+    query: { read: [velocity] },
+    // @ts-expect-error GPU kernels can't reduce yet
+    resources: { reduce: { [score]: "+" } },
+}, () => {});
+

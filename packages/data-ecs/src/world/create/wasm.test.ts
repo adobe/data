@@ -351,3 +351,31 @@ describe("generateWasm integer remainder", () => {
         }
     });
 });
+
+describe("generateWasm reductions", () => {
+    it("start each accumulator at its partial, fold every row into it, and store it back", () => {
+        // Local 0 sums the input and local 1 takes its least, from partials 10 and 5.
+        const program: Program = {
+            locals: 2,
+            reductions: [0, 1],
+            body: [
+                { kind: "set", local: 0, value: { kind: "binary", operator: "+", left: { kind: "local", local: 0 }, right: input } },
+                { kind: "set", local: 1, value: { kind: "math", name: "min", arguments: [{ kind: "local", local: 1 }, input] } },
+            ],
+        };
+        for (const simd of [false, true]) {
+            const kernel = generateWasm(program, [dense("f64", 0)], () => "number", simd);
+            if (kernel === null) throw new Error("expected a kernel");
+            const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
+            new Float64Array(memory.buffer, 0, 9).set([3, -2, 7, 1, 8, 0.5, 4, 6, 2]);
+            const partials = new Float64Array(memory.buffer, 4096, 2);
+            partials.set([10, 5]);
+            const instance = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) });
+            const runKernel: unknown = instance.exports.run;
+            if (typeof runKernel !== "function") throw new Error("no run export");
+            runKernel(0, 9, 0, -1, 0, 4096);
+            expect([...partials]).toEqual([10 + 29.5, -2]);
+            expect(kernel.vectorized).toBe(false);
+        }
+    });
+});

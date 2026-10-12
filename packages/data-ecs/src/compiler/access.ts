@@ -46,6 +46,8 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
             return fail(node, "row is indexed by a component in query read or write, or .entity");
         case "context": {
             if (key.kind === "binding") {
+                const reduced = signature.reduced.findIndex(entry => entry.resource === key.name);
+                if (reduced >= 0) return { kind: "reducer", reduced };
                 const index = signature.resources.indexOf(key.name);
                 return index >= 0 ? { kind: "dynamic", expression: { kind: "resource", index, path: [] } } : fail(node, `${key.name} is not in resources read`);
             }

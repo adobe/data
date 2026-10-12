@@ -166,6 +166,10 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   - **Disabled consumers:** each consumer chooses explicitly whether its finalizer keeps queuing while it is disabled, or it resyncs when re-enabled.
 - **Whole-plan finalizers** see the entire net plan rather than one query's unmatches. They are for persistence, sync and structural undo.
 
+- **Reductions.** `resources: { reduce: { [total]: "+", [low]: "min" } }` with `"+" "*" "min" "max" "&" "|" "^"`, applied leaf by leaf to numbers, tuples and structs, and on booleans only bitwise. In the body each reduced resource is a function, `context[total](value)`, that contributes a value; the body can't read the fold, and the resource can't also be read, written or filtered on. After a run the resource holds the fold of that run's contributions from the operator's identity, replacing its value, and is stamped changed only if it differs; a run the system skips, or that fails, leaves it as it was. Its query has no `added` or `changed` filters, since a reduction folds every row, and one system reduces into a resource.
+  - **Partials:** each kernel call folds into its own f64 partial, one per claimed piece across workers, which the main thread combines in piece order once the system's chunks settle. Results are deterministic for one world configuration; exact for min, max, bitwise operators and integer sums, while float sums and products vary with worker count, as precision does across backends. A result rounds or wraps once when stored; an empty `min` or `max` of integers stores the type's own extreme.
+  - **Contributions have a known shape:** a tuple or struct component contributed whole needs its leaves known, as whole-value writes do.
+
 ## Phase 0: open (affects API or correctness)
 
 1. **Kernel subset.** Kernels compile to efficient JS or WASM. Main-thread systems run as normal JS with every feature available.
@@ -176,15 +180,13 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
    - **Math types:** the package exports math types that are also namespaces of functions: `Vec2`, `Vec3`, `Vec4` (each `F32`, with `I32` and `U32` nested beside it), `Quat`, `Mat4x4`, and the scalars `F32`, `I32`, `U32`, each with a `schema`. They follow WGSL's semantics, and where WGSL leaves a result indeterminate they do what is fastest: integer vectors wrap, `round` rounds halfway values to even, `mod` is `x - m * floor(x / m)`, and `normalize` of a zero vector is NaN. Integer functions are defined for integers in range, and `pow` for a positive base; other inputs give indeterminate results, which may differ between the CPU and the GPU. The few that throw (`Mat4x4.inverse`, `Mat4x4.perspective`, `Mat4x4.lookAt`) can't be used in kernels.
    - **WGSL builtins:** a math function whose WGSL builtin matches it declares that explicitly, in its own file (`intrinsic({ wgsl: "normalize", parameters: ["vec3f"], result: "vec3f" }, implementation)`). In a GPU kernel a call to it becomes an intrinsic region holding its operands and its inlined body: WGSL emits the builtin on vector and matrix types, nesting calls as builtins do, and JS and WASM run the body, so CPU output is unchanged. Locals keep their JS names in WGSL, and a region's result is named after its function.
    - **Helpers return early:** a `return` inside an `if` splits the block, each branch running its own statements and then the rest, and the values merge as a conditional's do.
-   - Still open:
-     - The exact grammar (see `src/compiler/` for the subset as implemented).
+   - **Grammar:** `src/compiler/subset.md`.
    - **Value semantics** for tuple and struct locals, matching component values: locals are scalarized to one local per leaf.
-2. **Reduction construct.** Its shape, and how partial results combine.
-3. **Non-local matching.** Relationship pairs with variables (`(ChildOf, $p)` where `$p` has X) depend on another entity's archetype, and sparse-set components aren't part of the archetype. Should monitors support these, and how?
-4. **GPU systems.** Pure value reads and writes into component tables, with no structural commands, so the GPU never needs command buffer communication. Still open:
+2. **Non-local matching.** Relationship pairs with variables (`(ChildOf, $p)` where `$p` has X) depend on another entity's archetype, and sparse-set components aren't part of the archetype. Should monitors support these, and how?
+3. **GPU systems.** Pure value reads and writes into component tables, with no structural commands, so the GPU never needs command buffer communication. Still open:
    - **Latency.** Whether a system can declare that its writes become visible to CPU readers only at a later sync point, so readback overlaps the next frame.
    - **Device loss.** Components ahead on the GPU are lost with the device; decide whether a world can fall back to its last CPU copy.
-5. **API shapes** for rules, finalizers (per-query and whole-plan), and declared cascades.
+4. **API shapes** for rules, finalizers (per-query and whole-plan), and declared cascades.
 
 ## Additive later (no breaking change)
 
@@ -194,6 +196,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 - **Systems as entities:** metadata on systems, plus a query that selects which registered systems to run.
 - **Arguments for composites**, passed down to their members.
 - **WGSL helper functions, a minor readability option:** emit each inlined helper as its own WGSL `fn` instead of inlining it into the kernel, as a hand-written shader would. Parameter types come from the argument shapes at each call (a 3-tuple of numbers is `vec3f`, an object a generated `struct`), so a helper called with different shapes is emitted once per shape. GPU drivers inline small functions anyway, so it changes how the shader reads, not how it runs; JS and WASM stay inlined.
+- **Reductions, later:** GPU kernels (a workgroup tree reduction to per-workgroup partials, which needs resources resident on the GPU); four-lane SIMD accumulators, deterministic since pieces are 16-row aligned; contributing a component value of unknown shape whole, as bounds over positions want; lexicographic `min` and `max` over a tuple, for argmin and argmax such as the nearest entity; and per-field operators.
 - **Unregistering systems.** This needs a decision on what happens to a system's `lastRun` and artifacts.
 - **Entity-typed field annotation** in schemas (e.g. `format: "entity"`), so replication and persistence can map entity references.
 - **Hierarchy propagation**, for example a parent's world matrix flowing down to its children. The approach is not decided. Candidates:

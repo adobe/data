@@ -1,18 +1,28 @@
 import type { Expression, ObjectExpression, Property, SpreadElement, Pattern } from 'estree';
+import type { Reduction } from '../system/query.js';
 import { fail } from './failure.js';
 import type { ModuleScope } from './module-scope.js';
 
 export type Lookup = { readonly name: string; readonly read: readonly string[] };
+
+const reductionOperators: readonly Reduction[] = ["+", "*", "min", "max", "&", "|", "^"];
+const isReduction = (text: unknown): text is Reduction => reductionOperators.some(operator => operator === text);
+
+/** A resource the kernel reduces into, by its module-scope binding name. */
+export type Reduced = { readonly resource: string; readonly operator: Reduction };
 
 /** The parts of a kernel declaration the compiler needs. Component and resource keys are module-scope binding names. */
 export type Signature = {
     readonly read: ReadonlySet<string>;
     readonly write: ReadonlySet<string>;
     readonly resources: readonly string[];
+    readonly reduced: readonly Reduced[];
     readonly lookups: readonly Lookup[];
     readonly args: boolean;
     /** Whether it filters on `added` or `changed` components, or on changed resources. */
     readonly filtered: boolean;
+    /** Whether every row it matches runs when it runs: no `added` or `changed` filter on components. */
+    readonly folds: boolean;
 };
 
 const entry = <T>(name: string, value: T): readonly [string, T] => [name, value];
@@ -42,6 +52,20 @@ const lists = (node: Expression | Pattern, what: string, allowed: readonly strin
         ? entry(name, identifiers(property.value, module))
         : fail(property, `${what}.${name} is not allowed in a kernel declaration`)));
 
+/** `reduce: { [resource]: "operator", ... }`, with resources bound at module scope. */
+const reductions = (node: Expression | Pattern, module: ModuleScope): readonly Reduced[] => {
+    if (node.type !== "ObjectExpression") return fail(node, "resources.reduce must be an object literal in a kernel declaration");
+    return node.properties.map((property): Reduced => {
+        if (property.type === "SpreadElement" || !property.computed || property.key.type !== "Identifier" || !module.has(property.key.name)) {
+            return fail(property, "resources.reduce names each resource as a computed key bound at module scope, as in { [total]: \"+\" }");
+        }
+        const { value } = property;
+        const operator = value.type === "Literal" ? value.value : undefined;
+        if (!isReduction(operator)) return fail(value, `a resource is reduced with one of ${reductionOperators.map(item => JSON.stringify(item)).join(", ")}`);
+        return { resource: property.key.name, operator };
+    });
+};
+
 /** What kind of kernel a `System.create` declaration compiles to, or null when it isn't a kernel. */
 export const kernelOf = (declaration: ObjectExpression): "cpu" | "gpu" | null => {
     for (const property of declaration.properties) {
@@ -58,6 +82,7 @@ export const kernelOf = (declaration: ObjectExpression): "cpu" | "gpu" | null =>
 export const signature = (declaration: ObjectExpression, module: ModuleScope): Signature => {
     let query: ReadonlyMap<string, readonly string[]> | undefined;
     let resources: readonly string[] = [];
+    let reduced: readonly Reduced[] = [];
     let resourcesChanged = false;
     let args = false;
     const lookups: Lookup[] = [];
@@ -67,10 +92,11 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
                 query = lists(property.value, "query", ["read", "write", "has", "not", "added", "changed"], module);
                 break;
             case "resources":
-                {
-                    const listed = lists(property.value, "resources", ["read", "changed"], module);
-                    resources = listed.get("read") ?? [];
-                    resourcesChanged = (listed.get("changed")?.length ?? 0) > 0;
+                for (const [list, value] of properties(property.value, "resources")) {
+                    if (list === "read") resources = identifiers(value.value, module);
+                    else if (list === "changed") resourcesChanged = identifiers(value.value, module).length > 0;
+                    else if (list === "reduce") reduced = reductions(value.value, module);
+                    else fail(value, `resources.${list} is not allowed in a kernel declaration`);
                 }
                 break;
             case "lookup":
@@ -88,6 +114,6 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
         }
     }
     if (query === undefined) return fail(declaration, "a kernel needs a query");
-    const filtered = resourcesChanged || (query.get("added")?.length ?? 0) + (query.get("changed")?.length ?? 0) > 0;
-    return { read: new Set(query.get("read")), write: new Set(query.get("write")), resources, lookups, args, filtered };
+    const rowFiltered = (query.get("added")?.length ?? 0) + (query.get("changed")?.length ?? 0) > 0;
+    return { read: new Set(query.get("read")), write: new Set(query.get("write")), resources, reduced, lookups, args, filtered: resourcesChanged || rowFiltered, folds: !rowFiltered };
 };

@@ -1,7 +1,7 @@
 import { World } from "../world/world.js";
 import { enabled as flatEnabled, spawnFlat, spawnFlatDynamic, visible as flatVisible } from "./flat.js";
 import { enabled, fastest as particlesFastest, move, position as particlePosition, spawn, visible } from "./particles.js";
-import { chain, churn, emit, fastest, follow, hits, index, observe, poke, pokeCluster, position, retag, seeded, smalls, tag, totalOf } from "./suite.js";
+import { chain, churn, emit, fastest, follow, highest, hits, index, indexSum, observe, poke, pokeCluster, position, reduce, retag, seeded, smalls, tag, totalOf } from "./suite.js";
 
 /** Benchmarks shared by vitest (`*.perf-test.ts`) and the bundled node runner (`run.ts`). Each resolves to milliseconds. */
 export type Benchmark = { readonly name: string; readonly run: () => Promise<number> };
@@ -116,6 +116,16 @@ export const benchmarks: readonly Benchmark[] = [
             const world = await seeded(() => World.create(), 1_000_000, emit);
             const best = await fastest(() => world.run(emit));
             check(world.query.count([hits]) === 100_000, "emit: wrong count");
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "reduce 1M",
+        run: async () => {
+            const world = await seeded(() => World.create(), 1_000_000, reduce);
+            const best = await fastest(() => world.run(reduce));
+            check(world.read.resource(highest) === 999_999 && world.read.resource(indexSum) === 999_999 * 500_000, "reduce: wrong fold");
             await world.dispose();
             return best;
         },

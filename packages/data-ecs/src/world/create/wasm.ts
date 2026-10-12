@@ -238,7 +238,9 @@ export const generateWasm = (
     for (let pass = 0; pass < program.locals + 2 && inferLocals(program.body); pass++);
 
     /** Whether a value is an integer below 2^32 in magnitude: integer column reads, small integer literals, and locals of only those. */
-    const integralLocals = new Array<boolean>(program.locals).fill(true);
+    const accumulators = program.reductions ?? [];
+    // Accumulators start at their partials, which needn't be integers.
+    const integralLocals = new Array<boolean>(program.locals).fill(true).map((integral, index) => integral && !accumulators.includes(index));
     const integral = (expression: Expression): boolean => {
         switch (expression.kind) {
             case "column": {
@@ -265,7 +267,7 @@ export const generateWasm = (
     while (inferIntegral(program.body));
 
     // Parameters: start, end, tick, then one address per column, then scalars. Locals follow.
-    // Parameters: start, end, tick, lastRun, column addresses, filter row tick addresses, filter chunk tick addresses, scalars.
+    // Parameters: start, end, tick, lastRun, column addresses, filter row tick addresses, filter chunk tick addresses, scalars, and with reductions the partials address.
     const columnParameter = (column: number): number => 4 + column;
     const filterRowParameter = (filter: number): number => 4 + columns.length + filter;
     const filterChunkParameter = (filter: number): number => 4 + columns.length + filters + filter;
@@ -1323,9 +1325,14 @@ export const generateWasm = (
             code.length = 0;
             extraLocals.length = 0;
             rowsLocals.length = 0;
-            localBase = parameterCount + scalarCount;
+            // With reductions, the partials' address follows the scalars.
+            const partialsParameter = parameterCount + scalarCount;
+            localBase = partialsParameter + (accumulators.length > 0 ? 1 : 0);
             rowLocal = scratch(i32Type);
             code.push(op.localGet, 0, op.localSet, ...unsigned(rowLocal));
+            accumulators.forEach((accumulator, k) => {
+                code.push(op.localGet, ...unsigned(partialsParameter), op.f64Load, 3, ...unsigned(8 * k), op.localSet, ...unsigned(local(accumulator)));
+            });
             handleLocals.clear();
             if (lookupParameters > 0) convertLookupParameters();
             stampRangeChunks();
@@ -1351,10 +1358,16 @@ export const generateWasm = (
             labels.pop();
             code.push(op.end);
             code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, 1, op.i32Add, op.localSet, ...unsigned(rowLocal), op.br, 0);
-            code.push(op.end, op.end, op.end);
+            code.push(op.end, op.end);
+            accumulators.forEach((accumulator, k) => {
+                code.push(op.localGet, ...unsigned(partialsParameter), op.localGet, ...unsigned(local(accumulator)), op.f64Store, 3, ...unsigned(8 * k));
+            });
+            // The function's end.
+            code.push(op.end);
         };
         // Across-rows mode doesn't filter rows, so filtered kernels fuse within rows instead.
-        let mode: "rows" | "lanes" | "scalar" = !simdEnabled ? "scalar" : filters > 0 ? "lanes" : "rows";
+        // Accumulators carry from row to row, which neither SIMD mode keeps.
+        let mode: "rows" | "lanes" | "scalar" = !simdEnabled || accumulators.length > 0 ? "scalar" : filters > 0 ? "lanes" : "rows";
         try {
             generate(0, mode);
         }
@@ -1372,7 +1385,7 @@ export const generateWasm = (
         if (scalars.length !== discovered) throw unsupported;
         const vectorized = mode !== "scalar";
 
-        const parameterTypes = [i32Type, i32Type, f64Type, f64Type, ...columns.map(() => i32Type), ...new Array<number>(2 * filters).fill(i32Type), ...new Array<number>(lookupParameters).fill(f64Type), ...scalars.map(() => f64Type)];
+        const parameterTypes = [i32Type, i32Type, f64Type, f64Type, ...columns.map(() => i32Type), ...new Array<number>(2 * filters).fill(i32Type), ...new Array<number>(lookupParameters).fill(f64Type), ...scalars.map(() => f64Type), ...accumulators.length > 0 ? [i32Type] : []];
         const localTypesList = [...new Array<number>(program.locals).fill(f64Type)];
         // Locals in order: program locals, then extras in creation order; the row index was the first extra.
         const declared = [...localTypesList.map(type => [1, type]), ...extraLocals.map(type => [1, type])];

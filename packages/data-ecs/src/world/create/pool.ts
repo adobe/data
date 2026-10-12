@@ -19,6 +19,12 @@ export type FastTask = {
     readonly tick: number;
     readonly lastRun: number;
     readonly scalars: readonly number[];
+    /**
+     * The byte address of the task's first reduction partials, or -1 without reductions. A worker running claimed
+     * pieces folds piece `p` into the partials `p * partialBytes` past it.
+     */
+    readonly partials: number;
+    readonly partialBytes: number;
 };
 
 /**
@@ -143,7 +149,7 @@ export const createPool = (size: number, arena: Memory): Pool => {
             ensureOpen(worker);
             const current = Atomics.load(control, worker * controlWords + epoch);
             const base = (worker * ringSize + ring) * taskWords;
-            payloads.set([task.kernel, task.archetype, task.start, task.end, task.tick, task.lastRun, current, task.scalars.length, line, grain, self, participants], base);
+            payloads.set([task.kernel, task.archetype, task.start, task.end, task.tick, task.lastRun, current, task.scalars.length, line, grain, self, participants, task.partials, task.partialBytes], base);
             payloads.set(task.scalars, base + taskFields);
             Atomics.store(control, worker * controlWords + posted, count);
             wake(worker);
@@ -177,8 +183,12 @@ export const createPool = (size: number, arena: Memory): Pool => {
         const split = pieces <= maximumPieces ? freeSplits.pop() : undefined;
         if (split === undefined) {
             const share = Math.ceil((task.end - task.start) / workers / grain) * grain;
+            // Each share runs as the grain-row pieces it holds, into those pieces' partials, as claims would.
             return Array.from({ length: workers }, (_, i) =>
-                post((first + i) % size, { ...task, start: task.start + i * share, end: Math.min(task.end, task.start + (i + 1) * share) }, -1, 0, 0, 0));
+                post((first + i) % size, {
+                    ...task, start: task.start + i * share, end: Math.min(task.end, task.start + (i + 1) * share),
+                    partials: task.partials < 0 ? -1 : task.partials + (i * share / grain) * task.partialBytes,
+                }, -1, grain, 0, 0));
         }
         const line = split * size;
         startRanges(claims.subarray(line * lineWords, (line + workers) * lineWords), workers, pieces);

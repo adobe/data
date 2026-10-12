@@ -1,4 +1,5 @@
 import { Component } from "../component/component.js";
+import { Resource } from "../resource/resource.js";
 import type { Entity } from "../entity/entity.js";
 import type { Schema } from "../schema/schema.js";
 import { System } from "../system/system.js";
@@ -45,8 +46,20 @@ declare module "../system/types.js" {
         "suite/chain": true;
         [small: `suite/small${number}`]: true;
         "suite/smalls": true;
+        "suite/reduce": true;
     }
 }
+
+export const indexSum = "suite/indexSum";
+export const highest = "suite/highest";
+declare module "../resource/types.js" {
+    export interface Types {
+        [indexSum]: number;
+        [highest]: number;
+    }
+}
+Resource.register(indexSum, { type: "number", default: 0 });
+Resource.register(highest, { type: "number", default: 0 });
 
 Component.register(position, vec3);
 Component.register(velocity, vec3);
@@ -203,3 +216,9 @@ export const seeded = async (create: () => World, count: number, ...systems: rea
     await world.run(seed, count);
     return world;
 };
+
+/** Folds every row's index into a sum and a maximum. */
+export const reduce = System.create({ name: "suite/reduce", kernel: "cpu", query: { read: [index] }, resources: { reduce: { [indexSum]: "+", [highest]: "max" } } }, (row, context) => {
+    context[indexSum](row[index]);
+    context[highest](row[index]);
+});

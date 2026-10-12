@@ -143,7 +143,8 @@ export const accessOf = (leaf: Leaf): Access => {
     const { query, lookup, resources } = leaf.declaration;
     const reads = new Set<Key>([...query?.read ?? [], ...query?.added ?? [], ...query?.changed ?? [], ...resources?.read ?? [], ...resources?.changed ?? []]);
     for (const name in lookup) for (const key of lookup[name].read ?? []) reads.add(key);
-    const writes = new Set<Key>([...query?.write ?? [], ...resources?.write ?? []]);
+    const reduce = resources?.reduce;
+    const writes = new Set<Key>([...query?.write ?? [], ...resources?.write ?? [], ...reduce === undefined ? [] : Reflect.ownKeys(reduce)]);
     return { reads, writes };
 };
 

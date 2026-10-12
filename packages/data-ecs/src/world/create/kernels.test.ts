@@ -36,7 +36,7 @@ Resource.register(scale, { type: "number", default: 1 });
 const system = System.create({ name: "kernelsTest/read", kernel: "cpu", query: { read: [value, other] } }, () => {});
 
 const describing = (overrides: Partial<KernelDescription>): KernelDescription =>
-    ({ columns: [], shapes: [], resources: [], lookups: [], keys: [], url: "unused", program: null, ...overrides });
+    ({ columns: [], shapes: [], resources: [], lookups: [], keys: [], url: "unused", program: null, reductions: [], reducedShapes: [], ...overrides });
 
 const bind = (overrides: Partial<KernelDescription>): void => {
     bindKernel(createState(), attachKernel(system, describing(overrides)), describing(overrides));

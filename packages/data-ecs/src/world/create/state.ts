@@ -39,6 +39,10 @@ export type State = {
     nextShape: number;
     /** Lookup directories for WASM kernels, kept up to date at sync points. */
     readonly directories: Set<Directory>;
+    /** Workers the world may run kernels on; with none, kernels run on the main thread. */
+    workers: number;
+    /** Called at the end of each sync point, to size what depends on archetypes, such as reduction partials. */
+    readonly afterSync: Set<() => void>;
     /** Accessor rows for main-thread systems, by the component ids they read and write. */
     readonly rows: Map<string, Row>;
     /** Whether kernels with a program run as WASM, and as SIMD where they can; tests turn these off to compare with JS. */
@@ -70,7 +74,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         batchByKey: new Map(),
         spawnShapes: [],
         nextShape: 0,
-        directories: new Set(),
+        directories: new Set(), workers: 0, afterSync: new Set(),
         rows: new Map(),
         wasm,
         simd,

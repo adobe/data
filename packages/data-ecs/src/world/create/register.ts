@@ -39,7 +39,13 @@ const keysOf = (leaf: Leaf): { readonly components: readonly Key[]; readonly res
     const { query, lookup, resources } = leaf.declaration;
     const components = [...query?.read ?? [], ...query?.write ?? [], ...query?.has ?? [], ...query?.not ?? [], ...query?.added ?? [], ...query?.changed ?? []];
     for (const name in lookup) components.push(...lookup[name].read ?? [], ...lookup[name].has ?? [], ...lookup[name].not ?? []);
-    return { components, resources: [...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? []] };
+    return { components, resources: [...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? [], ...reducedBy(leaf)] };
+};
+
+/** The resources a system reduces into. */
+const reducedBy = (leaf: Leaf): readonly Key[] => {
+    const reduce = leaf.declaration.resources?.reduce;
+    return reduce === undefined ? [] : Reflect.ownKeys(reduce).filter(key => Reflect.get(reduce, key) !== undefined);
 };
 
 export const createRegistrar = (state: State): Registrar => {
@@ -47,6 +53,8 @@ export const createRegistrar = (state: State): Registrar => {
     const schedules = new Map<System, Schedule>();
     const runners = new Map<Leaf, Runner>();
     const kernelIndexes = new Map<Runner, number>();
+    /** The system that reduces into each resource: a resource holds one system's reduction. */
+    const reducers = new Map<Key, Name>();
     /** Never reused, so a rolled-back kernel's index can't alias a worker's loaded kernel. */
     let nextKernel = 0;
 
@@ -55,6 +63,7 @@ export const createRegistrar = (state: State): Registrar => {
         const addedSchedules = new Map<System, Schedule>();
         const addedRunners = new Map<Leaf, Runner>();
         const resources = new Set<Key>();
+        const addedReducers = new Map<Key, Name>();
         for (const root of roots) {
             for (const system of systemsOf(root)) {
                 const { name } = system.declaration;
@@ -65,6 +74,11 @@ export const createRegistrar = (state: State): Registrar => {
                 addedSchedules.set(system, createSchedule(system));
                 if (isLeaf(system)) {
                     checkLeaf(system);
+                    for (const key of reducedBy(system)) {
+                        const other = reducers.get(key) ?? addedReducers.get(key);
+                        if (other !== undefined) throw new Error(`Systems "${other}" and "${name}" both reduce "${String(key)}"; a resource holds one system's reduction.`);
+                        addedReducers.set(key, name);
+                    }
                     const keys = keysOf(system);
                     for (const key of keys.components) idOf(state, key);
                     for (const key of keys.resources) {
@@ -76,6 +90,7 @@ export const createRegistrar = (state: State): Registrar => {
             }
         }
         for (const [name, system] of added) named.set(name, system);
+        for (const [key, name] of addedReducers) reducers.set(key, name);
         for (const [system, schedule] of addedSchedules) schedules.set(system, schedule);
         for (const [leaf, runner] of addedRunners) {
             runners.set(leaf, runner);
@@ -87,6 +102,7 @@ export const createRegistrar = (state: State): Registrar => {
         const kernels = [...kernelIndexes.keys()].filter(runner => runner.kernel?.stale() === true);
         const rollback = (): void => {
             for (const name of added.keys()) named.delete(name);
+            for (const key of addedReducers.keys()) reducers.delete(key);
             for (const system of addedSchedules.keys()) schedules.delete(system);
             for (const leaf of addedRunners.keys()) runners.delete(leaf);
             for (const runner of addedRunners.values()) kernelIndexes.delete(runner);

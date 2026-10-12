@@ -11,6 +11,7 @@ import { packageIndex } from './paths.js';
 import { locateThroughMap } from './source-map.js';
 import { Mat4x4, Quat, Vec3 } from '../math/index.js';
 import { generateWgsl } from '../world/create/wgsl.js';
+import { identityOf } from '../world/create/reductions.js';
 import type { WasmColumn } from '../world/create/wasm.js';
 
 const header = `import { System } from "ecs";
@@ -89,7 +90,10 @@ type Layout = { readonly strides: readonly number[]; readonly offsets: readonly 
 
 /** A reference interpreter for `Program`, indexing columns by the layout as the WASM generator does. */
 const interpret = (program: Program, columns: readonly (Float64Array | Uint32Array)[], booleans: readonly boolean[], layout: Layout, start: number, end: number, resources: readonly unknown[], args: unknown,
-    lookups: readonly ((entity: number) => readonly unknown[] | null)[]): void => {
+    lookups: readonly ((entity: number) => readonly unknown[] | null)[], partials: Float64Array): void => {
+    const accumulators = program.reductions ?? [];
+    /** Accumulators carry from row to row, from their partials and back. */
+    const carried = accumulators.map((_, k) => partials[k] ?? NaN);
     const at = (column: number, row: number): number => row * (layout.strides[column] ?? 1) + (layout.offsets[column] ?? 0);
     const scalarAt = (root: unknown, path: readonly (number | string)[]): Scalar => {
         const value = path.reduce<unknown>((item, key) => Reflect.get(Object(item), key), root);
@@ -207,8 +211,11 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
                 }
             }
         };
+        accumulators.forEach((local, k) => { locals[local] = carried[k] ?? NaN; });
         execute(program.body);
+        accumulators.forEach((local, k) => { carried[k] = Number(locals[local]); });
     }
+    carried.forEach((value, k) => { partials[k] = value; });
 };
 
 /** Padding in interleaved components, which kernels must never touch. */
@@ -252,11 +259,14 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
     };
     const booleans = description.columns.map(column => column.kind === "field" && (options.booleans ?? []).includes(String(column.component)));
     const [start, end] = options.range ?? [0, rows];
-    description.create(booleans, layout.strides, layout.offsets)(columns, start, end, options.resources ?? [], options.lookups ?? [], description.keys, options.args, commands, tick);
+    const partials = Float64Array.from(description.reductions, reduction => identityOf(reduction.operator));
+    const interpretedPartials = Float64Array.from(partials);
+    description.create(booleans, layout.strides, layout.offsets)(columns, start, end, options.resources ?? [], options.lookups ?? [], description.keys, options.args, commands, tick, partials, 0);
     expect(description.program !== null).toBe(options.program ?? true);
     if (description.program !== null) {
         const interpreted = build();
-        interpret(description.program, interpreted, booleans, layout, start, end, options.resources ?? [], options.args, options.lookups ?? []);
+        interpret(description.program, interpreted, booleans, layout, start, end, options.resources ?? [], options.args, options.lookups ?? [], interpretedPartials);
+        expect([...interpretedPartials]).toEqual([...partials]);
         // Bit-identical, including NaN and -0.
         expect(interpreted.map(column => [...column].map(value => Object.is(value, -0) ? "-0" : String(value))))
             .toEqual(columns.map(column => [...column].map(value => Object.is(value, -0) ? "-0" : String(value))));
@@ -272,6 +282,9 @@ const run = (description: Compiled, rows: number, fields: Fields, options: Optio
         /** A component's whole interleaved array, padding included. */
         array: (component: string) => [...columns[index("field", component, [0])] ?? []],
         changed: (component: string) => [...columns[index("changed", component)] ?? []],
+        /** A reduced resource's leaf, folded over the rows from its identity. */
+        reduced: (resource: string, path: readonly (number | string)[] = []) =>
+            partials[description.reductions.findIndex(reduction => reduction.resource === resource && JSON.stringify(reduction.path) === JSON.stringify(path))],
         chunks: (component: string) => [...columns[index("chunks", component)] ?? []],
         calls,
     };
@@ -364,6 +377,41 @@ describe("layout", () => {
         const result = run(kernel, 3, { velocity: vec3([1, 4, 7], [2, 5, 8], [3, 6, 9]) }, { interleaved: { velocity: { stride: 4, offsets: { "[0]": 1, "[1]": 2, "[2]": 3 } } } });
         expect(result.array("velocity")).toEqual([padding, 3, 2, 1, padding, 4, 5, 6, padding, 9, 8, 7]);
         expect(result.changed("velocity")).toEqual([tick, 0, tick]);
+    });
+});
+
+describe("reductions", () => {
+    const reducing = (reduce: string, body: string) => `const total = "total";
+const low = "low";
+const bits = "bits";
+const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position, mass] }, resources: { reduce: { ${reduce} } } }, (row, context) => { ${body} });`;
+    const fields = { position: vec3([1, -4, 2], [5, 0, -1], [3, 9, 6]), mass: { "[]": [2, 3, 12] } };
+
+    test("fold each contribution into its resource, leaf by leaf, from the partial", async () => {
+        const kernel = await compile(reducing(`[total]: "+", [low]: "min", [bits]: "|"`, `
+            const [x, y, z] = row[position];
+            context[total](row[mass]);
+            context[total](1);
+            context[low]([x, y, z]);
+            context[bits](row[mass]);
+        `));
+        const result = run(kernel, 3, fields);
+        expect(result.reduced("total")).toBe(2 + 3 + 12 + 3);
+        expect([0, 1, 2].map(k => result.reduced("low", [k]))).toEqual([-4, -1, 3]);
+        expect(result.reduced("bits")).toBe(2 | 3 | 12);
+        expect(kernel.reductions.map(reduction => reduction.operator)).toEqual(["+", "min", "min", "min", "|"]);
+    });
+
+    test("fold the values of inlined functions", async () => {
+        const kernel = await compile(`import { Vec3 } from "ecs";\n${reducing(`[low]: "max"`, "context[low](Vec3.scale(row[position], 2));")}`);
+        expect([0, 1, 2].map(k => run(kernel, 3, fields).reduced("low", [k]))).toEqual([4, 10, 18]);
+    });
+
+    test("that can't be compiled fail with the reason", async () => {
+        expect(await failure(reducing(`[total]: "+"`, "context[total](1, 2);"))).toBe("total takes the one value it reduces");
+        expect(await failure(reducing(`[total]: "avg"`, "context[total](1);"))).toBe(`a resource is reduced with one of "+", "*", "min", "max", "&", "|", "^"`);
+        expect(await failure(reducing(`total: "+"`, "context[total](1);"))).toBe(`resources.reduce names each resource as a computed key bound at module scope, as in { [total]: "+" }`);
+        expect(await failure(reducing(`[total]: "+"`, "context[total](1);").replace(`kernel: "cpu"`, `kernel: "gpu"`))).toBe("a GPU kernel can't use reductions yet");
     });
 });
 

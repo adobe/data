@@ -40,6 +40,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
     const registrar = createRegistrar(state);
     const enqueue = createQueue();
     const workerCount = shared ? options.workers ?? defaultWorkerCount(shared) : 0;
+    state.workers = workerCount;
     /** Workers start with the first kernel, so worlds without kernels never spawn any. */
     let pool: Pool | null = null;
     const context: { -readonly [K in keyof ExecuteContext]: ExecuteContext[K] } = {

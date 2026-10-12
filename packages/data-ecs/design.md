@@ -193,6 +193,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 
 - **Systems as entities:** metadata on systems, plus a query that selects which registered systems to run.
 - **Arguments for composites**, passed down to their members.
+- **WGSL helper functions, a minor readability option:** emit each inlined helper as its own WGSL `fn` instead of inlining it into the kernel, as a hand-written shader would. Parameter types come from the argument shapes at each call (a 3-tuple of numbers is `vec3f`, an object a generated `struct`), so a helper called with different shapes is emitted once per shape. GPU drivers inline small functions anyway, so it changes how the shader reads, not how it runs; JS and WASM stay inlined.
 - **Unregistering systems.** This needs a decision on what happens to a system's `lastRun` and artifacts.
 - **Entity-typed field annotation** in schemas (e.g. `format: "entity"`), so replication and persistence can map entity references.
 - **Hierarchy propagation**, for example a parent's world matrix flowing down to its children. The approach is not decided. Candidates:

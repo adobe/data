@@ -53,6 +53,7 @@ declare module "../../system/types.js" {
         "gpuTest/poison": true;
         "gpuTest/fail": true;
         "gpuTest/failing": true;
+        "gpuTest/churn": true;
     }
 }
 
@@ -148,6 +149,16 @@ const following = System.composite({ name: "gpuTest/following", systems: [move, 
 const poison = System.create({ name: "gpuTest/poison", query: { read: [position] } }, (row, _, commands) => {
     if (row[position][0] === 2) commands.despawn(row.entity);
     if (row[position][0] === 4) commands.add(row.entity, { [score]: Symbol("poison") as unknown as number });
+});
+
+let frameNumber = 0;
+const spawnedNow: Entity[] = [];
+
+/** Spawns a few particles each frame, through growth of their archetypes; nothing on the CPU reads their positions. */
+const spawnFew = System.create({ name: "gpuTest/churn" }, (_, __, commands) => {
+    for (let i = 0; i < 37; i++) spawnedNow.push(commands.spawn({ [position]: [frameNumber, i, 0], [velocity]: [1, i % 3, 0.25] }));
+    // Every fifth frame, a despawn moves another particle into a row the GPU wrote.
+    if (frameNumber % 5 === 4) commands.despawn(spawnedNow[frameNumber * 3]);
 });
 
 /** A render body that fails after starting its pass. */
@@ -279,6 +290,24 @@ describe("GPU kernels", () => {
             await world.run(move);
         }
         await gpuWorld.synchronize([position]);
+        expect(positions(gpuWorld)).toEqual(positions(cpuWorld));
+        await gpuWorld.dispose();
+        await cpuWorld.dispose();
+    });
+
+    it("keep their writes as spawns grow their archetypes and despawns move rows", async () => {
+        const gpuWorld = createWorld({ gpu: { device: await device() } });
+        const cpuWorld = createWorld({ workers: 0 });
+        for (const world of [gpuWorld, cpuWorld]) {
+            spawnedNow.length = 0;
+            await world.systems.register(spawnFew, move);
+            for (frameNumber = 0; frameNumber < 40; frameNumber++) {
+                await world.run(spawnFew);
+                await world.run(move);
+            }
+        }
+        await gpuWorld.synchronize([position]);
+        expect(positions(gpuWorld).length).toBe(positions(cpuWorld).length);
         expect(positions(gpuWorld)).toEqual(positions(cpuWorld));
         await gpuWorld.dispose();
         await cpuWorld.dispose();

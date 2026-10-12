@@ -58,7 +58,12 @@ export type GpuEngine = {
     readonly anyAhead: () => boolean;
     /** Copies GPU writes back into the CPU storages; every storage when `storages` is omitted. */
     readonly readback: (storages?: readonly Storage[]) => Promise<void>;
-    /** After a sync point: rows of these archetypes may have moved or changed on the CPU. */
+    /**
+     * Before a sync point: `disturbed` are the archetypes whose existing rows it moves or writes, which must be read
+     * back first; the rest only gain rows at their end.
+     */
+    readonly beforeSync: (disturbed: ReadonlySet<Archetype>) => void;
+    /** After a sync point: the archetypes it changed, whose new rows, or all rows if disturbed, are uploaded next. */
     readonly touched: (archetypes: Iterable<Archetype>) => void;
     /** Set once the device is lost; later runs reject with it. */
     readonly lost: () => string | null;
@@ -146,14 +151,27 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
             residents.set(storage, resident);
         }
         if (resident.capacity < archetype.capacity) {
-            // Archetypes grow only at sync points that apply something, and those read GPU writes back first.
-            if (ahead.has(resident)) throw new Error("A storage grew while the GPU held writes the CPU hadn't seen.");
-            if (resident.bytes > 0) (freeBlocks[sizeClass(resident.bytes)] ??= []).push(resident.offset);
-            resident.bytes = Math.max(minimumBlockBytes, archetype.capacity * resident.stride);
-            resident.offset = allocate(resident.bytes);
+            const bytes = Math.max(minimumBlockBytes, archetype.capacity * resident.stride);
+            const offset = allocate(bytes);
+            if (resident.bytes === 0) {
+                resident.dirtyLow = 0;
+                resident.dirtyHigh = archetype.count;
+            }
+            else {
+                // The old rows move on the GPU, where they may be newer than the CPU's; a buffer can't copy into itself.
+                submit();
+                const used = resident.capacity * resident.stride;
+                const scratch = device.createBuffer({ size: used, usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST });
+                const copy = device.createCommandEncoder();
+                copy.copyBufferToBuffer(heap, resident.offset, scratch, 0, used);
+                copy.copyBufferToBuffer(scratch, 0, heap, offset, used);
+                device.queue.submit([copy.finish()]);
+                scratch.destroy();
+                (freeBlocks[sizeClass(resident.bytes)] ??= []).push(resident.offset);
+            }
+            resident.offset = offset;
+            resident.bytes = bytes;
             resident.capacity = archetype.capacity;
-            resident.dirtyLow = 0;
-            resident.dirtyHigh = archetype.count;
         }
         return resident;
     };
@@ -226,8 +244,27 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         }
     };
 
+    let disturbedNow: ReadonlySet<Archetype> = new Set();
+    /** Row counts of archetypes with GPU copies, before the sync point. */
+    const countsBefore = new Map<Archetype, number>();
+    const beforeSync = (disturbed: ReadonlySet<Archetype>): void => {
+        disturbedNow = disturbed;
+        countsBefore.clear();
+        for (const resident of residents.values()) countsBefore.set(resident.archetype, resident.archetype.count);
+    };
+
     const touched = (archetypes: Iterable<Archetype>): void => {
-        for (const archetype of archetypes) for (const storage of archetype.storages) markCpuWrites(archetype, storage);
+        for (const archetype of archetypes) {
+            const from = disturbedNow.has(archetype) ? 0 : countsBefore.get(archetype) ?? 0;
+            for (const storage of archetype.storages) {
+                const resident = residents.get(storage);
+                if (resident === undefined || from >= archetype.count) continue;
+                // A disturbed archetype was read back whole, so every row is the CPU's; otherwise only the new ones are.
+                resident.dirtyLow = resident.dirtyHigh > resident.dirtyLow ? Math.min(resident.dirtyLow, from) : from;
+                resident.dirtyHigh = Math.max(resident.dirtyHigh, archetype.count);
+            }
+        }
+        disturbedNow = new Set();
     };
 
     return {
@@ -249,6 +286,7 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         },
         anyAhead: () => ahead.size > 0,
         readback,
+        beforeSync,
         touched,
         lost: () => lostReason,
         destroy: () => {

@@ -5,6 +5,8 @@ import type { Archetype, Storage } from './archetype.js';
 import type { State } from './state.js';
 import type { GpuEngine } from './gpu.js';
 import { pending, synchronize } from './synchronize.js';
+import { spawnCommand } from './buffer.js';
+import { locate } from './entities.js';
 
 export type ExecuteContext = {
     readonly state: State;
@@ -51,8 +53,12 @@ export const execute = async ({ state, runnerOf, kernelIndexOf, workers, publish
         try {
             if (gpu !== null) {
                 gpu.submit();
-                // The sync point moves and writes rows on the CPU, so it needs the GPU's writes first.
-                if (gpu.anyAhead() && pending(state)) await gpu.readback();
+                if (pending(state)) {
+                    // The sync point moves and writes existing rows of these archetypes on the CPU, so it needs the GPU's writes there first.
+                    const disturbed = disturbedBy(state);
+                    gpu.beforeSync(disturbed);
+                    if (gpu.anyAhead()) await gpu.readback([...disturbed].flatMap(archetype => archetype.storages));
+                }
             }
             try {
                 synchronize(state);
@@ -69,6 +75,22 @@ export const execute = async ({ state, runnerOf, kernelIndexOf, workers, publish
             publish();
         }
     }
+};
+
+/**
+ * Archetypes whose existing rows the next sync point moves or writes: those of live entities that queued commands
+ * despawn, add to or remove from. Spawns only add rows at the end of their archetypes.
+ */
+const disturbedBy = (state: State): Set<Archetype> => {
+    const disturbed = new Set<Archetype>();
+    for (const { buffer } of state.queued) {
+        for (let command = 0; command < buffer.count; command++) {
+            if (buffer.kinds[command] === spawnCommand) continue;
+            const index = locate(state.entities, buffer.entities[command]);
+            if (index >= 0) disturbed.add(state.archetypes[state.entities.archetype[index]]);
+        }
+    }
+    return disturbed;
 };
 
 /** Before CPU systems read or write a storage, in their query or through a lookup, the GPU's writes to it come back. */

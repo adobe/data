@@ -1,12 +1,13 @@
 # Generated kernel code
 
-What one kernel system compiles to on each backend. Calls into the math types are inlined into scalar statements in the
-Program IR, and JS, WASM and WGSL are each generated from that IR; no backend calls `Vec3.add`.
+What one kernel system compiles to on each backend. Calls are inlined into the Program IR, and JS, WASM and WGSL are each
+generated from it. A GPU kernel's calls to math functions that declare a WGSL builtin become regions: WGSL emits the
+builtin, and JS and WASM run the inlined body.
 
 ## Regenerating
 
-1. Save the test below as `src/scratch/show.test.ts`. Put your system in `source`, and declare `columns` in the order of
-   the description's `columns` (printed first): one entry per field leaf, then an `f64` entry per `changed` or `chunks` column.
+1. Save the test below as `src/scratch/show.test.ts`, with your system in `source`. The column layout is derived from
+   the description, for components of three f32 leaves; adjust `columns` for other components.
 2. Run `npx vitest run src/scratch/show.test.ts`. It prints the rewritten module (with the description and program), the
    JS kernel module and the WGSL, and writes the WASM to `/tmp/kernel.wasm`.
 3. To read the WASM: `npm install wabt` in a scratch directory, then `node_modules/wabt/bin/wasm2wat --enable-all /tmp/kernel.wasm`.
@@ -15,32 +16,43 @@ Program IR, and JS, WASM and WGSL are each generated from that IR; no backend ca
 ```ts
 import { test } from 'vitest';
 import { parseAst } from 'vite';
-import { writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { transformKernels } from '../compiler/transform.js';
-import { loadBuiltins } from '../compiler/builtins.js';
-import { mathDirectory, mathEntry } from '../compiler/paths.js';
+import { createLinker } from '../compiler/link.js';
+import { packageIndex } from '../compiler/paths.js';
 import { generateWgsl } from '../world/create/wgsl.js';
-import { generateWasm } from '../world/create/wasm.js';
+import { generateWasm, type WasmColumn } from '../world/create/wasm.js';
 
 test("show", async () => {
-    const strip = async (code: string, file: string) => file.endsWith(".ts") ? (await (await import("vite")).transformWithEsbuild(code, file, { loader: "ts" })).code : code;
-    const builtins = loadBuiltins(mathDirectory, mathEntry, parseAst, strip);
-    const source = `import { System, Vec3 } from "ecs";
+    const source = `import { System, Vec3 } from "@adobe/data-ecs";
 const position = "position"; const velocity = "velocity";
 const move = System.create({ name: "move", kernel: "gpu", query: { read: [position, velocity], write: [position] } },
     row => { row[position] = Vec3.add(row[position], row[velocity]); });`;
-    const result = await transformKernels(source, "/move.js", parseAst, async s => s === "ecs", i => JSON.stringify(`kernel:${i}`),
-        { fileOf: async s => s === "ecs" ? mathEntry : null, builtins: () => builtins });
+    // Resolves the package to its source and relative imports to files, stripping types as the plugin does.
+    const linker = createLinker({
+        resolve: async (specifier, importer) => {
+            if (specifier === "@adobe/data-ecs") return packageIndex;
+            const path = resolve(dirname(importer), specifier);
+            return existsSync(path.replace(/\.js$/, ".ts")) ? path.replace(/\.js$/, ".ts") : path;
+        },
+        load: async file => {
+            const code = await readFile(file, "utf8");
+            return { code: file.endsWith(".ts") ? (await (await import("vite")).transformWithEsbuild(code, file, { loader: "ts" })).code : code };
+        },
+    }, parseAst);
+    const result = await transformKernels(source, "/move.js", parseAst, async s => s === "@adobe/data-ecs", i => JSON.stringify(`kernel:${i}`), linker);
     if (result === null || "failure" in result) throw new Error(JSON.stringify(result));
     console.log(result.code);
     console.log(result.kernels[0]);
-    const description = result.code.slice(result.code.indexOf("program: ") + 9);
-    const program = new Function(`return ${description.slice(0, description.lastIndexOf("\n}")).replace(/,\s*$/, "")}`)();
-    // position[0], velocity[0], position[1], velocity[1], position[2], velocity[2], then the changed and chunks ticks.
-    const columns = [
-        ...[0, 1, 2, 3, 4, 5].map(i => ({ view: "f32" as const, stride: 12, offset: Math.floor(i / 2) * 4, boolean: false, component: i % 2 })),
-        ...[0, 1].map(() => ({ view: "f64" as const, stride: 8, offset: 0, boolean: false, component: -1 })),
-    ];
+    // The description, with component keys bound to their names.
+    const text = result.code.slice(result.code.indexOf("attachKernel$(") + 14);
+    const { columns: described, program } = new Function("position", "velocity", `return ${text.slice(text.indexOf("}), {") + 3, text.lastIndexOf("});") + 1)};`)("position", "velocity");
+    // Each component is three f32 leaves of one row; tick columns are f64.
+    const columns: WasmColumn[] = described.map((column: { kind: string; component: string; path: number[] }) => column.kind === "field"
+        ? { view: "f32", stride: 12, offset: column.path[0] * 4, boolean: false, component: column.component === "position" ? 0 : 1 }
+        : { view: "f64", stride: 8, offset: 0, boolean: false, component: -1 });
     const wgsl = generateWgsl(program, columns, () => "number");
     console.log(typeof wgsl === "string" ? wgsl : wgsl.code);
     const wasm = generateWasm(program, columns, () => "number", true);
@@ -50,7 +62,7 @@ const move = System.create({ name: "move", kernel: "gpu", query: { read: [positi
 
 ## Example: `row => { row[position] = Vec3.add(row[position], row[velocity]); }`
 
-`position` and `velocity` are `Vec3` components, each 12 bytes per row.
+`position` and `velocity` are `Vec3` components, each 12 bytes per row, in a `kernel: "gpu"` system.
 
 ### JS (the row loop of the kernel module)
 
@@ -59,39 +71,31 @@ Local names come from `Vec3.add`'s own parameters.
 ```js
 rows: for (let i = start, x0 = start * s0 + o0, /* … x6 */; i < end; i++, x0 += s0, /* … */) {
 let x1_0 = c0[x0];
-let y1_2 = c2[x2];
-let z1_4 = c4[x4];
-let x2_1 = c1[x1];
-let y2_3 = c3[x3];
+let y1_1 = c1[x1];
+let z1_2 = c2[x2];
+let x2_3 = c3[x3];
+let y2_4 = c4[x4];
 let z2_5 = c5[x5];
-c0[x0] = (x1_0 + x2_1);
-c2[x2] = (y1_2 + y2_3);
-c4[x4] = (z1_4 + z2_5);
+c0[x0] = (x1_0 + x2_3);
+c1[x1] = (y1_1 + y2_4);
+c2[x2] = (z1_2 + z2_5);
 c6[x6] = tick;
 }
 ```
 
 ### WGSL
 
-The shader also carries a fixed preamble (`isNan`, `jsMin`, `remainder`, ...) for operators that need JS semantics; it's omitted here.
+`Vec3.add` declares WGSL's `+` on `vec3f`, so the shader adds vectors; its result is named after the function. The
+shader also carries a short preamble (`toUint32`, `power`, `roundHalfUp`) for operators whose JS results differ from
+WGSL's on finite values; it's omitted here.
 
 ```wgsl
 fn kernelRow(row: u32) {
-    var x1_0: f32 = 0.0;
-    var y1_2: f32 = 0.0;
-    var z1_4: f32 = 0.0;
-    var x2_1: f32 = 0.0;
-    var y2_3: f32 = 0.0;
-    var z2_5: f32 = 0.0;
-    x1_0 = bitcast<f32>(memory[parameters[1] + row * 3u + 0u]);
-    y1_2 = bitcast<f32>(memory[parameters[3] + row * 3u + 1u]);
-    z1_4 = bitcast<f32>(memory[parameters[5] + row * 3u + 2u]);
-    x2_1 = bitcast<f32>(memory[parameters[2] + row * 3u + 0u]);
-    y2_3 = bitcast<f32>(memory[parameters[4] + row * 3u + 1u]);
-    z2_5 = bitcast<f32>(memory[parameters[6] + row * 3u + 2u]);
-    memory[parameters[1] + row * 3u + 0u] = bitcast<u32>((x1_0 + x2_1));
-    memory[parameters[3] + row * 3u + 1u] = bitcast<u32>((y1_2 + y2_3));
-    memory[parameters[5] + row * 3u + 2u] = bitcast<u32>((z1_4 + z2_5));
+    var add_6: vec3f;
+    add_6 = (vec3f(bitcast<f32>(memory[parameters[1] + row * 3u + 0u]), bitcast<f32>(memory[parameters[2] + row * 3u + 1u]), bitcast<f32>(memory[parameters[3] + row * 3u + 2u])) + vec3f(bitcast<f32>(memory[parameters[4] + row * 3u + 0u]), bitcast<f32>(memory[parameters[5] + row * 3u + 1u]), bitcast<f32>(memory[parameters[6] + row * 3u + 2u])));
+    memory[parameters[1] + row * 3u + 0u] = bitcast<u32>(add_6.x);
+    memory[parameters[2] + row * 3u + 1u] = bitcast<u32>(add_6.y);
+    memory[parameters[3] + row * 3u + 2u] = bitcast<u32>(add_6.z);
 }
 
 @compute @workgroup_size(64)
@@ -101,6 +105,9 @@ fn main(@builtin(global_invocation_id) id: vec3u, @builtin(num_workgroups) group
     kernelRow(row);
 }
 ```
+
+Calls nest as builtins do: `Vec3.scale(Vec3.normalize(Vec3.cross(p, v)), Vec3.dot(p, v))` emits
+`cross_6 = cross(…)`, `normalize_19 = normalize(cross_6)`, `dot_26 = dot(…)` and `scale_31 = (normalize_19 * dot_26)`.
 
 ### WASM (499 bytes, excerpts from `wasm2wat`)
 

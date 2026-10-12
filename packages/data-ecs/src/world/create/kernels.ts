@@ -187,8 +187,14 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             loaded = module.create(booleans, strides.map((stride, k) => muted[k] ? 0 : stride), offsets.map((offset, k) => muted[k] ? 0 : offset));
             compiled = null;
             if (bound.wasm === null) return;
-            const wasmModule = await WebAssembly.compile(bound.wasm.bytes);
-            compiled = { module: wasmModule, run: await instantiateWasm(wasmModule, state.memory.memory, bound.wasm.imports) };
+            try {
+                const wasmModule = await WebAssembly.compile(bound.wasm.bytes);
+                compiled = { module: wasmModule, run: await instantiateWasm(wasmModule, state.memory.memory, bound.wasm.imports) };
+            }
+            catch {
+                // A content security policy without 'wasm-unsafe-eval' forbids compiling; the JS kernel runs instead.
+                bound.wasm = null;
+            }
         },
         lookupParameters: () => directories.length === 0 ? [] : lookupParameters(state, directories),
         gpu: () => description.program === null

@@ -20,7 +20,7 @@ const isTrivial = (expression: Expression): boolean =>
 const identifier = (node: Identifier, scope: Scope, out: Out): Value => {
     const local = findLocal(scope, node.name);
     if (local !== undefined) return local.value;
-    const binding = scope.module.get(node.name);
+    const binding = scope.module.bindings.get(node.name);
     if (binding !== undefined) return moduleValue(node, node.name, binding, scope.module, scope, out);
     switch (node.name) {
         case "Math": return { kind: "math" };

@@ -1,7 +1,7 @@
 import type { BlockStatement, Expression as SourceExpression, Pattern } from 'estree';
 import type { Path } from '../world/create/kernel.js';
 import type { Expression } from './ir.js';
-import type { ModuleScope } from './module-scope.js';
+import type { Module } from './module-scope.js';
 import type { Snapshot } from './snapshot.js';
 
 /**
@@ -18,9 +18,9 @@ export type Value =
     | { readonly kind: "snapshot"; readonly snapshot: Snapshot; readonly path: Path }
     | { readonly kind: "found"; readonly lookup: number; readonly expression: Expression }
     | { readonly kind: "lookup"; readonly lookup: number }
-    /** A helper; `module` is the scope its body is compiled in, its own module's for a builtin. `name` is unique per definition. */
-    | { readonly kind: "function"; readonly name: string; readonly params: readonly Pattern[]; readonly body: BlockStatement | SourceExpression; readonly module: ModuleScope }
-    /** A math module namespace, such as `Vec3`, at its file. */
+    /** A helper, compiled in its own module. `identity` is unique per definition; `name` is for messages. */
+    | { readonly kind: "function"; readonly name: string; readonly identity: string; readonly params: readonly Pattern[]; readonly body: BlockStatement | SourceExpression; readonly module: Module }
+    /** A module namespace, such as `Vec3`, at its file. */
     | { readonly kind: "namespace"; readonly file: string }
     | { readonly kind: "method"; readonly owner: "math" | "commands"; readonly name: string }
     | { readonly kind: "row" }

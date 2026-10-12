@@ -1,7 +1,7 @@
 import type { Node } from 'estree';
 import type { Expression } from './ir.js';
-import type { Builtins } from './builtins.js';
-import type { ModuleScope } from './module-scope.js';
+import type { Link } from './link.js';
+import type { Module } from './module-scope.js';
 import type { Out } from './out.js';
 import type { Scope } from './scope.js';
 import type { Signature } from './signature.js';
@@ -16,9 +16,10 @@ export type StatementCompiler = (node: Node, scope: Scope, out: Out) => void;
  */
 export type Unit = {
     readonly signature: Signature;
-    readonly module: ModuleScope;
-    /** The package's math modules, when the kernel imports any. */
-    readonly builtins: Builtins | null;
+    /** The module being transformed. */
+    readonly module: Module;
+    /** Other modules, for functions and constants the kernel imports. */
+    readonly link: Link | null;
     /** Column descriptions as source text, in `columns` order, indexed by an identity key. */
     readonly columns: string[];
     readonly columnIndex: Map<string, number>;
@@ -44,10 +45,10 @@ export type Unit = {
     readonly statement: StatementCompiler;
 };
 
-export const createUnit = (signature: Signature, module: ModuleScope, expression: ExpressionCompiler, statement: StatementCompiler, builtins: Builtins | null = null): Unit => {
+export const createUnit = (signature: Signature, module: Module, expression: ExpressionCompiler, statement: StatementCompiler, link: Link | null = null): Unit => {
     let counter = 0;
     return {
-        signature, module, builtins, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names: new Map(), shapes: new Set(), keys: [], active: new Set(),
+        signature, module, link, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names: new Map(), shapes: new Set(), keys: [], active: new Set(),
         next: () => counter++, expression, statement,
     };
 };

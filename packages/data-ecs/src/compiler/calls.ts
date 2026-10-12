@@ -3,9 +3,10 @@ import { mergeBranches } from './branches.js';
 import { bind } from './bind.js';
 import { observe, set } from './booleans.js';
 import { materialize, toData } from './data.js';
-import { fail } from './failure.js';
+import { fail, within } from './failure.js';
 import { local, type Expression, type Statement } from './ir.js';
 import type { Out } from './out.js';
+import { frameIn } from './module-value.js';
 import { scalar } from './scalar.js';
 import { childScope, findLocal, rootScope, type Scope } from './scope.js';
 import { fresh, keyIndex } from './unit.js';
@@ -21,7 +22,7 @@ const scalarArgument = (node: SourceExpression | SpreadElement, scope: Scope, ou
 
 /** A module-scope key named in a command, such as a component in `remove` or a computed key in `spawn` values. */
 const commandKey = (node: Node, scope: Scope): number =>
-    node.type === "Identifier" && findLocal(scope, node.name) === undefined && scope.module.has(node.name)
+    node.type === "Identifier" && findLocal(scope, node.name) === undefined && scope.module.bindings.has(node.name)
         ? keyIndex(scope.unit, node.name)
         : fail(node, "commands name components by identifiers bound at module scope");
 
@@ -129,19 +130,20 @@ const helperBlock = (name: string, segments: readonly Segment[], node: Node, out
 /** Inlines a helper: arguments are bound to fresh parameter locals, and the body is compiled in the helper's own scope. */
 const inline = (helper: Extract<Value, { kind: "function" }>, node: SimpleCallExpression, scope: Scope, out: Out): Value => {
     const unit = scope.unit;
-    if (unit.active.has(helper.name)) return fail(node, `${helper.name} is recursive`);
+    if (unit.active.has(helper.identity)) return fail(node, `${helper.name} is recursive`);
     if (node.arguments.length > helper.params.length) return fail(node, `${helper.name} takes ${helper.params.length} arguments`);
     const values = node.arguments.map(item => unit.expression(argument(item), scope, out));
-    unit.active.add(helper.name);
-    const inner = rootScope(unit, true, helper.module);
-    helper.params.forEach((param, index) => {
-        const value = values[index] ?? fail(node, `${helper.name} needs ${helper.params.length} arguments`);
-        bind(param, value, "parameter", inner, out);
-    });
-    const result = helper.body.type === "BlockStatement"
-        ? helperBlock(helper.name, [{ statements: helper.body.body, scope: inner }], helper.body, out)
-        : unit.expression(helper.body, inner, out);
-    unit.active.delete(helper.name);
+    if (values.length < helper.params.length) return fail(node, `${helper.name} needs ${helper.params.length} arguments`);
+    unit.active.add(helper.identity);
+    const compile = (): Value => {
+        const inner = rootScope(unit, true, helper.module);
+        helper.params.forEach((param, index) => bind(param, values[index] ?? fail(node, `${helper.name} needs ${helper.params.length} arguments`), "parameter", inner, out));
+        return helper.body.type === "BlockStatement"
+            ? helperBlock(helper.name, [{ statements: helper.body.body, scope: inner }], helper.body, out)
+            : unit.expression(helper.body, inner, out);
+    };
+    const result = helper.module === scope.module ? compile() : within(node, frameIn(helper.module, helper.name), compile);
+    unit.active.delete(helper.identity);
     return result;
 };
 
@@ -164,6 +166,6 @@ export const call = (node: SimpleCallExpression, scope: Scope, out: Out): Value 
         case "function":
             return inline(callee, node, scope, out);
         default:
-            return fail(node.callee, "only Math functions, commands, lookups and helpers defined in this module can be called");
+            return fail(node.callee, "only Math functions, commands, lookups and helpers can be called");
     }
 };

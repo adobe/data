@@ -13,18 +13,8 @@ export const attachKernelPath = posix(fileURLToPath(new URL(`../world/create/att
 /** The runtime hook for spawns whose values pass positionally. */
 export const prepareSpawnPath = posix(fileURLToPath(new URL(`../world/create/prepared-spawn${extension}`, import.meta.url)));
 
-/** The package's math modules, which kernels inline (`builtins.ts`), and their index. */
-export const mathDirectory = posix(fileURLToPath(new URL("../math", import.meta.url)));
-export const mathEntry = `${mathDirectory}/index${extension}`;
-
-const indexes: ReadonlySet<string> = new Set(["src/index.ts", "src/index.js", "dist/index.js"].map(path => `${packageRoot}/${path}`));
-
-/** The math module a resolved module id is: the math index for the package root, or null for anything else. */
-export const mathFileOf = (id: string): string | null => {
-    const path = posix(id.split("?")[0] ?? id);
-    if (indexes.has(path)) return mathEntry;
-    return path.startsWith(`${mathDirectory}/`) ? path : null;
-};
+/** The package root's module, for kernels that import the package when a build treats it as external. */
+export const packageIndex = posix(fileURLToPath(new URL(`../index${extension}`, import.meta.url)));
 
 const systemModules: ReadonlySet<string> = new Set([
     "src/system/system.ts", "src/system/system.js", "dist/system/system.js", "src/index.ts", "src/index.js", "dist/index.js",

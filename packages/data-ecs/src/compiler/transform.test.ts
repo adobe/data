@@ -1,9 +1,14 @@
+/// <reference types="node" />
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { parseAst } from 'vite';
 import { chunkShift, type KernelDescription, type KernelModule, type Program } from '../world/create/kernel.js';
-import { transformKernels, type MathImports } from './transform.js';
-import { loadBuiltins, type Builtins } from './builtins.js';
-import { mathDirectory, mathEntry } from './paths.js';
+import { transformKernels } from './transform.js';
+import { createLinker, type LinkHost } from './link.js';
+import { packageIndex } from './paths.js';
+import { locateThroughMap } from './source-map.js';
 import { Mat4x4, Quat, Vec3 } from '../math/index.js';
 
 const header = `import { System } from "ecs";
@@ -16,24 +21,32 @@ const delta = "delta";
 const target = "target";
 `;
 
-let builtins: Promise<Builtins> | null = null;
-const math: MathImports = {
-    fileOf: async specifier => specifier === "ecs" ? mathEntry : null,
-    builtins: () => builtins ??= loadBuiltins(mathDirectory, mathEntry, parseAst, async (code, file) => {
-        if (!file.endsWith(".ts")) return code;
+/** Modules by absolute path, for tests of imports: real files for anything not in `files`, and "ecs" for the package. */
+const host = (files: { readonly [file: string]: string }): LinkHost => ({
+    resolve: async (specifier, importer) => {
+        if (specifier === "ecs") return packageIndex;
+        if (!specifier.startsWith(".")) return { error: `${specifier} can't be resolved from ${importer}` };
+        const path = resolve(dirname(importer), specifier);
+        const typescript = path.replace(/\.js$/, ".ts");
+        return files[typescript] !== undefined || (files[path] === undefined && existsSync(typescript)) ? typescript : path;
+    },
+    load: async file => {
+        const code = files[file] ?? await readFile(file, "utf8");
+        if (!file.endsWith(".ts")) return { code };
         const { transformWithEsbuild } = await import("vite");
-        return (await transformWithEsbuild(code, file, { loader: "ts" })).code;
-    }),
-};
+        const result = await transformWithEsbuild(code, file, { loader: "ts", sourcemap: true });
+        return { code: result.code, locate: locateThroughMap(result.code, result.map.mappings) };
+    },
+});
 
-const transform = (source: string) => transformKernels(`${header}${source}`, "/test.js", parseAst, async specifier => specifier === "ecs",
-    index => JSON.stringify(`kernel:${index}`), math);
+const transform = (source: string, files: { readonly [file: string]: string } = {}) => transformKernels(`${header}${source}`, "/test.js", parseAst,
+    async specifier => specifier === "ecs", index => JSON.stringify(`kernel:${index}`), createLinker(host(files), parseAst));
 
 type Compiled = KernelDescription & KernelModule;
 
 /** Compiles `source`, which assigns its kernel system to `kernel`: the attached description plus its kernel module's `create`. */
-const compile = async (source: string): Promise<Compiled> => {
-    const result = await transform(source);
+const compile = async (source: string, files: { readonly [file: string]: string } = {}): Promise<Compiled> => {
+    const result = await transform(source, files);
     if (result === null || "failure" in result) throw new Error(result === null ? "no kernel" : result.failure.message);
     const module = result.code.split("\n").filter(line => !line.startsWith("import ")).join("\n");
     const evaluate = new Function("System", "attachKernel$", `${module}\nreturn kernel;`);
@@ -44,8 +57,8 @@ const compile = async (source: string): Promise<Compiled> => {
     return { ...description, ...kernelModule };
 };
 
-const failure = async (source: string): Promise<string> => {
-    const result = await transform(source);
+const failure = async (source: string, files: { readonly [file: string]: string } = {}): Promise<string> => {
+    const result = await transform(source, files);
     return result !== null && "failure" in result ? result.failure.message : "compiled";
 };
 
@@ -636,11 +649,6 @@ describe("subset", () => {
         expect(await failure(kernel("row[position][0] = 1;", "{ read: [position], write: [position] }"))).toBe("component values are immutable; write the whole value");
     });
 
-    test("imported helpers", async () => {
-        expect(await failure(`import { helper } from "./helper.js";\n${kernel("row[score] = helper(1);")}`))
-            .toBe("helper is imported; kernels can only use helpers and constants defined in this module, and the package's math types");
-    });
-
     test("GPU kernels", async () => {
         const gpu = (declaration: string, body: string) =>
             `const kernel = System.create({ name: "a", kernel: "gpu", ${declaration} }, (row, context, commands) => { ${body} });`;
@@ -785,7 +793,58 @@ describe("math builtins", () => {
         });`)).toBe("Math.random is not in the kernel subset");
         expect(await failure(`${math}const kernel = System.create({ name: "a", kernel: "cpu", query: { write: [position] } }, (row) => {
             row[position] = Vec3.missing([1, 2, 3]);
-        });`)).toBe("missing isn't a function or constant of the package's math types");
+        });`)).toMatch(/^missing isn't exported by .*\/math\/vec3\/public\.ts$/);
     });
 });
 
+describe("imported functions and constants", () => {
+    const kernel = (imports: string, body: string) => `${imports}\nconst kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, (row) => { ${body} });`;
+    const scores = async (source: string, files: { readonly [file: string]: string }) =>
+        run(await compile(source, files), 2, { mass: { "[]": [2, 3] } }).field("score");
+
+    test("inline through named, default, namespace and re-exported imports", async () => {
+        const files = {
+            "/shapes.js": "const TWO = 2;\nexport const twice = (x) => x * TWO;\nexport default function square(x) { return x * x; }\nexport const pair = (x) => [x, x + 1];",
+            "/second.js": "const ONE = 1;\nexport const second = (v) => v[ONE];",
+            "/barrel.js": "export { twice as double } from './shapes.js';\nexport * as Shapes from './shapes.js';\nexport * from './second.js';",
+        };
+        expect(await scores(kernel(`import square, { twice } from "./shapes.js";\nimport * as Barrel from "./barrel.js";`,
+            "row[score] = square(twice(row[mass])) + Barrel.double(1) + Barrel.Shapes.default(3) + Barrel.second(Barrel.Shapes.pair(row[mass]));"), files))
+            .toEqual([16 + 2 + 9 + 3, 36 + 2 + 9 + 4]);
+    });
+
+    test("report the files kernels inline from", async () => {
+        const result = await transform(kernel(`import { twice } from "./shapes.js";`, "row[score] = twice(row[mass]);"), { "/shapes.js": "export const twice = (x) => x * 2;" });
+        expect(result !== null && "dependencies" in result ? result.dependencies : []).toEqual(["/shapes.js"]);
+    });
+
+    test("that leave the subset fail at the call, with a frame for each inlined function", async () => {
+        const source = kernel(`import { outer } from "./outer.js";`, "row[score] = outer(row[mass]);");
+        const result = await transform(source, {
+            "/outer.js": "import { inner } from './inner.js';\nexport const outer = (x) => inner(x) + 1;",
+            "/inner.ts": "type Unused = {\n    readonly a: number;\n};\nexport const inner = (x: number): number =>\n    x * Math.random();",
+        });
+        const failure = result !== null && "failure" in result ? result.failure : undefined;
+        expect(failure?.message).toBe("Math.random is not in the kernel subset");
+        expect(failure?.position).toBe(`${header}${source}`.indexOf("outer(row[mass])"));
+        expect(failure?.frames).toEqual([
+            { name: "inner", file: "/inner.ts", line: 5, column: 9 },
+            { name: "outer", file: "/outer.js", line: 2, column: 29 },
+        ]);
+    });
+
+    test("fail on recursion across modules, module state, and names they can't resolve", async () => {
+        expect(await failure(kernel(`import { even } from "./even.js";`, "row[score] = even(row[mass]);"), {
+            "/even.js": "import { odd } from './odd.js';\nexport const even = (n) => n === 0 ? 1 : odd(n - 1);",
+            "/odd.js": "import { even } from './even.js';\nexport const odd = (n) => n === 0 ? 0 : even(n - 1);",
+        })).toBe("even is recursive");
+        expect(await failure(kernel(`import { next } from "./counter.js";`, "row[score] = next();"), { "/counter.js": "let count = 0;\nexport const next = () => count;" }))
+            .toBe("count is not a module-scope const");
+        expect(await failure(kernel(`import { missing } from "./shapes.js";`, "row[score] = missing(1);"), { "/shapes.js": "export const twice = (x) => x * 2;" }))
+            .toBe("missing isn't exported by /shapes.js");
+        expect(await failure(kernel(`import { f } from "./both.js";`, "row[score] = f(1);"), {
+            "/both.js": "export * from './a.js';\nexport * from './b.js';", "/a.js": "export const f = (x) => x;", "/b.js": "export const f = (x) => -x;",
+        })).toBe("f is exported by more than one export * of /both.js");
+        expect(await failure(kernel(`import { f } from "lodash";`, "row[score] = f(1);"))).toBe("lodash can't be resolved from /test.js");
+    });
+});

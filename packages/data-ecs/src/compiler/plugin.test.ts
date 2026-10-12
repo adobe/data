@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -17,9 +17,25 @@ const score = "score";
 const kernel = System.create({ name: "fixture", kernel: "cpu", query: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
 export const description = kernelOf(kernel);
 `);
+/** A kernel inlining a TypeScript helper and a function from a package's `dist`. */
+const linked = join(directory, "linked.js");
+const helper = join(directory, "helper.ts");
+const writeHelper = (factor: number) => writeFileSync(helper, `type Factor = number;\nconst factor: Factor = ${factor};\nexport const scaled = (x: number): number => x * factor;\n`);
+writeHelper(2);
+mkdirSync(join(directory, "node_modules/fake-math/dist"), { recursive: true });
+writeFileSync(join(directory, "node_modules/fake-math/package.json"), JSON.stringify({ name: "fake-math", type: "module", exports: "./dist/index.js" }));
+writeFileSync(join(directory, "node_modules/fake-math/dist/index.js"), "export const increment = (x) => x + 1;\n");
+writeFileSync(linked, `import { System } from ${source("../system/system.ts")};
+import { kernelOf } from ${source("../world/create/attach-kernel.ts")};
+import { scaled } from "./helper.ts";
+import { increment } from "fake-math";
+const score = "score";
+const kernel = System.create({ name: "linked", kernel: "cpu", query: { write: [score] } }, (row) => { row[score] = increment(scaled(row.entity)); });
+export const description = kernelOf(kernel);
+`);
 afterAll(() => rmSync(directory, { recursive: true, force: true }));
 
-/** Runs a one-column kernel writing `entity * 2`. */
+/** Runs a one-column kernel writing a function of the entity, for entities 3 and 4. */
 const runs = (module: KernelModule, description: KernelDescription): readonly number[] => {
     const entities = Float64Array.from([3, 4]);
     const columns = description.columns.map(column => column.kind === "entity" ? entities : column.kind === "changed" ? new Uint32Array(2) : new Float64Array(2));
@@ -74,4 +90,34 @@ test("serve rejects a url for a different version of the kernel", async () => {
     const description: KernelDescription = await serve(async server => (await server.ssrLoadModule(fixture)).description);
     const stale = description.url.replace(/\?h=.*/, "?h=stale");
     await expect(serve(server => server.ssrLoadModule(stale))).rejects.toThrow(/changed since its description was compiled/);
+});
+
+test("a build inlines functions from TypeScript modules and packages", async () => {
+    const outDir = join(directory, "dist-linked");
+    const output = await build({
+        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        build: { outDir, minify: false, lib: { entry: linked, formats: ["es"], fileName: "main" } },
+    });
+    const chunks = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
+        .filter((item): item is Rollup.OutputChunk => item.type === "chunk");
+    const main = chunks.find(chunk => chunk.isEntry);
+    const { description }: { description: KernelDescription } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
+    const module: KernelModule = await import(/* @vite-ignore */ description.url);
+    expect(runs(module, description)).toEqual([7, 9]);
+});
+
+test("serve compiles kernels again when a file they inline from changes", async () => {
+    try {
+        await serve(async server => {
+            const before: KernelDescription = (await server.ssrLoadModule(linked)).description;
+            expect(runs({ create: (await server.ssrLoadModule(before.url)).create }, before)).toEqual([7, 9]);
+            writeHelper(3);
+            server.watcher.emit("change", helper);
+            const after: KernelDescription = (await server.ssrLoadModule(linked)).description;
+            expect(after.url).not.toBe(before.url);
+            expect(runs({ create: (await server.ssrLoadModule(after.url)).create }, after)).toEqual([10, 13]);
+        });
+    } finally {
+        writeHelper(2);
+    }
 });

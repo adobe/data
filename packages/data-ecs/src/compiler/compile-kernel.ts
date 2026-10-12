@@ -2,8 +2,8 @@ import type { Node, ObjectExpression } from 'estree';
 import { bind } from './bind.js';
 import { expression } from './expression.js';
 import { fail } from './failure.js';
-import type { Builtins } from './builtins.js';
-import type { ModuleScope } from './module-scope.js';
+import type { Link } from './link.js';
+import type { Module } from './module-scope.js';
 import { resolve, type Out } from './out.js';
 import { localName, printStatements } from './print.js';
 import { toProgram } from './program.js';
@@ -35,13 +35,13 @@ const loops = (statements: readonly Program.Statement[]): boolean => statements.
 });
 
 /** `target` "gpu" also checks, before anything runs, what only a GPU kernel can't do; schemas are checked at registration. */
-export const compileKernel = (declaration: ObjectExpression, body: Node, module: ModuleScope, target: "cpu" | "gpu" = "cpu", builtins: Builtins | null = null): CompiledKernel => {
+export const compileKernel = (declaration: ObjectExpression, body: Node, module: Module, target: "cpu" | "gpu" = "cpu", link: Link | null = null): CompiledKernel => {
     if (body.type !== "ArrowFunctionExpression" && body.type !== "FunctionExpression") {
         return fail(body, "a kernel body must be an inline function");
     }
     if (body.async || body.generator) return fail(body, "a kernel body can't be async or a generator");
     if (body.params.length > 3) return fail(body, "a kernel body takes row, context and commands");
-    const unit = createUnit(signature(declaration, module), module, expression, statement, builtins);
+    const unit = createUnit(signature(declaration, module.bindings), module, expression, statement, link);
     const scope = rootScope(unit, false);
     const prelude: Out = [];
     const rows: Out = [];

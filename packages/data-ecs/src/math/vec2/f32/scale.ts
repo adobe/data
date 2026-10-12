@@ -1,0 +1,3 @@
+import type { F32 } from "./f32.js";
+
+export const scale = ([x, y]: F32, s: number): F32 => [x * s, y * s];

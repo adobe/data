@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import type { Entity } from "../../entity/entity.js";
 import { Gpu } from "../../gpu/gpu.js";
+import { Mat4x4, Quat, Vec3 } from "../../math/index.js";
 import type { Schema } from "../../schema/schema.js";
 import { System } from "../../system/system.js";
 import { createWorld } from "./create.js";
 
-type Vec3 = readonly [number, number, number];
 const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
 const position = "gpuTest/position";
 const velocity = "gpuTest/velocity";
@@ -55,6 +55,7 @@ declare module "../../system/types.js" {
         "gpuTest/failing": true;
         "gpuTest/churn": true;
         "gpuTest/invalid": true;
+        "gpuTest/transform": true;
     }
 }
 
@@ -171,6 +172,13 @@ const fail = System.render({ name: "gpuTest/fail", query: { read: [position] }, 
 });
 
 const failing = System.composite({ name: "gpuTest/failing", systems: [move, fail] });
+
+/** Math from three namespaces, inlined into a compute shader. */
+const transform = System.create({ name: "gpuTest/transform", kernel: "gpu", query: { read: [position, velocity], write: [position] } }, row => {
+    const q = Quat.fromAxisAngle([0, 1, 0], 0.5);
+    const m = Mat4x4.multiply(Mat4x4.translation(1, 2, 3), Mat4x4.scaling(2, 2, 2));
+    row[position] = Vec3.add(Mat4x4.multiplyVec3(m, Quat.rotateVec3(q, row[position])), Vec3.normalize(row[velocity]));
+});
 
 /** Reads the entity, an f64. */
 const entityScore = System.create({ name: "gpuTest/entityScore", kernel: "gpu", query: { read: [score], write: [score] } }, row => {
@@ -333,6 +341,24 @@ describe("GPU kernels", () => {
         }
         expect(counts[0]).toEqual(counts[1]);
         expect(counts[0]).toEqual([count, count, count, 2 * count, 2 * count, 2 * count, 2 * count, 3 * count]);
+    });
+
+    it("inline math functions as the CPU does, at f32 precision", async () => {
+        const gpuWorld = createWorld({ gpu: { device: await device() } });
+        const cpuWorld = createWorld({ workers: 0 });
+        for (const world of [gpuWorld, cpuWorld]) {
+            await world.systems.register(spawn, transform);
+            await world.run(spawn);
+            await world.run(transform);
+        }
+        await gpuWorld.synchronize([position]);
+        const gpu = positions(gpuWorld).flat();
+        const cpu = positions(cpuWorld).flat();
+        expect(gpu.length).toBe(cpu.length);
+        const worst = Math.max(...gpu.map((value, i) => Math.abs(value - cpu[i]) / Math.max(1, Math.abs(cpu[i]))));
+        expect(worst).toBeLessThan(1e-5);
+        await gpuWorld.dispose();
+        await cpuWorld.dispose();
     });
 
     it("refuse what they can't run, with the reason", async () => {

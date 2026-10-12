@@ -2,7 +2,8 @@ import type { Node, Program, SimpleCallExpression } from 'estree';
 import { compileKernel } from './compile-kernel.js';
 import { children, isFunction } from './estree.js';
 import { fail, failureOf, type Failure } from './failure.js';
-import { moduleScope } from './module-scope.js';
+import type { Builtins } from './builtins.js';
+import { moduleScope, type ModuleBinding } from './module-scope.js';
 import { attachKernelPath, prepareSpawnPath } from './paths.js';
 import { spawnSites } from './spawns.js';
 import { kernelOf } from './signature.js';
@@ -15,6 +16,11 @@ export type ResolveSystemImport = (source: string) => Promise<boolean>;
  * compiled to (the description without its url, plus the module source), so it can version the url.
  */
 export type KernelUrl = (index: number, identity: string) => string;
+/**
+ * How kernels reach the package's math types: `fileOf` is the math module an import specifier names (the math
+ * index for the package root), or null; `builtins` loads them all, once.
+ */
+export type MathImports = { readonly fileOf: (source: string) => Promise<string | null>; readonly builtins: () => Promise<Builtins> };
 /** `kernels[i]` is the source of kernel `i`'s module, which exports `create`. */
 export type TransformResult = { readonly code: string; readonly kernels: readonly string[] } | { readonly failure: Failure };
 
@@ -69,14 +75,34 @@ const uniqueName = (code: string, base: string): string => {
  * Also passes the values of main-thread spawns of literal keys positionally (`spawns.ts`).
  * Returns null when the module has neither, and a `Failure` when a kernel leaves the subset.
  */
+/** The module scope with imports of math types bound to them, and the loaded math modules if any are imported. */
+const withMath = async (program: Program, math: MathImports | undefined): Promise<{ readonly scope: Map<string, ModuleBinding>; readonly builtins: Builtins | null }> => {
+    const scope = new Map(moduleScope(program));
+    let builtins: Builtins | null = null;
+    if (math === undefined) return { scope, builtins };
+    for (const statement of program.body) {
+        if (statement.type !== "ImportDeclaration" || typeof statement.source.value !== "string") continue;
+        const file = await math.fileOf(statement.source.value);
+        if (file === null) continue;
+        builtins ??= await math.builtins();
+        for (const specifier of statement.specifiers) {
+            if (specifier.type === "ImportSpecifier" && specifier.imported.type === "Identifier") {
+                scope.set(specifier.local.name, { kind: "builtin", target: { kind: "export", file, name: specifier.imported.name } });
+            }
+            else if (specifier.type === "ImportNamespaceSpecifier") scope.set(specifier.local.name, { kind: "builtin", target: { kind: "namespace", file } });
+        }
+    }
+    return { scope, builtins };
+};
+
 export const transformKernels = async (
-    code: string, id: string, parse: Parse, resolveSystemImport: ResolveSystemImport, kernelUrl: KernelUrl,
+    code: string, id: string, parse: Parse, resolveSystemImport: ResolveSystemImport, kernelUrl: KernelUrl, math?: MathImports,
 ): Promise<TransformResult | null> => {
     if ((!code.includes("kernel") && !code.includes("spawn")) || id.includes("\0")) return null;
     const program = parse(code);
     const locals = await systemLocals(program, resolveSystemImport);
     if (locals.size === 0) return null;
-    const module = moduleScope(program);
+    const { scope: module, builtins } = await withMath(program, code.includes("kernel") ? math : undefined);
     const attach = uniqueName(code, "attachKernel$");
     const prepare = uniqueName(code, "prepareSpawn$");
     const spawnName = uniqueName(code, "spawn$");
@@ -91,7 +117,7 @@ export const transformKernels = async (
             if (declaration?.type === "ObjectExpression" && target !== null) {
                 if (nested) fail(node, "kernel systems must be declared at module scope");
                 if (body === undefined || body.type === "SpreadElement") return fail(node, "a kernel needs an inline body");
-                const compiled = compileKernel(declaration, body, module, target);
+                const compiled = compileKernel(declaration, body, module, target, builtins);
                 const source = `export const create = ${compiled.create};\n`;
                 const description = compiled.description(kernelUrl(kernels.length, `${compiled.description("")}\n${source}`));
                 kernels.push(source);

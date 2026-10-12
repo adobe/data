@@ -1,0 +1,3 @@
+import type { F32 } from "./f32.js";
+
+export const exp2 = ([x, y, z, w]: F32): F32 => [Math.pow(2, x), Math.pow(2, y), Math.pow(2, z), Math.pow(2, w)];

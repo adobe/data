@@ -6,6 +6,8 @@ import { number, type Expression } from './ir.js';
 import { mathConstants, mathFunctions } from './math.js';
 import { scalar } from './scalar.js';
 import type { Scope } from './scope.js';
+import { builtinValue } from './module-value.js';
+import type { Out } from './out.js';
 import { describeValue, scalarValue, type Value } from './value.js';
 
 const commandNames: ReadonlySet<string> = new Set(["spawn", "despawn", "add", "remove"]);
@@ -75,6 +77,13 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
             if (typeof name === "string" && mathConstants.has(name)) return scalarValue(mathConstant(name));
             if (typeof name === "string" && mathFunctions.has(name)) return { kind: "method", owner: "math", name };
             return fail(node, `Math.${String(name)} is not in the kernel subset`);
+        case "namespace": {
+            const builtins = scope.unit.builtins;
+            if (typeof name !== "string" || builtins === null) return fail(node, "math namespaces are indexed by a function or constant name");
+            const out: Out = [];
+            const member = builtinValue(node, name, builtins.resolve(value.file, name), scope, out);
+            return out.length === 0 ? member : fail(node, `${name} must be a function or a literal constant`);
+        }
         case "commands":
             if (typeof name === "string" && commandNames.has(name)) return { kind: "method", owner: "commands", name };
             return fail(node, "commands has spawn, despawn, add and remove");

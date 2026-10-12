@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import { parseAst } from 'vite';
 import { chunkShift, type KernelDescription, type KernelModule, type Program } from '../world/create/kernel.js';
-import { transformKernels } from './transform.js';
+import { transformKernels, type MathImports } from './transform.js';
+import { loadBuiltins, type Builtins } from './builtins.js';
+import { mathDirectory, mathEntry } from './paths.js';
+import { Mat4x4, Quat, Vec3 } from '../math/index.js';
 
 const header = `import { System } from "ecs";
 const position = "position";
@@ -13,8 +16,18 @@ const delta = "delta";
 const target = "target";
 `;
 
+let builtins: Promise<Builtins> | null = null;
+const math: MathImports = {
+    fileOf: async specifier => specifier === "ecs" ? mathEntry : null,
+    builtins: () => builtins ??= loadBuiltins(mathDirectory, mathEntry, parseAst, async (code, file) => {
+        if (!file.endsWith(".ts")) return code;
+        const { transformWithEsbuild } = await import("vite");
+        return (await transformWithEsbuild(code, file, { loader: "ts" })).code;
+    }),
+};
+
 const transform = (source: string) => transformKernels(`${header}${source}`, "/test.js", parseAst, async specifier => specifier === "ecs",
-    index => JSON.stringify(`kernel:${index}`));
+    index => JSON.stringify(`kernel:${index}`), math);
 
 type Compiled = KernelDescription & KernelModule;
 
@@ -625,7 +638,7 @@ describe("subset", () => {
 
     test("imported helpers", async () => {
         expect(await failure(`import { helper } from "./helper.js";\n${kernel("row[score] = helper(1);")}`))
-            .toBe("helper is imported; kernels can only use helpers and constants defined in this module");
+            .toBe("helper is imported; kernels can only use helpers and constants defined in this module, and the package's math types");
     });
 
     test("GPU kernels", async () => {
@@ -698,6 +711,73 @@ describe("spawns in main-thread systems", () => {
         const { calls } = await spawned(body);
         expect(calls.every(call => Array.isArray(call) && call[0] === "spawn")).toBe(true);
         expect(calls.length).toBe(1);
+    });
+});
+
+describe("helpers that return early", () => {
+    test("take each path's value, with later statements on the paths that fall through", async () => {
+        const kernel = await compile(`const pick = (a, b) => {
+            if (a > b) return [a, 0];
+            const c = b * 2;
+            if (c > 10) {
+                const d = c - 10;
+                return [d, 1];
+            }
+            return [c, 2];
+        };
+        const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [position] } }, (row) => {
+            const [value, path] = pick(row[mass], 4);
+            row[position] = [value, path, 0];
+        });`);
+        const result = run(kernel, 3, { mass: { "[]": [5, 3, 1] }, position: vec3([0, 0, 0], [0, 0, 0], [0, 0, 0]) });
+        expect([result.field("position", [0]), result.field("position", [1])]).toEqual([[5, 8, 8], [0, 2, 2]]);
+    });
+});
+
+describe("math builtins", () => {
+    const math = `import { Vec3, Quat, Mat4x4 } from "ecs";\n`;
+    const points = vec3([1, -2, 0.5], [0, 3, 4], [2, 1, -1]);
+    const at = (row: number): readonly [number, number, number] => [points["[0]"][row], points["[1]"][row], points["[2]"][row]];
+    const results = (result: ReturnType<typeof run>) => [0, 1, 2].map(row => [0, 1, 2].map(k => result.field("position", [k])[row]));
+
+    test("inline as scalar code, nested namespaces and helpers they call included", async () => {
+        const kernel = await compile(`${math}const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position, velocity], write: [position, score] } }, (row) => {
+            const p = row[position];
+            const v = row[velocity];
+            row[position] = Vec3.add(Vec3.normalize(Vec3.cross(p, v)), Vec3.F32.scale(Vec3.clamp(v, Vec3.zero, [1, 1, 1]), Vec3.dot(p, v)));
+            row[score] = Vec3.distance(p, v) + Vec3.length(Vec3.mix(p, v, 0.25));
+        });`);
+        const result = run(kernel, 3, { position: points, velocity: vec3([0.5, 1, 2], [1, 0, -1], [3, -2, 0]) });
+        const velocities: readonly (readonly [number, number, number])[] = [[0.5, 1, 3], [1, 0, -2], [2, -1, 0]];
+        const expected = [0, 1, 2].map(row => {
+            const p = at(row);
+            const v = velocities[row];
+            return Vec3.add(Vec3.normalize(Vec3.cross(p, v)), Vec3.scale(Vec3.clamp(v, Vec3.zero, [1, 1, 1]), Vec3.dot(p, v)));
+        });
+        expect(results(result)).toEqual(expected.map(value => [...value]));
+        expect(result.field("score")).toEqual([0, 1, 2].map(row => Vec3.distance(at(row), velocities[row]) + Vec3.length(Vec3.mix(at(row), velocities[row], 0.25))));
+        expect(String(kernel.create)).not.toMatch(/Vec3|normalize|cross/);
+    });
+
+    test("across namespaces: quaternions rotating vectors, and matrices", async () => {
+        const kernel = await compile(`${math}const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position], write: [position] } }, (row) => {
+            const q = Quat.fromAxisAngle([0, 0, 1], Math.PI / 2);
+            const m = Mat4x4.multiply(Mat4x4.translation(1, 2, 3), Mat4x4.scaling(2, 2, 2));
+            row[position] = Mat4x4.multiplyVec3(m, Quat.rotateVec3(q, row[position]));
+        });`);
+        const result = run(kernel, 3, { position: points });
+        const q = Quat.fromAxisAngle([0, 0, 1], Math.PI / 2);
+        const m = Mat4x4.multiply(Mat4x4.translation(1, 2, 3), Mat4x4.scaling(2, 2, 2));
+        expect(results(result)).toEqual([0, 1, 2].map(row => [...Mat4x4.multiplyVec3(m, Quat.rotateVec3(q, at(row)))]));
+    });
+
+    test("that leave the kernel subset fail with the function's reason", async () => {
+        expect(await failure(`${math}const kernel = System.create({ name: "a", kernel: "cpu", query: { write: [position] } }, (row) => {
+            row[position] = Vec3.random();
+        });`)).toBe("Math.random is not in the kernel subset");
+        expect(await failure(`${math}const kernel = System.create({ name: "a", kernel: "cpu", query: { write: [position] } }, (row) => {
+            row[position] = Vec3.missing([1, 2, 3]);
+        });`)).toBe("missing isn't a function or constant of the package's math types");
     });
 });
 

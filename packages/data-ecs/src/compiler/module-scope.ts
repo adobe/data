@@ -1,9 +1,16 @@
 import type { Expression, FunctionDeclaration, Pattern, Program, Statement, ModuleDeclaration, Directive } from 'estree';
 
-/** A module-scope binding. Only `const` initializers and function declarations can be inlined into kernels. */
+/** An import of one of the package's math modules: a namespace, or a named export of a module. */
+export type BuiltinTarget = { readonly kind: "namespace"; readonly file: string } | { readonly kind: "export"; readonly file: string; readonly name: string };
+
+/**
+ * A module-scope binding. Only `const` initializers and function declarations can be inlined into kernels, and
+ * imports of the package's math modules (`builtins.ts`).
+ */
 export type ModuleBinding =
     | { readonly kind: "const"; readonly init: Expression }
     | { readonly kind: "function"; readonly node: FunctionDeclaration }
+    | { readonly kind: "builtin"; readonly target: BuiltinTarget }
     | { readonly kind: "import" }
     | { readonly kind: "other" };
 

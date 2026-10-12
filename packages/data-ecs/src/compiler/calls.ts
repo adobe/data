@@ -1,4 +1,5 @@
-import type { SimpleCallExpression, Expression as SourceExpression, Node, SpreadElement } from 'estree';
+import type { SimpleCallExpression, Expression as SourceExpression, Node, SpreadElement, Statement as SourceStatement } from 'estree';
+import { mergeBranches } from './branches.js';
 import { bind } from './bind.js';
 import { observe, set } from './booleans.js';
 import { materialize, toData } from './data.js';
@@ -6,7 +7,7 @@ import { fail } from './failure.js';
 import { local, type Expression, type Statement } from './ir.js';
 import type { Out } from './out.js';
 import { scalar } from './scalar.js';
-import { findLocal, rootScope, type Scope } from './scope.js';
+import { childScope, findLocal, rootScope, type Scope } from './scope.js';
 import { fresh, keyIndex } from './unit.js';
 import { scalarValue, type Value } from './value.js';
 
@@ -20,7 +21,7 @@ const scalarArgument = (node: SourceExpression | SpreadElement, scope: Scope, ou
 
 /** A module-scope key named in a command, such as a component in `remove` or a computed key in `spawn` values. */
 const commandKey = (node: Node, scope: Scope): number =>
-    node.type === "Identifier" && findLocal(scope, node.name) === undefined && scope.unit.module.has(node.name)
+    node.type === "Identifier" && findLocal(scope, node.name) === undefined && scope.module.has(node.name)
         ? keyIndex(scope.unit, node.name)
         : fail(node, "commands name components by identifiers bound at module scope");
 
@@ -73,6 +74,58 @@ const command = (name: string, node: SimpleCallExpression, scope: Scope, out: Ou
     }
 };
 
+/** Whether a statement returns somewhere outside nested functions and loops. */
+const containsReturn = (node: Node): boolean => {
+    switch (node.type) {
+        case "ReturnStatement": return true;
+        case "BlockStatement": return node.body.some(containsReturn);
+        case "IfStatement": return containsReturn(node.consequent) || (node.alternate !== null && node.alternate !== undefined && containsReturn(node.alternate));
+        default: return false;
+    }
+};
+
+const statementsOf = (node: SourceStatement): readonly SourceStatement[] => node.type === "BlockStatement" ? node.body : [node];
+
+/** Statements to run in order, each run in its scope: the statements of a block, then of the blocks after it. */
+type Segment = { readonly statements: readonly SourceStatement[]; readonly scope: Scope };
+
+/** A copy of a scope, so each branch of a split block declares its own locals. */
+const forkScope = (scope: Scope): Scope => ({ ...scope, locals: new Map(scope.locals) });
+
+/**
+ * A helper body's value. A return inside an `if` splits the block: each branch runs its own statements and then
+ * the rest of the block, and their returned values merge as a conditional would.
+ */
+const helperBlock = (name: string, segments: readonly Segment[], node: Node, out: Out): Value => {
+    const [segment, ...after] = segments;
+    if (segment === undefined) return fail(node, `${name} must end with return <value>`);
+    const { statements, scope } = segment;
+    const unit = scope.unit;
+    for (let index = 0; index < statements.length; index++) {
+        const statement = statements[index];
+        if (statement.type === "ReturnStatement") {
+            if (!statement.argument) return fail(statement, `${name} must return a value`);
+            return unit.expression(statement.argument, scope, out);
+        }
+        if (statement.type === "IfStatement" && containsReturn(statement)) {
+            const test = scalar(unit.expression(statement.test, scope, out), statement.test, scope);
+            const rest = (fork: Scope): Segment[] => [{ statements: statements.slice(index + 1), scope: fork }, ...after.map(next => ({ ...next, scope: forkScope(next.scope) }))];
+            const branch = (taken: SourceStatement | null | undefined, branchOut: Out): Value => {
+                const fork = forkScope(scope);
+                const own: Segment[] = taken === null || taken === undefined ? [] : [{ statements: statementsOf(taken), scope: childScope(fork) }];
+                return helperBlock(name, [...own, ...rest(fork)], statement, branchOut);
+            };
+            const consequentOut: Out = [];
+            const alternateOut: Out = [];
+            const consequent = toData(branch(statement.consequent, consequentOut), statement.consequent, scope);
+            const alternate = toData(branch(statement.alternate, alternateOut), statement, scope);
+            return mergeBranches(statement, test, consequent, consequentOut, alternate, alternateOut, scope, out);
+        }
+        unit.statement(statement, scope, out);
+    }
+    return helperBlock(name, after, node, out);
+};
+
 /** Inlines a helper: arguments are bound to fresh parameter locals, and the body is compiled in the helper's own scope. */
 const inline = (helper: Extract<Value, { kind: "function" }>, node: SimpleCallExpression, scope: Scope, out: Out): Value => {
     const unit = scope.unit;
@@ -80,21 +133,14 @@ const inline = (helper: Extract<Value, { kind: "function" }>, node: SimpleCallEx
     if (node.arguments.length > helper.params.length) return fail(node, `${helper.name} takes ${helper.params.length} arguments`);
     const values = node.arguments.map(item => unit.expression(argument(item), scope, out));
     unit.active.add(helper.name);
-    const inner = rootScope(unit, true);
+    const inner = rootScope(unit, true, helper.module);
     helper.params.forEach((param, index) => {
         const value = values[index] ?? fail(node, `${helper.name} needs ${helper.params.length} arguments`);
         bind(param, value, "parameter", inner, out);
     });
-    let result: Value;
-    if (helper.body.type === "BlockStatement") {
-        const statements = helper.body.body;
-        const last = statements[statements.length - 1];
-        if (last?.type !== "ReturnStatement" || !last.argument) return fail(helper.body, `${helper.name} must end with return <value>`);
-        for (const statement of statements.slice(0, -1)) unit.statement(statement, inner, out);
-        result = unit.expression(last.argument, inner, out);
-    } else {
-        result = unit.expression(helper.body, inner, out);
-    }
+    const result = helper.body.type === "BlockStatement"
+        ? helperBlock(helper.name, [{ statements: helper.body.body, scope: inner }], helper.body, out)
+        : unit.expression(helper.body, inner, out);
     unit.active.delete(helper.name);
     return result;
 };

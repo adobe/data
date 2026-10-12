@@ -1,0 +1,3 @@
+import type { F32 } from "./f32.js";
+
+export const sign = ([x, y, z]: F32): F32 => [Math.sign(x), Math.sign(y), Math.sign(z)];

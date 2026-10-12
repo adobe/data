@@ -1,13 +1,10 @@
 import { Component } from '../../component/component.js';
-import type { Schema } from '../../schema/schema.js';
 import { Gpu } from '../../gpu/gpu.js';
+import { Vec3 } from '../../math/index.js';
 import { System } from '../../system/system.js';
 
 // The perf particles (src/perftest/particles.ts) on screen: 1M particles over four archetypes by visible and
 // enabled, with screen-space positions and velocities in pixels per frame. `move` is the perf move kernel, on the GPU.
-
-type Vec3 = readonly [number, number, number];
-const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
 
 export const position = "gpuParticles/position";
 export const velocity = "gpuParticles/velocity";
@@ -36,8 +33,8 @@ declare module '../../system/types.js' {
     }
 }
 
-Component.register(position, vec3);
-Component.register(velocity, vec3);
+Component.register(position, Vec3.schema);
+Component.register(velocity, Vec3.schema);
 Component.register(color, { type: "integer", minimum: 0, maximum: 0xFFFFFFFF });
 Component.register(mass, { type: "number", precision: 1 });
 Component.register(visible, { const: true });
@@ -80,9 +77,7 @@ export const move = System.create({
     kernel: "gpu",
     query: { read: [position, velocity], write: [position], has: [visible, enabled] },
 }, row => {
-    const [px, py, pz] = row[position];
-    const [vx, vy, vz] = row[velocity];
-    row[position] = [px + vx, py + vy, pz + vz];
+    row[position] = Vec3.add(row[position], row[velocity]);
 });
 
 /** The same move on the CPU, for comparison. */
@@ -91,9 +86,7 @@ export const moveOnCpu = System.create({
     kernel: "cpu",
     query: { read: [position, velocity], write: [position], has: [visible, enabled] },
 }, row => {
-    const [px, py, pz] = row[position];
-    const [vx, vy, vz] = row[velocity];
-    row[position] = [px + vx, py + vy, pz + vz];
+    row[position] = Vec3.add(row[position], row[velocity]);
 });
 
 /** The vertex and fragment stages, after the world's declarations: each particle is a point, wrapped into the field. */

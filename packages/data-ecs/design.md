@@ -171,7 +171,8 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
    - **Parser:** the bundler's own (`this.parse`, ESTree, in both Vite and Rolldown); the compiler validates the subset on that tree, and an ESLint rule can share the validator since ESLint also produces ESTree. A second JS parser would only add size and upkeep.
    - **Closed world:** every input comes from the ECS (query rows, resources).
    - **Precision:** arithmetic has at least the storage precision. Results are not bit-exact across backends (JS, WASM, GPU).
-   - **Builtins:** WGSL-style value types and functions (`Vec3<I32>`-like types, `dot`, `mix`, …) are recognized as intrinsics and scalarized, so tuples never allocate. The specific builtin set is not yet defined.
+   - **Builtins:** the package exports math types that are also namespaces of functions: `Vec2`, `Vec3`, `Vec4` (each `F32`, with `I32` and `U32` nested beside it), `Quat`, `Mat4x4`, and the scalars `F32`, `I32`, `U32`, each with a `schema`. They're plain TypeScript in the kernel subset, so kernels call them like helpers: at build time the plugin parses the package's math modules and inlines each call, compiled in its own module's scope, so tuples are scalarized and never allocate, on JS, WASM and the GPU alike. The few that throw or loop (`Mat4x4.inverse`, `Mat4x4.perspective`, `Mat4x4.lookAt`, the bit counts) run anywhere but in GPU kernels or, for throws, kernels.
+   - **Helpers return early:** a `return` inside an `if` splits the block, each branch running its own statements and then the rest, and the values merge as a conditional's do.
    - Still open:
      - The exact grammar (see `src/compiler/` for the subset as implemented).
    - **Value semantics** for tuple and struct locals, matching component values: locals are scalarized to one local per leaf.

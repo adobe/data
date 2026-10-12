@@ -16,7 +16,7 @@ export type Key =
 const keyOf = (node: Node, computed: boolean, scope: Scope, out: Out): Key => {
     if (!computed && node.type === "Identifier") return { kind: "static", name: node.name };
     if (node.type === "Literal" && (typeof node.value === "number" || typeof node.value === "string")) return { kind: "static", name: node.value };
-    if (node.type === "Identifier" && findLocal(scope, node.name) === undefined && scope.unit.module.has(node.name)) {
+    if (node.type === "Identifier" && findLocal(scope, node.name) === undefined && scope.module.has(node.name)) {
         return { kind: "binding", name: node.name };
     }
     if (node.type === "PrivateIdentifier") return fail(node, "private names are not in the kernel subset");

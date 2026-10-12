@@ -1,6 +1,7 @@
 import type { BlockStatement, Expression as SourceExpression, Pattern } from 'estree';
 import type { Path } from '../world/create/kernel.js';
 import type { Expression } from './ir.js';
+import type { ModuleScope } from './module-scope.js';
 import type { Snapshot } from './snapshot.js';
 
 /**
@@ -17,7 +18,10 @@ export type Value =
     | { readonly kind: "snapshot"; readonly snapshot: Snapshot; readonly path: Path }
     | { readonly kind: "found"; readonly lookup: number; readonly expression: Expression }
     | { readonly kind: "lookup"; readonly lookup: number }
-    | { readonly kind: "function"; readonly name: string; readonly params: readonly Pattern[]; readonly body: BlockStatement | SourceExpression }
+    /** A helper; `module` is the scope its body is compiled in, its own module's for a builtin. `name` is unique per definition. */
+    | { readonly kind: "function"; readonly name: string; readonly params: readonly Pattern[]; readonly body: BlockStatement | SourceExpression; readonly module: ModuleScope }
+    /** A math module namespace, such as `Vec3`, at its file. */
+    | { readonly kind: "namespace"; readonly file: string }
     | { readonly kind: "method"; readonly owner: "math" | "commands"; readonly name: string }
     | { readonly kind: "row" }
     | { readonly kind: "context" }
@@ -29,7 +33,7 @@ export const scalarValue = (expression: Expression): Value => ({ kind: "scalar",
 const describe: { readonly [K in Value["kind"]]: string } = {
     scalar: "a number", dynamic: "a value", tuple: "a tuple", struct: "a struct", component: "a component value",
     snapshot: "a component value", found: "a lookup result", lookup: "a lookup", function: "a helper",
-    method: "a method", row: "row", context: "the context", commands: "commands", math: "Math",
+    method: "a method", row: "row", context: "the context", commands: "commands", math: "Math", namespace: "a namespace",
 };
 
 /** A short description of a value's kind, for error messages. */

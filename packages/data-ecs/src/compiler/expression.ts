@@ -1,12 +1,13 @@
 import type { ConditionalExpression, Identifier, LogicalExpression, Node } from 'estree';
 import { access } from './access.js';
 import { observe, set } from './booleans.js';
+import { mergeBranches } from './branches.js';
 import { call } from './calls.js';
 import { dataValue, leavesOf, mapLeaves, sameShape, toData, type Data } from './data.js';
 import { fail } from './failure.js';
 import { isBinary, isUnary, local, not, number, type Expression } from './ir.js';
 import { memberKey } from './key.js';
-import type { ModuleBinding } from './module-scope.js';
+import { moduleValue } from './module-value.js';
 import type { Out } from './out.js';
 import { scalar } from './scalar.js';
 import { findLocal, rootScope, type Scope } from './scope.js';
@@ -16,42 +17,11 @@ import { scalarValue, type Value } from './value.js';
 const isTrivial = (expression: Expression): boolean =>
     expression.kind === "local" || expression.kind === "number" || expression.kind === "boolean";
 
-const isKey = (scope: Scope, name: string): boolean => {
-    const signature = scope.unit.signature;
-    return signature.read.has(name) || signature.write.has(name) || signature.resources.includes(name)
-        || signature.lookups.some(lookup => lookup.read.includes(name));
-};
-
-const moduleValue = (node: Identifier, binding: ModuleBinding, scope: Scope, out: Out): Value => {
-    if (isKey(scope, node.name)) return fail(node, `${node.name} is a key; use it to index, as in row[${node.name}]`);
-    switch (binding.kind) {
-        case "function":
-            return { kind: "function", name: node.name, params: binding.node.params, body: binding.node.body };
-        case "const": {
-            const init = binding.init;
-            if (init.type === "ArrowFunctionExpression" || init.type === "FunctionExpression") {
-                if (init.async || init.generator) return fail(init, `${node.name} must be a plain function to be inlined`);
-                return { kind: "function", name: node.name, params: init.params, body: init.body };
-            }
-            const unit = scope.unit;
-            if (unit.active.has(node.name)) return fail(node, `${node.name} refers to itself`);
-            unit.active.add(node.name);
-            const value = unit.expression(init, rootScope(unit, true), out);
-            unit.active.delete(node.name);
-            return value;
-        }
-        case "import":
-            return fail(node, `${node.name} is imported; kernels can only use helpers and constants defined in this module`);
-        case "other":
-            return fail(node, `${node.name} is not a module-scope const`);
-    }
-};
-
 const identifier = (node: Identifier, scope: Scope, out: Out): Value => {
     const local = findLocal(scope, node.name);
     if (local !== undefined) return local.value;
-    const binding = scope.unit.module.get(node.name);
-    if (binding !== undefined) return moduleValue(node, binding, scope, out);
+    const binding = scope.module.get(node.name);
+    if (binding !== undefined) return moduleValue(node, node.name, binding, scope.module, scope, out);
     switch (node.name) {
         case "Math": return { kind: "math" };
         case "Infinity": return scalarValue(number(Infinity));
@@ -61,39 +31,15 @@ const identifier = (node: Identifier, scope: Scope, out: Out): Value => {
     }
 };
 
-/** Declares `let` locals for data's leaves, and returns them as data plus an assignment of other data to them. */
-const temporaries = (data: Data, scope: Scope, out: Out): { readonly result: Data; readonly assign: (source: Data) => Out } => {
-    const locals = leavesOf(data).map(() => fresh(scope.unit, "t"));
-    let index = 0;
-    const result = mapLeaves(data, () => local(locals[index++]));
-    out.push({ kind: "declare", locals });
-    return { result, assign: source => leavesOf(source).map((leaf, leafIndex) => set(scope.unit, locals[leafIndex], leaf.expression, undefined)) };
-};
-
 /** `test ? a : b` over any matching shapes. Branches that emit statements become an `if`. */
 const conditional = (node: ConditionalExpression, scope: Scope, out: Out): Value => {
     const unit = scope.unit;
-    let test = scalar(unit.expression(node.test, scope, out), node.test, scope);
+    const test = scalar(unit.expression(node.test, scope, out), node.test, scope);
     const consequentOut: Out = [];
     const alternateOut: Out = [];
     const consequent = toData(unit.expression(node.consequent, scope, consequentOut), node.consequent, scope);
     const alternate = toData(unit.expression(node.alternate, scope, alternateOut), node.alternate, scope);
-    if (!sameShape(consequent, alternate)) return fail(node, "both branches must have the same shape");
-    if (consequentOut.length === 0 && alternateOut.length === 0) {
-        if (consequent.kind !== "leaf" && !isTrivial(test)) {
-            const name = fresh(unit, "test");
-            out.push(set(unit, name, test, "const"));
-            test = local(name);
-        }
-        const alternateLeaves = leavesOf(alternate);
-        let index = 0;
-        const condition = test;
-        return dataValue(mapLeaves(consequent, expression =>
-            ({ kind: "conditional", test: condition, consequent: expression, alternate: alternateLeaves[index++].expression })));
-    }
-    const { result, assign } = temporaries(consequent, scope, out);
-    out.push({ kind: "if", test, consequent: [...consequentOut, ...assign(consequent)], alternate: [...alternateOut, ...assign(alternate)] });
-    return dataValue(result);
+    return mergeBranches(node, test, consequent, consequentOut, alternate, alternateOut, scope, out);
 };
 
 /** `a && b`, `a || b`, `a ?? b`. A right side that emits statements runs only when needed. */

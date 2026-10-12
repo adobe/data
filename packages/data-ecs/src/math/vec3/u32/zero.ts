@@ -1,0 +1,3 @@
+import type { U32 as Vec3_U32 } from "./u32.js";
+
+export const zero: Vec3_U32 = [0, 0, 0];

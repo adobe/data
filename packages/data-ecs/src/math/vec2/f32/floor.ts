@@ -1,0 +1,3 @@
+import type { F32 } from "./f32.js";
+
+export const floor = ([x, y]: F32): F32 => [Math.floor(x), Math.floor(y)];

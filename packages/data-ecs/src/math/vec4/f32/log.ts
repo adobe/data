@@ -1,0 +1,3 @@
+import type { F32 } from "./f32.js";
+
+export const log = ([x, y, z, w]: F32): F32 => [Math.log(x), Math.log(y), Math.log(z), Math.log(w)];

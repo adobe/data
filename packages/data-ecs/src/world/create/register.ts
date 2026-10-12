@@ -94,6 +94,7 @@ export const createRegistrar = (state: State): Registrar => {
         for (const [system, schedule] of addedSchedules) schedules.set(system, schedule);
         for (const [leaf, runner] of addedRunners) {
             runners.set(leaf, runner);
+            if (runner.afterSync !== null) state.afterSync.add(runner.afterSync);
             if (runner.kernel !== null) kernelIndexes.set(runner, nextKernel++);
         }
         // New `changed` filters observe more components, so kernels that muted their stamps must load again.
@@ -105,6 +106,7 @@ export const createRegistrar = (state: State): Registrar => {
             for (const key of addedReducers.keys()) reducers.delete(key);
             for (const system of addedSchedules.keys()) schedules.delete(system);
             for (const leaf of addedRunners.keys()) runners.delete(leaf);
+            for (const runner of addedRunners.values()) if (runner.afterSync !== null) state.afterSync.delete(runner.afterSync);
             for (const runner of addedRunners.values()) kernelIndexes.delete(runner);
             state.observed.clear();
             for (const id of observedBefore) state.observed.add(id);

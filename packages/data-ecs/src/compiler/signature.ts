@@ -63,7 +63,7 @@ const reductions = (node: Expression | Pattern, module: ModuleScope): readonly R
         const operator = value.type === "Literal" ? value.value : undefined;
         if (!isReduction(operator)) return fail(value, `a resource is reduced with one of ${reductionOperators.map(item => JSON.stringify(item)).join(", ")}`);
         return { resource: property.key.name, operator };
-    });
+    }).map((entry, index, all) => all.findIndex(other => other.resource === entry.resource) === index ? entry : fail(node, `${entry.resource} is reduced twice`));
 };
 
 /** What kind of kernel a `System.create` declaration compiles to, or null when it isn't a kernel. */
@@ -83,7 +83,7 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
     let query: ReadonlyMap<string, readonly string[]> | undefined;
     let resources: readonly string[] = [];
     let reduced: readonly Reduced[] = [];
-    let resourcesChanged = false;
+    let changedResources: readonly string[] = [];
     let args = false;
     const lookups: Lookup[] = [];
     for (const [name, property] of properties(declaration, "a kernel declaration")) {
@@ -94,7 +94,7 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
             case "resources":
                 for (const [list, value] of properties(property.value, "resources")) {
                     if (list === "read") resources = identifiers(value.value, module);
-                    else if (list === "changed") resourcesChanged = identifiers(value.value, module).length > 0;
+                    else if (list === "changed") changedResources = identifiers(value.value, module);
                     else if (list === "reduce") reduced = reductions(value.value, module);
                     else fail(value, `resources.${list} is not allowed in a kernel declaration`);
                 }
@@ -114,6 +114,9 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
         }
     }
     if (query === undefined) return fail(declaration, "a kernel needs a query");
+    for (const { resource } of reduced) {
+        if (resources.includes(resource) || changedResources.includes(resource)) fail(declaration, `${resource} is reduced, so it can't also be read or filtered on`);
+    }
     const rowFiltered = (query.get("added")?.length ?? 0) + (query.get("changed")?.length ?? 0) > 0;
-    return { read: new Set(query.get("read")), write: new Set(query.get("write")), resources, reduced, lookups, args, filtered: resourcesChanged || rowFiltered, folds: !rowFiltered };
+    return { read: new Set(query.get("read")), write: new Set(query.get("write")), resources, reduced, lookups, args, filtered: changedResources.length > 0 || rowFiltered, folds: !rowFiltered };
 };

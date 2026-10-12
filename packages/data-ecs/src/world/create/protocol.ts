@@ -52,6 +52,8 @@ export type KernelSetup = {
     readonly keys: readonly number[];
     readonly added: readonly number[];
     readonly changed: readonly number[];
+    /** Whether the kernel reduces: its fast tasks then carry their partials' address and stride after the scalars. */
+    readonly reduces: boolean;
     /** The compiled WASM version, which workers instantiate against the shared memory and prefer. */
     readonly wasm: { readonly module: WebAssembly.Module; readonly scalars: readonly WasmScalar[]; readonly imports: readonly string[] } | null;
 };
@@ -94,7 +96,7 @@ export type FromWorker =
  */
 export const ringSize = 64;
 export const taskWords = 32;
-export const taskFields = 14;
+export const taskFields = 12;
 export const maximumScalars = taskWords - taskFields;
 /**
  * Int32 words per 128-byte cache line, the largest in use (Apple silicon). Words that different threads write each get

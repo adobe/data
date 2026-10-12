@@ -62,6 +62,8 @@ export type Runner = {
      * case they keep their values.
      */
     readonly finish: (failed: boolean) => void;
+    /** For the registrar to call after each sync point once the runner is registered: sizes its reduction partials. */
+    readonly afterSync: (() => void) | null;
 };
 
 /** Throws if the leaf is a kernel that wasn't compiled or doesn't match its schemas. */
@@ -90,10 +92,11 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         if (filtered) failPlacement("can't run on the GPU: GPU kernels don't support change filters yet");
         if (declaration.lookup !== undefined && Object.keys(declaration.lookup).length > 0) failPlacement("can't run on the GPU: GPU kernels don't support lookups yet");
     }
-    const targets = reductionTargets(state, declaration.name, resources?.reduce);
+    const targets = reductionTargets(state, declaration.name, resources);
     if (targets.length > 0) {
         if (addedIds.length + changedIds.length > 0) failPlacement("can't reduce with query change filters: a reduction folds every row");
         if (declaration.kernel === "gpu") failPlacement("can't run on the GPU: GPU kernels don't support reductions yet");
+        if (declaration.render !== undefined) failPlacement("can't reduce: a render system records GPU work rather than running rows");
     }
     /** For each partial of the kernel, the target and leaf it folds into. */
     const partialLeaves = (kernel?.description.reductions ?? []).map(reduced => {
@@ -137,7 +140,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const nextBuffer = (): CommandBuffer => owned[used++] ??= createBuffer();
     const commands = createCommands(state, holder);
     const kernelCommands = createKernelCommands(holder, kernel?.setup.keys ?? [], () => reserve(state.entities));
-    const context = createContext(state, declaration, targets);
+    // A kernel's reductions fold in its partials, so only a body that runs as written gets reducer functions.
+    const context = createContext(state, declaration, kernel === null ? targets : []);
     /** Partials of the kernel's reductions, one slot per kernel call of a run, in the order its rows run. */
     const partialCount = partialLeaves.length;
     let slots = noPartials;
@@ -145,26 +149,36 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     /** Whether the current run ran its rows, so its reductions are written. */
     let ran = false;
     let runTick = 0;
-    const slotsPerArchetype = (): number => state.workers > 0 ? state.workers * claimsPerWorker : 1;
-    /** Sized when archetypes change, at registration and sync points, so runs don't allocate. */
+    /**
+     * The most kernel calls a run gives an archetype: one on the main thread; across workers a piece of at least
+     * `chunkAlignment` rows each, at most `claimsPerWorker` per worker.
+     */
+    const slotsFor = (count: number): number =>
+        count === 0 ? 0 : state.workers > 0 ? Math.min(state.workers * claimsPerWorker, Math.ceil(count / chunkAlignment)) : 1;
+    /** Sized when archetypes change, at registration and sync points, so runs don't allocate or grow memory. */
     const sizeSlots = (): void => {
         if (partialCount === 0) return;
         refreshMatches();
-        const needed = Math.max(1, matches.length) * slotsPerArchetype() * partialCount;
+        let needed = 0;
+        for (const archetype of matches) needed += slotsFor(archetype.count);
+        needed = Math.max(1, needed) * partialCount;
         if (slots.length >= needed) return;
         if (slots.length > 0) freeArray(state.memory, slots);
         slots = allocateArray(state.memory, Float64Array, Math.max(needed, 2 * slots.length));
     };
-    if (partialCount > 0) state.afterSync.add(sizeSlots);
     /** The first of `count` slots for the next kernel calls, each starting at its operators' identities. */
     const takeSlots = (count: number): number => {
         const first = slotsUsed;
         slotsUsed += count;
+        // Archetypes change only at sync points, which size the slots for them.
+        if (slotsUsed * partialCount > slots.length) throw new Error(`System "${declaration.name}" has no room for its reduction partials.`);
         for (let slot = first; slot < slotsUsed; slot++) {
             partialLeaves.forEach(({ target }, k) => { slots[slot * partialCount + k] = identityOf(targets[target]?.operator ?? "+"); });
         }
         return first;
     };
+    /** Each target's leaves, folded from the partials in `finish`. */
+    const folded = targets.map(target => new Float64Array(target.leaves.length));
     const partialAddress = (slot: number): number => partialCount === 0 ? -1 : slots.byteOffset + slot * partialCount * 8;
     const matches: Archetype[] = [];
     let checked = 0;
@@ -234,7 +248,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
 
     /** WASM kernels with few enough scalars dispatch through shared memory. */
     const isFast = (bound: BoundKernel | null): boolean =>
-        bound !== null && bound.wasm !== null && bound.compiled() !== null && bound.lookupParameters().length + bound.wasm.scalars.length <= maximumScalars;
+        bound !== null && bound.wasm !== null && bound.compiled() !== null
+        && bound.lookupParameters().length + bound.wasm.scalars.length + (partialCount > 0 ? 2 : 0) <= maximumScalars;
     /** Rows below which an archetype runs on the main thread. Shared-memory dispatch is cheap enough that half the size pays off. */
     const minimumFor = (workers: Workers): number => isFast(kernel) ? workers.minimumChunk / 2 : workers.minimumChunk;
 
@@ -390,8 +405,6 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             if (since >= 0 && addedIds.length + changedIds.length === 0) return chunks;
             ran = true;
             refreshMatches();
-            // Archetypes are sized for at sync points; one matched since then is sized for here.
-            if (partialCount > 0 && slots.length < matches.length * slotsPerArchetype() * partialCount) sizeSlots();
             const values = kernel?.description.resources.map(key => {
                 const { storage, row } = resourceCell(state, key);
                 return readCell(storage, row);
@@ -429,14 +442,14 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             targets.forEach((target, t) => writeReduction(state, target, context.reduced[t] ?? noPartials, 0, runTick));
             return;
         }
-        const folded = targets.map(target => target.leaves.map(() => identityOf(target.operator)));
+        targets.forEach((target, t) => folded[t]?.fill(identityOf(target.operator)));
         partialLeaves.forEach(({ target, leaf }, k) => {
             const operator = targets[target]?.operator ?? "+";
             const values = folded[target];
             if (values === undefined) return;
             for (let slot = 0; slot < slotsUsed; slot++) values[leaf] = combine(operator, values[leaf] ?? NaN, slots[slot * partialCount + k] ?? NaN);
         });
-        targets.forEach((target, t) => writeReduction(state, target, folded[t] ?? [], 0, runTick));
+        targets.forEach((target, t) => writeReduction(state, target, folded[t] ?? noPartials, 0, runTick));
     };
 
     const setup = (index: number): KernelSetup | null => {
@@ -448,6 +461,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             ...kernel.setup,
             added: addedIds,
             changed: changedIds,
+            reduces: partialCount > 0,
             wasm: compiled === null || kernel.wasm === null ? null : { module: compiled.module, scalars: kernel.wasm.scalars, imports: kernel.wasm.imports },
         };
     };
@@ -466,5 +480,6 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         setup,
         start,
         finish,
+        afterSync: partialCount > 0 ? sizeSlots : null,
     };
 };

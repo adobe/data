@@ -216,10 +216,13 @@ const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
                 if (loaded === undefined || broken !== null) throw new Error("Worker can't run this task.");
                 const line = payloads[base + 8];
                 const participants = payloads[base + 11];
+                const scalarCount = payloads[base + 7];
+                const partials = loaded.setup.reduces ? payloads[base + taskFields + scalarCount] : -1;
+                const partialBytes = loaded.setup.reduces ? payloads[base + taskFields + scalarCount + 1] : 0;
                 runWasm(loaded, payloads[base + 1], payloads[base + 2], payloads[base + 3], payloads[base + 4], payloads[base + 5],
-                    Array.from(payloads.subarray(base + taskFields, base + taskFields + payloads[base + 7])),
+                    Array.from(payloads.subarray(base + taskFields, base + taskFields + scalarCount)),
                     line < 0 ? null : { words: new Int32Array(buffer, message.claims + line * lineWords * 4, participants * lineWords), self: payloads[base + 10], participants },
-                    payloads[base + 9], payloads[base + 12], payloads[base + 13]);
+                    payloads[base + 9], partials ?? -1, partialBytes ?? 0);
             }
             catch {
                 status = -status;

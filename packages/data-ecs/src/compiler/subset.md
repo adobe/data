@@ -4,9 +4,10 @@ What a kernel body (`kernel: "cpu"` or `"gpu"`) may contain. The build rejects a
 offending code. It is plain TypeScript; types are stripped before compiling.
 
 ```
-body        = "(" [row ["," context ["," commands]]] ")" "=>" (block | expression)
+body        = "(" [row ["," context ["," commands]]] ")" "=>" (block | expression) | "function" "(" ... ")" block
 row         = identifier | pattern            // parameters may be destructured
-statement   = declaration | assignment | update | call | if | loop | break | continue | return | block | ";"
+statement   = declaration | (assignment | update | call) {"," (assignment | update | call)} | if | loop | break | continue
+            | return | block | ";"
 declaration = ("const" | "let") pattern "=" expression { "," pattern "=" expression }
 pattern     = identifier | "[" pattern { "," pattern } "]" | "{" field [":" pattern] { "," ... } "}"
 assignment  = target ("=" | "+=" | "-=" | "*=" | "/=" | "%=" | "**=" | "&=" | "|=" | "^=" | "<<=" | ">>=" | ">>>=") expression
@@ -59,7 +60,7 @@ call        = Math-function | helper | lookup | command | reducer
 
 ## GPU kernels
 
-Also no lookups, change filters, commands, reductions, loops or labeled blocks, and only 4-byte scalar values: f32,
+Also no lookups, change filters, commands, reductions or loops, and only 4-byte scalar values: f32,
 i32, u32, and booleans in a `"storage"` layout. Results follow WGSL where it leaves JS results indeterminate (NaN and
 infinities).
 

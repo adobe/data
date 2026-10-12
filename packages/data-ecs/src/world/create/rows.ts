@@ -207,8 +207,10 @@ export const createArrayLookup = (state: State, lookup: Lookup) => {
     };
 };
 
-/** A system's context: lookups, resources and `args` in one object. `bind` resolves the resources' cells for a run. */
-/** A system's context. `reduced[t]` holds the leaves of the fold into its `t`th reduction target so far this run. */
+/**
+ * A system's context: lookups, resources and `args` in one object. `bind` resolves the resources' cells for a run;
+ * `reduced[t]` holds the leaves of the fold into its `t`th reduction target so far this run.
+ */
 export type Context = { readonly value: { args?: unknown }; readonly bind: () => void; readonly reduced: readonly Float64Array[] };
 
 /** Resource cells are resolved once per run: they move only at sync points. An unresolved resource throws on access. */

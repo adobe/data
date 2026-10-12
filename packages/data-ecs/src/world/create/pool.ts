@@ -20,8 +20,8 @@ export type FastTask = {
     readonly lastRun: number;
     readonly scalars: readonly number[];
     /**
-     * The byte address of the task's first reduction partials, or -1 without reductions. A worker running claimed
-     * pieces folds piece `p` into the partials `p * partialBytes` past it.
+     * The byte address of the task's first reduction partials, or -1 without reductions; they follow the scalars, and
+     * count against `maximumScalars`. A worker running claimed pieces folds piece `p` into the partials `p * partialBytes` past it.
      */
     readonly partials: number;
     readonly partialBytes: number;
@@ -149,8 +149,8 @@ export const createPool = (size: number, arena: Memory): Pool => {
             ensureOpen(worker);
             const current = Atomics.load(control, worker * controlWords + epoch);
             const base = (worker * ringSize + ring) * taskWords;
-            payloads.set([task.kernel, task.archetype, task.start, task.end, task.tick, task.lastRun, current, task.scalars.length, line, grain, self, participants, task.partials, task.partialBytes], base);
-            payloads.set(task.scalars, base + taskFields);
+            payloads.set([task.kernel, task.archetype, task.start, task.end, task.tick, task.lastRun, current, task.scalars.length, line, grain, self, participants], base);
+            payloads.set(task.partials < 0 ? task.scalars : [...task.scalars, task.partials, task.partialBytes], base + taskFields);
             Atomics.store(control, worker * controlWords + posted, count);
             wake(worker);
         };

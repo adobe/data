@@ -15,10 +15,14 @@ export type ReductionTarget = {
 const bitwise: ReadonlySet<Reduction> = new Set(["&", "|", "^"]);
 
 /** The resources a declaration reduces into, checked against their layouts. Throws for one that can't be reduced. */
-export const reductionTargets = (state: State, name: string, reduce: Resources["reduce"]): readonly ReductionTarget[] =>
-    reduce === undefined ? [] : Reflect.ownKeys(reduce).flatMap((key): ReductionTarget[] => {
+export const reductionTargets = (state: State, name: string, resources: Resources | undefined): readonly ReductionTarget[] => {
+    const reduce = resources?.reduce;
+    if (reduce === undefined) return [];
+    const others = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? []]);
+    return Reflect.ownKeys(reduce).flatMap((key): ReductionTarget[] => {
         const operator: Reduction | undefined = Reflect.get(reduce, key);
         if (operator === undefined) return [];
+        if (others.has(key)) throw new Error(`System "${name}" reduces "${String(key)}", so it can't also read, write or filter on it.`);
         const layout = state.layouts[idOf(state, key)];
         if (layout?.kind !== "linear") throw new Error(`System "${name}" reduces "${String(key)}", which isn't stored in linear memory.`);
         const leaves = layout.leaves.map(leaf => ({ path: leaf.path, view: leaf.view, boolean: leaf.scalar === "boolean" }));
@@ -27,6 +31,7 @@ export const reductionTargets = (state: State, name: string, reduce: Resources["
         }
         return [{ key, operator, leaves }];
     });
+};
 
 /** Each operator's identity, as a fold starts from it, and what an empty fold gives. */
 export const identityOf = (operator: Reduction): number => {
@@ -56,11 +61,12 @@ const integerRange: { readonly [V in View]?: readonly [number, number] } = {
     u8: [0, 255], i32: [-(2 ** 31), 2 ** 31 - 1], u32: [0, 2 ** 32 - 1],
 };
 
-/** A folded leaf in its stored form: a boolean, or an empty `min` or `max` as the integer type's own identity. */
-const stored = (value: number, view: View, boolean: boolean): number | boolean => {
+/** A folded leaf in its stored form: a boolean, or an empty `min` or `max` of integers as the type's own extreme. */
+const stored = (value: number, operator: Reduction, view: View, boolean: boolean): number | boolean => {
     if (boolean) return (value & 1) !== 0;
     const range = integerRange[view];
-    return range !== undefined && (value === Infinity || value === -Infinity) ? (value > 0 ? range[1] : range[0]) : value;
+    const empty = (operator === "min" && value === Infinity) || (operator === "max" && value === -Infinity);
+    return range !== undefined && empty ? (value > 0 ? range[1] : range[0]) : value;
 };
 
 const withLeaf = (value: unknown, path: Path, leaf: unknown): unknown => {
@@ -83,7 +89,7 @@ export const contributed = (value: unknown, path: Path): number => Number(leafOf
 export const writeReduction = (state: State, target: ReductionTarget, values: ArrayLike<number>, offset: number, tick: number): void => {
     const { storage, row } = resourceCell(state, target.key);
     const before = readCell(storage, row);
-    const next = target.leaves.reduce<unknown>((value, leaf, i) => withLeaf(value, leaf.path, stored(values[offset + i] ?? NaN, leaf.view, leaf.boolean)), before);
+    const next = target.leaves.reduce<unknown>((value, leaf, i) => withLeaf(value, leaf.path, stored(values[offset + i] ?? NaN, target.operator, leaf.view, leaf.boolean)), before);
     writeCell(storage, row, next);
     const after = readCell(storage, row);
     if (target.leaves.some(leaf => !Object.is(leafOf(before, leaf.path), leafOf(after, leaf.path)))) stampChanged(storage, row, tick);

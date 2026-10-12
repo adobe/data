@@ -4,6 +4,8 @@ import { Vec3 } from "../../math/index.js";
 import { Resource } from "../../resource/resource.js";
 import { System } from "../../system/system.js";
 import { createWorld } from "./create.js";
+import { createRegistrar } from "./register.js";
+import { createState } from "./state.js";
 
 const position = "reductionsTest/position";
 const mass = "reductionsTest/mass";
@@ -15,6 +17,7 @@ const least = "reductionsTest/least";
 const any = "reductionsTest/any";
 const level = "reductionsTest/level";
 const reads = "reductionsTest/reads";
+const wrapped = "reductionsTest/wrapped";
 
 declare module "../../component/types.js" {
     export interface Types {
@@ -32,6 +35,7 @@ declare module "../../resource/types.js" {
         [any]: boolean;
         [level]: number;
         [reads]: number;
+        [wrapped]: number;
     }
 }
 declare module "../../system/types.js" {
@@ -44,6 +48,7 @@ declare module "../../system/types.js" {
         "reductionsTest/other": true;
         "reductionsTest/flags": true;
         "reductionsTest/added": true;
+        "reductionsTest/infinite": true;
     }
 }
 
@@ -57,6 +62,7 @@ Resource.register(least, { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, def
 Resource.register(any, { type: "boolean", default: false });
 Resource.register(level, { type: "number", default: 0 });
 Resource.register(reads, { type: "number", default: 0 });
+Resource.register(wrapped, { type: "integer", minimum: -(2 ** 31), maximum: 2 ** 31 - 1, default: 5 });
 
 const rows = 3000;
 const positionAt = (i: number): Vec3 => [Math.sin(i) * 100, (i % 97) - 50, i / 7];
@@ -168,6 +174,18 @@ describe("reductions", () => {
         await world.dispose();
     });
 
+    it("store an infinite sum as any write of it, and only an empty min or max as the integer type's extreme", async () => {
+        const infinite = System.create({ name: "reductionsTest/infinite", query: { read: [mass] }, resources: { reduce: { [wrapped]: "+" } } }, (_, context) => {
+            context[wrapped](Infinity);
+        });
+        const world = createWorld({ workers: 0 });
+        await world.systems.register(spawn, infinite);
+        await world.run(spawn);
+        await world.run(infinite);
+        expect(world.read.resource(wrapped)).toBe(0);
+        await world.dispose();
+    });
+
     it("fold booleans bitwise", async () => {
         const world = createWorld({ workers: 0 });
         await world.systems.register(spawn, flags);
@@ -187,6 +205,23 @@ describe("reductions", () => {
         // @ts-expect-error a reduction folds every row, so its query has no change filters
         const added = System.create({ name: "reductionsTest/added", query: { read: [mass], added: [mass] }, resources: { reduce: { [total]: "+" } } }, (row, context) => { context[total](row[mass]); });
         await expect(createWorld({ workers: 0 }).systems.register(added)).rejects.toThrow("can't reduce with query change filters");
+        // @ts-expect-error a reduced resource can't also be read
+        const reading = System.create({ name: "reductionsTest/other", query: { read: [mass] }, resources: { read: [total], reduce: { [total]: "+" } } }, () => {});
+        await expect(createWorld({ workers: 0 }).systems.register(reading)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
+        // @ts-expect-error a reduced resource can't also be filtered on
+        const filtering = System.create({ name: "reductionsTest/other", query: { read: [mass] }, resources: { changed: [total], reduce: { [total]: "+" } } }, () => {});
+        await expect(createWorld({ workers: 0 }).systems.register(filtering)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
         await world.dispose();
+    });
+
+    it("leave nothing subscribed to sync points from a registration that failed", () => {
+        const state = createState(true);
+        const registrar = createRegistrar(state);
+        // @ts-expect-error booleans reduce bitwise
+        const sum = System.create({ name: "reductionsTest/flags", query: { read: [mass] }, resources: { reduce: { [any]: "+" } } }, () => {});
+        expect(() => registrar.register([kernel, sum])).toThrow(`booleans reduce with "&", "|" or "^"`);
+        expect(state.afterSync.size).toBe(0);
+        registrar.register([kernel]).rollback();
+        expect(state.afterSync.size).toBe(0);
     });
 });

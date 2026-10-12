@@ -266,7 +266,6 @@ export const generateWasm = (
     };
     while (inferIntegral(program.body));
 
-    // Parameters: start, end, tick, then one address per column, then scalars. Locals follow.
     // Parameters: start, end, tick, lastRun, column addresses, filter row tick addresses, filter chunk tick addresses, scalars, and with reductions the partials address.
     const columnParameter = (column: number): number => 4 + column;
     const filterRowParameter = (filter: number): number => 4 + columns.length + filter;

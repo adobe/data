@@ -412,6 +412,8 @@ const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [positio
         expect(await failure(reducing(`[total]: "avg"`, "context[total](1);"))).toBe(`a resource is reduced with one of "+", "*", "min", "max", "&", "|", "^"`);
         expect(await failure(reducing(`total: "+"`, "context[total](1);"))).toBe(`resources.reduce names each resource as a computed key bound at module scope, as in { [total]: "+" }`);
         expect(await failure(reducing(`[total]: "+"`, "context[total](1);").replace(`kernel: "cpu"`, `kernel: "gpu"`))).toBe("a GPU kernel can't use reductions yet");
+        expect(await failure(reducing(`[total]: "+"`, "context[total](1);").replace("resources: {", "resources: { read: [total],"))).toBe("total is reduced, so it can't also be read or filtered on");
+        expect(await failure(reducing(`[total]: "+", [total]: "max"`, "context[total](1);"))).toBe("total is reduced twice");
     });
 });
 

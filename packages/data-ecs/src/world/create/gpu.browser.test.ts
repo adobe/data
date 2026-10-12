@@ -177,7 +177,8 @@ const entityScore = System.create({ name: "gpuTest/entityScore", kernel: "gpu", 
     row[score] = row.entity;
 });
 
-const watch = System.create({ name: "gpuTest/watch", query: { read: [score], changed: [position] } }, () => {});
+let watched = 0;
+const watch = System.create({ name: "gpuTest/watch", query: { read: [position], changed: [position] } }, () => { watched++; });
 
 const frame = System.composite({ name: "gpuTest/frame", systems: [move, reset, moveAgain] });
 
@@ -316,6 +317,24 @@ describe("GPU kernels", () => {
         await cpuWorld.dispose();
     });
 
+    it("pass change filters on what they write, once per write", async () => {
+        const counts: number[][] = [];
+        for (const world of [createWorld({ gpu: { device: await device() } }), createWorld({ workers: 0 })]) {
+            watched = 0;
+            const seen: number[] = [];
+            await world.systems.register(spawn, move, watch);
+            await world.run(spawn);
+            for (const system of [watch, watch, move, watch, watch, move, move, watch]) {
+                await world.run(system);
+                seen.push(watched);
+            }
+            counts.push(seen);
+            await world.dispose();
+        }
+        expect(counts[0]).toEqual(counts[1]);
+        expect(counts[0]).toEqual([count, count, count, 2 * count, 2 * count, 2 * count, 2 * count, 3 * count]);
+    });
+
     it("refuse what they can't run, with the reason", async () => {
         const world = createWorld({ gpu: { device: await device() } });
         await expect(world.systems.register(entityScore)).rejects.toThrow(/can't run on the GPU: it reads an f64 value/);
@@ -324,8 +343,6 @@ describe("GPU kernels", () => {
         const cpuWorld = createWorld({ workers: 0 });
         await expect(cpuWorld.systems.register(flagScore)).rejects.toThrow(/reads a byte value/);
         await cpuWorld.dispose();
-        await world.systems.register(move);
-        await expect(world.systems.register(watch)).rejects.toThrow(/filters on with `changed`/);
         await world.dispose();
     });
 });

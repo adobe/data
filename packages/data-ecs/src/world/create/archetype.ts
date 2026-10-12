@@ -29,6 +29,11 @@ export type Storage = {
     /** The newest `added` and `changed` tick in each chunk of `2 ** chunkShift` rows, so change filters skip unchanged chunks. */
     chunkAdded: Float64Array;
     chunkChanged: Float64Array;
+    /**
+     * The newest tick at which every row may have changed, as a GPU kernel's writes do, so stamping them costs
+     * nothing per row: change filters pass the whole column when it's newer than their `lastRun`.
+     */
+    columnChanged: number;
 };
 
 /** Bytes after a column's last row, so a WASM kernel's 16-byte load of a row's leaves never reads past the column. */
@@ -125,6 +130,7 @@ const createStorage = (memory: Memory, component: number, layout: Layout, capaci
         changed: noTicks,
         chunkAdded: noTicks,
         chunkChanged: noTicks,
+        columnChanged: 0,
     };
     if (ticked) allocateTicks(memory, storage, capacity, 0);
     return storage;

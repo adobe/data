@@ -121,7 +121,7 @@ fn roundHalfUp(x: f32) -> f32 { let down = floor(x); return select(down, down + 
 
 /**
  * Generates a compute shader for a kernel program, or the reason it can't run on the GPU: lookups, loops, f64 or
- * entity columns, byte stores, or tick stamps something observes.
+ * entity columns, or byte stores.
  */
 export const generateWgsl = (program: Program, columns: readonly WasmColumn[], scalarTypes: (scalar: WasmScalar) => unknown): WgslKernel | string => {
     const scalars: WasmScalar[] = [];
@@ -326,9 +326,8 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
                 return `${indent}l${statement.local} = ${kind === "u32" ? asUint(value) : kind === "i32" ? asInt(value) : asNumber(value)};`;
             }
             case "store": return `${indent}${store(statement.column, emit(statement.value))}`;
-            case "stamp":
-                if (columns[statement.column].muted === true && columns[statement.chunks].muted === true) return "";
-                return fail("it writes a component some system filters on with `changed`");
+            // The CPU stamps the whole column once per dispatch instead.
+            case "stamp": return "";
             case "if":
                 return `${indent}if (${asBool(emit(statement.test))}) {\n${statements(statement.consequent, `${indent}    `)}\n${indent}} else {\n${statements(statement.alternate, `${indent}    `)}\n${indent}}`;
             case "next": return `${indent}return;`;

@@ -119,6 +119,13 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }
     };
 
+    /** Every row of an archetype passes when a `changed` component's whole column changed since `since`. */
+    const sinceFor = (archetype: Archetype, since: number): number => {
+        if (since < 0) return since;
+        for (const id of changedIds) if ((archetype.storageById[id]?.columnChanged ?? 0) > since) return -1;
+        return since;
+    };
+
     /** The archetype's change filters: `added` then `changed`, rows and chunks. */
     const filtersOf = (archetype: Archetype): Filter[] => [
         ...addedIds.flatMap(id => {
@@ -207,7 +214,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const floats = new Float32Array(words.buffer);
 
     /** One dispatch per archetype, each with its record of row count, column addresses and scalars. */
-    const runOnGpu = (values: readonly unknown[], args: unknown): void => {
+    const runOnGpu = (values: readonly unknown[], args: unknown, tick: number): void => {
         const gpu = state.gpu;
         if (gpu === null || pipeline === null || kernel === null) return failPlacement("isn't loaded on the GPU");
         const { sources } = kernel.setup;
@@ -237,7 +244,10 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             if (archetype.count === 0) continue;
             for (const id of writes) {
                 const storage = archetype.storageById[id];
-                if (storage !== undefined) gpu.markGpuWrites(archetype, storage);
+                if (storage === undefined) continue;
+                gpu.markGpuWrites(archetype, storage);
+                // Rows a GPU kernel writes are stamped as one, for the whole column.
+                if (storage.ticked) storage.columnChanged = tick;
             }
         }
     };
@@ -316,18 +326,19 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
                 return readCell(storage, row);
             }) ?? [];
             if (placement === "gpu") {
-                runOnGpu(values, args);
+                runOnGpu(values, args, tick);
                 return chunks;
             }
             for (const archetype of matches) {
                 if (archetype.count === 0) continue;
-                if (kernel === null) runBody(archetype, since);
+                const from = sinceFor(archetype, since);
+                if (kernel === null) runBody(archetype, from);
                 else if (workers !== null && archetype.count >= minimumFor(workers)) {
-                    chunks.push(...postChunks(workers, index, archetype, since, values, args, tick));
+                    chunks.push(...postChunks(workers, index, archetype, from, values, args, tick));
                     holder.buffer = nextBuffer();
                     chunks.push({ commands: holder.buffer });
                 }
-                else runKernelLocally(kernel, archetype, since, values, args, tick);
+                else runKernelLocally(kernel, archetype, from, values, args, tick);
             }
             return chunks;
         }

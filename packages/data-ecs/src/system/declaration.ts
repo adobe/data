@@ -10,7 +10,8 @@ export type Declaration = {
      * `lookup` must be linear and resources read-only. Without it, the system runs as written on the main thread.
      * - `"cpu"`: runs in chunks across workers, as WASM where the body allows, or on the main thread.
      * - `"gpu"`: also has no lookups, change filters, commands or loops, and only 4-byte scalar values. It runs as a
-     *   compute shader in a world with a GPU, and as a `"cpu"` kernel in one without.
+     *   compute shader in a world with a GPU, and as a `"cpu"` kernel in one without. Its writes mark whole columns
+     *   changed.
      */
     readonly kernel?: "cpu" | "gpu";
     /** Omitted for a resource-only system, which runs once per run on the main thread. */

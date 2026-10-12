@@ -1,6 +1,7 @@
 import type { Mat4x4 } from "./index.js";
+import { intrinsic } from "../intrinsic.js";
 
-export const determinant = (m: Mat4x4): number => {
+export const determinant = intrinsic({ wgsl: "determinant", parameters: ["mat4x4f"], result: "f32" }, (m: Mat4x4): number => {
     const [
         m00, m01, m02, m03,
         m10, m11, m12, m13,
@@ -22,4 +23,4 @@ export const determinant = (m: Mat4x4): number => {
     const b11 = m22 * m33 - m23 * m32;
 
     return b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
-};
+});

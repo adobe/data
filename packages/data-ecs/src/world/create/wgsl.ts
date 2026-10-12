@@ -24,6 +24,20 @@ const identifier = (name: string): string => {
     return safe.startsWith("_") ? `v${safe}` : safe;
 };
 
+/** Scalar lanes of a WGSL value type, and their element type. */
+const laneCount = (type: Program.ValueType): number => type === "mat4x4f" ? 16 : type.startsWith("vec") ? Number(type[3]) : 1;
+const elementKind = (type: Program.ValueType): "f32" | "i32" | "u32" =>
+    type === "i32" || type.endsWith("i") ? "i32" : type === "u32" || type.endsWith("u") ? "u32" : "f32";
+
+/** A lane of a value: the value itself, a vector component, or a matrix element by column and row. */
+const laneOf = (variable: string, type: Program.ValueType, lane: number): string =>
+    type === "mat4x4f" ? `${variable}[${lane >> 2}][${lane & 3}]` : laneCount(type) === 1 ? variable : `${variable}.${"xyzw"[lane]}`;
+
+type Region = Extract<Statement, { kind: "intrinsic" }>;
+
+const regionsOf = (body: readonly Statement[]): Region[] => body.flatMap(statement =>
+    statement.kind === "intrinsic" ? [statement] : statement.kind === "if" ? [...regionsOf(statement.consequent), ...regionsOf(statement.alternate)] : []);
+
 /** Rows per workgroup, and workgroups per dispatch dimension: WebGPU's default limit. */
 export const workgroupSize = 64;
 export const maximumWorkgroups = 65535;
@@ -175,6 +189,8 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
 
     const shift = (value: Value): string => `(${asUint(value)} & 31u)`;
     const localName = (local: number): string => identifier(program.names?.[local] ?? `l_${local}`);
+    const regions = new Map(regionsOf(program.body).map(region => [region.id, region]));
+    const regionName = (region: Region): string => identifier(`${region.name}_${region.id}`);
 
     /** Each local's type: an integer type when every assignment has it, else f32 (booleans as 0 or 1). */
     const localKinds: Kind[] = new Array<Kind>(program.locals).fill("f32");
@@ -200,6 +216,10 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
                 return left === kindOf(b) ? left : "f32";
             }
             case "math": return expression.name === "clz32" ? "u32" : expression.name === "imul" ? "i32" : "f32";
+            case "lane": {
+                const region = regions.get(expression.intrinsic);
+                return region === undefined ? "f32" : elementKind(region.intrinsic.result);
+            }
             case "boolean": return "bool";
             default: return "f32";
         }
@@ -316,7 +336,39 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
                 if (items.length === 2 && name === "hypot") return f32(`length(vec2f(${items[0]}, ${items[1]}))`);
                 return fail(`it uses Math.${name}, which GPU kernels don't support`);
             }
+            case "lane": {
+                const region = regions.get(expression.intrinsic);
+                if (region === undefined) return emit(expression.value);
+                const code = laneOf(regionName(region), region.intrinsic.result, expression.lane);
+                return { code, type: elementKind(region.intrinsic.result) };
+            }
             default: return fail("it uses lookups");
+        }
+    };
+
+    /** An intrinsic's operand: an earlier region's whole result, or a value built from its lanes. */
+    const operand = (lanes: readonly Expression[], type: Program.ValueType): string => {
+        const [first] = lanes;
+        const source = first?.kind === "lane" ? regions.get(first.intrinsic) : undefined;
+        if (source !== undefined && source.intrinsic.result === type
+            && lanes.every((lane, index) => lane.kind === "lane" && lane.intrinsic === source.id && lane.lane === index)) {
+            return regionName(source);
+        }
+        const kind = elementKind(type);
+        const items = lanes.map(lane => {
+            const value = emit(lane);
+            return kind === "i32" ? asInt(value) : kind === "u32" ? asUint(value) : asNumber(value);
+        });
+        return laneCount(type) === 1 ? items[0] ?? "" : `${type}(${items.join(", ")})`;
+    };
+
+    const intrinsicCall = (region: Region): string => {
+        const { operation, form, parameters } = region.intrinsic;
+        const operands = region.operands.map((lanes, index) => operand(lanes, parameters[index] ?? "f32"));
+        switch (form) {
+            case "infix": return `(${operands.join(` ${operation} `)})`;
+            case "prefix": return `(${operation}${operands[0] ?? ""})`;
+            case "call": return `${operation}(${operands.join(", ")})`;
         }
     };
 
@@ -333,14 +385,20 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
             case "if":
                 return `${indent}if (${asBool(emit(statement.test))}) {\n${statements(statement.consequent, `${indent}    `)}\n${indent}} else {\n${statements(statement.alternate, `${indent}    `)}\n${indent}}`;
             case "next": return `${indent}return;`;
+            case "intrinsic": return `${indent}${regionName(statement)} = ${intrinsicCall(statement)};`;
             default: return fail("it uses loops, labeled blocks or lookups");
         }
     }).filter(line => line.trim() !== "").join("\n");
 
     try {
-        const zero: { readonly [kind: string]: string } = { f32: "0.0", i32: "0i", u32: "0u" };
-        const locals = localKinds.map((kind, local) => `    var ${localName(local)}: ${kind} = ${zero[kind]};`).join("\n");
         const body = statements(program.body, "    ");
+        const zero: { readonly [kind: string]: string } = { f32: "0.0", i32: "0i", u32: "0u" };
+        // Locals only intrinsic bodies use aren't emitted.
+        const used = new Set(body.match(/\b\w+\b/g) ?? []);
+        const locals = [
+            ...localKinds.flatMap((kind, local) => used.has(localName(local)) ? [`    var ${localName(local)}: ${kind} = ${zero[kind]};`] : []),
+            ...[...regions.values()].map(region => `    var ${regionName(region)}: ${region.intrinsic.result};`),
+        ].join("\n");
         const code = `@group(0) @binding(0) var<storage, read_write> memory: array<u32>;
 @group(0) @binding(1) var<storage, read> parameters: array<u32>;
 ${helpers}

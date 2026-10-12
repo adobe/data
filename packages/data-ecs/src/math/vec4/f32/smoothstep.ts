@@ -1,6 +1,7 @@
 import type { F32 } from "./f32.js";
+import { intrinsic } from "../../intrinsic.js";
 
-export const smoothstep = ([e0x, e0y, e0z, e0w]: F32, [e1x, e1y, e1z, e1w]: F32, [x, y, z, w]: F32): F32 => {
+export const smoothstep = intrinsic({ wgsl: "smoothstep", parameters: ["vec4f", "vec4f", "vec4f"], result: "vec4f" }, ([e0x, e0y, e0z, e0w]: F32, [e1x, e1y, e1z, e1w]: F32, [x, y, z, w]: F32): F32 => {
     const tx = Math.max(0, Math.min(1, (x - e0x) / (e1x - e0x)));
     const ty = Math.max(0, Math.min(1, (y - e0y) / (e1y - e0y)));
     const tz = Math.max(0, Math.min(1, (z - e0z) / (e1z - e0z)));
@@ -11,4 +12,4 @@ export const smoothstep = ([e0x, e0y, e0z, e0w]: F32, [e1x, e1y, e1z, e1w]: F32,
         tz * tz * (3 - 2 * tz),
         tw * tw * (3 - 2 * tw)
     ];
-};
+});

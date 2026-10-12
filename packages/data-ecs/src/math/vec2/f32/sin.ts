@@ -1,3 +1,4 @@
 import type { F32 } from "./f32.js";
+import { intrinsic } from "../../intrinsic.js";
 
-export const sin = ([x, y]: F32): F32 => [Math.sin(x), Math.sin(y)];
+export const sin = intrinsic({ wgsl: "sin", parameters: ["vec2f"], result: "vec2f" }, ([x, y]: F32): F32 => [Math.sin(x), Math.sin(y)]);

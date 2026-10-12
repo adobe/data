@@ -1,5 +1,5 @@
 import type { BlockStatement, Expression as SourceExpression, Pattern } from 'estree';
-import type { Path } from '../world/create/kernel.js';
+import type { Path, Program } from '../world/create/kernel.js';
 import type { Expression } from './ir.js';
 import type { Module } from './module-scope.js';
 import type { Snapshot } from './snapshot.js';
@@ -18,8 +18,11 @@ export type Value =
     | { readonly kind: "snapshot"; readonly snapshot: Snapshot; readonly path: Path }
     | { readonly kind: "found"; readonly lookup: number; readonly expression: Expression }
     | { readonly kind: "lookup"; readonly lookup: number }
-    /** A helper, compiled in its own module. `identity` is unique per definition; `name` is for messages. */
-    | { readonly kind: "function"; readonly name: string; readonly identity: string; readonly params: readonly Pattern[]; readonly body: BlockStatement | SourceExpression; readonly module: Module }
+    /**
+     * A helper, compiled in its own module. `identity` is unique per definition; `name` is for messages. `intrinsic` is
+     * the WGSL builtin it matches, if its module declares one.
+     */
+    | { readonly kind: "function"; readonly name: string; readonly identity: string; readonly params: readonly Pattern[]; readonly body: BlockStatement | SourceExpression; readonly module: Module; readonly intrinsic?: Program.Intrinsic }
     /** A module namespace, such as `Vec3`, at its file. */
     | { readonly kind: "namespace"; readonly file: string }
     | { readonly kind: "method"; readonly owner: "math" | "commands"; readonly name: string }

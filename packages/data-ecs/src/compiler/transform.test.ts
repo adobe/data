@@ -10,6 +10,8 @@ import { createLinker, type LinkHost } from './link.js';
 import { packageIndex } from './paths.js';
 import { locateThroughMap } from './source-map.js';
 import { Mat4x4, Quat, Vec3 } from '../math/index.js';
+import { generateWgsl } from '../world/create/wgsl.js';
+import type { WasmColumn } from '../world/create/wasm.js';
 
 const header = `import { System } from "ecs";
 const position = "position";
@@ -162,6 +164,7 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
                     const result: unknown = Reflect.apply(method, Math, node.arguments.map(item => Number(evaluate(item))));
                     return typeof result === "number" ? result : NaN;
                 }
+                case "lane": return evaluate(node.value);
             }
         };
         const execute = (statements: readonly Program.Statement[]): Signal => {
@@ -195,6 +198,7 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
                 case "branch": return { kind: "branch", depth: statement.depth };
                 case "branchIf": return evaluate(statement.test) ? { kind: "branch", depth: statement.depth } : normal;
                 case "next": return { kind: "next" };
+                case "intrinsic": return execute(statement.body);
                 case "find": {
                     const lookup = lookups[statement.lookup];
                     if (lookup === undefined) throw new Error(`no lookup ${statement.lookup}`);
@@ -785,6 +789,23 @@ describe("math builtins", () => {
         const q = Quat.fromAxisAngle([0, 0, 1], Math.PI / 2);
         const m = Mat4x4.multiply(Mat4x4.translation(1, 2, 3), Mat4x4.scaling(2, 2, 2));
         expect(results(result)).toEqual([0, 1, 2].map(row => [...Mat4x4.multiplyVec3(m, Quat.rotateVec3(q, at(row)))]));
+    });
+
+    test("in GPU kernels, become regions WGSL emits as builtins, and other backends run as the inlined body", async () => {
+        const body = `(row) => { row[position] = Vec3.scale(Vec3.normalize(Vec3.cross(row[position], row[velocity])), Vec3.dot(row[position], row[velocity])); }`;
+        const declaration = `query: { read: [position, velocity], write: [position] }`;
+        const gpu = await compile(`${math}const kernel = System.create({ name: "a", kernel: "gpu", ${declaration} }, ${body});`);
+        const cpu = await compile(`${math}const kernel = System.create({ name: "a", kernel: "cpu", ${declaration} }, ${body});`);
+        const regions = (gpu.program?.body ?? []).flatMap(statement => statement.kind === "intrinsic" ? [statement.intrinsic.operation] : []);
+        expect(regions).toEqual(["cross", "normalize", "dot", "*"]);
+        expect((cpu.program?.body ?? []).some(statement => statement.kind === "intrinsic")).toBe(false);
+        const fields = { position: points, velocity: vec3([0.5, 1, 2], [1, 0, -1], [3, -2, 0]) };
+        expect(results(run(gpu, 3, fields))).toEqual(results(run(cpu, 3, fields)));
+        const columns = gpu.columns.map((column): WasmColumn => ({ view: column.kind === "field" ? "f32" : "f64", stride: 4, offset: 0, boolean: false, component: 0 }));
+        const shader = gpu.program === null ? "" : generateWgsl(gpu.program, columns, () => "number");
+        const code = typeof shader === "string" ? shader : shader.code;
+        expect(code).toMatch(/(normalize_\d+) = normalize\((cross_\d+)\);/);
+        expect(code).toMatch(/= \(normalize_\d+ \* dot_\d+\);/);
     });
 
     test("that leave the kernel subset fail with the function's reason", async () => {

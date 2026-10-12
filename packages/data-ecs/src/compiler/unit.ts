@@ -20,6 +20,8 @@ export type Unit = {
     readonly module: Module;
     /** Other modules, for functions and constants the kernel imports. */
     readonly link: Link | null;
+    /** GPU kernels emit intrinsic regions for calls to functions that match WGSL builtins. */
+    readonly target: "cpu" | "gpu";
     /** Column descriptions as source text, in `columns` order, indexed by an identity key. */
     readonly columns: string[];
     readonly columnIndex: Map<string, number>;
@@ -45,10 +47,10 @@ export type Unit = {
     readonly statement: StatementCompiler;
 };
 
-export const createUnit = (signature: Signature, module: Module, expression: ExpressionCompiler, statement: StatementCompiler, link: Link | null = null): Unit => {
+export const createUnit = (signature: Signature, module: Module, expression: ExpressionCompiler, statement: StatementCompiler, link: Link | null = null, target: "cpu" | "gpu" = "cpu"): Unit => {
     let counter = 0;
     return {
-        signature, module, link, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names: new Map(), shapes: new Set(), keys: [], active: new Set(),
+        signature, module, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names: new Map(), shapes: new Set(), keys: [], active: new Set(),
         next: () => counter++, expression, statement,
     };
 };

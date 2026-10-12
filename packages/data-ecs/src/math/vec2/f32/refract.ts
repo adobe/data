@@ -2,8 +2,9 @@ import type { F32 } from "./f32.js";
 import { dot } from "./dot.js";
 import { scale } from "./scale.js";
 import { subtract } from "./subtract.js";
+import { intrinsic } from "../../intrinsic.js";
 
-export const refract = (i: F32, n: F32, eta: number): F32 => {
+export const refract = intrinsic({ wgsl: "refract", parameters: ["vec2f", "vec2f", "f32"], result: "vec2f" }, (i: F32, n: F32, eta: number): F32 => {
     const dotProduct = dot(n, i);
     const k = 1.0 - eta * eta * (1.0 - dotProduct * dotProduct);
     if (k < 0.0) {
@@ -11,4 +12,4 @@ export const refract = (i: F32, n: F32, eta: number): F32 => {
     }
     const scaleFactor = eta * dotProduct + Math.sqrt(k);
     return subtract(scale(i, eta), scale(n, scaleFactor));
-};
+});

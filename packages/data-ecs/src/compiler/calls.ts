@@ -2,9 +2,11 @@ import type { SimpleCallExpression, Expression as SourceExpression, Node, Spread
 import { mergeBranches } from './branches.js';
 import { bind } from './bind.js';
 import { observe, set } from './booleans.js';
-import { materialize, toData } from './data.js';
+import { access } from './access.js';
+import { dataValue, leavesOf, mapLeaves, materialize, toData } from './data.js';
 import { fail, within } from './failure.js';
-import { local, type Expression, type Statement } from './ir.js';
+import { local, references, type Expression, type Statement } from './ir.js';
+import type { Program } from '../world/create/kernel.js';
 import type { Out } from './out.js';
 import { frameIn } from './module-value.js';
 import { scalar } from './scalar.js';
@@ -127,6 +129,52 @@ const helperBlock = (name: string, segments: readonly Segment[], node: Node, out
     return helperBlock(name, after, node, out);
 };
 
+/** Scalar lanes of a WGSL value type. */
+const laneCount = (type: Program.ValueType): number => type === "mat4x4f" ? 16 : type.startsWith("vec") ? Number(type[3]) : 1;
+
+/** An argument's lanes as an intrinsic operand of `type`, or null if its shape doesn't match. */
+const operandLanes = (value: Value, type: Program.ValueType, node: SimpleCallExpression, scope: Scope): readonly Expression[] | null => {
+    const isLeaf = (item: Value): boolean => ["scalar", "dynamic", "found", "component", "snapshot"].includes(item.kind);
+    const count = laneCount(type);
+    if (count === 1) return isLeaf(value) ? [scalar(value, node, scope)] : null;
+    if (value.kind === "tuple") return value.items.length === count && value.items.every(isLeaf) ? value.items.map(item => scalar(item, node, scope)) : null;
+    if (value.kind === "component" || value.kind === "snapshot" || value.kind === "dynamic") {
+        return Array.from({ length: count }, (_, index) => scalar(access(value, { kind: "static", name: index }, node, scope, false), node, scope));
+    }
+    return null;
+};
+
+/**
+ * A GPU kernel's call to a function that matches a WGSL builtin, as an intrinsic region: its operands, and its inlined
+ * body, whose result lanes the region names. Each operand lane is read once by each backend where the call is: by the
+ * builtin, or by the body binding its parameters. Null where the call doesn't fit the declaration, so it is inlined
+ * as usual.
+ */
+const intrinsicCall = (helper: Extract<Value, { kind: "function" }>, intrinsic: Program.Intrinsic, values: readonly Value[], node: SimpleCallExpression, scope: Scope, out: Out, compile: (bind: (index: number) => Value, bodyOut: Out) => Value): Value | null => {
+    const unit = scope.unit;
+    if (intrinsic.parameters.length !== helper.params.length || values.length !== helper.params.length) return null;
+    const lanes = intrinsic.parameters.map((type, index) => operandLanes(values[index], type, node, scope));
+    if (lanes.some(item => item === null)) return null;
+    const operands = lanes.map(item => item ?? []);
+    const body: Out = [];
+    const result = toData(compile(index => {
+        const [first, ...rest] = operands[index] ?? [];
+        return first !== undefined && rest.length === 0 && laneCount(intrinsic.parameters[index] ?? "f32") === 1
+            ? scalarValue(first)
+            : { kind: "tuple", items: (operands[index] ?? []).map(scalarValue) };
+    }, body), node, scope);
+    const leaves = leavesOf(result);
+    const flat = laneCount(intrinsic.result) === 1 ? result.kind === "leaf" : result.kind === "tuple" && result.items.every(item => item.kind === "leaf");
+    if (!flat || leaves.length !== laneCount(intrinsic.result) || leaves.some(leaf => references(leaf.expression, item => item.kind === "column"))) {
+        out.push(...body);
+        return dataValue(result);
+    }
+    const id = unit.next();
+    out.push({ kind: "intrinsic", id, name: helper.name, intrinsic, operands, body });
+    let lane = 0;
+    return dataValue(mapLeaves(result, value => ({ kind: "lane", intrinsic: id, lane: lane++, value })));
+};
+
 /** Inlines a helper: arguments are bound to fresh parameter locals, and the body is compiled in the helper's own scope. */
 const inline = (helper: Extract<Value, { kind: "function" }>, node: SimpleCallExpression, scope: Scope, out: Out): Value => {
     const unit = scope.unit;
@@ -135,14 +183,19 @@ const inline = (helper: Extract<Value, { kind: "function" }>, node: SimpleCallEx
     const values = node.arguments.map(item => unit.expression(argument(item), scope, out));
     if (values.length < helper.params.length) return fail(node, `${helper.name} needs ${helper.params.length} arguments`);
     unit.active.add(helper.identity);
-    const compile = (): Value => {
-        const inner = rootScope(unit, true, helper.module);
-        helper.params.forEach((param, index) => bind(param, values[index] ?? fail(node, `${helper.name} needs ${helper.params.length} arguments`), "parameter", inner, out));
-        return helper.body.type === "BlockStatement"
-            ? helperBlock(helper.name, [{ statements: helper.body.body, scope: inner }], helper.body, out)
-            : unit.expression(helper.body, inner, out);
+    const body = (argumentOf: (index: number) => Value, bodyOut: Out): Value => {
+        const compile = (): Value => {
+            const inner = rootScope(unit, true, helper.module);
+            helper.params.forEach((param, index) => bind(param, argumentOf(index), "parameter", inner, bodyOut));
+            return helper.body.type === "BlockStatement"
+                ? helperBlock(helper.name, [{ statements: helper.body.body, scope: inner }], helper.body, bodyOut)
+                : unit.expression(helper.body, inner, bodyOut);
+        };
+        return helper.module === scope.module ? compile() : within(node, frameIn(helper.module, helper.name), compile);
     };
-    const result = helper.module === scope.module ? compile() : within(node, frameIn(helper.module, helper.name), compile);
+    const argumentOf = (index: number): Value => values[index] ?? fail(node, `${helper.name} needs ${helper.params.length} arguments`);
+    const result = (unit.target === "gpu" && helper.intrinsic !== undefined ? intrinsicCall(helper, helper.intrinsic, values, node, scope, out, body) : null)
+        ?? body(argumentOf, out);
     unit.active.delete(helper.identity);
     return result;
 };

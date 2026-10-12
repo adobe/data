@@ -64,6 +64,20 @@ export type KernelCommands = {
  * typed as booleans where the generator needs to tell them apart. Control flow mirrors WASM's structured blocks.
  */
 export namespace Program {
+    /** A WGSL value type an intrinsic takes or returns, made of one lane per scalar leaf. */
+    export type ValueType =
+        | "f32" | "i32" | "u32"
+        | "vec2f" | "vec3f" | "vec4f" | "vec2i" | "vec3i" | "vec4i" | "vec2u" | "vec3u" | "vec4u"
+        | "mat4x4f";
+
+    /** A WGSL builtin a function matches: `operation(operands)`, or an operator between or before them. */
+    export type Intrinsic = {
+        readonly operation: string;
+        readonly form: "call" | "infix" | "prefix";
+        readonly parameters: readonly ValueType[];
+        readonly result: ValueType;
+    };
+
     export type Expression =
         | { readonly kind: "number"; readonly value: number }
         | { readonly kind: "boolean"; readonly value: boolean }
@@ -91,7 +105,9 @@ export namespace Program {
          * A scalar leaf of a found entity: component `read` (an index into the lookup's `read` list), at `path` within it.
          * Reads NaN if nothing was found, as `undefined` does in arithmetic.
          */
-        | { readonly kind: "lookupLeaf"; readonly handle: number; readonly read: number; readonly path: Path };
+        | { readonly kind: "lookupLeaf"; readonly handle: number; readonly read: number; readonly path: Path }
+        /** Lane `lane` of intrinsic region `intrinsic`'s result, which `value` computes from the region's body. */
+        | { readonly kind: "lane"; readonly intrinsic: number; readonly lane: number; readonly value: Expression };
 
     export type Statement =
         | { readonly kind: "set"; readonly local: number; readonly value: Expression }
@@ -110,14 +126,19 @@ export namespace Program {
         /** Ends the current row. */
         | { readonly kind: "next" }
         /** Looks `entity` up through lookup `lookup` (an index into `KernelDescription.lookups`), into `handle`. */
-        | { readonly kind: "find"; readonly handle: number; readonly lookup: number; readonly entity: Expression };
+        | { readonly kind: "find"; readonly handle: number; readonly lookup: number; readonly entity: Expression }
+        /**
+         * A call to a function that matches a WGSL builtin. `body` is the function inlined; `operands` are its arguments'
+         * lanes. WGSL emits the builtin and reads its result's lanes; other backends run `body` and read each lane's `value`.
+         */
+        | { readonly kind: "intrinsic"; readonly id: number; readonly name: string; readonly intrinsic: Intrinsic; readonly operands: readonly (readonly Expression[])[]; readonly body: readonly Statement[] };
 }
 
 /**
  * Scalar locals, lookup handles, and the row body, in the order JS evaluates it. `names` are the locals' JS names,
  * for readable generated code; GPU kernels carry them.
  */
-export type Program = { readonly locals: number; readonly handles?: number; readonly names?: readonly string[]; readonly body: readonly Program.Statement[] };
+export type Program = { readonly locals: number; readonly handles?: number; readonly names?: readonly string[]; readonly intrinsics?: number; readonly body: readonly Program.Statement[] };
 
 /** What the compiler emits for one kernel system. */
 export type KernelDescription = {

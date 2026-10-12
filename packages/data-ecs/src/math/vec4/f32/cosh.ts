@@ -1,3 +1,4 @@
 import type { F32 } from "./f32.js";
+import { intrinsic } from "../../intrinsic.js";
 
-export const cosh = ([x, y, z, w]: F32): F32 => [Math.cosh(x), Math.cosh(y), Math.cosh(z), Math.cosh(w)];
+export const cosh = intrinsic({ wgsl: "cosh", parameters: ["vec4f"], result: "vec4f" }, ([x, y, z, w]: F32): F32 => [Math.cosh(x), Math.cosh(y), Math.cosh(z), Math.cosh(w)]);

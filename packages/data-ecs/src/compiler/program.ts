@@ -121,10 +121,15 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
                 return items && { kind: "math", name: node.name, arguments: items };
             }
             case "observe": return expression(node.value, guards, test);
+            case "lane": {
+                const value = expression(node.value, guards, false);
+                return value && { kind: "lane", intrinsic: node.intrinsic, lane: node.lane, value };
+            }
             case "element": return leaf(node, guards) ?? undefined;
             default: return undefined;
         }
     };
+    let intrinsics = 0;
     const exits = (body: readonly Statement[]): boolean => body[body.length - 1]?.kind === "next";
     const block = (body: readonly Statement[], labels: readonly number[], outer: Guards): Program.Statement[] | undefined => {
         let guards = outer;
@@ -168,6 +173,12 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
                 return body && [{ kind: node.kind, body }];
             }
             case "branch": return [{ kind: "branch", depth: depth(node.label, labels) }];
+            case "intrinsic": {
+                const operands = all(node.operands, lanes => all(lanes, lane => expression(lane, guards, false)));
+                const body = block(resolve(node.body), labels, guards);
+                intrinsics = Math.max(intrinsics, node.id + 1);
+                return operands && body && [{ kind: "intrinsic", id: node.id, name: node.name, intrinsic: node.intrinsic, operands, body }];
+            }
             case "branchIf": {
                 const test = expression(node.test, guards, true);
                 return test && [{ kind: "branchIf", depth: depth(node.label, labels), test }];
@@ -183,8 +194,9 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
     };
     const body = block(statements, [], none);
     if (body === undefined) return null;
-    if (nameOf === undefined) return { locals: locals.size, handles: handles.size, body };
+    const counted = intrinsics === 0 ? {} : { intrinsics };
+    if (nameOf === undefined) return { locals: locals.size, handles: handles.size, ...counted, body };
     const names: string[] = [];
     for (const [original, dense] of locals) names[dense] = nameOf(original);
-    return { locals: locals.size, handles: handles.size, names, body };
+    return { locals: locals.size, handles: handles.size, names, ...counted, body };
 };

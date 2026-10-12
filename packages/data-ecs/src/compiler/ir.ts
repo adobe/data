@@ -1,5 +1,5 @@
 import type { BinaryOperator } from 'estree';
-import type { Path } from '../world/create/kernel.js';
+import type { Path, Program } from '../world/create/kernel.js';
 import type { Out } from './out.js';
 
 export type Binary = Exclude<BinaryOperator, "in" | "instanceof">;
@@ -32,6 +32,7 @@ export type Expression =
     | { readonly kind: "math"; readonly name: string; readonly arguments: readonly Expression[] }
     /** Reads inside convert boolean columns to booleans: a position where `true` and `1` differ. */
     | { readonly kind: "observe"; readonly value: Expression }
+    | { readonly kind: "lane"; readonly intrinsic: number; readonly lane: number; readonly value: Expression }
     // JS only:
     | { readonly kind: "nullish"; readonly value: "null" | "undefined" }
     | { readonly kind: "string"; readonly value: string }
@@ -52,6 +53,8 @@ export type Statement =
     | { readonly kind: "branch"; readonly label: number }
     | { readonly kind: "branchIf"; readonly label: number; readonly test: Expression }
     | { readonly kind: "next" }
+    /** An intrinsic region, as in `Program`; only GPU kernels have them. */
+    | { readonly kind: "intrinsic"; readonly id: number; readonly name: string; readonly intrinsic: Program.Intrinsic; readonly operands: readonly (readonly Expression[])[]; readonly body: Out }
     // JS only:
     | { readonly kind: "lookup"; readonly local: number; readonly lookup: number; readonly entity: Expression }
     /** `KernelCommands`: `spawn` reserves an entity and starts its spawn; `begin` starts a despawn (1), add (2) or remove (3). */
@@ -74,7 +77,7 @@ export const references = (expression: Expression, matches: (node: Expression) =
         case "binary": case "logical": return references(expression.left, matches) || references(expression.right, matches);
         case "conditional": return [expression.test, expression.consequent, expression.alternate].some(item => references(item, matches));
         case "math": return expression.arguments.some(item => references(item, matches));
-        case "observe": return references(expression.value, matches);
+        case "observe": case "lane": return references(expression.value, matches);
         case "element": return references(expression.object, matches) || references(expression.index, matches);
         case "array": return expression.items.some(item => references(item, matches));
         case "record": return expression.fields.some(([, item]) => references(item, matches));

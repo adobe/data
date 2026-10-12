@@ -16,6 +16,8 @@ const code = "gpuTest/code";
 const amount = "gpuTest/amount";
 const flag = "gpuTest/flag";
 const followed = "gpuTest/followed";
+const bits = "gpuTest/bits";
+const sums = "gpuTest/sums";
 
 declare module "../../component/types.js" {
     export interface Types {
@@ -27,6 +29,8 @@ declare module "../../component/types.js" {
         [amount]: number;
         [flag]: boolean;
         [followed]: number;
+        [bits]: Vec3.U32;
+        [sums]: Vec3.I32;
     }
 }
 declare module "../../system/types.js" {
@@ -56,6 +60,9 @@ declare module "../../system/types.js" {
         "gpuTest/churn": true;
         "gpuTest/invalid": true;
         "gpuTest/transform": true;
+        "gpuTest/spawnIntegers": true;
+        "gpuTest/integers": true;
+        "gpuTest/shading": true;
     }
 }
 
@@ -178,6 +185,39 @@ const transform = System.create({ name: "gpuTest/transform", kernel: "gpu", quer
     const q = Quat.fromAxisAngle([0, 1, 0], 0.5);
     const m = Mat4x4.multiply(Mat4x4.translation(1, 2, 3), Mat4x4.scaling(2, 2, 2));
     row[position] = Vec3.add(Mat4x4.multiplyVec3(m, Quat.rotateVec3(q, row[position])), Vec3.normalize(row[velocity]));
+});
+
+Component.register(bits, Vec3.U32.schema);
+Component.register(sums, Vec3.I32.schema);
+
+const spawnIntegers = System.create({ name: "gpuTest/spawnIntegers" }, (_, __, commands) => {
+    for (let i = 0; i < 100; i++) {
+        commands.spawn({ [bits]: [Math.imul(i + 1, 0x9E3779B9) >>> 0, (0xFFFFFFFF - i) >>> 0, (i << 26) >>> 0], [sums]: [2 ** 31 - 1 - i, -(2 ** 31) + i, Math.imul(i, 65536)] });
+    }
+});
+
+/** Integer builtins, which wrap and count bits as the functions do. */
+const integers = System.create({ name: "gpuTest/integers", kernel: "gpu", query: { read: [bits, sums], write: [bits, sums] } }, row => {
+    const b = row[bits];
+    const s = row[sums];
+    row[bits] = Vec3.U32.add(Vec3.U32.countOneBits(b), Vec3.U32.add(Vec3.U32.countTrailingZeros(b), Vec3.U32.multiply(Vec3.U32.reverseBits(b), Vec3.U32.bitwiseXor(b, [7, 7, 7]))));
+    row[sums] = Vec3.I32.add(Vec3.I32.multiply(s, [65536, 3, 65536]), Vec3.I32.abs(Vec3.I32.negate(s)));
+});
+
+/** Float builtins across vectors, quaternions and matrices, on in-domain inputs. */
+const shading = System.create({ name: "gpuTest/shading", kernel: "gpu", query: { read: [position, velocity], write: [position] } }, row => {
+    const p = row[position];
+    const v = Vec3.add(row[velocity], [0.25, 0.5, 0.75]);
+    const n = Vec3.normalize(v);
+    const lit = Vec3.smoothstep([0, 0, 0], [4, 4, 4], Vec3.abs(p));
+    const bent = Vec3.add(Vec3.reflect(n, [0, 1, 0]), Vec3.faceforward(n, [1, 0, 0], [0, 0, 1]));
+    const mixed = Vec3.mix(Vec3.round(Vec3.scale(p, 0.5)), Vec3.fract(p), 0.25);
+    const clamped = Vec3.clamp(Vec3.add(Vec3.min(p, v), Vec3.max(p, v)), [-2, -2, -2], [2, 2, 2]);
+    const m = Mat4x4.transpose(Mat4x4.multiply(Mat4x4.translation(1, 2, 3), Mat4x4.rotationY(0.5)));
+    const [x, y, z] = Mat4x4.multiplyVec4(m, [p[0], p[1], p[2], 1]);
+    const q = Quat.normalize([v[0], v[1], v[2], 1]);
+    const weight = Vec3.distance(p, v) * 0.01 + Vec3.length(lit) + Quat.dot(q, q) + Mat4x4.determinant(m) + Vec3.step([0, 0, 0], p)[0];
+    row[position] = Vec3.add(Vec3.add(Vec3.add(lit, bent), Vec3.add(mixed, clamped)), Vec3.scale([x, y, z], weight));
 });
 
 /** Reads the entity, an f64. */
@@ -357,6 +397,39 @@ describe("GPU kernels", () => {
         expect(gpu.length).toBe(cpu.length);
         const worst = Math.max(...gpu.map((value, i) => Math.abs(value - cpu[i]) / Math.max(1, Math.abs(cpu[i]))));
         expect(worst).toBeLessThan(1e-5);
+        await gpuWorld.dispose();
+        await cpuWorld.dispose();
+    });
+
+    it("emit WGSL builtins for integer math, which wraps and counts bits as the CPU does", async () => {
+        const gpuWorld = createWorld({ gpu: { device: await device() } });
+        const cpuWorld = createWorld({ workers: 0 });
+        for (const world of [gpuWorld, cpuWorld]) {
+            await world.systems.register(spawnIntegers, integers);
+            await world.run(spawnIntegers);
+            await world.run(integers);
+        }
+        await gpuWorld.synchronize([bits, sums]);
+        const read = (world: ReturnType<typeof createWorld>): unknown[] => world.query.select([bits]).map(entity => world.read.entity(entity, [bits, sums]));
+        expect(read(gpuWorld)).toEqual(read(cpuWorld));
+        await gpuWorld.dispose();
+        await cpuWorld.dispose();
+    });
+
+    it("emit WGSL builtins for float math, within f32 precision of the CPU", async () => {
+        const gpuWorld = createWorld({ gpu: { device: await device() } });
+        const cpuWorld = createWorld({ workers: 0 });
+        for (const world of [gpuWorld, cpuWorld]) {
+            await world.systems.register(spawn, shading);
+            await world.run(spawn);
+            await world.run(shading);
+        }
+        await gpuWorld.synchronize([position]);
+        const gpu = positions(gpuWorld).flat();
+        const cpu = positions(cpuWorld).flat();
+        expect(gpu.length).toBe(cpu.length);
+        const worst = Math.max(...gpu.map((value, i) => Math.abs(value - cpu[i]) / Math.max(1, Math.abs(cpu[i]))));
+        expect(worst).toBeLessThan(1e-4);
         await gpuWorld.dispose();
         await cpuWorld.dispose();
     });

@@ -32,6 +32,7 @@ export const printExpression = (unit: Unit, expression: Expression, observed: bo
         case "conditional": return `(${print(expression.test)} ? ${print(expression.consequent)} : ${print(expression.alternate)})`;
         case "math": return `Math.${expression.name}(${expression.arguments.map(print).join(", ")})`;
         case "observe": return printExpression(unit, expression.value, true);
+        case "lane": return print(expression.value);
         case "nullish": return expression.value;
         case "string": return JSON.stringify(expression.value);
         case "element": return `${print(expression.object)}${expression.optional ? "?." : ""}[${print(expression.index)}]`;
@@ -74,6 +75,7 @@ const printStatement = (unit: Unit, statement: Statement, labels: Labels): strin
         case "branch": return branch(statement.label);
         case "branchIf": return `if (${value(statement.test)}) ${branch(statement.label)}`;
         case "next": return `continue ${rowLabel};`;
+        case "intrinsic": return printStatements(unit, statement.body, labels);
         case "lookup": return `const ${localName(unit, statement.local)} = l${statement.lookup}(${value(statement.entity)});`;
         case "spawn": return `const ${localName(unit, statement.local)} = commands.spawn();`;
         case "begin": return `commands.begin(${statement.command}, ${value(statement.entity)});`;

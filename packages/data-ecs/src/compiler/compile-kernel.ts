@@ -25,7 +25,10 @@ const parameterValues: readonly Value[] = [{ kind: "row" }, { kind: "context" },
  */
 export type CompiledKernel = { readonly description: (url: string) => string; readonly create: string };
 
-/** Statements a GPU kernel can't contain: WGSL has no labeled multi-level branches, and loops aren't supported yet. */
+/**
+ * Statements a GPU kernel can't contain: WGSL has no labeled multi-level branches, and loops aren't supported yet.
+ * Intrinsic regions emit their builtin, not their body.
+ */
 const loops = (statements: readonly Program.Statement[]): boolean => statements.some(statement => {
     switch (statement.kind) {
         case "block": case "loop": case "branch": case "branchIf": case "find": return true;
@@ -41,7 +44,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     }
     if (body.async || body.generator) return fail(body, "a kernel body can't be async or a generator");
     if (body.params.length > 3) return fail(body, "a kernel body takes row, context and commands");
-    const unit = createUnit(signature(declaration, module.bindings), module, expression, statement, link);
+    const unit = createUnit(signature(declaration, module.bindings), module, expression, statement, link, target);
     const scope = rootScope(unit, false);
     const prelude: Out = [];
     const rows: Out = [];

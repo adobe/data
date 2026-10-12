@@ -1,7 +1,8 @@
 import type { Mat4x4 } from "./index.js";
+import { intrinsic } from "../intrinsic.js";
 
 /** `a * b`: column `j` row `i` is the dot of row `i` of `a` and column `j` of `b`. */
-export const multiply = (a: Mat4x4, b: Mat4x4): Mat4x4 => [
+export const multiply = intrinsic({ wgsl: "*", form: "infix", parameters: ["mat4x4f", "mat4x4f"], result: "mat4x4f" }, (a: Mat4x4, b: Mat4x4): Mat4x4 => [
     a[0] * b[0] + a[4] * b[1] + a[8] * b[2] + a[12] * b[3],
     a[1] * b[0] + a[5] * b[1] + a[9] * b[2] + a[13] * b[3],
     a[2] * b[0] + a[6] * b[1] + a[10] * b[2] + a[14] * b[3],
@@ -18,4 +19,4 @@ export const multiply = (a: Mat4x4, b: Mat4x4): Mat4x4 => [
     a[1] * b[12] + a[5] * b[13] + a[9] * b[14] + a[13] * b[15],
     a[2] * b[12] + a[6] * b[13] + a[10] * b[14] + a[14] * b[15],
     a[3] * b[12] + a[7] * b[13] + a[11] * b[14] + a[15] * b[15],
-];
+]);

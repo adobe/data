@@ -13,6 +13,11 @@ export const attachKernelPath = posix(fileURLToPath(new URL(`../world/create/att
 /** The runtime hook for spawns whose values pass positionally. */
 export const prepareSpawnPath = posix(fileURLToPath(new URL(`../world/create/prepared-spawn${extension}`, import.meta.url)));
 
+const intrinsicModules: ReadonlySet<string> = new Set(["src/math/intrinsic.ts", "src/math/intrinsic.js", "dist/math/intrinsic.js"].map(path => `${packageRoot}/${path}`));
+
+/** Whether a file is the module math functions declare their WGSL builtins with. */
+export const isIntrinsicModule = (file: string): boolean => intrinsicModules.has(posix(file));
+
 /** The package root's module, for kernels that import the package when a build treats it as external. */
 export const packageIndex = posix(fileURLToPath(new URL(`../index${extension}`, import.meta.url)));
 

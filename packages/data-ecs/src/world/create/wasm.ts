@@ -1,5 +1,6 @@
 import { chunkShift, type Program } from './kernel.js';
 import type { View } from '../../layout/layout.js';
+import { withoutIntrinsics } from './intrinsics.js';
 
 type Expression = Program.Expression;
 type Statement = Program.Statement;
@@ -148,13 +149,14 @@ const join = (a: Type, b: Type): Type => a === b ? a : "mixed";
  * The exported `run(start, end, tick, ...columnAddresses, ...scalars)` processes rows `start` to `end`.
  */
 export const generateWasm = (
-    program: Program,
+    source: Program,
     columns: readonly WasmColumn[],
     scalarTypes: (scalar: WasmScalar) => Type | null,
     simdEnabled = true,
     filters = 0,
     lookups: readonly WasmLookup[] = [],
 ): WasmKernel | null => {
+    const program = withoutIntrinsics(source);
     const scalars: WasmScalar[] = [];
     const scalarIndex = new Map<string, number>();
     const imports: string[] = [];
@@ -212,6 +214,8 @@ export const generateWasm = (
                 const leaf = lookup === undefined ? null : lookups[lookup]?.leaf(expression.read, expression.path);
                 return leaf?.boolean === true ? "boolean" : "number";
             }
+            // Regions are inlined before generating.
+            case "lane": throw unsupported;
         }
     };
     const inferLocals = (statements: readonly Statement[]): boolean => {

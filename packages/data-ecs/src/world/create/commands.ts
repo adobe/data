@@ -1,9 +1,14 @@
 import type { Commands } from '../../system/commands.js';
 import { addCommand, despawnCommand, pushCommand, pushComponent, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { hasSymbolNames } from '../../registry/create-registry.js';
-import { spawnShapeOf, stageShape, stageSpawn } from './batches.js';
+import { stageSpawn } from './batches.js';
 import { reserve } from './entities.js';
 import { idOf, type Key, type State } from './state.js';
+
+/** Where a world's commands queue: on the commands object under a symbol, so prepared spawns find it in one read. */
+export const commandsTarget = Symbol("commandsTarget");
+
+export type CommandsTarget = { readonly state: State; readonly target: { readonly buffer: CommandBuffer } };
 
 const collect = (state: State, buffer: CommandBuffer, key: Key, value: unknown): void => {
     if (value !== undefined) pushComponent(buffer, idOf(state, key), value);
@@ -30,19 +35,12 @@ export const pushValues = (state: State, buffer: CommandBuffer, kind: number, en
 };
 
 /** Commands that queue for the next sync point. Unregistered components throw here, inside the issuing system. */
-export const createCommands = (state: State, target: { readonly buffer: CommandBuffer }): Commands => ({
+export const createCommands = (state: State, target: { readonly buffer: CommandBuffer }): Commands & { readonly [commandsTarget]: CommandsTarget } => ({
+    [commandsTarget]: { state, target },
     spawn: values => {
         const entity = reserve(state.entities);
         if (!stageSpawn(state, entity, values)) pushValues(state, target.buffer, spawnCommand, entity, values);
         return entity;
-    },
-    spawner: components => {
-        const shape = spawnShapeOf(state, components);
-        return values => {
-            const entity = reserve(state.entities);
-            if (shape === null || !stageShape(shape, entity, values)) pushValues(state, target.buffer, spawnCommand, entity, values);
-            return entity;
-        };
     },
     despawn: entity => {
         pushCommand(target.buffer, despawnCommand, entity);

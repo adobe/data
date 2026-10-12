@@ -33,17 +33,13 @@ export type SpawnBatch = {
 };
 
 /**
- * Writes one spawn's values into row `row` of its batch's columns; false, at the first `undefined` value, when the
- * spawn must use commands instead.
+ * Writes one value into row `row` of a column, specialized to the column's layout when the shape is resolved; false,
+ * having written nothing, at an `undefined` value, which leaves the component out.
  */
-type Stage = (values: { readonly [key: string]: unknown }, row: number, columns: readonly Column[], write: typeof writeColumn) => boolean;
+export type Writer = (row: number, value: unknown) => boolean;
 
-/**
- * A spawn's own key order, resolved to its batch's columns; `batch` is null when spawns of these keys use commands.
- * `stage` is generated for the shape when the platform allows it, so each value is a read of a fixed property name and
- * a store at baked-in offsets.
- */
-export type Shape = { readonly keys: readonly string[]; readonly batch: SpawnBatch | null; readonly columns: readonly number[]; readonly stage: Stage | null };
+/** A spawn's own key order, resolved to a writer per key into its batch; `batch` is null when spawns of these keys use commands. */
+export type Shape = { readonly keys: readonly (string | symbol)[]; readonly batch: SpawnBatch | null; readonly writers: readonly Writer[] };
 
 const initialCapacity = 64;
 
@@ -66,45 +62,16 @@ const batchOf = (state: State, ids: readonly number[]): SpawnBatch => {
 };
 
 /** Resolves a key list to a shape. Throws for an unregistered key, as a command would. */
-const shapeOf = (state: State, keys: readonly string[]): Shape => {
+const shapeOf = (state: State, keys: readonly (string | symbol)[]): Shape => {
     const ids = keys.map(key => idOf(state, key));
     // The resource entity's components never take part in spawns.
-    if (ids.some(id => state.resources.has(id))) return { keys, batch: null, columns: [], stage: null };
+    if (ids.some(id => state.resources.has(id))) return { keys, batch: null, writers: [] };
     const batch = batchOf(state, ids);
-    const columns = ids.map(id => batch.ids.indexOf(id));
-    return { keys, batch, columns, stage: generateStage(keys, columns.map(c => batch.columns[c]), columns) };
-};
-
-const views: { readonly [write: number]: string } = { [writeF32]: "f32", [writeU32]: "u32", [writeI32]: "i32", [writeF64]: "f64" };
-
-/** Straight-line staging for one key list, or null where code generation isn't allowed (a content security policy). */
-const generateStage = (keys: readonly string[], columns: readonly Column[], indexes: readonly number[]): Stage | null => {
-    const lines = keys.map((key, k) => {
-        const column = columns[k];
-        const value = `v${k}`;
-        const target = `columns[${indexes[k]}]`;
-        const index = `row * ${column.unitStride} + ${column.unitOffset}`;
-        const read = `const ${value} = values[${JSON.stringify(key)}]; if (${value} === undefined) return false;`;
-        const view = views[column.write];
-        if (view !== undefined) return `${read} if (typeof ${value} === "number") ${target}.views.${view}[${index}] = ${value}; else write(${target}, row, ${value});`;
-        if (column.write === writeF32Lanes) {
-            const lanes = Array.from({ length: column.lanes }, (_, lane) => `t[i + ${lane}] = Number(${value}[${lane}]);`).join(" ");
-            return `${read} if (Array.isArray(${value})) { const t = ${target}.views.f32; const i = ${index}; ${lanes} } else write(${target}, row, ${value});`;
-        }
-        return `${read} write(${target}, row, ${value});`;
-    });
-    try {
-        // Generated from registered keys, escaped as string literals, and layout numbers.
-        const stage: Stage = new Function("values", "row", "columns", "write", `${lines.join("\n")}\nreturn true;`) as Stage;
-        return stage;
-    }
-    catch {
-        return null;
-    }
+    return { keys, batch, writers: ids.map(id => writerOf(batch.columns[batch.ids.indexOf(id)])) };
 };
 
 /** The last eight key lists spawned, replaced round-robin: spawn sites name the same keys in the same order. */
-const shapeFor = (state: State, keys: readonly string[]): Shape => {
+const shapeFor = (state: State, keys: readonly (string | symbol)[]): Shape => {
     const { spawnShapes } = state;
     const last = keys.length - 1;
     for (let s = 0; s < spawnShapes.length; s++) {
@@ -132,6 +99,36 @@ const grow = (batch: SpawnBatch): void => {
     entities.set(batch.entities.subarray(0, batch.count));
     batch.entities = entities;
     batch.capacity = capacity;
+};
+
+/** A column's writer: numbers and f32 tuples straight into its view, the rest through `writeColumn`. */
+const writerOf = (column: Column): Writer => {
+    const { unitStride, unitOffset, lanes } = column;
+    const general: Writer = (row, value) => {
+        if (value === undefined) return false;
+        writeColumn(column, row, value);
+        return true;
+    };
+    switch (column.write) {
+        case writeF32: return (row, value) => {
+            if (typeof value !== "number") return general(row, value);
+            column.views.f32[row * unitStride + unitOffset] = value;
+            return true;
+        };
+        case writeU32: return (row, value) => {
+            if (typeof value !== "number") return general(row, value);
+            column.views.u32[row * unitStride + unitOffset] = value;
+            return true;
+        };
+        case writeF32Lanes: return (row, value) => {
+            if (!Array.isArray(value)) return general(row, value);
+            const { f32 } = column.views;
+            const index = row * unitStride + unitOffset;
+            for (let lane = 0; lane < lanes; lane++) f32[index + lane] = Number(value[lane]);
+            return true;
+        };
+        default: return general;
+    }
 };
 
 /** Writes one value as the sync point would: numbers and f32 lane tuples straight into the view, the rest through the layout. */
@@ -165,38 +162,28 @@ export const stageSpawn = (state: State, entity: Entity, values: { readonly [key
     return stageShape(shapeFor(state, keys), entity, values);
 };
 
-/** The shape of spawns of exactly `keys`, resolved now, or null when they must use commands: a symbol key. */
-export const spawnShapeOf = (state: State, keys: readonly (string | symbol)[]): Shape | null => {
-    const names: string[] = [];
-    for (const key of keys) {
-        if (typeof key !== "string") return null;
-        names.push(key);
-    }
-    return shapeFor(state, names);
+/** The shape of spawns of exactly `keys`, resolved now. */
+export const spawnShapeOf = (state: State, keys: readonly (string | symbol)[]): Shape => shapeFor(state, keys);
+
+/** The row the batch's next spawn writes, growing it first if it's full. */
+export const openRow = (batch: SpawnBatch): number => {
+    if (batch.count === batch.capacity) grow(batch);
+    return batch.count;
 };
 
-/** Adds a spawn of a resolved shape to its batch; false, having claimed nothing, when it must use commands. */
-export const stageShape = ({ keys, batch, columns, stage }: Shape, entity: Entity, values: { readonly [key: string]: unknown }): boolean => {
-    if (batch === null) return false;
-    if (batch.count === batch.capacity) grow(batch);
-    const row = batch.count;
-    if (stage !== null) {
-        if (!stage(values, row, batch.columns, writeColumn)) return false;
-        batch.entities[row] = entity;
-        batch.count++;
-        return true;
-    }
-    for (let k = 0; k < keys.length; k++) {
-        const value = values[keys[k]];
-        if (value === undefined) return false;
-        const column = batch.columns[columns[k]];
-        // Plain numbers inline; everything else through `writeColumn`.
-        if (typeof value === "number" && column.write === writeF32) column.views.f32[row * column.unitStride + column.unitOffset] = value;
-        else if (typeof value === "number" && column.write === writeU32) column.views.u32[row * column.unitStride + column.unitOffset] = value;
-        else writeColumn(column, row, value);
-    }
-    batch.entities[row] = entity;
+/** Claims the open row for `entity`, once all its values are written. */
+export const claim = (batch: SpawnBatch, entity: Entity): void => {
+    batch.entities[batch.count] = entity;
     batch.count++;
+};
+
+/** Adds a spawn of a resolved shape to its batch, reading values by key; false, having claimed nothing, when it must use commands. */
+export const stageShape = (shape: Shape, entity: Entity, values: { readonly [key: string]: unknown }): boolean => {
+    const { batch, keys, writers } = shape;
+    if (batch === null) return false;
+    const row = openRow(batch);
+    for (let k = 0; k < keys.length; k++) if (!writers[k](row, Reflect.get(values, keys[k]))) return false;
+    claim(batch, entity);
     return true;
 };
 

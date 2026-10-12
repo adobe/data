@@ -32,7 +32,7 @@ declare module "../component/types.js" {
 declare module "../system/types.js" {
     export interface Types {
         "flat/spawn": true;
-        "flat/spawner": true;
+        "flat/dynamic": true;
     }
 }
 
@@ -53,22 +53,15 @@ export const spawnFlat = System.create({ name: "flat/spawn", args: { type: "inte
     }
 });
 
-const scalars = [color, mass, positionX, positionY, positionZ, velocityX, velocityY, velocityZ] as const;
-
-/** The same spawns through `commands.spawner`, resolved once per shape. */
-export const spawnFlatPrepared = System.create({ name: "flat/spawner", args: { type: "integer" } }, (_, { args }, commands) => {
-    const spawners = [
-        commands.spawner([...scalars, visible, enabled]),
-        commands.spawner([...scalars, visible]),
-        commands.spawner([...scalars, enabled]),
-        commands.spawner(scalars),
-    ] as const;
+/** The same spawns with each value object built first, so the compiler can't pass values positionally. */
+export const spawnFlatDynamic = System.create({ name: "flat/dynamic", args: { type: "integer" } }, (_, { args }, commands) => {
     for (let i = 0; i < args; i++) {
+        const values: Component.Values = { [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i };
         switch (i % 4) {
-            case 0: spawners[0]({ [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i, [visible]: true, [enabled]: true }); break;
-            case 1: spawners[1]({ [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i, [visible]: true }); break;
-            case 2: spawners[2]({ [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i, [enabled]: true }); break;
-            default: spawners[3]({ [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i });
+            case 0: commands.spawn({ ...values, [visible]: true, [enabled]: true }); break;
+            case 1: commands.spawn({ ...values, [visible]: true }); break;
+            case 2: commands.spawn({ ...values, [enabled]: true }); break;
+            default: commands.spawn(values);
         }
     }
 });

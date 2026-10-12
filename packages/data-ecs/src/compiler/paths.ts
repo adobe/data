@@ -10,6 +10,9 @@ const packageRoot = posix(fileURLToPath(new URL("../..", import.meta.url))).repl
 /** The runtime hook emitted code imports: the source file when running from `src`, the built one from `dist`. */
 export const attachKernelPath = posix(fileURLToPath(new URL(`../world/create/attach-kernel${extension}`, import.meta.url)));
 
+/** The runtime hook for spawns whose values pass positionally. */
+export const prepareSpawnPath = posix(fileURLToPath(new URL(`../world/create/prepared-spawn${extension}`, import.meta.url)));
+
 const systemModules: ReadonlySet<string> = new Set([
     "src/system/system.ts", "src/system/system.js", "dist/system/system.js", "src/index.ts", "src/index.js", "dist/index.js",
 ].map(path => `${packageRoot}/${path}`));

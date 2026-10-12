@@ -215,11 +215,11 @@ Measured with `pnpm perf` (benchmarks bundled as in production, on plain node) a
 - **Dispatch:** WASM chunks go through a per-worker task ring in shared memory, signalled with `Atomics.notify`; workers stay in that window across runs until a message must reach them.
 - **Kernels:** interleaved layouts, SIMD within rows (SLP), across dense rows, and across rows of whole interleaved elements (four tight vec3 rows are three vectors), 16-byte loads for three-lane rows with column slack, exact integer `%`.
 - **Main-thread reads:** `select`/`count` compile `where` once and resolve storages per archetype; single-component reads go straight to the storage.
+- **Main-thread spawns:** staged into a batch per component set and block-copied at the sync point. The plugin rewrites `commands.spawn({ ... })` with literal keys in main-thread systems into a per-site function with one parameter per value, writing each through a writer specialized to its column, so nothing is generated at runtime and nothing needs `'unsafe-eval'`. Other spawns read values by key.
 - **Main-thread systems:** one accessor row per set of reads and writes, in fast properties, shared across systems and archetypes and rebound per pass; getters and setters specialized per layout; resource cells resolved once per run.
 
 ### Next
 
-- **Precompiled spawn staging.** The plugin emits a staging function for each `commands.spawn` site with literal keys in any `System.create` body, kernel or not, and attaches its shape to the call, so spawns need no `new Function` (no `'unsafe-eval'` under a content security policy), no `Object.keys` and no shape match. This replaces the runtime generator and `commands.spawner`. Offsets stay runtime data; other sites use the plain loop.
 - **JS fallback when WASM can't compile.** Under a content security policy without `'wasm-unsafe-eval'`, `WebAssembly.compile` throws and registration rejects; kernels should run their compiled JS instead.
 - **U32 ticks,** if tick bandwidth matters for observed components. Halves tick memory and the change-filter scan's bandwidth, which bounds uniformly sparse filters. Comparisons use wrapping subtraction relative to the current tick, with a periodic clamp pass at a sync point, like Bevy's `check_change_ticks`, covering cell, `lastRun` and chunk ticks.
 - **Compiled main-thread systems.** Accessor rows copy tuples out on every read and share one megamorphic body call site; compiling main-thread systems (or a JS-only kernel mode) would remove both. A per-system loop alone measured 5–10%.

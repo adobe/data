@@ -3,7 +3,8 @@ import { compileKernel } from './compile-kernel.js';
 import { children, isFunction } from './estree.js';
 import { fail, failureOf, type Failure } from './failure.js';
 import { moduleScope } from './module-scope.js';
-import { attachKernelPath } from './paths.js';
+import { attachKernelPath, prepareSpawnPath } from './paths.js';
+import { spawnSites } from './spawns.js';
 import { kernelOf } from './signature.js';
 
 export type Parse = (code: string) => Program;
@@ -37,6 +38,25 @@ const isSystemCreate = (node: SimpleCallExpression, locals: ReadonlySet<string>)
     && node.callee.object.type === "Identifier" && locals.has(node.callee.object.name)
     && node.callee.property.type === "Identifier" && node.callee.property.name === "create";
 
+/**
+ * A spawn site's function: one parameter per value, so values pass without an array, then each written straight
+ * into the batch row by the site's own writers (`PreparedSpawn` in `world/create/prepared-spawn.ts`).
+ */
+const spawnFunction = (name: string, prepare: string, keys: readonly string[]): string => {
+    const values = keys.map((_, k) => `v${k}`);
+    const writes = values.map((value, k) => `w[${k}](r, ${value})`);
+    return [
+        `const ${name} = (() => {`,
+        `const p = ${prepare}(() => [${keys.join(", ")}]);`,
+        `return (c, ${values.join(", ")}) => {`,
+        "const r = p.begin(c);",
+        "const w = p.writers;",
+        `return ${["r >= 0", ...writes].join(" && ")} ? p.end() : p.fallback(c, [${values.join(", ")}]);`,
+        "};",
+        "})();",
+    ].join("\n");
+};
+
 const uniqueName = (code: string, base: string): string => {
     let name = base;
     for (let n = 1; code.includes(name); n++) name = `${base}${n}`;
@@ -46,19 +66,24 @@ const uniqueName = (code: string, base: string): string => {
 /**
  * Wraps each kernel `System.create(declaration, body)` call as `attachKernel(call, description)`, and returns each
  * kernel's `create` as its own module, referenced by `description.url`.
- * Returns null when the module has no kernels, and a `Failure` when a kernel leaves the subset.
+ * Also passes the values of main-thread spawns of literal keys positionally (`spawns.ts`).
+ * Returns null when the module has neither, and a `Failure` when a kernel leaves the subset.
  */
 export const transformKernels = async (
     code: string, id: string, parse: Parse, resolveSystemImport: ResolveSystemImport, kernelUrl: KernelUrl,
 ): Promise<TransformResult | null> => {
-    if (!code.includes("kernel") || id.includes("\0")) return null;
+    if ((!code.includes("kernel") && !code.includes("spawn")) || id.includes("\0")) return null;
     const program = parse(code);
     const locals = await systemLocals(program, resolveSystemImport);
     if (locals.size === 0) return null;
     const module = moduleScope(program);
     const attach = uniqueName(code, "attachKernel$");
+    const prepare = uniqueName(code, "prepareSpawn$");
+    const spawnName = uniqueName(code, "spawn$");
     const edits: Edit[] = [];
     const kernels: string[] = [];
+    /** Module-scope declarations of prepared spawns, appended after everything they name is declared. */
+    const prepared: string[] = [];
     const visit = (node: Node, nested: boolean): void => {
         if (node.type === "CallExpression" && isSystemCreate(node, locals)) {
             const [declaration, body] = node.arguments;
@@ -71,6 +96,16 @@ export const transformKernels = async (
                 const description = compiled.description(kernelUrl(kernels.length, `${compiled.description("")}\n${source}`));
                 kernels.push(source);
                 edits.push({ start: node.start, end: node.end, text: `${attach}(${code.slice(node.start, node.end)}, ${description})` });
+                return;
+            }
+            const spawns = body === undefined || body.type === "SpreadElement" ? null : spawnSites(body, module);
+            if (spawns !== null && spawns.sites.length > 0) {
+                for (const site of spawns.sites) {
+                    const name = `${spawnName}${prepared.length}`;
+                    prepared.push(spawnFunction(name, prepare, site.keys));
+                    const values = site.values.map(value => code.slice(value.start, value.end));
+                    edits.push({ start: site.start, end: site.end, text: `${name}(${[spawns.commands, ...values].join(", ")})` });
+                }
                 return;
             }
         }
@@ -87,5 +122,9 @@ export const transformKernels = async (
     if (edits.length === 0) return null;
     let result = code;
     for (const edit of [...edits].sort((a, b) => b.start - a.start)) result = result.slice(0, edit.start) + edit.text + result.slice(edit.end);
-    return { code: `import { attachKernel as ${attach} } from ${JSON.stringify(attachKernelPath)};\n${result}`, kernels };
+    const imports = [
+        ...kernels.length > 0 ? [`import { attachKernel as ${attach} } from ${JSON.stringify(attachKernelPath)};`] : [],
+        ...prepared.length > 0 ? [`import { prepareSpawn as ${prepare} } from ${JSON.stringify(prepareSpawnPath)};`] : [],
+    ];
+    return { code: [...imports, result, ...prepared].join("\n"), kernels };
 };

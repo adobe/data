@@ -660,3 +660,44 @@ describe("subset", () => {
         expect(await transformKernels(`import { System } from "other";\nSystem.create({ name: "a", kernel: "cpu" }, () => {});`, "/x.js", parseAst, async () => false, () => "")).toBeNull();
     });
 });
+
+describe("spawns in main-thread systems", () => {
+    /** Runs the transformed system's body once, recording each spawn's keys and values as the runtime hook receives them. */
+    const spawned = async (body: string): Promise<{ readonly code: string; readonly calls: readonly unknown[] }> => {
+        const source = `const system = System.create({ name: "a" }, (row, context, commands) => { ${body} });`;
+        const result = await transform(source);
+        if (result !== null && "failure" in result) return { code: result.failure.message, calls: [] };
+        const module = (result?.code ?? `${header}${source}`).split("\n").filter(line => !line.startsWith("import ")).join("\n");
+        const calls: unknown[] = [];
+        const prepare = (keys: () => readonly unknown[]) => {
+            let values: unknown[] = [];
+            return {
+                begin: () => { values = []; return 0; },
+                writers: Array.from({ length: 8 }, (_, k) => (__: number, value: unknown) => { values[k] = value; return true; }),
+                end: () => { calls.push(["prepared", keys(), values]); return 0; },
+                fallback: () => 0,
+            };
+        };
+        const system = new Function("System", "prepareSpawn$", `${module}\nreturn system;`)({ create: (declaration: unknown, run: unknown) => ({ declaration, run }) }, prepare);
+        system.run(undefined, {}, { spawn: (values: unknown) => { calls.push(["spawn", values]); } });
+        return { code: result?.code ?? source, calls };
+    };
+
+    test("pass literal values positionally, in source order", async () => {
+        const { calls } = await spawned(`let i = 0; commands.spawn({ [position]: [++i, 0, 0], [score]: ++i, "mass": 3 }); commands.spawn({});`);
+        expect(calls).toEqual([["prepared", ["position", "score", "mass"], [[1, 0, 0], 2, 3]], ["prepared", [], []]]);
+    });
+
+    test.each([
+        ["a value object built first", "const values = { [score]: 1 }; commands.spawn(values);"],
+        ["a spread", "const values = { [score]: 1 }; commands.spawn({ ...values, [mass]: 2 });"],
+        ["a key that isn't a module constant", "const key = score; commands.spawn({ [key]: 1 });"],
+        ["a shadowed key", "const score = \"other\"; commands.spawn({ [score]: 1 });"],
+        ["redeclared commands", "{ const commands = { spawn: () => {} }; } commands.spawn({ [score]: 1 });"],
+    ])("leave %s as written", async (_, body) => {
+        const { calls } = await spawned(body);
+        expect(calls.every(call => Array.isArray(call) && call[0] === "spawn")).toBe(true);
+        expect(calls.length).toBe(1);
+    });
+});
+

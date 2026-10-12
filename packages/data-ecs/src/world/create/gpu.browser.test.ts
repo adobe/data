@@ -115,14 +115,16 @@ const spawnNumbers = System.create({ name: "gpuTest/spawnNumbers" }, (_, __, com
 });
 
 /**
- * JS semantics the GPU keeps: u32 values past 2^31, bitwise operators, infinities, rounding. Every GPU value is an
- * f32, so only integers f32 holds exactly are compared; WGSL lets implementations assume no value is NaN.
+ * JS semantics the GPU keeps: u32 values past 2^31, integer and bitwise chains bit for bit, infinities, rounding.
+ * Arithmetic is f32, so only results f32 holds exactly are compared; WGSL lets implementations assume no value is NaN.
  */
 const numbers = System.create({ name: "gpuTest/numbers", kernel: "gpu", query: { read: [code, amount], write: [code, amount] } }, row => {
     const c = row[code];
     const a = row[amount];
-    row[code] = (c & 0xff00ff00) >>> 0;
-    row[amount] = Math.min(a, Infinity) + Math.round(a) + (-Infinity < a ? 1000 : 0) + ~(c >>> 28) + (c >>> 24) + (c | 0) / 0x1000000;
+    const mixed = (c ^ 0x0f0f0f0f) >>> 0;
+    row[code] = mixed > 0x80000000 ? mixed : (c & 0xff00ff00) >>> 0;
+    row[amount] = Math.min(a, Infinity) + Math.round(a) + (-Infinity < a ? 1000 : 0) + (~c & 0xff) + ~(c >>> 28) + (c >>> 24)
+        + (c | 0) / 0x1000000 + Math.clz32(c) + (c > 0x80000000 ? 10000 : 0);
 });
 
 const flagScore = System.create({ name: "gpuTest/flagScore", kernel: "gpu", query: { read: [flag], write: [score] } }, row => {

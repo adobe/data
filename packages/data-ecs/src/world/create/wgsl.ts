@@ -5,8 +5,8 @@ type Expression = Program.Expression;
 type Statement = Program.Statement;
 
 /**
- * A kernel as a WGSL compute shader over the GPU copy of the arena. Every value is an f32: results are not bit-exact
- * with JS. Each dispatch reads a parameter record of `u32` words: the row count, then each column's word address in
+ * A kernel as a WGSL compute shader over the GPU copy of the arena. Numbers are f32, and integer reads and bitwise
+ * results stay i32 or u32: results are not bit-exact with JS. Each dispatch reads a parameter record of `u32` words: the row count, then each column's word address in
  * this archetype, then the scalars as f32 bits.
  */
 export type WgslKernel = {
@@ -28,12 +28,50 @@ const fail = (reason: string): never => {
 const isUnsupported = (error: unknown): error is Unsupported =>
     typeof error === "object" && error !== null && "unsupported" in error && typeof error.unsupported === "string";
 
-type Value = { readonly code: string; readonly type: "f32" | "bool" };
+/**
+ * An emitted value and its WGSL type. Integer column reads and bitwise results stay `i32` or `u32`, so integer chains
+ * keep every bit; arithmetic converts to f32. `literal` keeps a number literal's exact value for integer use.
+ */
+type Kind = "f32" | "bool" | "i32" | "u32";
+type Value = { readonly code: string; readonly type: Kind; readonly literal?: number };
 
 const f32 = (code: string): Value => ({ code, type: "f32" });
 const bool = (code: string): Value => ({ code, type: "bool" });
-const asNumber = (value: Value): string => value.type === "f32" ? value.code : `select(0.0, 1.0, ${value.code})`;
-const asBool = (value: Value): string => value.type === "bool" ? value.code : `truthy(${value.code})`;
+const i32 = (code: string): Value => ({ code, type: "i32" });
+const u32 = (code: string): Value => ({ code, type: "u32" });
+
+/** JS `Number(value)`. */
+const asNumber = (value: Value): string => {
+    switch (value.type) {
+        case "f32": return value.code;
+        case "bool": return `select(0.0, 1.0, ${value.code})`;
+        default: return `f32(${value.code})`;
+    }
+};
+
+/** JS truthiness. */
+const asBool = (value: Value): string => {
+    switch (value.type) {
+        case "bool": return value.code;
+        case "f32": return `truthy(${value.code})`;
+        case "i32": return `(${value.code} != 0i)`;
+        case "u32": return `(${value.code} != 0u)`;
+    }
+};
+
+/** JS `ToUint32`, as bits. */
+const asUint = (value: Value): string => {
+    if (value.literal !== undefined && Number.isFinite(value.literal)) return `${value.literal >>> 0}u`;
+    switch (value.type) {
+        case "u32": return value.code;
+        case "i32": return `bitcast<u32>(${value.code})`;
+        case "bool": return `select(0u, 1u, ${value.code})`;
+        case "f32": return `toUint32(${value.code})`;
+    }
+};
+
+/** JS `ToInt32`. */
+const asInt = (value: Value): string => value.type === "i32" ? value.code : `bitcast<i32>(${asUint(value)})`;
 
 const literal = (value: number): string => {
     // Constant expressions can't be NaN or infinite, so these come from private variables.
@@ -65,7 +103,6 @@ fn toUint32(x: f32) -> u32 {
     let wrapped = u32(t - 4294967296.0 * floor(t / 4294967296.0));
     return select(wrapped, 0u - wrapped, x < 0.0);
 }
-fn toInt32(x: f32) -> i32 { return bitcast<i32>(toUint32(x)); }
 fn remainder(a: f32, b: f32) -> f32 {
     if (isFinite(a) && !isFinite(b) && !isNan(b)) { return a; }
     return a - b * trunc(a / b);
@@ -116,8 +153,8 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
         if (boolean) return bool(`${element} != 0u`);
         switch (view) {
             case "f32": return f32(`bitcast<f32>(${element})`);
-            case "u32": return f32(`f32(${element})`);
-            case "i32": return f32(`f32(bitcast<i32>(${element}))`);
+            case "u32": return u32(element);
+            case "i32": return i32(`bitcast<i32>(${element})`);
             default: return fail("it reads an f64 value, such as an entity or a precision-2 number");
         }
     };
@@ -127,34 +164,99 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
         if (muted === true) return "";
         if (boolean) return fail("it writes a boolean component");
         const target = `memory[${word(column)}]`;
-        const number = asNumber(value);
         switch (view) {
-            case "f32": return `${target} = bitcast<u32>(${number});`;
-            case "u32": case "i32": return `${target} = toUint32(${number});`;
+            case "f32": return `${target} = bitcast<u32>(${asNumber(value)});`;
+            case "u32": case "i32": return `${target} = ${asUint(value)};`;
             default: return fail("it writes an f64 or byte value");
         }
     };
 
-    const integer = (value: Value): string => `toInt32(${asNumber(value)})`;
-    const shift = (value: Value): string => `(toUint32(${asNumber(value)}) & 31u)`;
+    const shift = (value: Value): string => `(${asUint(value)} & 31u)`;
+
+    /** Each local's type: an integer type when every assignment has it, else f32 (booleans as 0 or 1). */
+    const localKinds: Kind[] = new Array<Kind>(program.locals).fill("f32");
+    const assigned: (Kind | undefined)[] = new Array<Kind | undefined>(program.locals);
+    const kindOf = (expression: Expression): Kind => {
+        switch (expression.kind) {
+            case "column": {
+                const { view, boolean } = columns[expression.column];
+                return boolean ? "bool" : view === "u32" ? "u32" : view === "i32" ? "i32" : "f32";
+            }
+            case "local": return localKinds[expression.local];
+            case "unary": return expression.operator === "!" ? "bool" : expression.operator === "~" ? "i32" : "f32";
+            case "binary":
+                switch (expression.operator) {
+                    case "&": case "|": case "^": case "<<": case ">>": return "i32";
+                    case ">>>": return "u32";
+                    case "<": case ">": case "<=": case ">=": case "==": case "!=": case "===": case "!==": return "bool";
+                    default: return "f32";
+                }
+            case "logical": case "conditional": {
+                const [a, b] = expression.kind === "logical" ? [expression.left, expression.right] : [expression.consequent, expression.alternate];
+                const left = kindOf(a);
+                return left === kindOf(b) ? left : "f32";
+            }
+            case "math": return expression.name === "clz32" ? "u32" : expression.name === "imul" ? "i32" : "f32";
+            case "boolean": return "bool";
+            default: return "f32";
+        }
+    };
+    const infer = (body: readonly Statement[]): void => {
+        for (const statement of body) {
+            if (statement.kind === "set") {
+                const kind = kindOf(statement.value);
+                const current = assigned[statement.local];
+                assigned[statement.local] = current === undefined || current === kind ? kind : "f32";
+            }
+            else if (statement.kind === "if") {
+                infer(statement.consequent);
+                infer(statement.alternate);
+            }
+        }
+    };
+    for (let pass = 0; pass <= program.locals; pass++) {
+        assigned.fill(undefined);
+        infer(program.body);
+        let changed = false;
+        assigned.forEach((kind, local) => {
+            const next = kind === "i32" || kind === "u32" ? kind : "f32";
+            if (next !== localKinds[local]) {
+                localKinds[local] = next;
+                changed = true;
+            }
+        });
+        if (!changed) break;
+    }
+
+    /** Compares integers of one type exactly, and anything else as numbers. */
+    const compare = (operator: string, left: Value, right: Value): Value => {
+        const integer = left.type === "i32" || left.type === "u32" ? left.type : right.type === "i32" || right.type === "u32" ? right.type : null;
+        const fits = (value: Value): boolean => value.type === integer
+            || (value.literal !== undefined && Number.isInteger(value.literal) && (integer === "u32" ? value.literal >= 0 && value.literal <= 0xFFFFFFFF : Math.abs(value.literal) <= 0x7FFFFFFF));
+        if (integer !== null && fits(left) && fits(right)) {
+            const as = (value: Value): string => integer === "u32" ? asUint(value) : asInt(value);
+            return bool(`(${as(left)} ${operator} ${as(right)})`);
+        }
+        return bool(`(${asNumber(left)} ${operator} ${asNumber(right)})`);
+    };
 
     const emit = (expression: Expression): Value => {
         switch (expression.kind) {
-            case "number": return f32(literal(expression.value));
+            case "number": return { code: literal(expression.value), type: "f32", literal: expression.value };
             case "boolean": return bool(String(expression.value));
             case "column": return read(expression.column);
             case "resource": case "args": {
                 const scalar: WasmScalar = expression.kind === "args" ? { source: "args", path: expression.path } : { source: "resource", index: expression.index, path: expression.path };
                 return f32(`bitcast<f32>(parameters[${1 + columns.length + scalarOf(scalar)}])`);
             }
-            case "local": return f32(`l${expression.local}`);
+            case "local": return { code: `l${expression.local}`, type: localKinds[expression.local] };
             case "unary": {
                 const operand = emit(expression.operand);
                 switch (expression.operator) {
                     case "-": return f32(`(-${asNumber(operand)})`);
                     case "+": return f32(asNumber(operand));
                     case "!": return bool(`(!${asBool(operand)})`);
-                    case "~": return f32(`f32(~${integer(operand)})`);
+                    case "~": return i32(`(~${asInt(operand)})`);
                 }
                 return fail("it uses an unsupported operator");
             }
@@ -167,13 +269,13 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
                     case "+": case "-": case "*": case "/": return f32(`(${a} ${expression.operator} ${b})`);
                     case "%": return f32(`remainder(${a}, ${b})`);
                     case "**": return f32(`power(${a}, ${b})`);
-                    case "<": case ">": case "<=": case ">=": return bool(`(${a} ${expression.operator} ${b})`);
-                    case "==": case "===": return bool(`(${a} == ${b})`);
-                    case "!=": case "!==": return bool(`(${a} != ${b})`);
-                    case "&": case "|": case "^": return f32(`f32(${integer(left)} ${expression.operator} ${integer(right)})`);
-                    case "<<": return f32(`f32(${integer(left)} << ${shift(right)})`);
-                    case ">>": return f32(`f32(${integer(left)} >> ${shift(right)})`);
-                    case ">>>": return f32(`f32(toUint32(${a}) >> ${shift(right)})`);
+                    case "<": case ">": case "<=": case ">=": return compare(expression.operator, left, right);
+                    case "==": case "===": return compare("==", left, right);
+                    case "!=": case "!==": return compare("!=", left, right);
+                    case "&": case "|": case "^": return i32(`(${asInt(left)} ${expression.operator} ${asInt(right)})`);
+                    case "<<": return i32(`(${asInt(left)} << ${shift(right)})`);
+                    case ">>": return i32(`(${asInt(left)} >> ${shift(right)})`);
+                    case ">>>": return u32(`(${asUint(left)} >> ${shift(right)})`);
                 }
                 return fail("it uses an unsupported operator");
             }
@@ -181,32 +283,35 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
                 const left = emit(expression.left);
                 const right = emit(expression.right);
                 if (left.type === "bool" && right.type === "bool") return bool(`(${left.code} ${expression.operator} ${right.code})`);
-                const a = asNumber(left);
-                const b = asNumber(right);
+                const same = left.type === right.type && left.type !== "bool";
+                const a = same ? left.code : asNumber(left);
+                const b = same ? right.code : asNumber(right);
+                const type = same ? left.type : "f32";
                 // JS returns an operand: `a && b` is `b` when `a` is truthy, `a || b` is `a` when it is.
-                return expression.operator === "&&" ? f32(`select(${a}, ${b}, ${asBool(left)})`) : f32(`select(${b}, ${a}, ${asBool(left)})`);
+                return { code: expression.operator === "&&" ? `select(${a}, ${b}, ${asBool(left)})` : `select(${b}, ${a}, ${asBool(left)})`, type };
             }
             case "conditional": {
                 const test = asBool(emit(expression.test));
                 const consequent = emit(expression.consequent);
                 const alternate = emit(expression.alternate);
-                if (consequent.type === "bool" && alternate.type === "bool") return bool(`select(${alternate.code}, ${consequent.code}, ${test})`);
+                if (consequent.type === alternate.type) return { code: `select(${alternate.code}, ${consequent.code}, ${test})`, type: consequent.type };
                 return f32(`select(${asNumber(alternate)}, ${asNumber(consequent)}, ${test})`);
             }
             case "math": {
-                const items = expression.arguments.map(item => asNumber(emit(item)));
+                const values = expression.arguments.map(emit);
+                const items = values.map(asNumber);
                 const name = expression.name;
+                if (values.length === 1 && name === "clz32") return u32(`countLeadingZeros(${asUint(values[0])})`);
+                if (values.length === 2 && name === "imul") return i32(`(${asInt(values[0])} * ${asInt(values[1])})`);
                 if (items.length === 1 && unaryMath[name] !== undefined) return f32(unaryMath[name] === "" ? items[0] : `${unaryMath[name]}(${items[0]})`);
                 if (items.length === 1 && name === "round") return f32(`roundHalfUp(${items[0]})`);
                 if (items.length === 1 && name === "log10") return f32(`(log(${items[0]}) * 0.4342944819032518)`);
                 if (items.length === 1 && name === "cbrt") return f32(`(sign(${items[0]}) * pow(abs(${items[0]}), 1.0 / 3.0))`);
-                if (items.length === 1 && name === "clz32") return f32(`f32(countLeadingZeros(toUint32(${items[0]})))`);
                 if (items.length === 2 && name === "min") return f32(`jsMin(${items[0]}, ${items[1]})`);
                 if (items.length === 2 && name === "max") return f32(`jsMax(${items[0]}, ${items[1]})`);
                 if (items.length === 2 && name === "atan2") return f32(`atan2(${items[0]}, ${items[1]})`);
                 if (items.length === 2 && name === "pow") return f32(`power(${items[0]}, ${items[1]})`);
                 if (items.length === 2 && name === "hypot") return f32(`length(vec2f(${items[0]}, ${items[1]}))`);
-                if (items.length === 2 && name === "imul") return f32(`f32(toInt32(${items[0]}) * toInt32(${items[1]}))`);
                 return fail(`it uses Math.${name}, which GPU kernels don't support`);
             }
             default: return fail("it uses lookups");
@@ -215,7 +320,11 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
 
     const statements = (body: readonly Statement[], indent: string): string => body.map(statement => {
         switch (statement.kind) {
-            case "set": return `${indent}l${statement.local} = ${asNumber(emit(statement.value))};`;
+            case "set": {
+                const value = emit(statement.value);
+                const kind = localKinds[statement.local];
+                return `${indent}l${statement.local} = ${kind === "u32" ? asUint(value) : kind === "i32" ? asInt(value) : asNumber(value)};`;
+            }
             case "store": return `${indent}${store(statement.column, emit(statement.value))}`;
             case "stamp":
                 if (columns[statement.column].muted === true && columns[statement.chunks].muted === true) return "";
@@ -228,7 +337,8 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
     }).filter(line => line.trim() !== "").join("\n");
 
     try {
-        const locals = Array.from({ length: program.locals }, (_, local) => `    var l${local}: f32 = 0.0;`).join("\n");
+        const zero: { readonly [kind: string]: string } = { f32: "0.0", i32: "0i", u32: "0u" };
+        const locals = localKinds.map((kind, local) => `    var l${local}: ${kind} = ${zero[kind]};`).join("\n");
         const body = statements(program.body, "    ");
         const code = `@group(0) @binding(0) var<storage, read_write> memory: array<u32>;
 @group(0) @binding(1) var<storage, read> parameters: array<u32>;

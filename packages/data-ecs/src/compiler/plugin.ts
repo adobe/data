@@ -58,8 +58,18 @@ export const kernelPlugin = (): Plugin => {
     let server: ViteDevServer | undefined;
     let context: Rollup.PluginContext | undefined;
     let linker: Linker | null = null;
-    /** Modules whose kernels inline each file. */
+    /** Modules whose kernels inline each file, and the files each module's kernels inline. */
     const dependents = new Map<string, Set<string>>();
+    const dependencies = new Map<string, readonly string[]>();
+    const depend = (parent: string, files: readonly string[]): void => {
+        for (const file of dependencies.get(parent) ?? []) dependents.get(file)?.delete(parent);
+        dependencies.set(parent, files);
+        for (const file of files) {
+            const parents = dependents.get(file) ?? new Set<string>();
+            parents.add(parent);
+            dependents.set(file, parents);
+        }
+    };
     /** Kernel modules by parent module id, kept current as parents are transformed. */
     const kernels = new Map<string, readonly CachedKernel[]>();
     return {
@@ -114,18 +124,15 @@ export const kernelPlugin = (): Plugin => {
                     ? JSON.stringify(serveUrl(id, index, hash))
                     : `import.meta.ROLLUP_FILE_URL_${this.emitFile({ type: "chunk", id: buildId(id, index), name: "kernel" })}`;
             }, linker);
+            const parent = id.split("?")[0] ?? id;
             if (result === null) {
                 kernels.delete(id);
+                depend(parent, []);
                 return null;
             }
+            for (const dependency of result.dependencies) this.addWatchFile(dependency);
+            depend(parent, result.dependencies);
             if ("failure" in result) return this.error(describeFailure(result.failure), result.failure.position);
-            const parent = id.split("?")[0] ?? id;
-            for (const dependency of result.dependencies) {
-                this.addWatchFile(dependency);
-                const parents = dependents.get(dependency) ?? new Set<string>();
-                parents.add(parent);
-                dependents.set(dependency, parents);
-            }
             kernels.set(id, result.kernels.map((source, index) => ({ source, hash: hashes[index] ?? "" })));
             return { code: result.code, map: null };
         },

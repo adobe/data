@@ -18,9 +18,11 @@ export type ResolveSystemImport = (source: string) => Promise<boolean>;
 export type KernelUrl = (index: number, identity: string) => string;
 /**
  * `kernels[i]` is the source of kernel `i`'s module, which exports `create`. `dependencies` are the other files
- * whose functions and constants the kernels inline.
+ * whose functions and constants the kernels inline, or that compiling them read before failing.
  */
-export type TransformResult = { readonly code: string; readonly kernels: readonly string[]; readonly dependencies: readonly string[] } | { readonly failure: Failure };
+export type TransformResult =
+    | { readonly code: string; readonly kernels: readonly string[]; readonly dependencies: readonly string[] }
+    | { readonly failure: Failure; readonly dependencies: readonly string[] };
 
 type Edit = { readonly start: number; readonly end: number; readonly text: string };
 
@@ -150,7 +152,7 @@ export const transformKernels = async (
     } catch (error) {
         const failure = failureOf(error);
         if (failure === undefined) throw error;
-        return { failure };
+        return { failure, dependencies: [...dependencies] };
     }
     if (edits.length === 0) return null;
     let result = code;

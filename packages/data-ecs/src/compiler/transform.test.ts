@@ -834,9 +834,12 @@ describe("imported functions and constants", () => {
             .toEqual([16 + 2 + 9 + 3, 36 + 2 + 9 + 4]);
     });
 
-    test("report the files kernels inline from", async () => {
+    test("report the files kernels inline from, also when they fail, so fixing them compiles again", async () => {
         const result = await transform(kernel(`import { twice } from "./shapes.js";`, "row[score] = twice(row[mass]);"), { "/shapes.js": "export const twice = (x) => x * 2;" });
-        expect(result !== null && "dependencies" in result ? result.dependencies : []).toEqual(["/shapes.js"]);
+        expect(result?.dependencies).toEqual(["/shapes.js"]);
+        const failed = await transform(kernel(`import { twice } from "./shapes.js";`, "row[score] = twice(row[mass]);"), { "/shapes.js": "export const twice = (x) => x * Math.random();" });
+        expect(failed !== null && "failure" in failed).toBe(true);
+        expect(failed?.dependencies).toEqual(["/shapes.js"]);
     });
 
     test("that leave the subset fail at the call, with a frame for each inlined function", async () => {

@@ -4,7 +4,7 @@ import { children, isFunction } from './estree.js';
 import { fail, failureOf, type Failure } from './failure.js';
 import { moduleScope } from './module-scope.js';
 import { attachKernelPath } from './paths.js';
-import { isKernel } from './signature.js';
+import { kernelOf } from './signature.js';
 
 export type Parse = (code: string) => Program;
 /** Whether an import specifier, resolved from the module being transformed, is the package's `System` namespace. */
@@ -62,10 +62,11 @@ export const transformKernels = async (
     const visit = (node: Node, nested: boolean): void => {
         if (node.type === "CallExpression" && isSystemCreate(node, locals)) {
             const [declaration, body] = node.arguments;
-            if (declaration?.type === "ObjectExpression" && isKernel(declaration)) {
+            const target = declaration?.type === "ObjectExpression" ? kernelOf(declaration) : null;
+            if (declaration?.type === "ObjectExpression" && target !== null) {
                 if (nested) fail(node, "kernel systems must be declared at module scope");
                 if (body === undefined || body.type === "SpreadElement") return fail(node, "a kernel needs an inline body");
-                const compiled = compileKernel(declaration, body, module);
+                const compiled = compileKernel(declaration, body, module, target);
                 const source = `export const create = ${compiled.create};\n`;
                 const description = compiled.description(kernelUrl(kernels.length, `${compiled.description("")}\n${source}`));
                 kernels.push(source);

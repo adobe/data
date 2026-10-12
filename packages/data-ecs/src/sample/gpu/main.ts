@@ -1,6 +1,6 @@
 import { System } from '../../system/system.js';
 import { World } from '../../world/world.js';
-import { createDraw, enabled, move, position, spawn, visible } from './particles.js';
+import { createDraw, enabled, move, moveOnCpu, position, spawn, visible } from './particles.js';
 
 /**
  * The particles sample. `?mode=gpu` moves particles on the GPU, `cpu` on workers (uploading positions for drawing
@@ -55,11 +55,12 @@ const start = async (): Promise<void> => {
     const format = navigator.gpu.getPreferredCanvasFormat();
     context.configure({ device, format, alphaMode: "opaque" });
 
-    const world = await World.create({ systems: [spawn, move], gpu: { device, place: mode === "gpu" ? [move] : [] } });
+    const moving = mode === "gpu" ? [move] : mode === "cpu" ? [moveOnCpu] : [];
+    const world = await World.create({ systems: [spawn, ...moving], gpu: { device } });
     if (world.gpu === null) return;
     const { draw, ready } = createDraw(device, world.gpu.layout, context, format);
     await ready;
-    const frame = System.composite({ name: "gpuParticles/frame", systems: mode === "static" ? [draw] : [move, draw] });
+    const frame = System.composite({ name: "gpuParticles/frame", systems: [...moving, draw] });
     await world.systems.register(frame);
     await world.run(spawn, [count, canvas.width, canvas.height]);
     /** For automated checks: a few drawn particles' positions, brought back from the GPU. */

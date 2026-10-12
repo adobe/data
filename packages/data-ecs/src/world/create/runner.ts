@@ -67,16 +67,16 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const resourceChanged = resources?.changed ?? [];
     const filtered = addedIds.length + changedIds.length + resourceChanged.length > 0;
     let kernel: BoundKernel | null = null;
-    if (declaration.kernel === true) {
+    if (declaration.kernel !== undefined) {
         const description = kernelOf(leaf);
         if (description === undefined) throw new Error(`System "${declaration.name}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
         kernel = bindKernel(state, leaf, description);
     }
-    const placement = declaration.render !== undefined ? "render" : state.placed.has(leaf) ? "gpu" : "cpu";
+    const placement = declaration.render !== undefined ? "render" : declaration.kernel === "gpu" && state.gpu !== null ? "gpu" : "cpu";
     const failPlacement = (message: string): never => { throw new Error(`System "${declaration.name}" ${message}.`); };
     if (placement !== "cpu" && state.gpu === null) failPlacement("needs a world created with gpu");
-    if (placement === "gpu") {
-        if (kernel === null) failPlacement("isn't a kernel, so it can't run on the GPU");
+    // The build rejects these in compiled kernels; this covers declarations it didn't see.
+    if (declaration.kernel === "gpu") {
         if (filtered) failPlacement("can't run on the GPU: GPU kernels don't support change filters yet");
         if (declaration.lookup !== undefined && Object.keys(declaration.lookup).length > 0) failPlacement("can't run on the GPU: GPU kernels don't support lookups yet");
     }
@@ -267,14 +267,16 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }
     };
 
+    /** A GPU kernel that could never run on the GPU is rejected in every world, with or without one. */
     const load = async (): Promise<void> => {
         if (kernel === null) return;
         await kernel.load();
-        const gpu = state.gpu;
-        if (placement !== "gpu" || gpu === null) return;
+        if (declaration.kernel !== "gpu") return;
         const generated = kernel.gpu();
         if (typeof generated === "string") return failPlacement(`can't run on the GPU: ${generated}`);
         if (1 + kernel.setup.sources.length + generated.scalars.length > recordWords) failPlacement(`can't run on the GPU: it uses more than ${recordWords - 1} columns and values`);
+        const gpu = state.gpu;
+        if (placement !== "gpu" || gpu === null) return;
         const { device } = gpu;
         const compute = await device.createComputePipelineAsync({
             layout: device.createPipelineLayout({ bindGroupLayouts: [gpu.computeLayout] }),

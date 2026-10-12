@@ -5,7 +5,6 @@ import { createArchetype, startTicks, type Archetype, type Storage } from './arc
 import type { Shape, SpawnBatch } from './batches.js';
 import type { Directory } from './directories.js';
 import type { GpuEngine } from './gpu.js';
-import type { Leaf } from '../../system/leaf.js';
 import type { Queued } from './synchronize.js';
 import { createEntities, type Entities } from './entities.js';
 import { layoutOf, type Layout } from '../../layout/layout.js';
@@ -45,9 +44,8 @@ export type State = {
     /** Whether kernels with a program run as WASM, and as SIMD where they can; tests turn these off to compare with JS. */
     readonly wasm: boolean;
     readonly simd: boolean;
-    /** The world's GPU, and the kernels placed on it. */
+    /** The world's GPU, where render systems and GPU kernels run. */
     gpu: GpuEngine | null;
-    readonly placed: Set<Leaf>;
     /** With a GPU: archetypes the current sync point changed, whose GPU copies are then out of date. */
     readonly touched: Set<Archetype> | null;
 };
@@ -77,7 +75,6 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         wasm,
         simd,
         gpu: null,
-        placed: new Set(),
         touched: gpu ? new Set() : null,
     };
 };

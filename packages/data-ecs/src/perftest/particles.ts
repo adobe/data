@@ -55,7 +55,7 @@ export const spawn = System.create({ name: "perf/spawn", args: { type: "integer"
 
 export const move = System.create({
     name: "perf/move",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [position, velocity], write: [position], has: [visible, enabled] },
 }, row => {
     const [px, py, pz] = row[position];

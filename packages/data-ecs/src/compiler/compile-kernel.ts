@@ -8,7 +8,7 @@ import { printStatements } from './print.js';
 import { toProgram } from './program.js';
 import { serialize } from './serialize.js';
 import { unconditionalChunks } from './stamps.js';
-import { chunkShift } from '../world/create/kernel.js';
+import { chunkShift, type Program } from '../world/create/kernel.js';
 import { rootScope } from './scope.js';
 import { signature } from './signature.js';
 import { rowLabel, statement } from './statement.js';
@@ -24,7 +24,17 @@ const parameterValues: readonly Value[] = [{ kind: "row" }, { kind: "context" },
  */
 export type CompiledKernel = { readonly description: (url: string) => string; readonly create: string };
 
-export const compileKernel = (declaration: ObjectExpression, body: Node, module: ModuleScope): CompiledKernel => {
+/** Statements a GPU kernel can't contain: WGSL has no labeled multi-level branches, and loops aren't supported yet. */
+const loops = (statements: readonly Program.Statement[]): boolean => statements.some(statement => {
+    switch (statement.kind) {
+        case "block": case "loop": case "branch": case "branchIf": case "find": return true;
+        case "if": return loops(statement.consequent) || loops(statement.alternate);
+        default: return false;
+    }
+});
+
+/** `target` "gpu" also checks, before anything runs, what only a GPU kernel can't do; schemas are checked at registration. */
+export const compileKernel = (declaration: ObjectExpression, body: Node, module: ModuleScope, target: "cpu" | "gpu" = "cpu"): CompiledKernel => {
     if (body.type !== "ArrowFunctionExpression" && body.type !== "FunctionExpression") {
         return fail(body, "a kernel body must be an inline function");
     }
@@ -45,7 +55,13 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     const kernel = printStatements(unit, resolve(rows));
     const preludeCode = printStatements(unit, resolve(prelude));
     const program = toProgram(statements);
-    const { signature: { resources, lookups }, columns, booleans, keys } = unit;
+    const { signature: { resources, lookups, filtered }, columns, booleans, keys } = unit;
+    if (target === "gpu") {
+        if (lookups.length > 0) fail(declaration, "a GPU kernel can't use lookups yet");
+        if (filtered) fail(declaration, "a GPU kernel can't use change filters yet");
+        if (program === null) fail(body, "a GPU kernel can't issue commands or use values that aren't numbers or booleans");
+        else if (loops(program.body)) fail(body, "a GPU kernel can't use loops or labeled blocks yet");
+    }
     const strided = columns.flatMap((_, index) => unit.chunks.has(index) ? [] : [index]);
     const locals = [
         ...columns.map((_, index) => `const c${index} = columns[${index}];`),

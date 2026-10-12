@@ -80,7 +80,7 @@ export const retag = System.create({ name: "suite/retag", args: { type: "integer
 /** Writes 1% of positions. */
 export const poke = System.create({
     name: "suite/poke",
-    kernel: true,
+    kernel: "cpu",
     args: { type: "integer" },
     query: { read: [index, position], write: [position] },
 }, (row, { args }) => {
@@ -93,7 +93,7 @@ export const poke = System.create({
 /** Writes 1% of positions, clustered in one contiguous run of rows. */
 export const pokeCluster = System.create({
     name: "suite/pokeCluster",
-    kernel: true,
+    kernel: "cpu",
     args: { type: "integer" },
     query: { read: [index, position], write: [position] },
 }, (row, { args }) => {
@@ -107,7 +107,7 @@ export const pokeCluster = System.create({
 /** Sees only what changed since it last ran. */
 export const observe = System.create({
     name: "suite/observe",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [position], write: [velocity], changed: [position] },
 }, row => {
     const [x, y, z] = row[position];
@@ -117,7 +117,7 @@ export const observe = System.create({
 /** Steers toward the target: one lookup per row. */
 export const follow = System.create({
     name: "suite/follow",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [position, target], write: [velocity] },
     lookup: { targets: { read: [position] } },
 }, (row, { targets }) => {
@@ -132,7 +132,7 @@ export const follow = System.create({
 /** Issues commands from a kernel: a tenth of the rows record a hit. */
 export const emit = System.create({
     name: "suite/emit",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [index, position] },
 }, (row, _, commands) => {
     if (row[index] % 10 === 0) {
@@ -142,27 +142,27 @@ export const emit = System.create({
 });
 
 /** Six dependent kernels: one tier each, so dispatch cost shows. */
-export const chain1 = System.create({ name: "suite/chain1", kernel: true, query: { read: [velocity], write: [velocity] } }, row => {
+export const chain1 = System.create({ name: "suite/chain1", kernel: "cpu", query: { read: [velocity], write: [velocity] } }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain2 = System.create({ name: "suite/chain2", kernel: true, query: { read: [velocity], write: [velocity] }, after: ["suite/chain1"] }, row => {
+export const chain2 = System.create({ name: "suite/chain2", kernel: "cpu", query: { read: [velocity], write: [velocity] }, after: ["suite/chain1"] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain3 = System.create({ name: "suite/chain3", kernel: true, query: { read: [velocity], write: [velocity] }, after: ["suite/chain2"] }, row => {
+export const chain3 = System.create({ name: "suite/chain3", kernel: "cpu", query: { read: [velocity], write: [velocity] }, after: ["suite/chain2"] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain4 = System.create({ name: "suite/chain4", kernel: true, query: { read: [velocity], write: [velocity] }, after: ["suite/chain3"] }, row => {
+export const chain4 = System.create({ name: "suite/chain4", kernel: "cpu", query: { read: [velocity], write: [velocity] }, after: ["suite/chain3"] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain5 = System.create({ name: "suite/chain5", kernel: true, query: { read: [velocity], write: [velocity] }, after: ["suite/chain4"] }, row => {
+export const chain5 = System.create({ name: "suite/chain5", kernel: "cpu", query: { read: [velocity], write: [velocity] }, after: ["suite/chain4"] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain6 = System.create({ name: "suite/chain6", kernel: true, query: { read: [velocity], write: [velocity] }, after: ["suite/chain5"] }, row => {
+export const chain6 = System.create({ name: "suite/chain6", kernel: "cpu", query: { read: [velocity], write: [velocity] }, after: ["suite/chain5"] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });

@@ -24,17 +24,26 @@ type Kernel = {
     readonly resources?: { readonly read?: readonly LinearResource[]; readonly write?: never };
 };
 
+/** What a GPU kernel can't use yet, beyond any kernel's limits. */
+type GpuKernel = {
+    readonly lookup?: { readonly [name: string]: never };
+    readonly query?: { readonly added?: never; readonly changed?: never };
+    readonly resources?: { readonly changed?: never };
+};
+
 type Validate<D extends Declaration> =
     Ordering<D["name"]>
     & { readonly lookup?: { readonly [K in Extract<keyof NonNullable<D["lookup"]>, ReservedContextName<D>>]: never } }
     & (D extends { readonly args: Schema } ? { readonly query?: { readonly added?: never; readonly changed?: never } } : {})
-    & (D extends { readonly kernel: true } ? Kernel : {})
+    & (D extends { readonly kernel: "cpu" | "gpu" } ? Kernel : {})
+    & (D extends { readonly kernel: "gpu" } ? GpuKernel : {})
     & { readonly render?: never };
 
 /** Declares a system. Returns its declaration and body as data; nothing runs. */
 export const create = <const D extends Declaration>(
     declaration: D & Validate<D>,
-    body: (row: Row<D>, context: Context<D>, commands: Commands) => void,
+    /** A GPU kernel can't issue commands. */
+    body: (row: Row<D>, context: Context<D>, commands: D extends { readonly kernel: "gpu" } ? never : Commands) => void,
 ): Leaf<D> => ({ declaration, body });
 
 /** Declares a system made of subsystems. */

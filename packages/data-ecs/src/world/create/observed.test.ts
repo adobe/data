@@ -34,11 +34,11 @@ const seed = System.create({ name: "observedTest/seed" }, (_, __, commands) => {
 });
 
 /** Writes every value: until something observes `value`, its stamps are muted. */
-const bump = System.create({ name: "observedTest/bump", kernel: true, query: { read: [value], write: [value] } }, row => {
+const bump = System.create({ name: "observedTest/bump", kernel: "cpu", query: { read: [value], write: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 
-const watch = System.create({ name: "observedTest/watch", kernel: true, query: { read: [seen], write: [seen], changed: [value] }, after: ["observedTest/bump"] }, row => {
+const watch = System.create({ name: "observedTest/watch", kernel: "cpu", query: { read: [seen], write: [seen], changed: [value] }, after: ["observedTest/bump"] }, row => {
     row[seen] = row[seen] + 1;
 });
 

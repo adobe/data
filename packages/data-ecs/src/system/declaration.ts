@@ -6,10 +6,13 @@ import type { Render } from './render.js';
 export type Declaration = {
     readonly name: Name;
     /**
-     * Compiled to a kernel that can run in chunks across workers. Values in `query` and `lookup` must be linear
-     * and resources read-only; the build fails if the body leaves the kernel subset. Otherwise the system runs on the main thread.
+     * Compiled to a kernel, which the build rejects if the body leaves the kernel subset. Values in `query` and
+     * `lookup` must be linear and resources read-only. Without it, the system runs as written on the main thread.
+     * - `"cpu"`: runs in chunks across workers, as WASM where the body allows, or on the main thread.
+     * - `"gpu"`: also has no lookups, change filters, commands or loops, and only 4-byte scalar values. It runs as a
+     *   compute shader in a world with a GPU, and as a `"cpu"` kernel in one without.
      */
-    readonly kernel?: boolean;
+    readonly kernel?: "cpu" | "gpu";
     /** Omitted for a resource-only system, which runs once per run on the main thread. */
     readonly query?: Query;
     readonly lookup?: { readonly [name: string]: Lookup };

@@ -5,7 +5,6 @@ import type { System } from '../../system/system.js';
 import type { World } from '../world.js';
 import type { GpuOptions } from '../gpu.js';
 import { createGpu } from './gpu.js';
-import { isLeaf } from './schedule.js';
 import { readCell } from './cells.js';
 import { execute, type ExecuteContext } from './execute.js';
 import { sharedMemoryAvailable } from './memory.js';
@@ -37,14 +36,7 @@ const defaultMinimumChunk = 16384;
 export const createWorld = (options: WorldOptions = {}): World => {
     const shared = sharedMemoryAvailable();
     const state = createState(shared, options.wasm ?? true, options.simd ?? true, options.gpu !== undefined);
-    if (options.gpu !== undefined) {
-        state.gpu = createGpu(options.gpu.device);
-        const place = (system: System): void => {
-            if (isLeaf(system)) state.placed.add(system);
-            else for (const member of system.declaration.systems) place(member);
-        };
-        for (const system of options.gpu.place ?? []) place(system);
-    }
+    if (options.gpu !== undefined) state.gpu = createGpu(options.gpu.device);
     const registrar = createRegistrar(state);
     const enqueue = createQueue();
     const workerCount = shared ? options.workers ?? defaultWorkerCount(shared) : 0;
@@ -158,8 +150,8 @@ export const createWorld = (options: WorldOptions = {}): World => {
 };
 
 /**
- * Creates a world. With systems, it's `create().systems.register(...systems)`. With `gpu`, render systems and the
- * kernels in `gpu.place` run on that device.
+ * Creates a world. With systems, it's `create().systems.register(...systems)`. With `gpu`, render systems and
+ * `kernel: "gpu"` kernels run on its device.
  */
 export function create(): World;
 export function create(options: { readonly systems?: readonly System[]; readonly gpu?: GpuOptions }): Promise<World>;

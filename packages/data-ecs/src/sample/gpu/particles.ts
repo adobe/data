@@ -4,7 +4,7 @@ import { Gpu } from '../../gpu/gpu.js';
 import { System } from '../../system/system.js';
 
 // The perf particles (src/perftest/particles.ts) on screen: 1M particles over four archetypes by visible and
-// enabled, with screen-space positions and velocities in pixels per frame. `move` is the perf move kernel.
+// enabled, with screen-space positions and velocities in pixels per frame. `move` is the perf move kernel, on the GPU.
 
 type Vec3 = readonly [number, number, number];
 const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
@@ -30,6 +30,7 @@ declare module '../../system/types.js' {
     export interface Types {
         "gpuParticles/spawn": true;
         "gpuParticles/move": true;
+        "gpuParticles/moveOnCpu": true;
         "gpuParticles/draw": true;
         "gpuParticles/frame": true;
     }
@@ -76,7 +77,18 @@ export const spawn = System.create({
 
 export const move = System.create({
     name: "gpuParticles/move",
-    kernel: true,
+    kernel: "gpu",
+    query: { read: [position, velocity], write: [position], has: [visible, enabled] },
+}, row => {
+    const [px, py, pz] = row[position];
+    const [vx, vy, vz] = row[velocity];
+    row[position] = [px + vx, py + vy, pz + vz];
+});
+
+/** The same move on the CPU, for comparison. */
+export const moveOnCpu = System.create({
+    name: "gpuParticles/moveOnCpu",
+    kernel: "cpu",
     query: { read: [position, velocity], write: [position], has: [visible, enabled] },
 }, row => {
     const [px, py, pz] = row[position];
@@ -105,7 +117,7 @@ const declaration = {
     name: "gpuParticles/draw",
     query: { read: [position, color], has: [visible, enabled] },
     render: { group: 0, accessors: { particlePosition: position, particleColor: color } },
-    after: ["gpuParticles/move"],
+    after: ["gpuParticles/move", "gpuParticles/moveOnCpu"],
 } as const;
 
 /**

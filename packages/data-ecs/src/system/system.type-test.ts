@@ -146,35 +146,83 @@ declare module '../component/types.js' {
 // Kernels: linear values (numbers, booleans, entities, fixed tuples), read-only resources.
 System.create({
     name: "test/integrate",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [velocity, vector, player, target], write: [position], has: [label] },
     resources: { read: [time] },
 }, () => {});
 
 System.create({
     name: "test/integrate",
-    kernel: true,
+    kernel: "cpu",
     // @ts-expect-error kernel values must be linear
     query: { read: [label] },
 }, () => {});
 
 System.create({
     name: "test/integrate",
-    kernel: true,
+    kernel: "cpu",
     // @ts-expect-error kernel values can't be variable-length arrays
     query: { write: [path] },
 }, () => {});
 
 System.create({
     name: "test/integrate",
-    kernel: true,
+    kernel: "cpu",
     // @ts-expect-error kernel lookups must read linear values
     lookup: { labels: { read: [label] } },
 }, () => {});
 
 System.create({
     name: "test/tally",
-    kernel: true,
+    kernel: "cpu",
     // @ts-expect-error kernels can't write resources
     resources: { write: [score] },
+}, () => {});
+
+// GPU kernels: everything kernels can't do, and no lookups, change filters or commands.
+System.create({
+    name: "test/integrate",
+    kernel: "gpu",
+    query: { read: [velocity], write: [position] },
+    resources: { read: [time] },
+}, row => {
+    row[position] = row[velocity];
+});
+
+System.create({
+    name: "test/integrate",
+    kernel: "gpu",
+    // @ts-expect-error GPU kernel values must be linear too
+    query: { read: [label] },
+}, () => {});
+
+System.create({
+    name: "test/follow",
+    kernel: "gpu",
+    query: { read: [target], write: [position] },
+    // @ts-expect-error GPU kernels can't use lookups
+    lookup: { targets: { read: [position] } },
+}, () => {});
+
+System.create({
+    name: "test/integrate",
+    kernel: "gpu",
+    // @ts-expect-error GPU kernels can't use change filters
+    query: { write: [position], changed: [velocity] },
+}, () => {});
+
+System.create({
+    name: "test/integrate",
+    kernel: "gpu",
+    query: { read: [velocity], write: [position] },
+}, (row, _, commands) => {
+    // @ts-expect-error GPU kernels can't issue commands
+    commands.despawn(row.entity);
+});
+
+System.create({
+    name: "test/integrate",
+    // @ts-expect-error a kernel is "cpu" or "gpu"
+    kernel: true,
+    query: { read: [velocity] },
 }, () => {});

@@ -80,7 +80,7 @@ const halve = (value: number) => value * 0.5;
 
 const integrate = System.create({
     name: "wasmTest/integrate",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [position, velocity], write: [position, velocity] },
     resources: { read: [seconds] },
 }, (row, context) => {
@@ -93,7 +93,7 @@ const integrate = System.create({
 
 const bounce = System.create({
     name: "wasmTest/bounce",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [position, velocity, bounces, flipped], write: [position, velocity, bounces, flipped] },
     resources: { read: [floor] },
     after: ["wasmTest/integrate"],
@@ -113,7 +113,7 @@ const bounce = System.create({
 
 const tally = System.create({
     name: "wasmTest/tally",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [bounces, flipped, position], write: [score] },
     after: ["wasmTest/bounce"],
 }, row => {
@@ -129,7 +129,7 @@ const tally = System.create({
 
 const scale = System.create({
     name: "wasmTest/scale",
-    kernel: true,
+    kernel: "cpu",
     args: { type: "number" },
     query: { read: [score], write: [score] },
 }, (row, { args }) => {
@@ -139,7 +139,7 @@ const scale = System.create({
 /** Component-wise vector math: one f32x4 operation per row. */
 const drift = System.create({
     name: "wasmTest/drift",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [position, velocity], write: [position] },
     resources: { read: [seconds] },
     after: ["wasmTest/tally"],
@@ -153,7 +153,7 @@ const drift = System.create({
 /** Runs only for rows whose bounces changed since it last ran. */
 const react = System.create({
     name: "wasmTest/react",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [score], write: [score], changed: [bounces] },
     after: ["wasmTest/tally"],
 }, row => {
@@ -163,7 +163,7 @@ const react = System.create({
 /** A lookup per row: found targets pull, missing or stale ones cost a point. */
 const chase = System.create({
     name: "wasmTest/chase",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [target, score], write: [score] },
     lookup: { targets: { read: [position, flipped] } },
     after: ["wasmTest/react", "wasmTest/drift"],

@@ -38,7 +38,7 @@ const seed = System.create({ name: "semanticsTest/seed" }, (_, __, commands) => 
 });
 const chase = System.create({
     name: "semanticsTest/chase",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [target, score], write: [score] },
     lookup: { targets: { read: [position] } },
 }, (row, { targets }) => {

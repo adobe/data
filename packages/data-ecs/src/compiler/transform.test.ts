@@ -252,7 +252,7 @@ const vec3 = (x: readonly number[], y: readonly number[], z: readonly number[]) 
 describe("particles", () => {
     test("gravity and integrate", async () => {
         const gravity = await compile(`const kernel = System.create({
-            name: "particles/gravity", kernel: true,
+            name: "particles/gravity", kernel: "cpu",
             query: { read: [velocity], write: [velocity] }, resources: { read: [delta] },
         }, (row, context) => {
             const [x, y, z] = row[velocity];
@@ -265,7 +265,7 @@ describe("particles", () => {
         expect(gravity.resources).toEqual(["delta"]);
 
         const integrate = await compile(`const kernel = System.create({
-            name: "particles/integrate", kernel: true,
+            name: "particles/integrate", kernel: "cpu",
             query: { read: [position, velocity], write: [position] }, resources: { read: [delta] }, after: ["particles/gravity"],
         }, (row, context) => {
             const [px, py, pz] = row[position];
@@ -284,7 +284,7 @@ describe("particles", () => {
 
 describe("layout", () => {
     test("interleaved components are read and written at row * stride + offset, leaving padding untouched", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [velocity, alive], write: [velocity] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [velocity, alive], write: [velocity] } }, (row) => {
             const [x, y, z] = row[velocity];
             row[velocity] = [z, row[alive] === true ? y * 10 : y, x];
         });`);
@@ -297,7 +297,7 @@ describe("layout", () => {
     });
 
     test("stamps set the changed row and its chunk; each changed column is followed by its chunk column", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [mass], write: [score] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, (row) => {
             if (row[mass] > 0) row[score] = 1;
         });`);
         const rows = 2 * 2 ** chunkShift + 5;
@@ -311,12 +311,12 @@ describe("layout", () => {
     });
 
     test("an unconditional stamp stamps the call's chunks once; a stamp after return stays per row", async () => {
-        const always = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [mass], write: [score] } }, (row) => {
+        const always = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, (row) => {
             row[score] = row[mass];
         });`);
         expect(String(always.create)).not.toContain(">> 10] = tick");
         expect(run(always, 3200, {}, { range: [1000, 2100] }).chunks("score")).toEqual([tick, tick, tick, 0]);
-        const after = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [mass], write: [score] } }, (row) => {
+        const after = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, (row) => {
             if (row[mass] > 0) return;
             row[score] = 1;
         });`);
@@ -326,7 +326,7 @@ describe("layout", () => {
     });
 
     test("indices stay in step when return skips the rest of a row", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [velocity], write: [velocity] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [velocity], write: [velocity] } }, (row) => {
             const [x, y, z] = row[velocity];
             if (x > 1 && x < 5) return;
             row[velocity] = [z, y, x];
@@ -339,7 +339,7 @@ describe("layout", () => {
 
 describe("binding identity", () => {
     test("a local shadowing a component key is not that component", async () => {
-        expect(await failure(`const kernel = System.create({ name: "a", kernel: true, query: { read: [velocity], write: [position] } }, (row) => {
+        expect(await failure(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [velocity], write: [position] } }, (row) => {
             const velocity = 1;
             row[position] = row[velocity];
         });`)).toBe("row is indexed by a component in query read or write, or .entity");
@@ -347,14 +347,14 @@ describe("binding identity", () => {
 
     test("another binding with the same key string is not the declared component", async () => {
         expect(await failure(`const speed = "velocity";
-        const kernel = System.create({ name: "a", kernel: true, query: { read: [velocity], write: [position] } }, (row) => {
+        const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [velocity], write: [position] } }, (row) => {
             row[position] = row[speed];
         });`)).toBe("speed is not in query read or write");
     });
 
     test("a helper parameter shadows a module binding only inside the helper", async () => {
         const kernel = await compile(`const twice = (velocity) => velocity * 2;
-        const kernel = System.create({ name: "a", kernel: true, query: { read: [velocity], write: [position] } }, (row) => {
+        const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [velocity], write: [position] } }, (row) => {
             row[position] = twice(row[velocity]) + row[velocity];
         });`);
         expect(run(kernel, 1, { velocity: { "[]": [3] } }).field("position")).toEqual([9]);
@@ -363,7 +363,7 @@ describe("binding identity", () => {
 
 describe("value semantics", () => {
     test("tuple locals are copies, and snapshots read before later writes", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [position], write: [position, score] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position], write: [position, score] } }, (row) => {
             const before = row[position];
             let v = [before[0], before[1]];
             const w = v;
@@ -377,7 +377,7 @@ describe("value semantics", () => {
     });
 
     test("whole-value writes evaluate every leaf before storing", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [position], write: [position, score] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position], write: [position, score] } }, (row) => {
             row[position] = [row[position][1], row[position][0]];
             let a = 1;
             let b = 2;
@@ -390,7 +390,7 @@ describe("value semantics", () => {
     });
 
     test("struct values and conditional tuples", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [mass], write: [position] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [position] } }, (row) => {
             const p = row[mass] > 1 ? { x: 1, y: [2, 3] } : { x: 4, y: [5, 6] };
             row[position] = p;
         });`);
@@ -408,7 +408,7 @@ describe("helpers", () => {
             return [x * k, y * k];
         };
         const length = ([x, y]) => Math.sqrt(x * x + y * y);
-        const kernel = System.create({ name: "a", kernel: true, query: { read: [position], write: [position, score] } }, (row) => {
+        const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position], write: [position, score] } }, (row) => {
             const k = 100;
             const x = 1;
             row[position] = scale(row[position], 0.5);
@@ -421,14 +421,14 @@ describe("helpers", () => {
 
     test("recursive helpers are rejected", async () => {
         expect(await failure(`const f = (x) => f(x);
-        const kernel = System.create({ name: "a", kernel: true, query: { write: [score] } }, (row) => { row[score] = f(1); });`))
+        const kernel = System.create({ name: "a", kernel: "cpu", query: { write: [score] } }, (row) => { row[score] = f(1); });`))
             .toBe("f is recursive");
     });
 });
 
 describe("control flow", () => {
     test("return ends the row, also from inside a loop", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [mass], write: [score] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, (row) => {
             if (row[mass] < 0) return;
             let total = 0;
             for (let i = 0; i < 10; i++) {
@@ -443,7 +443,7 @@ describe("control flow", () => {
 
     test("a loop test that inlines a helper is re-evaluated each iteration", async () => {
         const kernel = await compile(`const below = (a, b) => { const limit = b * 2; return a < limit; };
-        const kernel = System.create({ name: "a", kernel: true, query: { read: [mass], write: [score] } }, (row) => {
+        const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, (row) => {
             let n = 0;
             while (below(n, row[mass])) { n++; }
             let m = 0;
@@ -457,7 +457,7 @@ describe("control flow", () => {
 describe("context", () => {
     test("lookups map components to their read index, with null guards", async () => {
         const kernel = await compile(`const half = (value) => { const h = value / 2; return h; };
-        const kernel = System.create({ name: "a", kernel: true, query: { read: [target], write: [position, score] }, lookup: { targets: { read: [mass, position] } } }, (row, { targets }) => {
+        const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [target], write: [position, score] }, lookup: { targets: { read: [mass, position] } } }, (row, { targets }) => {
             const other = targets(row[target]);
             if (other !== null) { row[position] = other[position] - other[mass]; }
             row[score] = (other !== null && half(other[position])) || -1;
@@ -470,7 +470,7 @@ describe("context", () => {
     });
 
     test("optional lookup access, computed context destructuring and args", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, args: { type: "number" }, query: { read: [target], write: [score] }, resources: { read: [delta] }, lookup: { targets: { read: [mass] } } }, (row, { [delta]: d, targets, args }) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", args: { type: "number" }, query: { read: [target], write: [score] }, resources: { read: [delta] }, lookup: { targets: { read: [mass] } } }, (row, { [delta]: d, targets, args }) => {
             row[score] = (targets(row[target])?.[mass] ?? 0) + d + args;
         });`);
         const found = (entity: number) => entity === 1 ? [3] : null;
@@ -478,7 +478,7 @@ describe("context", () => {
     });
 
     test("boolean columns read as booleans", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [alive], write: [score] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [alive], write: [score] } }, (row) => {
             row[score] = row[alive] === true ? 1 : 2;
         });`);
         expect(run(kernel, 2, { alive: { "[]": [1, 0] } }, { booleans: ["alive"] }).field("score")).toEqual([1, 2]);
@@ -486,7 +486,7 @@ describe("context", () => {
     });
 
     test("boolean reads convert only where observable, including through locals", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [alive, mass], write: [score] } }, (row, context, commands) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [alive, mass], write: [score] } }, (row, context, commands) => {
             const flag = row[alive];
             const copy = flag;
             row[score] = (copy === true ? 10 : 20) + row[mass] * 2 + (flag ? 1 : 0);
@@ -505,7 +505,7 @@ describe("context", () => {
     });
 
     test("a spawn nested in an add's value is issued before the add begins", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [mass] } }, (row, context, commands) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass] } }, (row, context, commands) => {
             commands.add(row.entity, { [target]: commands.spawn({ [mass]: row[mass] }), [score]: 1 });
             commands.despawn(row.entity);
         });`);
@@ -519,7 +519,7 @@ describe("context", () => {
     });
 
     test("commands name components through keys", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [position] } }, (row, context, commands) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position] } }, (row, context, commands) => {
             const spawned = commands.spawn({ [position]: [row[position][0], 1], [alive]: true });
             commands.add(spawned, { [score]: row.entity });
             commands.remove(row.entity, alive, score);
@@ -535,7 +535,7 @@ describe("context", () => {
 
 describe("program", () => {
     test("args and resource paths are scalars in the program", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, args: { type: "object" }, query: { write: [score] }, resources: { read: [delta] } }, (row, { [delta]: d, args }) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", args: { type: "object" }, query: { write: [score] }, resources: { read: [delta] } }, (row, { [delta]: d, args }) => {
             const [, y] = d;
             row[score] = y * args.scale + Math.max(args.scale, Math.PI) + (args.flag ? 1 : 0);
         });`);
@@ -546,7 +546,7 @@ describe("program", () => {
     });
 
     test("runtime indexing into a resource has no program", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: true, query: { read: [mass], write: [score] }, resources: { read: [delta] } }, (row, { [delta]: d }) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] }, resources: { read: [delta] } }, (row, { [delta]: d }) => {
             row[score] = d[row[mass]];
         });`);
         expect(run(kernel, 1, { mass: { "[]": [1] } }, { resources: [[5, 6]], program: false }).field("score")).toEqual([6]);
@@ -555,7 +555,7 @@ describe("program", () => {
 
 describe("lookups in the program", () => {
     const targets = (entity: number) => entity === 1 ? [3, [10, 20, 30]] : entity === 2 ? [4, [40, 50, 60]] : null;
-    const declaration = (body: string) => `const kernel = System.create({ name: "a", kernel: true,
+    const declaration = (body: string) => `const kernel = System.create({ name: "a", kernel: "cpu",
         query: { read: [target, mass], write: [score] }, lookup: { targets: { read: [mass, position] }, others: { read: [position] } } },
         (row, { targets, others }) => { ${body} });`;
 
@@ -601,7 +601,7 @@ describe("lookups in the program", () => {
 
 describe("subset", () => {
     const kernel = (body: string, query = "{ read: [mass], write: [score] }") =>
-        `const kernel = System.create({ name: "a", kernel: true, query: ${query} }, (row, context, commands) => { ${body} });`;
+        `const kernel = System.create({ name: "a", kernel: "cpu", query: ${query} }, (row, context, commands) => { ${body} });`;
 
     test.each([
         ["row[mass] = 1;", "mass is not in query write"],
@@ -628,8 +628,23 @@ describe("subset", () => {
             .toBe("helper is imported; kernels can only use helpers and constants defined in this module");
     });
 
+    test("GPU kernels", async () => {
+        const gpu = (declaration: string, body: string) =>
+            `const kernel = System.create({ name: "a", kernel: "gpu", ${declaration} }, (row, context, commands) => { ${body} });`;
+        expect(await failure(gpu("query: { read: [mass], write: [score] }", "row[score] = row[mass] * 2;"))).toBe("compiled");
+        expect(await failure(gpu("query: { read: [target], write: [score] }, lookup: { targets: { read: [mass] } }", "row[score] = 1;")))
+            .toBe("a GPU kernel can't use lookups yet");
+        expect(await failure(gpu("query: { write: [score], changed: [mass] }", "row[score] = 1;"))).toBe("a GPU kernel can't use change filters yet");
+        expect(await failure(gpu("query: { read: [mass], write: [score] }", "commands.despawn(row.entity);")))
+            .toBe("a GPU kernel can't issue commands or use values that aren't numbers or booleans");
+        expect(await failure(gpu("query: { read: [mass], write: [score] }", "let s = 0; for (let i = 0; i < 3; i++) s += i; row[score] = s;")))
+            .toBe("a GPU kernel can't use loops or labeled blocks yet");
+        expect(await failure(`const kernel = System.create({ name: "a", kernel: true, query: { write: [score] } }, (row) => {});`))
+            .toBe(`kernel must be the literal "cpu" or "gpu"`);
+    });
+
     test("kernels inside functions", async () => {
-        expect(await failure(`const make = () => System.create({ name: "a", kernel: true, query: { write: [score] } }, (row) => {});`))
+        expect(await failure(`const make = () => System.create({ name: "a", kernel: "cpu", query: { write: [score] } }, (row) => {});`))
             .toBe("kernel systems must be declared at module scope");
     });
 
@@ -642,6 +657,6 @@ describe("subset", () => {
 
     test("non-kernel systems and other modules are left untouched", async () => {
         expect(await transform(`const s = System.create({ name: "a", query: { read: [mass] } }, (row) => { const f = () => row; });`)).toBeNull();
-        expect(await transformKernels(`import { System } from "other";\nSystem.create({ name: "a", kernel: true }, () => {});`, "/x.js", parseAst, async () => false, () => "")).toBeNull();
+        expect(await transformKernels(`import { System } from "other";\nSystem.create({ name: "a", kernel: "cpu" }, () => {});`, "/x.js", parseAst, async () => false, () => "")).toBeNull();
     });
 });

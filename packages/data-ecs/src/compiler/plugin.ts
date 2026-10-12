@@ -9,7 +9,7 @@ const packageName = "@adobe/data-ecs";
 type CachedKernel = { readonly source: string; readonly hash: string };
 
 /**
- * Compiles `kernel: true` systems. Runs after TypeScript is stripped and before minification, so it sees plain JS
+ * Compiles kernel systems (`kernel: "cpu"` or `"gpu"`). Runs after TypeScript is stripped and before minification, so it sees plain JS
  * with source names. Each kernel's `create` becomes its own module at `description.url`: served from a
  * root-absolute url in dev, and emitted as a chunk in a build.
  *

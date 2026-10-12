@@ -14,7 +14,7 @@ const fixture = join(directory, "fixture.js");
 writeFileSync(fixture, `import { System } from ${source("../system/system.ts")};
 import { kernelOf } from ${source("../world/create/attach-kernel.ts")};
 const score = "score";
-const kernel = System.create({ name: "fixture", kernel: true, query: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+const kernel = System.create({ name: "fixture", kernel: "cpu", query: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
 export const description = kernelOf(kernel);
 `);
 afterAll(() => rmSync(directory, { recursive: true, force: true }));

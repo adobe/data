@@ -53,7 +53,7 @@ export const spawn = System.create({
 // Kernels: linear components and read-only resources, so they can run in chunks across workers.
 export const gravity = System.create({
     name: "particles/gravity",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [velocity], write: [velocity] },
     resources: { read: [delta] },
 }, (row, context) => {
@@ -63,7 +63,7 @@ export const gravity = System.create({
 
 export const integrate = System.create({
     name: "particles/integrate",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [position, velocity], write: [position] },
     resources: { read: [delta] },
     after: ["particles/gravity"],

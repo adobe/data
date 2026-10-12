@@ -85,7 +85,7 @@ const seed = System.create({ name: "workersTest/seed", args: { type: "integer" }
 
 const integrate = System.create({
     name: "workersTest/integrate",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [position, velocity], write: [position] },
     resources: { read: [seconds] },
 }, (row, context) => {
@@ -97,7 +97,7 @@ const integrate = System.create({
 /** Structural commands from workers: rows past a threshold spawn a marker and lose their velocity. */
 const split = System.create({
     name: "workersTest/split",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [position], has: [velocity] },
     after: ["workersTest/integrate"],
 }, (row, _, commands) => {
@@ -111,7 +111,7 @@ const split = System.create({
 /** Lookups from workers: offset by the distance to the target. */
 const follow = System.create({
     name: "workersTest/follow",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [position, target], write: [offset] },
     lookup: { targets: { read: [position] } },
     after: ["workersTest/split"],
@@ -126,7 +126,7 @@ const main = System.composite({ name: "workersTest/main", systems: [integrate, s
 /** Every row writes the same entity, so only merge order decides which value survives. */
 const stamp = System.create({
     name: "workersTest/stamp",
-    kernel: true,
+    kernel: "cpu",
     args: { type: "integer" },
     query: { read: [position] },
 }, (row, { args }, commands) => {
@@ -137,7 +137,7 @@ const stamp = System.create({
 /** Despawns entity 0, which is the resource entity since registration reserves it first. */
 const unlink = System.create({
     name: "workersTest/unlink",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [target] },
 }, (_, __, commands) => {
     commands.despawn(0);
@@ -145,7 +145,7 @@ const unlink = System.create({
 
 const labels = System.create({
     name: "workersTest/labels",
-    kernel: true,
+    kernel: "cpu",
     query: { read: [target], write: [offset] },
     // @ts-expect-error kernel lookups must read linear values; registration rejects it too, for untyped callers
     lookup: { named: { read: [label] } },

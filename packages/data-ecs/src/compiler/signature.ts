@@ -11,6 +11,8 @@ export type Signature = {
     readonly resources: readonly string[];
     readonly lookups: readonly Lookup[];
     readonly args: boolean;
+    /** Whether it filters on `added` or `changed` components, or on changed resources. */
+    readonly filtered: boolean;
 };
 
 const entry = <T>(name: string, value: T): readonly [string, T] => [name, value];
@@ -40,21 +42,23 @@ const lists = (node: Expression | Pattern, what: string, allowed: readonly strin
         ? entry(name, identifiers(property.value, module))
         : fail(property, `${what}.${name} is not allowed in a kernel declaration`)));
 
-/** Whether a `System.create` declaration opts into compilation. */
-export const isKernel = (declaration: ObjectExpression): boolean => {
+/** What kind of kernel a `System.create` declaration compiles to, or null when it isn't a kernel. */
+export const kernelOf = (declaration: ObjectExpression): "cpu" | "gpu" | null => {
     for (const property of declaration.properties) {
         if (property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === "kernel") {
-            if (property.value.type === "Literal" && typeof property.value.value === "boolean") return property.value.value;
-            return fail(property.value, "kernel must be the literal true or false");
+            const { value } = property;
+            if (value.type === "Literal" && (value.value === "cpu" || value.value === "gpu")) return value.value;
+            return fail(value, `kernel must be the literal "cpu" or "gpu"`);
         }
     }
-    return false;
+    return null;
 };
 
 /** Reads and validates a kernel declaration. */
 export const signature = (declaration: ObjectExpression, module: ModuleScope): Signature => {
     let query: ReadonlyMap<string, readonly string[]> | undefined;
     let resources: readonly string[] = [];
+    let resourcesChanged = false;
     let args = false;
     const lookups: Lookup[] = [];
     for (const [name, property] of properties(declaration, "a kernel declaration")) {
@@ -63,7 +67,11 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
                 query = lists(property.value, "query", ["read", "write", "has", "not", "added", "changed"], module);
                 break;
             case "resources":
-                resources = lists(property.value, "resources", ["read", "changed"], module).get("read") ?? [];
+                {
+                    const listed = lists(property.value, "resources", ["read", "changed"], module);
+                    resources = listed.get("read") ?? [];
+                    resourcesChanged = (listed.get("changed")?.length ?? 0) > 0;
+                }
                 break;
             case "lookup":
                 for (const [lookup, value] of properties(property.value, "lookup")) {
@@ -80,5 +88,6 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
         }
     }
     if (query === undefined) return fail(declaration, "a kernel needs a query");
-    return { read: new Set(query.get("read")), write: new Set(query.get("write")), resources, lookups, args };
+    const filtered = resourcesChanged || (query.get("added")?.length ?? 0) + (query.get("changed")?.length ?? 0) > 0;
+    return { read: new Set(query.get("read")), write: new Set(query.get("write")), resources, lookups, args, filtered };
 };

@@ -46,6 +46,7 @@ const buildHost = (resolver: () => Rollup.PluginContext): LinkHost => ({
  * root-absolute url in dev, and emitted as a chunk in a build.
  *
  * Functions and constants kernels import are read from their files, with types stripped, and inlined (`link.ts`).
+ * The application's build compiles every kernel, its dependencies' too: a library ships its kernels uncompiled.
  *
  * Dev dep pre-bundling bypasses plugins and breaks the runtime's worker url, so `@adobe/data-ecs` is excluded from it.
  * Consumers must also add to `optimizeDeps.exclude` any dependency that defines kernels, imports `@adobe/data-ecs`, or

@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -31,6 +31,20 @@ import { scaled } from "./helper.ts";
 import { increment } from "fake-math";
 const score = "score";
 const kernel = System.create({ name: "linked", kernel: "cpu", query: { write: [score] } }, (row) => { row[score] = increment(scaled(row.entity)); });
+export const description = kernelOf(kernel);
+`);
+/** An application importing a kernel a library ships uncompiled, from its `dist`. */
+const application = join(directory, "application.js");
+mkdirSync(join(directory, "node_modules/@adobe"), { recursive: true });
+symlinkSync(fileURLToPath(new URL("../..", import.meta.url)), join(directory, "node_modules/@adobe/data-ecs"));
+mkdirSync(join(directory, "node_modules/kernel-library/dist"), { recursive: true });
+writeFileSync(join(directory, "node_modules/kernel-library/package.json"), JSON.stringify({ name: "kernel-library", type: "module", exports: "./dist/index.js" }));
+writeFileSync(join(directory, "node_modules/kernel-library/dist/index.js"), `import { System } from "@adobe/data-ecs";
+const score = "score";
+export const kernel = System.create({ name: "library", kernel: "cpu", query: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+`);
+writeFileSync(application, `import { kernelOf } from ${source("../world/create/attach-kernel.ts")};
+import { kernel } from "kernel-library";
 export const description = kernelOf(kernel);
 `);
 afterAll(() => rmSync(directory, { recursive: true, force: true }));
@@ -120,4 +134,18 @@ test("serve compiles kernels again when a file they inline from changes", async 
     } finally {
         writeHelper(2);
     }
+});
+
+test("an application's build compiles the kernels a library ships uncompiled", async () => {
+    const outDir = join(directory, "dist-application");
+    const output = await build({
+        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        build: { outDir, minify: false, lib: { entry: application, formats: ["es"], fileName: "main" } },
+    });
+    const main = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
+        .find((item): item is Rollup.OutputChunk => item.type === "chunk" && item.isEntry);
+    const { description }: { description: KernelDescription | undefined } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
+    expect(description).toBeDefined();
+    const module: KernelModule = await import(/* @vite-ignore */ description?.url ?? "");
+    expect(description === undefined ? [] : runs(module, description)).toEqual([6, 8]);
 });

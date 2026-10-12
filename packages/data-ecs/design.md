@@ -34,7 +34,8 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 - **Kernel systems (`kernel: "cpu"` or `"gpu"`) are compiled at build time.** A Vite/Rolldown plugin compiles them in its `transform` hook, after TS types are stripped and before minification, so names are never mangled and nothing is parsed at runtime.
   - It finds systems by resolving the import binding of the system factory.
   - From one parse it emits a compiled kernel (efficient JS; later WASM and WGSL) and the inferred read/write sets, which are checked against the declared signature.
-  - **The plugin is required for kernels.** Registering a kernel system that wasn't compiled throws. Non-kernel systems run as written on the main thread, through accessor rows over the same storage.
+  - **The plugin is required for kernels.** Registering a kernel system that wasn't compiled throws.
+  - **The application compiles every kernel,** its dependencies' too, against the one runtime it bundles. A library ships its kernels as source in its `dist`, uncompiled and unminified, so their code stays in the kernel subset and its errors stay readable. Non-kernel systems run as written on the main thread, through accessor rows over the same storage.
   - **Workers:**
     - The plugin emits each kernel as its own chunk and attaches its `new URL(..., import.meta.url)` reference to the system.
     - On registration, workers `import()` each kernel and cache it by system name.

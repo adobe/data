@@ -6,22 +6,33 @@ import { createWorld } from "./create.js";
 
 const position = "builtinsTest/position";
 const velocity = "builtinsTest/velocity";
+const bits = "builtinsTest/bits";
+const counts = "builtinsTest/counts";
+const sums = "builtinsTest/sums";
 
 declare module "../../component/types.js" {
     export interface Types {
         [position]: Vec3;
         [velocity]: Vec3;
+        [bits]: Vec3.U32;
+        [counts]: Vec3.U32;
+        [sums]: Vec3.I32;
     }
 }
 declare module "../../system/types.js" {
     export interface Types {
         "builtinsTest/spawn": true;
         "builtinsTest/transform": true;
+        "builtinsTest/spawnBits": true;
+        "builtinsTest/integers": true;
     }
 }
 
 Component.register(position, Vec3.schema);
 Component.register(velocity, Vec3.schema);
+Component.register(bits, Vec3.U32.schema);
+Component.register(counts, Vec3.U32.schema);
+Component.register(sums, Vec3.I32.schema);
 
 const spawn = System.create({ name: "builtinsTest/spawn" }, (_, __, commands) => {
     for (let i = 0; i < 64; i++) commands.spawn({ [position]: [i, i % 5, -i], [velocity]: [1, 0.5 * (i % 3), 0.25] });
@@ -39,6 +50,26 @@ const transform = System.create({ name: "builtinsTest/transform", kernel: "cpu",
 
 const expected = (p: Vec3, v: Vec3): Vec3 => Vec3.add(Mat4x4.multiplyVec3(matrix, Quat.rotateVec3(rotation, p)), Vec3.normalize(v));
 
+const bitsAt = (i: number): Vec3.U32 => [Math.imul(i + 1, 0x9E3779B9) >>> 0, (0xFFFFFFFF - i) >>> 0, i << 26 >>> 0];
+const sumsAt = (i: number): Vec3.I32 => [2 ** 31 - 1 - i, -(2 ** 31) + i, Math.imul(i, 65536)];
+
+const spawnBits = System.create({ name: "builtinsTest/spawnBits" }, (_, __, commands) => {
+    for (let i = 0; i < 64; i++) commands.spawn({ [bits]: bitsAt(i), [counts]: [0, 0, 0], [sums]: sumsAt(i) });
+});
+
+/** Integer functions that wrap, and bit functions without loops. */
+const integerResults = (b: Vec3.U32, s: Vec3.I32): { readonly counts: Vec3.U32; readonly sums: Vec3.I32 } => ({
+    counts: Vec3.U32.add(Vec3.U32.countOneBits(b), Vec3.U32.add(Vec3.U32.countTrailingZeros(b), Vec3.U32.multiply(Vec3.U32.reverseBits(b), b))),
+    sums: Vec3.I32.add(Vec3.I32.multiply(s, [65536, 3, 65536]), Vec3.I32.abs(Vec3.I32.negate(s))),
+});
+
+const integers = System.create({ name: "builtinsTest/integers", kernel: "cpu", query: { read: [bits, sums], write: [counts, sums] } }, row => {
+    const b = row[bits];
+    const s = row[sums];
+    row[counts] = Vec3.U32.add(Vec3.U32.countOneBits(b), Vec3.U32.add(Vec3.U32.countTrailingZeros(b), Vec3.U32.multiply(Vec3.U32.reverseBits(b), b)));
+    row[sums] = Vec3.I32.add(Vec3.I32.multiply(s, [65536, 3, 65536]), Vec3.I32.abs(Vec3.I32.negate(s)));
+});
+
 describe("math in kernels", () => {
     for (const wasm of [false, true]) {
         it(`matches the functions called directly (${wasm ? "WASM" : "JS"})`, async () => {
@@ -50,6 +81,19 @@ describe("math in kernels", () => {
             const want = Array.from({ length: 64 }, (_, i) => expected([i, i % 5, -i], [1, 0.5 * (i % 3), 0.25]));
             // Stored as f32, so compared at f32 precision.
             expect(read.map(value => value?.map(Math.fround))).toEqual(want.map(value => value.map(Math.fround)));
+            await world.dispose();
+        });
+    }
+    for (const wasm of [false, true]) {
+        it(`wraps integers and counts bits as the functions do (${wasm ? "WASM" : "JS"})`, async () => {
+            const world = createWorld({ workers: 0, wasm });
+            await world.systems.register(spawnBits, integers);
+            await world.run(spawnBits);
+            await world.run(integers);
+            const entities = world.query.select([bits]);
+            const want = Array.from({ length: 64 }, (_, i) => integerResults(bitsAt(i), sumsAt(i)));
+            expect(entities.map(entity => world.read.component(entity, counts))).toEqual(want.map(value => value.counts));
+            expect(entities.map(entity => world.read.component(entity, sums))).toEqual(want.map(value => value.sums));
             await world.dispose();
         });
     }

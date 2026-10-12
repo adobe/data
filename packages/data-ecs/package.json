@@ -14,16 +14,18 @@
     "typecheck": "tsc -b",
     "test": "pnpm exec playwright install chromium && vitest --run",
     "test:perf": "pnpm exec playwright install chromium && vitest --run --workspace vitest.perf.workspace.ts",
-    "perf": "vite build --config vite.perf.config.ts --logLevel warn && node dist/perf/run.js"
+    "perf": "vite build --config vite.perf.config.ts --logLevel warn && node dist/perf/run.js",
+    "sample": "vite --config vite.sample.config.ts"
   },
   "devDependencies": {
     "@types/estree": "^1.0.5",
     "@types/node": "^20.11.0",
+    "@vitest/browser": "^1.6.0",
+    "@webgpu/types": "^0.1.61",
+    "playwright": "^1.46.1",
     "typescript": "^5.8.3",
     "vite": "^5.1.1",
-    "vitest": "^1.6.0",
-    "@vitest/browser": "^1.6.0",
-    "playwright": "^1.46.1"
+    "vitest": "^1.6.0"
   },
   "exports": {
     ".": {

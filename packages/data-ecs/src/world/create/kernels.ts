@@ -7,6 +7,7 @@ import { createArrayLookup } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
 import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
 import { createDirectory, lookupParameters } from './directories.js';
+import { generateWgsl, type WgslKernel } from './wgsl.js';
 
 export type BoundKernel = {
     readonly description: KernelDescription;
@@ -38,6 +39,8 @@ export type BoundKernel = {
     readonly compiled: () => { readonly module: WebAssembly.Module; readonly run: WasmRun } | null;
     /** For a WASM kernel with lookups: the entity table and directories, passed ahead of the scalars. */
     readonly lookupParameters: () => number[];
+    /** The kernel as a compute shader for the components observed at the last load, or why it can't run on the GPU. */
+    readonly gpu: () => WgslKernel | string;
 };
 
 /** Whether a scalar leaf at `path` is a boolean, a number, or not a scalar leaf. */
@@ -188,6 +191,10 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             compiled = { module: wasmModule, run: await instantiateWasm(wasmModule, state.memory.memory, bound.wasm.imports) };
         },
         lookupParameters: () => directories.length === 0 ? [] : lookupParameters(state, directories),
+        gpu: () => description.program === null
+            ? "it issues commands or uses values that aren't numbers"
+            : description.lookups.length > 0 ? "it uses lookups"
+            : generateWgsl(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType),
     };
     return bound;
 };

@@ -42,7 +42,13 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   - **Worker count** comes from the platform (`navigator.hardwareConcurrency` minus the main thread). It's not part of the API.
   - **`SharedArrayBuffer` requires cross-origin isolation** (COOP/COEP headers). Without it, every system runs on the main thread.
   - **Subset errors** are reported at build time. An ESLint rule shares the same validator, so errors also show in the editor.
-- **GPU execution is a design goal in principle.** Some kernels should be able to run as WebGPU compute shaders, so the contract must not rule it out.
+- **GPU systems.** `World.create({ systems, gpu: { device, place } })` gives a world the app's device.
+  - **Placement is per world:** kernels in `place` run as WGSL compute shaders compiled from the same Program IR as WASM; the rest stay on the CPU, so one kernel can be measured both ways. Registering a placed kernel the GPU can't run rejects with the reason: commands, lookups, change filters, f64 or byte values, loops, or writing a component some system filters on with `changed`.
+  - **Render systems** (`System.render`) run once per run on the main thread in schedule order, read-only. They record into the run's encoder over the GPU copies of their query's components, one table per matched archetype. `Gpu.wgsl(system)` returns their shaders' declarations: the world's bind group at the group they name and a function per component (`fn position(row: u32) -> vec3<f32>`), from schemas alone, so shaders can be written before a world exists. Pipelines take `world.gpu.layout`; bind groups and buffers stay the world's, so they can be replaced as storage grows.
+  - **Residency:** a separate GPU heap holds copies of only the storages GPU systems use. Each copy tracks rows the CPU changed since its upload and rows the GPU wrote since its readback. GPU systems upload what the CPU changed first; CPU systems, and sync points with anything to apply, read back what the GPU wrote first. GPU-to-GPU chains and rendering never copy back.
+  - **Ordering:** a queue write lands before recorded but unsubmitted work, so recorded work is submitted before each upload. Each run's encoder is submitted at its end, before the sync point; `run` resolves then, not when the GPU finishes.
+  - **Reads outside runs** see values a GPU kernel wrote only after `await world.synchronize(components)`, queued with runs. A lost device makes later runs reject.
+  - **Numbers on the GPU** are f32 between operations, so integers past 2^24 lose bits mid-expression; stores and bitwise operators wrap as in JS. WGSL lets implementations assume no NaN or infinity arises from arithmetic, and Metal does, so kernels that rely on NaN differ there.
 
 ## Phase 0: contract decisions
 
@@ -169,9 +175,9 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
    - **Value semantics** for tuple and struct locals, matching component values: locals are scalarized to one local per leaf.
 2. **Reduction construct.** Its shape, and how partial results combine.
 3. **Non-local matching.** Relationship pairs with variables (`(ChildOf, $p)` where `$p` has X) depend on another entity's archetype, and sparse-set components aren't part of the archetype. Should monitors support these, and how?
-4. **GPU systems.** These are probably pure value reads and writes into component tables, with no structural commands, so the GPU never needs command buffer communication. Still open:
-   - **Latency.** A system may need to declare that its writes become visible to CPU readers at the next sync point or later, since readback is asynchronous.
-   - **Finalizers on GPU-resident components.** Finalize is synchronous, so these finalizers either run on the GPU or the sync point waits for a readback.
+4. **GPU systems.** Pure value reads and writes into component tables, with no structural commands, so the GPU never needs command buffer communication. Still open:
+   - **Latency.** Whether a system can declare that its writes become visible to CPU readers only at a later sync point, so readback overlaps the next frame.
+   - **Device loss.** Components ahead on the GPU are lost with the device; decide whether a world can fall back to its last CPU copy.
 5. **API shapes** for rules, finalizers (per-query and whole-plan), and declared cascades.
 
 ## Additive later (no breaking change)
@@ -228,10 +234,13 @@ Measured with `pnpm perf` (benchmarks bundled as in production, on plain node) a
 - **Gather loops.** The compiler needs an indexed-row loop mode for scattered sets, such as rows about to be removed.
 - **Sparse dirty lists.** A possible option for very large columns that change rarely.
 - **Archetype churn.** Derived components that toggle on and off move entities between tables. Candidates: sparse-set storage, or modeling the condition as a value.
-- **GPU residency.** Each column is valid on the CPU (SAB), on the GPU, or both, and transfers happen only when a system on the other side reads that column, as determined by the schedule's read/write sets.
-  - GPU-to-GPU system chains and rendering never copy back.
-  - Only changed chunks are uploaded.
-  - The structural plan is uploaded as row-copy lists and applied by a move kernel. Table growth uses `copyBufferToBuffer`.
-  - Tick columns are GPU-resident too. Only the per-chunk summary ticks are read back.
-  - Whole-plan consumers (persistence, sync) read back on demand.
-  - Main-thread-only components never live on the GPU.
+- **GPU residency, next steps.**
+  - Upload only changed chunks, by making the GPU copy an observer of `changed` ticks; today a CPU write or a sync point that touches an archetype uploads its whole columns.
+  - A whole-column changed tick, O(1) to stamp, so GPU kernels can write observed components; then u32 GPU ticks relative to an epoch rebased at sync points.
+  - Apply the structural plan on the GPU as row-copy lists run by a move kernel, instead of reading back first.
+  - GPU kernels with change filters, lookups and loops; GPU-only components (`residency: "gpu"`, never in the CPU arena) for outputs like culled lists and indirect draw arguments.
+  - One dispatch over several archetypes, and indirect draws; heap segments past `maxBufferSize`; automatic placement.
+  - Finalizers on components ahead on the GPU: until then, the sync point reads them back first.
+  - Read back only the archetypes a sync point's plan touches, and upload only the rows it moved: today a run with any command reads back every storage ahead on the GPU, so worlds that spawn every frame round-trip their GPU chains every frame.
+  - An integer type pass in the WGSL backend, so `u32`/`i32` values and bitwise chains stay exact.
+  - GPU validation errors, through error scopes, as run failures; today they reach only the console.

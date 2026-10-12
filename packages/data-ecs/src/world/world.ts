@@ -1,3 +1,5 @@
+import type { Component } from '../component/component.js';
+import type { Gpu } from './gpu.js';
 import type { System } from '../system/system.js';
 import type { Query } from './query/query.js';
 import type { Read } from './read.js';
@@ -17,8 +19,13 @@ export type World = {
     dispose(): Promise<void>;
     [Symbol.asyncDispose](): Promise<void>;
     readonly systems: Systems;
+    /** Values a GPU kernel wrote stay on the GPU; `query` and `read` see them only after `synchronize`. */
     readonly query: Query;
     readonly read: Read;
+    /** Brings the CPU copies of these components up to date with GPU writes, queued with runs. */
+    synchronize(components: readonly Component.Name[]): Promise<void>;
+    /** The world's GPU, or null for a world created without one. */
+    readonly gpu: Gpu | null;
 };
 
 export * as World from './index.js';

@@ -14,6 +14,9 @@ import { resourceCell } from './resources.js';
 import { createContext, rowBinder } from './rows.js';
 import { scalarValues } from './wasm.js';
 import { idOf, type State } from './state.js';
+import { accessorsOf } from '../../gpu/accessors.js';
+import { recordWords } from './gpu.js';
+import { maximumWorkgroups, workgroupSize, type WgslKernel } from './wgsl.js';
 
 /** One unit of a system's work for a run: the commands it issued, plus its error if it failed partway. */
 export type ChunkResult = { readonly commands: CommandBuffer; readonly error?: unknown };
@@ -36,6 +39,16 @@ const claimsPerWorker = 8;
  */
 export type Runner = {
     readonly kernel: BoundKernel | null;
+    /** Where it runs: the CPU, the GPU as a placed kernel, or the GPU as a render system recording its own work. */
+    readonly placement: "cpu" | "gpu" | "render";
+    /** Component ids it reads or writes in its query, those it writes, and those its lookups read in any archetype. */
+    readonly touches: readonly number[];
+    readonly writes: readonly number[];
+    readonly looks: readonly number[];
+    /** The archetypes its query matches now. */
+    readonly matched: () => readonly Archetype[];
+    /** Loads its kernel, and compiles its compute pipeline when it's placed on the GPU; rejects with the reason it can't be. */
+    readonly load: () => Promise<void>;
     /** What workers need to load this system's kernel, given its index. */
     readonly setup: (index: number) => KernelSetup | null;
     readonly start: (args: unknown, workers: Workers | null, index: number) => readonly Chunk[];
@@ -59,6 +72,33 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         if (description === undefined) throw new Error(`System "${declaration.name}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
         kernel = bindKernel(state, leaf, description);
     }
+    const placement = declaration.render !== undefined ? "render" : state.placed.has(leaf) ? "gpu" : "cpu";
+    const failPlacement = (message: string): never => { throw new Error(`System "${declaration.name}" ${message}.`); };
+    if (placement !== "cpu" && state.gpu === null) failPlacement("needs a world created with gpu");
+    if (placement === "gpu") {
+        if (kernel === null) failPlacement("isn't a kernel, so it can't run on the GPU");
+        if (filtered) failPlacement("can't run on the GPU: GPU kernels don't support change filters yet");
+        if (declaration.lookup !== undefined && Object.keys(declaration.lookup).length > 0) failPlacement("can't run on the GPU: GPU kernels don't support lookups yet");
+    }
+    const accessors = declaration.render === undefined ? [] : accessorsOf(declaration.render);
+    if (typeof accessors === "string") return failPlacement(`can't render: ${accessors}`);
+    if (declaration.render !== undefined) {
+        const named = new Set(accessors.map(accessor => accessor.component));
+        const read = new Set(query?.read ?? []);
+        if (named.size !== read.size || [...read].some(key => !named.has(key))) failPlacement("must name an accessor for each component in query.read, and only those");
+    }
+    const touches = [...new Set([...query?.read ?? [], ...query?.write ?? []])].map(key => idOf(state, key));
+    const writes = (query?.write ?? []).map(key => idOf(state, key));
+    const looks = [...new Set(Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []))].map(key => idOf(state, key));
+    if (declaration.render !== undefined && !("draw" in leaf)) failPlacement("has a render declaration but wasn't made by System.render");
+    /** Record keys by archetype. */
+    const keys = new Map<Archetype, string>();
+    const keyOf = (archetype: Archetype): string => {
+        let key = keys.get(archetype);
+        if (key === undefined) keys.set(archetype, key = `${declaration.name}:${archetype.id}`);
+        return key;
+    };
+    let pipeline: { readonly compute: GPUComputePipeline; readonly kernel: WgslKernel } | null = null;
     const holder: { buffer: CommandBuffer } = { buffer: createBuffer() };
     /** This system's buffers, reused each run: the sync point clears them. */
     const owned: CommandBuffer[] = [];
@@ -163,6 +203,86 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         return chunks;
     };
 
+    const words = new Uint32Array(recordWords);
+    const floats = new Float32Array(words.buffer);
+
+    /** One dispatch per archetype, each with its record of row count, column addresses and scalars. */
+    const runOnGpu = (values: readonly unknown[], args: unknown): void => {
+        const gpu = state.gpu;
+        if (gpu === null || pipeline === null || kernel === null) return failPlacement("isn't loaded on the GPU");
+        const { sources } = kernel.setup;
+        const scalars = scalarValues(pipeline.kernel.scalars, values, args);
+        const dispatches: { readonly offset: number; readonly count: number }[] = [];
+        for (const archetype of matches) {
+            if (archetype.count === 0) continue;
+            words[0] = archetype.count;
+            sources.forEach((source, k) => {
+                const storage = source.kind === "field" ? archetype.storageById[source.id] : undefined;
+                words[1 + k] = storage === undefined ? 0 : gpu.upload(archetype, storage);
+            });
+            scalars.forEach((value, s) => { floats[1 + sources.length + s] = value; });
+            dispatches.push({ offset: gpu.record(keyOf(archetype), words), count: archetype.count });
+        }
+        if (dispatches.length === 0) return;
+        const pass = gpu.encoder().beginComputePass();
+        pass.setPipeline(pipeline.compute);
+        for (const { offset, count } of dispatches) {
+            pass.setBindGroup(0, gpu.computeGroup(), [offset]);
+            const groups = Math.ceil(count / workgroupSize);
+            const x = Math.min(groups, maximumWorkgroups);
+            pass.dispatchWorkgroups(x, Math.ceil(groups / x));
+        }
+        pass.end();
+        for (const archetype of matches) {
+            if (archetype.count === 0) continue;
+            for (const id of writes) {
+                const storage = archetype.storageById[id];
+                if (storage !== undefined) gpu.markGpuWrites(archetype, storage);
+            }
+        }
+    };
+
+    const runRender = (): void => {
+        const gpu = state.gpu;
+        if (gpu === null || typeof accessors === "string") return;
+        const group = declaration.render?.group ?? 0;
+        const tables = matches.filter(archetype => archetype.count > 0).map(archetype => {
+            words[0] = archetype.count;
+            accessors.forEach((accessor, k) => {
+                const storage = archetype.storageById[idOf(state, accessor.component)];
+                words[1 + k] = storage === undefined ? 0 : gpu.upload(archetype, storage);
+            });
+            const offset = gpu.record(keyOf(archetype), words);
+            return { count: archetype.count, bind: (pass: GPURenderPassEncoder | GPUComputePassEncoder) => pass.setBindGroup(group, gpu.renderGroup(), [offset]) };
+        });
+        // Work recorded so far is submitted first, so a body that fails partway loses only its own.
+        gpu.submit();
+        try {
+            // Only `System.render` makes leaves with a render declaration, and it gives them `draw`.
+            if ("draw" in leaf && typeof leaf.draw === "function") Reflect.apply(leaf.draw, leaf, [{ device: gpu.device, encoder: gpu.encoder(), tables }, context.value]);
+        }
+        catch (error) {
+            gpu.discard();
+            throw error;
+        }
+    };
+
+    const load = async (): Promise<void> => {
+        if (kernel === null) return;
+        await kernel.load();
+        const gpu = state.gpu;
+        if (placement !== "gpu" || gpu === null) return;
+        const generated = kernel.gpu();
+        if (typeof generated === "string") return failPlacement(`can't run on the GPU: ${generated}`);
+        if (1 + kernel.setup.sources.length + generated.scalars.length > recordWords) failPlacement(`can't run on the GPU: it uses more than ${recordWords - 1} columns and values`);
+        const { device } = gpu;
+        const compute = await device.createComputePipelineAsync({
+            layout: device.createPipelineLayout({ bindGroupLayouts: [gpu.computeLayout] }),
+            compute: { module: device.createShaderModule({ code: generated.code }), entryPoint: "main" },
+        });
+        pipeline = { compute, kernel: generated };
+    };
+
     const start = (args: unknown, workers: Workers | null, index: number): readonly Chunk[] => {
         const tick = ++state.tick;
         used = 0;
@@ -177,6 +297,11 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             const since = !filtered || resourcesChanged ? -1 : lastRun;
             context.bind();
             context.value.args = args;
+            if (placement === "render") {
+                refreshMatches();
+                runRender();
+                return chunks;
+            }
             if (query === undefined) {
                 if (since < 0) system.body(undefined, context.value, commands);
                 return chunks;
@@ -188,6 +313,10 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
                 const { storage, row } = resourceCell(state, key);
                 return readCell(storage, row);
             }) ?? [];
+            if (placement === "gpu") {
+                runOnGpu(values, args);
+                return chunks;
+            }
             for (const archetype of matches) {
                 if (archetype.count === 0) continue;
                 if (kernel === null) runBody(archetype, since);
@@ -223,5 +352,18 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         };
     };
 
-    return { kernel, setup, start };
+    return {
+        kernel,
+        placement,
+        touches,
+        writes,
+        looks,
+        matched: () => {
+            refreshMatches();
+            return matches;
+        },
+        load,
+        setup,
+        start,
+    };
 };

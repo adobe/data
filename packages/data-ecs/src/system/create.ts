@@ -28,7 +28,8 @@ type Validate<D extends Declaration> =
     Ordering<D["name"]>
     & { readonly lookup?: { readonly [K in Extract<keyof NonNullable<D["lookup"]>, ReservedContextName<D>>]: never } }
     & (D extends { readonly args: Schema } ? { readonly query?: { readonly added?: never; readonly changed?: never } } : {})
-    & (D extends { readonly kernel: true } ? Kernel : {});
+    & (D extends { readonly kernel: true } ? Kernel : {})
+    & { readonly render?: never };
 
 /** Declares a system. Returns its declaration and body as data; nothing runs. */
 export const create = <const D extends Declaration>(

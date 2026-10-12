@@ -220,7 +220,10 @@ const applyEntry = (state: State, queued: readonly Queued[], entry: number, tick
     const index = indexOf(entity);
     const from = plan.from[entry] < 0 ? null : archetypes[plan.from[entry]];
     if (plan.despawned[entry] === 1) {
-        if (from !== null) remove(state, from, entities.row[index]);
+        if (from !== null) {
+            remove(state, from, entities.row[index]);
+            state.touched?.add(from);
+        }
         release(entities, index);
         return;
     }
@@ -238,6 +241,10 @@ const applyEntry = (state: State, queued: readonly Queued[], entry: number, tick
         if (more !== undefined) for (let r = 0; r < more.length; r += 3) writeRange(queued[more[r]].buffer, more[r + 1], more[r + 2], to, toRow, from, fresh, tick);
     }
     if (from !== null && to !== from) remove(state, from, fromRow);
+    if (state.touched !== null) {
+        state.touched.add(to);
+        if (from !== null) state.touched.add(from);
+    }
     entities.archetype[index] = to.id;
     entities.row[index] = toRow;
 };
@@ -251,6 +258,10 @@ const presize = (state: State): void => {
         if (incoming[id] > 0) ensureCapacity(state.memory, archetype, archetype.count + incoming[id]);
     }
 };
+
+/** Whether the next sync point has anything to apply. */
+export const pending = (state: State): boolean =>
+    state.queued.some(({ buffer }) => buffer.count > 0) || reserved(state.entities) || state.batches.some(batch => batch.count > 0);
 
 /** Applies every queued command as one sync point with a new tick, then empties the queue. */
 export const synchronize = (state: State): void => {

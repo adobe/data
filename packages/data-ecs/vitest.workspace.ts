@@ -13,7 +13,7 @@ export default defineWorkspace([
         test: {
             name: "browser",
             include: ["src/**/*.browser.test.ts"],
-            browser: { enabled: true, provider: "playwright", name: "chromium", headless: true },
+            browser: { enabled: true, provider: "playwright", name: "chromium", headless: true, providerOptions: { launch: { args: ["--enable-unsafe-webgpu"] } } },
         },
     },
 ]);

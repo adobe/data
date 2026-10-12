@@ -159,6 +159,9 @@ importers:
       '@vitest/browser':
         specifier: ^1.6.0
         version: 1.6.0(playwright@1.46.1)(vitest@1.6.0)
+      '@webgpu/types':
+        specifier: ^0.1.61
+        version: 0.1.61
       playwright:
         specifier: ^1.46.1
         version: 1.46.1

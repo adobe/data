@@ -11,7 +11,7 @@ export default defineWorkspace([
             name: "perf-browser",
             include: ["src/**/*.perf-browser-test.ts"],
             testTimeout: 120_000,
-            browser: { enabled: true, provider: "playwright", name: "chromium", headless: true },
+            browser: { enabled: true, provider: "playwright", name: "chromium", headless: true, providerOptions: { launch: { args: ["--enable-unsafe-webgpu"] } } },
         },
     },
 ]);

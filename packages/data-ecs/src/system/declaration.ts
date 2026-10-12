@@ -1,6 +1,7 @@
 import type { Schema } from '../schema/schema.js';
 import type { Name } from './name.js';
 import type { Lookup, Query, Resources } from './query.js';
+import type { Render } from './render.js';
 
 export type Declaration = {
     readonly name: Name;
@@ -15,6 +16,8 @@ export type Declaration = {
     readonly resources?: Resources;
     /** Arguments passed to each run. A system with arguments can't use `added` or `changed`. */
     readonly args?: Schema;
+    /** Makes this a render system (see `render`): its body records GPU work over the GPU copy of its query's components. */
+    readonly render?: Render;
     /** Hard constraint. */
     readonly before?: readonly Name[];
     /** Hard constraint. */

@@ -235,6 +235,7 @@ export const commitBatches = (state: State, tick: number): number => {
             entities.row[index] = start + i;
         }
         target.count += n;
+        state.touched?.add(target);
         batch.count = 0;
         committed += n;
     }

@@ -8,4 +8,5 @@ export * from './declaration.js';
 export * from './leaf.js';
 export * from './name.js';
 export * from './query.js';
+export * from './render.js';
 export * from './types.js';

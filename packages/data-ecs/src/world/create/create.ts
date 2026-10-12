@@ -3,6 +3,9 @@ import type { Entity } from '../../entity/entity.js';
 import type { Resource } from '../../resource/resource.js';
 import type { System } from '../../system/system.js';
 import type { World } from '../world.js';
+import type { GpuOptions } from '../gpu.js';
+import { createGpu } from './gpu.js';
+import { isLeaf } from './schedule.js';
 import { readCell } from './cells.js';
 import { execute, type ExecuteContext } from './execute.js';
 import { sharedMemoryAvailable } from './memory.js';
@@ -26,14 +29,22 @@ const createQueue = (): Queue => {
 };
 
 /** Internal: tests choose the worker count and chunk size; apps get the platform default. */
-export type WorldOptions = { readonly workers?: number; readonly minimumChunk?: number; readonly wasm?: boolean; readonly simd?: boolean };
+export type WorldOptions = { readonly workers?: number; readonly minimumChunk?: number; readonly wasm?: boolean; readonly simd?: boolean; readonly gpu?: GpuOptions };
 
 /** Rows below which a kernel's archetype runs on the main thread rather than paying for a round trip. */
 const defaultMinimumChunk = 16384;
 
 export const createWorld = (options: WorldOptions = {}): World => {
     const shared = sharedMemoryAvailable();
-    const state = createState(shared, options.wasm ?? true, options.simd ?? true);
+    const state = createState(shared, options.wasm ?? true, options.simd ?? true, options.gpu !== undefined);
+    if (options.gpu !== undefined) {
+        state.gpu = createGpu(options.gpu.device);
+        const place = (system: System): void => {
+            if (isLeaf(system)) state.placed.add(system);
+            else for (const member of system.declaration.systems) place(member);
+        };
+        for (const system of options.gpu.place ?? []) place(system);
+    }
     const registrar = createRegistrar(state);
     const enqueue = createQueue();
     const workerCount = shared ? options.workers ?? defaultWorkerCount(shared) : 0;
@@ -61,7 +72,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
             startTicking(state, ticked);
             // Workers see the new tick arrays before the next run's tasks.
             context.publish();
-            await Promise.all(kernels.map(runner => runner.kernel?.load()));
+            await Promise.all(kernels.map(runner => runner.load()));
             // Workers get every kernel whose main-thread load is newer than theirs, including ones a failed registration reloaded.
             const behind = registrar.kernels().filter(runner => runner.kernel?.staleOnWorkers() === true);
             if (workerCount === 0 || behind.length === 0) return;
@@ -98,8 +109,19 @@ export const createWorld = (options: WorldOptions = {}): World => {
         },
         dispose: () => {
             disposed = true;
-            return enqueue(() => pool?.terminate());
+            return enqueue(async () => {
+                state.gpu?.destroy();
+                await pool?.terminate();
+            });
         },
+        synchronize: components => {
+            checkLive();
+            const { gpu } = state;
+            if (gpu === null) return Promise.resolve();
+            const ids = new Set(components.map(key => state.ids.get(key)));
+            return enqueue(() => gpu.readback(state.archetypes.flatMap(archetype => archetype.storages.filter(storage => ids.has(storage.component)))));
+        },
+        gpu: state.gpu === null ? null : { device: state.gpu.device, layout: state.gpu.renderLayout },
         [Symbol.asyncDispose]: () => world.dispose(),
         systems: {
             register: (...systems: readonly System[]) => {
@@ -135,10 +157,13 @@ export const createWorld = (options: WorldOptions = {}): World => {
     return world;
 };
 
-/** Creates a world. With systems, it's `create().systems.register(...systems)`. */
+/**
+ * Creates a world. With systems, it's `create().systems.register(...systems)`. With `gpu`, render systems and the
+ * kernels in `gpu.place` run on that device.
+ */
 export function create(): World;
-export function create(options: { readonly systems: readonly System[] }): Promise<World>;
-export function create(options?: { readonly systems: readonly System[] }): World | Promise<World> {
-    const world = createWorld();
-    return options === undefined ? world : world.systems.register(...options.systems);
+export function create(options: { readonly systems?: readonly System[]; readonly gpu?: GpuOptions }): Promise<World>;
+export function create(options?: { readonly systems?: readonly System[]; readonly gpu?: GpuOptions }): World | Promise<World> {
+    const world = createWorld({ gpu: options?.gpu });
+    return options === undefined ? world : world.systems.register(...options.systems ?? []);
 }

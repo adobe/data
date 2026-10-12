@@ -86,6 +86,24 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 **Main thread.** Compiled `select` predicates: 18 → ~3.5 ms. `where` tests resolve each archetype's storage once and read plain numbers straight from the view, and tuples of 2–4 adjacent same-typed lanes read as array literals: select 1M 37.5 → 24 ms. Row getters chosen once, and tuple reads and writes in one loop: 50 systems 3.2 → 1.63 ms (vitest).
 - Accessor rows each get their own prototype. Built from `{}`, every row after the first that defines an accessor with another getter went to V8 dictionary properties. One row per set of reads and writes, shared across systems and archetypes and rebound per pass, so a body sees one shape; f32-lane tuples read as array literals, and scalars and f32 lanes written directly. Resource cells in a context are resolved once per run. On node: 50 systems 1.1 → 0.45 ms, churn 55 → 32 ms, retag 74 → 59 ms; 50 distinct bodies over three row shapes 1.75 → 0.53 ms; two writing systems over 100K 19.5 → 1.9 ms; 20 systems reading a resource per row 1.26 → 0.22 ms.
 
+## GPU particles
+
+The sample (`pnpm sample`, then `/samples/particles/`) draws the visible and enabled quarter of the perf particles as points, wrapping positions in the vertex shader, and moves them with the perf `move` kernel: on the GPU (`?mode=gpu`, positions never come back), on workers with the positions uploaded for drawing each frame (`?mode=cpu`), or not at all (`?mode=static`). Headless chromium on Apple silicon at 60 fps, 10 s per sample after warmup, CPU time per frame by process from `ps`, main-thread task time from the DevTools protocol. Four rounds at 1M (250K drawn), two at 4M (1M drawn):
+
+| Per frame, ms | draw only | CPU move + upload | GPU move |
+|---|---|---|---|
+| `run`, median (p95), 1M | 0.28 (0.6) | 0.75 (3.9) | 0.39 (0.75) |
+| main thread busy, 1M | 0.95 | 1.9 | 1.02 |
+| renderer process CPU, main thread and workers, 1M | 2.2 | 4.9 | 2.3 |
+| GPU process CPU, 1M | 2.9–3.0 | 2.2 | 3.1 |
+| `run`, median (p95), 4M | 0.2–0.45 | 0.97 (1.9) | 0.40–0.46 (0.87) |
+| renderer process CPU, 4M | 1.5–2.7 | 5.55 | 2.6 |
+| GPU process CPU, 4M | 2.0–3.3 | 4.2 | 3.2–3.3 |
+
+- **The GPU move costs about what drawing alone does:** about 0.1 ms more `run` and 0.1 ms more renderer CPU, the same at 250K and 1M drawn: one record write and one dispatch per archetype.
+- **The CPU move costs about 2.7 ms more renderer CPU per frame and twice the main-thread time,** though the move itself is 0.015–0.03 ms on workers. The rest is waking workers inside a frame loop and the 3 MB (12 MB at 4M) upload, copied on the main thread by `writeBuffer` and again in the GPU process, whose CPU rises at 4M.
+- **The GPU process uses less CPU in the CPU mode at 1M** than with nothing moving at all; not understood yet.
+
 ## Worker scaling
 
 move, chromium, by worker count and entity count (a quarter of the entities move), with even shares:

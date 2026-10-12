@@ -7,6 +7,7 @@ import { dataValue, leavesOf, mapLeaves, materialize, toData } from './data.js';
 import { fail, within } from './failure.js';
 import { local, references, type Expression, type Statement } from './ir.js';
 import type { Program } from '../world/create/kernel.js';
+import { laneCount } from '../world/create/intrinsics.js';
 import type { Out } from './out.js';
 import { frameIn } from './module-value.js';
 import { scalar } from './scalar.js';
@@ -129,8 +130,6 @@ const helperBlock = (name: string, segments: readonly Segment[], node: Node, out
     return helperBlock(name, after, node, out);
 };
 
-/** Scalar lanes of a WGSL value type. */
-const laneCount = (type: Program.ValueType): number => type === "mat4x4f" ? 16 : type.startsWith("vec") ? Number(type[3]) : 1;
 
 /** An argument's lanes as an intrinsic operand of `type`, or null if its shape doesn't match. */
 const operandLanes = (value: Value, type: Program.ValueType, node: SimpleCallExpression, scope: Scope): readonly Expression[] | null => {
@@ -191,7 +190,7 @@ const inline = (helper: Extract<Value, { kind: "function" }>, node: SimpleCallEx
                 ? helperBlock(helper.name, [{ statements: helper.body.body, scope: inner }], helper.body, bodyOut)
                 : unit.expression(helper.body, inner, bodyOut);
         };
-        return helper.module === scope.module ? compile() : within(node, frameIn(helper.module, helper.name), compile);
+        return helper.module === unit.module ? compile() : within(node, frameIn(helper.module, helper.name), compile);
     };
     const argumentOf = (index: number): Value => values[index] ?? fail(node, `${helper.name} needs ${helper.params.length} arguments`);
     const result = (unit.target === "gpu" && helper.intrinsic !== undefined ? intrinsicCall(helper, helper.intrinsic, values, node, scope, out, body) : null)

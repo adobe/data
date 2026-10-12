@@ -136,9 +136,16 @@ export namespace Program {
 
 /**
  * Scalar locals, lookup handles, and the row body, in the order JS evaluates it. `names` are the locals' JS names,
- * for readable generated code; GPU kernels carry them.
+ * for readable generated code; GPU kernels carry them, and their intrinsic regions.
  */
-export type Program = { readonly locals: number; readonly handles?: number; readonly names?: readonly string[]; readonly intrinsics?: number; readonly body: readonly Program.Statement[] };
+export type Program = {
+    readonly locals: number;
+    readonly handles?: number;
+    readonly names?: readonly string[];
+    /** Every intrinsic region's id is below it; absent when there are none. */
+    readonly intrinsics?: number;
+    readonly body: readonly Program.Statement[];
+};
 
 /** What the compiler emits for one kernel system. */
 export type KernelDescription = {

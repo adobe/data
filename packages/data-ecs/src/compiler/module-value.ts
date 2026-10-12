@@ -1,5 +1,6 @@
 import type { Expression as SourceExpression, Node } from 'estree';
 import type { Program } from '../world/create/kernel.js';
+import { isValueType } from '../world/create/intrinsics.js';
 import { fail, within, type Frame } from './failure.js';
 import { resolveBinding, type Resolved } from './link.js';
 import { isIntrinsicModule } from './paths.js';
@@ -20,10 +21,6 @@ export const frameIn = (module: Module, name: string) => (position: number): Fra
 
 const displayName = (name: string): string => name === "*default*" ? "default export" : name;
 
-const valueTypes: ReadonlySet<string> = new Set([
-    "f32", "i32", "u32", "vec2f", "vec3f", "vec4f", "vec2i", "vec3i", "vec4i", "vec2u", "vec3u", "vec4u", "mat4x4f",
-]);
-const isValueType = (text: string): text is Program.ValueType => valueTypes.has(text);
 
 /** An `intrinsic(declaration, implementation)` call's declaration, read from its literals. */
 const intrinsicDeclaration = (node: SourceExpression): Program.Intrinsic => {
@@ -82,7 +79,7 @@ const definition = (node: Node, name: string, binding: ModuleBinding, module: Mo
         case "function":
             return { kind: "function", name: display, identity, params: binding.node.params, body: binding.node.body, module };
         case "const": {
-            const declared = module === scope.module
+            const declared = module === unit.module
                 ? intrinsicDefinition(binding.init, module, scope)
                 : within(node, frameIn(module, display), () => intrinsicDefinition(binding.init, module, scope));
             const init = declared?.implementation ?? binding.init;
@@ -94,7 +91,7 @@ const definition = (node: Node, name: string, binding: ModuleBinding, module: Mo
             if (unit.active.has(identity)) return fail(node, `${display} refers to itself`);
             unit.active.add(identity);
             const compile = (): Value => unit.expression(init, rootScope(unit, true, module), out);
-            const value = module === scope.module ? compile() : within(node, frameIn(module, display), compile);
+            const value = module === unit.module ? compile() : within(node, frameIn(module, display), compile);
             unit.active.delete(identity);
             return value;
         }

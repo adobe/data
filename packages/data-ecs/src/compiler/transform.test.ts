@@ -857,6 +857,17 @@ describe("imported functions and constants", () => {
         ]);
     });
 
+    test("frame each function of a module that fails inside another of its functions", async () => {
+        const result = await transform(kernel(`import { outer } from "./outer.js";`, "row[score] = outer(row[mass]);"), {
+            "/outer.js": "const inner = (x) => x * Math.random();\nexport const outer = (x) => inner(x) + 1;",
+        });
+        const failure = result !== null && "failure" in result ? result.failure : undefined;
+        expect(failure?.frames).toEqual([
+            { name: "inner", file: "/outer.js", line: 1, column: 26 },
+            { name: "outer", file: "/outer.js", line: 2, column: 29 },
+        ]);
+    });
+
     test("fail on recursion across modules, module state, and names they can't resolve", async () => {
         expect(await failure(kernel(`import { even } from "./even.js";`, "row[score] = even(row[mass]);"), {
             "/even.js": "import { odd } from './odd.js';\nexport const even = (n) => n === 0 ? 1 : odd(n - 1);",

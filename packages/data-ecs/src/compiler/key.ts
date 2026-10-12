@@ -6,7 +6,8 @@ import type { Value } from './value.js';
 
 /**
  * An index into a value: a static name or element, a binding of the kernel's own module (a component, resource or
- * command key), or a runtime value. In other modules, constants that are number or string literals fold to static indices.
+ * command key), or a runtime value. Other values that are number or string literals, such as constants of other
+ * modules and locals, fold to static indices.
  */
 export type Key =
     | { readonly kind: "static"; readonly name: number | string }

@@ -1,3 +1,4 @@
+import { laneCount } from './intrinsics.js';
 import type { Program } from './kernel.js';
 import type { WasmColumn, WasmScalar } from './wasm.js';
 
@@ -24,8 +25,7 @@ const identifier = (name: string): string => {
     return safe.startsWith("_") ? `v${safe}` : safe;
 };
 
-/** Scalar lanes of a WGSL value type, and their element type. */
-const laneCount = (type: Program.ValueType): number => type === "mat4x4f" ? 16 : type.startsWith("vec") ? Number(type[3]) : 1;
+/** A WGSL value type's element type. */
 const elementKind = (type: Program.ValueType): "f32" | "i32" | "u32" =>
     type === "i32" || type.endsWith("i") ? "i32" : type === "u32" || type.endsWith("u") ? "u32" : "f32";
 
@@ -34,6 +34,32 @@ const laneOf = (variable: string, type: Program.ValueType, lane: number): string
     type === "mat4x4f" ? `${variable}[${lane >> 2}][${lane & 3}]` : laneCount(type) === 1 ? variable : `${variable}.${"xyzw"[lane]}`;
 
 type Region = Extract<Statement, { kind: "intrinsic" }>;
+
+/** Locals an expression reads. A lane reads its region's result, not its value. */
+const localsIn = (expression: Expression, into: Set<number>): void => {
+    switch (expression.kind) {
+        case "local": into.add(expression.local); return;
+        case "unary": localsIn(expression.operand, into); return;
+        case "binary": case "logical": localsIn(expression.left, into); localsIn(expression.right, into); return;
+        case "conditional": for (const item of [expression.test, expression.consequent, expression.alternate]) localsIn(item, into); return;
+        case "math": for (const item of expression.arguments) localsIn(item, into); return;
+        default: return;
+    }
+};
+
+/** Locals the shader uses: those intrinsic bodies alone use aren't emitted. */
+const usedLocals = (body: readonly Statement[], into: Set<number> = new Set()): Set<number> => {
+    for (const statement of body) {
+        switch (statement.kind) {
+            case "set": into.add(statement.local); localsIn(statement.value, into); break;
+            case "store": localsIn(statement.value, into); break;
+            case "if": localsIn(statement.test, into); usedLocals(statement.consequent, into); usedLocals(statement.alternate, into); break;
+            case "intrinsic": for (const lanes of statement.operands) for (const lane of lanes) localsIn(lane, into); break;
+            default: break;
+        }
+    }
+    return into;
+};
 
 const regionsOf = (body: readonly Statement[]): Region[] => body.flatMap(statement =>
     statement.kind === "intrinsic" ? [statement] : statement.kind === "if" ? [...regionsOf(statement.consequent), ...regionsOf(statement.alternate)] : []);
@@ -393,10 +419,9 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
     try {
         const body = statements(program.body, "    ");
         const zero: { readonly [kind: string]: string } = { f32: "0.0", i32: "0i", u32: "0u" };
-        // Locals only intrinsic bodies use aren't emitted.
-        const used = new Set(body.match(/\b\w+\b/g) ?? []);
+        const used = usedLocals(program.body);
         const locals = [
-            ...localKinds.flatMap((kind, local) => used.has(localName(local)) ? [`    var ${localName(local)}: ${kind} = ${zero[kind]};`] : []),
+            ...localKinds.flatMap((kind, local) => used.has(local) ? [`    var ${localName(local)}: ${kind} = ${zero[kind]};`] : []),
             ...[...regions.values()].map(region => `    var ${regionName(region)}: ${region.intrinsic.result};`),
         ].join("\n");
         const code = `@group(0) @binding(0) var<storage, read_write> memory: array<u32>;

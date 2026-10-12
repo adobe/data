@@ -4,10 +4,11 @@ import { Vec3 as Vec3Namespace } from "../vec3/index.js";
 
 export const lookAt = (forward: Vec3, up: Vec3): Quat => {
     // Normalize forward vector
-    const f = Vec3Namespace.normalize(forward);
+    const f = Vec3Namespace.length(forward) === 0 ? Vec3Namespace.zero : Vec3Namespace.normalize(forward);
 
-    // Calculate right vector
-    const r = Vec3Namespace.normalize(Vec3Namespace.cross(f, up));
+    // Calculate right vector; it is zero when up is parallel to forward
+    const right = Vec3Namespace.cross(f, up);
+    const r = Vec3Namespace.length(right) === 0 ? Vec3Namespace.zero : Vec3Namespace.normalize(right);
 
     // Recalculate up vector
     const u = Vec3Namespace.cross(r, f);

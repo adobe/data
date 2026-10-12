@@ -22,10 +22,27 @@ export type ExecuteContext = {
  * run while main-thread systems do; commands merge in tier order, then chunk order, whichever thread ran them.
  * A failing system rejects the run after its tier finishes; later tiers are skipped, and commands so far still apply.
  */
-export const execute = async ({ state, runnerOf, kernelIndexOf, workers, publish }: ExecuteContext, schedule: Schedule, args: unknown): Promise<void> => {
-    const { gpu } = state;
-    const lost = gpu?.lost() ?? null;
+export const execute = async (context: ExecuteContext, schedule: Schedule, args: unknown): Promise<void> => {
+    const { gpu } = context.state;
+    if (gpu === null) return executeTiers(context, schedule, args);
+    const lost = gpu.lost();
     if (lost !== null) throw new Error(`The world's GPU device was lost: ${lost}`);
+    const earlier = gpu.takeError();
+    if (earlier !== null) throw new Error(`An earlier run's GPU work failed: ${earlier}`);
+    // The run's GPU work, its render bodies' included, reports its errors to the next run: waiting for them here would
+    // hold every run until the GPU process catches up.
+    gpu.device.pushErrorScope("out-of-memory");
+    gpu.device.pushErrorScope("validation");
+    try {
+        await executeTiers(context, schedule, args);
+    }
+    finally {
+        gpu.reportErrors(gpu.device.popErrorScope(), gpu.device.popErrorScope());
+    }
+};
+
+const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }: ExecuteContext, schedule: Schedule, args: unknown): Promise<void> => {
+    const { gpu } = state;
     try {
         for (const tier of schedule.tiers) {
             const runners = tier.map(runnerOf);

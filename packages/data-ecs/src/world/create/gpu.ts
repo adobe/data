@@ -67,6 +67,10 @@ export type GpuEngine = {
     readonly touched: (archetypes: Iterable<Archetype>) => void;
     /** Set once the device is lost; later runs reject with it. */
     readonly lost: () => string | null;
+    /** Records the first error a run's scopes report, for the next run to reject with. */
+    readonly reportErrors: (validation: Promise<GPUError | null>, memory: Promise<GPUError | null>) => void;
+    /** The recorded error, cleared. */
+    readonly takeError: () => string | null;
     readonly destroy: () => void;
 };
 
@@ -96,6 +100,7 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
     let groups: { render: GPUBindGroup; compute: GPUBindGroup } | null = null;
     let encoder: GPUCommandEncoder | null = null;
     let lostReason: string | null = null;
+    let recorded: string | null = null;
     const residents = new Map<Storage, Resident>();
     const ahead = new Set<Resident>();
     void device.lost.then(info => { lostReason = info.message === "" ? info.reason : info.message; });
@@ -289,6 +294,18 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         beforeSync,
         touched,
         lost: () => lostReason,
+        reportErrors: (validation, memory) => {
+            void (async () => {
+                const [invalid, exhausted] = await Promise.all([validation, memory]);
+                if (invalid !== null) recorded ??= `validation: ${invalid.message}`;
+                else if (exhausted !== null) recorded ??= `out of memory: ${exhausted.message}`;
+            })();
+        },
+        takeError: () => {
+            const error = recorded;
+            recorded = null;
+            return error;
+        },
         destroy: () => {
             submit();
             heap.destroy();

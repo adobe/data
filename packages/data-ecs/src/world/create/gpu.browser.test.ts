@@ -54,6 +54,7 @@ declare module "../../system/types.js" {
         "gpuTest/fail": true;
         "gpuTest/failing": true;
         "gpuTest/churn": true;
+        "gpuTest/invalid": true;
     }
 }
 
@@ -335,6 +336,25 @@ describe("render systems", () => {
         await expect(world.run(failing)).rejects.toThrow("draw failed");
         await world.synchronize([position]);
         expect(positions(world)[0]).toEqual([1, 0, 0.5]);
+        await world.dispose();
+    });
+
+    it("that record invalid work make the next run reject with the GPU's error", async () => {
+        // A dispatch without a pipeline is a validation error when the encoder finishes.
+        const invalid = System.render({ name: "gpuTest/invalid", query: { read: [position] }, render: { accessors: { place: position } } }, ({ encoder }) => {
+            const pass = encoder.beginComputePass();
+            pass.dispatchWorkgroups(1);
+            pass.end();
+        });
+        const gpu = await device();
+        const world = createWorld({ gpu: { device: gpu } });
+        await world.systems.register(spawn, invalid);
+        await world.run(spawn);
+        await world.run(invalid);
+        // The device reports the error once it has processed the run's work.
+        await gpu.queue.onSubmittedWorkDone();
+        await expect(world.run(spawn)).rejects.toThrow(/An earlier run's GPU work failed: validation/);
+        await world.run(spawn);
         await world.dispose();
     });
 

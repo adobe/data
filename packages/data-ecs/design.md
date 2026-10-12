@@ -47,7 +47,8 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   - **Render systems** (`System.render`) run once per run on the main thread in schedule order, read-only. They record into the run's encoder over the GPU copies of their query's components, one table per matched archetype. `Gpu.wgsl(system)` returns their shaders' declarations: the world's bind group at the group they name and a function per component (`fn position(row: u32) -> vec3<f32>`), from schemas alone, so shaders can be written before a world exists. Pipelines take `world.gpu.layout`; bind groups and buffers stay the world's, so they can be replaced as storage grows.
   - **Residency:** a separate GPU heap holds copies of only the storages GPU systems use. Each copy tracks rows the CPU changed since its upload and rows the GPU wrote since its readback. GPU systems upload what the CPU changed first; CPU systems read back what the GPU wrote first. A sync point reads back only archetypes whose existing rows it moves or writes (despawns, adds, removes); spawns only append rows, which are uploaded alone, and a copy that outgrows its block moves on the GPU. GPU-to-GPU chains and rendering never copy back.
   - **Ordering:** a queue write lands before recorded but unsubmitted work, so recorded work is submitted before each upload. Each run's encoder is submitted at its end, before the sync point; `run` resolves then, not when the GPU finishes.
-  - **Reads outside runs** see values a GPU kernel wrote only after `await world.synchronize(components)`, queued with runs. A lost device makes later runs reject.
+  - **Reads outside runs** see values a GPU kernel wrote only after `await world.synchronize(components)`, queued with runs.
+  - **GPU errors:** a run's GPU work, its render bodies' included, runs in validation and out-of-memory error scopes; the first error they report makes the next run reject, since waiting for them would hold every run until the GPU process catches up. A lost device makes later runs reject.
   - **Numbers on the GPU** are f32 between operations, so integers past 2^24 lose bits mid-expression; stores and bitwise operators wrap as in JS. WGSL lets implementations assume no NaN or infinity arises from arithmetic, and Metal does, so kernels that rely on NaN differ there.
 
 ## Phase 0: contract decisions
@@ -243,4 +244,3 @@ Measured with `pnpm perf` (benchmarks bundled as in production, on plain node) a
   - Finalizers on components ahead on the GPU: until then, the sync point reads them back first.
   - Read back only the rows a sync point moves, rather than whole disturbed archetypes, or move them on the GPU.
   - An integer type pass in the WGSL backend, so `u32`/`i32` values and bitwise chains stay exact.
-  - GPU validation errors, through error scopes, as run failures; today they reach only the console.

@@ -367,6 +367,19 @@ describe("layout", () => {
     });
 });
 
+describe("let locals of component values", () => {
+    test("written back whole after a tuple assignment have the tuple's shape", async () => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position, alive], write: [position] } }, (row) => {
+            let v = row[position];
+            if (row[alive]) v = [7, 8, 9];
+            row[position] = v;
+        });`);
+        expect(kernel.columns.some(column => column.kind === "field" && column.path.length === 0 && column.component === "position")).toBe(false);
+        const result = run(kernel, 2, { position: vec3([1, 4], [2, 5], [3, 6]), alive: { "[]": [1, 0] } });
+        expect([0, 1, 2].map(k => result.field("position", [k]))).toEqual([[7, 4], [8, 5], [9, 6]]);
+    });
+});
+
 describe("binding identity", () => {
     test("a local shadowing a component key is not that component", async () => {
         expect(await failure(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [velocity], write: [position] } }, (row) => {

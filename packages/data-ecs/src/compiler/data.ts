@@ -4,6 +4,8 @@ import { fail } from './failure.js';
 import type { Expression } from './ir.js';
 import { scalar } from './scalar.js';
 import type { Scope } from './scope.js';
+import { local } from './ir.js';
+import { snapshotLeaf, type Snapshot } from './snapshot.js';
 import type { Value } from './value.js';
 
 /** A value with a statically known shape: scalar leaves as expressions. */
@@ -12,11 +14,32 @@ export type Data =
     | { readonly kind: "tuple"; readonly items: readonly Data[] }
     | { readonly kind: "struct"; readonly fields: readonly (readonly [string, Data])[] };
 
-/** Converts a value to data. Values of unknown shape become one leaf. */
+/**
+ * A snapshot's value at `path`, shaped by the leaves below it the body has used or assigned: a tuple up to the highest
+ * element used, or a struct of the fields used. With none, it is one leaf.
+ */
+const snapshotData = (unit: Scope["unit"], snapshot: Snapshot, path: Path): Data => {
+    const below = [...snapshot.leaves.keys()].flatMap((identity): Path[] => {
+        const leafPath: unknown = JSON.parse(identity);
+        if (!Array.isArray(leafPath) || leafPath.length <= path.length || !path.every((item, index) => leafPath[index] === item)) return [];
+        return [leafPath.filter((item): item is number | string => typeof item === "number" || typeof item === "string")];
+    });
+    const next = below.map(item => item[path.length]);
+    if (next.length === 0) return { kind: "leaf", expression: local(snapshotLeaf(unit, snapshot, path)) };
+    if (next.every(item => typeof item === "number")) {
+        const length = Math.max(...next.filter((item): item is number => typeof item === "number")) + 1;
+        return { kind: "tuple", items: Array.from({ length }, (_, index) => snapshotData(unit, snapshot, [...path, index])) };
+    }
+    const names = [...new Set(next.filter((item): item is string => typeof item === "string"))];
+    return { kind: "struct", fields: names.map(name => [name, snapshotData(unit, snapshot, [...path, name])]) };
+};
+
+/** Converts a value to data. Values of unknown shape become one leaf; a snapshot takes the shape its leaves show. */
 export const toData = (value: Value, node: Node, scope: Scope): Data => {
     switch (value.kind) {
         case "tuple": return { kind: "tuple", items: value.items.map(item => toData(item, node, scope)) };
         case "struct": return { kind: "struct", fields: value.fields.map(([name, field]) => [name, toData(field, node, scope)]) };
+        case "snapshot": return snapshotData(scope.unit, value.snapshot, value.path);
         default: return { kind: "leaf", expression: scalar(value, node, scope) };
     }
 };

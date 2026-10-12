@@ -125,7 +125,7 @@ const numbers = System.create({ name: "gpuTest/numbers", kernel: "gpu", query: {
     const mixed = (c ^ 0x0f0f0f0f) >>> 0;
     row[code] = mixed > 0x80000000 ? mixed : (c & 0xff00ff00) >>> 0;
     row[amount] = Math.min(a, Infinity) + Math.round(a) + (-Infinity < a ? 1000 : 0) + (~c & 0xff) + ~(c >>> 28) + (c >>> 24)
-        + (c | 0) / 0x1000000 + Math.clz32(c) + (c > 0x80000000 ? 10000 : 0);
+        + (c | 0) / 0x1000000 + Math.clz32(c) + (c > 0x80000000 ? 10000 : 0) + Math.max(a, -1) * 100 + (a % 1.5) * 10000;
 });
 
 const flagScore = System.create({ name: "gpuTest/flagScore", kernel: "gpu", query: { read: [flag], write: [score] } }, row => {

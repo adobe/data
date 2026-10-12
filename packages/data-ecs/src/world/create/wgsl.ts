@@ -58,11 +58,11 @@ const asNumber = (value: Value): string => {
     }
 };
 
-/** JS truthiness. */
+/** JS truthiness; for NaN, WGSL leaves it indeterminate. */
 const asBool = (value: Value): string => {
     switch (value.type) {
         case "bool": return value.code;
-        case "f32": return `truthy(${value.code})`;
+        case "f32": return `(${value.code} != 0.0)`;
         case "i32": return `(${value.code} != 0i)`;
         case "u32": return `(${value.code} != 0u)`;
     }
@@ -95,36 +95,29 @@ const literal = (value: number): string => {
 /** `Math` functions with a WGSL equivalent, by argument count. */
 const unaryMath: { readonly [name: string]: string } = {
     abs: "abs", sqrt: "sqrt", floor: "floor", ceil: "ceil", trunc: "trunc", sin: "sin", cos: "cos", tan: "tan",
-    asin: "asin", acos: "acos", atan: "atan", sinh: "sinh", cosh: "cosh", tanh: "tanh", exp: "exp", log: "log",
+    asin: "asin", acos: "acos", atan: "atan", sinh: "sinh", cosh: "cosh", tanh: "tanh", asinh: "asinh", acosh: "acosh",
+    atanh: "atanh", exp: "exp", log: "log",
     log2: "log2", sign: "sign", fround: "",
 };
 
-/** JS semantics where WGSL's differ. Compilers may fold `x == x`, so NaN tests read the bits. */
+/**
+ * JS semantics where WGSL's differ for finite values. Where they differ only for NaN or infinite inputs or results,
+ * WGSL leaves the result indeterminate and its own operation is used.
+ */
 const helpers = `
 var<private> nanBits: u32 = 0x7fc00000u;
 var<private> infinityBits: u32 = 0x7f800000u;
-fn isNan(x: f32) -> bool { return (bitcast<u32>(x) & 0x7fffffffu) > 0x7f800000u; }
-fn isFinite(x: f32) -> bool { return (bitcast<u32>(x) & 0x7fffffffu) < 0x7f800000u; }
-fn truthy(x: f32) -> bool { return x != 0.0 && !isNan(x); }
 fn toUint32(x: f32) -> u32 {
-    if (!isFinite(x)) { return 0u; }
     let t = abs(trunc(x));
     let wrapped = u32(t - 4294967296.0 * floor(t / 4294967296.0));
     return select(wrapped, 0u - wrapped, x < 0.0);
 }
-fn remainder(a: f32, b: f32) -> f32 {
-    if (isFinite(a) && !isFinite(b) && !isNan(b)) { return a; }
-    return a - b * trunc(a / b);
-}
 fn power(a: f32, b: f32) -> f32 {
     if (b == 0.0) { return 1.0; }
     if (a >= 0.0) { return pow(a, b); }
-    if (fract(b) != 0.0) { return bitcast<f32>(nanBits); }
     let magnitude = pow(-a, b);
     return select(magnitude, -magnitude, fract(b * 0.5) != 0.0);
 }
-fn jsMin(a: f32, b: f32) -> f32 { return select(min(a, b), bitcast<f32>(nanBits), isNan(a) || isNan(b)); }
-fn jsMax(a: f32, b: f32) -> f32 { return select(max(a, b), bitcast<f32>(nanBits), isNan(a) || isNan(b)); }
 fn roundHalfUp(x: f32) -> f32 { let down = floor(x); return select(down, down + 1.0, x - down >= 0.5); }
 `;
 
@@ -277,7 +270,7 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
                 const b = asNumber(right);
                 switch (expression.operator) {
                     case "+": case "-": case "*": case "/": return f32(`(${a} ${expression.operator} ${b})`);
-                    case "%": return f32(`remainder(${a}, ${b})`);
+                    case "%": return f32(`(${a} % ${b})`);
                     case "**": return f32(`power(${a}, ${b})`);
                     case "<": case ">": case "<=": case ">=": return compare(expression.operator, left, right);
                     case "==": case "===": return compare("==", left, right);
@@ -317,8 +310,7 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
                 if (items.length === 1 && name === "round") return f32(`roundHalfUp(${items[0]})`);
                 if (items.length === 1 && name === "log10") return f32(`(log(${items[0]}) * 0.4342944819032518)`);
                 if (items.length === 1 && name === "cbrt") return f32(`(sign(${items[0]}) * pow(abs(${items[0]}), 1.0 / 3.0))`);
-                if (items.length === 2 && name === "min") return f32(`jsMin(${items[0]}, ${items[1]})`);
-                if (items.length === 2 && name === "max") return f32(`jsMax(${items[0]}, ${items[1]})`);
+                if (items.length === 2 && (name === "min" || name === "max")) return f32(`${name}(${items[0]}, ${items[1]})`);
                 if (items.length === 2 && name === "atan2") return f32(`atan2(${items[0]}, ${items[1]})`);
                 if (items.length === 2 && name === "pow") return f32(`power(${items[0]}, ${items[1]})`);
                 if (items.length === 2 && name === "hypot") return f32(`length(vec2f(${items[0]}, ${items[1]}))`);

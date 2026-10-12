@@ -191,8 +191,9 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
                 const wasmModule = await WebAssembly.compile(bound.wasm.bytes);
                 compiled = { module: wasmModule, run: await instantiateWasm(wasmModule, state.memory.memory, bound.wasm.imports) };
             }
-            catch {
+            catch (error) {
                 // A content security policy without 'wasm-unsafe-eval' forbids compiling; the JS kernel runs instead.
+                if (!(error instanceof WebAssembly.CompileError)) throw error;
                 bound.wasm = null;
             }
         },

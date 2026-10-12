@@ -240,7 +240,11 @@ Measured with `pnpm perf` (benchmarks bundled as in production, on plain node) a
   - Upload only changed chunks, by making the GPU copy an observer of `changed` ticks; today a CPU write or a sync point that touches an archetype uploads its whole columns.
   - u32 tick columns on the GPU, relative to an epoch rebased at sync points, so GPU kernels can stamp rows and use change filters.
   - Apply the structural plan on the GPU as row-copy lists run by a move kernel, instead of reading back first.
-  - GPU kernels with change filters, lookups and loops; GPU-only components (`residency: "gpu"`, never in the CPU arena) for outputs like culled lists and indirect draw arguments.
+  - GPU kernels with change filters, lookups and loops.
   - One dispatch over several archetypes, and indirect draws; heap segments past `maxBufferSize`; automatic placement.
   - Finalizers on components ahead on the GPU: until then, the sync point reads them back first.
   - Read back only the rows a sync point moves, rather than whole disturbed archetypes, or move them on the GPU.
+- **GPU-only components, not planned until a workload needs one.** A const meta tag on the component entity (components are entities), so its values have a column in the GPU heap and none in the CPU arena; entities, archetypes and `has`/`not` stay on the CPU. Values given at spawn are uploaded once; otherwise rows start at the schema default.
+  - **The use case:** GPU state with history that nothing on the CPU reads, such as a simulation integrated only on the GPU, previous-frame transforms for motion vectors, or accumulators. Data recomputed every frame (culled lists, indirect draw arguments, sort keys) isn't state: render systems own those as scratch buffers. Cached derived data (world matrices, skinning palettes) is an optimization, not a need.
+  - **What it adds over an ordinary component written only on the GPU,** which already stays GPU-resident and is never read back unless asked: the CPU column's memory, and a type-level guarantee that CPU systems, `read` and `query` can't name it.
+  - **What it requires:** structural changes on the GPU (the move kernel above), since there's no CPU copy to move.

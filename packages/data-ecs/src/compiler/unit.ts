@@ -44,6 +44,8 @@ export type Unit = {
     readonly keys: string[];
     /** Each leaf a reduction folds into: its resource (an index into `Signature.reduced`), path and accumulator local. */
     readonly accumulators: { readonly reduced: number; readonly path: readonly (number | string)[]; readonly local: number }[];
+    /** The components, resources and lookup results the body reads and writes, to check the declaration lists only those. */
+    readonly used: { readonly read: Set<string>; readonly write: Set<string>; readonly resources: Set<string>; readonly lookups: Map<string, Set<string>> };
     /** Helpers and constants being inlined, to reject recursion. */
     readonly active: Set<string>;
     readonly next: () => number;
@@ -55,6 +57,7 @@ export const createUnit = (signature: Signature, module: Module, expression: Exp
     let counter = 0;
     return {
         signature, module, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names: new Map(), shapes: new Set(), reducedShapes: new Set(), keys: [], accumulators: [], active: new Set(),
+        used: { read: new Set(), write: new Set(), resources: new Set(), lookups: new Map() },
         next: () => counter++, expression, statement,
     };
 };

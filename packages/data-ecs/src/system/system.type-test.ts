@@ -28,6 +28,7 @@ declare module '../resource/types.js' {
 }
 declare module './types.js' {
     export interface Types {
+        "test/draw": true;
         "test/integrate": true;
         "test/follow": true;
         "test/move": true;
@@ -118,7 +119,8 @@ System.create({
     resources: { read: [time] },
     // @ts-expect-error a lookup can't share a name with a resource
     lookup: { [time]: { read: [position] } },
-}, () => {});
+}, (_, context) => {
+    void context[time];});
 
 System.create({
     name: "test/tally",
@@ -273,3 +275,12 @@ System.create({
     resources: { reduce: { [score]: "+" } },
 }, () => {});
 
+
+// Render systems: the accessors name the components they read.
+System.render({ name: "test/draw", query: { has: [player] }, render: { accessors: { place: position, speed: velocity } } }, () => {});
+System.render({
+    name: "test/draw",
+    // @ts-expect-error a render system reads the components its accessors name
+    query: { read: [position] },
+    render: { accessors: { place: position } },
+}, () => {});

@@ -255,7 +255,7 @@ const vec2f = System.create({ name: "intrinsicsTest/vec2f", kernel: "gpu", args,
     else if (op === 38) row[f2o] = Vec2.faceforward(a, b, p);
 });
 
-const vec2fScalar = System.create({ name: "intrinsicsTest/vec2fScalar", kernel: "gpu", args, query: { read: [f2a, f2b, f2p], write: [fo] } }, (row, { args: { op } }) => {
+const vec2fScalar = System.create({ name: "intrinsicsTest/vec2fScalar", kernel: "gpu", args, query: { read: [f2a, f2b], write: [fo] } }, (row, { args: { op } }) => {
     const a = row[f2a];
     const b = row[f2b];
     if (op === 0) row[fo] = Vec2.dot(a, b);
@@ -350,7 +350,7 @@ const vec3f = System.create({ name: "intrinsicsTest/vec3f", kernel: "gpu", args,
     else if (op === 40) row[f3o] = Vec3.faceforward(a, b, p);
 });
 
-const vec3fScalar = System.create({ name: "intrinsicsTest/vec3fScalar", kernel: "gpu", args, query: { read: [f3a, f3b, f3p], write: [fo] } }, (row, { args: { op } }) => {
+const vec3fScalar = System.create({ name: "intrinsicsTest/vec3fScalar", kernel: "gpu", args, query: { read: [f3a, f3b], write: [fo] } }, (row, { args: { op } }) => {
     const a = row[f3a];
     const b = row[f3b];
     if (op === 0) row[fo] = Vec3.dot(a, b);
@@ -446,7 +446,7 @@ const vec4f = System.create({ name: "intrinsicsTest/vec4f", kernel: "gpu", args,
     else if (op === 39) row[f4o] = Vec4.faceforward(a, b, p);
 });
 
-const vec4fScalar = System.create({ name: "intrinsicsTest/vec4fScalar", kernel: "gpu", args, query: { read: [f4a, f4b, f4p], write: [fo] } }, (row, { args: { op } }) => {
+const vec4fScalar = System.create({ name: "intrinsicsTest/vec4fScalar", kernel: "gpu", args, query: { read: [f4a, f4b], write: [fo] } }, (row, { args: { op } }) => {
     const a = row[f4a];
     const b = row[f4b];
     if (op === 0) row[fo] = Vec4.dot(a, b);
@@ -512,7 +512,7 @@ const mat4x4Vector = System.create({ name: "intrinsicsTest/mat4x4Vector", kernel
     if (op === 0) row[f4o] = Mat4x4.multiplyVec4(a, b);
 });
 
-const mat4x4Scalar = System.create({ name: "intrinsicsTest/mat4x4Scalar", kernel: "gpu", args, query: { read: [ma, mb], write: [fo] } }, (row, { args: { op } }) => {
+const mat4x4Scalar = System.create({ name: "intrinsicsTest/mat4x4Scalar", kernel: "gpu", args, query: { read: [ma], write: [fo] } }, (row, { args: { op } }) => {
     const a = row[ma];
     if (op === 0) row[fo] = Mat4x4.determinant(a);
 });

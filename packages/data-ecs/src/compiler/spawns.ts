@@ -1,5 +1,5 @@
-import type { Node, Pattern, Property, SpreadElement } from 'estree';
-import { children, isFunction } from './estree.js';
+import type { Node, Property, SpreadElement } from 'estree';
+import { children, declaredIn } from './estree.js';
 import type { ModuleScope } from './module-scope.js';
 
 /** A `commands.spawn({ ... })` call with literal keys: key expressions as module-scope source, value source ranges in order. */
@@ -8,34 +8,6 @@ export type SpawnSite = {
     readonly end: number;
     readonly keys: readonly string[];
     readonly values: readonly { readonly start: number; readonly end: number }[];
-};
-
-const patternNames = (pattern: Pattern): readonly string[] => {
-    switch (pattern.type) {
-        case "Identifier": return [pattern.name];
-        case "ArrayPattern": return pattern.elements.flatMap(element => element === null ? [] : patternNames(element));
-        case "ObjectPattern": return pattern.properties.flatMap(property => patternNames(property.type === "RestElement" ? property.argument : property.value));
-        case "RestElement": return patternNames(pattern.argument);
-        case "AssignmentPattern": return patternNames(pattern.left);
-        case "MemberExpression": return [];
-    }
-};
-
-/** Every name declared anywhere inside `node`: variables, parameters, functions, classes and catch parameters. */
-const declaredIn = (node: Node, names: Set<string>): Set<string> => {
-    switch (node.type) {
-        case "VariableDeclarator": for (const name of patternNames(node.id)) names.add(name); break;
-        case "FunctionDeclaration": case "FunctionExpression": case "ClassDeclaration": case "ClassExpression":
-            if (node.id) names.add(node.id.name);
-            break;
-        case "CatchClause": if (node.param) for (const name of patternNames(node.param)) names.add(name); break;
-        default: break;
-    }
-    if (isFunction(node) && (node.type === "ArrowFunctionExpression" || node.type === "FunctionExpression" || node.type === "FunctionDeclaration")) {
-        for (const param of node.params) for (const name of patternNames(param)) names.add(name);
-    }
-    for (const child of children(node)) declaredIn(child, names);
-    return names;
 };
 
 /** A key as a module-scope expression, or null when the property isn't a plain literal key. */

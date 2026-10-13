@@ -63,7 +63,7 @@ let observedRows = 0;
 const bump = System.create({ name: "dispatchTest/fastA", kernel: "cpu", query: { read: [offset], write: [offset] } }, row => {
     row[offset] = row[offset] + 1;
 });
-const watch = System.create({ name: "dispatchTest/slowB", query: { read: [offset], changed: [offset] } }, () => { observedRows++; });
+const watch = System.create({ name: "dispatchTest/slowB", query: { changed: [offset] } }, () => { observedRows++; });
 describe("worker dispatch", () => {
     it("reloads kernels on workers when an observer registers", async () => {
         const world = createWorld({ workers: 2, minimumChunk: 64 });

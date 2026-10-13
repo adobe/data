@@ -173,7 +173,7 @@ const spawnFew = System.create({ name: "gpuTest/churn" }, (_, __, commands) => {
 });
 
 /** A render body that fails after starting its pass. */
-const fail = System.render({ name: "gpuTest/fail", query: { read: [position] }, render: { accessors: { place: position } }, after: ["gpuTest/move"] }, ({ encoder }) => {
+const fail = System.render({ name: "gpuTest/fail", render: { accessors: { place: position } }, after: ["gpuTest/move"] }, ({ encoder }) => {
     encoder.beginComputePass();
     throw new Error("draw failed");
 });
@@ -221,12 +221,12 @@ const shading = System.create({ name: "gpuTest/shading", kernel: "gpu", query: {
 });
 
 /** Reads the entity, an f64. */
-const entityScore = System.create({ name: "gpuTest/entityScore", kernel: "gpu", query: { read: [score], write: [score] } }, row => {
+const entityScore = System.create({ name: "gpuTest/entityScore", kernel: "gpu", query: { write: [score] } }, row => {
     row[score] = row.entity;
 });
 
 let watched = 0;
-const watch = System.create({ name: "gpuTest/watch", query: { read: [position], changed: [position] } }, () => { watched++; });
+const watch = System.create({ name: "gpuTest/watch", query: { changed: [position] } }, () => { watched++; });
 
 const frame = System.composite({ name: "gpuTest/frame", systems: [move, reset, moveAgain] });
 
@@ -459,7 +459,7 @@ describe("render systems", () => {
 
     it("that record invalid work make the next run reject with the GPU's error", async () => {
         // A dispatch without a pipeline is a validation error when the encoder finishes.
-        const invalid = System.render({ name: "gpuTest/invalid", query: { read: [position] }, render: { accessors: { place: position } } }, ({ encoder }) => {
+        const invalid = System.render({ name: "gpuTest/invalid", render: { accessors: { place: position } } }, ({ encoder }) => {
             const pass = encoder.beginComputePass();
             pass.dispatchWorkgroups(1);
             pass.end();
@@ -478,7 +478,7 @@ describe("render systems", () => {
 
     it("name accessors anything WGSL allows, and only that", async () => {
         const gpu = await device();
-        const named = (name: string) => System.render({ name: "gpuTest/copy", query: { read: [position] }, render: { accessors: { [name]: position } } }, () => {});
+        const named = (name: string) => System.render({ name: "gpuTest/copy", render: { accessors: { [name]: position } } }, () => {});
         const module = gpu.createShaderModule({ code: `${Gpu.wgsl(named("count"))}\n@compute @workgroup_size(1) fn main() { _ = count(0u); }` });
         expect((await module.getCompilationInfo()).messages.filter(message => message.type === "error")).toEqual([]);
         expect(() => Gpu.wgsl(named("target"))).toThrow(/isn't usable as a WGSL function name/);
@@ -489,7 +489,7 @@ describe("render systems", () => {
         const output = gpu.createBuffer({ size: count * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
         const copy = System.render({
             name: "gpuTest/copy",
-            query: { read: [position], has: [tag] },
+            query: { has: [tag] },
             render: { group: 0, accessors: { place: position } },
             after: ["gpuTest/move"],
         }, ({ encoder, tables }) => {

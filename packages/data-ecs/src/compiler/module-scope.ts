@@ -1,4 +1,5 @@
 import type { Directive, Expression, FunctionDeclaration, MaybeNamedFunctionDeclaration, ModuleDeclaration, Pattern, Program, Statement } from 'estree';
+import { patternNames } from './estree.js';
 
 /**
  * A module-scope binding. Only `const` initializers and function declarations can be inlined into kernels, and imports
@@ -32,18 +33,6 @@ export type Module = {
 
 /** The binding an `export default <expression>` declares. Not a valid identifier, so it can't be shadowed. */
 const defaultBinding = "*default*";
-
-const patternNames = (pattern: Pattern): readonly string[] => {
-    switch (pattern.type) {
-        case "Identifier": return [pattern.name];
-        case "ArrayPattern": return pattern.elements.flatMap(element => element === null ? [] : patternNames(element));
-        case "ObjectPattern": return pattern.properties.flatMap(property =>
-            patternNames(property.type === "RestElement" ? property.argument : property.value));
-        case "RestElement": return patternNames(pattern.argument);
-        case "AssignmentPattern": return patternNames(pattern.left);
-        case "MemberExpression": return [];
-    }
-};
 
 const nameOf = (node: { readonly type: string; readonly name?: string; readonly value?: unknown }): string | undefined =>
     node.type === "Identifier" ? node.name : typeof node.value === "string" ? node.value : undefined;

@@ -7,6 +7,8 @@ import { createModule, locateIn, type Module } from './module-scope.js';
 import { attachKernelPath, prepareSpawnPath } from './paths.js';
 import { spawnSites } from './spawns.js';
 import { kernelOf } from './signature.js';
+import { usedBy } from './body-access.js';
+import { requireExact } from './exact.js';
 
 export type Parse = (code: string) => Program;
 /** Whether an import specifier, resolved from the module being transformed, is the package's `System` namespace. */
@@ -93,7 +95,7 @@ type KernelSite = { readonly node: SimpleCallExpression; readonly declaration: O
 export const transformKernels = async (
     code: string, id: string, parse: Parse, resolveSystemImport: ResolveSystemImport, kernelUrl: KernelUrl, linker?: Linker,
 ): Promise<TransformResult | null> => {
-    if ((!code.includes("kernel") && !code.includes("spawn")) || id.includes("\0")) return null;
+    if (!code.includes("System") || id.includes("\0")) return null;
     const program = parse(code);
     const locals = await systemLocals(program, resolveSystemImport);
     if (locals.size === 0) return null;
@@ -126,6 +128,7 @@ export const transformKernels = async (
                 sites.push({ node, declaration, body, target });
                 return;
             }
+            if (declaration?.type === "ObjectExpression" && body !== undefined && body.type !== "SpreadElement") requireExact(declaration, usedBy(body, module.bindings), module.bindings);
             const spawns = body === undefined || body.type === "SpreadElement" ? null : spawnSites(body, module.bindings);
             if (spawns !== null && spawns.sites.length > 0) {
                 for (const site of spawns.sites) {

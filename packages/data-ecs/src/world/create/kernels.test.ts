@@ -33,7 +33,9 @@ Component.register(other, { type: "number" });
 Resource.register(scale, { type: "number", default: 1 });
 
 /** Reads `value` and `other`, writes nothing, reads no resources. */
-const system = System.create({ name: "kernelsTest/read", kernel: "cpu", query: { read: [value, other] } }, () => {});
+const system = System.create({ name: "kernelsTest/read", kernel: "cpu", query: { read: [value, other] } }, row => {
+    if (row[value] > row[other]) return;
+});
 
 const describing = (overrides: Partial<KernelDescription>): KernelDescription =>
     ({ columns: [], shapes: [], resources: [], lookups: [], keys: [], url: "unused", program: null, reductions: [], reducedShapes: [], ...overrides });

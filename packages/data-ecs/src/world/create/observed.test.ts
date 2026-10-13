@@ -46,7 +46,7 @@ const watch = System.create({ name: "observedTest/watch", kernel: "cpu", query: 
 const fresh = System.create({ name: "observedTest/fresh", query: { read: [seen], write: [seen], added: [value] } }, row => {
     row[seen] = row[seen] + 1;
 });
-const flagAll = System.create({ name: "observedTest/flagAll", query: { read: [value] } }, (row, _, commands) => {
+const flagAll = System.create({ name: "observedTest/flagAll", query: { has: [value] } }, (row, _, commands) => {
     commands.add(row.entity, { [flag]: true });
 });
 const spawnOne = System.create({ name: "observedTest/spawnOne" }, (_, __, commands) => {

@@ -1,5 +1,6 @@
 import type { Node, ObjectExpression } from 'estree';
 import { bind } from './bind.js';
+import { requireExact } from './exact.js';
 import { expression } from './expression.js';
 import { fail } from './failure.js';
 import type { Link } from './link.js';
@@ -69,6 +70,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         if (program === null) fail(body, "a GPU kernel can't issue commands or use values that aren't numbers or booleans");
         else if (loops(program.body)) fail(body, "a GPU kernel can't use loops or labeled blocks yet");
     }
+    requireExact(declaration, { query: unit.used, resources: { read: unit.used.resources, write: new Set() }, lookups: unit.used.lookups }, module.bindings);
     const strided = columns.flatMap((_, index) => unit.chunks.has(index) ? [] : [index]);
     const locals = [
         ...columns.map((_, index) => `const c${index} = columns[${index}];`),

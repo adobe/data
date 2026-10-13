@@ -75,7 +75,7 @@ const move = System.create({
 /** Counts rows whose position may have changed since it last ran. */
 const watch = System.create({
     name: "createTest/watch",
-    query: { read: [position], changed: [position] },
+    query: { changed: [position] },
     resources: { read: [seen], write: [seen] },
     after: ["createTest/move"],
 }, (_, context) => {
@@ -84,7 +84,7 @@ const watch = System.create({
 
 /** A kernel whose module can't be imported. */
 const missing = attachKernel(
-    System.create({ name: "createTest/missing", kernel: "cpu", query: { read: [velocity] } }, () => {}),
+    System.create({ name: "createTest/missing", kernel: "cpu", query: { has: [velocity] } }, () => {}),
     { columns: [], shapes: [], resources: [], lookups: [], keys: [], url: "/@missing/kernel.js", program: null, reductions: [], reducedShapes: [] },
 );
 
@@ -177,7 +177,7 @@ describe("World.create", () => {
     });
 
     it("hides the resource entity from queries and commands", async () => {
-        const edit = System.create({ name: "createTest/edit", query: {}, resources: { read: [seen] } }, (row, _, commands) => {
+        const edit = System.create({ name: "createTest/edit", query: {} }, (row, _, commands) => {
             commands.despawn(row.entity);
         });
         const world = await World.create({ systems: [edit] });
@@ -187,7 +187,7 @@ describe("World.create", () => {
     });
 
     it("throws at registration on an unordered conflict", async () => {
-        const push = System.create({ name: "createTest/push", query: { write: [position] } }, () => {});
+        const push = System.create({ name: "createTest/push", query: { write: [position] } }, row => { row[position] = [0, 0]; });
         const conflicted = System.composite({ name: "createTest/main", systems: [move, push] });
         await expect(World.create({ systems: [conflicted] })).rejects.toThrow('"createTest/move" and "createTest/push"');
     });
@@ -205,7 +205,7 @@ describe("World.create", () => {
     it("skips every row when a system's only filter is an unchanged resource", async () => {
         const count = System.create({
             name: "createTest/count",
-            query: { read: [velocity] },
+            query: { has: [velocity] },
             resources: { read: [seen], write: [seen], changed: [spawnCount] },
         }, (_, context) => {
             context[seen] += 1;
@@ -220,7 +220,7 @@ describe("World.create", () => {
 
     it("doesn't let a lookup match the resource entity", async () => {
         let found: object | null | undefined;
-        const probe = System.create({ name: "createTest/probe", lookup: { any: {} }, resources: { read: [seen] } }, (_, { any }) => {
+        const probe = System.create({ name: "createTest/probe", lookup: { any: {} } }, (_, { any }) => {
             // The resource entity is entity 0, since registration reserves it first.
             found = any(0);
         });

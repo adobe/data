@@ -26,6 +26,7 @@ const root = (node: Node): string | undefined =>
 
 const requireWritable = (node: Node, scope: Scope, component: string): void => {
     if (!scope.unit.signature.write.has(component)) fail(node, `${component} is not in query write`);
+    scope.unit.used.write.add(component);
 };
 
 /** Resolves an assignment target to a value whose scalar leaves are assignable. */

@@ -39,7 +39,7 @@ const seed = System.create({ name: "semanticsTest/seed" }, (_, __, commands) => 
 const chase = System.create({
     name: "semanticsTest/chase",
     kernel: "cpu",
-    query: { read: [target, score], write: [score] },
+    query: { read: [target], write: [score] },
     lookup: { targets: { read: [position] } },
 }, (row, { targets }) => {
     const other = targets(row[target]);
@@ -94,7 +94,7 @@ describe("semantics", () => {
         let entity = -1;
         const spawn = System.create({ name: "semanticsTest/seed" }, (_, __, commands) => { entity = commands.spawn({ [tag]: true, [score]: 0 }); });
         const retag = System.create({ name: "semanticsTest/retag" }, (_, __, commands) => { commands.add(entity, { [tag]: true }); });
-        const watch = System.create({ name: "semanticsTest/watch", query: { read: [score], added: [tag] } }, row => { seen.push(row.entity); });
+        const watch = System.create({ name: "semanticsTest/watch", query: { has: [score], added: [tag] } }, row => { seen.push(row.entity); });
         const world = createWorld({ workers: 0 });
         await world.systems.register(spawn, retag, watch);
         await world.run(spawn);

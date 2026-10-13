@@ -138,7 +138,7 @@ const stamp = System.create({
 const unlink = System.create({
     name: "workersTest/unlink",
     kernel: "cpu",
-    query: { read: [target] },
+    query: { has: [target] },
 }, (_, __, commands) => {
     commands.despawn(0);
 });
@@ -149,8 +149,9 @@ const labels = System.create({
     query: { read: [target], write: [offset] },
     // @ts-expect-error kernel lookups must read linear values; registration rejects it too, for untyped callers
     lookup: { named: { read: [label] } },
-}, row => {
-    row[offset] = 0;
+}, (row, { named }) => {
+    const found = named(row[target]);
+    row[offset] = found === null ? 0 : +found[label];
 });
 
 const disposals: World[] = [];

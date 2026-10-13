@@ -37,13 +37,13 @@ describe("staged spawns", () => {
     it("are seen once by `added` observers in earlier, the same and later tiers, and not before the sync point", async () => {
         const seen = { early: 0, same: 0, late: 0 };
         const spawned: Entity[] = [];
-        const early = System.create({ name: "batchesTest/early", query: { read: [score], added: [score] } }, () => { seen.early++; });
+        const early = System.create({ name: "batchesTest/early", query: { added: [score] } }, () => { seen.early++; });
         const spawn = System.create({ name: "batchesTest/spawn", after: ["batchesTest/early"] }, (_, __, commands) => {
             if (spawned.length > 0) return;
             for (let i = 0; i < 100; i++) spawned.push(commands.spawn({ [position]: [i, i, i], [score]: i, [name]: `${i}`, [tag]: true }));
         });
-        const same = System.create({ name: "batchesTest/same", query: { read: [score], added: [score] }, after: ["batchesTest/early"] }, () => { seen.same++; });
-        const late = System.create({ name: "batchesTest/late", query: { read: [score], added: [score] }, after: ["batchesTest/spawn", "batchesTest/same"] }, () => { seen.late++; });
+        const same = System.create({ name: "batchesTest/same", query: { added: [score] }, after: ["batchesTest/early"] }, () => { seen.same++; });
+        const late = System.create({ name: "batchesTest/late", query: { added: [score] }, after: ["batchesTest/spawn", "batchesTest/same"] }, () => { seen.late++; });
         const frame = System.composite({ name: "batchesTest/edit", systems: [early, spawn, same, late] });
         const world = createWorld({ workers: 0 });
         await world.systems.register(frame);

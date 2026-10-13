@@ -12,6 +12,7 @@ export const requireReadable = (node: Node, scope: Scope, component: string): vo
             ? `${component} is write-only here; add it to query read to read it`
             : `${component} is not in query read`);
     }
+    scope.unit.used.read.add(component);
 };
 
 /** A value used as a number or boolean. A component of unknown shape is read as a scalar. */

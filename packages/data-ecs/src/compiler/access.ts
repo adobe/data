@@ -49,16 +49,20 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
                 const reduced = signature.reduced.findIndex(entry => entry.resource === key.name);
                 if (reduced >= 0) return { kind: "reducer", reduced };
                 const index = signature.resources.indexOf(key.name);
-                return index >= 0 ? { kind: "dynamic", expression: { kind: "resource", index, path: [] } } : fail(node, `${key.name} is not in resources read`);
+                if (index < 0) return fail(node, `${key.name} is not in resources read`);
+                scope.unit.used.resources.add(key.name);
+                return { kind: "dynamic", expression: { kind: "resource", index, path: [] } };
             }
             if (name === "args" && signature.args) return { kind: "dynamic", expression: { kind: "args", path: [] } };
             const lookup = signature.lookups.findIndex(entry => entry.name === name);
             return lookup >= 0 ? { kind: "lookup", lookup } : fail(node, "the context holds declared resources, lookups and args");
         }
         case "found": {
-            const read = signature.lookups[value.lookup]?.read ?? [];
-            const index = key.kind === "binding" ? read.indexOf(key.name) : -1;
-            if (index < 0) return fail(node, "a lookup result is indexed by a component in that lookup's read");
+            const lookup = signature.lookups[value.lookup];
+            const index = key.kind === "binding" ? (lookup?.read ?? []).indexOf(key.name) : -1;
+            if (lookup === undefined || key.kind !== "binding" || index < 0) return fail(node, "a lookup result is indexed by a component in that lookup's read");
+            const used = scope.unit.used.lookups;
+            used.set(lookup.name, (used.get(lookup.name) ?? new Set()).add(key.name));
             return { kind: "dynamic", expression: { kind: "element", object: value.expression, index: number(index), optional } };
         }
         case "dynamic":

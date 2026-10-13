@@ -70,7 +70,7 @@ const seed = System.create({ name: "wasmTest/seed", args: { type: "integer" } },
 });
 
 /** Despawns every seventh entity and spawns replacements, so some targets go stale and their indexes are reused. */
-const cull = System.create({ name: "wasmTest/cull", args: { type: "integer" }, query: { read: [bounces, position] } }, (row, { args }, commands) => {
+const cull = System.create({ name: "wasmTest/cull", args: { type: "integer" }, query: { read: [position], has: [bounces] } }, (row, { args }, commands) => {
     if ((row.entity >>> 0) % 7 !== args % 7) return;
     commands.despawn(row.entity);
     commands.spawn({ [position]: row[position], [velocity]: [1, 1], [bounces]: 0, [flipped]: true, [score]: 0, [target]: row.entity });

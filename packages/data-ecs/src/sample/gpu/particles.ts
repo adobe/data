@@ -108,7 +108,7 @@ struct Point { @builtin(position) position: vec4f, @location(0) color: vec4f }
 
 const declaration = {
     name: "gpuParticles/draw",
-    query: { read: [position, color], has: [visible, enabled] },
+    query: { has: [visible, enabled] },
     render: { group: 0, accessors: { particlePosition: position, particleColor: color } },
     after: ["gpuParticles/move", "gpuParticles/moveOnCpu"],
 } as const;

@@ -69,9 +69,9 @@ describe("createSchedule", () => {
     });
 
     it("throws on an unordered write conflict, but not when ordered or disjoint", () => {
-        const a = System.create({ name: "scheduleTest/a", query: { write: [value] } }, () => {});
-        const b = System.create({ name: "scheduleTest/b", query: { read: [value] } }, () => {});
-        const c = System.create({ name: "scheduleTest/c", query: { write: [other] }, during: ["scheduleTest/a"] }, () => {});
+        const a = System.create({ name: "scheduleTest/a", query: { write: [value] } }, row => { row[value] = 0; });
+        const b = System.create({ name: "scheduleTest/b", query: { read: [value] } }, row => { void row[value]; });
+        const c = System.create({ name: "scheduleTest/c", query: { write: [other] }, during: ["scheduleTest/a"] }, row => { row[other] = 0; });
         expect(() => createSchedule(System.composite({ name: "scheduleTest/root", systems: [a, b] }))).toThrow('"scheduleTest/a" and "scheduleTest/b"');
         const ordered = System.create({ ...b.declaration, after: ["scheduleTest/a"] }, b.body);
         expect(names(System.composite({ name: "scheduleTest/root", systems: [a, ordered, c] })))

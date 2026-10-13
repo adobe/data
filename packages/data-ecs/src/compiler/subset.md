@@ -39,6 +39,9 @@ call        = Math-function | helper | lookup | command | reducer
   is the row's entity.
 - **`context[resource]`** reads a resource in `resources.read`, and `context.args` the system's arguments. Kernels
   don't write resources; they reduce into them.
+- **Declarations list exactly what the body uses.** Every component in `query.read`, `query.write` and a lookup's
+  `read`, and every resource in `resources.read`, must be read or written as listed; one only required belongs in
+  `has`.
 - **Indexes** are literals, field names, or constants and locals whose value is a number or string literal. Tuples and
   structs are indexed only statically; resources and `args` may be indexed at runtime.
 - **Shapes are known at build time.** A local holding a component value takes its shape from the leaves the body uses

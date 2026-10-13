@@ -116,11 +116,6 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     }
     const accessors = declaration.render === undefined ? [] : accessorsOf(declaration.render);
     if (typeof accessors === "string") return failPlacement(`can't render: ${accessors}`);
-    if (declaration.render !== undefined) {
-        const named = new Set(accessors.map(accessor => accessor.component));
-        const read = new Set(query?.read ?? []);
-        if (named.size !== read.size || [...read].some(key => !named.has(key))) failPlacement("must name an accessor for each component in query.read, and only those");
-    }
     const touches = [...new Set([...query?.read ?? [], ...query?.write ?? []])].map(key => idOf(state, key));
     const writes = (query?.write ?? []).map(key => idOf(state, key));
     const looks = [...new Set(Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []))].map(key => idOf(state, key));

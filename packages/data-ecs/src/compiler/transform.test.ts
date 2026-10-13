@@ -381,10 +381,10 @@ describe("layout", () => {
 });
 
 describe("reductions", () => {
-    const reducing = (reduce: string, body: string) => `const total = "total";
+    const reducing = (reduce: string, body: string, read = "[position, mass]") => `const total = "total";
 const low = "low";
 const bits = "bits";
-const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position, mass] }, resources: { reduce: { ${reduce} } } }, (row, context) => { ${body} });`;
+const kernel = System.create({ name: "a", kernel: "cpu", query: { read: ${read} }, resources: { reduce: { ${reduce} } } }, (row, context) => { ${body} });`;
     const fields = { position: vec3([1, -4, 2], [5, 0, -1], [3, 9, 6]), mass: { "[]": [2, 3, 12] } };
 
     test("fold each contribution into its resource, leaf by leaf, from the partial", async () => {
@@ -403,7 +403,7 @@ const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [positio
     });
 
     test("fold the values of inlined functions", async () => {
-        const kernel = await compile(`import { Vec3 } from "ecs";\n${reducing(`[low]: "max"`, "context[low](Vec3.scale(row[position], 2));")}`);
+        const kernel = await compile(`import { Vec3 } from "ecs";\n${reducing(`[low]: "max"`, "context[low](Vec3.scale(row[position], 2));", "[position]")}`);
         expect([0, 1, 2].map(k => run(kernel, 3, fields).reduced("low", [k]))).toEqual([4, 10, 18]);
     });
 
@@ -648,9 +648,9 @@ describe("program", () => {
 
 describe("lookups in the program", () => {
     const targets = (entity: number) => entity === 1 ? [3, [10, 20, 30]] : entity === 2 ? [4, [40, 50, 60]] : null;
-    const declaration = (body: string) => `const kernel = System.create({ name: "a", kernel: "cpu",
-        query: { read: [target, mass], write: [score] }, lookup: { targets: { read: [mass, position] }, others: { read: [position] } } },
-        (row, { targets, others }) => { ${body} });`;
+    const declaration = (body: string, read = "[target]", lookup = "targets: { read: [mass, position] }") => `const kernel = System.create({ name: "a", kernel: "cpu",
+        query: { read: ${read}, write: [score] }, lookup: { ${lookup} } },
+        (row, { ${lookup.includes("others") ? "targets, others" : "targets"} }) => { ${body} });`;
 
     test("guarded leaf access, early return and a second lookup in its own handle", async () => {
         const kernel = await compile(declaration(`
@@ -660,7 +660,7 @@ describe("lookups in the program", () => {
             const second = others(row[mass]);
             const extra = second !== null ? second[position][2] : 0;
             row[score] = tx - other[mass] + ty * 0 + extra;
-        `));
+        `, "[target, mass]", "targets: { read: [mass, position] }, others: { read: [position] }"));
         expect(kernel.program?.handles).toBe(2);
         const others = (entity: number) => entity === 2 ? [[0, 0, 7]] : null;
         expect(run(kernel, 3, { target: { "[]": [1, 2, 3] }, mass: { "[]": [2, 0, 0] }, score: { "[]": [-1, -1, -1] } }, { lookups: [targets, others] }).field("score"))
@@ -668,9 +668,9 @@ describe("lookups in the program", () => {
     });
 
     test("optional chains read NaN when nothing was found, anywhere", async () => {
-        const kernel = await compile(declaration(`row[score] = targets(row[target])?.[position]?.[1] * 2;`));
+        const kernel = await compile(declaration(`row[score] = targets(row[target])?.[position]?.[1] * 2;`, "[target]", "targets: { read: [position] }"));
         expect(kernel.program).not.toBeNull();
-        expect(run(kernel, 2, { target: { "[]": [1, 5] } }, { lookups: [targets, () => null] }).field("score")).toEqual([40, NaN]);
+        expect(run(kernel, 2, { target: { "[]": [1, 5] } }, { lookups: [entity => targets(entity)?.slice(1) ?? null] }).field("score")).toEqual([40, NaN]);
     });
 
     test("guards through && and conditional tests", async () => {
@@ -683,11 +683,11 @@ describe("lookups in the program", () => {
     });
 
     test.each([
-        ["an unguarded leaf access", `const other = targets(row[target]); row[score] = other[mass];`],
-        ["a lookup result used whole", `const other = targets(row[target]); row[score] = other;`],
-        ["a leaf access after the guard's scope", `const other = targets(row[target]); if (other !== null) { row[score] = 1; } row[score] = other[mass];`],
-    ])("no program for %s", async (_, body) => {
-        const kernel = await compile(declaration(body));
+        ["an unguarded leaf access", `const other = targets(row[target]); row[score] = other[mass];`, "targets: { read: [mass] }"],
+        ["a lookup result used whole", `const other = targets(row[target]); row[score] = other;`, "targets: { has: [mass] }"],
+        ["a leaf access after the guard's scope", `const other = targets(row[target]); if (other !== null) { row[score] = 1; } row[score] = other[mass];`, "targets: { read: [mass] }"],
+    ])("no program for %s", async (_, body, lookup) => {
+        const kernel = await compile(declaration(body, "[target]", lookup));
         expect(kernel.program).toBeNull();
     });
 });
@@ -944,5 +944,54 @@ describe("imported functions and constants", () => {
             "/both.js": "export * from './a.js';\nexport * from './b.js';", "/a.js": "export const f = (x) => x;", "/b.js": "export const f = (x) => -x;",
         })).toBe("f is exported by more than one export * of /both.js");
         expect(await failure(kernel(`import { f } from "lodash";`, "row[score] = f(1);"))).toBe("lodash can't be resolved from /test.js");
+    });
+});
+
+describe("declared access", () => {
+    const kernel = (declaration: string, body: string) =>
+        `const kernel = System.create({ name: "a", kernel: "cpu", ${declaration} }, (row, context) => { ${body} });`;
+    const system = (declaration: string, body: string) => `const system = System.create({ name: "a", ${declaration} }, ${body});`;
+
+    test("a kernel uses every component and resource it lists", async () => {
+        expect(await failure(kernel("query: { read: [position, velocity], write: [position] }", "row[position] = row[velocity];")))
+            .toBe("position is in query read but never read; remove it, or move it to query has to keep requiring it");
+        expect(await failure(kernel("query: { read: [position], write: [velocity, mass] }", "row[velocity] = row[position];")))
+            .toBe("mass is in query write but never written; remove it");
+        expect(await failure(kernel("query: { write: [score] }, resources: { read: [delta] }", "row[score] = 1;")))
+            .toBe("delta is in resources read but never read; remove it");
+        expect(await failure(kernel("query: { read: [target], write: [score] }, lookup: { targets: { read: [mass, position] } }",
+            "const found = context.targets(row[target]); row[score] = found === null ? 0 : found[mass];")))
+            .toBe("position is in lookup.targets read but never read; remove it, or move it to lookup.targets has to keep requiring it");
+        expect(await failure(kernel("query: { read: [mass], has: [alive] }", "const entity = row.entity;")))
+            .toBe("mass is in query read but never read; remove it, or move it to query has to keep requiring it");
+        expect(await failure(kernel("query: { read: [position, mass], write: [score] }, resources: { read: [delta] }",
+            "row[score] = row[mass] * context[delta] + row[position][0];"))).toBe("compiled");
+    });
+
+    test("a main-thread system uses every component and resource it lists, where its body shows every access", async () => {
+        expect(await failure(system("query: { read: [position, mass], write: [velocity] }", "(row) => { row[velocity] = row[position]; }")))
+            .toBe("mass is in query read but never read; remove it, or move it to query has to keep requiring it");
+        expect(await failure(system("query: { read: [position], write: [velocity] }", "(row) => { console.log(row[position]); }")))
+            .toBe("velocity is in query write but never written; remove it");
+        expect(await failure(system("query: { read: [mass] }", "() => {}")))
+            .toBe("mass is in query read but never read; remove it, or move it to query has to keep requiring it");
+        expect(await failure(system("query: { read: [mass] }", "(row, _, commands) => commands.despawn(row.entity)")))
+            .toBe("mass is in query read but never read; remove it, or move it to query has to keep requiring it");
+        expect(await failure(system("resources: { read: [delta], write: [score] }", "(_, context) => { context[score] = 1; }")))
+            .toBe("delta is in resources read but never read; remove it");
+        expect(await failure(system("resources: { read: [delta] }, args: { type: \"number\" }", "(_, { args }) => { console.log(args); }")))
+            .toBe("delta is in resources read but never read; remove it");
+        expect(await failure(system("query: { write: [score] }, resources: { write: [score] }", "(row, context) => { row[score] += 1; context[score]++; }")))
+            .toBe("compiled");
+    });
+
+    test("a main-thread system whose body hides an access isn't checked", async () => {
+        expect(await failure(system("query: { read: [mass] }", "(row) => { helper(row); }"))).toBe("compiled");
+        expect(await failure(system("query: { read: [mass] }", "(row) => { for (const key of [mass]) console.log(row[key]); }"))).toBe("compiled");
+        expect(await failure(system("query: { read: [mass] }", "(row) => { const mass = \"other\"; console.log(row[mass]); }"))).toBe("compiled");
+        expect(await failure(system("query: { read: [mass] }", "function (row) { console.log(arguments[0][mass]); }"))).toBe("compiled");
+        expect(await failure(system("resources: { read: [delta] }", "(_, { ...all }) => { console.log(all); }"))).toBe("compiled");
+        expect(await failure(system("query: { read: [mass] }", "body"))).toBe("compiled");
+        expect(await failure("const decay = (k) => System.create({ name: \"a\", query: { read: [k] } }, (row) => { console.log(row[k]); });")).toBe("compiled");
     });
 });

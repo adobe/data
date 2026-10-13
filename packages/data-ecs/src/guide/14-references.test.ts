@@ -1,0 +1,43 @@
+import { expect, it } from "vitest";
+import { Component, Entity, System, World } from "../index.js";
+
+const node = "guide/references/node";
+const parent = "guide/references/parent";
+const watching = "guide/references/watching";
+
+declare module "../component/types.js" {
+    interface Types {
+        [node]: { type: string };
+        [parent]: { type: Entity; reference: "owner" };
+        [watching]: { type: Entity; reference: "weak" };
+    }
+}
+declare module "../system/types.js" {
+    interface Types {
+        "guide/references/spawn": true;
+        "guide/references/prune": true;
+    }
+}
+
+Component.register(node, { type: { type: "string" } });
+// When the target despawns, an `owner` reference despawns its holder, and a `weak` one is removed from it.
+Component.register(parent, { type: Entity.schema, reference: "owner" });
+Component.register(watching, { type: Entity.schema, reference: "weak" });
+
+const spawn = System.create({ name: "guide/references/spawn" }, (_, __, commands) => {
+    const root = commands.spawn({ [node]: "root" });
+    const child = commands.spawn({ [node]: "child", [parent]: root });
+    commands.spawn({ [node]: "grandchild", [parent]: child });
+    commands.spawn({ [node]: "camera", [watching]: child });
+});
+const prune = System.create({ name: "guide/references/prune", query: { read: [node] } }, (row, _, commands) => {
+    if (row[node] === "root") commands.despawn(row.entity);
+});
+
+it("despawns owned entities with their owner, transitively, and drops weak references", async () => {
+    await using world = await World.create({ systems: [spawn, prune] });
+    await world.run(spawn);
+    await world.run(prune);
+    expect(world.query.select([node]).map(entity => world.read.component(entity, node))).toEqual(["camera"]);
+    expect(world.query.count([watching])).toBe(0);
+});

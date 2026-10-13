@@ -1,12 +1,9 @@
 import { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
 import { Resource } from '../resource/resource.js';
-import type { Schema } from '../schema/schema.js';
+import { Vec3 } from '../math/index.js';
 import { System } from '../system/system.js';
 import { World } from '../world/world.js';
-
-export type Vec3 = readonly [number, number, number];
-const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
 
 export const position = 'particles/position';
 export const velocity = 'particles/velocity';
@@ -35,8 +32,8 @@ declare module '../system/types.js' {
     }
 }
 
-Component.register(position, { type: vec3 });
-Component.register(velocity, { type: vec3 });
+Component.register(position, { type: Vec3.schema });
+Component.register(velocity, { type: Vec3.schema });
 Resource.register(delta, { type: { type: "number", precision: 1, default: 0 } });
 Resource.register(count, { type: { type: "integer", minimum: 0, default: 100 } });
 

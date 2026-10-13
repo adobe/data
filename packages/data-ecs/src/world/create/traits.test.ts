@@ -21,13 +21,12 @@ declare module "../../system/types.js" {
     export interface Types {
         "traitsTest/spawn": true;
         "traitsTest/derived": true;
-        "traitsTest/cascade": true;
         "traitsTest/lookup": true;
     }
 }
 
 Component.register(score, { type: { type: "number" } });
-Component.register(slot, { type: { type: "number" }, derived: true });
+Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
 Component.register(ready, { type: { const: true }, within: slot });
 Component.register(parent, { type: Entity.schema, reference: "owner" });
 
@@ -55,11 +54,6 @@ describe("traits", () => {
         expect(errors).toEqual(Array.from({ length: 3 }, () => `"${slot}" is derived, so only rules add and remove it.`));
         expect(world.query.count([score])).toBe(1);
         await world.dispose();
-    });
-
-    it("are rejected by worlds where they declare cascades", async () => {
-        const cascade = System.create({ name: "traitsTest/cascade", query: { read: [parent] } }, row => { void row[parent]; });
-        await expect(createWorld({ workers: 0 }).systems.register(cascade)).rejects.toThrow("which worlds don't support yet");
     });
 
     it("leave index 0 to Entity.none, which no lookup finds", async () => {

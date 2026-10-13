@@ -40,6 +40,9 @@ export const createRegistry = <D extends { readonly [K in keyof D]: AnyDeclarati
         if (declaration.reference !== undefined && !("format" in type && type.format === "entity")) {
             throw new Error(`Cannot declare ${kind} ${String(name)}: a reference's type is Entity.schema.`);
         }
+        if (declaration.derived === true && !("default" in type || "const" in type)) {
+            throw new Error(`Cannot declare ${kind} ${String(name)}: a derived component's type has a default, which it starts at.`);
+        }
         layoutOf(type);
         declareName(name, kind);
         registered.set(name, Object.freeze({ ...declaration }));

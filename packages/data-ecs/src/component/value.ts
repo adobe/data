@@ -8,6 +8,11 @@ type ValueTypes = { readonly [K in Name]: Types[K] extends { readonly type: infe
 /** The value type of component `K`. */
 export type Value<K extends Name> = ValueTypes[K];
 
+type Primitive = string | number | boolean | bigint | symbol | null | undefined;
+
+/** Component `K`'s value as reads return it: read-only, with branded primitives such as `Entity` as they are. */
+export type ReadonlyValue<K extends Name> = Value<K> extends Primitive ? Value<K> : Readonly<Value<K>>;
+
 /** Components that declare trait `T`, with a value assignable to `V`. */
 export type With<T extends TraitName, V = unknown> = { [K in Name]: Types[K] extends { readonly [P in T]: V } ? K : never }[Name];
 
@@ -19,3 +24,6 @@ export type Derived = With<"derived">;
 
 /** Components user code adds and removes: the only ones commands take. */
 export type Essential = Exclude<Name, Derived>;
+
+/** Components systems may write: every one but references, which change only through commands. */
+export type Writable = Exclude<Name, With<"reference">>;

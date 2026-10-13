@@ -58,11 +58,10 @@ export type GpuEngine = {
     readonly anyAhead: () => boolean;
     /** Copies GPU writes back into the CPU storages; every storage when `storages` is omitted. */
     readonly readback: (storages?: readonly Storage[]) => Promise<void>;
-    /**
-     * Before a sync point: `disturbed` are the archetypes whose existing rows it moves or writes, which must be read
-     * back first; the rest only gain rows at their end.
-     */
-    readonly beforeSync: (disturbed: ReadonlySet<Archetype>) => void;
+    /** Before a sync point: notes row counts, so the rows it only appends are uploaded alone. */
+    readonly beforeSync: () => void;
+    /** Once a sync point is planned: the archetypes whose existing rows it moves or writes, read back first and uploaded whole. */
+    readonly disturb: (disturbed: ReadonlySet<Archetype>) => void;
     /** After a sync point: the archetypes it changed, whose new rows, or all rows if disturbed, are uploaded next. */
     readonly touched: (archetypes: Iterable<Archetype>) => void;
     /** Set once the device is lost; later runs reject with it. */
@@ -252,8 +251,8 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
     let disturbedNow: ReadonlySet<Archetype> = new Set();
     /** Row counts of archetypes with GPU copies, before the sync point. */
     const countsBefore = new Map<Archetype, number>();
-    const beforeSync = (disturbed: ReadonlySet<Archetype>): void => {
-        disturbedNow = disturbed;
+    const beforeSync = (): void => {
+        disturbedNow = new Set();
         countsBefore.clear();
         for (const resident of residents.values()) countsBefore.set(resident.archetype, resident.archetype.count);
     };
@@ -292,6 +291,7 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         anyAhead: () => ahead.size > 0,
         readback,
         beforeSync,
+        disturb: disturbed => { disturbedNow = disturbed; },
         touched,
         lost: () => lostReason,
         reportErrors: (validation, memory) => {

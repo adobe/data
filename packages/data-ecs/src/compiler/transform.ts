@@ -11,7 +11,7 @@ import { usedBy } from './body-access.js';
 import { requireExact } from './exact.js';
 
 export type Parse = (code: string) => Program;
-/** Whether an import specifier, resolved from the module being transformed, is the package's `System` namespace. */
+/** Whether an import specifier, resolved from the module being transformed, is the package's, which exports `System` and `Finalizer`. */
 export type ResolveSystemImport = (source: string) => Promise<boolean>;
 /**
  * The JS expression for kernel `index`'s module url. `identity` is everything the description and module are
@@ -28,23 +28,27 @@ export type TransformResult =
 
 type Edit = { readonly start: number; readonly end: number; readonly text: string };
 
-const systemLocals = async (program: Program, resolveSystemImport: ResolveSystemImport): Promise<ReadonlySet<string>> => {
-    const locals = new Set<string>();
+/** The local names of the package's `System` and `Finalizer` namespaces, by the namespace each names. */
+const systemLocals = async (program: Program, resolveSystemImport: ResolveSystemImport): Promise<ReadonlyMap<string, "System" | "Finalizer">> => {
+    const locals = new Map<string, "System" | "Finalizer">();
     for (const statement of program.body) {
         if (statement.type !== "ImportDeclaration" || typeof statement.source.value !== "string") continue;
-        const specifiers = statement.specifiers.filter(specifier => specifier.type === "ImportSpecifier"
-            && specifier.imported.type === "Identifier" && specifier.imported.name === "System");
+        const specifiers = statement.specifiers.flatMap(specifier => specifier.type === "ImportSpecifier" && specifier.imported.type === "Identifier"
+            && (specifier.imported.name === "System" || specifier.imported.name === "Finalizer") ? [{ local: specifier.local.name, imported: specifier.imported.name }] : []);
         if (specifiers.length > 0 && await resolveSystemImport(statement.source.value)) {
-            for (const specifier of specifiers) locals.add(specifier.local.name);
+            for (const { local, imported } of specifiers) locals.set(local, imported === "System" ? "System" : "Finalizer");
         }
     }
     return locals;
 };
 
-const isSystemCreate = (node: SimpleCallExpression, locals: ReadonlySet<string>): boolean =>
-    node.callee.type === "MemberExpression" && !node.callee.computed
-    && node.callee.object.type === "Identifier" && locals.has(node.callee.object.name)
-    && node.callee.property.type === "Identifier" && node.callee.property.name === "create";
+/** `System.create`, or `Finalizer.create` or `Finalizer.changes`, whose bodies run on the main thread. */
+const isSystemCreate = (node: SimpleCallExpression, locals: ReadonlyMap<string, "System" | "Finalizer">): boolean => {
+    if (node.callee.type !== "MemberExpression" || node.callee.computed || node.callee.object.type !== "Identifier" || node.callee.property.type !== "Identifier") return false;
+    const namespace = locals.get(node.callee.object.name);
+    const method = node.callee.property.name;
+    return namespace === "System" ? method === "create" : namespace === "Finalizer" && (method === "create" || method === "changes");
+};
 
 /**
  * A spawn site's function: one parameter per value, so values pass without an array, then each written straight
@@ -95,7 +99,7 @@ type KernelSite = { readonly node: SimpleCallExpression; readonly declaration: O
 export const transformKernels = async (
     code: string, id: string, parse: Parse, resolveSystemImport: ResolveSystemImport, kernelUrl: KernelUrl, linker?: Linker,
 ): Promise<TransformResult | null> => {
-    if (!code.includes("System") || id.includes("\0")) return null;
+    if ((!code.includes("System") && !code.includes("Finalizer")) || id.includes("\0")) return null;
     const program = parse(code);
     const locals = await systemLocals(program, resolveSystemImport);
     if (locals.size === 0) return null;

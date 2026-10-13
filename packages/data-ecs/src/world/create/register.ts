@@ -1,17 +1,23 @@
+import type { Finalizer } from '../../finalizer/finalizer.js';
+import { declarationOf } from '../../registry/create-registry.js';
+import type { Rule } from '../../rule/rule.js';
 import type { Leaf } from '../../system/leaf.js';
 import type { Name } from '../../system/name.js';
 import type { System } from '../../system/system.js';
 import { createRunner, type Runner } from './runner.js';
 import { checkLeaf, createSchedule, isLeaf, type Schedule } from './schedule.js';
+import type { RuleFacts } from './closure.js';
+import { createFinalizerRunner, isFinalizer, orderFinalizers, type FinalizerRunner } from './finalizers.js';
 import { idOf, type Key, type State } from './state.js';
+import { restratify } from './structure.js';
 
 /** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */
 /** `ticked`: components the new systems filter on, which must keep ticks before they run. */
 export type Registration = { readonly resources: readonly Key[]; readonly ticked: readonly number[]; readonly kernels: readonly Runner[]; readonly rollback: () => void };
 
 export type Registrar = {
-    /** Validates and records systems and all their members. Throws without recording anything on failure. */
-    readonly register: (systems: readonly System[]) => Registration;
+    /** Validates and records systems with all their members, rules and finalizers. Throws without recording anything on failure. */
+    readonly register: (items: readonly (System | Rule | Finalizer)[]) => Registration;
     /** Throws if the system isn't registered. */
     readonly scheduleOf: (system: System) => Schedule;
     readonly runnerOf: (leaf: Leaf) => Runner;
@@ -48,6 +54,22 @@ const reducedBy = (leaf: Leaf): readonly Key[] => {
     return reduce === undefined ? [] : Reflect.ownKeys(reduce).filter(key => Reflect.get(reduce, key) !== undefined);
 };
 
+const isRule = (item: System | Rule | Finalizer): item is Rule => "derives" in item.declaration;
+
+/** A rule as component ids. Throws if it derives a component that isn't derived, or matches on a resource. */
+const factsOf = (state: State, rule: Rule): RuleFacts => {
+    const { name, query, derives } = rule.declaration;
+    for (const key of derives) {
+        if (declarationOf(key)?.derived !== true) throw new Error(`Rule "${name}" derives "${String(key)}", which isn't declared derived.`);
+    }
+    const ids = (keys: readonly Key[] | undefined): number[] => (keys ?? []).map(key => {
+        const id = idOf(state, key);
+        if (state.resources.has(id)) throw new Error(`Rule "${name}" matches on "${String(key)}", which is a resource.`);
+        return id;
+    });
+    return { name, has: ids(query.has), not: ids(query.not), derives: ids(derives) };
+};
+
 export const createRegistrar = (state: State): Registrar => {
     const named = new Map<Name, System>();
     const schedules = new Map<System, Schedule>();
@@ -58,7 +80,81 @@ export const createRegistrar = (state: State): Registrar => {
     /** Never reused, so a rolled-back kernel's index can't alias a worker's loaded kernel. */
     let nextKernel = 0;
 
-    const register = (roots: readonly System[]): Registration => {
+    /** Every registered name, systems', rules' and finalizers' alike. */
+    const names = new Map<string, System | Rule | Finalizer>();
+    const claim = (added: Map<string, System | Rule | Finalizer>, item: System | Rule | Finalizer): boolean => {
+        const { name } = item.declaration;
+        const existing = names.get(name) ?? added.get(name);
+        if (existing === item) return false;
+        if (existing !== undefined) throw new Error(`A different system, rule or finalizer named "${name}" is already registered.`);
+        added.set(name, item);
+        return true;
+    };
+
+    const register = (items: readonly (System | Rule | Finalizer)[]): Registration => {
+        const claimed = new Map<string, System | Rule | Finalizer>();
+        const roots = items.filter((item): item is System => !isRule(item) && !isFinalizer(item));
+        const rules = items.filter(isRule).filter(rule => claim(claimed, rule));
+        const finalizers = items.filter(isFinalizer).filter(finalizer => claim(claimed, finalizer));
+        const { structure } = state;
+        const nameOf = (id: number): string => String(state.keys[id]);
+        const facts = rules.map(rule => factsOf(state, rule));
+        if (facts.length > 0) {
+            restratify(structure, [...structure.rules, ...facts], structure.hosts, nameOf);
+            structure.rederive = true;
+        }
+        let runners: FinalizerRunner[] = [];
+        /** Undoes only this registration's rules and finalizers, so others recorded since stay. */
+        const restore = (): void => {
+            for (const name of claimed.keys()) names.delete(name);
+            if (facts.length > 0) {
+                restratify(structure, structure.rules.filter(rule => !facts.includes(rule)), structure.hosts, nameOf);
+                // Entities may already have what these rules derived.
+                structure.rederive = true;
+            }
+            const remaining = state.finalizers.filter(runner => !runners.includes(runner));
+            state.finalizers.splice(0, state.finalizers.length, ...remaining);
+        };
+        const finalizerResources = new Set<Key>();
+        if (finalizers.length > 0) {
+            try {
+                const created: FinalizerRunner[] = finalizers.map(finalizer => {
+                    const { lookup, resources } = finalizer.declaration;
+                    for (const name in lookup) for (const key of [...lookup[name].read ?? [], ...lookup[name].has ?? [], ...lookup[name].not ?? []]) idOf(state, key);
+                    for (const key of [...resources?.read ?? [], ...resources?.write ?? []]) {
+                        idOf(state, key);
+                        finalizerResources.add(key);
+                    }
+                    return createFinalizerRunner(state, finalizer);
+                });
+                state.finalizers.splice(0, state.finalizers.length, ...orderFinalizers([...state.finalizers, ...created]));
+                runners = created;
+            }
+            catch (error) {
+                restore();
+                throw error;
+            }
+        }
+        let systems: Registration;
+        try {
+            systems = registerSystems(roots);
+        }
+        catch (error) {
+            restore();
+            throw error;
+        }
+        for (const [name, item] of claimed) names.set(name, item);
+        return {
+            ...systems,
+            resources: [...new Set([...systems.resources, ...finalizerResources])],
+            rollback: () => {
+                systems.rollback();
+                restore();
+            },
+        };
+    };
+
+    const registerSystems = (roots: readonly System[]): Registration => {
         const added = new Map<Name, System>();
         const addedSchedules = new Map<System, Schedule>();
         const addedRunners = new Map<Leaf, Runner>();
@@ -69,11 +165,14 @@ export const createRegistrar = (state: State): Registrar => {
                 const { name } = system.declaration;
                 const existing = named.get(name) ?? added.get(name);
                 if (existing === system) continue;
-                if (existing !== undefined) throw new Error(`A different system named "${name}" is already registered.`);
+                if (existing !== undefined || names.has(name)) throw new Error(`A different system, rule or finalizer named "${name}" is already registered.`);
                 added.set(name, system);
                 addedSchedules.set(system, createSchedule(system));
                 if (isLeaf(system)) {
                     checkLeaf(system);
+                    for (const key of system.declaration.query?.write ?? []) {
+                        if (declarationOf(key)?.reference !== undefined) throw new Error(`System "${name}" writes "${String(key)}", a reference, which changes only through commands.`);
+                    }
                     for (const key of reducedBy(system)) {
                         const other = reducers.get(key) ?? addedReducers.get(key);
                         if (other !== undefined) throw new Error(`Systems "${other}" and "${name}" both reduce "${String(key)}"; a resource holds one system's reduction.`);

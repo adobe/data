@@ -6,6 +6,6 @@ export type Read = {
     /** The listed components of an entity, or `null` if it's dead or lacks any of them. */
     entity<const C extends readonly Component.Name[]>(entity: Entity, components: C): Component.ValuesOf<C> | null;
     /** One component of an entity, or `null` if it's dead or lacks it. */
-    component<C extends Component.Name>(entity: Entity, component: C): Readonly<Component.Value<C>> | null;
-    resource<R extends Resource.Name>(name: R): Readonly<Resource.Value<R>>;
+    component<C extends Component.Name>(entity: Entity, component: C): Component.ReadonlyValue<C> | null;
+    resource<R extends Resource.Name>(name: R): Resource.ReadonlyValue<R>;
 };

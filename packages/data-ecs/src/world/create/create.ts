@@ -1,11 +1,14 @@
 import type { Component } from '../../component/component.js';
 import type { Entity } from '../../entity/entity.js';
+import type { Finalizer } from '../../finalizer/finalizer.js';
+import type { Rule } from '../../rule/rule.js';
 import type { Resource } from '../../resource/resource.js';
 import type { System } from '../../system/system.js';
 import type { World } from '../world.js';
 import type { GpuOptions } from '../gpu.js';
 import { createGpu } from './gpu.js';
 import { readCell } from './cells.js';
+import { finalizeAll } from './finalizers.js';
 import { execute, type ExecuteContext } from './execute.js';
 import { sharedMemoryAvailable } from './memory.js';
 import { createPool, defaultWorkerCount, type Pool } from './pool.js';
@@ -103,8 +106,19 @@ export const createWorld = (options: WorldOptions = {}): World => {
         dispose: () => {
             disposed = true;
             return enqueue(async () => {
-                state.gpu?.destroy();
-                await pool?.terminate();
+                // Per-query finalizers release what every live entity they match holds, reading the GPU's writes first.
+                let errors: unknown[] = [];
+                try {
+                    if (state.finalizers.length > 0) {
+                        if (state.gpu?.anyAhead() === true) await state.gpu.readback();
+                        errors = finalizeAll(state);
+                    }
+                }
+                finally {
+                    state.gpu?.destroy();
+                    await pool?.terminate();
+                }
+                if (errors.length > 0) throw errors[0];
             });
         },
         synchronize: components => {
@@ -117,7 +131,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
         gpu: state.gpu === null ? null : { device: state.gpu.device, layout: state.gpu.renderLayout },
         [Symbol.asyncDispose]: () => world.dispose(),
         systems: {
-            register: (...systems: readonly System[]) => {
+            register: (...systems: readonly (System | Rule | Finalizer)[]) => {
                 try {
                     checkLive();
                     const registration = registrar.register(systems);
@@ -142,9 +156,9 @@ export const createWorld = (options: WorldOptions = {}): World => {
             component: <C extends Component.Name>(entity: Entity, component: C) => {
                 const value = readComponent(state, entity, component);
                 // Stored values match each component's registered schema, so they have its type.
-                return value === undefined ? null : value as Readonly<Component.Value<C>>;
+                return value === undefined ? null : value as Component.ReadonlyValue<C>;
             },
-            resource: <R extends Resource.Name>(key: R) => readResource(key) as Readonly<Resource.Value<R>>,
+            resource: <R extends Resource.Name>(key: R) => readResource(key) as Resource.ReadonlyValue<R>,
         },
     };
     return world;
@@ -155,8 +169,8 @@ export const createWorld = (options: WorldOptions = {}): World => {
  * `kernel: "gpu"` kernels run on its device.
  */
 export function create(): World;
-export function create(options: { readonly systems?: readonly System[]; readonly gpu?: GpuOptions }): Promise<World>;
-export function create(options?: { readonly systems?: readonly System[]; readonly gpu?: GpuOptions }): World | Promise<World> {
+export function create(options: { readonly systems?: readonly (System | Rule | Finalizer)[]; readonly gpu?: GpuOptions }): Promise<World>;
+export function create(options?: { readonly systems?: readonly (System | Rule | Finalizer)[]; readonly gpu?: GpuOptions }): World | Promise<World> {
     const world = createWorld({ gpu: options?.gpu });
     return options === undefined ? world : world.systems.register(...options.systems ?? []);
 }

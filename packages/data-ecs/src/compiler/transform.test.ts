@@ -1016,6 +1016,20 @@ describe("declared access", () => {
         expect(await failure(system("query: { read: [position] }", "({ ...all }) => { console.log(all); }"))).toBe("compiled");
     });
 
+    test("finalizers are checked as main-thread bodies, in files that import only Finalizer", async () => {
+        const finalizing = (source: string) => transformKernels(source, "/finalizer.js", parseAst, async specifier => specifier === "ecs", index => JSON.stringify(`kernel:${index}`));
+        const failed = async (source: string) => {
+            const result = await finalizing(source);
+            return result !== null && "failure" in result ? result.failure.message : "compiled";
+        };
+        const header = `import { Finalizer } from "ecs";\nconst handle = "handle";\nconst count = "count";\n`;
+        expect(await failed(`${header}const f = Finalizer.create({ name: "f", query: { read: [handle, count] } }, (row) => { console.log(row[handle]); });`))
+            .toBe("count is in query read but never read; remove it, or move it to query has to keep requiring it");
+        expect(await failed(`${header}const f = Finalizer.changes({ name: "f", resources: { read: [count] } }, (changes, context) => { console.log(changes); });`))
+            .toBe("count is in resources read but never read; remove it");
+        expect(await failed(`${header}const f = Finalizer.create({ name: "f", query: { read: [handle] } }, (row) => { console.log(row[handle]); });`)).toBe("compiled");
+    });
+
     test("a main-thread system whose body hides an access isn't checked", async () => {
         expect(await failure(system("query: { read: [mass] }", "(row) => { helper(row); }"))).toBe("compiled");
         expect(await failure(system("query: { read: [mass] }", "(row) => { for (const key of [mass]) console.log(row[key]); }"))).toBe("compiled");

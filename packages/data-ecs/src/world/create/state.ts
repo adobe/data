@@ -6,7 +6,11 @@ import type { Shape, SpawnBatch } from './batches.js';
 import type { Directory } from './directories.js';
 import type { GpuEngine } from './gpu.js';
 import type { Queued } from './synchronize.js';
-import { createEntities, type Entities } from './entities.js';
+import type { IndexChanges } from './cascade.js';
+import { createEntities, type Entities, type Reserved } from './entities.js';
+import type { FinalizerRunner } from './finalizers.js';
+import { createPlan, type Plan } from './plan.js';
+import { createStructure, owner, restratify, weak, type Structure } from './structure.js';
 import { layoutOf, type Layout } from '../../layout/layout.js';
 import { createMemory, type Memory } from './memory.js';
 import type { Row } from './rows.js';
@@ -50,6 +54,30 @@ export type State = {
     /** Whether kernels with a program run as WASM, and as SIMD where they can; tests turn these off to compare with JS. */
     readonly wasm: boolean;
     readonly simd: boolean;
+    /** The sync point's plan, kept from planning to applying. */
+    readonly plan: Plan;
+    /** A sync point between planning and applying: its queued buffers, reservations and tick. */
+    syncing: {
+        readonly queued: readonly Queued[];
+        readonly reservations: Reserved;
+        /** The entity table's length once they were made. */
+        readonly reserved: number;
+        readonly tick: number;
+        /** By batch target archetype id, the first row its batches added. */
+        readonly born: Map<number, number>;
+        readonly index: IndexChanges | null;
+        /** Whether rules or `within` declarations can change archetypes. */
+        readonly deriving: boolean;
+        /** Applies only its queued buffers, for registration's own changes. */
+        readonly isolated: boolean;
+    } | null;
+    /** Reservations made during the last sync point's finalizers, which the next one accounts for. */
+    carried: Reserved | null;
+    /** While finalizers run: by batch target archetype id, the first row its batches added this sync point, which lookups don't see. */
+    born: Map<number, number> | null;
+    readonly structure: Structure;
+    /** Registered finalizers, in their order. */
+    readonly finalizers: FinalizerRunner[];
     /** The world's GPU, where render systems and GPU kernels run. */
     gpu: GpuEngine | null;
     /** With a GPU: archetypes the current sync point changed, whose GPU copies are then out of date. */
@@ -81,10 +109,19 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         rows: new Map(),
         wasm,
         simd,
+        plan: createPlan(),
+        syncing: null,
+        carried: null,
+        born: null,
+        structure: createStructure(),
+        finalizers: [],
         gpu: null,
         touched: gpu ? new Set() : null,
     };
 };
+
+/** Components whose hosts are being resolved, to report a cycle of `within` declarations. */
+const resolving = new Set<Key>();
 
 /** The id of a component or resource. Throws if it has no registered schema. */
 export const idOf = (state: State, key: Key): number => {
@@ -92,14 +129,35 @@ export const idOf = (state: State, key: Key): number => {
     if (existing !== undefined) return existing;
     const declaration = declarationOf(key);
     if (declaration === undefined) throw new Error(`"${String(key)}" has no registered schema; import the module that registers it.`);
-    if (declaration.within !== undefined || declaration.reference !== undefined) {
-        throw new Error(`"${String(key)}" is declared within another component or as a reference, which worlds don't support yet.`);
+    const { structure } = state;
+    // A host gets its id first, so stratifying with the new edge can name it; a cycle throws before anything is recorded.
+    const within = declaration.within;
+    let host = -1;
+    if (typeof within === "string" || typeof within === "symbol") {
+        if (resolving.has(key)) throw new Error(`Components are within each other in a cycle: ${[...resolving].map(String).sort().join(", ")}.`);
+        resolving.add(key);
+        try {
+            host = idOf(state, within);
+        }
+        finally {
+            resolving.delete(key);
+        }
     }
     const id = state.keys.length;
+    if (host >= 0) {
+        const hosts = [...structure.hosts];
+        hosts[id] = host;
+        restratify(structure, structure.rules, hosts, other => String(other === id ? key : state.keys[other]));
+    }
     state.ids.set(key, id);
     state.keys.push(key);
     state.layouts.push(layoutOf(declaration.type));
     state.derived.push(declaration.derived === true);
+    structure.hosts[id] = host;
+    structure.dependents[id] = [];
+    if (host >= 0) structure.dependents[host].push(id);
+    structure.references[id] = declaration.reference === "owner" ? owner : declaration.reference === "weak" ? weak : 0;
+    if (structure.references[id] !== 0) structure.referenceIds.push(id);
     if (kindOf(key) === "resource") state.resources.add(id);
     return id;
 };

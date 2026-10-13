@@ -65,7 +65,7 @@ declare module '../resource/types.js' {
 // Registration takes exactly the declared traits, `type` as a schema for the declared type.
 Component.register(parent, { type: Entity.schema, reference: "owner" });
 Component.register(follows, { type: Entity.schema, reference: "weak" });
-Component.register(slot, { type: { type: "number" }, derived: true });
+Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
 Component.register(ready, { type: { const: true }, within: slot });
 Component.register(score, { type: { type: "number" } });
 Component.register(link, { type: { type: "object", properties: { to: Entity.schema, weight: { type: "number" } } } });
@@ -73,18 +73,20 @@ Component.register(pair, { type: { type: "array", items: { type: "number" }, min
 Component.register(cache, { type: { type: "number" }, [nonPersistent]: true });
 Resource.register(time, { type: { type: "number", default: 0 } });
 
+// @ts-expect-error a derived component's type has a default, which it starts at
+Component.register(slot, { type: { type: "number" }, derived: true });
 // @ts-expect-error a reference's value is an entity
 Component.register(badReference, { type: { type: "number" }, reference: "owner" });
 // @ts-expect-error a component can't live within itself
 Component.register(selfWithin, { type: { const: true }, within: selfWithin });
 // @ts-expect-error a derived component's rule covers within
-Component.register(derivedWithin, { type: { type: "number" }, derived: true, within: score });
+Component.register(derivedWithin, { type: { type: "number", default: 0 }, derived: true, within: score });
 // @ts-expect-error a rule can't set a derived component's target
-Component.register(derivedReference, { type: Entity.schema, derived: true, reference: "owner" });
+Component.register(derivedReference, { type: { ...Entity.schema, default: Entity.none }, derived: true, reference: "owner" });
 // @ts-expect-error gpuOnly takes only linear components
 Component.register(gpuString, { type: { type: "string" }, [gpuOnly]: true });
 // @ts-expect-error nonPersistent is redundant on a derived component
-Component.register(derivedNonPersistent, { type: { type: "number" }, derived: true, [nonPersistent]: true });
+Component.register(derivedNonPersistent, { type: { type: "number", default: 0 }, derived: true, [nonPersistent]: true });
 // @ts-expect-error a declared trait is missing
 Component.register(parent, { type: Entity.schema });
 // @ts-expect-error an undeclared trait is given

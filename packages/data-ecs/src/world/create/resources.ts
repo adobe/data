@@ -2,7 +2,7 @@ import { schemaOf } from '../../registry/create-registry.js';
 import type { Storage } from './archetype.js';
 import { indexOf, reserve } from './entities.js';
 import { idOf, type Key, type State } from './state.js';
-import { synchronize } from './synchronize.js';
+import { synchronizeAlone } from './synchronize.js';
 import { addCommand, createBuffer, spawnCommand } from './buffer.js';
 import { pushValues } from './commands.js';
 
@@ -15,8 +15,8 @@ export const defaultOf = (key: Key): unknown => {
 };
 
 /**
- * Adds any missing resources with their schema defaults, as their own sync point.
- * Called only between runs, when no commands are pending.
+ * Adds any missing resources with their schema defaults, as their own sync point, between runs; commands that are
+ * pending stay for the next run.
  */
 export const ensureResources = (state: State, keys: Iterable<Key>): void => {
     const index = state.resourceEntity < 0 ? -1 : indexOf(state.resourceEntity);
@@ -34,8 +34,7 @@ export const ensureResources = (state: State, keys: Iterable<Key>): void => {
     else {
         pushValues(state, buffer, addCommand, state.resourceEntity, values);
     }
-    state.queued.push({ buffer, guarded: false });
-    synchronize(state);
+    synchronizeAlone(state, buffer);
 };
 
 /** Where a resource lives now, or `undefined` if no registered system uses it. Valid until the next sync point. */

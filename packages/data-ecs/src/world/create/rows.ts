@@ -167,8 +167,11 @@ const createMatcher = (state: State, lookup: Lookup) => {
             for (let i = 0; i < read.length; i++) if (storageById[read[i]] === undefined) return -1;
             for (let i = 0; i < has.length; i++) if (storageById[has[i]] === undefined) return -1;
             for (let i = 0; i < not.length; i++) if (storageById[not[i]] !== undefined) return -1;
+            const row = state.entities.row[index];
+            // While finalizers run, rows spawned in the same sync point aren't alive yet.
+            if (state.born !== null && row >= (state.born.get(archetype.id) ?? Infinity)) return -1;
             matcher.archetype = archetype;
-            return state.entities.row[index];
+            return row;
         },
     };
     return matcher;
@@ -214,7 +217,7 @@ export const createArrayLookup = (state: State, lookup: Lookup) => {
 export type Context = { readonly value: { args?: unknown }; readonly bind: () => void; readonly reduced: readonly Float64Array[] };
 
 /** Resource cells are resolved once per run: they move only at sync points. An unresolved resource throws on access. */
-export const createContext = (state: State, declaration: Declaration, targets: readonly ReductionTarget[] = []): Context => {
+export const createContext = (state: State, declaration: Pick<Declaration, "lookup" | "resources">, targets: readonly ReductionTarget[] = []): Context => {
     // Its own prototype gives the context its own root map, as for rows.
     const value: { args?: unknown } = Object.create({});
     const { lookup, resources } = declaration;

@@ -2,10 +2,9 @@ import type { Leaf } from '../../system/leaf.js';
 import type { Chunk, Runner, Workers } from './runner.js';
 import type { Schedule } from './schedule.js';
 import type { Archetype, Storage } from './archetype.js';
-import type { State } from './state.js';
+import { idOf, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
-import { pending, synchronize } from './synchronize.js';
-import { spawnCommand } from './buffer.js';
+import { applySync, prepareSync } from './synchronize.js';
 import { locate } from './entities.js';
 
 export type ExecuteContext = {
@@ -77,15 +76,24 @@ const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }
         try {
             if (gpu !== null) {
                 gpu.submit();
-                if (pending(state)) {
-                    // The sync point moves and writes existing rows of these archetypes on the CPU, so it needs the GPU's writes there first.
-                    const disturbed = disturbedBy(state);
-                    gpu.beforeSync(disturbed);
-                    if (gpu.anyAhead()) await gpu.readback([...disturbed].flatMap(archetype => archetype.storages));
-                }
+                gpu.beforeSync();
             }
             try {
-                synchronize(state);
+                if (prepareSync(state)) {
+                    try {
+                        if (gpu !== null) {
+                            // The sync point moves and writes existing rows of these archetypes on the CPU, and finalizers read
+                            // them, so it needs the GPU's writes there first.
+                            const disturbed = disturbedBy(state);
+                            gpu.disturb(disturbed.archetypes);
+                            if (gpu.anyAhead()) await gpu.readback(disturbed.storages);
+                        }
+                    }
+                    finally {
+                        // Applied even when the readback fails, which only a lost device makes it do: the CPU state stays whole.
+                        applySync(state);
+                    }
+                }
             }
             finally {
                 // Even a sync point that failed partway moved rows.
@@ -102,19 +110,28 @@ const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }
 };
 
 /**
- * Archetypes whose existing rows the next sync point moves or writes: those of live entities that queued commands
- * despawn, add to or remove from. Spawns only add rows at the end of their archetypes.
+ * What the planned sync point disturbs: the archetypes whose existing rows it moves or writes, those of every planned
+ * entity that existed before it, and the resource entity's when finalizers run; and every storage it reads, theirs
+ * and those finalizers look up. Spawns only add rows at the end of their archetypes.
  */
-const disturbedBy = (state: State): Set<Archetype> => {
+const disturbedBy = (state: State): { readonly archetypes: Set<Archetype>; readonly storages: readonly Storage[] } => {
+    const { plan, archetypes } = state;
     const disturbed = new Set<Archetype>();
-    for (const { buffer } of state.queued) {
-        for (let command = 0; command < buffer.count; command++) {
-            if (buffer.kinds[command] === spawnCommand) continue;
-            const index = locate(state.entities, buffer.entities[command]);
-            if (index >= 0) disturbed.add(state.archetypes[state.entities.archetype[index]]);
+    for (let entry = 0; entry < plan.count; entry++) if (plan.from[entry] >= 0) disturbed.add(archetypes[plan.from[entry]]);
+    const looked = new Set<number>();
+    if (state.finalizers.length > 0) {
+        const index = state.resourceEntity < 0 ? -1 : locate(state.entities, state.resourceEntity);
+        if (index >= 0) disturbed.add(archetypes[state.entities.archetype[index]]);
+        for (const { finalizer } of state.finalizers) {
+            for (const name in finalizer.declaration.lookup) for (const key of finalizer.declaration.lookup[name].read ?? []) looked.add(idOf(state, key));
         }
     }
-    return disturbed;
+    const storages = [...disturbed].flatMap(archetype => archetype.storages);
+    if (looked.size > 0) for (const archetype of archetypes) for (const id of looked) {
+        const storage = archetype.storageById[id];
+        if (storage !== undefined && !disturbed.has(archetype)) storages.push(storage);
+    }
+    return { archetypes: disturbed, storages };
 };
 
 /** Before CPU systems read or write a storage, in their query or through a lookup, the GPU's writes to it come back. */

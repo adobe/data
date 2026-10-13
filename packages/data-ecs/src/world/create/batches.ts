@@ -1,10 +1,12 @@
 import type { Entity } from '../../entity/entity.js';
 import { viewsOf, type Layout, type Views } from '../../layout/layout.js';
 import { hasSymbolNames } from '../../registry/create-registry.js';
-import { ensureCapacity, writeF32, writeF32Lanes, writeF64, writeI32, writeOf, writeU32 } from './archetype.js';
+import { ensureCapacity, type Archetype, writeF32, writeF32Lanes, writeF64, writeI32, writeOf, writeU32 } from './archetype.js';
 import { indexOf } from './entities.js';
 import { chunkShift } from './kernel.js';
 import { archetypeOf, commandIdOf, type State } from './state.js';
+import { gainsOf } from './structure.js';
+import { writeDefault } from './synchronize.js';
 
 /** One component of a spawn batch: its values in the target storage's layout, so committing is a block copy. */
 type Column = {
@@ -191,14 +193,26 @@ export const stageShape = (shape: Shape, entity: number, values: { readonly [key
  * At a sync point, before the plan: copies every batch into its archetype, places its entities, and stamps their
  * ticks with the sync point's tick, as a commanded spawn would be. Returns the entities committed.
  */
-export const commitBatches = (state: State, tick: number): number => {
+/**
+ * Copies each batch into its archetype, or into its closure under `close` when rules or `within` apply, writing the
+ * defaults of derived components it gains. `born` records the first row each target gains.
+ */
+export const commitBatches = (state: State, tick: number, born: Map<number, number>, close: ((archetype: Archetype) => Archetype) | null): number => {
     let committed = 0;
     for (const batch of state.batches) {
         const n = batch.count;
         if (n === 0) continue;
-        const target = archetypeOf(state, batch.ids);
+        const spawned = archetypeOf(state, batch.ids);
+        const target = close === null ? spawned : close(spawned);
         ensureCapacity(state.memory, target, target.count + n);
         const start = target.count;
+        if (!born.has(target.id)) born.set(target.id, start);
+        if (close !== null) {
+            for (const id of gainsOf(state.structure, state.derived, null, target)) {
+                const storage = target.storageById[id];
+                if (storage !== undefined) for (let row = start; row < start + n; row++) writeDefault(state, storage, row, tick);
+            }
+        }
         target.entities.set(batch.entities.subarray(0, n), start);
         for (const column of batch.columns) {
             const storage = target.storageById[column.id];

@@ -18,6 +18,7 @@ const flag = "gpuTest/flag";
 const followed = "gpuTest/followed";
 const bits = "gpuTest/bits";
 const sums = "gpuTest/sums";
+const ownedBy = "gpuTest/ownedBy";
 
 declare module "../../component/types.js" {
     export interface Types {
@@ -31,6 +32,7 @@ declare module "../../component/types.js" {
         [followed]: { type: Entity };
         [bits]: { type: Vec3.U32 };
         [sums]: { type: Vec3.I32 };
+        [ownedBy]: { type: Entity; reference: "owner" };
     }
 }
 declare module "../../system/types.js" {
@@ -63,6 +65,8 @@ declare module "../../system/types.js" {
         "gpuTest/spawnIntegers": true;
         "gpuTest/integers": true;
         "gpuTest/shading": true;
+        "gpuTest/spawnOwned": true;
+        "gpuTest/despawnOwner": true;
     }
 }
 
@@ -74,6 +78,7 @@ Component.register(code, { type: { type: "integer", minimum: 0, maximum: 0xFFFFF
 Component.register(amount, { type: { type: "number", precision: 1 } });
 Component.register(flag, { type: { type: "boolean" } });
 Component.register(followed, { type: Entity.schema });
+Component.register(ownedBy, { type: Entity.schema, reference: "owner" });
 
 const count = 5000;
 
@@ -302,6 +307,28 @@ describe("GPU kernels", () => {
         expect(all.filter(([x]) => x === -1)).toEqual([[-1, -1, -1]]);
         // Moved twice: once before the spawn's sync point and once after.
         expect(all.filter(([x]) => x === 2)).toEqual([[2, 0, 1]]);
+        await world.dispose();
+    });
+
+    it("keep their writes when a cascade moves rows of their archetypes", async () => {
+        const owners: Entity[] = [];
+        const spawnOwned = System.create({ name: "gpuTest/spawnOwned" }, (_, __, commands) => {
+            owners.push(commands.spawn({ [score]: 0 }), commands.spawn({ [score]: 1 }));
+            for (let i = 0; i < 64; i++) commands.spawn({ [position]: [i, 0, 0], [velocity]: [1, 0, 0], [ownedBy]: owners[i === 0 ? 0 : 1] });
+        });
+        // No command touches the owned rows: despawning their owner removes them.
+        const despawnOwner = System.create({ name: "gpuTest/despawnOwner" }, (_, __, commands) => {
+            const [owner] = owners;
+            if (owner !== undefined) commands.despawn(owner);
+        });
+        const world = createWorld({ gpu: { device: await device() } });
+        await world.systems.register(spawnOwned, move, despawnOwner);
+        await world.run(spawnOwned);
+        await world.run(move);
+        await world.run(despawnOwner);
+        await world.synchronize([position]);
+        const xs = positions(world).map(([x]) => x).sort((a, b) => a - b);
+        expect(xs).toEqual(Array.from({ length: 63 }, (_, i) => i + 2));
         await world.dispose();
     });
 

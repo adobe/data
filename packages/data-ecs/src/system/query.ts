@@ -4,7 +4,8 @@ import type { Resource } from '../resource/resource.js';
 /** Matches every component in `read`, `write`, `has`, `added` and `changed`, and excludes `not`. */
 export type Query = {
     readonly read?: readonly Component.Name[];
-    readonly write?: readonly Component.Name[];
+    /** A component holding a `reference` changes only through commands, so it can't be written here. */
+    readonly write?: readonly Component.Writable[];
     readonly has?: readonly Component.Name[];
     readonly not?: readonly Component.Name[];
     /** Passes rows where any of these were added since the system last ran. */

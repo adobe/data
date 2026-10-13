@@ -5,22 +5,13 @@ import type { Schema } from '../schema/schema.js';
 import type { Commands } from './commands.js';
 import type { Declaration } from './declaration.js';
 import type { Listed, Property } from './property.js';
-
-
-type ComponentValues = { readonly [K in Component.Name]: Component.Value<K> };
-type ResourceValues = { readonly [K in Resource.Name]: Resource.Value<K> };
-
-type Values<Read, Write, Names extends PropertyKey, Types> =
-    { readonly [K in Exclude<Read, Write> & Names]: Types[K & keyof Types] }
-    & { -readonly [K in Write & Names]: Types[K & keyof Types] };
+import type { ComponentValues, LookupFunction, ResourceValues, Values } from './values.js';
 
 /** `read` values are read-only, `write` values are writable. `undefined` for a system without a query. */
 export type Row<D extends Declaration> =
     Property<D, "query"> extends undefined ? undefined :
     { readonly entity: Entity }
     & Values<Listed<Property<D, "query">, "read">, Listed<Property<D, "query">, "write">, Component.Name, ComponentValues>;
-
-type LookupFunction<L> = (entity: Entity) => { readonly [K in Listed<L, "read"> & Component.Name]: Component.Value<K> } | null;
 
 /** Each resource a system reduces, as a function contributing a value to its fold. */
 type Reducers<R> = { readonly [K in keyof R & Resource.Name]: (value: Resource.Value<K>) => void };

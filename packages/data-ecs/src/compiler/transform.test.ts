@@ -985,6 +985,37 @@ describe("declared access", () => {
             .toBe("compiled");
     });
 
+    test("a system contributes to every resource it reduces", async () => {
+        const totals = `const total = "total";\nconst low = "low";\n`;
+        expect(await failure(`${totals}${kernel(`query: { read: [mass] }, resources: { reduce: { [total]: "+", [low]: "min" } }`, "context[total](row[mass]);")}`))
+            .toBe("low is in resources reduce but never contributed to; remove it");
+        expect(await failure(`${totals}${system(`query: { read: [mass] }, resources: { reduce: { [total]: "+", [low]: "min" } }`, "(row, context) => { context[total](row[mass]); }")}`))
+            .toBe("low is in resources reduce but never contributed to; remove it");
+        expect(await failure(`${totals}${system(`query: { read: [mass] }, resources: { reduce: { [total]: "+" } }`, "(row, { [total]: add }) => { add(row[mass]); }")}`))
+            .toBe("compiled");
+    });
+
+    test("a main-thread system reads every component it lists in a lookup, where its body shows every use of the result", async () => {
+        const looking = (lookup: string, body: string) => system(`query: { read: [target] }, lookup: { targets: { read: ${lookup} } }`, body);
+        expect(await failure(looking("[mass, position]", "(row, context) => { const found = context.targets(row[target]); if (found !== null) console.log(found[mass]); }")))
+            .toBe("position is in lookup.targets read but never read; remove it, or move it to lookup.targets has to keep requiring it");
+        expect(await failure(looking("[mass, position]", "(row, { targets }) => { console.log(targets(row[target])?.[mass]); }")))
+            .toBe("position is in lookup.targets read but never read; remove it, or move it to lookup.targets has to keep requiring it");
+        expect(await failure(looking("[mass]", "(row, { targets }) => { const found = targets(row[target]); if (!found) return; console.log(found[mass]); }")))
+            .toBe("compiled");
+        expect(await failure(looking("[mass, position]", "(row, { targets }) => { const found = targets(row[target]); console.log(found); }"))).toBe("compiled");
+        expect(await failure(looking("[mass, position]", "(row, { targets }) => { let found = targets(row[target]); console.log(found?.[mass]); }"))).toBe("compiled");
+        expect(await failure(looking("[mass, position]", "(row, { targets }) => { helper(targets); console.log(row[target]); }"))).toBe("compiled");
+    });
+
+    test("a main-thread system reads every component it lists through a destructured row", async () => {
+        expect(await failure(system("query: { read: [position, mass] }", "({ [position]: p, entity }) => { console.log(p, entity); }")))
+            .toBe("mass is in query read but never read; remove it, or move it to query has to keep requiring it");
+        expect(await failure(system("query: { read: [position, mass] }", "(row) => { const { [position]: p } = row; console.log(p); }")))
+            .toBe("mass is in query read but never read; remove it, or move it to query has to keep requiring it");
+        expect(await failure(system("query: { read: [position] }", "({ ...all }) => { console.log(all); }"))).toBe("compiled");
+    });
+
     test("a main-thread system whose body hides an access isn't checked", async () => {
         expect(await failure(system("query: { read: [mass] }", "(row) => { helper(row); }"))).toBe("compiled");
         expect(await failure(system("query: { read: [mass] }", "(row) => { for (const key of [mass]) console.log(row[key]); }"))).toBe("compiled");

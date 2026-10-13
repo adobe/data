@@ -31,7 +31,7 @@ export const spawnSites = (body: Node, module: ModuleScope): { readonly commands
     if (parameter?.type !== "Identifier") return null;
     const commands = parameter.name;
     const declared = new Set<string>();
-    declaredIn(body.body, declared);
+    declaredIn(body.body, name => declared.add(name));
     if (declared.has(commands)) return null;
     const sites: SpawnSite[] = [];
     const visit = (node: Node): void => {

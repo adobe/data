@@ -197,19 +197,19 @@ describe("reductions", () => {
 
     it("reject what can't be reduced", async () => {
         const world = createWorld({ workers: 0 });
-        const other = System.create({ name: "reductionsTest/other", query: { has: [mass] }, resources: { reduce: { [total]: "max" } } }, () => {});
+        const other = System.create({ name: "reductionsTest/other", query: { has: [mass] }, resources: { reduce: { [total]: "max" } } }, (_, context) => { context[total](1); });
         await expect(world.systems.register(kernel, other)).rejects.toThrow(`Systems "reductionsTest/kernel" and "reductionsTest/other" both reduce "reductionsTest/total"`);
         // @ts-expect-error booleans reduce bitwise
-        const sum = System.create({ name: "reductionsTest/flags", query: { has: [mass] }, resources: { reduce: { [any]: "+" } } }, () => {});
+        const sum = System.create({ name: "reductionsTest/flags", query: { has: [mass] }, resources: { reduce: { [any]: "+" } } }, (_, context) => { context[any](true); });
         await expect(createWorld({ workers: 0 }).systems.register(sum)).rejects.toThrow(`booleans reduce with "&", "|" or "^"`);
         // @ts-expect-error a reduction folds every row, so its query has no change filters
         const added = System.create({ name: "reductionsTest/added", query: { read: [mass], added: [mass] }, resources: { reduce: { [total]: "+" } } }, (row, context) => { context[total](row[mass]); });
         await expect(createWorld({ workers: 0 }).systems.register(added)).rejects.toThrow("can't reduce with query change filters");
         // @ts-expect-error a reduced resource can't also be read
-        const reading = System.create({ name: "reductionsTest/other", query: { has: [mass] }, resources: { read: [total], reduce: { [total]: "+" } } }, (_, context) => { void context[total]; });
+        const reading = System.create({ name: "reductionsTest/other", query: { has: [mass] }, resources: { read: [total], reduce: { [total]: "+" } } }, (_, context) => { void context[total]; context[total](1); });
         await expect(createWorld({ workers: 0 }).systems.register(reading)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
         // @ts-expect-error a reduced resource can't also be filtered on
-        const filtering = System.create({ name: "reductionsTest/other", query: { has: [mass] }, resources: { changed: [total], reduce: { [total]: "+" } } }, () => {});
+        const filtering = System.create({ name: "reductionsTest/other", query: { has: [mass] }, resources: { changed: [total], reduce: { [total]: "+" } } }, (_, context) => { context[total](1); });
         await expect(createWorld({ workers: 0 }).systems.register(filtering)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
         await world.dispose();
     });
@@ -218,7 +218,7 @@ describe("reductions", () => {
         const state = createState(true);
         const registrar = createRegistrar(state);
         // @ts-expect-error booleans reduce bitwise
-        const sum = System.create({ name: "reductionsTest/flags", query: { has: [mass] }, resources: { reduce: { [any]: "+" } } }, () => {});
+        const sum = System.create({ name: "reductionsTest/flags", query: { has: [mass] }, resources: { reduce: { [any]: "+" } } }, (_, context) => { context[any](true); });
         expect(() => registrar.register([kernel, sum])).toThrow(`booleans reduce with "&", "|" or "^"`);
         expect(state.afterSync.size).toBe(0);
         registrar.register([kernel]).rollback();

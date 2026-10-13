@@ -4,12 +4,12 @@ import type { ModuleScope } from './module-scope.js';
 
 type Access = { readonly read: ReadonlySet<string>; readonly write: ReadonlySet<string> };
 
-/** The keys a body reads and writes, by module-scope binding name; null where the body doesn't show every access. */
+/** The keys a body reads, writes and contributes to, by module-scope binding name; null where the body doesn't show every use. */
 export type Used = {
     readonly query: Access | null;
-    readonly resources: Access | null;
-    /** The components read from each lookup's results, by lookup name. */
-    readonly lookups: ReadonlyMap<string, ReadonlySet<string>> | null;
+    readonly resources: (Access & { readonly reduce: ReadonlySet<string> }) | null;
+    /** The components read from each lookup's results, by lookup name: null for one whose results aren't followed. */
+    readonly lookups: ReadonlyMap<string, ReadonlySet<string> | null> | null;
 };
 
 /** An object literal's plain-named properties; none for anything else. */
@@ -28,6 +28,15 @@ const requireUsed = (list: Expression | Pattern | undefined, used: ReadonlySet<s
     for (const element of names) if (element !== null && !used.has(element.name)) fail(element, message(element.name));
 };
 
+/** Requires `reduce` to name only resources in `contributed`, when it names each by a computed module-scope key. */
+const requireContributed = (reduce: Expression | Pattern | undefined, contributed: ReadonlySet<string>, module: ModuleScope): void => {
+    if (reduce?.type !== "ObjectExpression") return;
+    const keys = reduce.properties.map(property =>
+        property.type === "Property" && property.computed && property.key.type === "Identifier" && module.has(property.key.name) ? property.key : null);
+    for (const key of keys) if (key === null) return;
+    for (const key of keys) if (key !== null && !contributed.has(key.name)) fail(key, `${key.name} is in resources reduce but never contributed to; remove it`);
+};
+
 /**
  * Requires a system's declared `read` and `write` lists to be exactly what its body uses: a key it never uses
  * would still narrow which entities match, and hold back systems that could otherwise run alongside it.
@@ -43,10 +52,13 @@ export const requireExact = (declaration: ObjectExpression, used: Used, module: 
     if (used.resources !== null) {
         requireUsed(resources.get("read"), used.resources.read, module, name => `${name} is in resources read but never read; remove it`);
         requireUsed(resources.get("write"), used.resources.write, module, name => `${name} is in resources write but never written; remove it`);
+        requireContributed(resources.get("reduce"), used.resources.reduce, module);
     }
     if (used.lookups !== null) {
         for (const [lookup, value] of fields(declared.get("lookup"))) {
-            requireUsed(fields(value).get("read"), used.lookups.get(lookup) ?? new Set(), module,
+            const read = used.lookups.get(lookup);
+            if (read === null) continue;
+            requireUsed(fields(value).get("read"), read ?? new Set(), module,
                 name => `${name} is in lookup.${lookup} read but never read; remove it, or move it to lookup.${lookup} has to keep requiring it`);
         }
     }

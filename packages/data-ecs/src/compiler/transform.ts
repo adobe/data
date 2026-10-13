@@ -128,7 +128,7 @@ export const transformKernels = async (
                 sites.push({ node, declaration, body, target });
                 return;
             }
-            if (declaration?.type === "ObjectExpression" && body !== undefined && body.type !== "SpreadElement") requireExact(declaration, usedBy(body, module.bindings), module.bindings);
+            if (declaration?.type === "ObjectExpression" && body !== undefined && body.type !== "SpreadElement") requireExact(declaration, usedBy(declaration, body, module.bindings), module.bindings);
             const spawns = body === undefined || body.type === "SpreadElement" ? null : spawnSites(body, module.bindings);
             if (spawns !== null && spawns.sites.length > 0) {
                 for (const site of spawns.sites) {

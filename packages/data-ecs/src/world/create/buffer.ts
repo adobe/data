@@ -49,7 +49,7 @@ const grown = <T extends Uint8Array | Float64Array | Int32Array>(array: T, creat
 };
 
 /** Starts a command; name its components with `pushComponent` right after. */
-export const pushCommand = (buffer: CommandBuffer, kind: number, entity: Entity): void => {
+export const pushCommand = (buffer: CommandBuffer, kind: number, entity: number): void => {
     if (buffer.count === buffer.kinds.length) {
         buffer.kinds = grown(buffer.kinds, length => new Uint8Array(length));
         buffer.entities = grown(buffer.entities, length => new Float64Array(length));

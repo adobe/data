@@ -17,12 +17,12 @@ export const enabled = "perf/enabled";
 
 declare module "../component/types.js" {
     export interface Types {
-        [color]: number;
-        [mass]: number;
-        [position]: Vec3;
-        [velocity]: Vec3;
-        [visible]: true;
-        [enabled]: true;
+        [color]: { type: number };
+        [mass]: { type: number };
+        [position]: { type: Vec3 };
+        [velocity]: { type: Vec3 };
+        [visible]: { type: true };
+        [enabled]: { type: true };
     }
 }
 declare module "../system/types.js" {
@@ -32,12 +32,12 @@ declare module "../system/types.js" {
     }
 }
 
-Component.register(color, { type: "integer", minimum: 0, maximum: 0xFFFFFFFF });
-Component.register(mass, { type: "number", precision: 1 });
-Component.register(position, vec3);
-Component.register(velocity, vec3);
-Component.register(visible, { const: true });
-Component.register(enabled, { const: true });
+Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+Component.register(mass, { type: { type: "number", precision: 1 } });
+Component.register(position, { type: vec3 });
+Component.register(velocity, { type: vec3 });
+Component.register(visible, { type: { const: true } });
+Component.register(enabled, { type: { const: true } });
 
 /** Interleaved like ecs2's seedSingle: entity i goes to archetype i % 4. */
 export const spawn = System.create({ name: "perf/spawn", args: { type: "integer" } }, (_, { args }, commands) => {

@@ -58,8 +58,8 @@ export type Kernel = (
 /** How kernels issue commands. `kind` is 1 for despawn, 2 for add, 3 for remove; `key` indexes the kernel's `keys`. */
 export type KernelCommands = {
     /** Reserves an entity and starts its spawn command. */
-    readonly spawn: () => Entity;
-    readonly begin: (kind: number, entity: Entity) => void;
+    readonly spawn: () => number;
+    readonly begin: (kind: number, entity: number) => void;
     /** A component and its value for the current spawn or add; `undefined` values are skipped. */
     readonly value: (key: number, value: unknown) => void;
     /** A component for the current remove. */

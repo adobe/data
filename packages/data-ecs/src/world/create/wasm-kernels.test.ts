@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
-import type { Entity } from "../../entity/entity.js";
+import { Entity } from "../../entity/entity.js";
 import { Resource } from "../../resource/resource.js";
 import type { Schema } from "../../schema/schema.js";
 import { System } from "../../system/system.js";
@@ -24,18 +24,18 @@ const target = "wasmTest/target";
 
 declare module "../../component/types.js" {
     export interface Types {
-        [position]: Vec2;
-        [velocity]: Vec2;
-        [bounces]: number;
-        [flipped]: boolean;
-        [score]: number;
-        [target]: Entity;
+        [position]: { type: Vec2 };
+        [velocity]: { type: Vec2 };
+        [bounces]: { type: number };
+        [flipped]: { type: boolean };
+        [score]: { type: number };
+        [target]: { type: Entity };
     }
 }
 declare module "../../resource/types.js" {
     export interface Types {
-        [seconds]: number;
-        [floor]: number;
+        [seconds]: { type: number };
+        [floor]: { type: number };
     }
 }
 declare module "../../system/types.js" {
@@ -53,17 +53,17 @@ declare module "../../system/types.js" {
     }
 }
 
-Component.register(position, { ...vec2, layout: "storage" });
-Component.register(velocity, vec2);
-Component.register(bounces, { type: "integer", minimum: -2147483648, maximum: 2147483647 });
-Component.register(flipped, { type: "boolean" });
-Component.register(score, { type: "number" });
-Component.register(target, { type: "integer" });
-Resource.register(seconds, { type: "number", default: 1 / 60 });
-Resource.register(floor, { type: "number", precision: 1, default: -2.5 });
+Component.register(position, { type: { ...vec2, layout: "storage" } });
+Component.register(velocity, { type: vec2 });
+Component.register(bounces, { type: { type: "integer", minimum: -2147483648, maximum: 2147483647 } });
+Component.register(flipped, { type: { type: "boolean" } });
+Component.register(score, { type: { type: "number" } });
+Component.register(target, { type: Entity.schema });
+Resource.register(seconds, { type: { type: "number", default: 1 / 60 } });
+Resource.register(floor, { type: { type: "number", precision: 1, default: -2.5 } });
 
 const seed = System.create({ name: "wasmTest/seed", args: { type: "integer" } }, (_, { args }, commands) => {
-    let previous = -1;
+    let previous = Entity.none;
     for (let i = 0; i < args; i++) {
         previous = commands.spawn({ [position]: [i * 0.37, (i % 13) * 0.71], [velocity]: [Math.sin(i) * 3, Math.cos(i) * 5], [bounces]: 0, [flipped]: false, [score]: 0, [target]: previous });
     }

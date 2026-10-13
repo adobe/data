@@ -4,8 +4,8 @@ export const component = 'component';
 
 declare module '../component/types.js' {
     export interface Types {
-        [component]: true;
+        [component]: { type: true };
     }
 }
 
-Component.register(component, { const: true });
+Component.register(component, { type: { const: true } });

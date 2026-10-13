@@ -1,6 +1,6 @@
 import { Component } from "../component/component.js";
 import { Resource } from "../resource/resource.js";
-import type { Entity } from "../entity/entity.js";
+import { Entity } from "../entity/entity.js";
 import type { Schema } from "../schema/schema.js";
 import { System } from "../system/system.js";
 import type { World } from "../world/world.js";
@@ -19,12 +19,12 @@ export const hits = "suite/hits";
 
 declare module "../component/types.js" {
     export interface Types {
-        [position]: Vec3;
-        [velocity]: Vec3;
-        [target]: Entity;
-        [index]: number;
-        [tag]: true;
-        [hits]: number;
+        [position]: { type: Vec3 };
+        [velocity]: { type: Vec3 };
+        [target]: { type: Entity };
+        [index]: { type: number };
+        [tag]: { type: true };
+        [hits]: { type: number };
     }
 }
 declare module "../system/types.js" {
@@ -54,19 +54,19 @@ export const indexSum = "suite/indexSum";
 export const highest = "suite/highest";
 declare module "../resource/types.js" {
     export interface Types {
-        [indexSum]: number;
-        [highest]: number;
+        [indexSum]: { type: number };
+        [highest]: { type: number };
     }
 }
-Resource.register(indexSum, { type: "number", default: 0 });
-Resource.register(highest, { type: "number", default: 0 });
+Resource.register(indexSum, { type: { type: "number", default: 0 } });
+Resource.register(highest, { type: { type: "number", default: 0 } });
 
-Component.register(position, vec3);
-Component.register(velocity, vec3);
-Component.register(target, { type: "integer" });
-Component.register(index, { type: "integer", minimum: 0, maximum: 0xFFFFFFFF });
-Component.register(tag, { const: true });
-Component.register(hits, { type: "number", precision: 1 });
+Component.register(position, { type: vec3 });
+Component.register(velocity, { type: vec3 });
+Component.register(target, { type: Entity.schema });
+Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+Component.register(tag, { type: { const: true } });
+Component.register(hits, { type: { type: "number", precision: 1 } });
 
 /** `args` entities, each targeting the one spawned before it. */
 export const seed = System.create({ name: "suite/seed", args: { type: "integer" } }, (_, { args }, commands) => {

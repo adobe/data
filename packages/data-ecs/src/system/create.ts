@@ -31,7 +31,7 @@ type ReduceAlone<D extends Declaration> = {
         readonly read?: readonly Exclude<Resource.Name, Reduced<D>>[];
         readonly write?: readonly Exclude<Resource.Name, Reduced<D>>[];
         readonly changed?: readonly Exclude<Resource.Name, Reduced<D>>[];
-        readonly reduce?: { readonly [K in Resource.Name]?: Resource.Types[K] extends boolean ? "&" | "|" | "^" : Reduction };
+        readonly reduce?: { readonly [K in Resource.Name]?: Resource.Value<K> extends boolean ? "&" | "|" | "^" : Reduction };
     };
 } & ([Reduced<D>] extends [never] ? {} : { readonly query?: { readonly added?: never; readonly changed?: never } });
 

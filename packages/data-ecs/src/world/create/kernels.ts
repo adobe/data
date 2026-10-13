@@ -4,7 +4,7 @@ import type { Kernel, KernelDescription, KernelModule } from './kernel.js';
 import { layoutOf, samePath, type Layout, type TypedArray } from '../../layout/layout.js';
 import type { LookupSetup, Source } from './protocol.js';
 import { createArrayLookup } from './rows.js';
-import { idOf, type Key, type State } from './state.js';
+import { commandIdOf, idOf, type Key, type State } from './state.js';
 import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
 import { createDirectory, lookupParameters } from './directories.js';
 import { generateWgsl, type WgslKernel } from './wgsl.js';
@@ -117,7 +117,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         strides,
         offsets,
         lookups: declaredLookups.map(declared => ({ read: ids(declared.read), has: ids(declared.has), not: ids(declared.not) })),
-        keys: ids(description.keys),
+        keys: description.keys.map(key => commandIdOf(state, key)),
     };
     const cache = new Map<Archetype, { version: number; columns: readonly TypedArray[] }>();
     const columnsOf = (archetype: Archetype): readonly TypedArray[] => {

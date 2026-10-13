@@ -13,10 +13,10 @@ const name = "batchesTest/name";
 const tag = "batchesTest/tag";
 declare module "../../component/types.js" {
     export interface Types {
-        [position]: Vec3;
-        [score]: number;
-        [name]: string;
-        [tag]: true;
+        [position]: { type: Vec3 };
+        [score]: { type: number };
+        [name]: { type: string };
+        [tag]: { type: true };
     }
 }
 declare module "../../system/types.js" {
@@ -28,10 +28,10 @@ declare module "../../system/types.js" {
         "batchesTest/edit": true;
     }
 }
-Component.register(position, vec3);
-Component.register(score, { type: "number", precision: 1 });
-Component.register(name, { type: "string" });
-Component.register(tag, { const: true });
+Component.register(position, { type: vec3 });
+Component.register(score, { type: { type: "number", precision: 1 } });
+Component.register(name, { type: { type: "string" } });
+Component.register(tag, { type: { const: true } });
 
 describe("staged spawns", () => {
     it("are seen once by `added` observers in earlier, the same and later tiers, and not before the sync point", async () => {

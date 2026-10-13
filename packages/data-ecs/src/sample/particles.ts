@@ -15,14 +15,14 @@ export const count = 'particles/count';
 
 declare module '../component/types.js' {
     export interface Types {
-        [position]: Vec3;
-        [velocity]: Vec3;
+        [position]: { type: Vec3 };
+        [velocity]: { type: Vec3 };
     }
 }
 declare module '../resource/types.js' {
     export interface Types {
-        [delta]: number;
-        [count]: number;
+        [delta]: { type: number };
+        [count]: { type: number };
     }
 }
 declare module '../system/types.js' {
@@ -35,10 +35,10 @@ declare module '../system/types.js' {
     }
 }
 
-Component.register(position, vec3);
-Component.register(velocity, vec3);
-Resource.register(delta, { type: "number", precision: 1, default: 0 });
-Resource.register(count, { type: "integer", minimum: 0, default: 100 });
+Component.register(position, { type: vec3 });
+Component.register(velocity, { type: vec3 });
+Resource.register(delta, { type: { type: "number", precision: 1, default: 0 } });
+Resource.register(count, { type: { type: "integer", minimum: 0, default: 100 } });
 
 // Main thread: resource-only, runs when `count` changes, including the first run.
 export const spawn = System.create({

@@ -4,7 +4,7 @@ import { hasSymbolNames } from '../../registry/create-registry.js';
 import { ensureCapacity, writeF32, writeF32Lanes, writeF64, writeI32, writeOf, writeU32 } from './archetype.js';
 import { indexOf } from './entities.js';
 import { chunkShift } from './kernel.js';
-import { archetypeOf, idOf, type State } from './state.js';
+import { archetypeOf, commandIdOf, type State } from './state.js';
 
 /** One component of a spawn batch: its values in the target storage's layout, so committing is a block copy. */
 type Column = {
@@ -63,7 +63,7 @@ const batchOf = (state: State, ids: readonly number[]): SpawnBatch => {
 
 /** Resolves a key list to a shape. Throws for an unregistered key, as a command would. */
 const shapeOf = (state: State, keys: readonly (string | symbol)[]): Shape => {
-    const ids = keys.map(key => idOf(state, key));
+    const ids = keys.map(key => commandIdOf(state, key));
     // The resource entity's components never take part in spawns.
     if (ids.some(id => state.resources.has(id))) return { keys, batch: null, writers: [] };
     const batch = batchOf(state, ids);
@@ -156,7 +156,7 @@ const writeColumn = (column: Column, row: number, value: unknown): void => {
  * symbol key, a resource component, or an `undefined` value, which leaves the component out. A row is claimed only
  * once every value is written, so a value that throws leaves nothing behind.
  */
-export const stageSpawn = (state: State, entity: Entity, values: { readonly [key: string]: unknown }): boolean => {
+export const stageSpawn = (state: State, entity: number, values: { readonly [key: string]: unknown }): boolean => {
     if (hasSymbolNames()) return false;
     const keys = Object.keys(values);
     return stageShape(shapeFor(state, keys), entity, values);
@@ -172,13 +172,13 @@ export const openRow = (batch: SpawnBatch): number => {
 };
 
 /** Claims the open row for `entity`, once all its values are written. */
-export const claim = (batch: SpawnBatch, entity: Entity): void => {
+export const claim = (batch: SpawnBatch, entity: number): void => {
     batch.entities[batch.count] = entity;
     batch.count++;
 };
 
 /** Adds a spawn of a resolved shape to its batch, reading values by key; false, having claimed nothing, when it must use commands. */
-export const stageShape = (shape: Shape, entity: Entity, values: { readonly [key: string]: unknown }): boolean => {
+export const stageShape = (shape: Shape, entity: number, values: { readonly [key: string]: unknown }): boolean => {
     const { batch, keys, writers } = shape;
     if (batch === null) return false;
     const row = openRow(batch);

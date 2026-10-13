@@ -12,11 +12,11 @@ const sums = "builtinsTest/sums";
 
 declare module "../../component/types.js" {
     export interface Types {
-        [position]: Vec3;
-        [velocity]: Vec3;
-        [bits]: Vec3.U32;
-        [counts]: Vec3.U32;
-        [sums]: Vec3.I32;
+        [position]: { type: Vec3 };
+        [velocity]: { type: Vec3 };
+        [bits]: { type: Vec3.U32 };
+        [counts]: { type: Vec3.U32 };
+        [sums]: { type: Vec3.I32 };
     }
 }
 declare module "../../system/types.js" {
@@ -28,11 +28,11 @@ declare module "../../system/types.js" {
     }
 }
 
-Component.register(position, Vec3.schema);
-Component.register(velocity, Vec3.schema);
-Component.register(bits, Vec3.U32.schema);
-Component.register(counts, Vec3.U32.schema);
-Component.register(sums, Vec3.I32.schema);
+Component.register(position, { type: Vec3.schema });
+Component.register(velocity, { type: Vec3.schema });
+Component.register(bits, { type: Vec3.U32.schema });
+Component.register(counts, { type: Vec3.U32.schema });
+Component.register(sums, { type: Vec3.I32.schema });
 
 const spawn = System.create({ name: "builtinsTest/spawn" }, (_, __, commands) => {
     for (let i = 0; i < 64; i++) commands.spawn({ [position]: [i, i % 5, -i], [velocity]: [1, 0.5 * (i % 3), 0.25] });

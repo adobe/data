@@ -7,9 +7,9 @@ const visible = "renderTest/visible";
 
 declare module "../component/types.js" {
     export interface Types {
-        [position]: readonly [number, number];
-        [color]: number;
-        [visible]: true;
+        [position]: { type: readonly [number, number] };
+        [color]: { type: number };
+        [visible]: { type: true };
     }
 }
 declare module "./types.js" {

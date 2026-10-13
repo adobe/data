@@ -10,20 +10,20 @@ const score = 'systemTest/score';
 
 declare module '../component/types.js' {
     export interface Types {
-        [position]: number;
-        [velocity]: number;
-        [target]: Entity;
-        [player]: true;
+        [position]: { type: number };
+        [velocity]: { type: number };
+        [target]: { type: Entity };
+        [player]: { type: true };
     }
 }
 const flagged = 'systemTest/flagged';
 const bounds = 'systemTest/bounds';
 declare module '../resource/types.js' {
     export interface Types {
-        [time]: number;
-        [score]: number;
-        [flagged]: boolean;
-        [bounds]: readonly [number, number, number];
+        [time]: { type: number };
+        [score]: { type: number };
+        [flagged]: { type: boolean };
+        [bounds]: { type: readonly [number, number, number] };
     }
 }
 declare module './types.js' {
@@ -143,9 +143,9 @@ const path = 'systemTest/path';
 const vector = 'systemTest/vector';
 declare module '../component/types.js' {
     export interface Types {
-        [label]: string;
-        [path]: readonly number[];
-        [vector]: readonly [number, number, number];
+        [label]: { type: string };
+        [path]: { type: readonly number[] };
+        [vector]: { type: readonly [number, number, number] };
     }
 }
 

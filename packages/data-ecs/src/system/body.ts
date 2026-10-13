@@ -7,6 +7,9 @@ import type { Declaration } from './declaration.js';
 import type { Listed, Property } from './property.js';
 
 
+type ComponentValues = { readonly [K in Component.Name]: Component.Value<K> };
+type ResourceValues = { readonly [K in Resource.Name]: Resource.Value<K> };
+
 type Values<Read, Write, Names extends PropertyKey, Types> =
     { readonly [K in Exclude<Read, Write> & Names]: Types[K & keyof Types] }
     & { -readonly [K in Write & Names]: Types[K & keyof Types] };
@@ -15,17 +18,17 @@ type Values<Read, Write, Names extends PropertyKey, Types> =
 export type Row<D extends Declaration> =
     Property<D, "query"> extends undefined ? undefined :
     { readonly entity: Entity }
-    & Values<Listed<Property<D, "query">, "read">, Listed<Property<D, "query">, "write">, Component.Name, Component.Types>;
+    & Values<Listed<Property<D, "query">, "read">, Listed<Property<D, "query">, "write">, Component.Name, ComponentValues>;
 
-type LookupFunction<L> = (entity: Entity) => { readonly [K in Listed<L, "read"> & Component.Name]: Component.Types[K] } | null;
+type LookupFunction<L> = (entity: Entity) => { readonly [K in Listed<L, "read"> & Component.Name]: Component.Value<K> } | null;
 
 /** Each resource a system reduces, as a function contributing a value to its fold. */
-type Reducers<R> = { readonly [K in keyof R & Resource.Name]: (value: Resource.Types[K]) => void };
+type Reducers<R> = { readonly [K in keyof R & Resource.Name]: (value: Resource.Value<K>) => void };
 
 /** Lookups, resources and `args`, flattened into one object. */
 export type Context<D extends Declaration> =
     { readonly [K in keyof Property<D, "lookup">]: LookupFunction<Property<D, "lookup">[K]> }
-    & Values<Listed<Property<D, "resources">, "read">, Listed<Property<D, "resources">, "write">, Resource.Name, Resource.Types>
+    & Values<Listed<Property<D, "resources">, "read">, Listed<Property<D, "resources">, "write">, Resource.Name, ResourceValues>
     & Reducers<Property<Property<D, "resources">, "reduce">>
     & (Property<D, "args"> extends Schema ? { readonly args: Schema.ToType<Property<D, "args">> } : {});
 

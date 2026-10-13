@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
-import type { Entity } from "../../entity/entity.js";
+import { Entity } from "../../entity/entity.js";
 import { Resource } from "../../resource/resource.js";
 import { System } from "../../system/system.js";
 import { World } from "../world.js";
@@ -18,17 +18,17 @@ const marker = Symbol("createTest/marker");
 
 declare module "../../component/types.js" {
     export interface Types {
-        [position]: Vec2;
-        [velocity]: number;
-        [label]: string;
-        [frozen]: true;
-        [marker]: number;
+        [position]: { type: Vec2 };
+        [velocity]: { type: number };
+        [label]: { type: string };
+        [frozen]: { type: true };
+        [marker]: { type: number };
     }
 }
 declare module "../../resource/types.js" {
     export interface Types {
-        [spawnCount]: number;
-        [seen]: number;
+        [spawnCount]: { type: number };
+        [seen]: { type: number };
     }
 }
 declare module "../../system/types.js" {
@@ -48,13 +48,13 @@ declare module "../../system/types.js" {
     }
 }
 
-Component.register(position, { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 });
-Component.register(velocity, { type: "number" });
-Component.register(label, { type: "string" });
-Component.register(frozen, { const: true });
-Component.register(marker, { type: "number" });
-Resource.register(spawnCount, { type: "integer", default: 3 });
-Resource.register(seen, { type: "integer", default: 0 });
+Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });
+Component.register(velocity, { type: { type: "number" } });
+Component.register(label, { type: { type: "string" } });
+Component.register(frozen, { type: { const: true } });
+Component.register(marker, { type: { type: "number" } });
+Resource.register(spawnCount, { type: { type: "integer", default: 3 } });
+Resource.register(seen, { type: { type: "integer", default: 0 } });
 
 const spawn = System.create({
     name: "createTest/spawn",
@@ -119,8 +119,8 @@ describe("World.create", () => {
     });
 
     it("applies the net structural change of a sync point", async () => {
-        let first: Entity = -1;
-        let second: Entity = -1;
+        let first = Entity.none;
+        let second = Entity.none;
         const edit = System.create({ name: "createTest/edit", args: { type: "string" } }, (_, { args }, commands) => {
             if (args === "spawn") {
                 first = commands.spawn({ [velocity]: 1 });
@@ -221,8 +221,9 @@ describe("World.create", () => {
     it("doesn't let a lookup match the resource entity", async () => {
         let found: object | null | undefined;
         const probe = System.create({ name: "createTest/probe", lookup: { any: {} } }, (_, { any }) => {
-            // The resource entity is entity 0, since registration reserves it first.
-            found = any(0);
+            // The resource entity is entity 1, since index 0 is never an entity and registration reserves the next first.
+            // @ts-expect-error an untyped caller can pass any number
+            found = any(1);
         });
         const world = await World.create({ systems: [probe] });
         await world.run(probe);
@@ -277,7 +278,7 @@ describe("World.create", () => {
     });
 
     it("spawns components named by symbols", async () => {
-        let spawned: Entity = -1;
+        let spawned = Entity.none;
         const edit = System.create({ name: "createTest/edit" }, (_, __, commands) => {
             spawned = commands.spawn({ [velocity]: 2, [marker]: 7 });
         });

@@ -61,7 +61,9 @@ export const prepareSpawn = (keys: () => readonly Key[]): PreparedSpawn => {
             return batch === null ? -1 : openRow(batch);
         },
         end: () => {
-            const entity = last === null ? -1 : reserve(last.entities);
+            // `end` follows a `begin` that returned a row, which set `last`.
+            if (last === null) throw new Error("A prepared spawn ended without beginning.");
+            const entity = reserve(last.entities);
             if (batch !== null) claim(batch, entity);
             return entity;
         },

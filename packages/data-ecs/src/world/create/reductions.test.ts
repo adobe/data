@@ -21,21 +21,21 @@ const wrapped = "reductionsTest/wrapped";
 
 declare module "../../component/types.js" {
     export interface Types {
-        [position]: Vec3;
-        [mass]: number;
-        [heavy]: true;
+        [position]: { type: Vec3 };
+        [mass]: { type: number };
+        [heavy]: { type: true };
     }
 }
 declare module "../../resource/types.js" {
     export interface Types {
-        [total]: number;
-        [low]: Vec3;
-        [bits]: number;
-        [least]: number;
-        [any]: boolean;
-        [level]: number;
-        [reads]: number;
-        [wrapped]: number;
+        [total]: { type: number };
+        [low]: { type: Vec3 };
+        [bits]: { type: number };
+        [least]: { type: number };
+        [any]: { type: boolean };
+        [level]: { type: number };
+        [reads]: { type: number };
+        [wrapped]: { type: number };
     }
 }
 declare module "../../system/types.js" {
@@ -52,17 +52,17 @@ declare module "../../system/types.js" {
     }
 }
 
-Component.register(position, Vec3.schema);
-Component.register(mass, { type: "integer", minimum: 0, maximum: 0xFFFFFFFF });
-Component.register(heavy, { const: true });
-Resource.register(total, { type: "number", default: 0 });
-Resource.register(low, { ...Vec3.schema, default: [0, 0, 0] });
-Resource.register(bits, { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 });
-Resource.register(least, { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 });
-Resource.register(any, { type: "boolean", default: false });
-Resource.register(level, { type: "number", default: 0 });
-Resource.register(reads, { type: "number", default: 0 });
-Resource.register(wrapped, { type: "integer", minimum: -(2 ** 31), maximum: 2 ** 31 - 1, default: 5 });
+Component.register(position, { type: Vec3.schema });
+Component.register(mass, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+Component.register(heavy, { type: { const: true } });
+Resource.register(total, { type: { type: "number", default: 0 } });
+Resource.register(low, { type: { ...Vec3.schema, default: [0, 0, 0] } });
+Resource.register(bits, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 } });
+Resource.register(least, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 } });
+Resource.register(any, { type: { type: "boolean", default: false } });
+Resource.register(level, { type: { type: "number", default: 0 } });
+Resource.register(reads, { type: { type: "number", default: 0 } });
+Resource.register(wrapped, { type: { type: "integer", minimum: -(2 ** 31), maximum: 2 ** 31 - 1, default: 5 } });
 
 const rows = 3000;
 const positionAt = (i: number): Vec3 => [Math.sin(i) * 100, (i % 97) - 50, i / 7];

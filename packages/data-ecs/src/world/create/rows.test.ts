@@ -14,10 +14,10 @@ const tag = "rowsTest/tag";
 
 declare module "../../component/types.js" {
     export interface Types {
-        [position]: Vec3;
-        [count]: number;
-        [flag]: boolean;
-        [tag]: true;
+        [position]: { type: Vec3 };
+        [count]: { type: number };
+        [flag]: { type: boolean };
+        [tag]: { type: true };
     }
 }
 declare module "../../system/types.js" {
@@ -29,10 +29,10 @@ declare module "../../system/types.js" {
     }
 }
 
-Component.register(position, vec3);
-Component.register(count, { type: "integer", minimum: 0, maximum: 1000 });
-Component.register(flag, { type: "boolean" });
-Component.register(tag, { const: true });
+Component.register(position, { type: vec3 });
+Component.register(count, { type: { type: "integer", minimum: 0, maximum: 1000 } });
+Component.register(flag, { type: { type: "boolean" } });
+Component.register(tag, { type: { const: true } });
 
 const seed = System.create({ name: "rowsTest/seed" }, (_, __, commands) => {
     for (let i = 0; i < 4; i++) commands.spawn({ [position]: [i, i + 0.5, -i], [count]: i, [flag]: i % 2 === 0, ...(i < 2 ? { [tag]: true } : {}) });

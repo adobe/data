@@ -1,5 +1,5 @@
 import type { Entity } from '../../entity/entity.js';
-import { schemaOf } from '../../registry/create-registry.js';
+import { declarationOf } from '../../registry/create-registry.js';
 import { kindOf } from '../../registry/declare-name.js';
 import { createArchetype, startTicks, type Archetype, type Storage } from './archetype.js';
 import type { Shape, SpawnBatch } from './batches.js';
@@ -22,12 +22,14 @@ export type State = {
     readonly ids: Map<Key, number>;
     readonly keys: Key[];
     readonly layouts: Layout[];
+    /** Whether each component is derived, so only rules add and remove it. */
+    readonly derived: boolean[];
     readonly resources: Set<number>;
     /** The newest tick handed out. Systems and sync points each take the next one. */
     tick: number;
     /** Command buffers for the next sync point, in merge order. */
     readonly queued: Queued[];
-    resourceEntity: Entity;
+    resourceEntity: number;
     /** Components some registered system filters on with `changed`; only their kernel stamps are kept. */
     readonly observed: Set<number>;
     /** Components some registered system filters on with `added` or `changed`; only they keep ticks. */
@@ -64,6 +66,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         ids: new Map(),
         keys: [],
         layouts: [],
+        derived: [],
         resources: new Set(),
         tick: 0,
         queued: [],
@@ -87,13 +90,24 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
 export const idOf = (state: State, key: Key): number => {
     const existing = state.ids.get(key);
     if (existing !== undefined) return existing;
-    const schema = schemaOf(key);
-    if (schema === undefined) throw new Error(`"${String(key)}" has no registered schema; import the module that registers it.`);
+    const declaration = declarationOf(key);
+    if (declaration === undefined) throw new Error(`"${String(key)}" has no registered schema; import the module that registers it.`);
+    if (declaration.within !== undefined || declaration.reference !== undefined) {
+        throw new Error(`"${String(key)}" is declared within another component or as a reference, which worlds don't support yet.`);
+    }
     const id = state.keys.length;
     state.ids.set(key, id);
     state.keys.push(key);
-    state.layouts.push(layoutOf(schema));
+    state.layouts.push(layoutOf(declaration.type));
+    state.derived.push(declaration.derived === true);
     if (kindOf(key) === "resource") state.resources.add(id);
+    return id;
+};
+
+/** The id of a component a command names. Throws for a derived one, which only rules add and remove. */
+export const commandIdOf = (state: State, key: Key): number => {
+    const id = idOf(state, key);
+    if (state.derived[id]) throw new Error(`"${String(key)}" is derived, so only rules add and remove it.`);
     return id;
 };
 

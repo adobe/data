@@ -8,8 +8,8 @@ const seen = "observedWorkersTest/seen";
 
 declare module "../../component/types.js" {
     export interface Types {
-        [value]: number;
-        [seen]: number;
+        [value]: { type: number };
+        [seen]: { type: number };
     }
 }
 declare module "../../system/types.js" {
@@ -20,8 +20,8 @@ declare module "../../system/types.js" {
     }
 }
 
-Component.register(value, { type: "number", precision: 1 });
-Component.register(seen, { type: "number", precision: 1 });
+Component.register(value, { type: { type: "number", precision: 1 } });
+Component.register(seen, { type: { type: "number", precision: 1 } });
 
 const seed = System.create({ name: "observedWorkersTest/seed" }, (_, __, commands) => {
     for (let i = 0; i < 3000; i++) commands.spawn({ [value]: i, [seen]: 0 });

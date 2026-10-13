@@ -7,8 +7,14 @@ const generationScale = 0x100000000;
 /** Generations wrap at 2^21 so entities stay safe integers. */
 const generationMask = 0x1FFFFF;
 
-export const indexOf = (entity: Entity): number => entity >>> 0;
-export const generationOf = (entity: Entity): number => Math.floor(entity / generationScale);
+export const indexOf = (entity: number): number => entity >>> 0;
+export const generationOf = (entity: number): number => Math.floor(entity / generationScale);
+
+/**
+ * The entity an id names. Ids passed here come only from the entity table, entity columns and command buffers,
+ * which hold nothing but entities.
+ */
+export const asEntity = (id: number): Entity => id as Entity;
 
 /** `cursor` slots. */
 const taken = 0;
@@ -40,15 +46,22 @@ export type Entities = Reservations & {
 
 const initialCapacity = 64;
 
-export const createEntities = (memory: Memory): Entities => ({
-    cursor: allocateArray(memory, Int32Array, 4).fill(0),
-    free: allocateArray(memory, Int32Array, initialCapacity),
-    archetype: allocateArray(memory, Int32Array, initialCapacity),
-    row: allocateArray(memory, Uint32Array, initialCapacity),
-    generation: allocateArray(memory, Uint32Array, initialCapacity),
-    length: 0,
-    released: [],
-});
+/** Index 0 is never alive and never freed, so `Entity.none` and zeroed entity values name no entity. */
+export const createEntities = (memory: Memory): Entities => {
+    const cursor = allocateArray(memory, Int32Array, 4).fill(0);
+    cursor[tableLength] = 1;
+    const archetype = allocateArray(memory, Int32Array, initialCapacity);
+    archetype[0] = -1;
+    return {
+        cursor,
+        free: allocateArray(memory, Int32Array, initialCapacity),
+        archetype,
+        row: allocateArray(memory, Uint32Array, initialCapacity),
+        generation: allocateArray(memory, Uint32Array, initialCapacity).fill(0),
+        length: 1,
+        released: [],
+    };
+};
 
 /** Reserves an entity. Safe to call from any thread between sync points. */
 export const reserve = ({ cursor, free, generation }: Reservations): Entity => {
@@ -56,16 +69,16 @@ export const reserve = ({ cursor, free, generation }: Reservations): Entity => {
     const available = cursor[freeCount];
     if (position < available) {
         const index = free[available - 1 - position];
-        return index + generation[index] * generationScale;
+        return asEntity(index + generation[index] * generationScale);
     }
-    return cursor[tableLength] + position - available;
+    return asEntity(cursor[tableLength] + position - available);
 };
 
 /** Whether any entity was reserved since the last sync point. */
 export const reserved = (entities: Entities): boolean => Atomics.load(entities.cursor, taken) > 0;
 
 /** The index of a live entity, or -1. */
-export const locate = (entities: Pick<Entities, "archetype" | "generation" | "length">, entity: Entity): number => {
+export const locate = (entities: Pick<Entities, "archetype" | "generation" | "length">, entity: number): number => {
     const index = indexOf(entity);
     return index < entities.length && entities.archetype[index] >= 0 && entities.generation[index] === generationOf(entity) ? index : -1;
 };

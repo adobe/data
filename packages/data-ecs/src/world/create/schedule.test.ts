@@ -8,8 +8,8 @@ const other = "scheduleTest/other";
 
 declare module "../../component/types.js" {
     export interface Types {
-        [value]: number;
-        [other]: number;
+        [value]: { type: number };
+        [other]: { type: number };
     }
 }
 declare module "../../system/types.js" {
@@ -23,8 +23,8 @@ declare module "../../system/types.js" {
     }
 }
 
-Component.register(value, { type: "number" });
-Component.register(other, { type: "number" });
+Component.register(value, { type: { type: "number" } });
+Component.register(other, { type: { type: "number" } });
 
 const names = (system: System): string[][] => createSchedule(system).tiers.map(tier => tier.map(leaf => leaf.declaration.name));
 

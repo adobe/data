@@ -12,15 +12,15 @@ const largest = "reductionsBrowserTest/largest";
 
 declare module "../../component/types.js" {
     export interface Types {
-        [weight]: number;
-        [sized]: true;
+        [weight]: { type: number };
+        [sized]: { type: true };
     }
 }
 declare module "../../resource/types.js" {
     export interface Types {
-        [count]: number;
-        [sum]: number;
-        [largest]: number;
+        [count]: { type: number };
+        [sum]: { type: number };
+        [largest]: { type: number };
     }
 }
 declare module "../../system/types.js" {
@@ -30,11 +30,11 @@ declare module "../../system/types.js" {
     }
 }
 
-Component.register(weight, { type: "number", precision: 1 });
-Component.register(sized, { const: true });
-Resource.register(count, { type: "number", default: 0 });
-Resource.register(sum, { type: "number", default: 0 });
-Resource.register(largest, { type: "number", default: 0 });
+Component.register(weight, { type: { type: "number", precision: 1 } });
+Component.register(sized, { type: { const: true } });
+Resource.register(count, { type: { type: "number", default: 0 } });
+Resource.register(sum, { type: { type: "number", default: 0 } });
+Resource.register(largest, { type: { type: "number", default: 0 } });
 
 const rows = 100_000;
 const weightAt = (i: number): number => Math.fround(Math.sin(i * 0.37) * 1000);

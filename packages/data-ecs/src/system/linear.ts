@@ -8,6 +8,6 @@ export type IsLinear<T> =
     [T] extends [object] ? (false extends { [K in keyof T]-?: IsLinear<T[K]> }[keyof T] ? false : true) :
     false;
 
-export type LinearComponent = { [K in Component.Name]: IsLinear<Component.Types[K]> extends true ? K : never }[Component.Name];
+export type LinearComponent = { [K in Component.Name]: IsLinear<Component.Value<K>> extends true ? K : never }[Component.Name];
 
-export type LinearResource = { [K in Resource.Name]: IsLinear<Resource.Types[K]> extends true ? K : never }[Resource.Name];
+export type LinearResource = { [K in Resource.Name]: IsLinear<Resource.Value<K>> extends true ? K : never }[Resource.Name];

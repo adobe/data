@@ -75,7 +75,7 @@ const shapeOf = (schema: Schema): Shape | null => {
     if (!("type" in schema)) return null;
     switch (schema.type) {
         case "number": return { kind: "scalar", scalar: schema.precision === 1 ? "f32" : "f64" };
-        case "integer": return { kind: "scalar", scalar: integerScalar(schema) };
+        case "integer": return { kind: "scalar", scalar: "format" in schema ? "f64" : integerScalar(schema) };
         case "boolean": return { kind: "scalar", scalar: "boolean" };
         case "array": {
             const length = schema.minItems;

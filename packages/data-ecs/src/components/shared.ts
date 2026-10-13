@@ -4,8 +4,8 @@ export const shared = 'shared';
 
 declare module '../component/types.js' {
     export interface Types {
-        [shared]: true;
+        [shared]: { type: true };
     }
 }
 
-Component.register(shared, { const: true });
+Component.register(shared, { type: { const: true } });

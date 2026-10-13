@@ -1,10 +1,10 @@
 import { createRegistry, type Registry } from "../registry/create-registry.js";
-import type { Schema } from "../schema/schema.js";
-import type { Types } from "./types.js";
+import type { Declaration } from "./declaration.js";
+import type { Name } from "./name.js";
 
-type Declarations = { [K in keyof Types]: Schema.ForType<Types[K]> };
+type Declarations = { readonly [K in Name]: Declaration<K> };
 
 const registry: Registry<Declarations> = createRegistry<Declarations>("component");
 
-export const schemas: Registry<Declarations>["schemas"] = registry.schemas;
 export const register: Registry<Declarations>["register"] = registry.register;
+export const declaration: Registry<Declarations>["declaration"] = registry.declaration;

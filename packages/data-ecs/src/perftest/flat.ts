@@ -17,16 +17,16 @@ export const enabled = "flat/enabled";
 
 declare module "../component/types.js" {
     export interface Types {
-        [color]: number;
-        [mass]: number;
-        [positionX]: number;
-        [positionY]: number;
-        [positionZ]: number;
-        [velocityX]: number;
-        [velocityY]: number;
-        [velocityZ]: number;
-        [visible]: true;
-        [enabled]: true;
+        [color]: { type: number };
+        [mass]: { type: number };
+        [positionX]: { type: number };
+        [positionY]: { type: number };
+        [positionZ]: { type: number };
+        [velocityX]: { type: number };
+        [velocityY]: { type: number };
+        [velocityZ]: { type: number };
+        [visible]: { type: true };
+        [enabled]: { type: true };
     }
 }
 declare module "../system/types.js" {
@@ -36,10 +36,10 @@ declare module "../system/types.js" {
     }
 }
 
-Component.register(color, { type: "integer", minimum: 0, maximum: 0xFFFFFFFF });
-for (const key of [mass, positionX, positionY, positionZ, velocityX, velocityY, velocityZ] as const) Component.register(key, { type: "number", precision: 1 });
-Component.register(visible, { const: true });
-Component.register(enabled, { const: true });
+Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+for (const key of [mass, positionX, positionY, positionZ, velocityX, velocityY, velocityZ] as const) Component.register(key, { type: { type: "number", precision: 1 } });
+Component.register(visible, { type: { const: true } });
+Component.register(enabled, { type: { const: true } });
 
 /** Entity i goes to archetype i % 4, like ecs2's seedSingle. */
 export const spawnFlat = System.create({ name: "flat/spawn", args: { type: "integer" } }, (_, { args }, commands) => {

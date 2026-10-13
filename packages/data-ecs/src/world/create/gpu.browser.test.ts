@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
-import type { Entity } from "../../entity/entity.js";
+import { Entity } from "../../entity/entity.js";
 import { Gpu } from "../../gpu/gpu.js";
 import { Mat4x4, Quat, Vec3 } from "../../math/index.js";
 import type { Schema } from "../../schema/schema.js";
@@ -21,16 +21,16 @@ const sums = "gpuTest/sums";
 
 declare module "../../component/types.js" {
     export interface Types {
-        [position]: Vec3;
-        [velocity]: Vec3;
-        [score]: number;
-        [tag]: true;
-        [code]: number;
-        [amount]: number;
-        [flag]: boolean;
-        [followed]: number;
-        [bits]: Vec3.U32;
-        [sums]: Vec3.I32;
+        [position]: { type: Vec3 };
+        [velocity]: { type: Vec3 };
+        [score]: { type: number };
+        [tag]: { type: true };
+        [code]: { type: number };
+        [amount]: { type: number };
+        [flag]: { type: boolean };
+        [followed]: { type: Entity };
+        [bits]: { type: Vec3.U32 };
+        [sums]: { type: Vec3.I32 };
     }
 }
 declare module "../../system/types.js" {
@@ -66,14 +66,14 @@ declare module "../../system/types.js" {
     }
 }
 
-Component.register(position, vec3);
-Component.register(velocity, vec3);
-Component.register(score, { type: "number", precision: 1 });
-Component.register(tag, { const: true });
-Component.register(code, { type: "integer", minimum: 0, maximum: 0xFFFFFFFF });
-Component.register(amount, { type: "number", precision: 1 });
-Component.register(flag, { type: "boolean" });
-Component.register(followed, { type: "number" });
+Component.register(position, { type: vec3 });
+Component.register(velocity, { type: vec3 });
+Component.register(score, { type: { type: "number", precision: 1 } });
+Component.register(tag, { type: { const: true } });
+Component.register(code, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+Component.register(amount, { type: { type: "number", precision: 1 } });
+Component.register(flag, { type: { type: "boolean" } });
+Component.register(followed, { type: Entity.schema });
 
 const count = 5000;
 
@@ -187,8 +187,8 @@ const transform = System.create({ name: "gpuTest/transform", kernel: "gpu", quer
     row[position] = Vec3.add(Mat4x4.multiplyVec3(m, Quat.rotateVec3(q, row[position])), Vec3.normalize(row[velocity]));
 });
 
-Component.register(bits, Vec3.U32.schema);
-Component.register(sums, Vec3.I32.schema);
+Component.register(bits, { type: Vec3.U32.schema });
+Component.register(sums, { type: Vec3.I32.schema });
 
 const spawnIntegers = System.create({ name: "gpuTest/spawnIntegers" }, (_, __, commands) => {
     for (let i = 0; i < 100; i++) {

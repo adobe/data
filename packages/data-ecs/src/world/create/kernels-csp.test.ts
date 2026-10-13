@@ -7,7 +7,7 @@ const value = "kernelsCspTest/value";
 
 declare module "../../component/types.js" {
     export interface Types {
-        [value]: number;
+        [value]: { type: number };
     }
 }
 declare module "../../system/types.js" {
@@ -17,7 +17,7 @@ declare module "../../system/types.js" {
     }
 }
 
-Component.register(value, { type: "number", precision: 1 });
+Component.register(value, { type: { type: "number", precision: 1 } });
 
 const seed = System.create({ name: "kernelsCspTest/seed" }, (_, __, commands) => {
     for (let i = 0; i < 10; i++) commands.spawn({ [value]: i });

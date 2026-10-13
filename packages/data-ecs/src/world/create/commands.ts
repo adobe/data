@@ -3,7 +3,7 @@ import { addCommand, despawnCommand, pushCommand, pushComponent, removeCommand, 
 import { hasSymbolNames } from '../../registry/create-registry.js';
 import { stageSpawn } from './batches.js';
 import { reserve } from './entities.js';
-import { idOf, type Key, type State } from './state.js';
+import { commandIdOf, type Key, type State } from './state.js';
 
 /** Where a world's commands queue: on the commands object under a symbol, so prepared spawns find it in one read. */
 export const commandsTarget = Symbol("commandsTarget");
@@ -11,7 +11,7 @@ export const commandsTarget = Symbol("commandsTarget");
 export type CommandsTarget = { readonly state: State; readonly target: { readonly buffer: CommandBuffer } };
 
 const collect = (state: State, buffer: CommandBuffer, key: Key, value: unknown): void => {
-    if (value !== undefined) pushComponent(buffer, idOf(state, key), value);
+    if (value !== undefined) pushComponent(buffer, commandIdOf(state, key), value);
 };
 
 /**
@@ -49,7 +49,7 @@ export const createCommands = (state: State, target: { readonly buffer: CommandB
         pushValues(state, target.buffer, addCommand, entity, values);
     },
     remove: (entity, ...components) => {
-        const ids = components.map((key: Key) => idOf(state, key));
+        const ids = components.map((key: Key) => commandIdOf(state, key));
         pushCommand(target.buffer, removeCommand, entity);
         for (const id of ids) pushComponent(target.buffer, id, undefined);
     },

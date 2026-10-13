@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
-import type { Entity } from "../../entity/entity.js";
+import { Entity } from "../../entity/entity.js";
 import { Resource } from "../../resource/resource.js";
 import type { Schema } from "../../schema/schema.js";
 import { System } from "../../system/system.js";
@@ -21,26 +21,26 @@ const seconds = "workersTest/seconds";
 
 declare module "../../component/types.js" {
     export interface Types {
-        [position]: Vec2;
-        [velocity]: Vec2;
-        [target]: Entity;
-        [offset]: number;
-        [spawned]: true;
-        [label]: string;
-        "workersTest/tag-a": true;
-        "workersTest/tag-b": true;
-        "workersTest/tag-c": true;
-        "workersTest/tag-d": true;
-        "workersTest/tag-e": true;
-        "workersTest/tag-f": true;
-        "workersTest/tag-g": true;
-        "workersTest/tag-h": true;
-        "workersTest/tag-i": true;
+        [position]: { type: Vec2 };
+        [velocity]: { type: Vec2 };
+        [target]: { type: Entity };
+        [offset]: { type: number };
+        [spawned]: { type: true };
+        [label]: { type: string };
+        "workersTest/tag-a": { type: true };
+        "workersTest/tag-b": { type: true };
+        "workersTest/tag-c": { type: true };
+        "workersTest/tag-d": { type: true };
+        "workersTest/tag-e": { type: true };
+        "workersTest/tag-f": { type: true };
+        "workersTest/tag-g": { type: true };
+        "workersTest/tag-h": { type: true };
+        "workersTest/tag-i": { type: true };
     }
 }
 declare module "../../resource/types.js" {
     export interface Types {
-        [seconds]: number;
+        [seconds]: { type: number };
     }
 }
 declare module "../../system/types.js" {
@@ -57,13 +57,13 @@ declare module "../../system/types.js" {
     }
 }
 
-Component.register(position, vec2);
-Component.register(velocity, vec2);
-Component.register(target, { type: "integer" });
-Component.register(offset, { type: "number", precision: 1 });
-Component.register(spawned, { const: true });
-Component.register(label, { type: "string" });
-for (const tag of tags) Component.register(tag, { const: true });
+Component.register(position, { type: vec2 });
+Component.register(velocity, { type: vec2 });
+Component.register(target, { type: Entity.schema });
+Component.register(offset, { type: { type: "number", precision: 1 } });
+Component.register(spawned, { type: { const: true } });
+Component.register(label, { type: { type: "string" } });
+for (const tag of tags) Component.register(tag, { type: { const: true } });
 
 /** 64 entities in each of the 512 archetypes the tags combine into. */
 const scatter = System.create({ name: "workersTest/scatter" }, (_, __, commands) => {
@@ -73,7 +73,7 @@ const scatter = System.create({ name: "workersTest/scatter" }, (_, __, commands)
         commands.spawn(values);
     }
 });
-Resource.register(seconds, { type: "number", default: 0.25 });
+Resource.register(seconds, { type: { type: "number", default: 0.25 } });
 
 /** Spawns `args` moving entities, each following the one before it. */
 const seed = System.create({ name: "workersTest/seed", args: { type: "integer" } }, (_, { args }, commands) => {
@@ -127,20 +127,21 @@ const main = System.composite({ name: "workersTest/main", systems: [integrate, s
 const stamp = System.create({
     name: "workersTest/stamp",
     kernel: "cpu",
-    args: { type: "integer" },
+    args: Entity.schema,
     query: { read: [position] },
 }, (row, { args }, commands) => {
     const [x, y] = row[position];
     commands.add(args, { [offset]: x * 1000 + y });
 });
 
-/** Despawns entity 0, which is the resource entity since registration reserves it first. */
+/** Despawns entity 1, the resource entity, since index 0 is never an entity and registration reserves the next first. */
 const unlink = System.create({
     name: "workersTest/unlink",
     kernel: "cpu",
     query: { has: [target] },
 }, (_, __, commands) => {
-    commands.despawn(0);
+    // @ts-expect-error an untyped caller can pass any number
+    commands.despawn(1);
 });
 
 const labels = System.create({

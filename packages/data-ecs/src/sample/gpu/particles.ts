@@ -15,12 +15,12 @@ export const enabled = "gpuParticles/enabled";
 
 declare module '../../component/types.js' {
     export interface Types {
-        [position]: Vec3;
-        [velocity]: Vec3;
-        [color]: number;
-        [mass]: number;
-        [visible]: true;
-        [enabled]: true;
+        [position]: { type: Vec3 };
+        [velocity]: { type: Vec3 };
+        [color]: { type: number };
+        [mass]: { type: number };
+        [visible]: { type: true };
+        [enabled]: { type: true };
     }
 }
 declare module '../../system/types.js' {
@@ -33,12 +33,12 @@ declare module '../../system/types.js' {
     }
 }
 
-Component.register(position, Vec3.schema);
-Component.register(velocity, Vec3.schema);
-Component.register(color, { type: "integer", minimum: 0, maximum: 0xFFFFFFFF });
-Component.register(mass, { type: "number", precision: 1 });
-Component.register(visible, { const: true });
-Component.register(enabled, { const: true });
+Component.register(position, { type: Vec3.schema });
+Component.register(velocity, { type: Vec3.schema });
+Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
+Component.register(mass, { type: { type: "number", precision: 1 } });
+Component.register(visible, { type: { const: true } });
+Component.register(enabled, { type: { const: true } });
 
 /** A deterministic sequence in [0, 1), so every mode starts from the same particles. */
 const random = (seed: number): (() => number) => {

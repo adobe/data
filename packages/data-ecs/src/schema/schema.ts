@@ -1,3 +1,4 @@
+import type { Entity } from '../entity/entity.js';
 
 /** Any value representable in JSON. */
 type JSONValue = string | number | boolean | null | readonly JSONValue[] | { readonly [key: string]: JSONValue };
@@ -38,8 +39,15 @@ interface NumberSchema {
     readonly precision?: 1 | 2;
 }
 
+/** An entity reference: an f64 integer, typed `Entity`. Every entity-typed value uses it, so references can be found by schema. */
+interface EntitySchema {
+    readonly type: 'integer';
+    readonly format: 'entity';
+}
+
 interface IntegerSchema {
     readonly type: 'integer';
+    readonly format?: never;
     readonly minimum?: number;
     readonly maximum?: number;
 }
@@ -67,7 +75,7 @@ interface OrSchema {
     readonly anyOf: readonly Schema[];
 }
 
-export type Schema = ObjectSchema | StringSchema | ArraySchema<Schema> | NumberSchema | IntegerSchema | BooleanSchema | NullSchema | ConstSchema | AndSchema | OrSchema;
+export type Schema = EntitySchema | ObjectSchema | StringSchema | ArraySchema<Schema> | NumberSchema | IntegerSchema | BooleanSchema | NullSchema | ConstSchema | AndSchema | OrSchema;
 
 type UnionToIntersection<U> = (U extends unknown ? (x: U) => void : never) extends (x: infer I) => void ? I : never;
 
@@ -84,6 +92,7 @@ export namespace Schema {
         T extends AndSchema ? UnionToIntersection<Schema.ToType<T['allOf'][number]>> :
         T extends OrSchema ? Schema.ToType<T['anyOf'][number]> :
         T extends { const: infer C } ? C :
+        T extends EntitySchema ? Entity :
         T extends ObjectSchema ? ObjectToType<T> :
         T extends StringSchema ? string :
         T extends ArraySchema<infer U> ? readonly Schema.ToType<U>[] :
@@ -109,6 +118,7 @@ export namespace Schema {
         [T] extends [true] ? ConstSchema & { const: T } :
         [T] extends [false] ? ConstSchema & { const: T } :
         [T] extends [boolean] ? BooleanSchema :
+        [T] extends [Entity] ? EntitySchema :
         [T] extends [string] ? StringSchema :
         [T] extends [number] ? (NumberSchema | IntegerSchema) :
         T extends readonly (infer U)[] ? ArraySchema<ForType<U> & Schema> :

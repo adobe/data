@@ -142,9 +142,9 @@ export const createWorld = (options: WorldOptions = {}): World => {
             component: <C extends Component.Name>(entity: Entity, component: C) => {
                 const value = readComponent(state, entity, component);
                 // Stored values match each component's registered schema, so they have its type.
-                return value === undefined ? null : value as Readonly<Component.Types[C]>;
+                return value === undefined ? null : value as Readonly<Component.Value<C>>;
             },
-            resource: <R extends Resource.Name>(key: R) => readResource(key) as Readonly<Resource.Types[R]>,
+            resource: <R extends Resource.Name>(key: R) => readResource(key) as Readonly<Resource.Value<R>>,
         },
     };
     return world;

@@ -12,10 +12,11 @@ const offset = "dispatchTest/offset";
 const tags = ["dispatchTest/a", "dispatchTest/b", "dispatchTest/c", "dispatchTest/d", "dispatchTest/e", "dispatchTest/f", "dispatchTest/g"] as const;
 declare module "../../component/types.js" {
     export interface Types {
-        [position]: Vec2;
-        [velocity]: Vec2;
-        [offset]: number;
-        "dispatchTest/a": true; "dispatchTest/b": true; "dispatchTest/c": true; "dispatchTest/d": true; "dispatchTest/e": true; "dispatchTest/f": true; "dispatchTest/g": true;
+        [position]: { type: Vec2 };
+        [velocity]: { type: Vec2 };
+        [offset]: { type: number };
+        "dispatchTest/a": { type: true }; "dispatchTest/b": { type: true }; "dispatchTest/c": { type: true }; "dispatchTest/d": { type: true };
+        "dispatchTest/e": { type: true }; "dispatchTest/f": { type: true }; "dispatchTest/g": { type: true };
     }
 }
 declare module "../../system/types.js" {
@@ -23,10 +24,10 @@ declare module "../../system/types.js" {
         "dispatchTest/scatter": true; "dispatchTest/seed": true; "dispatchTest/fastA": true; "dispatchTest/slowB": true; "dispatchTest/fastC": true; "dispatchTest/tier": true;
     }
 }
-Component.register(position, vec2);
-Component.register(velocity, vec2);
-Component.register(offset, { type: "number", precision: 1 });
-for (const tag of tags) Component.register(tag, { const: true });
+Component.register(position, { type: vec2 });
+Component.register(velocity, { type: vec2 });
+Component.register(offset, { type: { type: "number", precision: 1 } });
+for (const tag of tags) Component.register(tag, { type: { const: true } });
 
 const scatter = System.create({ name: "dispatchTest/scatter" }, (_, __, commands) => {
     for (let i = 0; i < 128 * 64; i++) {

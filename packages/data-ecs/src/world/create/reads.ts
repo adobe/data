@@ -1,7 +1,7 @@
 import type { Entity } from '../../entity/entity.js';
 import type { Archetype, Storage } from './archetype.js';
 import { readCell } from './cells.js';
-import { locate } from './entities.js';
+import { asEntity, locate } from './entities.js';
 import { entriesOf, type Key, type State } from './state.js';
 
 const operators = new Set(["==", "!=", "<", ">", "<=", ">="]);
@@ -121,7 +121,7 @@ export const select = (state: State, include: readonly Key[], options: Options =
         const passes = compiled.where.length === 0 ? null : passerOf(archetype, compiled);
         for (let row = 0; row < archetype.count; row++) {
             if (passes !== null && !passes(row)) continue;
-            selected.push(entities[row]);
+            selected.push(asEntity(entities[row]));
             if (order.length > 0) keys.push(order.map(({ id }) => cellAt(archetype, id, row)));
         }
     }

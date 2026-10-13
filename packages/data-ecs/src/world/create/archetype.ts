@@ -205,7 +205,7 @@ export const ensureCapacity = (memory: Memory, archetype: Archetype, needed: num
 };
 
 /** Appends a row for `entity`, growing if full. Component values and ticks are left for the caller to write. */
-export const insertRow = (memory: Memory, archetype: Archetype, entity: Entity): number => {
+export const insertRow = (memory: Memory, archetype: Archetype, entity: number): number => {
     if (archetype.count === archetype.capacity) grow(memory, archetype);
     const row = archetype.count++;
     archetype.entities[row] = entity;
@@ -251,7 +251,7 @@ export const copyCell = (from: Storage, fromRow: number, to: Storage, toRow: num
 };
 
 /** Removes a row by moving the last row into it. Returns the moved entity, or -1 if the removed row was last. */
-export const swapRemove = (archetype: Archetype, row: number): Entity => {
+export const swapRemove = (archetype: Archetype, row: number): number => {
     const last = --archetype.count;
     const moved = row === last ? -1 : archetype.entities[last];
     for (const storage of archetype.storages) {

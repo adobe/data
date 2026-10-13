@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
-import type { Entity } from "../../entity/entity.js";
+import { Entity } from "../../entity/entity.js";
 import type { Schema } from "../../schema/schema.js";
 import { System } from "../../system/system.js";
 import { createWorld } from "./create.js";
@@ -13,10 +13,10 @@ const score = "semanticsTest/score";
 const tag = "semanticsTest/tag";
 declare module "../../component/types.js" {
     export interface Types {
-        [position]: Vec2;
-        [target]: Entity;
-        [score]: number;
-        [tag]: true;
+        [position]: { type: Vec2 };
+        [target]: { type: Entity };
+        [score]: { type: number };
+        [tag]: { type: true };
     }
 }
 declare module "../../system/types.js" {
@@ -27,13 +27,15 @@ declare module "../../system/types.js" {
         "semanticsTest/watch": true;
     }
 }
-Component.register(position, vec2);
-Component.register(target, { type: "number" });
-Component.register(score, { type: "number" });
-Component.register(tag, { const: true });
+Component.register(position, { type: vec2 });
+Component.register(target, { type: Entity.schema });
+Component.register(score, { type: { type: "number" } });
+Component.register(tag, { type: { const: true } });
 
 const seed = System.create({ name: "semanticsTest/seed" }, (_, __, commands) => {
+    // @ts-expect-error untyped callers can store any number as an entity
     commands.spawn({ [position]: [5, 6], [target]: -1, [score]: 0 });
+    // @ts-expect-error untyped callers can store any number as an entity
     commands.spawn({ [position]: [7, 8], [target]: Number.NaN, [score]: 0 });
 });
 const chase = System.create({
@@ -91,7 +93,7 @@ describe("semantics", () => {
 
     it("re-adding an existing tag keeps its added tick", async () => {
         const seen: number[] = [];
-        let entity = -1;
+        let entity = Entity.none;
         const spawn = System.create({ name: "semanticsTest/seed" }, (_, __, commands) => { entity = commands.spawn({ [tag]: true, [score]: 0 }); });
         const retag = System.create({ name: "semanticsTest/retag" }, (_, __, commands) => { commands.add(entity, { [tag]: true }); });
         const watch = System.create({ name: "semanticsTest/watch", query: { has: [score], added: [tag] } }, row => { seen.push(row.entity); });

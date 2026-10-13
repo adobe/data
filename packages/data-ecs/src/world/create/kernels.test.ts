@@ -13,13 +13,13 @@ const scale = "kernelsTest/scale";
 
 declare module "../../component/types.js" {
     export interface Types {
-        [value]: number;
-        [other]: number;
+        [value]: { type: number };
+        [other]: { type: number };
     }
 }
 declare module "../../resource/types.js" {
     export interface Types {
-        [scale]: number;
+        [scale]: { type: number };
     }
 }
 declare module "../../system/types.js" {
@@ -28,9 +28,9 @@ declare module "../../system/types.js" {
     }
 }
 
-Component.register(value, { type: "number" });
-Component.register(other, { type: "number" });
-Resource.register(scale, { type: "number", default: 1 });
+Component.register(value, { type: { type: "number" } });
+Component.register(other, { type: { type: "number" } });
+Resource.register(scale, { type: { type: "number", default: 1 } });
 
 /** Reads `value` and `other`, writes nothing, reads no resources. */
 const system = System.create({ name: "kernelsTest/read", kernel: "cpu", query: { read: [value, other] } }, row => {

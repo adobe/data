@@ -238,7 +238,6 @@ Measured with `pnpm perf` (benchmarks bundled as in production, on plain node) a
 - **Per-archetype query-match bitsets.** Compute stop/start for each move as `match(from) & ~match(to)` in O(Q/32). Memory scales with archetypes, not archetype-graph edges.
 - **Per-archetype rule-closure cache.**
 - **Main-thread fast path.** Main-thread structural changes may skip the command buffer, or be applied early, only when no system or finalizer could observe the difference before the next sync point.
-- **Early cutoff.** Compare before writing (`set_if_neq` / backdating), so equal writes don't mark `Changed` and don't trigger recompute through everything downstream. Decide whether the compiler emits it by default or per component.
 - **Bulk operations in the plan.** Keep (archetype, all rows) or entity-ID ranges, not one entry per entity, so million-entity despawns stay cheap. Despawning a pair target bulk-moves by (source archetype, target).
 - **Finalizer execution:** skip the phase when nothing is pending. Run on the main thread by default; move to workers only above a size threshold and only for linear-memory finalizers. Run main-thread and worker finalizers concurrently. That's at most one barrier per flush.
 - **Gather loops.** The compiler needs an indexed-row loop mode for scattered sets, such as rows about to be removed.

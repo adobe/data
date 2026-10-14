@@ -6,14 +6,12 @@ import { createSchedule } from "./schedule.js";
 const value = "scheduleTest/value";
 const other = "scheduleTest/other";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [value]: { type: number };
         [other]: { type: number };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "scheduleTest/a": true;
         "scheduleTest/b": true;
         "scheduleTest/c": true;

@@ -22,8 +22,8 @@ const seconds = "wasmTest/seconds";
 const floor = "wasmTest/floor";
 const target = "wasmTest/target";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [position]: { type: Vec2 };
         [velocity]: { type: Vec2 };
         [bounces]: { type: number };
@@ -31,15 +31,11 @@ declare module "../../component/types.js" {
         [score]: { type: number };
         [target]: { type: Entity };
     }
-}
-declare module "../../resource/types.js" {
-    export interface Types {
+    export interface Resources {
         [seconds]: { type: number };
         [floor]: { type: number };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "wasmTest/seed": true;
         "wasmTest/integrate": true;
         "wasmTest/bounce": true;

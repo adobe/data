@@ -10,20 +10,16 @@ export const velocity = 'particles/velocity';
 export const delta = 'particles/delta';
 export const count = 'particles/count';
 
-declare module '../component/types.js' {
-    export interface Types {
+declare module '@adobe/data-ecs' {
+    export interface Components {
         [position]: { type: Vec3 };
         [velocity]: { type: Vec3 };
     }
-}
-declare module '../resource/types.js' {
-    export interface Types {
+    export interface Resources {
         [delta]: { type: number };
         [count]: { type: number };
     }
-}
-declare module '../system/types.js' {
-    export interface Types {
+    export interface Systems {
         "particles/spawn": true;
         "particles/integrate": true;
         "particles/gravity": true;

@@ -3,13 +3,11 @@ import { Component, System, Vec3, World } from "../index.js";
 
 const position = "guide/arguments/position";
 
-declare module "@adobe/data-ecs/components" {
-    interface Types {
+declare module "@adobe/data-ecs" {
+    interface Components {
         [position]: { type: Vec3 };
     }
-}
-declare module "@adobe/data-ecs/systems" {
-    interface Types {
+    interface Systems {
         "guide/arguments/place": true;
     }
 }

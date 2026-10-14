@@ -1,3 +1,3 @@
-import { Types } from './types.js';
+import { Components } from './types.js';
 
-export type Name = keyof Types;
+export type Name = keyof Components;

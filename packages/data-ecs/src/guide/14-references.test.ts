@@ -5,15 +5,13 @@ const node = "guide/references/node";
 const parent = "guide/references/parent";
 const watching = "guide/references/watching";
 
-declare module "@adobe/data-ecs/components" {
-    interface Types {
+declare module "@adobe/data-ecs" {
+    interface Components {
         [node]: { type: string };
         [parent]: { type: Entity; reference: "owner" };
         [watching]: { type: Entity; reference: "weak" };
     }
-}
-declare module "@adobe/data-ecs/systems" {
-    interface Types {
+    interface Systems {
         "guide/references/spawn": true;
         "guide/references/prune": true;
     }

@@ -4,14 +4,12 @@ import { Component, System, World } from "../index.js";
 const body = "guide/within/body";
 const glow = "guide/within/glow";
 
-declare module "@adobe/data-ecs/components" {
-    interface Types {
+declare module "@adobe/data-ecs" {
+    interface Components {
         [body]: { type: number };
         [glow]: { type: number; within: typeof body };
     }
-}
-declare module "@adobe/data-ecs/systems" {
-    interface Types {
+    interface Systems {
         "guide/within/spawn": true;
         "guide/within/strip": true;
     }

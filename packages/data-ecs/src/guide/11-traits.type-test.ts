@@ -3,11 +3,11 @@ import { Component, Entity, Trait, type System } from "../index.js";
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };
 
-// A trait is a member of `Trait.Types<N>`: the value it allows on component `N`, or `never` where it doesn't apply.
-// Its type comes from augmenting "@adobe/data-ecs/traits"; it claims the name with `Trait.register`.
+// A trait is a member of `Traits<N>`: the value it allows on component `N`, or `never` where it doesn't apply.
+// It is declared by augmenting `Traits`, and claims the name with `Trait.register`.
 export const instanced = "guide/traits/instanced";
-declare module "@adobe/data-ecs/traits" {
-    interface Types<N> {
+declare module "@adobe/data-ecs" {
+    interface Traits<N> {
         readonly [instanced]: N extends Component.Name ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never;
     }
 }
@@ -20,8 +20,8 @@ const meshReady = "guide/traits/meshReady";
 const parent = "guide/traits/parent";
 
 // Each component's record lists all its traits, `type` among them.
-declare module "@adobe/data-ecs/components" {
-    interface Types {
+declare module "@adobe/data-ecs" {
+    interface Components {
         [transform]: { type: readonly [number, number, number]; [instanced]: true };
         [label]: { type: string };
         [meshSlot]: { type: number; derived: true };

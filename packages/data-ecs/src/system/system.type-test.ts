@@ -8,8 +8,8 @@ const player = Symbol('systemTest/player');
 const time = 'systemTest/time';
 const score = 'systemTest/score';
 
-declare module '../component/types.js' {
-    export interface Types {
+declare module '@adobe/data-ecs' {
+    export interface Components {
         [position]: { type: number };
         [velocity]: { type: number };
         [target]: { type: Entity };
@@ -18,16 +18,14 @@ declare module '../component/types.js' {
 }
 const flagged = 'systemTest/flagged';
 const bounds = 'systemTest/bounds';
-declare module '../resource/types.js' {
-    export interface Types {
+declare module '@adobe/data-ecs' {
+    export interface Resources {
         [time]: { type: number };
         [score]: { type: number };
         [flagged]: { type: boolean };
         [bounds]: { type: readonly [number, number, number] };
     }
-}
-declare module './types.js' {
-    export interface Types {
+    export interface Systems {
         "test/draw": true;
         "test/integrate": true;
         "test/follow": true;
@@ -141,8 +139,8 @@ void [noArguments, moveArguments, compositeArguments];
 const label = 'systemTest/label';
 const path = 'systemTest/path';
 const vector = 'systemTest/vector';
-declare module '../component/types.js' {
-    export interface Types {
+declare module '@adobe/data-ecs' {
+    export interface Components {
         [label]: { type: string };
         [path]: { type: readonly number[] };
         [vector]: { type: readonly [number, number, number] };

@@ -5,24 +5,18 @@ const name = "guide/changes/name";
 const score = "guide/changes/score";
 const journal = "guide/changes/journal";
 
-declare module "@adobe/data-ecs/components" {
-    interface Types {
+declare module "@adobe/data-ecs" {
+    interface Components {
         [name]: { type: string };
         [score]: { type: number };
     }
-}
-declare module "@adobe/data-ecs/resources" {
-    interface Types {
+    interface Resources {
         [journal]: { type: readonly string[] };
     }
-}
-declare module "@adobe/data-ecs/finalizers" {
-    interface Types {
+    interface Finalizers {
         "guide/changes/save": true;
     }
-}
-declare module "@adobe/data-ecs/systems" {
-    interface Types {
+    interface Systems {
         "guide/changes/spawn": true;
         "guide/changes/retire": true;
     }

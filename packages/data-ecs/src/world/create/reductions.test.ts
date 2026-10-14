@@ -19,15 +19,13 @@ const level = "reductionsTest/level";
 const reads = "reductionsTest/reads";
 const wrapped = "reductionsTest/wrapped";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [position]: { type: Vec3 };
         [mass]: { type: number };
         [heavy]: { type: true };
     }
-}
-declare module "../../resource/types.js" {
-    export interface Types {
+    export interface Resources {
         [total]: { type: number };
         [low]: { type: Vec3 };
         [bits]: { type: number };
@@ -37,9 +35,7 @@ declare module "../../resource/types.js" {
         [reads]: { type: number };
         [wrapped]: { type: number };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "reductionsTest/spawn": true;
         "reductionsTest/kernel": true;
         "reductionsTest/body": true;

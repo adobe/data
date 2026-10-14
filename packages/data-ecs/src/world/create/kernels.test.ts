@@ -11,19 +11,15 @@ const value = "kernelsTest/value";
 const other = "kernelsTest/other";
 const scale = "kernelsTest/scale";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [value]: { type: number };
         [other]: { type: number };
     }
-}
-declare module "../../resource/types.js" {
-    export interface Types {
+    export interface Resources {
         [scale]: { type: number };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "kernelsTest/read": true;
     }
 }

@@ -1,3 +1,3 @@
-import type { Types } from './types.js';
+import type { Systems } from './types.js';
 
-export type Name = keyof Types & string;
+export type Name = keyof Systems & string;

@@ -15,8 +15,8 @@ const velocityZ = "flat/velocityZ";
 export const visible = "flat/visible";
 export const enabled = "flat/enabled";
 
-declare module "../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [color]: { type: number };
         [mass]: { type: number };
         [positionX]: { type: number };
@@ -28,9 +28,7 @@ declare module "../component/types.js" {
         [visible]: { type: true };
         [enabled]: { type: true };
     }
-}
-declare module "../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "flat/spawn": true;
         "flat/dynamic": true;
     }

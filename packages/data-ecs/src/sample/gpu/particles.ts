@@ -13,8 +13,8 @@ export const mass = "gpuParticles/mass";
 export const visible = "gpuParticles/visible";
 export const enabled = "gpuParticles/enabled";
 
-declare module '../../component/types.js' {
-    export interface Types {
+declare module '@adobe/data-ecs' {
+    export interface Components {
         [position]: { type: Vec3 };
         [velocity]: { type: Vec3 };
         [color]: { type: number };
@@ -22,9 +22,7 @@ declare module '../../component/types.js' {
         [visible]: { type: true };
         [enabled]: { type: true };
     }
-}
-declare module '../../system/types.js' {
-    export interface Types {
+    export interface Systems {
         "gpuParticles/spawn": true;
         "gpuParticles/move": true;
         "gpuParticles/moveOnCpu": true;

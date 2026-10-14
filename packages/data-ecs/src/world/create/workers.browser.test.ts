@@ -19,8 +19,8 @@ const label = "workersTest/label";
 const tags = ["workersTest/tag-a", "workersTest/tag-b", "workersTest/tag-c", "workersTest/tag-d", "workersTest/tag-e", "workersTest/tag-f", "workersTest/tag-g", "workersTest/tag-h", "workersTest/tag-i"] as const;
 const seconds = "workersTest/seconds";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [position]: { type: Vec2 };
         [velocity]: { type: Vec2 };
         [target]: { type: Entity };
@@ -37,14 +37,10 @@ declare module "../../component/types.js" {
         "workersTest/tag-h": { type: true };
         "workersTest/tag-i": { type: true };
     }
-}
-declare module "../../resource/types.js" {
-    export interface Types {
+    export interface Resources {
         [seconds]: { type: number };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "workersTest/seed": true;
         "workersTest/integrate": true;
         "workersTest/split": true;

@@ -2,8 +2,8 @@ import { Component } from '../component/component.js';
 
 export const shared = 'shared';
 
-declare module '../component/types.js' {
-    export interface Types {
+declare module '@adobe/data-ecs' {
+    export interface Components {
         [shared]: { type: true };
     }
 }

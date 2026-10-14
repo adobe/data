@@ -16,23 +16,19 @@ const spawnCount = "createTest/spawnCount";
 const seen = "createTest/seen";
 const marker = Symbol("createTest/marker");
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [position]: { type: Vec2 };
         [velocity]: { type: number };
         [label]: { type: string };
         [frozen]: { type: true };
         [marker]: { type: number };
     }
-}
-declare module "../../resource/types.js" {
-    export interface Types {
+    export interface Resources {
         [spawnCount]: { type: number };
         [seen]: { type: number };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "createTest/spawn": true;
         "createTest/move": true;
         "createTest/watch": true;

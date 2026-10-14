@@ -17,8 +17,8 @@ export const index = "suite/index";
 export const tag = "suite/tag";
 export const hits = "suite/hits";
 
-declare module "../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [position]: { type: Vec3 };
         [velocity]: { type: Vec3 };
         [target]: { type: Entity };
@@ -26,9 +26,7 @@ declare module "../component/types.js" {
         [tag]: { type: true };
         [hits]: { type: number };
     }
-}
-declare module "../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "suite/seed": true;
         "suite/churn": true;
         "suite/retag": true;
@@ -52,8 +50,8 @@ declare module "../system/types.js" {
 
 export const indexSum = "suite/indexSum";
 export const highest = "suite/highest";
-declare module "../resource/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Resources {
         [indexSum]: { type: number };
         [highest]: { type: number };
     }

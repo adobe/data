@@ -5,15 +5,13 @@ const position = "renderTest/position";
 const color = "renderTest/color";
 const visible = "renderTest/visible";
 
-declare module "../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [position]: { type: readonly [number, number] };
         [color]: { type: number };
         [visible]: { type: true };
     }
-}
-declare module "./types.js" {
-    export interface Types {
+    export interface Systems {
         "renderTest/draw": true;
     }
 }

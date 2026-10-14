@@ -7,15 +7,13 @@ const value = "observedTest/value";
 const seen = "observedTest/seen";
 const flag = "observedTest/flag";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [value]: { type: number };
         [seen]: { type: number };
         [flag]: { type: true };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "observedTest/seed": true;
         "observedTest/bump": true;
         "observedTest/watch": true;

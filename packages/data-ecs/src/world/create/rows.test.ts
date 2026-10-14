@@ -12,16 +12,14 @@ const count = "rowsTest/count";
 const flag = "rowsTest/flag";
 const tag = "rowsTest/tag";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [position]: { type: Vec3 };
         [count]: { type: number };
         [flag]: { type: boolean };
         [tag]: { type: true };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "rowsTest/seed": true;
         "rowsTest/first": true;
         "rowsTest/other": true;

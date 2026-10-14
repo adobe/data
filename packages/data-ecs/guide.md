@@ -38,21 +38,15 @@ export default defineConfig({ plugins: [kernelPlugin()] });
 [`vite.sample.config.ts`](vite.sample.config.ts) serves the samples with the plugin and the isolation headers from
 [`vitest.plugins.ts`](vitest.plugins.ts#L8-L19).
 
-Types are declared by augmenting interfaces. An application augments the package's type modules:
-
-| Declares | Augment |
-|---|---|
-| components | `@adobe/data-ecs/components` |
-| resources | `@adobe/data-ecs/resources` |
-| system, rule and finalizer names | `@adobe/data-ecs/systems`, `rules`, `finalizers` |
-| traits | `@adobe/data-ecs/traits` |
-
-The examples augment the same paths, which `tsconfig.json` maps to the package source.
+Types are declared by augmenting interfaces of `@adobe/data-ecs`: `Components` and `Resources` by key, `Systems`,
+`Rules` and `Finalizers` by name, and `Traits<N>`. Every declaration goes through `@adobe/data-ecs`; augmenting the
+module that defines an interface by its relative path splits the interface in two. The examples use the same path,
+which `tsconfig.json` maps to the package source.
 
 ## 2. Components and resources
 
 A component or resource is an exported key, a string or a symbol, namespaced like `"game/position"`. Its traits,
-`type` first, come from augmenting `Types`; registering it gives the schema for that type. A resource always has a
+`type` first, come from augmenting `Components` or `Resources`; registering it gives the schema for that type. A resource always has a
 value, so its schema has a `default`.
 
 ```ts
@@ -60,14 +54,12 @@ export const position = "guide/components/position";
 export const enemy = "guide/components/enemy";
 export const gravity = "guide/components/gravity";
 
-declare module "@adobe/data-ecs/components" {
-    interface Types {
+declare module "@adobe/data-ecs" {
+    interface Components {
         [position]: { type: Vec3 };
         [enemy]: { type: true };
     }
-}
-declare module "@adobe/data-ecs/resources" {
-    interface Types {
+    interface Resources {
         [gravity]: { type: number };
     }
 }
@@ -85,7 +77,7 @@ const [first] = world.query.select([position, enemy]);
 expect(world.read.component(first, position)).toEqual([0, 10, 0]);
 ```
 
-Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L4-L42).
+Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L4-L38).
 
 - **Registration must match the declaration**, trait for trait, with `type` a schema for the declared type. Otherwise it doesn't compile.
 - **`World.create({ systems })` resolves once its systems are registered.** `await using` disposes the world.
@@ -110,7 +102,7 @@ const move = System.create({
 
 A system without a query runs once per run, with resources only.
 
-Example: [`02-systems.test.ts`](src/guide/02-systems.test.ts#L42-L64).
+Example: [`02-systems.test.ts`](src/guide/02-systems.test.ts#L38-L60).
 
 - **Declarations list exactly what bodies use.** A key the body never uses is a build error, as is one it uses without listing it.
 - **Rejected:** reads of undeclared components (types), unused declared ones (build), a write to a component a system only reads (types).
@@ -127,7 +119,7 @@ const heal = System.create({ name: "guide/scheduling/heal", query: { read: [heal
 const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal, hit] });
 ```
 
-Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L27-L50).
+Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L25-L48).
 
 - **Rejected:** two members that both write a component or resource, or where one reads what the other writes, with no ordering path between them, at registration.
 
@@ -146,7 +138,7 @@ const show = System.create({ name: "guide/filters/show", query: { read: [score],
 });
 ```
 
-Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L34-L58).
+Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L30-L54).
 
 - **`changed` is conservative:** it means "may have changed".
 
@@ -166,7 +158,7 @@ const follow = System.create({
 });
 ```
 
-Example: [`05-lookups.test.ts`](src/guide/05-lookups.test.ts#L26-L48).
+Example: [`05-lookups.test.ts`](src/guide/05-lookups.test.ts#L24-L46).
 
 - **Rejected:** a lookup reading a component its own system writes, at registration.
 
@@ -185,7 +177,7 @@ const place = System.create({
 await world.run(place, { x: 3, count: 2 });
 ```
 
-Example: [`06-arguments.test.ts`](src/guide/06-arguments.test.ts#L19-L32).
+Example: [`06-arguments.test.ts`](src/guide/06-arguments.test.ts#L17-L30).
 
 - **Not yet:** a system with arguments can't use `added` or `changed`, or be a member of a composite.
 
@@ -203,7 +195,7 @@ const spawn = System.create({ name: "guide/sync/spawn" }, (_, __, commands) => {
 });
 ```
 
-Example: [`07-sync-points.test.ts`](src/guide/07-sync-points.test.ts#L32-L62).
+Example: [`07-sync-points.test.ts`](src/guide/07-sync-points.test.ts#L28-L58).
 
 - **`spawn` returns a real entity at once,** which can be stored, including in the spawner's own row.
 - **Commands against dead entities do nothing.**
@@ -231,7 +223,7 @@ const chase = System.create({
 });
 ```
 
-Example: [`08-kernels.test.ts`](src/guide/08-kernels.test.ts#L36-L66), with the inlined helper in
+Example: [`08-kernels.test.ts`](src/guide/08-kernels.test.ts#L34-L64), with the inlined helper in
 [`08-steer.ts`](src/guide/08-steer.ts).
 
 - **The subset** a kernel body may use is in [`src/compiler/subset.md`](src/compiler/subset.md). The build rejects anything else, with a message at the code.
@@ -258,7 +250,7 @@ const measure = System.create({
 });
 ```
 
-Example: [`09-reductions.test.ts`](src/guide/09-reductions.test.ts#L37-L56).
+Example: [`09-reductions.test.ts`](src/guide/09-reductions.test.ts#L33-L52).
 
 - **Rejected:** a reduced resource that the system also reads, writes or filters on, at registration and in types; a query with change filters; two systems reducing one resource.
 - **Not yet:** reductions in GPU kernels.
@@ -276,11 +268,11 @@ const move = System.create({ name: "guide/gpu/move", kernel: "gpu", query: { rea
 const world = await World.create({ gpu: { device }, systems: [spawn, move] });
 ```
 
-Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L28-L46).
+Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L26-L44).
 
 A render system records GPU work over the GPU copy of the components its accessors name. `Gpu.wgsl(system)` gives
 its shaders' declarations, a function per accessor, and pipelines take `world.gpu.layout`. See the particle sample's
-[declaration](src/sample/gpu/particles.ts#L109-L114) and [draw](src/sample/gpu/particles.ts#L120-L148), wired up in
+[declaration](src/sample/gpu/particles.ts#L107-L112) and [draw](src/sample/gpu/particles.ts#L118-L146), wired up in
 [`main.ts`](src/sample/gpu/main.ts#L58-L63).
 
 - **Not yet:** lookups, change filters, commands, loops and reductions in GPU kernels.
@@ -298,12 +290,12 @@ at registration:
   target, and the entity that has the component is its holder. When the target despawns, `"owner"` despawns the
   holder too, and `"weak"` removes the component from the holder. See [Entity references](#15-entity-references).
 
-A trait is a member of `Trait.Types<N>`, so other packages define traits the same way: the member is the value the
+A trait is a member of `Traits<N>`, so other packages define traits the same way: the member is the value the
 trait allows on component `N`, or `never` where it doesn't apply. Types then filter components by trait.
 
 ```ts
-declare module "@adobe/data-ecs/traits" {
-    interface Types<N> {
+declare module "@adobe/data-ecs" {
+    interface Traits<N> {
         readonly [instanced]: N extends Component.Name ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never;
     }
 }
@@ -330,7 +322,7 @@ const sprites = Rule.create({ name: "guide/rules/sprites", query: { has: [sprite
 const layers = Rule.create({ name: "guide/rules/layers", query: { has: [drawn] }, derives: [layer] });
 ```
 
-Example: [`12-rules.test.ts`](src/guide/12-rules.test.ts#L36-L64).
+Example: [`12-rules.test.ts`](src/guide/12-rules.test.ts#L32-L60).
 
 - **The result depends only on which components an entity has,** so it's computed once per archetype, and a change is still a single move.
 - **A rule registered after entities exist** applies at the next sync point.
@@ -345,7 +337,7 @@ despawn or another `within`. One added without its host is dropped.
 Component.register(glow, { type: { type: "number" }, within: body });
 ```
 
-Example: [`13-within.test.ts`](src/guide/13-within.test.ts#L20-L39).
+Example: [`13-within.test.ts`](src/guide/13-within.test.ts#L18-L37).
 
 - **Removing a host and adding it back** in the same sync point still ends its dependents. A derived host that a rule keeps never leaves.
 - **Rejected:** components within each other in a cycle, at registration.
@@ -361,7 +353,7 @@ Component.register(parent, { type: Entity.schema, reference: "owner" });
 Component.register(watching, { type: Entity.schema, reference: "weak" });
 ```
 
-Example: [`14-references.test.ts`](src/guide/14-references.test.ts#L22-L43).
+Example: [`14-references.test.ts`](src/guide/14-references.test.ts#L20-L41).
 
 - **Only the value a holder ends up with counts:** a reference pointed elsewhere in the same sync point stays.
 - **References change only through commands**, which keeps the index from targets to holders exact. `Component.Writable` leaves them out of `query.write`.
@@ -383,7 +375,7 @@ const release = Finalizer.create({ name: "guide/finalizers/release", query: { re
 });
 ```
 
-Example: [`15-finalizers.test.ts`](src/guide/15-finalizers.test.ts#L31-L69).
+Example: [`15-finalizers.test.ts`](src/guide/15-finalizers.test.ts#L27-L65).
 
 - **A stop:** a despawn, the loss of a required component by any cause, a required component removed and added again, or an excluded one added.
 - **Rows are read-only.** Lookups see the state before the sync point applies, and resource writes take its tick.
@@ -403,7 +395,7 @@ const save = Finalizer.changes({ name: "guide/changes/save", components: [name, 
 });
 ```
 
-Example: [`16-changes.test.ts`](src/guide/16-changes.test.ts#L35-L51).
+Example: [`16-changes.test.ts`](src/guide/16-changes.test.ts#L29-L45).
 
 - **A group** has `from` and `to` (null for spawned and despawned entities), `added`, `removed`, `replaced` and `entities`.
 - **Rejected:** watching a derived component, at registration and in types.
@@ -428,7 +420,7 @@ const apply = System.create({
 });
 ```
 
-Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L69-L116).
+Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L61-L108).
 
 - **Shared assets:** many entities using one file are counted by the loader. The ECS gives each user exactly one acquire (`added`) and one release (a finalizer).
 

@@ -4,14 +4,12 @@ import { Component, System, World } from "../index.js";
 const health = "guide/scheduling/health";
 const damage = "guide/scheduling/damage";
 
-declare module "@adobe/data-ecs/components" {
-    interface Types {
+declare module "@adobe/data-ecs" {
+    interface Components {
         [health]: { type: number };
         [damage]: { type: number };
     }
-}
-declare module "@adobe/data-ecs/systems" {
-    interface Types {
+    interface Systems {
         "guide/scheduling/spawn": true;
         "guide/scheduling/hit": true;
         "guide/scheduling/heal": true;

@@ -9,16 +9,14 @@ const slot = "traitsTest/slot";
 const ready = "traitsTest/ready";
 const parent = "traitsTest/parent";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [score]: { type: number };
         [slot]: { type: number; derived: true };
         [ready]: { type: true; within: typeof slot };
         [parent]: { type: Entity; reference: "owner" };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "traitsTest/spawn": true;
         "traitsTest/derived": true;
         "traitsTest/lookup": true;

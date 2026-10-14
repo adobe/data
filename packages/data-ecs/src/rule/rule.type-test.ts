@@ -14,33 +14,25 @@ const slot = "ruleTypeTest/slot";
 const parent = "ruleTypeTest/parent";
 const time = "ruleTypeTest/time";
 
-declare module '../component/types.js' {
-    export interface Types {
+declare module '@adobe/data-ecs' {
+    export interface Components {
         [source]: { type: number };
         [hidden]: { type: true };
         [slot]: { type: number; derived: true };
         [parent]: { type: Entity; reference: "owner" };
     }
-}
-declare module '../resource/types.js' {
-    export interface Types {
+    export interface Resources {
         [time]: { type: number };
     }
-}
-declare module './types.js' {
-    export interface Types {
+    export interface Rules {
         "ruleTypeTest/slots": true;
     }
-}
-declare module '../finalizer/types.js' {
-    export interface Types {
+    export interface Finalizers {
         "ruleTypeTest/release": true;
         "ruleTypeTest/save": true;
         "ruleTypeTest/other": true;
     }
-}
-declare module '../system/types.js' {
-    export interface Types {
+    export interface Systems {
         "ruleTypeTest/move": true;
     }
 }

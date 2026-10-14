@@ -6,20 +6,16 @@ const shown = "guide/filters/shown";
 const level = "guide/filters/level";
 const enemy = "guide/filters/enemy";
 
-declare module "@adobe/data-ecs/components" {
-    interface Types {
+declare module "@adobe/data-ecs" {
+    interface Components {
         [score]: { type: number };
         [shown]: { type: number };
         [enemy]: { type: true };
     }
-}
-declare module "@adobe/data-ecs/resources" {
-    interface Types {
+    interface Resources {
         [level]: { type: number };
     }
-}
-declare module "@adobe/data-ecs/systems" {
-    interface Types {
+    interface Systems {
         "guide/filters/load": true;
         "guide/filters/show": true;
         "guide/filters/bump": true;

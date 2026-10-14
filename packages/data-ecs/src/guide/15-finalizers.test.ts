@@ -5,20 +5,16 @@ const position = "guide/finalizers/position";
 const handle = "guide/finalizers/handle";
 const debris = "guide/finalizers/debris";
 
-declare module "@adobe/data-ecs/components" {
-    interface Types {
+declare module "@adobe/data-ecs" {
+    interface Components {
         [position]: { type: Vec3 };
         [handle]: { type: number };
         [debris]: { type: true };
     }
-}
-declare module "@adobe/data-ecs/finalizers" {
-    interface Types {
+    interface Finalizers {
         "guide/finalizers/release": true;
     }
-}
-declare module "@adobe/data-ecs/systems" {
-    interface Types {
+    interface Systems {
         "guide/finalizers/spawn": true;
         "guide/finalizers/destroy": true;
     }

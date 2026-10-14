@@ -11,16 +11,14 @@ const position = "batchesTest/position";
 const score = "batchesTest/score";
 const name = "batchesTest/name";
 const tag = "batchesTest/tag";
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [position]: { type: Vec3 };
         [score]: { type: number };
         [name]: { type: string };
         [tag]: { type: true };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "batchesTest/spawn": true;
         "batchesTest/early": true;
         "batchesTest/late": true;

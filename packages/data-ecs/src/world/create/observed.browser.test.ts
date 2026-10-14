@@ -6,14 +6,12 @@ import { createWorld } from "./create.js";
 const value = "observedWorkersTest/value";
 const seen = "observedWorkersTest/seen";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [value]: { type: number };
         [seen]: { type: number };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "observedWorkersTest/seed": true;
         "observedWorkersTest/bump": true;
         "observedWorkersTest/watch": true;

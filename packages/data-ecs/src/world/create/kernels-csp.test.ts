@@ -5,13 +5,11 @@ import { createWorld } from "./create.js";
 
 const value = "kernelsCspTest/value";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [value]: { type: number };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "kernelsCspTest/seed": true;
         "kernelsCspTest/double": true;
     }

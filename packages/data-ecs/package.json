@@ -35,24 +35,6 @@
     "./compiler": {
       "import": "./dist/compiler/index.js",
       "types": "./dist/compiler/index.d.ts"
-    },
-    "./components": {
-      "types": "./dist/component/types.d.ts"
-    },
-    "./resources": {
-      "types": "./dist/resource/types.d.ts"
-    },
-    "./systems": {
-      "types": "./dist/system/types.d.ts"
-    },
-    "./rules": {
-      "types": "./dist/rule/types.d.ts"
-    },
-    "./finalizers": {
-      "types": "./dist/finalizer/types.d.ts"
-    },
-    "./traits": {
-      "types": "./dist/trait/types.d.ts"
     }
   }
 }

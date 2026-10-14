@@ -44,8 +44,8 @@ const qo = "intrinsicsTest/qo";
 const ua = "intrinsicsTest/ua";
 const uo = "intrinsicsTest/uo";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [f2a]: { type: Vec2 };
         [f2b]: { type: Vec2 };
         [f2p]: { type: Vec2 };
@@ -86,9 +86,7 @@ declare module "../../component/types.js" {
         [ua]: { type: U32 };
         [uo]: { type: U32 };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "intrinsicsTest/spawn": true;
         "intrinsicsTest/vec2f": true;
         "intrinsicsTest/vec2fScalar": true;

@@ -1,3 +1,3 @@
 /** Registry of rule names, augmented by each rule's module: `{ "render/meshSlots": true }`. */
-export interface Types {
+export interface Rules {
 }

@@ -20,8 +20,8 @@ const bits = "gpuTest/bits";
 const sums = "gpuTest/sums";
 const ownedBy = "gpuTest/ownedBy";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [position]: { type: Vec3 };
         [velocity]: { type: Vec3 };
         [score]: { type: number };
@@ -34,9 +34,7 @@ declare module "../../component/types.js" {
         [sums]: { type: Vec3.I32 };
         [ownedBy]: { type: Entity; reference: "owner" };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "gpuTest/spawn": true;
         "gpuTest/move": true;
         "gpuTest/moveAgain": true;

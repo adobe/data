@@ -6,8 +6,8 @@ const testTime = 'resourceSchemasTest/time';
 const testShared = 'shared';
 const testSymbol = Symbol('resourceSchemasTest/symbol');
 
-declare module './types.js' {
-    export interface Types {
+declare module '@adobe/data-ecs' {
+    export interface Resources {
         [testTime]: { type: number };
         [testShared]: { type: true };
         [testSymbol]: { type: boolean };

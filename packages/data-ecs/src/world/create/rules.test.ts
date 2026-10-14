@@ -20,8 +20,8 @@ const mark = "rulesTest/mark";
 const left = "rulesTest/left";
 const right = "rulesTest/right";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [source]: { type: number };
         [hidden]: { type: true };
         [sprite]: { type: true };
@@ -35,17 +35,13 @@ declare module "../../component/types.js" {
         [left]: { type: true; within: typeof right };
         [right]: { type: true; within: typeof left };
     }
-}
-declare module "../../rule/types.js" {
-    export interface Types {
+    export interface Rules {
         "rulesTest/slots": true;
         "rulesTest/visible": true;
         "rulesTest/sprites": true;
         "rulesTest/bad": true;
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "rulesTest/edit": true;
         "rulesTest/spawn": true;
         "rulesTest/write": true;

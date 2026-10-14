@@ -1,3 +1,3 @@
-import type { Types } from './types.js';
+import type { Traits } from './types.js';
 
-export type Name = keyof Types<never>;
+export type Name = keyof Traits<never>;

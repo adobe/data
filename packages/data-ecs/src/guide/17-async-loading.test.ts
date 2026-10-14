@@ -10,8 +10,8 @@ const requests = "guide/loading/requests";
 
 type Request = { readonly entity: Entity; readonly token: number; readonly path: string };
 
-declare module "@adobe/data-ecs/components" {
-    interface Types {
+declare module "@adobe/data-ecs" {
+    interface Components {
         [meshSource]: { type: string };
         [hidden]: { type: true };
         /** The token of the slot's load; a new one each time the slot starts over. */
@@ -19,25 +19,17 @@ declare module "@adobe/data-ecs/components" {
         /** The loaded mesh's handle, which exists only while its slot does. */
         [meshReady]: { type: number; within: typeof meshSlot };
     }
-}
-declare module "@adobe/data-ecs/resources" {
-    interface Types {
+    interface Resources {
         [nextToken]: { type: number };
         [requests]: { type: readonly Request[] };
     }
-}
-declare module "@adobe/data-ecs/rules" {
-    interface Types {
+    interface Rules {
         "guide/loading/slots": true;
     }
-}
-declare module "@adobe/data-ecs/finalizers" {
-    interface Types {
+    interface Finalizers {
         "guide/loading/release": true;
     }
-}
-declare module "@adobe/data-ecs/systems" {
-    interface Types {
+    interface Systems {
         "guide/loading/spawn": true;
         "guide/loading/request": true;
         "guide/loading/apply": true;

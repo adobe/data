@@ -11,16 +11,14 @@ const position = "semanticsTest/position";
 const target = "semanticsTest/target";
 const score = "semanticsTest/score";
 const tag = "semanticsTest/tag";
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [position]: { type: Vec2 };
         [target]: { type: Entity };
         [score]: { type: number };
         [tag]: { type: true };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "semanticsTest/seed": true;
         "semanticsTest/chase": true;
         "semanticsTest/retag": true;

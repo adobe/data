@@ -10,16 +10,14 @@ const loose = "componentRegisterTest/loose";
 const marked = "componentRegisterTest/marked";
 const mark = "componentRegisterTest/mark";
 
-declare module "./types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [parent]: { type: Entity; reference: "owner" };
         [count]: { type: number };
         [loose]: { type: number };
         [marked]: { type: true; [mark]: true };
     }
-}
-declare module "../trait/types.js" {
-    export interface Types<N> {
+    export interface Traits<N> {
         readonly [mark]: true;
     }
 }

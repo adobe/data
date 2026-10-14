@@ -8,23 +8,8 @@
       "@webgpu/types"
     ],
     "paths": {
-      "@adobe/data-ecs/components": [
-        "./src/component/types.ts"
-      ],
-      "@adobe/data-ecs/resources": [
-        "./src/resource/types.ts"
-      ],
-      "@adobe/data-ecs/systems": [
-        "./src/system/types.ts"
-      ],
-      "@adobe/data-ecs/rules": [
-        "./src/rule/types.ts"
-      ],
-      "@adobe/data-ecs/finalizers": [
-        "./src/finalizer/types.ts"
-      ],
-      "@adobe/data-ecs/traits": [
-        "./src/trait/types.ts"
+      "@adobe/data-ecs": [
+        "./src/index.ts"
       ]
     }
   },

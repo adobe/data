@@ -10,17 +10,15 @@ const position = "dispatchTest/position";
 const velocity = "dispatchTest/velocity";
 const offset = "dispatchTest/offset";
 const tags = ["dispatchTest/a", "dispatchTest/b", "dispatchTest/c", "dispatchTest/d", "dispatchTest/e", "dispatchTest/f", "dispatchTest/g"] as const;
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [position]: { type: Vec2 };
         [velocity]: { type: Vec2 };
         [offset]: { type: number };
         "dispatchTest/a": { type: true }; "dispatchTest/b": { type: true }; "dispatchTest/c": { type: true }; "dispatchTest/d": { type: true };
         "dispatchTest/e": { type: true }; "dispatchTest/f": { type: true }; "dispatchTest/g": { type: true };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "dispatchTest/scatter": true; "dispatchTest/seed": true; "dispatchTest/fastA": true; "dispatchTest/slowB": true; "dispatchTest/fastC": true; "dispatchTest/tier": true;
     }
 }

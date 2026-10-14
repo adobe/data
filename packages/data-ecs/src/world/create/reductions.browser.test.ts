@@ -10,21 +10,17 @@ const count = "reductionsBrowserTest/count";
 const sum = "reductionsBrowserTest/sum";
 const largest = "reductionsBrowserTest/largest";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [weight]: { type: number };
         [sized]: { type: true };
     }
-}
-declare module "../../resource/types.js" {
-    export interface Types {
+    export interface Resources {
         [count]: { type: number };
         [sum]: { type: number };
         [largest]: { type: number };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "reductionsBrowserTest/spawn": true;
         "reductionsBrowserTest/reduce": true;
     }

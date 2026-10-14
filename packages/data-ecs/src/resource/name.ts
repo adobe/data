@@ -1,3 +1,3 @@
-import { Types } from './types.js';
+import { Resources } from './types.js';
 
-export type Name = keyof Types;
+export type Name = keyof Resources;

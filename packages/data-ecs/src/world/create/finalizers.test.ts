@@ -17,8 +17,8 @@ const released = "finalizersTest/released";
 const late = "finalizersTest/late";
 const level = "finalizersTest/level";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [handle]: { type: number };
         [hidden]: { type: true };
         [source]: { type: number };
@@ -27,20 +27,14 @@ declare module "../../component/types.js" {
         [label]: { type: string };
         [late]: { type: number };
     }
-}
-declare module "../../resource/types.js" {
-    export interface Types {
+    export interface Resources {
         [released]: { type: number };
         [level]: { type: number };
     }
-}
-declare module "../../rule/types.js" {
-    export interface Types {
+    export interface Rules {
         "finalizersTest/slots": true;
     }
-}
-declare module "../../finalizer/types.js" {
-    export interface Types {
+    export interface Finalizers {
         "finalizersTest/release": true;
         "finalizersTest/slotReleased": true;
         "finalizersTest/count": true;
@@ -52,9 +46,7 @@ declare module "../../finalizer/types.js" {
         "finalizersTest/everything": true;
         "finalizersTest/pending": true;
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "finalizersTest/edit": true;
         "finalizersTest/reads": true;
     }

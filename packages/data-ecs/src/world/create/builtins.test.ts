@@ -10,17 +10,15 @@ const bits = "builtinsTest/bits";
 const counts = "builtinsTest/counts";
 const sums = "builtinsTest/sums";
 
-declare module "../../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [position]: { type: Vec3 };
         [velocity]: { type: Vec3 };
         [bits]: { type: Vec3.U32 };
         [counts]: { type: Vec3.U32 };
         [sums]: { type: Vec3.I32 };
     }
-}
-declare module "../../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "builtinsTest/spawn": true;
         "builtinsTest/transform": true;
         "builtinsTest/spawnBits": true;

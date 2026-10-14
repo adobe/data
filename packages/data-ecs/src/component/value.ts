@@ -1,9 +1,9 @@
 import type { Name as TraitName } from "../trait/name.js";
 import type { Name } from "./name.js";
-import type { Types } from "./types.js";
+import type { Components } from "./types.js";
 
 /** Every component's value type, computed once so `Value` is a lookup. */
-type ValueTypes = { readonly [K in Name]: Types[K] extends { readonly type: infer T } ? T : never };
+type ValueTypes = { readonly [K in Name]: Components[K] extends { readonly type: infer T } ? T : never };
 
 /** The value type of component `K`. */
 export type Value<K extends Name> = ValueTypes[K];
@@ -14,7 +14,7 @@ type Primitive = string | number | boolean | bigint | symbol | null | undefined;
 export type ReadonlyValue<K extends Name> = Value<K> extends Primitive ? Value<K> : Readonly<Value<K>>;
 
 /** Components that declare trait `T`, with a value assignable to `V`. */
-export type With<T extends TraitName, V = unknown> = { [K in Name]: Types[K] extends { readonly [P in T]: V } ? K : never }[Name];
+export type With<T extends TraitName, V = unknown> = { [K in Name]: Components[K] extends { readonly [P in T]: V } ? K : never }[Name];
 
 /** Components whose value type is assignable to `V`, as `Where<Entity>` for entity references. */
 export type Where<V> = { [K in Name]: [Value<K>] extends [V] ? K : never }[Name];

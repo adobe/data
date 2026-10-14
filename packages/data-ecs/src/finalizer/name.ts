@@ -1,3 +1,3 @@
-import type { Types } from './types.js';
+import type { Finalizers } from './types.js';
 
-export type Name = keyof Types & string;
+export type Name = keyof Finalizers & string;

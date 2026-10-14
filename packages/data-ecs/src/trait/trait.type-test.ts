@@ -3,6 +3,7 @@ import { Entity } from '../entity/entity.js';
 import { Resource } from '../resource/resource.js';
 import type { Commands } from '../system/commands.js';
 import type { IsLinear } from '../system/linear.js';
+import type { Components } from '../component/types.js';
 import { Trait } from './trait.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
@@ -11,10 +12,10 @@ const check = <_T extends true>() => { };
 // Traits other packages define: one only linear components take, one derived components don't need.
 const gpuOnly = "traitTest/gpuOnly";
 const nonPersistent = Symbol("traitTest/nonPersistent");
-declare module './types.js' {
-    export interface Types<N> {
+declare module '@adobe/data-ecs' {
+    export interface Traits<N> {
         readonly [gpuOnly]: N extends Component.Name ? (IsLinear<Component.Value<N>> extends true ? true : never) : never;
-        readonly [nonPersistent]: N extends Component.Name ? (Component.Types[N] extends { readonly derived: true } ? never : true) : true;
+        readonly [nonPersistent]: N extends Component.Name ? (Components[N] extends { readonly derived: true } ? never : true) : true;
     }
 }
 Trait.register(gpuOnly);
@@ -37,8 +38,8 @@ const derivedNonPersistent = "traitTest/derivedNonPersistent";
 const time = "traitTest/time";
 const derivedResource = "traitTest/derivedResource";
 
-declare module '../component/types.js' {
-    export interface Types {
+declare module '@adobe/data-ecs' {
+    export interface Components {
         [parent]: { type: Entity; reference: "owner" };
         [follows]: { type: Entity; reference: "weak" };
         [slot]: { type: number; derived: true };
@@ -54,9 +55,7 @@ declare module '../component/types.js' {
         [gpuString]: { type: string; [gpuOnly]: true };
         [derivedNonPersistent]: { type: number; derived: true; [nonPersistent]: true };
     }
-}
-declare module '../resource/types.js' {
-    export interface Types {
+    export interface Resources {
         [time]: { type: number };
         [derivedResource]: { type: number; derived: true };
     }

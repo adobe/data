@@ -15,8 +15,8 @@ const velocity = "perf/velocity";
 export const visible = "perf/visible";
 export const enabled = "perf/enabled";
 
-declare module "../component/types.js" {
-    export interface Types {
+declare module "@adobe/data-ecs" {
+    export interface Components {
         [color]: { type: number };
         [mass]: { type: number };
         [position]: { type: Vec3 };
@@ -24,9 +24,7 @@ declare module "../component/types.js" {
         [visible]: { type: true };
         [enabled]: { type: true };
     }
-}
-declare module "../system/types.js" {
-    export interface Types {
+    export interface Systems {
         "perf/spawn": true;
         "perf/move": true;
     }

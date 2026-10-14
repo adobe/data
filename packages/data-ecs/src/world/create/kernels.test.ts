@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import { Resource } from "../../resource/resource.js";
 import { System } from "../../system/system.js";
+import { World } from "../../world/world.js";
 import { attachKernel } from "./attach-kernel.js";
 import { bindKernel } from "./kernels.js";
 import type { KernelDescription } from "./kernel.js";
@@ -21,6 +22,9 @@ declare module "@adobe/data-ecs" {
     }
     export interface Systems {
         "kernelsTest/read": true;
+        "kernelsTest/spawn": true;
+        "kernelsTest/double": true;
+        "kernelsTest/doubleAgain": true;
     }
 }
 
@@ -31,6 +35,11 @@ Resource.register(scale, { type: { type: "number", default: 1 } });
 /** Reads `value` and `other`, writes nothing, reads no resources. */
 const system = System.create({ name: "kernelsTest/read", kernel: "cpu", components: { read: [value, other] } }, row => {
     if (row[value] > row[other]) return;
+});
+
+const spawn = System.create({ name: "kernelsTest/spawn" }, ({ commands }) => { commands.spawn({ [value]: 3, [other]: 0 }); });
+const double = System.create({ name: "kernelsTest/double", kernel: "cpu", components: { write: [value] } }, row => {
+    row[value] = row[value] * 2;
 });
 
 const describing = (overrides: Partial<KernelDescription>): KernelDescription =>
@@ -50,4 +59,13 @@ describe("bindKernel", () => {
     it("rejects a whole-value write of a component the system only reads", () => {
         expect(() => bind({ shapes: [{ component: value, leaves: [[]] }] })).toThrow("isn't in its components' write");
     });
+});
+
+it("runs a kernel copied by spreading it with a new declaration", async () => {
+    const doubleAgain: System = { ...double, declaration: { ...double.declaration, name: "kernelsTest/doubleAgain", after: ["kernelsTest/double"] } };
+    await using world = await World.create({ systems: [spawn, double, doubleAgain] });
+    await world.run(spawn);
+    await world.run(doubleAgain);
+    const [entity] = world.query.select([value]);
+    expect(world.read.component(entity, value)).toBe(6);
 });

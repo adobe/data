@@ -119,7 +119,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   - **`during` is a preference,** not a constraint: it pulls systems into the same tier where no ordering path separates them.
   - **Unordered conflicts throw at registration:** within a composite, two systems that both write a component or resource, or where one reads what the other writes, must have an ordering path between them. Contributors to one reduced resource don't conflict with each other, and every system that reads it is ordered after all of them.
   - **A lookup can't read a component its own system writes;** that also throws at registration. Rejecting it now means hierarchy propagation can later give it defined semantics without breaking anything.
-  - To reuse a main-thread system with different placement, spread the leaf with a new declaration, `{ ...move, declaration: { ...move.declaration, after: [...] } }`, which keeps its body. A kernel is compiled from its own `System.create`, so it can't be copied this way.
+  - To reuse a system with different placement, spread it with a new declaration, `{ ...move, declaration: { ...move.declaration, after: [...] } }`, which keeps its body; a kernel keeps its compiled form, which is attached to the body.
 - **World** (`src/world/`):
   - `World.create()` returns a world synchronously. `World.create({ systems })` is `create().systems.register(...systems)`, so it returns a `Promise`.
   - `systems.register(...systems): Promise<World>` resolves once worker kernels are loaded, so failures show up at registration and the first run doesn't stall.

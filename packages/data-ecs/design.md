@@ -193,8 +193,14 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 3. **GPU systems.** Pure value reads and writes into component tables, with no structural commands, so the GPU never needs command buffer communication. Still open:
    - **Latency.** Whether a system can declare that its writes become visible to CPU readers only at a later sync point, so readback overlaps the next frame.
    - **Device loss.** Components ahead on the GPU are lost with the device; decide whether a world can fall back to its last CPU copy.
-4. **The body's `context`.** It holds resources by key beside lookups and `args`; review that contract.
-5. **Reductions.** Revisit the purpose, the API and how they're explained: a resource is a single value, so what a reduction folds into it, and how, has to be clear from the declaration.
+4. **Bodies, decided:** every body is `(subject, context)`: `(row, context)` for systems and finalizers, `(context)` for a system without a query, `(changes, context)` for changes finalizers and `(gpu, context)` for render systems. The context holds only what the declaration declares, by kind, mirroring the declaration's keys: `resources` (values, assignable where written), `lookup` (functions by name), `reduce` (contribution functions by resource), `args` and `commands`. A key with nothing declared is absent from the type, and from the object at runtime. Implemented with the reduction changes, after the naming review.
+5. **Reductions, decided:**
+   - **The operator is a resource trait:** `[alertness]: { type: number; reduce: "max" }`, registered the same way. Booleans allow `&`, `|` and `^`; numbers, and tuples and structs of them, allow every operator.
+   - **A contributing system repeats it**, `resources: { reduce: { [alertness]: "max" } }`. The types require it to equal the resource's, and registration checks it again, so a change at the resource breaks every contributor. A resource without the trait can't be reduced.
+   - **Several systems may contribute** to one resource in a run. At the start of each run that includes a contributor, the resource is set to the operator's identity, leaf by leaf (0 for `+`, 1 for `*`, +∞ or the type's largest integer for `min`, and so on). After the last contributor it holds the fold of every contribution, and readers are ordered after every contributor. A run without a contributor leaves it as it is, and the `default`, or the value given at creation, is what it holds before the first contributing run.
+   - **Reduced resources are never written,** only reset by the world. A contributor can't read the resource; other systems read the finished fold.
+   - **Change filters are allowed on contributors,** so a run folds only the rows that pass, as "did anything move" needs.
+   - **The body contributes with `reduce[alertness](value)`.**
 6. **Rules and finalizers: per world or program-wide.** Whether they're registered on a world, or like components apply to every world.
 7. **Names across systems, rules and finalizers.** Review the declaration keys (`query`, `resources`, `lookup`, `components`, `derives`, …) together so they're consistent; for example whether `query` becomes `components`, beside `resources`.
 

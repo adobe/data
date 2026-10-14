@@ -42,10 +42,10 @@ Types are declared by augmenting interfaces. An application augments the package
 
 | Declares | Augment |
 |---|---|
-| components | `@adobe/data-ecs/component/types` |
-| resources | `@adobe/data-ecs/resource/types` |
-| system, rule and finalizer names | `@adobe/data-ecs/system/types`, `rule/types`, `finalizer/types` |
-| traits | `@adobe/data-ecs/trait/types` |
+| components | `@adobe/data-ecs/components` |
+| resources | `@adobe/data-ecs/resources` |
+| system, rule and finalizer names | `@adobe/data-ecs/systems`, `rules`, `finalizers` |
+| traits | `@adobe/data-ecs/traits` |
 
 The examples live inside the package, so they augment the same modules by relative path (`"../component/types.js"`).
 
@@ -56,10 +56,19 @@ A component or resource is an exported key, a string or a symbol, namespaced lik
 value, so its schema has a `default`.
 
 ```ts
+export const position = "guide/components/position";
+export const enemy = "guide/components/enemy";
+export const gravity = "guide/components/gravity";
+
 declare module "../component/types.js" {
     interface Types {
         [position]: { type: Vec3 };
         [enemy]: { type: true };
+    }
+}
+declare module "../resource/types.js" {
+    interface Types {
+        [gravity]: { type: number };
     }
 }
 Component.register(position, { type: Vec3.schema });
@@ -281,9 +290,13 @@ its shaders' declarations, a function per accessor, and pipelines take `world.gp
 A component's record lists its traits. `type` is the value type; the others are declared the same way and given again
 at registration:
 
-- **`derived: true`:** only rules add and remove the component; commands reject it. Its schema has a `default`.
-- **`within: host`:** the component exists only while its host component does.
-- **`reference: "owner" | "weak"`:** on an entity-valued component, what happens to the holder when its target despawns.
+- **`derived: true`:** only rules add and remove the component; commands reject it. Its schema has a `default`. See [Rules](#13-rules).
+- **`within: host`:** `host` is another component on the same entity. The component can be on an entity only while
+  `host` is too: when `host` leaves, by any cause, the component leaves with it in the same sync point, and one added
+  to an entity without `host` is dropped. See [Within](#14-within).
+- **`reference: "owner" | "weak"`:** on a component whose value is an `Entity`, the entity it points to is its
+  target, and the entity that has the component is its holder. When the target despawns, `"owner"` despawns the
+  holder too, and `"weak"` removes the component from the holder. See [Entity references](#15-entity-references).
 
 A trait is a member of `Trait.Types<N>`, so other packages define traits the same way: the member is the value the
 trait allows on component `N`, or `never` where it doesn't apply. Types then filter components by trait.
@@ -355,8 +368,10 @@ Example: [`14-references.test.ts`](src/guide/14-references.test.ts#L22-L43).
 
 ## 16. Finalizers
 
-A finalizer runs inside the sync point, on the main thread, for each entity that stops matching its query, whatever
-the cause, reading its values from before the sync point applies. It releases what entities hold outside the world,
+A finalizer runs inside the sync point, on the main thread, for each entity that stops matching its query: one that
+matched after the previous sync point and won't after this one, whatever the cause. It reads the entity's values
+from before the sync point applies. An entity spawned and despawned in the same sync point never matched, so a
+finalizer doesn't run for it, and neither does a change of values alone. It releases what entities hold outside the world,
 such as GPU buffers or DOM nodes. Its commands apply at the next sync point; `dispose()` runs it for every entity it
 still matches.
 

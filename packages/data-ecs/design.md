@@ -193,6 +193,8 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 3. **GPU systems.** Pure value reads and writes into component tables, with no structural commands, so the GPU never needs command buffer communication. Still open:
    - **Latency.** Whether a system can declare that its writes become visible to CPU readers only at a later sync point, so readback overlaps the next frame.
    - **Device loss.** Components ahead on the GPU are lost with the device; decide whether a world can fall back to its last CPU copy.
+4. **The body's `context`.** It holds resources by key beside lookups and `args`; review that contract.
+5. **Reductions.** Revisit the purpose, the API and how they're explained: a resource is a single value, so what a reduction folds into it, and how, has to be clear from the declaration.
 
 ## Additive later (no breaking change)
 

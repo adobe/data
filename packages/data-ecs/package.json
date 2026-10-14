@@ -36,22 +36,22 @@
       "import": "./dist/compiler/index.js",
       "types": "./dist/compiler/index.d.ts"
     },
-    "./component/types": {
+    "./components": {
       "types": "./dist/component/types.d.ts"
     },
-    "./resource/types": {
+    "./resources": {
       "types": "./dist/resource/types.d.ts"
     },
-    "./system/types": {
+    "./systems": {
       "types": "./dist/system/types.d.ts"
     },
-    "./rule/types": {
+    "./rules": {
       "types": "./dist/rule/types.d.ts"
     },
-    "./finalizer/types": {
+    "./finalizers": {
       "types": "./dist/finalizer/types.d.ts"
     },
-    "./trait/types": {
+    "./traits": {
       "types": "./dist/trait/types.d.ts"
     }
   }

@@ -4,7 +4,7 @@ type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y 
 const check = <_T extends true>() => { };
 
 // A trait is a member of `Trait.Types<N>`: the value it allows on component `N`, or `never` where it doesn't apply.
-// An application augments "@adobe/data-ecs/trait/types", and claims the name with `Trait.register`.
+// An application augments "@adobe/data-ecs/traits", and claims the name with `Trait.register`.
 export const instanced = "guide/traits/instanced";
 declare module "../trait/types.js" {
     interface Types<N> {

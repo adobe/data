@@ -47,7 +47,7 @@ Types are declared by augmenting interfaces. An application augments the package
 | system, rule and finalizer names | `@adobe/data-ecs/systems`, `rules`, `finalizers` |
 | traits | `@adobe/data-ecs/traits` |
 
-The examples live inside the package, so they augment the same modules by relative path (`"../component/types.js"`).
+The examples augment the same paths, which `tsconfig.json` maps to the package source.
 
 ## 2. Components and resources
 
@@ -60,13 +60,13 @@ export const position = "guide/components/position";
 export const enemy = "guide/components/enemy";
 export const gravity = "guide/components/gravity";
 
-declare module "../component/types.js" {
+declare module "@adobe/data-ecs/components" {
     interface Types {
         [position]: { type: Vec3 };
         [enemy]: { type: true };
     }
 }
-declare module "../resource/types.js" {
+declare module "@adobe/data-ecs/resources" {
     interface Types {
         [gravity]: { type: number };
     }
@@ -85,7 +85,7 @@ const [first] = world.query.select([position, enemy]);
 expect(world.read.component(first, position)).toEqual([0, 10, 0]);
 ```
 
-Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L4-L43).
+Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L4-L42).
 
 - **Registration must match the declaration**, trait for trait, with `type` a schema for the declared type. Otherwise it doesn't compile.
 - **`World.create({ systems })` resolves once its systems are registered.** `await using` disposes the world.
@@ -302,7 +302,7 @@ A trait is a member of `Trait.Types<N>`, so other packages define traits the sam
 trait allows on component `N`, or `never` where it doesn't apply. Types then filter components by trait.
 
 ```ts
-declare module "../trait/types.js" {
+declare module "@adobe/data-ecs/traits" {
     interface Types<N> {
         readonly [instanced]: N extends Component.Name ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never;
     }

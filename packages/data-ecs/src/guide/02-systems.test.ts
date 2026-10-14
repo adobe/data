@@ -7,20 +7,20 @@ const frozen = "guide/systems/frozen";
 const delta = "guide/systems/delta";
 const frames = "guide/systems/frames";
 
-declare module "../component/types.js" {
+declare module "@adobe/data-ecs/components" {
     interface Types {
         [position]: { type: Vec3 };
         [velocity]: { type: Vec3 };
         [frozen]: { type: true };
     }
 }
-declare module "../resource/types.js" {
+declare module "@adobe/data-ecs/resources" {
     interface Types {
         [delta]: { type: number };
         [frames]: { type: number };
     }
 }
-declare module "../system/types.js" {
+declare module "@adobe/data-ecs/systems" {
     interface Types {
         "guide/systems/spawn": true;
         "guide/systems/move": true;

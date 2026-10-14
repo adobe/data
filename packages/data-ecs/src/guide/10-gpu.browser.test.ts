@@ -4,13 +4,13 @@ import { Component, System, Vec3, World } from "../index.js";
 const position = "guide/gpu/position";
 const velocity = "guide/gpu/velocity";
 
-declare module "../component/types.js" {
+declare module "@adobe/data-ecs/components" {
     interface Types {
         [position]: { type: Vec3 };
         [velocity]: { type: Vec3 };
     }
 }
-declare module "../system/types.js" {
+declare module "@adobe/data-ecs/systems" {
     interface Types {
         "guide/gpu/spawn": true;
         "guide/gpu/move": true;

@@ -4,9 +4,9 @@ type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y 
 const check = <_T extends true>() => { };
 
 // A trait is a member of `Trait.Types<N>`: the value it allows on component `N`, or `never` where it doesn't apply.
-// An application augments "@adobe/data-ecs/traits", and claims the name with `Trait.register`.
+// Its type comes from augmenting "@adobe/data-ecs/traits"; it claims the name with `Trait.register`.
 export const instanced = "guide/traits/instanced";
-declare module "../trait/types.js" {
+declare module "@adobe/data-ecs/traits" {
     interface Types<N> {
         readonly [instanced]: N extends Component.Name ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never;
     }
@@ -20,7 +20,7 @@ const meshReady = "guide/traits/meshReady";
 const parent = "guide/traits/parent";
 
 // Each component's record lists all its traits, `type` among them.
-declare module "../component/types.js" {
+declare module "@adobe/data-ecs/components" {
     interface Types {
         [transform]: { type: readonly [number, number, number]; [instanced]: true };
         [label]: { type: string };

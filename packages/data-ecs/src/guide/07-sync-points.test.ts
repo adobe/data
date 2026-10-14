@@ -5,18 +5,18 @@ const unit = "guide/sync/unit";
 const shield = "guide/sync/shield";
 const counted = "guide/sync/counted";
 
-declare module "../component/types.js" {
+declare module "@adobe/data-ecs/components" {
     interface Types {
         [unit]: { type: number };
         [shield]: { type: true };
     }
 }
-declare module "../resource/types.js" {
+declare module "@adobe/data-ecs/resources" {
     interface Types {
         [counted]: { type: number };
     }
 }
-declare module "../system/types.js" {
+declare module "@adobe/data-ecs/systems" {
     interface Types {
         "guide/sync/spawn": true;
         "guide/sync/count": true;

@@ -195,6 +195,8 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
    - **Device loss.** Components ahead on the GPU are lost with the device; decide whether a world can fall back to its last CPU copy.
 4. **The body's `context`.** It holds resources by key beside lookups and `args`; review that contract.
 5. **Reductions.** Revisit the purpose, the API and how they're explained: a resource is a single value, so what a reduction folds into it, and how, has to be clear from the declaration.
+6. **Rules and finalizers: per world or program-wide.** Whether they're registered on a world, or like components apply to every world.
+7. **Names across systems, rules and finalizers.** Review the declaration keys (`query`, `resources`, `lookup`, `components`, `derives`, …) together so they're consistent; for example whether `query` becomes `components`, beside `resources`.
 
 ## Additive later (no breaking change)
 

@@ -2,23 +2,22 @@ import { expect, it } from "vitest";
 import { Component, Resource, System, Vec3, World } from "../index.js";
 
 // A component or resource is an exported key; its type comes from augmenting `Types`, its schema from `register`.
-// An application augments "@adobe/data-ecs/components" and "@adobe/data-ecs/resources".
 export const position = "guide/components/position";
 export const enemy = "guide/components/enemy";
 export const gravity = "guide/components/gravity";
 
-declare module "../component/types.js" {
+declare module "@adobe/data-ecs/components" {
     interface Types {
         [position]: { type: Vec3 };
         [enemy]: { type: true };
     }
 }
-declare module "../resource/types.js" {
+declare module "@adobe/data-ecs/resources" {
     interface Types {
         [gravity]: { type: number };
     }
 }
-declare module "../system/types.js" {
+declare module "@adobe/data-ecs/systems" {
     interface Types {
         "guide/components/spawn": true;
     }

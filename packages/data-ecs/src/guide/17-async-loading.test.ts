@@ -10,7 +10,7 @@ const requests = "guide/loading/requests";
 
 type Request = { readonly entity: Entity; readonly token: number; readonly path: string };
 
-declare module "../component/types.js" {
+declare module "@adobe/data-ecs/components" {
     interface Types {
         [meshSource]: { type: string };
         [hidden]: { type: true };
@@ -20,23 +20,23 @@ declare module "../component/types.js" {
         [meshReady]: { type: number; within: typeof meshSlot };
     }
 }
-declare module "../resource/types.js" {
+declare module "@adobe/data-ecs/resources" {
     interface Types {
         [nextToken]: { type: number };
         [requests]: { type: readonly Request[] };
     }
 }
-declare module "../rule/types.js" {
+declare module "@adobe/data-ecs/rules" {
     interface Types {
         "guide/loading/slots": true;
     }
 }
-declare module "../finalizer/types.js" {
+declare module "@adobe/data-ecs/finalizers" {
     interface Types {
         "guide/loading/release": true;
     }
 }
-declare module "../system/types.js" {
+declare module "@adobe/data-ecs/systems" {
     interface Types {
         "guide/loading/spawn": true;
         "guide/loading/request": true;

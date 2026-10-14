@@ -7,7 +7,7 @@ const hidden = "guide/rules/hidden";
 const drawn = "guide/rules/drawn";
 const layer = "guide/rules/layer";
 
-declare module "../component/types.js" {
+declare module "@adobe/data-ecs/components" {
     interface Types {
         [mesh]: { type: number };
         [sprite]: { type: number };
@@ -16,14 +16,14 @@ declare module "../component/types.js" {
         [layer]: { type: number; derived: true };
     }
 }
-declare module "../rule/types.js" {
+declare module "@adobe/data-ecs/rules" {
     interface Types {
         "guide/rules/meshes": true;
         "guide/rules/sprites": true;
         "guide/rules/layers": true;
     }
 }
-declare module "../system/types.js" {
+declare module "@adobe/data-ecs/systems" {
     interface Types {
         "guide/rules/spawn": true;
         "guide/rules/hide": true;

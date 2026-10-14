@@ -6,19 +6,19 @@ const mass = "guide/reductions/mass";
 const total = "guide/reductions/total";
 const lowest = "guide/reductions/lowest";
 
-declare module "../component/types.js" {
+declare module "@adobe/data-ecs/components" {
     interface Types {
         [position]: { type: Vec3 };
         [mass]: { type: number };
     }
 }
-declare module "../resource/types.js" {
+declare module "@adobe/data-ecs/resources" {
     interface Types {
         [total]: { type: number };
         [lowest]: { type: Vec3 };
     }
 }
-declare module "../system/types.js" {
+declare module "@adobe/data-ecs/systems" {
     interface Types {
         "guide/reductions/spawn": true;
         "guide/reductions/measure": true;

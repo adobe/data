@@ -7,7 +7,7 @@ const velocity = "guide/kernels/velocity";
 const target = "guide/kernels/target";
 const spark = "guide/kernels/spark";
 
-declare module "../component/types.js" {
+declare module "@adobe/data-ecs/components" {
     interface Types {
         [position]: { type: Vec3 };
         [velocity]: { type: Vec3 };
@@ -15,7 +15,7 @@ declare module "../component/types.js" {
         [spark]: { type: true };
     }
 }
-declare module "../system/types.js" {
+declare module "@adobe/data-ecs/systems" {
     interface Types {
         "guide/kernels/spawn": true;
         "guide/kernels/integrate": true;

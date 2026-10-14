@@ -5,14 +5,14 @@ const position = "guide/lookups/position";
 const velocity = "guide/lookups/velocity";
 const target = "guide/lookups/target";
 
-declare module "../component/types.js" {
+declare module "@adobe/data-ecs/components" {
     interface Types {
         [position]: { type: Vec3 };
         [velocity]: { type: Vec3 };
         [target]: { type: Entity };
     }
 }
-declare module "../system/types.js" {
+declare module "@adobe/data-ecs/systems" {
     interface Types {
         "guide/lookups/spawn": true;
         "guide/lookups/follow": true;

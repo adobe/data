@@ -6,19 +6,19 @@ const shown = "guide/filters/shown";
 const level = "guide/filters/level";
 const enemy = "guide/filters/enemy";
 
-declare module "../component/types.js" {
+declare module "@adobe/data-ecs/components" {
     interface Types {
         [score]: { type: number };
         [shown]: { type: number };
         [enemy]: { type: true };
     }
 }
-declare module "../resource/types.js" {
+declare module "@adobe/data-ecs/resources" {
     interface Types {
         [level]: { type: number };
     }
 }
-declare module "../system/types.js" {
+declare module "@adobe/data-ecs/systems" {
     interface Types {
         "guide/filters/load": true;
         "guide/filters/show": true;

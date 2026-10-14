@@ -2,8 +2,8 @@ import type { Declaration } from './declaration.js';
 import type { Leaf } from './leaf.js';
 import type { Name } from './name.js';
 
-/** A system that can be a member of a composite: any composite, or a leaf without arguments. */
-export type Member = Composite | Leaf<Declaration & { readonly args?: undefined }>;
+/** A system that can be a member of a composite: any composite, or a leaf without input. */
+export type Member = Composite | Leaf<Declaration & { readonly input?: undefined }>;
 
 export type CompositeDeclaration = {
     readonly name: Name;
@@ -18,5 +18,6 @@ export type CompositeDeclaration = {
 
 /** A system made of subsystems; members are flattened and ordered by their constraints. */
 export type Composite<D extends CompositeDeclaration = CompositeDeclaration> = {
+    readonly kind: "composite";
     readonly declaration: D;
 };

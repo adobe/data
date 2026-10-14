@@ -30,6 +30,10 @@ export type Value =
     | { readonly kind: "method"; readonly owner: "math" | "commands"; readonly name: string }
     | { readonly kind: "row" }
     | { readonly kind: "context" }
+    /** The context's `resources`, `lookup` and `reduce`. */
+    | { readonly kind: "resources" }
+    | { readonly kind: "lookups" }
+    | { readonly kind: "reducers" }
     | { readonly kind: "commands" }
     | { readonly kind: "math" };
 
@@ -38,7 +42,7 @@ export const scalarValue = (expression: Expression): Value => ({ kind: "scalar",
 const describe: { readonly [K in Value["kind"]]: string } = {
     scalar: "a number", dynamic: "a value", tuple: "a tuple", struct: "a struct", component: "a component value",
     snapshot: "a component value", found: "a lookup result", lookup: "a lookup", reducer: "a reduction", function: "a helper",
-    method: "a method", row: "row", context: "the context", commands: "commands", math: "Math", namespace: "a namespace",
+    method: "a method", row: "row", context: "the context", resources: "the resources", lookups: "the lookups", reducers: "the reductions", commands: "commands", math: "Math", namespace: "a namespace",
 };
 
 /** A short description of a value's kind, for error messages. */

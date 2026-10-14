@@ -64,13 +64,13 @@ Component.register(mark, { type: { type: "number" } });
 Component.register(left, { type: { const: true }, within: right });
 Component.register(right, { type: { const: true }, within: left });
 
-const slots = Rule.create({ name: "rulesTest/slots", query: { has: [source], not: [hidden] }, derives: [slot] });
-const shown = Rule.create({ name: "rulesTest/visible", query: { has: [slot] }, derives: [visible] });
-const sprites = Rule.create({ name: "rulesTest/sprites", query: { has: [sprite] }, derives: [visible] });
+const slots = Rule.create({ name: "rulesTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] });
+const shown = Rule.create({ name: "rulesTest/visible", components: { has: [slot] }, derive: [visible] });
+const sprites = Rule.create({ name: "rulesTest/sprites", components: { has: [sprite] }, derive: [visible] });
 
 /** Runs `edit` with commands once, as its own run. */
-const edit = System.create({ name: "rulesTest/edit", args: { type: "integer" } }, (_, { args }, commands) => {
-    for (const step of steps[args] ?? []) step(commands);
+const edit = System.create({ name: "rulesTest/edit", input: { type: "integer" } }, ({ input, commands }) => {
+    for (const step of steps[input] ?? []) step(commands);
 });
 let steps: ((commands: System.Commands) => void)[][] = [];
 const at = (world: ReturnType<typeof createWorld>) => async (...run: ((commands: System.Commands) => void)[]) => {
@@ -104,7 +104,7 @@ describe("rules", () => {
     });
 
     it("write the default again where a derived component starts over, on a reused row", async () => {
-        const write = System.create({ name: "rulesTest/write", query: { write: [slot] } }, row => { row[slot] = 99; });
+        const write = System.create({ name: "rulesTest/write", components: { write: [slot] } }, row => { row[slot] = 99; });
         const world = createWorld({ workers: 0 });
         await world.systems.register(edit, slots, write);
         const step = at(world);
@@ -120,8 +120,8 @@ describe("rules", () => {
 
     it("apply to entities that exist when they're registered, and to batch spawns", async () => {
         let added = 0;
-        const observe = System.create({ name: "rulesTest/added", query: { added: [slot] } }, () => { added++; });
-        const spawn = System.create({ name: "rulesTest/spawn" }, (_, __, commands) => { for (let i = 0; i < 3; i++) commands.spawn({ [source]: i }); });
+        const observe = System.create({ name: "rulesTest/added", components: { added: [slot] } }, () => { added++; });
+        const spawn = System.create({ name: "rulesTest/spawn" }, ({ commands }) => { for (let i = 0; i < 3; i++) commands.spawn({ [source]: i }); });
         const world = createWorld({ workers: 0 });
         await world.systems.register(spawn, observe);
         await world.run(spawn);
@@ -138,16 +138,16 @@ describe("rules", () => {
     it("are rejected when they can't hold", async () => {
         const world = createWorld({ workers: 0 });
         // @ts-expect-error a rule derives only derived components
-        await expect(world.systems.register(Rule.create({ name: "rulesTest/bad", query: { has: [source] }, derives: [mark] }))).rejects.toThrow(`derives "${mark}", which isn't declared derived`);
-        const oscillates = Rule.create({ name: "rulesTest/bad", query: { has: [source], not: [visible] }, derives: [slot] });
+        await expect(world.systems.register(Rule.create({ name: "rulesTest/bad", components: { has: [source] }, derive: [mark] }))).rejects.toThrow(`derives "${mark}", which isn't declared derived`);
+        const oscillates = Rule.create({ name: "rulesTest/bad", components: { has: [source], not: [visible] }, derive: [slot] });
         await expect(world.systems.register(shown, oscillates)).rejects.toThrow("cycle through a negation, which could oscillate");
         // A failed registration records nothing, so the rest still registers.
         await world.systems.register(shown);
         await expect(world.systems.register(System.create({ name: "rulesTest/visible" }, () => {}))).rejects.toThrow('A different system, rule or finalizer named "rulesTest/visible"');
         // @ts-expect-error a reference changes only through commands
-        const writes = System.create({ name: "rulesTest/write", query: { write: [owned] } }, row => { row[owned] = Entity.none; });
+        const writes = System.create({ name: "rulesTest/write", components: { write: [owned] } }, row => { row[owned] = Entity.none; });
         await expect(world.systems.register(writes)).rejects.toThrow("a reference, which changes only through commands");
-        const cycle = System.create({ name: "rulesTest/cycle", query: { has: [left] } }, () => {});
+        const cycle = System.create({ name: "rulesTest/cycle", components: { has: [left] } }, () => {});
         await expect(world.systems.register(cycle)).rejects.toThrow("within each other in a cycle: rulesTest/left, rulesTest/right");
         await world.dispose();
     });

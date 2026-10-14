@@ -16,9 +16,9 @@ declare module "@adobe/data-ecs" {
         [sized]: { type: true };
     }
     export interface Resources {
-        [count]: { type: number };
-        [sum]: { type: number };
-        [largest]: { type: number };
+        [count]: { type: number; reduce: "+" };
+        [sum]: { type: number; reduce: "+" };
+        [largest]: { type: number; reduce: "max" };
     }
     export interface Systems {
         "reductionsBrowserTest/spawn": true;
@@ -28,24 +28,24 @@ declare module "@adobe/data-ecs" {
 
 Component.register(weight, { type: { type: "number", precision: 1 } });
 Component.register(sized, { type: { const: true } });
-Resource.register(count, { type: { type: "number", default: 0 } });
-Resource.register(sum, { type: { type: "number", default: 0 } });
-Resource.register(largest, { type: { type: "number", default: 0 } });
+Resource.register(count, { type: { type: "number", default: 0 }, reduce: "+" });
+Resource.register(sum, { type: { type: "number", default: 0 }, reduce: "+" });
+Resource.register(largest, { type: { type: "number", default: 0 }, reduce: "max" });
 
 const rows = 100_000;
 const weightAt = (i: number): number => Math.fround(Math.sin(i * 0.37) * 1000);
 
-const spawn = System.create({ name: "reductionsBrowserTest/spawn" }, (_, __, commands) => {
+const spawn = System.create({ name: "reductionsBrowserTest/spawn" }, ({ commands }) => {
     for (let i = 0; i < rows; i++) {
         if (i % 4 === 0) commands.spawn({ [weight]: weightAt(i), [sized]: true });
         else commands.spawn({ [weight]: weightAt(i) });
     }
 });
 
-const reduce = System.create({ name: "reductionsBrowserTest/reduce", kernel: "cpu", query: { read: [weight] }, resources: { reduce: { [count]: "+", [sum]: "+", [largest]: "max" } } }, (row, context) => {
-    context[count](1);
-    context[sum](row[weight]);
-    context[largest](row[weight]);
+const reduce = System.create({ name: "reductionsBrowserTest/reduce", kernel: "cpu", components: { read: [weight] }, reduce: { [count]: "+", [sum]: "+", [largest]: "max" } }, (row, { reduce }) => {
+    reduce[count](1);
+    reduce[sum](row[weight]);
+    reduce[largest](row[weight]);
 });
 
 describe("reductions across workers", () => {

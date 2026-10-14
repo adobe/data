@@ -29,7 +29,7 @@ Component.register(other, { type: { type: "number" } });
 Resource.register(scale, { type: { type: "number", default: 1 } });
 
 /** Reads `value` and `other`, writes nothing, reads no resources. */
-const system = System.create({ name: "kernelsTest/read", kernel: "cpu", query: { read: [value, other] } }, row => {
+const system = System.create({ name: "kernelsTest/read", kernel: "cpu", components: { read: [value, other] } }, row => {
     if (row[value] > row[other]) return;
 });
 
@@ -45,9 +45,9 @@ describe("bindKernel", () => {
         expect(() => bind({ resources: [scale] })).toThrow('reads resource "kernelsTest/scale"');
     });
     it("rejects a changed column for a component the system only reads", () => {
-        expect(() => bind({ columns: [{ kind: "changed", component: value }] })).toThrow("isn't in the query's write");
+        expect(() => bind({ columns: [{ kind: "changed", component: value }] })).toThrow("isn't in its components' write");
     });
     it("rejects a whole-value write of a component the system only reads", () => {
-        expect(() => bind({ shapes: [{ component: value, leaves: [[]] }] })).toThrow("isn't in the query's write");
+        expect(() => bind({ shapes: [{ component: value, leaves: [[]] }] })).toThrow("isn't in its components' write");
     });
 });

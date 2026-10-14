@@ -1,8 +1,11 @@
 import type { Component } from '../component/component.js';
 import type { Resource } from '../resource/resource.js';
 
-/** Matches every component in `read`, `write`, `has`, `added` and `changed`, and excludes `not`. */
-export type Query = {
+/**
+ * Matches every component in `read`, `write`, `has`, `added` and `changed`, and excludes `not`. A component in `write`
+ * is also readable, so it's never listed in `read` as well.
+ */
+export type ComponentAccess = {
     readonly read?: readonly Component.Name[];
     /** A component holding a `reference` changes only through commands, so it can't be written here. */
     readonly write?: readonly Component.Writable[];
@@ -15,19 +18,12 @@ export type Query = {
 };
 
 /** Read-only access to other entities, by entity only. */
-export type Lookup = Pick<Query, "read" | "has" | "not">;
+export type Lookup = Pick<ComponentAccess, "read" | "has" | "not">;
 
-/** How a reduction combines values, leaf by leaf: a sum, a product, the least or greatest, or a bitwise fold. */
-export type Reduction = "+" | "*" | "min" | "max" | "&" | "|" | "^";
-
-export type Resources = {
+/** A resource in `write` is also readable, so it's never listed in `read` as well. Reduced resources are never written. */
+export type ResourceAccess = {
     readonly read?: readonly Resource.Name[];
-    readonly write?: readonly Resource.Name[];
+    readonly write?: readonly Exclude<Resource.Name, Resource.Reduced>[];
     /** Passes every row when any of these changed since the system last ran. */
     readonly changed?: readonly Resource.Name[];
-    /**
-     * Resources the system computes as a fold of the values its body contributes, with `context[resource](value)`.
-     * After each run a resource holds the fold of that run's contributions, from the operator's identity.
-     */
-    readonly reduce?: { readonly [K in Resource.Name]?: Reduction };
 };

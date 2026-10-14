@@ -4,7 +4,7 @@ import type { Name } from './name.js';
 export type Declaration = {
     readonly name: Name;
     /** Which entities the rule matches, by the components they have and don't have. */
-    readonly query: { readonly has?: readonly Component.Name[]; readonly not?: readonly Component.Name[] };
+    readonly components: { readonly has?: readonly Component.Name[]; readonly not?: readonly Component.Name[] };
     /** Components present on matching entities, while any rule deriving them matches. */
-    readonly derives: readonly Component.Derived[];
+    readonly derive: readonly Component.Derived[];
 };

@@ -23,7 +23,7 @@ Component.register(position, { type: Vec3.schema });
 Component.register(enemy, { type: { const: true } });
 Resource.register(gravity, { type: { type: "number", default: -9.8 } });
 
-export const spawn = System.create({ name: "guide/components/spawn" }, (_, __, commands) => {
+export const spawn = System.create({ name: "guide/components/spawn" }, ({ commands }) => {
     commands.spawn({ [position]: [0, 10, 0], [enemy]: true });
     commands.spawn({ [position]: [5, 0, 0] });
 });

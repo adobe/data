@@ -19,12 +19,12 @@ Component.register(body, { type: { type: "number" } });
 // A component declared within a host exists only while the host does, whatever removes the host.
 Component.register(glow, { type: { type: "number" }, within: body });
 
-const spawn = System.create({ name: "guide/within/spawn" }, (_, __, commands) => {
+const spawn = System.create({ name: "guide/within/spawn" }, ({ commands }) => {
     commands.spawn({ [body]: 1, [glow]: 0.5 });
     // Added without its host: dropped.
     commands.spawn({ [glow]: 0.5 });
 });
-const strip = System.create({ name: "guide/within/strip", query: { has: [body] } }, (row, _, commands) => {
+const strip = System.create({ name: "guide/within/strip", components: { has: [body] } }, (row, { commands }) => {
     commands.remove(row.entity, body);
 });
 

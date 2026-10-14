@@ -1,6 +1,6 @@
 import { layoutOf, type Leaf } from '../layout/layout.js';
 import { schemaOf } from '../registry/create-registry.js';
-import type { Render } from '../system/render.js';
+import type { Shader } from '../system/render.js';
 
 /** A WGSL function reading one component of a row from the GPU copy of a render system's table. */
 export type Accessor = { readonly name: string; readonly component: string | symbol; readonly code: string };
@@ -25,12 +25,12 @@ const reserved = new Set(("alias break case const const_assert continue continui
     + "NULL Self abstract active alignas alignof as asm asm_fragment async attribute auto await become cast catch class co_await co_return co_yield coherent column_major common compile compile_fragment concept const_cast consteval constexpr constinit crate debugger decltype delete demote demote_to_helper do dynamic_cast enum explicit export extends extern external fallthrough filter final finally friend from fxgroup get goto groupshared highp impl implements import inline instanceof interface layout lowp macro macro_rules match mediump meta mod module move mut mutable namespace new nil noexcept noinline nointerpolation non_coherent noncoherent noperspective null nullptr of operator package packoffset partition pass patch pixelfragment precise precision premerge priv protected pub public readonly ref regardless register reinterpret_cast require resource restrict self set shared sizeof smooth snorm static static_assert static_cast std subroutine super target template this thread_local throw trait try type typedef typeid typename typeof union unless unorm unsafe unsized use using varying virtual volatile wgsl where with writeonly yield").split(" "));
 
 /**
- * Accessors for a render declaration, in `accessors` order, or the reason one can't be read on the GPU: scalars
+ * Accessors for a render system's shader, in `accessors` order, or the reason one can't be read on the GPU: scalars
  * and tuples of two to four scalars of one type, laid out in 4-byte words.
  */
-export const accessorsOf = (render: Render): readonly Accessor[] | string => {
+export const accessorsOf = (shader: Shader): readonly Accessor[] | string => {
     const accessors: Accessor[] = [];
-    const entries = Object.entries(render.accessors);
+    const entries = Object.entries(shader.accessors);
     // A table record is a row count, then a word address per accessor.
     if (entries.length > 63) return "it names more than 63 accessors";
     for (const [name, key] of entries) {

@@ -59,38 +59,38 @@ const load = async (path: string): Promise<number> => {
 };
 
 // 1. A rule derives a slot for every visible entity with a mesh source.
-const slots = Rule.create({ name: "guide/loading/slots", query: { has: [meshSource], not: [hidden] }, derives: [meshSlot] });
+const slots = Rule.create({ name: "guide/loading/slots", components: { has: [meshSource], not: [hidden] }, derive: [meshSlot] });
 
 // 2. Each new slot gets a fresh token, and its load is requested; the application starts requested loads.
 const request = System.create({
     name: "guide/loading/request",
-    query: { read: [meshSource], write: [meshSlot], added: [meshSlot] },
-    resources: { read: [nextToken, requests], write: [nextToken, requests] },
-}, (row, context) => {
-    const token = context[nextToken];
-    context[nextToken] = token + 1;
+    components: { read: [meshSource], write: [meshSlot], added: [meshSlot] },
+    resources: { write: [nextToken, requests] },
+}, (row, { resources }) => {
+    const token = resources[nextToken];
+    resources[nextToken] = token + 1;
     row[meshSlot] = token;
-    context[requests] = [...context[requests], { entity: row.entity, token, path: row[meshSource] }];
+    resources[requests] = [...resources[requests], { entity: row.entity, token, path: row[meshSource] }];
 });
 
 // 3. A completed load arrives as a run of its own. A slot whose token still matches gets the mesh; a stale one releases it.
 const apply = System.create({
     name: "guide/loading/apply",
-    args: { type: "object", properties: { entity: Entity.schema, token: { type: "integer" }, handle: { type: "integer" } } },
+    input: { type: "object", properties: { entity: Entity.schema, token: { type: "integer" }, handle: { type: "integer" } } },
     lookup: { slots: { read: [meshSlot] } },
-}, (_, { args, slots }, commands) => {
-    if (slots(args.entity)?.[meshSlot] === args.token) commands.add(args.entity, { [meshReady]: args.handle });
-    else loaded.delete(args.handle);
+}, ({ input, lookup, commands }) => {
+    if (lookup.slots(input.entity)?.[meshSlot] === input.token) commands.add(input.entity, { [meshReady]: input.handle });
+    else loaded.delete(input.handle);
 });
 
 // 4. When the slot goes, its mesh goes with it, and the finalizer releases what was loaded.
-const release = Finalizer.create({ name: "guide/loading/release", query: { read: [meshReady] } }, row => { loaded.delete(row[meshReady]); });
+const release = Finalizer.create({ name: "guide/loading/release", components: { read: [meshReady] } }, row => { loaded.delete(row[meshReady]); });
 
-const spawn = System.create({ name: "guide/loading/spawn" }, (_, __, commands) => {
+const spawn = System.create({ name: "guide/loading/spawn" }, ({ commands }) => {
     commands.spawn({ [meshSource]: "ship.glb" });
     commands.spawn({ [meshSource]: "rock.glb" });
 });
-const hide = System.create({ name: "guide/loading/hide", args: Entity.schema }, (_, { args }, commands) => { commands.add(args, { [hidden]: true }); });
+const hide = System.create({ name: "guide/loading/hide", input: Entity.schema }, ({ input, commands }) => { commands.add(input, { [hidden]: true }); });
 
 it("loads resources asynchronously for derived slots, and releases them when the slot goes", async () => {
     await using world = await World.create({ systems: [slots, request, apply, release, spawn, hide] });

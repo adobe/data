@@ -16,3 +16,4 @@ export const isTrait = (name: string | symbol): boolean => registered.has(name);
 register("derived");
 register("within");
 register("reference");
+register("reduce");

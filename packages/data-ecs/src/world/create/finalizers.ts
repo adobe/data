@@ -1,7 +1,7 @@
 import type { Component } from '../../component/component.js';
 import type { Entity } from '../../entity/entity.js';
 import type { Finalizer } from '../../finalizer/finalizer.js';
-import type { Changes } from '../../finalizer/body.js';
+import type { ChangeSet } from '../../finalizer/body.js';
 import type { Commands } from '../../system/commands.js';
 import type { Archetype } from './archetype.js';
 import { createBuffer, type CommandBuffer } from './buffer.js';
@@ -29,17 +29,17 @@ export type FinalizerRunner = {
     readonly reads: readonly Key[];
 };
 
-export const isFinalizer = (value: object): value is Finalizer => "finalize" in value || "changes" in value;
+export const isFinalizer = (value: { readonly kind: string }): value is Finalizer => value.kind === "finalizer" || value.kind === "changes";
 
 export const createFinalizerRunner = (state: State, finalizer: Finalizer): FinalizerRunner => {
     const { declaration } = finalizer;
-    const query = "finalize" in finalizer ? finalizer.declaration.query : undefined;
+    const query = finalizer.kind === "finalizer" ? finalizer.declaration.components : undefined;
     const reads = query?.read ?? [];
     // By default every component that isn't derived, including ones a world first meets later; never resources.
     let watches = (id: number): boolean => !state.derived[id] && !state.resources.has(id);
-    const components = "changes" in finalizer ? finalizer.declaration.components : undefined;
-    if (components !== undefined) {
-        const watched = new Set(components.map(key => {
+    const watch = finalizer.kind === "changes" ? finalizer.declaration.watch : undefined;
+    if (watch !== undefined) {
+        const watched = new Set(watch.map(key => {
             const id = idOf(state, key);
             if (state.derived[id]) throw new Error(`Finalizer "${declaration.name}" watches "${String(key)}", which is derived; it sees only components user code adds and removes.`);
             return id;
@@ -47,6 +47,7 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
         watches = id => watched.has(id);
     }
     const target = { buffer: createBuffer() };
+    const commands = createCommands(state, target);
     return {
         name: declaration.name,
         finalizer,
@@ -54,9 +55,9 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
         excluded: (query?.not ?? []).map(key => idOf(state, key)),
         watches,
         matches: [],
-        context: createContext(state, declaration),
+        context: createContext(state, declaration, { commands }),
         target,
-        commands: createCommands(state, target),
+        commands,
         reads,
     };
 };
@@ -80,7 +81,7 @@ const fromOf = (state: State, entry: number): Archetype | null => {
     return first !== undefined && state.entities.row[indexOf(plan.entity[entry])] >= first ? null : state.archetypes[from];
 };
 
-type Untyped = { finalize(row: object, context: object, commands: Commands): void };
+type Untyped = { body(row: object, context: object): void };
 
 /** Calls `body`, keeping the first error for after the sync point applies. */
 const guarded = (errors: unknown[], body: () => void): void => {
@@ -109,7 +110,7 @@ const finalizeStops = (state: State, runner: FinalizerRunner, leaf: Finalizer.Le
         const row = bind(archetype);
         for (const entry of stopped) {
             row.index = entities.row[indexOf(plan.entity[entry])];
-            guarded(errors, () => finalizer.finalize(row.value, runner.context.value, runner.commands));
+            guarded(errors, () => finalizer.body(row.value, runner.context.value));
         }
     }
 };
@@ -138,7 +139,7 @@ export const isMissing = (value: unknown): boolean => value === missing;
 const essential = (state: State, id: number): Component.Essential => state.keys[id] as Component.Essential;
 
 /** The sync point's structural changes to a changes finalizer's components, grouped by how they changed. */
-const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queued[]): Changes<Component.Essential> => {
+const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queued[]): ChangeSet<Component.Essential> => {
     const { plan, archetypes, entities } = state;
     const { watches } = runner;
     const names = (archetype: Archetype | null): Component.Essential[] | null =>
@@ -221,11 +222,11 @@ export const runFinalizers = (state: State, queued: readonly Queued[], born: Map
         for (const runner of state.finalizers) {
             runner.context.bind();
             const { finalizer } = runner;
-            if ("finalize" in finalizer) finalizeStops(state, runner, finalizer, errors);
+            if (finalizer.kind === "finalizer") finalizeStops(state, runner, finalizer, errors);
             else {
                 // The context is built to the finalizer's declaration, so its body accepts it.
-                const whole: { changes(changes: Changes<Component.Essential>, context: object, commands: Commands): void } = finalizer;
-                guarded(errors, () => whole.changes(changesOf(state, runner, queued), runner.context.value, runner.commands));
+                const changes: { body(changes: ChangeSet<Component.Essential>, context: object): void } = finalizer;
+                guarded(errors, () => changes.body(changesOf(state, runner, queued), runner.context.value));
             }
             if (runner.target.buffer.count > 0) {
                 state.queued.push({ buffer: runner.target.buffer, guarded: true });
@@ -243,8 +244,9 @@ export const runFinalizers = (state: State, queued: readonly Queued[], born: Map
 export const finalizeAll = (state: State): unknown[] => {
     const errors: unknown[] = [];
     for (const runner of state.finalizers) {
-        if (!("finalize" in runner.finalizer)) continue;
-        const finalizer: Untyped = runner.finalizer;
+        const { finalizer: leaf } = runner;
+        if (leaf.kind !== "finalizer") continue;
+        const finalizer: Untyped = leaf;
         runner.context.bind();
         const bind = rowBinder(state, runner.reads, []);
         for (const archetype of state.archetypes) {
@@ -252,7 +254,7 @@ export const finalizeAll = (state: State): unknown[] => {
             const row = bind(archetype);
             for (let index = 0; index < archetype.count; index++) {
                 row.index = index;
-                guarded(errors, () => finalizer.finalize(row.value, runner.context.value, runner.commands));
+                guarded(errors, () => finalizer.body(row.value, runner.context.value));
             }
         }
     }

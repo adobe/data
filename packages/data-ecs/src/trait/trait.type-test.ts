@@ -37,6 +37,10 @@ const gpuString = "traitTest/gpuString";
 const derivedNonPersistent = "traitTest/derivedNonPersistent";
 const time = "traitTest/time";
 const derivedResource = "traitTest/derivedResource";
+const sum = "traitTest/sum";
+const anyFlag = "traitTest/anyFlag";
+const named = "traitTest/named";
+const reducedComponent = "traitTest/reducedComponent";
 
 declare module '@adobe/data-ecs' {
     export interface Components {
@@ -54,10 +58,14 @@ declare module '@adobe/data-ecs' {
         [derivedReference]: { type: Entity; derived: true; reference: "owner" };
         [gpuString]: { type: string; [gpuOnly]: true };
         [derivedNonPersistent]: { type: number; derived: true; [nonPersistent]: true };
+        [reducedComponent]: { type: number; reduce: "+" };
     }
     export interface Resources {
         [time]: { type: number };
         [derivedResource]: { type: number; derived: true };
+        [sum]: { type: number; reduce: "+" };
+        [anyFlag]: { type: boolean; reduce: "+" };
+        [named]: { type: string; reduce: "max" };
     }
 }
 
@@ -71,6 +79,7 @@ Component.register(link, { type: { type: "object", properties: { to: Entity.sche
 Component.register(pair, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 }, [gpuOnly]: true });
 Component.register(cache, { type: { type: "number" }, [nonPersistent]: true });
 Resource.register(time, { type: { type: "number", default: 0 } });
+Resource.register(sum, { type: { type: "number", default: 0 }, reduce: "+" });
 
 // @ts-expect-error a derived component's type has a default, which it starts at
 Component.register(slot, { type: { type: "number" }, derived: true });
@@ -136,3 +145,11 @@ const raw: number = Entity.none;
 const forged: Entity = 3;
 void raw;
 void forged;
+// @ts-expect-error booleans reduce bitwise
+Resource.register(anyFlag, { type: { type: "boolean", default: false }, reduce: "+" });
+// @ts-expect-error only numbers and booleans, and tuples and structs of them, are reduced
+Resource.register(named, { type: { type: "string", default: "" }, reduce: "max" });
+// @ts-expect-error reduce is a resource trait
+Component.register(reducedComponent, { type: { type: "number" }, reduce: "+" });
+check<Equal<Resource.Reduced & typeof sum, typeof sum>>();
+check<Equal<Resource.Reduced & typeof time, never>>();

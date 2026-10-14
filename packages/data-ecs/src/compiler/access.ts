@@ -15,7 +15,7 @@ const commandNames: ReadonlySet<string> = new Set(["spawn", "despawn", "add", "r
 
 const literal = (key: Key): number | string | undefined => key.kind === "static" ? key.name : undefined;
 
-/** Indexes a plain JS value. A static index into a resource or `args` extends its path. */
+/** Indexes a plain JS value. A static index into a resource or the input extends its path. */
 const element = (node: Node, scope: Scope, object: Expression, key: Key, optional: boolean): Expression => {
     if (key.kind === "static" && !optional && (object.kind === "resource" || object.kind === "args")) {
         return { ...object, path: [...object.path, key.name] };
@@ -39,23 +39,31 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
     switch (value.kind) {
         case "row":
             if (key.kind === "binding") {
-                if (!signature.read.has(key.name) && !signature.write.has(key.name)) fail(node, `${key.name} is not in query read or write`);
+                if (!signature.read.has(key.name) && !signature.write.has(key.name)) fail(node, `${key.name} is not in components read or write`);
                 return { kind: "component", component: key.name, path: [] };
             }
             if (name === "entity") return scalarValue(entityRead(scope.unit));
-            return fail(node, "row is indexed by a component in query read or write, or .entity");
-        case "context": {
-            if (key.kind === "binding") {
-                const reduced = signature.reduced.findIndex(entry => entry.resource === key.name);
-                if (reduced >= 0) return { kind: "reducer", reduced };
-                const index = signature.resources.indexOf(key.name);
-                if (index < 0) return fail(node, `${key.name} is not in resources read`);
-                scope.unit.used.resources.add(key.name);
-                return { kind: "dynamic", expression: { kind: "resource", index, path: [] } };
-            }
-            if (name === "args" && signature.args) return { kind: "dynamic", expression: { kind: "args", path: [] } };
+            return fail(node, "row is indexed by a component in components read or write, or .entity");
+        case "context":
+            if (name === "resources") return { kind: "resources" };
+            if (name === "lookup") return { kind: "lookups" };
+            if (name === "reduce") return { kind: "reducers" };
+            if (name === "commands") return { kind: "commands" };
+            if (name === "input" && signature.input) return { kind: "dynamic", expression: { kind: "args", path: [] } };
+            return fail(node, "the context holds the declared resources, lookup, reduce and input, and commands");
+        case "resources": {
+            const index = key.kind === "binding" ? signature.resources.indexOf(key.name) : -1;
+            if (key.kind !== "binding" || index < 0) return fail(node, `${key.kind === "binding" ? key.name : "resources"} is not in resources read`);
+            scope.unit.used.resources.add(key.name);
+            return { kind: "dynamic", expression: { kind: "resource", index, path: [] } };
+        }
+        case "reducers": {
+            const reduced = key.kind === "binding" ? signature.reduced.findIndex(entry => entry.resource === key.name) : -1;
+            return reduced >= 0 ? { kind: "reducer", reduced } : fail(node, "reduce is indexed by a resource in the declaration's reduce");
+        }
+        case "lookups": {
             const lookup = signature.lookups.findIndex(entry => entry.name === name);
-            return lookup >= 0 ? { kind: "lookup", lookup } : fail(node, "the context holds declared resources, lookups and args");
+            return lookup >= 0 ? { kind: "lookup", lookup } : fail(node, "lookup holds the declaration's lookups, by name");
         }
         case "found": {
             const lookup = signature.lookups[value.lookup];

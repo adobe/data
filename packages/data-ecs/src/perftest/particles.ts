@@ -38,8 +38,8 @@ Component.register(visible, { type: { const: true } });
 Component.register(enabled, { type: { const: true } });
 
 /** Interleaved like ecs2's seedSingle: entity i goes to archetype i % 4. */
-export const spawn = System.create({ name: "perf/spawn", args: { type: "integer" } }, (_, { args }, commands) => {
-    for (let i = 0; i < args; i++) {
+export const spawn = System.create({ name: "perf/spawn", input: { type: "integer" } }, ({ input, commands }) => {
+    for (let i = 0; i < input; i++) {
         const p = [i + 1, i + 1, i + 1] as const;
         const v = [-i, -i, -i] as const;
         switch (i % 4) {
@@ -54,7 +54,7 @@ export const spawn = System.create({ name: "perf/spawn", args: { type: "integer"
 export const move = System.create({
     name: "perf/move",
     kernel: "cpu",
-    query: { read: [position, velocity], write: [position], has: [visible, enabled] },
+    components: { read: [velocity], write: [position], has: [visible, enabled] },
 }, row => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];

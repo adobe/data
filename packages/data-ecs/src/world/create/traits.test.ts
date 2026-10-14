@@ -31,7 +31,7 @@ Component.register(parent, { type: Entity.schema, reference: "owner" });
 describe("traits", () => {
     it("keep derived components out of commands, for untyped callers too", async () => {
         const errors: string[] = [];
-        const derived = System.create({ name: "traitsTest/derived" }, (_, __, commands) => {
+        const derived = System.create({ name: "traitsTest/derived" }, ({ commands }) => {
             const entity = commands.spawn({ [score]: 1 });
             const attempts = [
                 // @ts-expect-error derived components are added only by rules
@@ -57,8 +57,8 @@ describe("traits", () => {
     it("leave index 0 to Entity.none, which no lookup finds", async () => {
         let first = Entity.none;
         let found: unknown = undefined;
-        const spawn = System.create({ name: "traitsTest/spawn" }, (_, __, commands) => { first = commands.spawn({ [score]: 1 }); });
-        const lookup = System.create({ name: "traitsTest/lookup", lookup: { scores: { read: [score] } } }, (_, { scores }) => { found = scores(Entity.none); });
+        const spawn = System.create({ name: "traitsTest/spawn" }, ({ commands }) => { first = commands.spawn({ [score]: 1 }); });
+        const lookup = System.create({ name: "traitsTest/lookup", lookup: { scores: { read: [score] } } }, ({ lookup: { scores } }) => { found = scores(Entity.none); });
         const world = createWorld({ workers: 0 });
         await world.systems.register(spawn, lookup);
         await world.run(spawn);

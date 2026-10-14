@@ -21,16 +21,16 @@ declare module "@adobe/data-ecs" {
 Component.register(value, { type: { type: "number", precision: 1 } });
 Component.register(seen, { type: { type: "number", precision: 1 } });
 
-const seed = System.create({ name: "observedWorkersTest/seed" }, (_, __, commands) => {
+const seed = System.create({ name: "observedWorkersTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 3000; i++) commands.spawn({ [value]: i, [seen]: 0 });
 });
 
 /** Writes every value: until something observes `value`, its stamps are muted. */
-const bump = System.create({ name: "observedWorkersTest/bump", kernel: "cpu", query: { read: [value], write: [value] } }, row => {
+const bump = System.create({ name: "observedWorkersTest/bump", kernel: "cpu", components: { write: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 
-const watch = System.create({ name: "observedWorkersTest/watch", kernel: "cpu", query: { read: [seen], write: [seen], changed: [value] }, after: ["observedWorkersTest/bump"] }, row => {
+const watch = System.create({ name: "observedWorkersTest/watch", kernel: "cpu", components: { write: [seen], changed: [value] }, after: ["observedWorkersTest/bump"] }, row => {
     row[seen] = row[seen] + 1;
 });
 

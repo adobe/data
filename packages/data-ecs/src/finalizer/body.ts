@@ -1,21 +1,29 @@
 import type { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
 import type { Resource } from '../resource/resource.js';
+import type { Commands } from '../system/commands.js';
 import type { Listed, Property } from '../system/property.js';
 import type { LookupFunction, ResourceValues, Values } from '../system/values.js';
 import type { ChangesDeclaration, Declaration } from './declaration.js';
 
 /** The entity that stopped matching, with its `read` values as they are before the sync point applies. */
 export type Row<D extends Declaration> =
-    { readonly entity: Entity } & { readonly [K in Listed<Property<D, "query">, "read"> & Component.Name]: Component.Value<K> };
+    { readonly entity: Entity } & { readonly [K in Listed<Property<D, "components">, "read"> & Component.Name]: Component.Value<K> };
 
-/** Lookups and resources, flattened into one object. */
+type Resources<D> = Listed<Property<D, "resources">, "read"> | Listed<Property<D, "resources">, "write">;
+
+/** Resources and lookups, each present only when declared, and the commands it issues for the next sync point. */
 export type Context<D extends Declaration | ChangesDeclaration> =
-    { readonly [K in keyof Property<D, "lookup">]: LookupFunction<Property<D, "lookup">[K]> }
-    & Values<Listed<Property<D, "resources">, "read">, Listed<Property<D, "resources">, "write">, Resource.Name, ResourceValues>;
+    ([Resources<D>] extends [never] ? {} : {
+        readonly resources: Values<Listed<Property<D, "resources">, "read">, Listed<Property<D, "resources">, "write">, Resource.Name, ResourceValues>;
+    })
+    & ([keyof Property<D, "lookup">] extends [never] ? {} : {
+        readonly lookup: { readonly [K in keyof Property<D, "lookup">]: LookupFunction<Property<D, "lookup">[K]> };
+    })
+    & { readonly commands: Commands };
 
 /** The components a changes finalizer sees. */
-export type Watched<D extends ChangesDeclaration> = Property<D, "components"> extends readonly Component.Essential[] ? Listed<D, "components"> & Component.Essential : Component.Essential;
+export type Watched<D extends ChangesDeclaration> = Property<D, "watch"> extends readonly Component.Essential[] ? Listed<D, "watch"> & Component.Essential : Component.Essential;
 
 /** Entities whose components changed the same way: `from` and `to` are null for those spawned and despawned. */
 export type Group<C extends Component.Name> = {
@@ -29,7 +37,7 @@ export type Group<C extends Component.Name> = {
 };
 
 /** A sync point's structural changes to the watched components, before they apply. */
-export type Changes<C extends Component.Name> = {
+export type ChangeSet<C extends Component.Name> = {
     readonly groups: readonly Group<C>[];
     /** The value before the sync point, or null if the entity didn't have it. */
     previous<K extends C>(entity: Entity, component: K): Component.ReadonlyValue<K> | null;

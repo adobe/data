@@ -1,6 +1,7 @@
 import type { Entity } from '../../entity/entity.js';
 import type { Declaration } from '../../system/declaration.js';
-import type { Lookup } from '../../system/query.js';
+import type { Lookup } from '../../system/access.js';
+import type { Commands } from '../../system/commands.js';
 import type { Layout, TypedArray } from '../../layout/layout.js';
 import { stampChanged, writeF32Lanes, writeGeneral, writeOf, type Archetype, type Storage } from './archetype.js';
 import { readCell, writeCell } from './cells.js';
@@ -211,48 +212,69 @@ export const createArrayLookup = (state: State, lookup: Lookup) => {
 };
 
 /**
- * A system's context: lookups, resources and `args` in one object. `bind` resolves the resources' cells for a run;
- * `reduced[t]` holds the leaves of the fold into its `t`th reduction target so far this run.
+ * A body's context: its resources, lookups, reductions, input and commands, each under its own key and present only
+ * when declared. `bind` resolves the resources' cells for a run; `reduced[t]` holds the leaves of the fold into its
+ * `t`th reduction target so far this run.
  */
-export type Context = { readonly value: { args?: unknown }; readonly bind: () => void; readonly reduced: readonly Float64Array[] };
+export type Context = { readonly value: { input?: unknown }; readonly bind: () => void; readonly reduced: readonly Float64Array[] };
+
+/** What a context holds beyond the declaration's resources and lookups. */
+type Extras = { readonly targets?: readonly ReductionTarget[]; readonly commands?: Commands; readonly input?: boolean };
+
+/** An object with its own prototype, so it gets its own root map, as rows do. */
+const own = (): object => Object.create({});
 
 /** Resource cells are resolved once per run: they move only at sync points. An unresolved resource throws on access. */
-export const createContext = (state: State, declaration: Pick<Declaration, "lookup" | "resources">, targets: readonly ReductionTarget[] = []): Context => {
-    // Its own prototype gives the context its own root map, as for rows.
-    const value: { args?: unknown } = Object.create({});
+export const createContext = (state: State, declaration: Pick<Declaration, "lookup" | "resources">, { targets = [], commands, input = false }: Extras = {}): Context => {
+    const value: { input?: unknown } = own();
     const { lookup, resources } = declaration;
-    for (const name in lookup) Object.defineProperty(value, name, { value: createObjectLookup(state, lookup[name]), enumerable: true });
-    const writes = resources?.write ?? [];
-    const keys = [...new Set([...resources?.read ?? [], ...writes])];
+    const names = Object.keys(lookup ?? {});
+    if (names.length > 0) {
+        const lookups = own();
+        for (const name of names) Object.defineProperty(lookups, name, { value: createObjectLookup(state, lookup?.[name] ?? {}), enumerable: true });
+        Object.defineProperty(value, "lookup", { value: lookups, enumerable: true });
+    }
+    const writes = new Set<Key>(resources?.write);
+    const keys = [...new Set<Key>([...resources?.read ?? [], ...writes])];
     const cells: (ResourceCell | undefined)[] = keys.map(() => undefined);
-    keys.forEach((key, i) => {
-        const cellOf = (): ResourceCell => cells[i] ?? resourceCell(state, key);
-        Object.defineProperty(value, key, {
-            get: () => {
-                const { storage, row } = cellOf();
-                return readCell(storage, row);
-            },
-            set: writes.includes(key) ? (next: unknown) => {
-                const { storage, row } = cellOf();
-                writeCell(storage, row, next);
-                stampChanged(storage, row, state.tick);
-            } : undefined,
-            enumerable: true,
+    if (keys.length > 0) {
+        const values = own();
+        keys.forEach((key, i) => {
+            const cellOf = (): ResourceCell => cells[i] ?? resourceCell(state, key);
+            Object.defineProperty(values, key, {
+                get: () => {
+                    const { storage, row } = cellOf();
+                    return readCell(storage, row);
+                },
+                set: writes.has(key) ? (next: unknown) => {
+                    const { storage, row } = cellOf();
+                    writeCell(storage, row, next);
+                    stampChanged(storage, row, state.tick);
+                } : undefined,
+                enumerable: true,
+            });
         });
-    });
+        Object.defineProperty(value, "resources", { value: values, enumerable: true });
+    }
     // Each resource it reduces is a function folding a value into the run's accumulators, leaf by leaf.
     const reduced = targets.map(target => new Float64Array(target.leaves.length));
-    targets.forEach((target, t) => {
-        const accumulators = reduced[t];
-        const { operator, leaves } = target;
-        Object.defineProperty(value, target.key, {
-            value: (contribution: unknown): void => {
-                if (accumulators === undefined) return;
-                for (let i = 0; i < leaves.length; i++) accumulators[i] = combine(operator, accumulators[i] ?? NaN, contributed(contribution, leaves[i]?.path ?? []));
-            },
-            enumerable: true,
+    if (targets.length > 0) {
+        const reducers = own();
+        targets.forEach((target, t) => {
+            const accumulators = reduced[t];
+            const { operator, leaves } = target;
+            Object.defineProperty(reducers, target.key, {
+                value: (contribution: unknown): void => {
+                    if (accumulators === undefined) return;
+                    for (let i = 0; i < leaves.length; i++) accumulators[i] = combine(operator, accumulators[i] ?? NaN, contributed(contribution, leaves[i]?.path ?? []));
+                },
+                enumerable: true,
+            });
         });
-    });
+        Object.defineProperty(value, "reduce", { value: reducers, enumerable: true });
+    }
+    if (input) value.input = undefined;
+    if (commands !== undefined) Object.defineProperty(value, "commands", { value: commands, enumerable: true });
     const bind = (): void => {
         for (let i = 0; i < keys.length; i++) cells[i] = findResource(state, keys[i]);
         targets.forEach((target, t) => reduced[t]?.fill(identityOf(target.operator)));

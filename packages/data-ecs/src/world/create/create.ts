@@ -147,8 +147,8 @@ export const createWorld = (options: WorldOptions = {}): World => {
             get: name => registrar.get(name),
         },
         query: {
-            select: (include, options) => select(state, include, options),
-            count: (include, options) => count(state, include, options),
+            select: (has, options) => select(state, has, options),
+            count: (has, options) => count(state, has, options),
         },
         read: {
             // Stored values match each component's registered schema, so they have its type.

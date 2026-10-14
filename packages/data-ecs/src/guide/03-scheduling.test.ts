@@ -22,12 +22,12 @@ declare module "@adobe/data-ecs" {
 Component.register(health, { type: { type: "number" } });
 Component.register(damage, { type: { type: "number" } });
 
-const spawn = System.create({ name: "guide/scheduling/spawn" }, (_, __, commands) => { commands.spawn({ [health]: 10, [damage]: 4 }); });
-const hit = System.create({ name: "guide/scheduling/hit", query: { read: [health, damage], write: [health] } }, row => {
+const spawn = System.create({ name: "guide/scheduling/spawn" }, ({ commands }) => { commands.spawn({ [health]: 10, [damage]: 4 }); });
+const hit = System.create({ name: "guide/scheduling/hit", components: { read: [damage], write: [health] } }, row => {
     row[health] -= row[damage];
 });
 // Ordering comes only from before, after and during; systems in one tier may run in parallel.
-const heal = System.create({ name: "guide/scheduling/heal", query: { read: [health], write: [health] }, after: ["guide/scheduling/hit"] }, row => {
+const heal = System.create({ name: "guide/scheduling/heal", components: { write: [health] }, after: ["guide/scheduling/hit"] }, row => {
     row[health] = Math.min(row[health] * 2, 10);
 });
 const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal, hit] });
@@ -42,7 +42,7 @@ it("orders a composite's members by their constraints", async () => {
 });
 
 it("rejects two systems that write the same component without an order between them", async () => {
-    const regenerate = System.create({ name: "guide/scheduling/regenerate", query: { read: [health], write: [health] } }, row => { row[health] += 1; });
+    const regenerate = System.create({ name: "guide/scheduling/regenerate", components: { write: [health] } }, row => { row[health] += 1; });
     const unordered = System.composite({ name: "guide/scheduling/unordered", systems: [regenerate, hit] });
     await expect(World.create({ systems: [unordered] })).rejects.toThrow('"guide/scheduling/regenerate" and "guide/scheduling/hit"');
 });

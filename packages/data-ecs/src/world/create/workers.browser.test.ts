@@ -62,7 +62,7 @@ Component.register(label, { type: { type: "string" } });
 for (const tag of tags) Component.register(tag, { type: { const: true } });
 
 /** 64 entities in each of the 512 archetypes the tags combine into. */
-const scatter = System.create({ name: "workersTest/scatter" }, (_, __, commands) => {
+const scatter = System.create({ name: "workersTest/scatter" }, ({ commands }) => {
     for (let i = 0; i < 512 * 64; i++) {
         const values: { [key: string]: unknown } = { [position]: [i, 0], [velocity]: [1, i % 5] };
         tags.forEach((tag, bit) => { if (((i >> 6) & (1 << bit)) !== 0) values[tag] = true; });
@@ -71,10 +71,10 @@ const scatter = System.create({ name: "workersTest/scatter" }, (_, __, commands)
 });
 Resource.register(seconds, { type: { type: "number", default: 0.25 } });
 
-/** Spawns `args` moving entities, each following the one before it. */
-const seed = System.create({ name: "workersTest/seed", args: { type: "integer" } }, (_, { args }, commands) => {
+/** Spawns `input` moving entities, each following the one before it. */
+const seed = System.create({ name: "workersTest/seed", input: { type: "integer" } }, ({ input, commands }) => {
     let previous = commands.spawn({ [position]: [0, 0], [velocity]: [1, 0] });
-    for (let i = 1; i < args; i++) {
+    for (let i = 1; i < input; i++) {
         previous = commands.spawn({ [position]: [i, 0], [velocity]: [1, i % 7], [target]: previous });
     }
 });
@@ -82,21 +82,21 @@ const seed = System.create({ name: "workersTest/seed", args: { type: "integer" }
 const integrate = System.create({
     name: "workersTest/integrate",
     kernel: "cpu",
-    query: { read: [position, velocity], write: [position] },
+    components: { read: [velocity], write: [position] },
     resources: { read: [seconds] },
-}, (row, context) => {
+}, (row, { resources }) => {
     const [x, y] = row[position];
     const [vx, vy] = row[velocity];
-    row[position] = [x + vx * context[seconds], y + vy * context[seconds]];
+    row[position] = [x + vx * resources[seconds], y + vy * resources[seconds]];
 });
 
 /** Structural commands from workers: rows past a threshold spawn a marker and lose their velocity. */
 const split = System.create({
     name: "workersTest/split",
     kernel: "cpu",
-    query: { read: [position], has: [velocity] },
+    components: { read: [position], has: [velocity] },
     after: ["workersTest/integrate"],
-}, (row, _, commands) => {
+}, (row, { commands }) => {
     const [x, y] = row[position];
     if (y > 3) {
         commands.spawn({ [position]: [x, -y], [spawned]: true });
@@ -108,10 +108,10 @@ const split = System.create({
 const follow = System.create({
     name: "workersTest/follow",
     kernel: "cpu",
-    query: { read: [position, target], write: [offset] },
+    components: { read: [position, target], write: [offset] },
     lookup: { targets: { read: [position] } },
     after: ["workersTest/split"],
-}, (row, { targets }) => {
+}, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
     const [x] = row[position];
     row[offset] = other === null ? -1 : x - other[position][0];
@@ -123,19 +123,19 @@ const main = System.composite({ name: "workersTest/main", systems: [integrate, s
 const stamp = System.create({
     name: "workersTest/stamp",
     kernel: "cpu",
-    args: Entity.schema,
-    query: { read: [position] },
-}, (row, { args }, commands) => {
+    input: Entity.schema,
+    components: { read: [position] },
+}, (row, { input, commands }) => {
     const [x, y] = row[position];
-    commands.add(args, { [offset]: x * 1000 + y });
+    commands.add(input, { [offset]: x * 1000 + y });
 });
 
 /** Despawns entity 1, the resource entity, since index 0 is never an entity and registration reserves the next first. */
 const unlink = System.create({
     name: "workersTest/unlink",
     kernel: "cpu",
-    query: { has: [target] },
-}, (_, __, commands) => {
+    components: { has: [target] },
+}, (_, { commands }) => {
     // @ts-expect-error an untyped caller can pass any number
     commands.despawn(1);
 });
@@ -143,10 +143,10 @@ const unlink = System.create({
 const labels = System.create({
     name: "workersTest/labels",
     kernel: "cpu",
-    query: { read: [target], write: [offset] },
+    components: { read: [target], write: [offset] },
     // @ts-expect-error kernel lookups must read linear values; registration rejects it too, for untyped callers
     lookup: { named: { read: [label] } },
-}, (row, { named }) => {
+}, (row, { lookup: { named } }) => {
     const found = named(row[target]);
     row[offset] = found === null ? 0 : +found[label];
 });

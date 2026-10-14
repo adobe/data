@@ -40,8 +40,8 @@ Component.register(visible, { type: { const: true } });
 Component.register(enabled, { type: { const: true } });
 
 /** Entity i goes to archetype i % 4, like ecs2's seedSingle. */
-export const spawnFlat = System.create({ name: "flat/spawn", args: { type: "integer" } }, (_, { args }, commands) => {
-    for (let i = 0; i < args; i++) {
+export const spawnFlat = System.create({ name: "flat/spawn", input: { type: "integer" } }, ({ input, commands }) => {
+    for (let i = 0; i < input; i++) {
         switch (i % 4) {
             case 0: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i, [visible]: true, [enabled]: true }); break;
             case 1: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i, [visible]: true }); break;
@@ -52,8 +52,8 @@ export const spawnFlat = System.create({ name: "flat/spawn", args: { type: "inte
 });
 
 /** The same spawns with each value object built first, so the compiler can't pass values positionally. */
-export const spawnFlatDynamic = System.create({ name: "flat/dynamic", args: { type: "integer" } }, (_, { args }, commands) => {
-    for (let i = 0; i < args; i++) {
+export const spawnFlatDynamic = System.create({ name: "flat/dynamic", input: { type: "integer" } }, ({ input, commands }) => {
+    for (let i = 0; i < input; i++) {
         const values: Component.Values = { [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i };
         switch (i % 4) {
             case 0: commands.spawn({ ...values, [visible]: true, [enabled]: true }); break;

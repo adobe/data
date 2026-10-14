@@ -1,5 +1,5 @@
 import type { Entity } from '../../entity/entity.js';
-import type { Reduction } from '../../system/query.js';
+import type { Reduction } from '../../resource/reduction.js';
 
 type Key = string | symbol;
 

@@ -6,12 +6,10 @@ import { local, type Expression } from './ir.js';
 import { snapshotLeaf } from './snapshot.js';
 import { describeValue, type Value } from './value.js';
 
+/** A component in `write` is readable too. */
 export const requireReadable = (node: Node, scope: Scope, component: string): void => {
-    if (!scope.unit.signature.read.has(component)) {
-        fail(node, scope.unit.signature.write.has(component)
-            ? `${component} is write-only here; add it to query read to read it`
-            : `${component} is not in query read`);
-    }
+    const { signature } = scope.unit;
+    if (!signature.read.has(component) && !signature.write.has(component)) fail(node, `${component} is not in components read or write`);
     scope.unit.used.read.add(component);
 };
 

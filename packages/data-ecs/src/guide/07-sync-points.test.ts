@@ -26,13 +26,13 @@ Component.register(shield, { type: { const: true } });
 Resource.register(counted, { type: { type: "number", default: 0 } });
 
 // Commands are structural changes: they apply together at the sync point that ends each run.
-const spawn = System.create({ name: "guide/sync/spawn" }, (_, __, commands) => {
+const spawn = System.create({ name: "guide/sync/spawn" }, ({ commands }) => {
     const entity = commands.spawn({ [unit]: 1 });
     commands.add(entity, { [shield]: true });
     commands.remove(entity, shield);
 });
-const count = System.create({ name: "guide/sync/count", query: { has: [unit] }, resources: { read: [counted], write: [counted] }, after: ["guide/sync/spawn"] }, (_, context) => {
-    context[counted] += 1;
+const count = System.create({ name: "guide/sync/count", components: { has: [unit] }, resources: { write: [counted] }, after: ["guide/sync/spawn"] }, (_, { resources }) => {
+    resources[counted] += 1;
 });
 const frame = System.composite({ name: "guide/sync/frame", systems: [spawn, count] });
 
@@ -48,7 +48,7 @@ it("applies structural changes at the end of a run, as their net effect", async 
 });
 
 it("still applies the commands of a run whose system throws, then rejects", async () => {
-    const fail = System.create({ name: "guide/sync/fail" }, (_, __, commands) => {
+    const fail = System.create({ name: "guide/sync/fail" }, ({ commands }) => {
         commands.spawn({ [unit]: 2 });
         throw new Error("lost connection");
     });

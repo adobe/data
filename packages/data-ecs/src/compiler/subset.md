@@ -35,15 +35,16 @@ call        = Math-function | helper | lookup | command | reducer
 - **Numbers and booleans** are scalars. **Tuples and structs** of them are values with a fixed shape: they are
   immutable, compiled to one local per leaf, and never allocate. A `let` takes a whole new value; its elements can't be
   assigned.
-- **`row[component]`** reads a component in `query.read` and writes one in `query.write`, always whole. `row.entity`
-  is the row's entity.
-- **`context[resource]`** reads a resource in `resources.read`, and `context.args` the system's arguments. Kernels
-  don't write resources; they reduce into them.
-- **Declarations list exactly what the body uses.** Every component in `query.read`, `query.write` and a lookup's
-  `read` must be read or written as listed, every resource in `resources.read` read, and every one in
-  `resources.reduce` contributed to; a component only required belongs in `has`.
+- **The body is `(row, context)`,** and either may be destructured, as in `(row, { resources, lookup, reduce })`.
+- **`row[component]`** reads a component in `components.read` or `components.write`, and writes one in
+  `components.write`, always whole. `row.entity` is the row's entity.
+- **`context.resources[resource]`** reads a resource in `resources.read`, and `context.input` the system's input.
+  Kernels don't write resources; they reduce into them.
+- **Declarations list exactly what the body uses.** Every component in `components.read`, `components.write` and a
+  lookup's `read` must be read or written as listed, every resource in `resources.read` read, and every one in
+  `reduce` contributed to; a component only required belongs in `has`.
 - **Indexes** are literals, field names, or constants and locals whose value is a number or string literal. Tuples and
-  structs are indexed only statically; resources and `args` may be indexed at runtime.
+  structs are indexed only statically; resources and the input may be indexed at runtime.
 - **Shapes are known at build time.** A local holding a component value takes its shape from the leaves the body uses
   or assigns. A tuple or struct component value written or contributed whole with none of its leaves used, as in `row[a] = row[b]`,
   fails at registration: destructure it or index its fields.
@@ -56,9 +57,9 @@ call        = Math-function | helper | lookup | command | reducer
   package's math types among them. Each call is inlined in its own module's scope. A helper's body is in the same
   subset; it may `return` early inside `if`, and must end with `return <value>`. No recursion, no closures, no default
   or rest parameters, no spread.
-- **Lookups:** `context[lookup](entity)` returns the other entity's values in that lookup's `read`, or `null`.
-- **Reductions:** `context[resource](value)` contributes a value to a resource in `resources.reduce`; see `design.md`.
-- **Commands:** `commands.spawn({ [component]: value, ... })`, `despawn(entity)`, `add(entity, { ... })`,
+- **Lookups:** `context.lookup.name(entity)` returns the other entity's values in that lookup's `read`, or `null`.
+- **Reductions:** `context.reduce[resource](value)` contributes a value to a resource in `reduce`; see `design.md`.
+- **Commands:** `context.commands.spawn({ [component]: value, ... })`, `despawn(entity)`, `add(entity, { ... })`,
   `remove(entity, component, ...)`, with component keys bound at module scope.
 
 ## GPU kernels

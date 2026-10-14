@@ -17,7 +17,7 @@ import { rowLabel, statement } from './statement.js';
 import { createUnit } from './unit.js';
 import type { Value } from './value.js';
 
-const parameterValues: readonly Value[] = [{ kind: "row" }, { kind: "context" }, { kind: "commands" }];
+const parameterValues: readonly Value[] = [{ kind: "row" }, { kind: "context" }];
 
 /**
  * One compiled kernel: `description(url)` is the source of its `KernelDescription`, with keys as the declaration's
@@ -44,7 +44,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         return fail(body, "a kernel body must be an inline function");
     }
     if (body.async || body.generator) return fail(body, "a kernel body can't be async or a generator");
-    if (body.params.length > 3) return fail(body, "a kernel body takes row, context and commands");
+    if (body.params.length > 2) return fail(body, "a kernel body takes row and context");
     const unit = createUnit(signature(declaration, module.bindings), module, expression, statement, link, target);
     const scope = rootScope(unit, false);
     const prelude: Out = [];
@@ -61,8 +61,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     const preludeCode = printStatements(unit, resolve(prelude));
     const accumulators = unit.accumulators.map(entry => entry.local);
     const program = toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined, accumulators);
-    const { signature: { resources, lookups, filtered, reduced, folds }, columns, booleans, keys } = unit;
-    if (reduced.length > 0 && !folds) fail(declaration, "a reduction folds every row, so its query can't use added or changed");
+    const { signature: { resources, lookups, filtered, reduced }, columns, booleans, keys } = unit;
     if (target === "gpu") {
         if (lookups.length > 0) fail(declaration, "a GPU kernel can't use lookups yet");
         if (filtered) fail(declaration, "a GPU kernel can't use change filters yet");

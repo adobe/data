@@ -1,8 +1,11 @@
-import type { Commands } from './commands.js';
-import type { Context, Row } from './body.js';
 import type { Declaration } from './declaration.js';
 
+/**
+ * A system that runs a body: `"render"` for one made by `render`, `"system"` otherwise. Its body's parameters are
+ * checked where it's created, so a leaf holds any body.
+ */
 export type Leaf<D extends Declaration = Declaration> = {
+    readonly kind: "system" | "render";
     readonly declaration: D;
-    body(row: Row<D>, context: Context<D>, commands: Commands): void;
+    readonly body: (...parameters: never[]) => void;
 };

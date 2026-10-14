@@ -34,25 +34,25 @@ const requireContributed = (reduce: Expression | Pattern | undefined, contribute
     const keys = reduce.properties.map(property =>
         property.type === "Property" && property.computed && property.key.type === "Identifier" && module.has(property.key.name) ? property.key : null);
     for (const key of keys) if (key === null) return;
-    for (const key of keys) if (key !== null && !contributed.has(key.name)) fail(key, `${key.name} is in resources reduce but never contributed to; remove it`);
+    for (const key of keys) if (key !== null && !contributed.has(key.name)) fail(key, `${key.name} is in reduce but never contributed to; remove it`);
 };
 
 /**
- * Requires a system's declared `read` and `write` lists to be exactly what its body uses: a key it never uses
+ * Requires a system's declared `read`, `write` and `reduce` to be exactly what its body uses: a key it never uses
  * would still narrow which entities match, and hold back systems that could otherwise run alongside it.
  */
 export const requireExact = (declaration: ObjectExpression, used: Used, module: ModuleScope): void => {
     const declared = fields(declaration);
-    const query = fields(declared.get("query"));
+    const components = fields(declared.get("components"));
     const resources = fields(declared.get("resources"));
     if (used.query !== null) {
-        requireUsed(query.get("read"), used.query.read, module, name => `${name} is in query read but never read; remove it, or move it to query has to keep requiring it`);
-        requireUsed(query.get("write"), used.query.write, module, name => `${name} is in query write but never written; remove it`);
+        requireUsed(components.get("read"), used.query.read, module, name => `${name} is in components read but never read; remove it, or move it to components has to keep requiring it`);
+        requireUsed(components.get("write"), used.query.write, module, name => `${name} is in components write but never written; remove it, or move it to components read if it's only read`);
     }
     if (used.resources !== null) {
         requireUsed(resources.get("read"), used.resources.read, module, name => `${name} is in resources read but never read; remove it`);
-        requireUsed(resources.get("write"), used.resources.write, module, name => `${name} is in resources write but never written; remove it`);
-        requireContributed(resources.get("reduce"), used.resources.reduce, module);
+        requireUsed(resources.get("write"), used.resources.write, module, name => `${name} is in resources write but never written; remove it, or move it to resources read if it's only read`);
+        requireContributed(declared.get("reduce"), used.resources.reduce, module);
     }
     if (used.lookups !== null) {
         for (const [lookup, value] of fields(declared.get("lookup"))) {

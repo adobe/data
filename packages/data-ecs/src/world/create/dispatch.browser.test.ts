@@ -27,27 +27,27 @@ Component.register(velocity, { type: vec2 });
 Component.register(offset, { type: { type: "number", precision: 1 } });
 for (const tag of tags) Component.register(tag, { type: { const: true } });
 
-const scatter = System.create({ name: "dispatchTest/scatter" }, (_, __, commands) => {
+const scatter = System.create({ name: "dispatchTest/scatter" }, ({ commands }) => {
     for (let i = 0; i < 128 * 64; i++) {
         const values: { [key: string]: unknown } = { [position]: [i, 0], [velocity]: [1, i % 5], [offset]: 0 };
         tags.forEach((tag, bit) => { if (((i >> 6) & (1 << bit)) !== 0) values[tag] = true; });
         commands.spawn(values);
     }
 });
-const seed = System.create({ name: "dispatchTest/seed" }, (_, __, commands) => {
+const seed = System.create({ name: "dispatchTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 4096; i++) commands.spawn({ [position]: [i, 0], [velocity]: [1, i % 5], [offset]: 0 });
 });
-const fastA = System.create({ name: "dispatchTest/fastA", kernel: "cpu", query: { read: [position, velocity], write: [position] } }, row => {
+const fastA = System.create({ name: "dispatchTest/fastA", kernel: "cpu", components: { read: [velocity], write: [position] } }, row => {
     const [x, y] = row[position];
     const [vx, vy] = row[velocity];
     row[position] = [x + vx, y + vy];
 });
 // Commands make it a JS kernel, dispatched by message.
-const slowB = System.create({ name: "dispatchTest/slowB", kernel: "cpu", query: { read: [velocity] } }, (row, _, commands) => {
+const slowB = System.create({ name: "dispatchTest/slowB", kernel: "cpu", components: { read: [velocity] } }, (row, { commands }) => {
     const [vx] = row[velocity];
     if (vx > 100) commands.despawn(row.entity);
 });
-const fastC = System.create({ name: "dispatchTest/fastC", kernel: "cpu", query: { read: [velocity], write: [offset] } }, row => {
+const fastC = System.create({ name: "dispatchTest/fastC", kernel: "cpu", components: { read: [velocity], write: [offset] } }, row => {
     const [vx, vy] = row[velocity];
     row[offset] = vx + vy;
 });
@@ -55,14 +55,14 @@ const fastC = System.create({ name: "dispatchTest/fastC", kernel: "cpu", query: 
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | "timeout"> =>
     Promise.race([promise, new Promise<"timeout">(resolve => setTimeout(() => resolve("timeout"), ms))]);
 
-const grow = System.create({ name: "dispatchTest/seed" }, (_, __, commands) => {
+const grow = System.create({ name: "dispatchTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 3000; i++) commands.spawn({ [position]: [i, 1], [velocity]: [2, i % 3], [offset]: 0 });
 });
 let observedRows = 0;
-const bump = System.create({ name: "dispatchTest/fastA", kernel: "cpu", query: { read: [offset], write: [offset] } }, row => {
+const bump = System.create({ name: "dispatchTest/fastA", kernel: "cpu", components: { write: [offset] } }, row => {
     row[offset] = row[offset] + 1;
 });
-const watch = System.create({ name: "dispatchTest/slowB", query: { changed: [offset] } }, () => { observedRows++; });
+const watch = System.create({ name: "dispatchTest/slowB", components: { changed: [offset] } }, () => { observedRows++; });
 describe("worker dispatch", () => {
     it("reloads kernels on workers when an observer registers", async () => {
         const world = createWorld({ workers: 2, minimumChunk: 64 });

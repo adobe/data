@@ -55,7 +55,7 @@ const leafType = (layout: Layout, path: readonly (number | string)[]): Type | nu
  * Throws if a column names a missing leaf or a whole-value write doesn't cover every leaf.
  */
 export const bindKernel = (state: State, leaf: Leaf, description: KernelDescription): BoundKernel => {
-    const { name, lookup, query, resources } = leaf.declaration;
+    const { name, lookup, components: query, resources } = leaf.declaration;
     const fail = (message: string): never => { throw new Error(`Kernel "${name}": ${message}`); };
     const queried = new Set<Key>([...query?.read ?? [], ...query?.write ?? []]);
     const written = new Set<Key>(query?.write);
@@ -77,10 +77,10 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             dense();
             return column;
         }
-        if (!queried.has(column.component)) return fail(`"${String(column.component)}" isn't in the query's read or write.`);
+        if (!queried.has(column.component)) return fail(`"${String(column.component)}" isn't in its components' read or write.`);
         const id = idOf(state, column.component);
         if (column.kind === "changed" || column.kind === "chunks") {
-            if (!written.has(column.component)) return fail(`writes "${String(column.component)}", which isn't in the query's write.`);
+            if (!written.has(column.component)) return fail(`writes "${String(column.component)}", which isn't in its components' write.`);
             dense();
             return { kind: column.kind, id, leaf: 0 };
         }
@@ -96,7 +96,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         return { kind: "field", id, leaf: index };
     });
     for (const shape of description.shapes) {
-        if (!written.has(shape.component)) fail(`writes "${String(shape.component)}", which isn't in the query's write.`);
+        if (!written.has(shape.component)) fail(`writes "${String(shape.component)}", which isn't in its components' write.`);
         const layout = state.layouts[idOf(state, shape.component)];
         const leaves = layout.kind === "linear" ? layout.leaves : [];
         const exact = leaves.length === shape.leaves.length && leaves.every(leaf => shape.leaves.some(path => samePath(path, leaf.path)));
@@ -126,7 +126,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         const columns = sources.map(source => {
             if (source.kind === "entity") return archetype.entities;
             const storage = archetype.storageOf.get(source.id);
-            if (storage === undefined) return fail(`column of "${String(state.keys[source.id])}" isn't in the query.`);
+            if (storage === undefined) return fail(`column of "${String(state.keys[source.id])}" isn't in its components.`);
             if (source.kind === "changed") return storage.changed;
             if (source.kind === "chunks") return storage.chunkChanged;
             const layout = state.layouts[source.id];
@@ -135,7 +135,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         cache.set(archetype, { version: archetype.version, columns });
         return columns;
     };
-    const argsLayout = leaf.declaration.args === undefined ? null : layoutOf(leaf.declaration.args);
+    const argsLayout = leaf.declaration.input === undefined ? null : layoutOf(leaf.declaration.input);
     const scalarType = (scalar: WasmScalar): Type | null => scalar.source === "args"
         ? argsLayout === null ? null : leafType(argsLayout, scalar.path)
         : scalar.index < description.resources.length ? leafType(state.layouts[idOf(state, description.resources[scalar.index])], scalar.path) : null;

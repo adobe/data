@@ -1,22 +1,22 @@
 import type { Component } from '../component/component.js';
 import type { Resource } from '../resource/resource.js';
-import type { Lookup } from '../system/query.js';
+import type { Lookup } from '../system/access.js';
 import type { Name } from './name.js';
 
 type Shared = {
     readonly name: Name;
     /** Read-only access to other entities, as they are before the sync point applies. */
     readonly lookup?: { readonly [name: string]: Lookup };
-    /** Writes take the sync point's tick, so each system sees them once. */
-    readonly resources?: { readonly read?: readonly Resource.Name[]; readonly write?: readonly Resource.Name[] };
+    /** Writes take the sync point's tick, so each system sees them once. A resource in `write` is also readable. */
+    readonly resources?: { readonly read?: readonly Resource.Name[]; readonly write?: readonly Exclude<Resource.Name, Resource.Reduced>[] };
     readonly before?: readonly Name[];
     readonly after?: readonly Name[];
 };
 
-/** A finalizer that runs for each entity that stops matching its query. */
+/** A finalizer that runs for each entity that stops matching its components. */
 export type Declaration = Shared & {
-    readonly query: { readonly read?: readonly Component.Name[]; readonly has?: readonly Component.Name[]; readonly not?: readonly Component.Name[] };
+    readonly components: { readonly read?: readonly Component.Name[]; readonly has?: readonly Component.Name[]; readonly not?: readonly Component.Name[] };
 };
 
-/** A finalizer that sees each sync point's structural changes to `components`: every one that isn't derived, by default. */
-export type ChangesDeclaration = Shared & { readonly components?: readonly Component.Essential[] };
+/** A finalizer that sees each sync point's structural changes to the components it watches: every one that isn't derived, by default. */
+export type ChangesDeclaration = Shared & { readonly watch?: readonly Component.Essential[] };

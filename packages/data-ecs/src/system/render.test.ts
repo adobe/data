@@ -18,7 +18,7 @@ declare module "@adobe/data-ecs" {
 
 describe("render systems", () => {
     it("read the components their accessors name, once each", () => {
-        const draw = System.render({ name: "renderTest/draw", query: { has: [visible] }, render: { accessors: { place: position, tint: color, again: position } } }, () => {});
-        expect(draw.declaration.query).toEqual({ has: [visible], read: [position, color] });
+        const draw = System.render({ name: "renderTest/draw", components: { has: [visible] }, shader: { accessors: { place: position, tint: color, again: position } } }, () => {});
+        expect(draw.declaration.components).toEqual({ has: [visible], read: [position, color] });
     });
 });

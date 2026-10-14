@@ -296,10 +296,10 @@ describe("particles", () => {
     test("gravity and integrate", async () => {
         const gravity = await compile(`const kernel = System.create({
             name: "particles/gravity", kernel: "cpu",
-            query: { read: [velocity], write: [velocity] }, resources: { read: [delta] },
-        }, (row, context) => {
+            components: { write: [velocity] }, resources: { read: [delta] },
+        }, (row, { resources }) => {
             const [x, y, z] = row[velocity];
-            row[velocity] = [x, y - 9.8 * context[delta], z];
+            row[velocity] = [x, y - 9.8 * resources[delta], z];
         });`);
         const fallen = run(gravity, 2, { velocity: vec3([1, 2], [0, 10], [3, 4]) }, { resources: [0.5] });
         expect([fallen.field("velocity", [0]), fallen.field("velocity", [1]), fallen.field("velocity", [2])]).toEqual([[1, 2], [-4.9, 5.1], [3, 4]]);
@@ -309,11 +309,11 @@ describe("particles", () => {
 
         const integrate = await compile(`const kernel = System.create({
             name: "particles/integrate", kernel: "cpu",
-            query: { read: [position, velocity], write: [position] }, resources: { read: [delta] }, after: ["particles/gravity"],
-        }, (row, context) => {
+            components: { read: [velocity], write: [position] }, resources: { read: [delta] }, after: ["particles/gravity"],
+        }, (row, { resources }) => {
             const [px, py, pz] = row[position];
             const [vx, vy, vz] = row[velocity];
-            const t = context[delta];
+            const t = resources[delta];
             row[position] = [px + vx * t, py + vy * t, pz + vz * t];
         });`);
         const moved = run(integrate, 1, { position: vec3([1], [2], [3]), velocity: vec3([2], [4], [6]) }, { resources: [0.5] });
@@ -327,7 +327,7 @@ describe("particles", () => {
 
 describe("layout", () => {
     test("interleaved components are read and written at row * stride + offset, leaving padding untouched", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [velocity, alive], write: [velocity] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [alive], write: [velocity] } }, (row) => {
             const [x, y, z] = row[velocity];
             row[velocity] = [z, row[alive] === true ? y * 10 : y, x];
         });`);
@@ -340,7 +340,7 @@ describe("layout", () => {
     });
 
     test("stamps set the changed row and its chunk; each changed column is followed by its chunk column", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass], write: [score] } }, (row) => {
             if (row[mass] > 0) row[score] = 1;
         });`);
         const rows = 2 * 2 ** chunkShift + 5;
@@ -354,12 +354,12 @@ describe("layout", () => {
     });
 
     test("an unconditional stamp stamps the call's chunks once; a stamp after return stays per row", async () => {
-        const always = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, (row) => {
+        const always = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass], write: [score] } }, (row) => {
             row[score] = row[mass];
         });`);
         expect(String(always.create)).not.toContain(">> 10] = tick");
         expect(run(always, 3200, {}, { range: [1000, 2100] }).chunks("score")).toEqual([tick, tick, tick, 0]);
-        const after = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, (row) => {
+        const after = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass], write: [score] } }, (row) => {
             if (row[mass] > 0) return;
             row[score] = 1;
         });`);
@@ -369,7 +369,7 @@ describe("layout", () => {
     });
 
     test("indices stay in step when return skips the rest of a row", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [velocity], write: [velocity] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { write: [velocity] } }, (row) => {
             const [x, y, z] = row[velocity];
             if (x > 1 && x < 5) return;
             row[velocity] = [z, y, x];
@@ -384,16 +384,16 @@ describe("reductions", () => {
     const reducing = (reduce: string, body: string, read = "[position, mass]") => `const total = "total";
 const low = "low";
 const bits = "bits";
-const kernel = System.create({ name: "a", kernel: "cpu", query: { read: ${read} }, resources: { reduce: { ${reduce} } } }, (row, context) => { ${body} });`;
+const kernel = System.create({ name: "a", kernel: "cpu", components: { read: ${read} }, reduce: { ${reduce} } }, (row, { reduce }) => { ${body} });`;
     const fields = { position: vec3([1, -4, 2], [5, 0, -1], [3, 9, 6]), mass: { "[]": [2, 3, 12] } };
 
     test("fold each contribution into its resource, leaf by leaf, from the partial", async () => {
         const kernel = await compile(reducing(`[total]: "+", [low]: "min", [bits]: "|"`, `
             const [x, y, z] = row[position];
-            context[total](row[mass]);
-            context[total](1);
-            context[low]([x, y, z]);
-            context[bits](row[mass]);
+            reduce[total](row[mass]);
+            reduce[total](1);
+            reduce[low]([x, y, z]);
+            reduce[bits](row[mass]);
         `));
         const result = run(kernel, 3, fields);
         expect(result.reduced("total")).toBe(2 + 3 + 12 + 3);
@@ -403,23 +403,23 @@ const kernel = System.create({ name: "a", kernel: "cpu", query: { read: ${read} 
     });
 
     test("fold the values of inlined functions", async () => {
-        const kernel = await compile(`import { Vec3 } from "ecs";\n${reducing(`[low]: "max"`, "context[low](Vec3.scale(row[position], 2));", "[position]")}`);
+        const kernel = await compile(`import { Vec3 } from "ecs";\n${reducing(`[low]: "max"`, "reduce[low](Vec3.scale(row[position], 2));", "[position]")}`);
         expect([0, 1, 2].map(k => run(kernel, 3, fields).reduced("low", [k]))).toEqual([4, 10, 18]);
     });
 
     test("that can't be compiled fail with the reason", async () => {
-        expect(await failure(reducing(`[total]: "+"`, "context[total](1, 2);"))).toBe("total takes the one value it reduces");
-        expect(await failure(reducing(`[total]: "avg"`, "context[total](1);"))).toBe(`a resource is reduced with one of "+", "*", "min", "max", "&", "|", "^"`);
-        expect(await failure(reducing(`total: "+"`, "context[total](1);"))).toBe(`resources.reduce names each resource as a computed key bound at module scope, as in { [total]: "+" }`);
-        expect(await failure(reducing(`[total]: "+"`, "context[total](1);").replace(`kernel: "cpu"`, `kernel: "gpu"`))).toBe("a GPU kernel can't use reductions yet");
-        expect(await failure(reducing(`[total]: "+"`, "context[total](1);").replace("resources: {", "resources: { read: [total],"))).toBe("total is reduced, so it can't also be read or filtered on");
-        expect(await failure(reducing(`[total]: "+", [total]: "max"`, "context[total](1);"))).toBe("total is reduced twice");
+        expect(await failure(reducing(`[total]: "+"`, "reduce[total](1, 2);"))).toBe("total takes the one value it reduces");
+        expect(await failure(reducing(`[total]: "avg"`, "reduce[total](1);"))).toBe(`a resource is reduced with one of "+", "*", "min", "max", "&", "|", "^"`);
+        expect(await failure(reducing(`total: "+"`, "reduce[total](1);"))).toBe(`reduce names each resource as a computed key bound at module scope, as in { [total]: "+" }`);
+        expect(await failure(reducing(`[total]: "+"`, "reduce[total](1);").replace(`kernel: "cpu"`, `kernel: "gpu"`))).toBe("a GPU kernel can't use reductions yet");
+        expect(await failure(reducing(`[total]: "+"`, "reduce[total](1);").replace("reduce: {", "resources: { read: [total] }, reduce: {"))).toBe("total is reduced, so it can't also be read or filtered on");
+        expect(await failure(reducing(`[total]: "+", [total]: "max"`, "reduce[total](1);"))).toBe("total is reduced twice");
     });
 });
 
 describe("let locals of component values", () => {
     test("written back whole after a tuple assignment have the tuple's shape", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position, alive], write: [position] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [alive], write: [position] } }, (row) => {
             let v = row[position];
             if (row[alive]) v = [7, 8, 9];
             row[position] = v;
@@ -432,22 +432,22 @@ describe("let locals of component values", () => {
 
 describe("binding identity", () => {
     test("a local shadowing a component key is not that component", async () => {
-        expect(await failure(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [velocity], write: [position] } }, (row) => {
+        expect(await failure(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [velocity], write: [position] } }, (row) => {
             const velocity = 1;
             row[position] = row[velocity];
-        });`)).toBe("row is indexed by a component in query read or write, or .entity");
+        });`)).toBe("row is indexed by a component in components read or write, or .entity");
     });
 
     test("another binding with the same key string is not the declared component", async () => {
         expect(await failure(`const speed = "velocity";
-        const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [velocity], write: [position] } }, (row) => {
+        const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [velocity], write: [position] } }, (row) => {
             row[position] = row[speed];
-        });`)).toBe("speed is not in query read or write");
+        });`)).toBe("speed is not in components read or write");
     });
 
     test("a helper parameter shadows a module binding only inside the helper", async () => {
         const kernel = await compile(`const twice = (velocity) => velocity * 2;
-        const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [velocity], write: [position] } }, (row) => {
+        const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [velocity], write: [position] } }, (row) => {
             row[position] = twice(row[velocity]) + row[velocity];
         });`);
         expect(run(kernel, 1, { velocity: { "[]": [3] } }).field("position")).toEqual([9]);
@@ -456,7 +456,7 @@ describe("binding identity", () => {
 
 describe("value semantics", () => {
     test("tuple locals are copies, and snapshots read before later writes", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position], write: [position, score] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { write: [position, score] } }, (row) => {
             const before = row[position];
             let v = [before[0], before[1]];
             const w = v;
@@ -470,7 +470,7 @@ describe("value semantics", () => {
     });
 
     test("whole-value writes evaluate every leaf before storing", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position], write: [position, score] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { write: [position, score] } }, (row) => {
             row[position] = [row[position][1], row[position][0]];
             let a = 1;
             let b = 2;
@@ -483,7 +483,7 @@ describe("value semantics", () => {
     });
 
     test("struct values and conditional tuples", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [position] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass], write: [position] } }, (row) => {
             const p = row[mass] > 1 ? { x: 1, y: [2, 3] } : { x: 4, y: [5, 6] };
             row[position] = p;
         });`);
@@ -501,7 +501,7 @@ describe("helpers", () => {
             return [x * k, y * k];
         };
         const length = ([x, y]) => Math.sqrt(x * x + y * y);
-        const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position], write: [position, score] } }, (row) => {
+        const kernel = System.create({ name: "a", kernel: "cpu", components: { write: [position, score] } }, (row) => {
             const k = 100;
             const x = 1;
             row[position] = scale(row[position], 0.5);
@@ -514,14 +514,14 @@ describe("helpers", () => {
 
     test("recursive helpers are rejected", async () => {
         expect(await failure(`const f = (x) => f(x);
-        const kernel = System.create({ name: "a", kernel: "cpu", query: { write: [score] } }, (row) => { row[score] = f(1); });`))
+        const kernel = System.create({ name: "a", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = f(1); });`))
             .toBe("f is recursive");
     });
 });
 
 describe("control flow", () => {
     test("return ends the row, also from inside a loop", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass], write: [score] } }, (row) => {
             if (row[mass] < 0) return;
             let total = 0;
             for (let i = 0; i < 10; i++) {
@@ -536,7 +536,7 @@ describe("control flow", () => {
 
     test("a loop test that inlines a helper is re-evaluated each iteration", async () => {
         const kernel = await compile(`const below = (a, b) => { const limit = b * 2; return a < limit; };
-        const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, (row) => {
+        const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass], write: [score] } }, (row) => {
             let n = 0;
             while (below(n, row[mass])) { n++; }
             let m = 0;
@@ -550,7 +550,7 @@ describe("control flow", () => {
 describe("context", () => {
     test("lookups map components to their read index, with null guards", async () => {
         const kernel = await compile(`const half = (value) => { const h = value / 2; return h; };
-        const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [target], write: [position, score] }, lookup: { targets: { read: [mass, position] } } }, (row, { targets }) => {
+        const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [target], write: [position, score] }, lookup: { targets: { read: [mass, position] } } }, (row, { lookup: { targets } }) => {
             const other = targets(row[target]);
             if (other !== null) { row[position] = other[position] - other[mass]; }
             row[score] = (other !== null && half(other[position])) || -1;
@@ -562,16 +562,25 @@ describe("context", () => {
         expect(result.field("score")).toEqual([5, -1]);
     });
 
-    test("optional lookup access, computed context destructuring and args", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", args: { type: "number" }, query: { read: [target], write: [score] }, resources: { read: [delta] }, lookup: { targets: { read: [mass] } } }, (row, { [delta]: d, targets, args }) => {
-            row[score] = (targets(row[target])?.[mass] ?? 0) + d + args;
+    test("optional lookup access, destructured context groups and input", async () => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", input: { type: "number" }, components: { read: [target], write: [score] }, resources: { read: [delta] }, lookup: { targets: { read: [mass] } } }, (row, { resources: { [delta]: d }, lookup: { targets }, input }) => {
+            row[score] = (targets(row[target])?.[mass] ?? 0) + d + input;
+        });`);
+        const found = (entity: number) => entity === 1 ? [3] : null;
+        expect(run(kernel, 2, { target: { "[]": [1, 2] } }, { lookups: [found], resources: [10], args: 100, program: false }).field("score")).toEqual([113, 110]);
+    });
+
+    test("context groups reached through the context parameter", async () => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", input: { type: "number" }, components: { read: [target], write: [score] }, resources: { read: [delta] }, lookup: { targets: { read: [mass] } } }, (row, context) => {
+            const { resources } = context;
+            row[score] = (context.lookup.targets(row[target])?.[mass] ?? 0) + resources[delta] + context.input;
         });`);
         const found = (entity: number) => entity === 1 ? [3] : null;
         expect(run(kernel, 2, { target: { "[]": [1, 2] } }, { lookups: [found], resources: [10], args: 100, program: false }).field("score")).toEqual([113, 110]);
     });
 
     test("boolean columns read as booleans", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [alive], write: [score] } }, (row) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [alive], write: [score] } }, (row) => {
             row[score] = row[alive] === true ? 1 : 2;
         });`);
         expect(run(kernel, 2, { alive: { "[]": [1, 0] } }, { booleans: ["alive"] }).field("score")).toEqual([1, 2]);
@@ -579,7 +588,7 @@ describe("context", () => {
     });
 
     test("boolean reads convert only where observable, including through locals", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [alive, mass], write: [score] } }, (row, context, commands) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [alive, mass], write: [score] } }, (row, { commands }) => {
             const flag = row[alive];
             const copy = flag;
             row[score] = (copy === true ? 10 : 20) + row[mass] * 2 + (flag ? 1 : 0);
@@ -598,7 +607,7 @@ describe("context", () => {
     });
 
     test("a spawn nested in an add's value is issued before the add begins", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass] } }, (row, context, commands) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass] } }, (row, { commands }) => {
             commands.add(row.entity, { [target]: commands.spawn({ [mass]: row[mass] }), [score]: 1 });
             commands.despawn(row.entity);
         });`);
@@ -612,7 +621,8 @@ describe("context", () => {
     });
 
     test("commands name components through keys", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position] } }, (row, context, commands) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [position] } }, (row, context) => {
+            const { commands } = context;
             const spawned = commands.spawn({ [position]: [row[position][0], 1], [alive]: true });
             commands.add(spawned, { [score]: row.entity });
             commands.remove(row.entity, alive, score);
@@ -627,10 +637,10 @@ describe("context", () => {
 });
 
 describe("program", () => {
-    test("args and resource paths are scalars in the program", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", args: { type: "object" }, query: { write: [score] }, resources: { read: [delta] } }, (row, { [delta]: d, args }) => {
+    test("input and resource paths are scalars in the program", async () => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", input: { type: "object" }, components: { write: [score] }, resources: { read: [delta] } }, (row, { resources: { [delta]: d }, input }) => {
             const [, y] = d;
-            row[score] = y * args.scale + Math.max(args.scale, Math.PI) + (args.flag ? 1 : 0);
+            row[score] = y * input.scale + Math.max(input.scale, Math.PI) + (input.flag ? 1 : 0);
         });`);
         const result = run(kernel, 1, {}, { resources: [[1, 2]], args: { scale: 3, flag: true } });
         expect(result.field("score")).toEqual([2 * 3 + Math.PI + 1]);
@@ -639,7 +649,7 @@ describe("program", () => {
     });
 
     test("runtime indexing into a resource has no program", async () => {
-        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] }, resources: { read: [delta] } }, (row, { [delta]: d }) => {
+        const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass], write: [score] }, resources: { read: [delta] } }, (row, { resources: { [delta]: d } }) => {
             row[score] = d[row[mass]];
         });`);
         expect(run(kernel, 1, { mass: { "[]": [1] } }, { resources: [[5, 6]], program: false }).field("score")).toEqual([6]);
@@ -649,8 +659,8 @@ describe("program", () => {
 describe("lookups in the program", () => {
     const targets = (entity: number) => entity === 1 ? [3, [10, 20, 30]] : entity === 2 ? [4, [40, 50, 60]] : null;
     const declaration = (body: string, read = "[target]", lookup = "targets: { read: [mass, position] }") => `const kernel = System.create({ name: "a", kernel: "cpu",
-        query: { read: ${read}, write: [score] }, lookup: { ${lookup} } },
-        (row, { ${lookup.includes("others") ? "targets, others" : "targets"} }) => { ${body} });`;
+        components: { read: ${read}, write: [score] }, lookup: { ${lookup} } },
+        (row, { lookup: { ${lookup.includes("others") ? "targets, others" : "targets"} } }) => { ${body} });`;
 
     test("guarded leaf access, early return and a second lookup in its own handle", async () => {
         const kernel = await compile(declaration(`
@@ -693,12 +703,12 @@ describe("lookups in the program", () => {
 });
 
 describe("subset", () => {
-    const kernel = (body: string, query = "{ read: [mass], write: [score] }") =>
-        `const kernel = System.create({ name: "a", kernel: "cpu", query: ${query} }, (row, context, commands) => { ${body} });`;
+    const kernel = (body: string, components = "{ read: [mass], write: [score] }") =>
+        `const kernel = System.create({ name: "a", kernel: "cpu", components: ${components} }, (row, { commands }) => { ${body} });`;
 
     test.each([
-        ["row[mass] = 1;", "mass is not in query write"],
-        ["row[score] = row[score] + 1;", "score is write-only here; add it to query read to read it"],
+        ["row[mass] = 1;", "mass is not in components write"],
+        ["row[score] = row[score] + row[mass];", "compiled"],
         ["const f = () => 1;", "functions can't be created in a kernel; define helpers at module scope"],
         ["row[score] = \"a\";", "only number, boolean and null literals are in the kernel subset"],
         ["var x = 1;", "use const or let, not var"],
@@ -713,34 +723,34 @@ describe("subset", () => {
     });
 
     test("component values are written whole", async () => {
-        expect(await failure(kernel("row[position][0] = 1;", "{ read: [position], write: [position] }"))).toBe("component values are immutable; write the whole value");
+        expect(await failure(kernel("row[position][0] = 1;", "{ write: [position] }"))).toBe("component values are immutable; write the whole value");
     });
 
     test("GPU kernels", async () => {
         const gpu = (declaration: string, body: string) =>
-            `const kernel = System.create({ name: "a", kernel: "gpu", ${declaration} }, (row, context, commands) => { ${body} });`;
-        expect(await failure(gpu("query: { read: [mass], write: [score] }", "row[score] = row[mass] * 2;"))).toBe("compiled");
-        expect(await failure(gpu("query: { read: [target], write: [score] }, lookup: { targets: { read: [mass] } }", "row[score] = 1;")))
+            `const kernel = System.create({ name: "a", kernel: "gpu", ${declaration} }, (row, context) => { ${body} });`;
+        expect(await failure(gpu("components: { read: [mass], write: [score] }", "row[score] = row[mass] * 2;"))).toBe("compiled");
+        expect(await failure(gpu("components: { read: [target], write: [score] }, lookup: { targets: { read: [mass] } }", "row[score] = 1;")))
             .toBe("a GPU kernel can't use lookups yet");
-        expect(await failure(gpu("query: { write: [score], changed: [mass] }", "row[score] = 1;"))).toBe("a GPU kernel can't use change filters yet");
-        expect(await failure(gpu("query: { read: [mass], write: [score] }", "commands.despawn(row.entity);")))
+        expect(await failure(gpu("components: { write: [score], changed: [mass] }", "row[score] = 1;"))).toBe("a GPU kernel can't use change filters yet");
+        expect(await failure(gpu("components: { read: [mass], write: [score] }", "context.commands.despawn(row.entity);")))
             .toBe("a GPU kernel can't issue commands or use values that aren't numbers or booleans");
-        expect(await failure(gpu("query: { read: [mass], write: [score] }", "let s = 0; for (let i = 0; i < 3; i++) s += i; row[score] = s;")))
+        expect(await failure(gpu("components: { read: [mass], write: [score] }", "let s = 0; for (let i = 0; i < 3; i++) s += i; row[score] = s;")))
             .toBe("a GPU kernel can't use loops or labeled blocks yet");
-        expect(await failure(`const kernel = System.create({ name: "a", kernel: true, query: { write: [score] } }, (row) => {});`))
+        expect(await failure(`const kernel = System.create({ name: "a", kernel: true, components: { write: [score] } }, (row) => {});`))
             .toBe(`kernel must be the literal "cpu" or "gpu"`);
     });
 
     test("GPU programs carry their locals' names", async () => {
         const body = "(row) => { const doubled = row[mass] * 2; row[score] = doubled; }";
-        const gpu = await compile(`const kernel = System.create({ name: "a", kernel: "gpu", query: { read: [mass], write: [score] } }, ${body});`);
-        const cpu = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, ${body});`);
+        const gpu = await compile(`const kernel = System.create({ name: "a", kernel: "gpu", components: { read: [mass], write: [score] } }, ${body});`);
+        const cpu = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass], write: [score] } }, ${body});`);
         expect(gpu.program?.names).toEqual([expect.stringMatching(/^doubled_\d+$/)]);
         expect(cpu.program?.names).toBeUndefined();
     });
 
     test("kernels inside functions", async () => {
-        expect(await failure(`const make = () => System.create({ name: "a", kernel: "cpu", query: { write: [score] } }, (row) => {});`))
+        expect(await failure(`const make = () => System.create({ name: "a", kernel: "cpu", components: { write: [score] } }, (row) => {});`))
             .toBe("kernel systems must be declared at module scope");
     });
 
@@ -752,15 +762,15 @@ describe("subset", () => {
     });
 
     test("non-kernel systems and other modules are left untouched", async () => {
-        expect(await transform(`const s = System.create({ name: "a", query: { read: [mass] } }, (row) => { const f = () => row; });`)).toBeNull();
+        expect(await transform(`const s = System.create({ name: "a", components: { read: [mass] } }, (row) => { const f = () => row; });`)).toBeNull();
         expect(await transformKernels(`import { System } from "other";\nSystem.create({ name: "a", kernel: "cpu" }, () => {});`, "/x.js", parseAst, async () => false, () => "")).toBeNull();
     });
 });
 
 describe("spawns in main-thread systems", () => {
     /** Runs the transformed system's body once, recording each spawn's keys and values as the runtime hook receives them. */
-    const spawned = async (body: string): Promise<{ readonly code: string; readonly calls: readonly unknown[] }> => {
-        const source = `const system = System.create({ name: "a" }, (row, context, commands) => { ${body} });`;
+    const spawned = async (body: string, parameters = "({ commands })", declaration = `{ name: "a" }`): Promise<{ readonly code: string; readonly calls: readonly unknown[] }> => {
+        const source = `const system = System.create(${declaration}, ${parameters} => { ${body} });`;
         const result = await transform(source);
         if (result !== null && "failure" in result) return { code: result.failure.message, calls: [] };
         const module = (result?.code ?? `${header}${source}`).split("\n").filter(line => !line.startsWith("import ")).join("\n");
@@ -775,13 +785,25 @@ describe("spawns in main-thread systems", () => {
             };
         };
         const system = new Function("System", "prepareSpawn$", `${module}\nreturn system;`)({ create: (declaration: unknown, run: unknown) => ({ declaration, run }) }, prepare);
-        system.run(undefined, {}, { spawn: (values: unknown) => { calls.push(["spawn", values]); } });
+        const context = { commands: { spawn: (values: unknown) => { calls.push(["spawn", values]); } } };
+        if (parameters.startsWith("(row")) system.run({}, context);
+        else system.run(context);
         return { code: result?.code ?? source, calls };
     };
 
     test("pass literal values positionally, in source order", async () => {
         const { calls } = await spawned(`let i = 0; commands.spawn({ [position]: [++i, 0, 0], [score]: ++i, "mass": 3 }); commands.spawn({});`);
         expect(calls).toEqual([["prepared", ["position", "score", "mass"], [[1, 0, 0], 2, 3]], ["prepared", [], []]]);
+    });
+
+    test.each([
+        ["the context's commands", "context.commands.spawn({ [score]: 1 });", "(context)", `{ name: "a" }`],
+        ["renamed commands", "issue.spawn({ [score]: 1 });", "({ commands: issue })", `{ name: "a" }`],
+        ["a system with components", "commands.spawn({ [score]: 1 });", "(row, { commands })", `{ name: "a", components: { has: [mass] } }`],
+        ["the context of a system with components", "context.commands.spawn({ [score]: 1 });", "(row, context)", `{ name: "a", components: { has: [mass] } }`],
+    ])("pass values positionally through %s", async (_, body, parameters, declaration) => {
+        const { calls } = await spawned(body, parameters, declaration);
+        expect(calls).toEqual([["prepared", ["score"], [1]]]);
     });
 
     test.each([
@@ -808,7 +830,7 @@ describe("helpers that return early", () => {
             }
             return [c, 2];
         };
-        const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [position] } }, (row) => {
+        const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass], write: [position] } }, (row) => {
             const [value, path] = pick(row[mass], 4);
             row[position] = [value, path, 0];
         });`);
@@ -824,7 +846,7 @@ describe("math builtins", () => {
     const results = (result: ReturnType<typeof run>) => [0, 1, 2].map(row => [0, 1, 2].map(k => result.field("position", [k])[row]));
 
     test("inline as scalar code, nested namespaces and helpers they call included", async () => {
-        const kernel = await compile(`${math}const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position, velocity], write: [position, score] } }, (row) => {
+        const kernel = await compile(`${math}const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [velocity], write: [position, score] } }, (row) => {
             const p = row[position];
             const v = row[velocity];
             row[position] = Vec3.add(Vec3.normalize(Vec3.cross(p, v)), Vec3.F32.scale(Vec3.clamp(v, Vec3.zero, [1, 1, 1]), Vec3.dot(p, v)));
@@ -843,7 +865,7 @@ describe("math builtins", () => {
     });
 
     test("across namespaces: quaternions rotating vectors, and matrices", async () => {
-        const kernel = await compile(`${math}const kernel = System.create({ name: "a", kernel: "cpu", query: { read: [position], write: [position] } }, (row) => {
+        const kernel = await compile(`${math}const kernel = System.create({ name: "a", kernel: "cpu", components: { write: [position] } }, (row) => {
             const q = Quat.fromAxisAngle([0, 0, 1], Math.PI / 2);
             const m = Mat4x4.multiply(Mat4x4.translation(1, 2, 3), Mat4x4.scaling(2, 2, 2));
             row[position] = Mat4x4.multiplyVec3(m, Quat.rotateVec3(q, row[position]));
@@ -856,7 +878,7 @@ describe("math builtins", () => {
 
     test("in GPU kernels, become regions WGSL emits as builtins, and other backends run as the inlined body", async () => {
         const body = `(row) => { row[position] = Vec3.scale(Vec3.normalize(Vec3.cross(row[position], row[velocity])), Vec3.dot(row[position], row[velocity])); }`;
-        const declaration = `query: { read: [position, velocity], write: [position] }`;
+        const declaration = `components: { read: [velocity], write: [position] }`;
         const gpu = await compile(`${math}const kernel = System.create({ name: "a", kernel: "gpu", ${declaration} }, ${body});`);
         const cpu = await compile(`${math}const kernel = System.create({ name: "a", kernel: "cpu", ${declaration} }, ${body});`);
         const regions = (gpu.program?.body ?? []).flatMap(statement => statement.kind === "intrinsic" ? [statement.intrinsic.operation] : []);
@@ -872,17 +894,17 @@ describe("math builtins", () => {
     });
 
     test("that leave the kernel subset fail with the function's reason", async () => {
-        expect(await failure(`${math}const kernel = System.create({ name: "a", kernel: "cpu", query: { write: [position] } }, (row) => {
+        expect(await failure(`${math}const kernel = System.create({ name: "a", kernel: "cpu", components: { write: [position] } }, (row) => {
             row[position] = Vec3.random();
         });`)).toBe("Math.random is not in the kernel subset");
-        expect(await failure(`${math}const kernel = System.create({ name: "a", kernel: "cpu", query: { write: [position] } }, (row) => {
+        expect(await failure(`${math}const kernel = System.create({ name: "a", kernel: "cpu", components: { write: [position] } }, (row) => {
             row[position] = Vec3.missing([1, 2, 3]);
         });`)).toMatch(/^missing isn't exported by .*\/math\/vec3\/public\.ts$/);
     });
 });
 
 describe("imported functions and constants", () => {
-    const kernel = (imports: string, body: string) => `${imports}\nconst kernel = System.create({ name: "a", kernel: "cpu", query: { read: [mass], write: [score] } }, (row) => { ${body} });`;
+    const kernel = (imports: string, body: string) => `${imports}\nconst kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass], write: [score] } }, (row) => { ${body} });`;
     const scores = async (source: string, files: { readonly [file: string]: string }) =>
         run(await compile(source, files), 2, { mass: { "[]": [2, 3] } }).field("score");
 
@@ -949,71 +971,75 @@ describe("imported functions and constants", () => {
 
 describe("declared access", () => {
     const kernel = (declaration: string, body: string) =>
-        `const kernel = System.create({ name: "a", kernel: "cpu", ${declaration} }, (row, context) => { ${body} });`;
+        `const kernel = System.create({ name: "a", kernel: "cpu", ${declaration} }, (row, { resources, lookup, reduce }) => { ${body} });`;
     const system = (declaration: string, body: string) => `const system = System.create({ name: "a", ${declaration} }, ${body});`;
 
     test("a kernel uses every component and resource it lists", async () => {
-        expect(await failure(kernel("query: { read: [position, velocity], write: [position] }", "row[position] = row[velocity];")))
-            .toBe("position is in query read but never read; remove it, or move it to query has to keep requiring it");
-        expect(await failure(kernel("query: { read: [position], write: [velocity, mass] }", "row[velocity] = row[position];")))
-            .toBe("mass is in query write but never written; remove it");
-        expect(await failure(kernel("query: { write: [score] }, resources: { read: [delta] }", "row[score] = 1;")))
+        expect(await failure(kernel("components: { read: [position, velocity], write: [score] }", "row[score] = row[velocity];")))
+            .toBe("position is in components read but never read; remove it, or move it to components has to keep requiring it");
+        expect(await failure(kernel("components: { read: [position], write: [velocity, mass] }", "row[velocity] = row[position];")))
+            .toBe("mass is in components write but never written; remove it, or move it to components read if it's only read");
+        expect(await failure(kernel("components: { write: [score] }, resources: { read: [delta] }", "row[score] = 1;")))
             .toBe("delta is in resources read but never read; remove it");
-        expect(await failure(kernel("query: { read: [target], write: [score] }, lookup: { targets: { read: [mass, position] } }",
-            "const found = context.targets(row[target]); row[score] = found === null ? 0 : found[mass];")))
+        expect(await failure(kernel("components: { read: [target], write: [score] }, lookup: { targets: { read: [mass, position] } }",
+            "const found = lookup.targets(row[target]); row[score] = found === null ? 0 : found[mass];")))
             .toBe("position is in lookup.targets read but never read; remove it, or move it to lookup.targets has to keep requiring it");
-        expect(await failure(kernel("query: { read: [mass], has: [alive] }", "const entity = row.entity;")))
-            .toBe("mass is in query read but never read; remove it, or move it to query has to keep requiring it");
-        expect(await failure(kernel("query: { read: [position, mass], write: [score] }, resources: { read: [delta] }",
-            "row[score] = row[mass] * context[delta] + row[position][0];"))).toBe("compiled");
+        expect(await failure(kernel("components: { read: [mass], has: [alive] }", "const entity = row.entity;")))
+            .toBe("mass is in components read but never read; remove it, or move it to components has to keep requiring it");
+        expect(await failure(kernel("components: { read: [position, mass], write: [score] }, resources: { read: [delta] }",
+            "row[score] = row[mass] * resources[delta] + row[position][0];"))).toBe("compiled");
     });
 
     test("a main-thread system uses every component and resource it lists, where its body shows every access", async () => {
-        expect(await failure(system("query: { read: [position, mass], write: [velocity] }", "(row) => { row[velocity] = row[position]; }")))
-            .toBe("mass is in query read but never read; remove it, or move it to query has to keep requiring it");
-        expect(await failure(system("query: { read: [position], write: [velocity] }", "(row) => { console.log(row[position]); }")))
-            .toBe("velocity is in query write but never written; remove it");
-        expect(await failure(system("query: { read: [mass] }", "() => {}")))
-            .toBe("mass is in query read but never read; remove it, or move it to query has to keep requiring it");
-        expect(await failure(system("query: { read: [mass] }", "(row, _, commands) => commands.despawn(row.entity)")))
-            .toBe("mass is in query read but never read; remove it, or move it to query has to keep requiring it");
-        expect(await failure(system("resources: { read: [delta], write: [score] }", "(_, context) => { context[score] = 1; }")))
-            .toBe("delta is in resources read but never read; remove it");
-        expect(await failure(system("resources: { read: [delta] }, args: { type: \"number\" }", "(_, { args }) => { console.log(args); }")))
-            .toBe("delta is in resources read but never read; remove it");
-        expect(await failure(system("query: { write: [score] }, resources: { write: [score] }", "(row, context) => { row[score] += 1; context[score]++; }")))
-            .toBe("compiled");
+        const unread = "mass is in components read but never read; remove it, or move it to components has to keep requiring it";
+        expect(await failure(system("components: { read: [position, mass], write: [velocity] }", "(row) => { row[velocity] = row[position]; }"))).toBe(unread);
+        expect(await failure(system("components: { read: [position], write: [velocity] }", "(row) => { console.log(row[position]); }")))
+            .toBe("velocity is in components write but never written; remove it, or move it to components read if it's only read");
+        expect(await failure(system("components: { read: [mass] }", "() => {}"))).toBe(unread);
+        expect(await failure(system("components: { read: [mass] }", "(row, { commands }) => commands.despawn(row.entity)"))).toBe(unread);
+        expect(await failure(system("components: { write: [score] }", "(row) => { row[score] += 1; }"))).toBe("compiled");
+    });
+
+    test("a main-thread system uses every resource it lists, through its context's resources however it reaches them", async () => {
+        const unread = "delta is in resources read but never read; remove it";
+        // Without components, the context is the first parameter.
+        expect(await failure(system("resources: { read: [delta], write: [score] }", "(context) => { context.resources[score] = 1; }"))).toBe(unread);
+        expect(await failure(system("resources: { read: [delta], write: [score] }", "({ resources }) => { resources[score] = 1; }"))).toBe(unread);
+        expect(await failure(system("resources: { read: [delta], write: [score] }", "(context) => { const { resources } = context; resources[score] = 1; }"))).toBe(unread);
+        expect(await failure(system("resources: { read: [delta] }, input: { type: \"number\" }", "({ input }) => { console.log(input); }"))).toBe(unread);
+        expect(await failure(system("resources: { write: [score, mass] }", "({ resources }) => { resources[score] = 1; }"))).toBe("mass is in resources write but never written; remove it, or move it to resources read if it's only read");
+        expect(await failure(system("components: { has: [mass] }, resources: { read: [delta], write: [score] }",
+            "(_, context) => { context.resources[score] = context.resources[delta]; }"))).toBe("compiled");
+        expect(await failure(system("resources: { read: [delta] }", "({ resources: { [delta]: d } }) => { console.log(d); }"))).toBe("compiled");
     });
 
     test("a system contributes to every resource it reduces", async () => {
         const totals = `const total = "total";\nconst low = "low";\n`;
-        expect(await failure(`${totals}${kernel(`query: { read: [mass] }, resources: { reduce: { [total]: "+", [low]: "min" } }`, "context[total](row[mass]);")}`))
-            .toBe("low is in resources reduce but never contributed to; remove it");
-        expect(await failure(`${totals}${system(`query: { read: [mass] }, resources: { reduce: { [total]: "+", [low]: "min" } }`, "(row, context) => { context[total](row[mass]); }")}`))
-            .toBe("low is in resources reduce but never contributed to; remove it");
-        expect(await failure(`${totals}${system(`query: { read: [mass] }, resources: { reduce: { [total]: "+" } }`, "(row, { [total]: add }) => { add(row[mass]); }")}`))
-            .toBe("compiled");
+        const missing = "low is in reduce but never contributed to; remove it";
+        expect(await failure(`${totals}${kernel(`components: { read: [mass] }, reduce: { [total]: "+", [low]: "min" }`, "reduce[total](row[mass]);")}`)).toBe(missing);
+        expect(await failure(`${totals}${system(`components: { read: [mass] }, reduce: { [total]: "+", [low]: "min" }`, "(row, { reduce }) => { reduce[total](row[mass]); }")}`)).toBe(missing);
+        expect(await failure(`${totals}${system(`components: { read: [mass] }, reduce: { [total]: "+", [low]: "min" }`, "(row, context) => { context.reduce[total](row[mass]); }")}`)).toBe(missing);
+        expect(await failure(`${totals}${system(`components: { read: [mass] }, reduce: { [total]: "+" }`, "(row, { reduce }) => { const add = reduce[total]; add(row[mass]); }")}`)).toBe("compiled");
     });
 
     test("a main-thread system reads every component it lists in a lookup, where its body shows every use of the result", async () => {
-        const looking = (lookup: string, body: string) => system(`query: { read: [target] }, lookup: { targets: { read: ${lookup} } }`, body);
-        expect(await failure(looking("[mass, position]", "(row, context) => { const found = context.targets(row[target]); if (found !== null) console.log(found[mass]); }")))
-            .toBe("position is in lookup.targets read but never read; remove it, or move it to lookup.targets has to keep requiring it");
-        expect(await failure(looking("[mass, position]", "(row, { targets }) => { console.log(targets(row[target])?.[mass]); }")))
-            .toBe("position is in lookup.targets read but never read; remove it, or move it to lookup.targets has to keep requiring it");
-        expect(await failure(looking("[mass]", "(row, { targets }) => { const found = targets(row[target]); if (!found) return; console.log(found[mass]); }")))
+        const looking = (lookup: string, body: string) => system(`components: { read: [target] }, lookup: { targets: { read: ${lookup} } }`, body);
+        const unread = "position is in lookup.targets read but never read; remove it, or move it to lookup.targets has to keep requiring it";
+        expect(await failure(looking("[mass, position]", "(row, context) => { const found = context.lookup.targets(row[target]); if (found !== null) console.log(found[mass]); }"))).toBe(unread);
+        expect(await failure(looking("[mass, position]", "(row, { lookup }) => { console.log(lookup.targets(row[target])?.[mass]); }"))).toBe(unread);
+        expect(await failure(looking("[mass, position]", "(row, { lookup: { targets } }) => { console.log(targets(row[target])?.[mass]); }"))).toBe(unread);
+        expect(await failure(looking("[mass]", "(row, { lookup: { targets } }) => { const found = targets(row[target]); if (!found) return; console.log(found[mass]); }")))
             .toBe("compiled");
-        expect(await failure(looking("[mass, position]", "(row, { targets }) => { const found = targets(row[target]); console.log(found); }"))).toBe("compiled");
-        expect(await failure(looking("[mass, position]", "(row, { targets }) => { let found = targets(row[target]); console.log(found?.[mass]); }"))).toBe("compiled");
-        expect(await failure(looking("[mass, position]", "(row, { targets }) => { helper(targets); console.log(row[target]); }"))).toBe("compiled");
+        expect(await failure(looking("[mass, position]", "(row, { lookup: { targets } }) => { const found = targets(row[target]); console.log(found); }"))).toBe("compiled");
+        expect(await failure(looking("[mass, position]", "(row, { lookup: { targets } }) => { let found = targets(row[target]); console.log(found?.[mass]); }"))).toBe("compiled");
+        expect(await failure(looking("[mass, position]", "(row, { lookup }) => { helper(lookup); console.log(row[target]); }"))).toBe("compiled");
     });
 
     test("a main-thread system reads every component it lists through a destructured row", async () => {
-        expect(await failure(system("query: { read: [position, mass] }", "({ [position]: p, entity }) => { console.log(p, entity); }")))
-            .toBe("mass is in query read but never read; remove it, or move it to query has to keep requiring it");
-        expect(await failure(system("query: { read: [position, mass] }", "(row) => { const { [position]: p } = row; console.log(p); }")))
-            .toBe("mass is in query read but never read; remove it, or move it to query has to keep requiring it");
-        expect(await failure(system("query: { read: [position] }", "({ ...all }) => { console.log(all); }"))).toBe("compiled");
+        const unread = "mass is in components read but never read; remove it, or move it to components has to keep requiring it";
+        expect(await failure(system("components: { read: [position, mass] }", "({ [position]: p, entity }) => { console.log(p, entity); }"))).toBe(unread);
+        expect(await failure(system("components: { read: [position, mass] }", "(row) => { const { [position]: p } = row; console.log(p); }"))).toBe(unread);
+        expect(await failure(system("components: { read: [position] }", "({ ...all }) => { console.log(all); }"))).toBe("compiled");
     });
 
     test("finalizers are checked as main-thread bodies, in files that import only Finalizer", async () => {
@@ -1023,20 +1049,25 @@ describe("declared access", () => {
             return result !== null && "failure" in result ? result.failure.message : "compiled";
         };
         const header = `import { Finalizer } from "ecs";\nconst handle = "handle";\nconst count = "count";\n`;
-        expect(await failed(`${header}const f = Finalizer.create({ name: "f", query: { read: [handle, count] } }, (row) => { console.log(row[handle]); });`))
-            .toBe("count is in query read but never read; remove it, or move it to query has to keep requiring it");
-        expect(await failed(`${header}const f = Finalizer.changes({ name: "f", resources: { read: [count] } }, (changes, context) => { console.log(changes); });`))
+        expect(await failed(`${header}const f = Finalizer.create({ name: "f", components: { read: [handle, count] } }, (row) => { console.log(row[handle]); });`))
+            .toBe("count is in components read but never read; remove it, or move it to components has to keep requiring it");
+        expect(await failed(`${header}const f = Finalizer.changes({ name: "f", resources: { read: [count] } }, (changes, { resources }) => { console.log(changes); });`))
             .toBe("count is in resources read but never read; remove it");
-        expect(await failed(`${header}const f = Finalizer.create({ name: "f", query: { read: [handle] } }, (row) => { console.log(row[handle]); });`)).toBe("compiled");
+        expect(await failed(`${header}const f = Finalizer.changes({ name: "f", resources: { read: [count] } }, (changes, { resources }) => { console.log(changes, resources[count]); });`))
+            .toBe("compiled");
+        expect(await failed(`${header}const f = Finalizer.create({ name: "f", components: { read: [handle] } }, (row) => { console.log(row[handle]); });`)).toBe("compiled");
     });
 
     test("a main-thread system whose body hides an access isn't checked", async () => {
-        expect(await failure(system("query: { read: [mass] }", "(row) => { helper(row); }"))).toBe("compiled");
-        expect(await failure(system("query: { read: [mass] }", "(row) => { for (const key of [mass]) console.log(row[key]); }"))).toBe("compiled");
-        expect(await failure(system("query: { read: [mass] }", "(row) => { const mass = \"other\"; console.log(row[mass]); }"))).toBe("compiled");
-        expect(await failure(system("query: { read: [mass] }", "function (row) { console.log(arguments[0][mass]); }"))).toBe("compiled");
-        expect(await failure(system("resources: { read: [delta] }", "(_, { ...all }) => { console.log(all); }"))).toBe("compiled");
-        expect(await failure(system("query: { read: [mass] }", "body"))).toBe("compiled");
-        expect(await failure("const decay = (k) => System.create({ name: \"a\", query: { read: [k] } }, (row) => { console.log(row[k]); });")).toBe("compiled");
+        expect(await failure(system("components: { read: [mass] }", "(row) => { helper(row); }"))).toBe("compiled");
+        expect(await failure(system("components: { read: [mass] }", "(row) => { for (const key of [mass]) console.log(row[key]); }"))).toBe("compiled");
+        expect(await failure(system("components: { read: [mass] }", "(row) => { const mass = \"other\"; console.log(row[mass]); }"))).toBe("compiled");
+        expect(await failure(system("components: { read: [mass] }", "function (row) { console.log(arguments[0][mass]); }"))).toBe("compiled");
+        expect(await failure(system("resources: { read: [delta] }", "({ ...all }) => { console.log(all); }"))).toBe("compiled");
+        expect(await failure(system("resources: { read: [delta] }", "({ resources: { ...all } }) => { console.log(all); }"))).toBe("compiled");
+        expect(await failure(system("resources: { read: [delta] }", "(context) => { helper(context.resources); }"))).toBe("compiled");
+        expect(await failure(system("resources: { read: [delta] }", "(context) => { let r = context.resources; console.log(r); }"))).toBe("compiled");
+        expect(await failure(system("components: { read: [mass] }", "body"))).toBe("compiled");
+        expect(await failure("const decay = (k) => System.create({ name: \"a\", components: { read: [k] } }, (row) => { console.log(row[k]); });")).toBe("compiled");
     });
 });

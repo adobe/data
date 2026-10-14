@@ -80,27 +80,27 @@ Component.register(ownedBy, { type: Entity.schema, reference: "owner" });
 
 const count = 5000;
 
-const spawn = System.create({ name: "gpuTest/spawn" }, (_, __, commands) => {
+const spawn = System.create({ name: "gpuTest/spawn" }, ({ commands }) => {
     for (let i = 0; i < count; i++) {
         if (i % 2 === 0) commands.spawn({ [position]: [i, 0, -i], [velocity]: [1, i % 7, 0.5] });
         else commands.spawn({ [position]: [i, 0, -i], [velocity]: [1, i % 7, 0.5], [tag]: true });
     }
 });
 
-const move = System.create({ name: "gpuTest/move", kernel: "gpu", query: { read: [position, velocity], write: [position] } }, row => {
+const move = System.create({ name: "gpuTest/move", kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];
     row[position] = [px + vx, py + vy * 2, pz + vz];
 });
 
-const moveAgain = System.create({ name: "gpuTest/moveAgain", kernel: "gpu", query: { read: [position, velocity], write: [position] }, after: ["gpuTest/reset"] }, row => {
+const moveAgain = System.create({ name: "gpuTest/moveAgain", kernel: "gpu", components: { read: [velocity], write: [position] }, after: ["gpuTest/reset"] }, row => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];
     row[position] = [px + vx, py + vy, pz + vz];
 });
 
 /** Between two GPU kernels: reads what the first wrote, and changes what both read. */
-const reset = System.create({ name: "gpuTest/reset", query: { read: [position, velocity], write: [position, velocity] }, after: ["gpuTest/move"] }, row => {
+const reset = System.create({ name: "gpuTest/reset", components: { write: [position, velocity] }, after: ["gpuTest/move"] }, row => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];
     row[position] = [px * 2, py, pz + 100];
@@ -108,12 +108,12 @@ const reset = System.create({ name: "gpuTest/reset", query: { read: [position, v
 });
 
 /** Between two GPU kernels: changes only what they read, so nothing needs reading back first. */
-const turn = System.create({ name: "gpuTest/turn", query: { read: [velocity], write: [velocity] }, after: ["gpuTest/move"] }, row => {
+const turn = System.create({ name: "gpuTest/turn", components: { write: [velocity] }, after: ["gpuTest/move"] }, row => {
     const [vx, vy, vz] = row[velocity];
     row[velocity] = [vz * 3, vx, vy];
 });
 
-const moveLater = System.create({ name: "gpuTest/moveLater", kernel: "gpu", query: { read: [position, velocity], write: [position] }, after: ["gpuTest/turn"] }, row => {
+const moveLater = System.create({ name: "gpuTest/moveLater", kernel: "gpu", components: { read: [velocity], write: [position] }, after: ["gpuTest/turn"] }, row => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];
     row[position] = [px + vx, py + vy, pz + vz];
@@ -121,7 +121,7 @@ const moveLater = System.create({ name: "gpuTest/moveLater", kernel: "gpu", quer
 
 const turning = System.composite({ name: "gpuTest/turning", systems: [move, turn, moveLater] });
 
-const spawnNumbers = System.create({ name: "gpuTest/spawnNumbers" }, (_, __, commands) => {
+const spawnNumbers = System.create({ name: "gpuTest/spawnNumbers" }, ({ commands }) => {
     for (const [c, a] of [[0, 0], [3, -2.5], [0xff00ff00, 2.5], [0xffffff00, 7], [0x80000000, -0.25]]) commands.spawn({ [code]: c, [amount]: a });
 });
 
@@ -129,7 +129,7 @@ const spawnNumbers = System.create({ name: "gpuTest/spawnNumbers" }, (_, __, com
  * JS semantics the GPU keeps: u32 values past 2^31, integer and bitwise chains bit for bit, infinities, rounding.
  * Arithmetic is f32, so only results f32 holds exactly are compared; WGSL lets implementations assume no value is NaN.
  */
-const numbers = System.create({ name: "gpuTest/numbers", kernel: "gpu", query: { read: [code, amount], write: [code, amount] } }, row => {
+const numbers = System.create({ name: "gpuTest/numbers", kernel: "gpu", components: { write: [code, amount] } }, row => {
     const c = row[code];
     const a = row[amount];
     const mixed = (c ^ 0x0f0f0f0f) >>> 0;
@@ -138,11 +138,11 @@ const numbers = System.create({ name: "gpuTest/numbers", kernel: "gpu", query: {
         + (c | 0) / 0x1000000 + Math.clz32(c) + (c > 0x80000000 ? 10000 : 0) + Math.max(a, -1) * 100 + (a % 1.5) * 10000;
 });
 
-const flagScore = System.create({ name: "gpuTest/flagScore", kernel: "gpu", query: { read: [flag], write: [score] } }, row => {
+const flagScore = System.create({ name: "gpuTest/flagScore", kernel: "gpu", components: { read: [flag], write: [score] } }, row => {
     row[score] = row[flag] ? 1 : 0;
 });
 
-const spawnFollower = System.create({ name: "gpuTest/spawnFollower" }, (_, __, commands) => {
+const spawnFollower = System.create({ name: "gpuTest/spawnFollower" }, ({ commands }) => {
     const leader = commands.spawn({ [position]: [10, 0, 0], [velocity]: [5, 0, 0] });
     commands.spawn({ [followed]: leader, [score]: 0 });
 });
@@ -150,17 +150,17 @@ const spawnFollower = System.create({ name: "gpuTest/spawnFollower" }, (_, __, c
 /** On the CPU, reads through a lookup what a GPU kernel wrote. */
 const follow = System.create({
     name: "gpuTest/follow",
-    query: { read: [followed], write: [score] },
+    components: { read: [followed], write: [score] },
     lookup: { leader: { read: [position] } },
     after: ["gpuTest/move"],
-}, (row, { leader }) => {
+}, (row, { lookup: { leader } }) => {
     row[score] = leader(row[followed])?.[position][0] ?? -1;
 });
 
 const following = System.composite({ name: "gpuTest/following", systems: [move, follow] });
 
 /** Despawns the first entity, moving the last into its row, then makes the sync point throw. */
-const poison = System.create({ name: "gpuTest/poison", query: { read: [position] } }, (row, _, commands) => {
+const poison = System.create({ name: "gpuTest/poison", components: { read: [position] } }, (row, { commands }) => {
     if (row[position][0] === 2) commands.despawn(row.entity);
     if (row[position][0] === 4) commands.add(row.entity, { [score]: Symbol("poison") as unknown as number });
 });
@@ -169,14 +169,14 @@ let frameNumber = 0;
 const spawnedNow: Entity[] = [];
 
 /** Spawns a few particles each frame, through growth of their archetypes; nothing on the CPU reads their positions. */
-const spawnFew = System.create({ name: "gpuTest/churn" }, (_, __, commands) => {
+const spawnFew = System.create({ name: "gpuTest/churn" }, ({ commands }) => {
     for (let i = 0; i < 37; i++) spawnedNow.push(commands.spawn({ [position]: [frameNumber, i, 0], [velocity]: [1, i % 3, 0.25] }));
     // Every fifth frame, a despawn moves another particle into a row the GPU wrote.
     if (frameNumber % 5 === 4) commands.despawn(spawnedNow[frameNumber * 3]);
 });
 
 /** A render body that fails after starting its pass. */
-const fail = System.render({ name: "gpuTest/fail", render: { accessors: { place: position } }, after: ["gpuTest/move"] }, ({ encoder }) => {
+const fail = System.render({ name: "gpuTest/fail", shader: { accessors: { place: position } }, after: ["gpuTest/move"] }, ({ encoder }) => {
     encoder.beginComputePass();
     throw new Error("draw failed");
 });
@@ -184,7 +184,7 @@ const fail = System.render({ name: "gpuTest/fail", render: { accessors: { place:
 const failing = System.composite({ name: "gpuTest/failing", systems: [move, fail] });
 
 /** Math from three namespaces, inlined into a compute shader. */
-const transform = System.create({ name: "gpuTest/transform", kernel: "gpu", query: { read: [position, velocity], write: [position] } }, row => {
+const transform = System.create({ name: "gpuTest/transform", kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
     const q = Quat.fromAxisAngle([0, 1, 0], 0.5);
     const m = Mat4x4.multiply(Mat4x4.translation(1, 2, 3), Mat4x4.scaling(2, 2, 2));
     row[position] = Vec3.add(Mat4x4.multiplyVec3(m, Quat.rotateVec3(q, row[position])), Vec3.normalize(row[velocity]));
@@ -193,14 +193,14 @@ const transform = System.create({ name: "gpuTest/transform", kernel: "gpu", quer
 Component.register(bits, { type: Vec3.U32.schema });
 Component.register(sums, { type: Vec3.I32.schema });
 
-const spawnIntegers = System.create({ name: "gpuTest/spawnIntegers" }, (_, __, commands) => {
+const spawnIntegers = System.create({ name: "gpuTest/spawnIntegers" }, ({ commands }) => {
     for (let i = 0; i < 100; i++) {
         commands.spawn({ [bits]: [Math.imul(i + 1, 0x9E3779B9) >>> 0, (0xFFFFFFFF - i) >>> 0, (i << 26) >>> 0], [sums]: [2 ** 31 - 1 - i, -(2 ** 31) + i, Math.imul(i, 65536)] });
     }
 });
 
 /** Integer builtins, which wrap and count bits as the functions do. */
-const integers = System.create({ name: "gpuTest/integers", kernel: "gpu", query: { read: [bits, sums], write: [bits, sums] } }, row => {
+const integers = System.create({ name: "gpuTest/integers", kernel: "gpu", components: { write: [bits, sums] } }, row => {
     const b = row[bits];
     const s = row[sums];
     row[bits] = Vec3.U32.add(Vec3.U32.countOneBits(b), Vec3.U32.add(Vec3.U32.countTrailingZeros(b), Vec3.U32.multiply(Vec3.U32.reverseBits(b), Vec3.U32.bitwiseXor(b, [7, 7, 7]))));
@@ -208,7 +208,7 @@ const integers = System.create({ name: "gpuTest/integers", kernel: "gpu", query:
 });
 
 /** Float builtins across vectors, quaternions and matrices, on in-domain inputs. */
-const shading = System.create({ name: "gpuTest/shading", kernel: "gpu", query: { read: [position, velocity], write: [position] } }, row => {
+const shading = System.create({ name: "gpuTest/shading", kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
     const p = row[position];
     const v = Vec3.add(row[velocity], [0.25, 0.5, 0.75]);
     const n = Vec3.normalize(v);
@@ -224,12 +224,12 @@ const shading = System.create({ name: "gpuTest/shading", kernel: "gpu", query: {
 });
 
 /** Reads the entity, an f64. */
-const entityScore = System.create({ name: "gpuTest/entityScore", kernel: "gpu", query: { write: [score] } }, row => {
+const entityScore = System.create({ name: "gpuTest/entityScore", kernel: "gpu", components: { write: [score] } }, row => {
     row[score] = row.entity;
 });
 
 let watched = 0;
-const watch = System.create({ name: "gpuTest/watch", query: { changed: [position] } }, () => { watched++; });
+const watch = System.create({ name: "gpuTest/watch", components: { changed: [position] } }, () => { watched++; });
 
 const frame = System.composite({ name: "gpuTest/frame", systems: [move, reset, moveAgain] });
 
@@ -290,7 +290,7 @@ describe("GPU kernels", () => {
     });
 
     it("keep their writes when the sync point moves rows of their archetypes", async () => {
-        const spawnOne = System.create({ name: "gpuTest/spawnOne" }, (_, __, commands) => {
+        const spawnOne = System.create({ name: "gpuTest/spawnOne" }, ({ commands }) => {
             commands.spawn({ [position]: [-1, -1, -1], [velocity]: [0, 0, 0] });
         });
         const world = createWorld({ gpu: { device: await device() } });
@@ -310,12 +310,12 @@ describe("GPU kernels", () => {
 
     it("keep their writes when a cascade moves rows of their archetypes", async () => {
         const owners: Entity[] = [];
-        const spawnOwned = System.create({ name: "gpuTest/spawnOwned" }, (_, __, commands) => {
+        const spawnOwned = System.create({ name: "gpuTest/spawnOwned" }, ({ commands }) => {
             owners.push(commands.spawn({ [score]: 0 }), commands.spawn({ [score]: 1 }));
             for (let i = 0; i < 64; i++) commands.spawn({ [position]: [i, 0, 0], [velocity]: [1, 0, 0], [ownedBy]: owners[i === 0 ? 0 : 1] });
         });
         // No command touches the owned rows: despawning their owner removes them.
-        const despawnOwner = System.create({ name: "gpuTest/despawnOwner" }, (_, __, commands) => {
+        const despawnOwner = System.create({ name: "gpuTest/despawnOwner" }, ({ commands }) => {
             const [owner] = owners;
             if (owner !== undefined) commands.despawn(owner);
         });
@@ -484,7 +484,7 @@ describe("render systems", () => {
 
     it("that record invalid work make the next run reject with the GPU's error", async () => {
         // A dispatch without a pipeline is a validation error when the encoder finishes.
-        const invalid = System.render({ name: "gpuTest/invalid", render: { accessors: { place: position } } }, ({ encoder }) => {
+        const invalid = System.render({ name: "gpuTest/invalid", shader: { accessors: { place: position } } }, ({ encoder }) => {
             const pass = encoder.beginComputePass();
             pass.dispatchWorkgroups(1);
             pass.end();
@@ -503,7 +503,7 @@ describe("render systems", () => {
 
     it("name accessors anything WGSL allows, and only that", async () => {
         const gpu = await device();
-        const named = (name: string) => System.render({ name: "gpuTest/copy", render: { accessors: { [name]: position } } }, () => {});
+        const named = (name: string) => System.render({ name: "gpuTest/copy", shader: { accessors: { [name]: position } } }, () => {});
         const module = gpu.createShaderModule({ code: `${Gpu.wgsl(named("count"))}\n@compute @workgroup_size(1) fn main() { _ = count(0u); }` });
         expect((await module.getCompilationInfo()).messages.filter(message => message.type === "error")).toEqual([]);
         expect(() => Gpu.wgsl(named("target"))).toThrow(/isn't usable as a WGSL function name/);
@@ -514,8 +514,8 @@ describe("render systems", () => {
         const output = gpu.createBuffer({ size: count * 16, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC });
         const copy = System.render({
             name: "gpuTest/copy",
-            query: { has: [tag] },
-            render: { group: 0, accessors: { place: position } },
+            components: { has: [tag] },
+            shader: { group: 0, accessors: { place: position } },
             after: ["gpuTest/move"],
         }, ({ encoder, tables }) => {
             const pass = encoder.beginComputePass();

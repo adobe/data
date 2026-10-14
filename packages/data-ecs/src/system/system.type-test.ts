@@ -18,12 +18,14 @@ declare module '@adobe/data-ecs' {
 }
 const flagged = 'systemTest/flagged';
 const bounds = 'systemTest/bounds';
+const total = 'systemTest/total';
 declare module '@adobe/data-ecs' {
     export interface Resources {
         [time]: { type: number };
         [score]: { type: number };
-        [flagged]: { type: boolean };
-        [bounds]: { type: readonly [number, number, number] };
+        [flagged]: { type: boolean; reduce: "|" };
+        [bounds]: { type: readonly [number, number, number]; reduce: "min" };
+        [total]: { type: number; reduce: "+" };
     }
     export interface Systems {
         "test/draw": true;
@@ -38,9 +40,9 @@ declare module '@adobe/data-ecs' {
 // Row: read values are read-only, write values writable, others absent.
 export const integrate = System.create({
     name: "test/integrate",
-    query: { read: [velocity], write: [position], has: [player] },
+    components: { read: [velocity], write: [position], has: [player] },
     resources: { read: [time] },
-}, (row, { [time]: delta }) => {
+}, (row, { resources: { [time]: delta } }) => {
     row[position] += row[velocity] * delta;
     const entity: Entity = row.entity;
     // @ts-expect-error read values are read-only
@@ -51,13 +53,20 @@ export const integrate = System.create({
     void row[player];
 });
 
+// Write grants read: a component in write is readable, and listing it in read as well is rejected.
+System.create({
+    name: "test/integrate",
+    // @ts-expect-error write already makes it readable
+    components: { read: [position], write: [position] },
+}, row => { row[position] += 1; });
+
 // Lookups: read-only values by entity, or null.
 export const follow = System.create({
     name: "test/follow",
-    query: { read: [target, position], write: [velocity] },
+    components: { read: [target, position], write: [velocity] },
     lookup: { targets: { read: [position] } },
     after: ["test/integrate"],
-}, (row, { targets }) => {
+}, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
     if (other !== null) {
         row[velocity] = other[position] - row[position];
@@ -68,30 +77,52 @@ export const follow = System.create({
     void targets(row[target])[position];
 });
 
-// Arguments: typed from the schema.
+// Input: typed from its schema.
 export const move = System.create({
     name: "test/move",
-    args: { type: "object", properties: { distance: { type: "number" } } },
-    query: { has: [player], write: [position] },
-}, (row, { args }) => {
-    row[position] += args.distance;
+    input: { type: "object", properties: { distance: { type: "number" } } },
+    components: { has: [player], write: [position] },
+}, (row, { input }) => {
+    row[position] += input.distance;
+    // @ts-expect-error input has its schema's type
+    void input.missing;
 });
 
-// Resource-only system: no row; resource writes are writable.
+// A system without components takes only its context; resource writes are writable, and written ones readable.
 export const tally = System.create({
     name: "test/tally",
     resources: { read: [time], write: [score] },
-}, (row, context, commands) => {
-    const none: undefined = row;
-    context[score] += context[time];
+}, ({ resources, commands }) => {
+    resources[score] += resources[time];
     // @ts-expect-error read resources are read-only
-    context[time] = 0;
+    resources[time] = 0;
     const spawned: Entity = commands.spawn({ [position]: 0, [player]: true });
     // @ts-expect-error spawn values must match the component type
     commands.spawn({ [position]: "zero" });
     commands.remove(spawned, velocity);
-    void none;
 });
+
+// The context holds only what the declaration declares.
+System.create({ name: "test/tally" }, context => {
+    // @ts-expect-error no resources declared
+    void context.resources;
+    // @ts-expect-error no lookups declared
+    void context.lookup;
+    // @ts-expect-error no reductions declared
+    void context.reduce;
+    // @ts-expect-error no input declared
+    void context.input;
+    void context.commands;
+});
+
+// @ts-expect-error a system without components has no row
+System.create({ name: "test/tally" }, (row: object, context: object) => { void [row, context]; });
+
+System.create({
+    name: "test/tally",
+    // @ts-expect-error write already makes a resource readable
+    resources: { read: [score], write: [score] },
+}, ({ resources }) => { resources[score] += 1; });
 
 System.create({
     name: "test/integrate",
@@ -107,34 +138,22 @@ System.create({
 
 System.create({
     name: "test/move",
-    args: { type: "number" },
-    // @ts-expect-error a system with arguments can't use change filters
-    query: { changed: [position] },
-}, () => {});
-
-System.create({
-    name: "test/tally",
-    resources: { read: [time] },
-    // @ts-expect-error a lookup can't share a name with a resource
-    lookup: { [time]: { read: [position] } },
-}, (_, context) => {
-    void context[time];});
-
-System.create({
-    name: "test/tally",
-    // @ts-expect-error a lookup can't be named args
-    lookup: { args: { read: [position] } },
+    input: { type: "number" },
+    // @ts-expect-error a system with input can't use change filters
+    components: { changed: [position] },
 }, () => {});
 
 export const main = System.composite({ name: "test/main", systems: [integrate, follow, tally] });
 
-// @ts-expect-error a system with arguments can't be a composite member
+// @ts-expect-error a system with input can't be a composite member
 System.composite({ name: "test/main", systems: [move] });
 
-const noArguments: System.Arguments<typeof integrate> = [];
-const moveArguments: System.Arguments<typeof move> = [{ distance: 1 }];
-const compositeArguments: System.Arguments<typeof main> = [];
-void [noArguments, moveArguments, compositeArguments];
+const noInput: System.Input<typeof integrate> = [];
+const moveInput: System.Input<typeof move> = [{ distance: 1 }];
+const compositeInput: System.Input<typeof main> = [];
+// @ts-expect-error input has its schema's type
+const wrongInput: System.Input<typeof move> = [{ distance: "far" }];
+void [noInput, moveInput, compositeInput, wrongInput];
 
 const label = 'systemTest/label';
 const path = 'systemTest/path';
@@ -151,7 +170,7 @@ declare module '@adobe/data-ecs' {
 System.create({
     name: "test/integrate",
     kernel: "cpu",
-    query: { read: [velocity, vector, player, target], write: [position], has: [label] },
+    components: { read: [velocity, vector, player, target], write: [position], has: [label] },
     resources: { read: [time] },
 }, () => {});
 
@@ -159,14 +178,14 @@ System.create({
     name: "test/integrate",
     kernel: "cpu",
     // @ts-expect-error kernel values must be linear
-    query: { read: [label] },
+    components: { read: [label] },
 }, () => {});
 
 System.create({
     name: "test/integrate",
     kernel: "cpu",
     // @ts-expect-error kernel values can't be variable-length arrays
-    query: { write: [path] },
+    components: { write: [path] },
 }, () => {});
 
 System.create({
@@ -187,7 +206,7 @@ System.create({
 System.create({
     name: "test/integrate",
     kernel: "gpu",
-    query: { read: [velocity], write: [position] },
+    components: { read: [velocity], write: [position] },
     resources: { read: [time] },
 }, row => {
     row[position] = row[velocity];
@@ -197,13 +216,13 @@ System.create({
     name: "test/integrate",
     kernel: "gpu",
     // @ts-expect-error GPU kernel values must be linear too
-    query: { read: [label] },
+    components: { read: [label] },
 }, () => {});
 
 System.create({
     name: "test/follow",
     kernel: "gpu",
-    query: { read: [target], write: [position] },
+    components: { read: [target], write: [position] },
     // @ts-expect-error GPU kernels can't use lookups
     lookup: { targets: { read: [position] } },
 }, () => {});
@@ -212,73 +231,84 @@ System.create({
     name: "test/integrate",
     kernel: "gpu",
     // @ts-expect-error GPU kernels can't use change filters
-    query: { write: [position], changed: [velocity] },
+    components: { write: [position], changed: [velocity] },
 }, () => {});
 
 System.create({
     name: "test/integrate",
     kernel: "gpu",
-    query: { read: [velocity], write: [position] },
-}, (row, _, commands) => {
+    components: { read: [velocity], write: [position] },
+}, (row, context) => {
     // @ts-expect-error GPU kernels can't issue commands
-    commands.despawn(row.entity);
+    context.commands.despawn(row.entity);
 });
 
 System.create({
     name: "test/integrate",
     // @ts-expect-error a kernel is "cpu" or "gpu"
     kernel: true,
-    query: { read: [velocity] },
 }, () => {});
 
-// Reductions: each reduced resource is a function contributing a value of its type.
+// Reductions: each reduced resource is a function contributing a value of its type, with its trait's operator repeated.
 System.create({
     name: "test/tally",
-    query: { read: [velocity, vector] },
-    resources: { reduce: { [score]: "+", [bounds]: "min", [flagged]: "|" } },
-}, (row, context) => {
-    context[score](row[velocity]);
-    context[bounds](row[vector]);
-    context[flagged](row[velocity] > 1);
+    components: { read: [velocity, vector], changed: [velocity] },
+    reduce: { [total]: "+", [bounds]: "min", [flagged]: "|" },
+}, (row, { reduce }) => {
+    reduce[total](row[velocity]);
+    reduce[bounds](row[vector]);
+    reduce[flagged](row[velocity] > 1);
     // @ts-expect-error a contribution has the resource's type
-    context[bounds](1);
+    reduce[bounds](1);
     // @ts-expect-error a reduced resource can't be read
-    void (context[score] + 1);
+    void (reduce[total] + 1);
 });
 
 System.create({
     name: "test/tally",
-    // @ts-expect-error booleans reduce bitwise
-    resources: { reduce: { [flagged]: "+" } },
+    // @ts-expect-error the operator must equal the resource's reduce trait
+    reduce: { [total]: "max" },
 }, () => {});
 
 System.create({
     name: "test/tally",
-    // @ts-expect-error a reduced resource can't also be read
-    resources: { read: [score], reduce: { [score]: "+" } },
+    // @ts-expect-error only resources with a reduce trait can be reduced
+    reduce: { [score]: "+" },
 }, () => {});
 
 System.create({
     name: "test/tally",
-    // @ts-expect-error a reduction folds every row, so its query has no change filters
-    query: { read: [velocity], changed: [velocity] },
-    resources: { reduce: { [score]: "+" } },
+    // @ts-expect-error a reduced resource is never written
+    resources: { write: [total] },
+}, () => {});
+
+System.create({
+    name: "test/tally",
+    // @ts-expect-error a contributor doesn't read what it reduces into
+    resources: { read: [total] },
+    reduce: { [total]: "+" },
 }, () => {});
 
 System.create({
     name: "test/integrate",
     kernel: "gpu",
-    query: { read: [velocity] },
+    components: { read: [velocity] },
     // @ts-expect-error GPU kernels can't reduce yet
-    resources: { reduce: { [score]: "+" } },
+    reduce: { [total]: "+" },
 }, () => {});
 
 
 // Render systems: the accessors name the components they read.
-System.render({ name: "test/draw", query: { has: [player] }, render: { accessors: { place: position, speed: velocity } } }, () => {});
+System.render({ name: "test/draw", components: { has: [player] }, resources: { read: [time] }, shader: { accessors: { place: position, speed: velocity } } }, (gpu, { resources }) => {
+    void [gpu.encoder, resources[time]];
+});
+System.render({ name: "test/draw", shader: { accessors: { place: position } } }, (_, context) => {
+    // @ts-expect-error a render body issues no commands
+    void context.commands;
+});
 System.render({
     name: "test/draw",
     // @ts-expect-error a render system reads the components its accessors name
-    query: { read: [position] },
-    render: { accessors: { place: position } },
+    components: { read: [position] },
+    shader: { accessors: { place: position } },
 }, () => {});

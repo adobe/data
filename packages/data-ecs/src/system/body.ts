@@ -5,23 +5,37 @@ import type { Schema } from '../schema/schema.js';
 import type { Commands } from './commands.js';
 import type { Declaration } from './declaration.js';
 import type { Listed, Property } from './property.js';
+import type { RenderContext } from './render.js';
 import type { ComponentValues, LookupFunction, ResourceValues, Values } from './values.js';
 
-/** `read` values are read-only, `write` values are writable. `undefined` for a system without a query. */
+/** `read` values are read-only, `write` values readable and writable. */
 export type Row<D extends Declaration> =
-    Property<D, "query"> extends undefined ? undefined :
     { readonly entity: Entity }
-    & Values<Listed<Property<D, "query">, "read">, Listed<Property<D, "query">, "write">, Component.Name, ComponentValues>;
+    & Values<Listed<Property<D, "components">, "read">, Listed<Property<D, "components">, "write">, Component.Name, ComponentValues>;
 
-/** Each resource a system reduces, as a function contributing a value to its fold. */
-type Reducers<R> = { readonly [K in keyof R & Resource.Name]: (value: Resource.Value<K>) => void };
+type Resources<D> = Listed<Property<D, "resources">, "read"> | Listed<Property<D, "resources">, "write">;
+type Reduced<D> = keyof Property<D, "reduce"> & Resource.Name;
 
-/** Lookups, resources and `args`, flattened into one object. */
+/**
+ * What a body uses besides its row, by kind, under the declaration's own keys: each is present only when the
+ * declaration declares something of its kind. `commands` is there for every system but a GPU kernel.
+ */
 export type Context<D extends Declaration> =
-    { readonly [K in keyof Property<D, "lookup">]: LookupFunction<Property<D, "lookup">[K]> }
-    & Values<Listed<Property<D, "resources">, "read">, Listed<Property<D, "resources">, "write">, Resource.Name, ResourceValues>
-    & Reducers<Property<Property<D, "resources">, "reduce">>
-    & (Property<D, "args"> extends Schema ? { readonly args: Schema.ToType<Property<D, "args">> } : {});
+    ([Resources<D>] extends [never] ? {} : {
+        readonly resources: Values<Listed<Property<D, "resources">, "read">, Listed<Property<D, "resources">, "write">, Resource.Name, ResourceValues>;
+    })
+    & ([keyof Property<D, "lookup">] extends [never] ? {} : {
+        readonly lookup: { readonly [K in keyof Property<D, "lookup">]: LookupFunction<Property<D, "lookup">[K]> };
+    })
+    & ([Reduced<D>] extends [never] ? {} : {
+        /** Each resource it reduces into, as a function contributing a value to the run's fold. */
+        readonly reduce: { readonly [K in Reduced<D>]: (value: Resource.Value<K>) => void };
+    })
+    & (Property<D, "input"> extends Schema ? { readonly input: Schema.ToType<Property<D, "input">> } : {})
+    & (D extends { readonly kernel: "gpu" } | { readonly shader: object } ? {} : { readonly commands: Commands });
 
-export type Body<D extends Declaration> = (row: Row<D>, context: Context<D>, commands: Commands) => void;
-
+/** `(row, context)` for a system with `components`, `(context)` for one without, and `(gpu, context)` for a render system. */
+export type Body<D extends Declaration> =
+    D extends { readonly shader: object } ? (gpu: RenderContext, context: Context<D>) => void :
+    Property<D, "components"> extends undefined ? (context: Context<D>) => void :
+    (row: Row<D>, context: Context<D>) => void;

@@ -19,12 +19,12 @@ declare module "@adobe/data-ecs" {
 Component.register(position, { type: Vec3.schema });
 Component.register(velocity, { type: Vec3.schema });
 
-const spawn = System.create({ name: "guide/gpu/spawn" }, (_, __, commands) => {
+const spawn = System.create({ name: "guide/gpu/spawn" }, ({ commands }) => {
     for (let i = 0; i < 1000; i++) commands.spawn({ [position]: [i, 0, 0], [velocity]: [0, 1, 0] });
 });
 
 // `kernel: "gpu"` runs as a compute shader in a world with a device, and as a "cpu" kernel in one without.
-const move = System.create({ name: "guide/gpu/move", kernel: "gpu", query: { read: [position, velocity], write: [position] } }, row => {
+const move = System.create({ name: "guide/gpu/move", kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
 

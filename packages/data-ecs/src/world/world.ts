@@ -14,7 +14,7 @@ export type World = {
      * Runs a registered system or composite, ending in a sync point. Throws if it isn't registered.
      * Rejects if a system or finalizer throws.
      */
-    run<S extends System>(system: S, ...args: System.Arguments<S>): Promise<void>;
+    run<S extends System>(system: S, ...input: System.Input<S>): Promise<void>;
     /** Waits for pending runs, then terminates workers and releases memory. The world is unusable afterwards. */
     dispose(): Promise<void>;
     [Symbol.asyncDispose](): Promise<void>;

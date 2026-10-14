@@ -6,6 +6,7 @@ import { idOf, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
 import { applySync, prepareSync } from './synchronize.js';
 import { locate } from './entities.js';
+import { combine, identityOf, writeReduction, type ReductionTarget } from './reductions.js';
 
 export type ExecuteContext = {
     readonly state: State;
@@ -40,8 +41,33 @@ export const execute = async (context: ExecuteContext, schedule: Schedule, args:
     }
 };
 
+/**
+ * A run's fold into one reduced resource: it starts at the operator's identity, and is written once its last
+ * contributor finishes, unless one failed or none ran its rows.
+ */
+type Fold = { target: ReductionTarget | null; readonly values: number[]; remaining: number; ran: boolean; failed: boolean };
+
+/** Folds a contributor's leaves into its run's folds, writing each resource whose contributors have all finished. */
+const contribute = (state: State, folds: ReadonlyMap<unknown, Fold>, runner: Runner, folded: readonly Float64Array[] | null, failed: boolean): void => {
+    runner.targets.forEach((target, t) => {
+        const fold = folds.get(target.key);
+        if (fold === undefined) return;
+        fold.target ??= target;
+        if (fold.values.length === 0) fold.values.push(...target.leaves.map(() => identityOf(target.operator)));
+        const leaves = folded?.[t];
+        if (failed) fold.failed = true;
+        else if (leaves !== undefined) {
+            fold.ran = true;
+            for (let i = 0; i < leaves.length; i++) fold.values[i] = combine(target.operator, fold.values[i] ?? NaN, leaves[i] ?? NaN);
+        }
+        if (--fold.remaining === 0 && fold.ran && !fold.failed) writeReduction(state, target, fold.values, 0, state.tick);
+    });
+};
+
 const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }: ExecuteContext, schedule: Schedule, args: unknown): Promise<void> => {
     const { gpu } = state;
+    const folds = new Map<unknown, Fold>();
+    for (const [key, contributors] of schedule.reductions) folds.set(key, { target: null, values: [], remaining: contributors, ran: false, failed: false });
     try {
         for (const tier of schedule.tiers) {
             const runners = tier.map(runnerOf);
@@ -66,7 +92,8 @@ const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }
                         failure ??= { error };
                     }
                 }
-                runners[i]?.finish(failed);
+                const runner = runners[i];
+                if (runner !== undefined && runner.targets.length > 0) contribute(state, folds, runner, runner.finish(failed), failed);
             }
             if (gpu !== null) markWrites(gpu, runners);
             if (failure !== null) throw failure.error;

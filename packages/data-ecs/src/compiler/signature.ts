@@ -1,12 +1,10 @@
 import type { Expression, ObjectExpression, Property, SpreadElement, Pattern } from 'estree';
-import type { Reduction } from '../system/query.js';
+import type { Reduction } from '../resource/reduction.js';
+import { isReduction, reductionOperators } from '../registry/reduction.js';
 import { fail } from './failure.js';
 import type { ModuleScope } from './module-scope.js';
 
 export type Lookup = { readonly name: string; readonly read: readonly string[] };
-
-const reductionOperators: readonly Reduction[] = ["+", "*", "min", "max", "&", "|", "^"];
-const isReduction = (text: unknown): text is Reduction => reductionOperators.some(operator => operator === text);
 
 /** A resource the kernel reduces into, by its module-scope binding name. */
 export type Reduced = { readonly resource: string; readonly operator: Reduction };
@@ -18,11 +16,9 @@ export type Signature = {
     readonly resources: readonly string[];
     readonly reduced: readonly Reduced[];
     readonly lookups: readonly Lookup[];
-    readonly args: boolean;
+    readonly input: boolean;
     /** Whether it filters on `added` or `changed` components, or on changed resources. */
     readonly filtered: boolean;
-    /** Whether every row it matches runs when it runs: no `added` or `changed` filter on components. */
-    readonly folds: boolean;
 };
 
 const entry = <T>(name: string, value: T): readonly [string, T] => [name, value];
@@ -54,10 +50,10 @@ const lists = (node: Expression | Pattern, what: string, allowed: readonly strin
 
 /** `reduce: { [resource]: "operator", ... }`, with resources bound at module scope. */
 const reductions = (node: Expression | Pattern, module: ModuleScope): readonly Reduced[] => {
-    if (node.type !== "ObjectExpression") return fail(node, "resources.reduce must be an object literal in a kernel declaration");
+    if (node.type !== "ObjectExpression") return fail(node, "reduce must be an object literal in a kernel declaration");
     return node.properties.map((property): Reduced => {
         if (property.type === "SpreadElement" || !property.computed || property.key.type !== "Identifier" || !module.has(property.key.name)) {
-            return fail(property, "resources.reduce names each resource as a computed key bound at module scope, as in { [total]: \"+\" }");
+            return fail(property, "reduce names each resource as a computed key bound at module scope, as in { [total]: \"+\" }");
         }
         const { value } = property;
         const operator = value.type === "Literal" ? value.value : undefined;
@@ -80,32 +76,34 @@ export const kernelOf = (declaration: ObjectExpression): "cpu" | "gpu" | null =>
 
 /** Reads and validates a kernel declaration. */
 export const signature = (declaration: ObjectExpression, module: ModuleScope): Signature => {
-    let query: ReadonlyMap<string, readonly string[]> | undefined;
+    let components: ReadonlyMap<string, readonly string[]> | undefined;
     let resources: readonly string[] = [];
     let reduced: readonly Reduced[] = [];
     let changedResources: readonly string[] = [];
-    let args = false;
+    let input = false;
     const lookups: Lookup[] = [];
     for (const [name, property] of properties(declaration, "a kernel declaration")) {
         switch (name) {
-            case "query":
-                query = lists(property.value, "query", ["read", "write", "has", "not", "added", "changed"], module);
+            case "components":
+                components = lists(property.value, "components", ["read", "write", "has", "not", "added", "changed"], module);
                 break;
             case "resources":
                 for (const [list, value] of properties(property.value, "resources")) {
                     if (list === "read") resources = identifiers(value.value, module);
                     else if (list === "changed") changedResources = identifiers(value.value, module);
-                    else if (list === "reduce") reduced = reductions(value.value, module);
                     else fail(value, `resources.${list} is not allowed in a kernel declaration`);
                 }
+                break;
+            case "reduce":
+                reduced = reductions(property.value, module);
                 break;
             case "lookup":
                 for (const [lookup, value] of properties(property.value, "lookup")) {
                     lookups.push({ name: lookup, read: lists(value.value, `lookup.${lookup}`, ["read", "has", "not"], module).get("read") ?? [] });
                 }
                 break;
-            case "args":
-                args = true;
+            case "input":
+                input = true;
                 break;
             case "name": case "kernel": case "before": case "after": case "during":
                 break;
@@ -113,10 +111,13 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
                 fail(property, `${name} is not allowed in a kernel declaration`);
         }
     }
-    if (query === undefined) return fail(declaration, "a kernel needs a query");
+    if (components === undefined) return fail(declaration, "a kernel needs components");
     for (const { resource } of reduced) {
         if (resources.includes(resource) || changedResources.includes(resource)) fail(declaration, `${resource} is reduced, so it can't also be read or filtered on`);
     }
-    const rowFiltered = (query.get("added")?.length ?? 0) + (query.get("changed")?.length ?? 0) > 0;
-    return { read: new Set(query.get("read")), write: new Set(query.get("write")), resources, reduced, lookups, args, filtered: changedResources.length > 0 || rowFiltered, folds: !rowFiltered };
+    const write = components.get("write") ?? [];
+    const both = (components.get("read") ?? []).find(key => write.includes(key));
+    if (both !== undefined) fail(declaration, `${both} is in both components read and write; write already makes it readable`);
+    const rowFiltered = (components.get("added")?.length ?? 0) + (components.get("changed")?.length ?? 0) > 0;
+    return { read: new Set(components.get("read")), write: new Set(write), resources, reduced, lookups, input, filtered: changedResources.length > 0 || rowFiltered };
 };

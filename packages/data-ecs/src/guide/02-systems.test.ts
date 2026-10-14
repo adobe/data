@@ -30,26 +30,26 @@ Component.register(frozen, { type: { const: true } });
 Resource.register(delta, { type: { type: "number", default: 0.5 } });
 Resource.register(frames, { type: { type: "number", default: 0 } });
 
-const spawn = System.create({ name: "guide/systems/spawn" }, (_, __, commands) => {
+const spawn = System.create({ name: "guide/systems/spawn" }, ({ commands }) => {
     commands.spawn({ [position]: [0, 0, 0], [velocity]: [2, 0, 0] });
     commands.spawn({ [position]: [0, 0, 0], [velocity]: [2, 0, 0], [frozen]: true });
 });
 
-// The row holds the components the query reads and writes; values are replaced whole, never edited in place.
+// The row holds the components it reads and writes, `write` being readable too; values are replaced whole, never edited in place.
 const move = System.create({
     name: "guide/systems/move",
-    query: { read: [position, velocity], write: [position], not: [frozen] },
+    components: { read: [velocity], write: [position], not: [frozen] },
     resources: { read: [delta] },
-}, (row, context) => {
-    row[position] = Vec3.add(row[position], Vec3.scale(row[velocity], context[delta]));
+}, (row, { resources }) => {
+    row[position] = Vec3.add(row[position], Vec3.scale(row[velocity], resources[delta]));
 });
 
-// Without a query, a system runs once per run, with resources only.
-const count = System.create({ name: "guide/systems/count", resources: { read: [frames], write: [frames] } }, (_, context) => {
-    context[frames] += 1;
+// Without components, a system runs once per run, and its body takes only the context.
+const count = System.create({ name: "guide/systems/count", resources: { write: [frames] } }, ({ resources }) => {
+    resources[frames] += 1;
 });
 
-it("runs a body for each row its query matches", async () => {
+it("runs a body for each row its components match", async () => {
     await using world = await World.create({ systems: [spawn, move, count] });
     await world.run(spawn);
     await world.run(move);

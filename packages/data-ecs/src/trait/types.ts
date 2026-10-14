@@ -2,6 +2,7 @@ import type { Component } from '../component/component.js';
 import type { Components } from '../component/types.js';
 import type { Entity } from '../entity/entity.js';
 import type { Resource } from '../resource/resource.js';
+import type { IsLinear } from '../system/linear.js';
 
 /**
  * The value each trait allows on the component or resource `N`. Augment it, with this exact type parameter, to
@@ -24,5 +25,12 @@ export interface Traits<N extends Component.Name | Resource.Name> {
      */
     readonly reference: N extends Component.Name
         ? Components[N] extends { readonly derived: true } ? never : [Component.Value<N>] extends [Entity] ? "owner" | "weak" : never
+        : never;
+    /**
+     * On a resource, the operator systems reduce into it with: each run that a contributor runs in starts it at the
+     * operator's identity and leaves it holding the fold of every contribution. Booleans fold bitwise.
+     */
+    readonly reduce: N extends Resource.Name
+        ? [Resource.Value<N>] extends [boolean] ? "&" | "|" | "^" : IsLinear<Resource.Value<N>> extends true ? Resource.Reduction : never
         : never;
 }

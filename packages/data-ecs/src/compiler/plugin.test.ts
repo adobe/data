@@ -14,7 +14,7 @@ const fixture = join(directory, "fixture.js");
 writeFileSync(fixture, `import { System } from ${source("../system/system.ts")};
 import { kernelOf } from ${source("../world/create/attach-kernel.ts")};
 const score = "score";
-const kernel = System.create({ name: "fixture", kernel: "cpu", query: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+const kernel = System.create({ name: "fixture", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
 export const description = kernelOf(kernel);
 `);
 /** A kernel inlining a TypeScript helper and a function from a package's `dist`. */
@@ -30,7 +30,7 @@ import { kernelOf } from ${source("../world/create/attach-kernel.ts")};
 import { scaled } from "./helper.ts";
 import { increment } from "fake-math";
 const score = "score";
-const kernel = System.create({ name: "linked", kernel: "cpu", query: { write: [score] } }, (row) => { row[score] = increment(scaled(row.entity)); });
+const kernel = System.create({ name: "linked", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = increment(scaled(row.entity)); });
 export const description = kernelOf(kernel);
 `);
 /** An application importing a kernel a library ships uncompiled, from its `dist`. */
@@ -41,7 +41,7 @@ mkdirSync(join(directory, "node_modules/kernel-library/dist"), { recursive: true
 writeFileSync(join(directory, "node_modules/kernel-library/package.json"), JSON.stringify({ name: "kernel-library", type: "module", exports: "./dist/index.js" }));
 writeFileSync(join(directory, "node_modules/kernel-library/dist/index.js"), `import { System } from "@adobe/data-ecs";
 const score = "score";
-export const kernel = System.create({ name: "library", kernel: "cpu", query: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+export const kernel = System.create({ name: "library", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
 `);
 writeFileSync(application, `import { kernelOf } from ${source("../world/create/attach-kernel.ts")};
 import { kernel } from "kernel-library";

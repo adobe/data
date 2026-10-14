@@ -28,7 +28,7 @@ import { generateWasm, type WasmColumn } from '../world/create/wasm.js';
 test("show", async () => {
     const source = `import { System, Vec3 } from "@adobe/data-ecs";
 const position = "position"; const velocity = "velocity";
-const move = System.create({ name: "move", kernel: "gpu", query: { read: [position, velocity], write: [position] } },
+const move = System.create({ name: "move", kernel: "gpu", components: { read: [velocity], write: [position] } },
     row => { row[position] = Vec3.add(row[position], row[velocity]); });`;
     // Resolves the package to its source and relative imports to files, stripping types as the plugin does.
     const linker = createLinker({

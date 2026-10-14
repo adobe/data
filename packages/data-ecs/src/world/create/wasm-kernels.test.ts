@@ -58,16 +58,16 @@ Component.register(target, { type: Entity.schema });
 Resource.register(seconds, { type: { type: "number", default: 1 / 60 } });
 Resource.register(floor, { type: { type: "number", precision: 1, default: -2.5 } });
 
-const seed = System.create({ name: "wasmTest/seed", args: { type: "integer" } }, (_, { args }, commands) => {
+const seed = System.create({ name: "wasmTest/seed", input: { type: "integer" } }, ({ input, commands }) => {
     let previous = Entity.none;
-    for (let i = 0; i < args; i++) {
+    for (let i = 0; i < input; i++) {
         previous = commands.spawn({ [position]: [i * 0.37, (i % 13) * 0.71], [velocity]: [Math.sin(i) * 3, Math.cos(i) * 5], [bounces]: 0, [flipped]: false, [score]: 0, [target]: previous });
     }
 });
 
 /** Despawns every seventh entity and spawns replacements, so some targets go stale and their indexes are reused. */
-const cull = System.create({ name: "wasmTest/cull", args: { type: "integer" }, query: { read: [position], has: [bounces] } }, (row, { args }, commands) => {
-    if ((row.entity >>> 0) % 7 !== args % 7) return;
+const cull = System.create({ name: "wasmTest/cull", input: { type: "integer" }, components: { read: [position], has: [bounces] } }, (row, { input, commands }) => {
+    if ((row.entity >>> 0) % 7 !== input % 7) return;
     commands.despawn(row.entity);
     commands.spawn({ [position]: row[position], [velocity]: [1, 1], [bounces]: 0, [flipped]: true, [score]: 0, [target]: row.entity });
 });
@@ -77,12 +77,12 @@ const halve = (value: number) => value * 0.5;
 const integrate = System.create({
     name: "wasmTest/integrate",
     kernel: "cpu",
-    query: { read: [position, velocity], write: [position, velocity] },
+    components: { write: [position, velocity] },
     resources: { read: [seconds] },
-}, (row, context) => {
+}, (row, { resources }) => {
     const [x, y] = row[position];
     const [vx, vy] = row[velocity];
-    const t = context[seconds];
+    const t = resources[seconds];
     row[velocity] = [vx * 0.999, vy - 9.8 * t];
     row[position] = [x + vx * t, y + halve(vy) * t * 2];
 });
@@ -90,14 +90,14 @@ const integrate = System.create({
 const bounce = System.create({
     name: "wasmTest/bounce",
     kernel: "cpu",
-    query: { read: [position, velocity, bounces, flipped], write: [position, velocity, bounces, flipped] },
+    components: { write: [position, velocity, bounces, flipped] },
     resources: { read: [floor] },
     after: ["wasmTest/integrate"],
-}, (row, context) => {
+}, (row, { resources }) => {
     const [x, y] = row[position];
     const [vx, vy] = row[velocity];
-    if (y < context[floor] && vy < 0) {
-        row[position] = [x, context[floor] + Math.abs(y - context[floor])];
+    if (y < resources[floor] && vy < 0) {
+        row[position] = [x, resources[floor] + Math.abs(y - resources[floor])];
         row[velocity] = [vx, Math.min(-vy * 0.8, 40)];
         row[bounces] = row[bounces] + 1;
         row[flipped] = !row[flipped];
@@ -110,7 +110,7 @@ const bounce = System.create({
 const tally = System.create({
     name: "wasmTest/tally",
     kernel: "cpu",
-    query: { read: [bounces, flipped, position], write: [score] },
+    components: { read: [bounces, flipped, position], write: [score] },
     after: ["wasmTest/bounce"],
 }, row => {
     let total = 0;
@@ -126,23 +126,23 @@ const tally = System.create({
 const scale = System.create({
     name: "wasmTest/scale",
     kernel: "cpu",
-    args: { type: "number" },
-    query: { read: [score], write: [score] },
-}, (row, { args }) => {
-    row[score] = row[score] * args;
+    input: { type: "number" },
+    components: { write: [score] },
+}, (row, { input }) => {
+    row[score] = row[score] * input;
 });
 
 /** Component-wise vector math: one f32x4 operation per row. */
 const drift = System.create({
     name: "wasmTest/drift",
     kernel: "cpu",
-    query: { read: [position, velocity], write: [position] },
+    components: { read: [velocity], write: [position] },
     resources: { read: [seconds] },
     after: ["wasmTest/tally"],
-}, (row, context) => {
+}, (row, { resources }) => {
     const [x, y] = row[position];
     const [vx, vy] = row[velocity];
-    const t = context[seconds];
+    const t = resources[seconds];
     row[position] = [x + vx * t, y + vy * t];
 });
 
@@ -150,7 +150,7 @@ const drift = System.create({
 const react = System.create({
     name: "wasmTest/react",
     kernel: "cpu",
-    query: { read: [score], write: [score], changed: [bounces] },
+    components: { write: [score], changed: [bounces] },
     after: ["wasmTest/tally"],
 }, row => {
     row[score] = row[score] + 1000;
@@ -160,10 +160,10 @@ const react = System.create({
 const chase = System.create({
     name: "wasmTest/chase",
     kernel: "cpu",
-    query: { read: [target, score], write: [score] },
+    components: { read: [target], write: [score] },
     lookup: { targets: { read: [position, flipped] } },
     after: ["wasmTest/react", "wasmTest/drift"],
-}, (row, { targets }) => {
+}, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
     if (other === null) {
         row[score] = row[score] - 1;

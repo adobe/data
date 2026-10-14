@@ -69,19 +69,19 @@ const predicateOf = (condition: unknown): ((value: unknown) => boolean) => {
 type Options = { readonly not?: readonly Key[]; readonly where?: object; readonly order?: object };
 
 type Compiled = {
-    readonly include: readonly number[];
+    readonly has: readonly number[];
     readonly not: readonly number[];
     readonly where: readonly { readonly id: number; readonly test: (value: unknown) => boolean }[];
 };
 
-const compile = (state: State, include: readonly Key[], options: Options): Compiled => ({
-    include: idsOf(state, include),
+const compile = (state: State, has: readonly Key[], options: Options): Compiled => ({
+    has: idsOf(state, has),
     not: idsOf(state, options.not ?? []),
     where: options.where === undefined ? [] : entriesOf(options.where).map(([key, condition]) => ({ id: state.ids.get(key) ?? -1, test: predicateOf(condition) })),
 });
 
 const matches = (archetype: Archetype, compiled: Compiled): boolean =>
-    archetype.count > 0 && !archetype.resource && hasAll(archetype, compiled.include) && !hasAny(archetype, compiled.not);
+    archetype.count > 0 && !archetype.resource && hasAll(archetype, compiled.has) && !hasAny(archetype, compiled.not);
 
 /** Reads one storage's cells; a plain number straight from its view, which can't change while a query runs. */
 const readerOf = (storage: Storage | undefined): ((row: number) => unknown) => {
@@ -109,9 +109,9 @@ const passerOf = (archetype: Archetype, compiled: Compiled): ((row: number) => b
     };
 };
 
-/** Entities with every included component and none of `not`, filtered by `where` and sorted by `order`. */
-export const select = (state: State, include: readonly Key[], options: Options = {}): Entity[] => {
-    const compiled = compile(state, include, options);
+/** Entities with every component in `has` and none of `not`, filtered by `where` and sorted by `order`. */
+export const select = (state: State, has: readonly Key[], options: Options = {}): Entity[] => {
+    const compiled = compile(state, has, options);
     const order = options.order === undefined ? [] : entriesOf(options.order).map(([key, ascending]) => ({ id: state.ids.get(key) ?? -1, ascending: ascending !== false }));
     const selected: Entity[] = [];
     const keys: unknown[][] = [];
@@ -138,8 +138,8 @@ export const select = (state: State, include: readonly Key[], options: Options =
 };
 
 /** The number of entities `select` would return, without building them. */
-export const count = (state: State, include: readonly Key[], options: Options = {}): number => {
-    const compiled = compile(state, include, options);
+export const count = (state: State, has: readonly Key[], options: Options = {}): number => {
+    const compiled = compile(state, has, options);
     let total = 0;
     for (const archetype of state.archetypes) {
         if (!matches(archetype, compiled)) continue;

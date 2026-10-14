@@ -52,12 +52,12 @@ export const indexSum = "suite/indexSum";
 export const highest = "suite/highest";
 declare module "@adobe/data-ecs" {
     export interface Resources {
-        [indexSum]: { type: number };
-        [highest]: { type: number };
+        [indexSum]: { type: number; reduce: "+" };
+        [highest]: { type: number; reduce: "max" };
     }
 }
-Resource.register(indexSum, { type: { type: "number", default: 0 } });
-Resource.register(highest, { type: { type: "number", default: 0 } });
+Resource.register(indexSum, { type: { type: "number", default: 0 }, reduce: "+" });
+Resource.register(highest, { type: { type: "number", default: 0 }, reduce: "max" });
 
 Component.register(position, { type: vec3 });
 Component.register(velocity, { type: vec3 });
@@ -66,36 +66,36 @@ Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFF
 Component.register(tag, { type: { const: true } });
 Component.register(hits, { type: { type: "number", precision: 1 } });
 
-/** `args` entities, each targeting the one spawned before it. */
-export const seed = System.create({ name: "suite/seed", args: { type: "integer" } }, (_, { args }, commands) => {
+/** `input` entities, each targeting the one spawned before it. */
+export const seed = System.create({ name: "suite/seed", input: { type: "integer" } }, ({ input, commands }) => {
     let previous = commands.spawn({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [index]: 0 });
-    for (let i = 1; i < args; i++) {
+    for (let i = 1; i < input; i++) {
         previous = commands.spawn({ [position]: [i, i * 0.5, -i], [velocity]: [1, 0, 0], [index]: i, [target]: previous });
     }
 });
 
 /** Despawns a tenth of the entities and spawns as many replacements. */
-export const churn = System.create({ name: "suite/churn", args: { type: "integer" }, query: { read: [index, position] } }, (row, { args }, commands) => {
-    if (row[index] % 10 !== args) return;
+export const churn = System.create({ name: "suite/churn", input: { type: "integer" }, components: { read: [index, position] } }, (row, { input, commands }) => {
+    if (row[index] % 10 !== input) return;
     commands.despawn(row.entity);
     commands.spawn({ [position]: row[position], [velocity]: [0, 0, 0], [index]: row[index] });
 });
 
 /** Adds the tag to one tenth and removes it from another: a fifth of the entities move archetype. */
-export const retag = System.create({ name: "suite/retag", args: { type: "integer" }, query: { read: [index] } }, (row, { args }, commands) => {
+export const retag = System.create({ name: "suite/retag", input: { type: "integer" }, components: { read: [index] } }, (row, { input, commands }) => {
     const group = row[index] % 10;
-    if (group === args) commands.add(row.entity, { [tag]: true });
-    else if (group === (args + 5) % 10) commands.remove(row.entity, tag);
+    if (group === input) commands.add(row.entity, { [tag]: true });
+    else if (group === (input + 5) % 10) commands.remove(row.entity, tag);
 });
 
 /** Writes 1% of positions. */
 export const poke = System.create({
     name: "suite/poke",
     kernel: "cpu",
-    args: { type: "integer" },
-    query: { read: [index, position], write: [position] },
-}, (row, { args }) => {
-    if (row[index] % 100 === args) {
+    input: { type: "integer" },
+    components: { read: [index], write: [position] },
+}, (row, { input }) => {
+    if (row[index] % 100 === input) {
         const [x, y, z] = row[position];
         row[position] = [x + 1, y, z];
     }
@@ -105,10 +105,10 @@ export const poke = System.create({
 export const pokeCluster = System.create({
     name: "suite/pokeCluster",
     kernel: "cpu",
-    args: { type: "integer" },
-    query: { read: [index, position], write: [position] },
-}, (row, { args }) => {
-    const group = row[index] - args * 10_000;
+    input: { type: "integer" },
+    components: { read: [index], write: [position] },
+}, (row, { input }) => {
+    const group = row[index] - input * 10_000;
     if (group >= 0 && group < 10_000) {
         const [x, y, z] = row[position];
         row[position] = [x + 1, y, z];
@@ -119,7 +119,7 @@ export const pokeCluster = System.create({
 export const observe = System.create({
     name: "suite/observe",
     kernel: "cpu",
-    query: { read: [position], write: [velocity], changed: [position] },
+    components: { read: [position], write: [velocity], changed: [position] },
 }, row => {
     const [x, y, z] = row[position];
     row[velocity] = [x * 0.5, y * 0.5, z * 0.5];
@@ -129,9 +129,9 @@ export const observe = System.create({
 export const follow = System.create({
     name: "suite/follow",
     kernel: "cpu",
-    query: { read: [position, target], write: [velocity] },
+    components: { read: [position, target], write: [velocity] },
     lookup: { targets: { read: [position] } },
-}, (row, { targets }) => {
+}, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
     if (other !== null) {
         const [tx, ty, tz] = other[position];
@@ -144,8 +144,8 @@ export const follow = System.create({
 export const emit = System.create({
     name: "suite/emit",
     kernel: "cpu",
-    query: { read: [index, position] },
-}, (row, _, commands) => {
+    components: { read: [index, position] },
+}, (row, { commands }) => {
     if (row[index] % 10 === 0) {
         const [x] = row[position];
         commands.add(row.entity, { [hits]: x });
@@ -153,27 +153,27 @@ export const emit = System.create({
 });
 
 /** Six dependent kernels: one tier each, so dispatch cost shows. */
-export const chain1 = System.create({ name: "suite/chain1", kernel: "cpu", query: { read: [velocity], write: [velocity] } }, row => {
+export const chain1 = System.create({ name: "suite/chain1", kernel: "cpu", components: { write: [velocity] } }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain2 = System.create({ name: "suite/chain2", kernel: "cpu", query: { read: [velocity], write: [velocity] }, after: ["suite/chain1"] }, row => {
+export const chain2 = System.create({ name: "suite/chain2", kernel: "cpu", components: { write: [velocity] }, after: ["suite/chain1"] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain3 = System.create({ name: "suite/chain3", kernel: "cpu", query: { read: [velocity], write: [velocity] }, after: ["suite/chain2"] }, row => {
+export const chain3 = System.create({ name: "suite/chain3", kernel: "cpu", components: { write: [velocity] }, after: ["suite/chain2"] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain4 = System.create({ name: "suite/chain4", kernel: "cpu", query: { read: [velocity], write: [velocity] }, after: ["suite/chain3"] }, row => {
+export const chain4 = System.create({ name: "suite/chain4", kernel: "cpu", components: { write: [velocity] }, after: ["suite/chain3"] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain5 = System.create({ name: "suite/chain5", kernel: "cpu", query: { read: [velocity], write: [velocity] }, after: ["suite/chain4"] }, row => {
+export const chain5 = System.create({ name: "suite/chain5", kernel: "cpu", components: { write: [velocity] }, after: ["suite/chain4"] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain6 = System.create({ name: "suite/chain6", kernel: "cpu", query: { read: [velocity], write: [velocity] }, after: ["suite/chain5"] }, row => {
+export const chain6 = System.create({ name: "suite/chain6", kernel: "cpu", components: { write: [velocity] }, after: ["suite/chain5"] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
@@ -183,7 +183,7 @@ export const chain = System.composite({ name: "suite/chain", systems: [chain1, c
 let total = 0;
 export const smalls = System.composite({
     name: "suite/smalls",
-    systems: Array.from({ length: 50 }, (_, i) => System.create({ name: `suite/small${i}`, query: { read: [position] } }, row => {
+    systems: Array.from({ length: 50 }, (_, i) => System.create({ name: `suite/small${i}`, components: { read: [position] } }, row => {
         total += row[position][0];
     })),
 });
@@ -216,7 +216,7 @@ export const seeded = async (create: () => World, count: number, ...systems: rea
 };
 
 /** Folds every row's index into a sum and a maximum. */
-export const reduce = System.create({ name: "suite/reduce", kernel: "cpu", query: { read: [index] }, resources: { reduce: { [indexSum]: "+", [highest]: "max" } } }, (row, context) => {
-    context[indexSum](row[index]);
-    context[highest](row[index]);
+export const reduce = System.create({ name: "suite/reduce", kernel: "cpu", components: { read: [index] }, reduce: { [indexSum]: "+", [highest]: "max" } }, (row, { reduce }) => {
+    reduce[indexSum](row[index]);
+    reduce[highest](row[index]);
 });

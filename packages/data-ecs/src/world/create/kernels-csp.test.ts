@@ -17,11 +17,11 @@ declare module "@adobe/data-ecs" {
 
 Component.register(value, { type: { type: "number", precision: 1 } });
 
-const seed = System.create({ name: "kernelsCspTest/seed" }, (_, __, commands) => {
+const seed = System.create({ name: "kernelsCspTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 10; i++) commands.spawn({ [value]: i });
 });
 
-const double = System.create({ name: "kernelsCspTest/double", kernel: "cpu", query: { read: [value], write: [value] } }, row => {
+const double = System.create({ name: "kernelsCspTest/double", kernel: "cpu", components: { write: [value] } }, row => {
     row[value] = row[value] * 2;
 });
 

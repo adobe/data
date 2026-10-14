@@ -1,4 +1,6 @@
-import type { Reduction, Resources } from '../../system/query.js';
+import type { Reduction } from '../../resource/reduction.js';
+import type { Declaration } from '../../system/declaration.js';
+import { isReduction } from '../../registry/reduction.js';
 import type { Path, View } from '../../layout/layout.js';
 import { stampChanged } from './archetype.js';
 import { readCell, writeCell } from './cells.js';
@@ -14,14 +16,15 @@ export type ReductionTarget = {
 
 const bitwise: ReadonlySet<Reduction> = new Set(["&", "|", "^"]);
 
+
 /** The resources a declaration reduces into, checked against their layouts. Throws for one that can't be reduced. */
-export const reductionTargets = (state: State, name: string, resources: Resources | undefined): readonly ReductionTarget[] => {
-    const reduce = resources?.reduce;
+export const reductionTargets = (state: State, { name, reduce, resources }: Pick<Declaration, "name" | "reduce" | "resources">): readonly ReductionTarget[] => {
     if (reduce === undefined) return [];
     const others = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? []]);
     return Reflect.ownKeys(reduce).flatMap((key): ReductionTarget[] => {
-        const operator: Reduction | undefined = Reflect.get(reduce, key);
+        const operator: unknown = Reflect.get(reduce, key);
         if (operator === undefined) return [];
+        if (!isReduction(operator)) throw new Error(`System "${name}" reduces "${String(key)}" with "${String(operator)}", which isn't an operator.`);
         if (others.has(key)) throw new Error(`System "${name}" reduces "${String(key)}", so it can't also read, write or filter on it.`);
         const layout = state.layouts[idOf(state, key)];
         if (layout?.kind !== "linear") throw new Error(`System "${name}" reduces "${String(key)}", which isn't stored in linear memory.`);

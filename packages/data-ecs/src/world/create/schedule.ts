@@ -3,14 +3,17 @@ import type { Leaf } from '../../system/leaf.js';
 import type { System } from '../../system/system.js';
 import type { Key } from './state.js';
 
-/** Leaves in run order, grouped into tiers. Leaves in one tier have no ordering path between them. */
-export type Schedule = { readonly tiers: readonly (readonly Leaf[])[] };
+/**
+ * Leaves in run order, grouped into tiers. Leaves in one tier have no ordering path between them. `reductions` are the
+ * resources its leaves reduce into, each with how many of them contribute.
+ */
+export type Schedule = { readonly tiers: readonly (readonly Leaf[])[]; readonly reductions: ReadonlyMap<Key, number> };
 
 type Constraints = { readonly before: Set<string>; readonly after: Set<string>; readonly during: Set<string> };
 
 type Entry = Constraints & { readonly leaf: Leaf };
 
-export const isLeaf = (system: System): system is Leaf => "body" in system;
+export const isLeaf = (system: System): system is Leaf => system.kind !== "composite";
 
 const add = (target: Set<string>, names: readonly string[] | undefined): void => {
     for (const name of names ?? []) target.add(name);
@@ -136,28 +139,34 @@ const tiersOf = (order: readonly number[], graph: Graph, reach: readonly Uint32A
     return tier;
 };
 
-type Access = { readonly reads: ReadonlySet<Key>; readonly writes: ReadonlySet<Key> };
+type Access = { readonly reads: ReadonlySet<Key>; readonly writes: ReadonlySet<Key>; readonly reduces: ReadonlySet<Key> };
+
+/** The resources a leaf reduces into. */
+export const reducedBy = (leaf: Leaf): readonly Key[] => {
+    const { reduce } = leaf.declaration;
+    return reduce === undefined ? [] : Reflect.ownKeys(reduce).filter(key => Reflect.get(reduce, key) !== undefined);
+};
 
 /** Reads include change filters, since they observe writers' ticks. Presence-only lists don't conflict. */
 export const accessOf = (leaf: Leaf): Access => {
-    const { query, lookup, resources } = leaf.declaration;
-    const reads = new Set<Key>([...query?.read ?? [], ...query?.added ?? [], ...query?.changed ?? [], ...resources?.read ?? [], ...resources?.changed ?? []]);
+    const { components, lookup, resources } = leaf.declaration;
+    const reads = new Set<Key>([...components?.read ?? [], ...components?.added ?? [], ...components?.changed ?? [], ...resources?.read ?? [], ...resources?.changed ?? []]);
     for (const name in lookup) for (const key of lookup[name].read ?? []) reads.add(key);
-    const reduce = resources?.reduce;
-    const writes = new Set<Key>([...query?.write ?? [], ...resources?.write ?? [], ...reduce === undefined ? [] : Reflect.ownKeys(reduce).filter(key => Reflect.get(reduce, key) !== undefined)]);
-    return { reads, writes };
+    const writes = new Set<Key>([...components?.write ?? [], ...resources?.write ?? []]);
+    return { reads, writes, reduces: new Set(reducedBy(leaf)) };
 };
 
+/** Contributors to one resource don't conflict with each other: their fold doesn't depend on which runs first. */
 const conflictOf = (a: Access, b: Access): Key | undefined => {
-    for (const key of a.writes) if (b.writes.has(key) || b.reads.has(key)) return key;
-    for (const key of b.writes) if (a.reads.has(key)) return key;
+    for (const key of a.writes) if (b.writes.has(key) || b.reads.has(key) || b.reduces.has(key)) return key;
+    for (const key of b.writes) if (a.reads.has(key) || a.reduces.has(key)) return key;
     return undefined;
 };
 
-/** Throws if a leaf's lookup reads a component its own query writes. */
+/** Throws if a leaf's lookup reads a component it writes. */
 export const checkLeaf = (leaf: Leaf): void => {
-    const { name, query, lookup } = leaf.declaration;
-    const writes = new Set<Key>(query?.write);
+    const { name, components, lookup } = leaf.declaration;
+    const writes = new Set<Key>(components?.write);
     for (const lookupName in lookup) {
         for (const key of lookup[lookupName].read ?? []) {
             if (writes.has(key)) throw new Error(`System "${name}": lookup "${lookupName}" reads "${String(key)}", which the system writes.`);
@@ -169,9 +178,17 @@ export const checkLeaf = (leaf: Leaf): void => {
 export const createSchedule = (system: System): Schedule => {
     const { entries, expand } = flatten(system);
     const graph = graphOf(entries, expand);
+    const accesses = entries.map(entry => accessOf(entry.leaf));
+    // Leaves that read a resource run after every leaf that reduces into it, so they read the finished fold.
+    const reductions = new Map<Key, number>();
+    accesses.forEach((access, contributor) => {
+        for (const key of access.reduces) {
+            reductions.set(key, (reductions.get(key) ?? 0) + 1);
+            accesses.forEach((other, reader) => { if (reader !== contributor && other.reads.has(key)) graph.successors[contributor].add(reader); });
+        }
+    });
     const order = topologicalOrder(entries, graph.successors);
     const reach = reachability(order, graph.successors);
-    const accesses = entries.map(entry => accessOf(entry.leaf));
     for (let a = 0; a < entries.length; a++) {
         for (let b = a + 1; b < entries.length; b++) {
             const key = conflictOf(accesses[a], accesses[b]);
@@ -183,5 +200,5 @@ export const createSchedule = (system: System): Schedule => {
     const tier = tiersOf(order, graph, reach);
     const tiers: Leaf[][] = [];
     entries.forEach((entry, index) => (tiers[tier[index]] ??= []).push(entry.leaf));
-    return { tiers: tiers.filter(leaves => leaves !== undefined) };
+    return { tiers: tiers.filter(leaves => leaves !== undefined), reductions };
 };

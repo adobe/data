@@ -42,12 +42,23 @@ const systemLocals = async (program: Program, resolveSystemImport: ResolveSystem
     return locals;
 };
 
-/** `System.create`, or `Finalizer.create` or `Finalizer.changes`, whose bodies run on the main thread. */
-const isSystemCreate = (node: SimpleCallExpression, locals: ReadonlyMap<string, "System" | "Finalizer">): boolean => {
-    if (node.callee.type !== "MemberExpression" || node.callee.computed || node.callee.object.type !== "Identifier" || node.callee.property.type !== "Identifier") return false;
+type Created = "system" | "finalizer" | "changes";
+
+/** `System.create`, or `Finalizer.create` or `Finalizer.changes`, whose bodies run on the main thread; null for any other call. */
+const createdBy = (node: SimpleCallExpression, locals: ReadonlyMap<string, "System" | "Finalizer">): Created | null => {
+    if (node.callee.type !== "MemberExpression" || node.callee.computed || node.callee.object.type !== "Identifier" || node.callee.property.type !== "Identifier") return null;
     const namespace = locals.get(node.callee.object.name);
     const method = node.callee.property.name;
-    return namespace === "System" ? method === "create" : namespace === "Finalizer" && (method === "create" || method === "changes");
+    if (namespace === "System") return method === "create" ? "system" : null;
+    return namespace === "Finalizer" && (method === "create" || method === "changes") ? (method === "create" ? "finalizer" : "changes") : null;
+};
+
+/** Which parameters are the row and the context: a system without `components` takes only its context, and a changes finalizer takes its changes first. */
+const positionsOf = (created: Created, declaration: ObjectExpression): { readonly row: number; readonly context: number } => {
+    if (created === "changes") return { row: -1, context: 1 };
+    const rowed = declaration.properties.some(property =>
+        property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === "components");
+    return rowed ? { row: 0, context: 1 } : { row: -1, context: 0 };
 };
 
 /**
@@ -123,7 +134,8 @@ export const transformKernels = async (
     /** Module-scope declarations of prepared spawns, appended after everything they name is declared. */
     const prepared: string[] = [];
     const visit = (node: Node, nested: boolean): void => {
-        if (node.type === "CallExpression" && isSystemCreate(node, locals)) {
+        const created = node.type === "CallExpression" ? createdBy(node, locals) : null;
+        if (node.type === "CallExpression" && created !== null) {
             const [declaration, body] = node.arguments;
             const target = declaration?.type === "ObjectExpression" ? kernelOf(declaration) : null;
             if (declaration?.type === "ObjectExpression" && target !== null) {
@@ -132,8 +144,11 @@ export const transformKernels = async (
                 sites.push({ node, declaration, body, target });
                 return;
             }
-            if (declaration?.type === "ObjectExpression" && body !== undefined && body.type !== "SpreadElement") requireExact(declaration, usedBy(declaration, body, module.bindings), module.bindings);
-            const spawns = body === undefined || body.type === "SpreadElement" ? null : spawnSites(body, module.bindings);
+            const positions = declaration?.type === "ObjectExpression" ? positionsOf(created, declaration) : null;
+            if (declaration?.type === "ObjectExpression" && positions !== null && body !== undefined && body.type !== "SpreadElement") {
+                requireExact(declaration, usedBy(declaration, body, module.bindings, positions), module.bindings);
+            }
+            const spawns = positions === null || body === undefined || body.type === "SpreadElement" ? null : spawnSites(body, module.bindings, positions.context);
             if (spawns !== null && spawns.sites.length > 0) {
                 for (const site of spawns.sites) {
                     const name = `${spawnName}${prepared.length}`;

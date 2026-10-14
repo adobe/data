@@ -25,7 +25,7 @@ const root = (node: Node): string | undefined =>
     node.type === "Identifier" ? node.name : node.type === "MemberExpression" ? root(node.object) : undefined;
 
 const requireWritable = (node: Node, scope: Scope, component: string): void => {
-    if (!scope.unit.signature.write.has(component)) fail(node, `${component} is not in query write`);
+    if (!scope.unit.signature.write.has(component)) fail(node, `${component} is not in components write`);
     scope.unit.used.write.add(component);
 };
 

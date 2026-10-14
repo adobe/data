@@ -62,10 +62,10 @@ Component.register(late, { type: { type: "number" } });
 Resource.register(released, { type: { type: "number", default: 0 } });
 Resource.register(level, { type: { type: "number", default: 0 } });
 
-const slots = Rule.create({ name: "finalizersTest/slots", query: { has: [source] }, derives: [slot] });
+const slots = Rule.create({ name: "finalizersTest/slots", components: { has: [source] }, derive: [slot] });
 
 let steps: ((commands: System.Commands) => void)[] = [];
-const edit = System.create({ name: "finalizersTest/edit", args: { type: "integer" } }, (_, { args }, commands) => { steps[args]?.(commands); });
+const edit = System.create({ name: "finalizersTest/edit", input: { type: "integer" } }, ({ input, commands }) => { steps[input]?.(commands); });
 const step = (world: ReturnType<typeof createWorld>) => async (run: (commands: System.Commands) => void) => {
     steps = [...steps, run];
     await world.run(edit, steps.length - 1);
@@ -74,7 +74,7 @@ const step = (world: ReturnType<typeof createWorld>) => async (run: (commands: S
 describe("finalizers", () => {
     it("run for each entity that stops matching, by any cause, reading its values before the sync point applies", async () => {
         const seen: [Entity, number][] = [];
-        const release = Finalizer.create({ name: "finalizersTest/release", query: { read: [handle], not: [hidden] } }, row => { seen.push([row.entity, row[handle]]); });
+        const release = Finalizer.create({ name: "finalizersTest/release", components: { read: [handle], not: [hidden] } }, row => { seen.push([row.entity, row[handle]]); });
         const world = createWorld({ workers: 0 });
         await world.systems.register(edit, release);
         const run = step(world);
@@ -99,7 +99,7 @@ describe("finalizers", () => {
 
     it("run for rules' and references' removals too, and at disposal for every live match", async () => {
         const seen: number[] = [];
-        const release = Finalizer.create({ name: "finalizersTest/slotReleased", query: { read: [slot, source] } }, row => { seen.push(row[source]); });
+        const release = Finalizer.create({ name: "finalizersTest/slotReleased", components: { read: [slot, source] } }, row => { seen.push(row[source]); });
         const world = createWorld({ workers: 0 });
         await world.systems.register(edit, slots, release);
         const run = step(world);
@@ -120,12 +120,12 @@ describe("finalizers", () => {
         const found: (number | null)[] = [];
         const count = Finalizer.create({
             name: "finalizersTest/count",
-            query: { read: [handle] },
+            components: { read: [handle] },
             lookup: { handles: { read: [handle] } },
-            resources: { read: [released], write: [released] },
-        }, (row, context, commands) => {
-            context[released] += 1;
-            found.push(context.handles(row.entity)?.[handle] ?? null);
+            resources: { write: [released] },
+        }, (row, { resources, lookup, commands }) => {
+            resources[released] += 1;
+            found.push(lookup.handles(row.entity)?.[handle] ?? null);
             commands.spawn({ [label]: `after ${row[handle]}` });
         });
         const world = createWorld({ workers: 0 });
@@ -144,14 +144,14 @@ describe("finalizers", () => {
 
     it("leave their commands for the next run when a registration adds resources in between", async () => {
         let other = Entity.none;
-        const pending = Finalizer.create({ name: "finalizersTest/pending", query: { read: [handle] } }, (_, __, commands) => { commands.despawn(other); });
+        const pending = Finalizer.create({ name: "finalizersTest/pending", components: { read: [handle] } }, (_, { commands }) => { commands.despawn(other); });
         const world = createWorld({ workers: 0 });
         await world.systems.register(edit, pending);
         const run = step(world);
         let a = Entity.none;
         await run(commands => { a = commands.spawn({ [handle]: 1 }); other = commands.spawn({ [label]: "other" }); });
         await run(commands => commands.despawn(a));
-        await world.systems.register(System.create({ name: "finalizersTest/reads", resources: { read: [level] } }, (_, context) => { void context[level]; }));
+        await world.systems.register(System.create({ name: "finalizersTest/reads", resources: { read: [level] } }, ({ resources }) => { void resources[level]; }));
         expect(world.read.component(other, label)).toBe("other");
         await run(() => {});
         expect(world.read.component(other, label)).toBeNull();
@@ -159,7 +159,7 @@ describe("finalizers", () => {
     });
 
     it("keep reservations they make apart from the indexes their sync point frees", async () => {
-        const respawn = Finalizer.create({ name: "finalizersTest/respawn", query: { read: [handle] } }, (row, _, commands) => {
+        const respawn = Finalizer.create({ name: "finalizersTest/respawn", components: { read: [handle] } }, (row, { commands }) => {
             commands.spawn({ [handle]: row[handle] + 100 });
         });
         const world = createWorld({ workers: 0 });
@@ -178,9 +178,9 @@ describe("finalizers", () => {
 
     it("run in their order, and a throw still applies the sync point, then rejects the run", async () => {
         const order: string[] = [];
-        const second = Finalizer.create({ name: "finalizersTest/second", query: { read: [handle] }, after: ["finalizersTest/first"] }, () => { order.push("second"); });
-        const first = Finalizer.create({ name: "finalizersTest/first", query: { read: [handle] } }, () => { order.push("first"); });
-        const throws = Finalizer.create({ name: "finalizersTest/throws", query: { read: [handle] } }, () => { throw new Error("finalizer failed"); });
+        const second = Finalizer.create({ name: "finalizersTest/second", components: { read: [handle] }, after: ["finalizersTest/first"] }, () => { order.push("second"); });
+        const first = Finalizer.create({ name: "finalizersTest/first", components: { read: [handle] } }, () => { order.push("first"); });
+        const throws = Finalizer.create({ name: "finalizersTest/throws", components: { read: [handle] } }, () => { throw new Error("finalizer failed"); });
         const world = createWorld({ workers: 0 });
         await world.systems.register(edit, second, first, throws);
         const run = step(world);
@@ -190,7 +190,7 @@ describe("finalizers", () => {
         expect(order).toEqual(["first", "second"]);
         expect(world.read.component(a, handle)).toBeNull();
         const writer = (name: "finalizersTest/first" | "finalizersTest/second") =>
-            Finalizer.create({ name, query: { read: [handle] }, resources: { write: [released] } }, (_, context) => { context[released] = 1; });
+            Finalizer.create({ name, components: { read: [handle] }, resources: { write: [released] } }, (_, { resources }) => { resources[released] = 1; });
         await expect(createWorld({ workers: 0 }).systems.register(writer("finalizersTest/first"), writer("finalizersTest/second"))).rejects.toThrow("order them with before or after");
         await world.dispose();
     });
@@ -199,8 +199,8 @@ describe("finalizers", () => {
 describe("changes finalizers", () => {
     it("watch by default every component that isn't derived, including ones first used later, and no resources", async () => {
         const seen: unknown[] = [];
-        const everything = Finalizer.changes({ name: "finalizersTest/everything", resources: { read: [released] } }, (changes, context) => {
-            void context[released];
+        const everything = Finalizer.changes({ name: "finalizersTest/everything", resources: { read: [released] } }, (changes, { resources }) => {
+            void resources[released];
             for (const group of changes.groups) seen.push(group.to);
         });
         const world = createWorld({ workers: 0 });
@@ -213,7 +213,7 @@ describe("changes finalizers", () => {
     it("see each sync point's structural changes to their components, grouped, with values before and after", async () => {
         const groups: unknown[] = [];
         const values: unknown[] = [];
-        const changes = Finalizer.changes({ name: "finalizersTest/changes", components: [handle, label] }, ({ groups: seen, previous, next }) => {
+        const changes = Finalizer.changes({ name: "finalizersTest/changes", watch: [handle, label] }, ({ groups: seen, previous, next }) => {
             for (const group of seen) {
                 groups.push({ ...group, entities: group.entities.length });
                 for (const entity of group.entities) values.push([previous(entity, handle), next(entity, handle)]);

@@ -5,7 +5,7 @@ import type { Leaf } from '../../system/leaf.js';
 import type { Name } from '../../system/name.js';
 import type { System } from '../../system/system.js';
 import { createRunner, type Runner } from './runner.js';
-import { checkLeaf, createSchedule, isLeaf, type Schedule } from './schedule.js';
+import { checkLeaf, createSchedule, isLeaf, reducedBy, type Schedule } from './schedule.js';
 import type { RuleFacts } from './closure.js';
 import { createFinalizerRunner, isFinalizer, orderFinalizers, type FinalizerRunner } from './finalizers.js';
 import { idOf, type Key, type State } from './state.js';
@@ -42,24 +42,42 @@ const systemsOf = (root: System): System[] => {
 
 /** Every component and resource a leaf names, so missing schemas throw at registration. */
 const keysOf = (leaf: Leaf): { readonly components: readonly Key[]; readonly resources: readonly Key[] } => {
-    const { query, lookup, resources } = leaf.declaration;
-    const components = [...query?.read ?? [], ...query?.write ?? [], ...query?.has ?? [], ...query?.not ?? [], ...query?.added ?? [], ...query?.changed ?? []];
+    const { components: access, lookup, resources } = leaf.declaration;
+    const components = [...access?.read ?? [], ...access?.write ?? [], ...access?.has ?? [], ...access?.not ?? [], ...access?.added ?? [], ...access?.changed ?? []];
     for (const name in lookup) components.push(...lookup[name].read ?? [], ...lookup[name].has ?? [], ...lookup[name].not ?? []);
     return { components, resources: [...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? [], ...reducedBy(leaf)] };
 };
 
-/** The resources a system reduces into. */
-const reducedBy = (leaf: Leaf): readonly Key[] => {
-    const reduce = leaf.declaration.resources?.reduce;
-    return reduce === undefined ? [] : Reflect.ownKeys(reduce).filter(key => Reflect.get(reduce, key) !== undefined);
+/** Throws if a key is in both `read` and `write`: `write` already makes it readable. */
+const checkLists = (kind: string, name: string, what: string, lists: { readonly read?: readonly Key[]; readonly write?: readonly Key[] } | undefined): void => {
+    const writes = new Set(lists?.write);
+    const both = (lists?.read ?? []).find(key => writes.has(key));
+    if (both !== undefined) throw new Error(`${kind} "${name}" lists "${String(both)}" in both ${what} read and write; write already makes it readable.`);
 };
 
-const isRule = (item: System | Rule | Finalizer): item is Rule => "derives" in item.declaration;
+/**
+ * Throws if a system reduces into a resource with an operator its `reduce` trait doesn't declare, or writes a resource
+ * that's reduced, which only its contributors' fold sets.
+ */
+const checkReductions = (leaf: Leaf): void => {
+    const { name, reduce, resources } = leaf.declaration;
+    for (const key of reducedBy(leaf)) {
+        const declared = declarationOf(key)?.reduce;
+        const operator: unknown = Reflect.get(reduce ?? {}, key);
+        if (declared === undefined) throw new Error(`System "${name}" reduces "${String(key)}", which has no reduce trait.`);
+        if (declared !== operator) throw new Error(`System "${name}" reduces "${String(key)}" with "${String(operator)}", but it's declared reduce: "${String(declared)}".`);
+    }
+    for (const key of resources?.write ?? []) {
+        if (declarationOf(key)?.reduce !== undefined) throw new Error(`System "${name}" writes "${String(key)}", which is reduced; only its contributors' fold sets it.`);
+    }
+};
+
+const isRule = (item: System | Rule | Finalizer): item is Rule => item.kind === "rule";
 
 /** A rule as component ids. Throws if it derives a component that isn't derived, or matches on a resource. */
 const factsOf = (state: State, rule: Rule): RuleFacts => {
-    const { name, query, derives } = rule.declaration;
-    for (const key of derives) {
+    const { name, components, derive } = rule.declaration;
+    for (const key of derive) {
         if (declarationOf(key)?.derived !== true) throw new Error(`Rule "${name}" derives "${String(key)}", which isn't declared derived.`);
     }
     const ids = (keys: readonly Key[] | undefined): number[] => (keys ?? []).map(key => {
@@ -67,7 +85,7 @@ const factsOf = (state: State, rule: Rule): RuleFacts => {
         if (state.resources.has(id)) throw new Error(`Rule "${name}" matches on "${String(key)}", which is a resource.`);
         return id;
     });
-    return { name, has: ids(query.has), not: ids(query.not), derives: ids(derives) };
+    return { name, has: ids(components.has), not: ids(components.not), derives: ids(derive) };
 };
 
 export const createRegistrar = (state: State): Registrar => {
@@ -75,8 +93,6 @@ export const createRegistrar = (state: State): Registrar => {
     const schedules = new Map<System, Schedule>();
     const runners = new Map<Leaf, Runner>();
     const kernelIndexes = new Map<Runner, number>();
-    /** The system that reduces into each resource: a resource holds one system's reduction. */
-    const reducers = new Map<Key, Name>();
     /** Never reused, so a rolled-back kernel's index can't alias a worker's loaded kernel. */
     let nextKernel = 0;
 
@@ -120,6 +136,10 @@ export const createRegistrar = (state: State): Registrar => {
             try {
                 const created: FinalizerRunner[] = finalizers.map(finalizer => {
                     const { lookup, resources } = finalizer.declaration;
+                    checkLists("Finalizer", finalizer.declaration.name, "resources", resources);
+                    for (const key of resources?.write ?? []) {
+                        if (declarationOf(key)?.reduce !== undefined) throw new Error(`Finalizer "${finalizer.declaration.name}" writes "${String(key)}", which is reduced; only its contributors' fold sets it.`);
+                    }
                     for (const name in lookup) for (const key of [...lookup[name].read ?? [], ...lookup[name].has ?? [], ...lookup[name].not ?? []]) idOf(state, key);
                     for (const key of [...resources?.read ?? [], ...resources?.write ?? []]) {
                         idOf(state, key);
@@ -159,7 +179,6 @@ export const createRegistrar = (state: State): Registrar => {
         const addedSchedules = new Map<System, Schedule>();
         const addedRunners = new Map<Leaf, Runner>();
         const resources = new Set<Key>();
-        const addedReducers = new Map<Key, Name>();
         for (const root of roots) {
             for (const system of systemsOf(root)) {
                 const { name } = system.declaration;
@@ -170,14 +189,12 @@ export const createRegistrar = (state: State): Registrar => {
                 addedSchedules.set(system, createSchedule(system));
                 if (isLeaf(system)) {
                     checkLeaf(system);
-                    for (const key of system.declaration.query?.write ?? []) {
+                    checkLists("System", name, "components", system.declaration.components);
+                    checkLists("System", name, "resources", system.declaration.resources);
+                    for (const key of system.declaration.components?.write ?? []) {
                         if (declarationOf(key)?.reference !== undefined) throw new Error(`System "${name}" writes "${String(key)}", a reference, which changes only through commands.`);
                     }
-                    for (const key of reducedBy(system)) {
-                        const other = reducers.get(key) ?? addedReducers.get(key);
-                        if (other !== undefined) throw new Error(`Systems "${other}" and "${name}" both reduce "${String(key)}"; a resource holds one system's reduction.`);
-                        addedReducers.set(key, name);
-                    }
+                    checkReductions(system);
                     const keys = keysOf(system);
                     for (const key of keys.components) idOf(state, key);
                     for (const key of keys.resources) {
@@ -189,7 +206,6 @@ export const createRegistrar = (state: State): Registrar => {
             }
         }
         for (const [name, system] of added) named.set(name, system);
-        for (const [key, name] of addedReducers) reducers.set(key, name);
         for (const [system, schedule] of addedSchedules) schedules.set(system, schedule);
         for (const [leaf, runner] of addedRunners) {
             runners.set(leaf, runner);
@@ -198,11 +214,10 @@ export const createRegistrar = (state: State): Registrar => {
         }
         // New `changed` filters observe more components, so kernels that muted their stamps must load again.
         const observedBefore = new Set(state.observed);
-        for (const leaf of addedRunners.keys()) for (const key of leaf.declaration.query?.changed ?? []) state.observed.add(idOf(state, key));
+        for (const leaf of addedRunners.keys()) for (const key of leaf.declaration.components?.changed ?? []) state.observed.add(idOf(state, key));
         const kernels = [...kernelIndexes.keys()].filter(runner => runner.kernel?.stale() === true);
         const rollback = (): void => {
             for (const name of added.keys()) named.delete(name);
-            for (const key of addedReducers.keys()) reducers.delete(key);
             for (const system of addedSchedules.keys()) schedules.delete(system);
             for (const leaf of addedRunners.keys()) runners.delete(leaf);
             for (const runner of addedRunners.values()) if (runner.afterSync !== null) state.afterSync.delete(runner.afterSync);
@@ -210,7 +225,7 @@ export const createRegistrar = (state: State): Registrar => {
             state.observed.clear();
             for (const id of observedBefore) state.observed.add(id);
         };
-        const ticked = [...addedRunners.keys()].flatMap(leaf => [...leaf.declaration.query?.added ?? [], ...leaf.declaration.query?.changed ?? []].map(key => idOf(state, key)));
+        const ticked = [...addedRunners.keys()].flatMap(leaf => [...leaf.declaration.components?.added ?? [], ...leaf.declaration.components?.changed ?? []].map(key => idOf(state, key)));
         return { resources: [...resources], ticked, kernels, rollback };
     };
 

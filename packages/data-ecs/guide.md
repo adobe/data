@@ -11,7 +11,7 @@ with the reasoning behind each rule.
 4. [Scheduling and composites](#4-scheduling-and-composites)
 5. [Change filters](#5-change-filters)
 6. [Lookups](#6-lookups)
-7. [Arguments](#7-arguments)
+7. [Input](#7-input)
 8. [Sync points](#8-sync-points)
 9. [Kernels](#9-kernels)
 10. [Reductions](#10-reductions)
@@ -28,7 +28,7 @@ with the reasoning behind each rule.
 ## 1. Setup
 
 The Vite plugin compiles kernel systems at build time and checks that every system's declaration lists exactly what
-its body uses. Workers share memory, so pages need cross-origin isolation.
+its body uses: a listed key the body never uses fails the build. Workers share memory, so pages need cross-origin isolation.
 
 ```ts
 import { kernelPlugin } from "@adobe/data-ecs/compiler";
@@ -86,34 +86,45 @@ Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L4-L38).
 
 ## 3. Systems
 
-A system matches entities with every component in its query's `read`, `write` and `has`, and none in `not`. Its body
-runs once per row: `row` holds the components it reads and writes, `context` its resources, lookups and arguments,
-and `commands` its structural changes. Values are replaced whole, never edited in place.
+A system's `components` say which entities it runs over: those with every component in `read`, `write` and `has`, and
+none in `not`. Its body runs once per row, as `(row, context)`. `row` holds the components it reads and writes; one
+in `write` is readable too, so it's never also listed in `read`. Values are replaced whole, never edited in place.
+
+The context holds what the body uses besides its row, each kind under the declaration's own key, and only the keys
+the declaration declares: `resources` (values, assignable when in `write`), `lookup` (section 6), `reduce`
+(section 10), `input` (section 7), and `commands` (section 8), which every system but a GPU kernel has.
 
 ```ts
 const move = System.create({
     name: "guide/systems/move",
-    query: { read: [position, velocity], write: [position], not: [frozen] },
+    components: { read: [velocity], write: [position], not: [frozen] },
     resources: { read: [delta] },
-}, (row, context) => {
-    row[position] = Vec3.add(row[position], Vec3.scale(row[velocity], context[delta]));
+}, (row, { resources }) => {
+    row[position] = Vec3.add(row[position], Vec3.scale(row[velocity], resources[delta]));
 });
 ```
 
-A system without a query runs once per run, with resources only.
+A system without `components` runs once per run, and its body takes only the context:
+
+```ts
+const count = System.create({ name: "guide/systems/count", resources: { write: [frames] } }, ({ resources }) => {
+    resources[frames] += 1;
+});
+```
 
 Example: [`02-systems.test.ts`](src/guide/02-systems.test.ts#L38-L60).
 
 - **Declarations list exactly what bodies use.** A key the body never uses is a build error, as is one it uses without listing it.
-- **Rejected:** reads of undeclared components (types), unused declared ones (build), a write to a component a system only reads (types).
+- **Rejected:** reads of undeclared components or resources, and context keys the declaration doesn't declare (types); unused declared ones (build); a write to a component a system only reads, and a key in both `read` and `write` (types and registration).
 
 ## 4. Scheduling and composites
 
-There's no built-in schedule: the application runs a composite each frame. Order comes only from `before`, `after`
-and `during`; systems with no ordering path between them may run in parallel.
+There's no built-in schedule: the application runs a composite each frame. Order comes from `before` and `after`,
+which are hard constraints. `during` is a preference: it puts systems in the same tier where nothing orders them
+apart. Systems with no ordering path between them may run in parallel.
 
 ```ts
-const heal = System.create({ name: "guide/scheduling/heal", query: { read: [health], write: [health] }, after: ["guide/scheduling/hit"] }, row => {
+const heal = System.create({ name: "guide/scheduling/heal", components: { write: [health] }, after: ["guide/scheduling/hit"] }, row => {
     row[health] = Math.min(row[health] * 2, 10);
 });
 const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal, hit] });
@@ -122,6 +133,7 @@ const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal,
 Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L25-L48).
 
 - **Rejected:** two members that both write a component or resource, or where one reads what the other writes, with no ordering path between them, at registration.
+- **Reductions are the exception:** contributors to one resource need no order between them, and its readers run after all of them (section 10).
 
 ## 5. Change filters
 
@@ -130,10 +142,10 @@ system sees each change once. Only rows a body actually writes are marked change
 passes every row when it changes, including on the first run, so systems that set things up need no run-once flag.
 
 ```ts
-const load = System.create({ name: "guide/filters/load", resources: { read: [level], changed: [level] } }, (_, context, commands) => {
-    for (let i = 0; i < context[level] * 2; i++) commands.spawn({ [score]: 0, [shown]: -1, [enemy]: true });
+const load = System.create({ name: "guide/filters/load", resources: { read: [level], changed: [level] } }, ({ resources, commands }) => {
+    for (let i = 0; i < resources[level] * 2; i++) commands.spawn({ [score]: 0, [shown]: -1, [enemy]: true });
 });
-const show = System.create({ name: "guide/filters/show", query: { read: [score], write: [shown], changed: [score] } }, row => {
+const show = System.create({ name: "guide/filters/show", components: { read: [score], write: [shown], changed: [score] } }, row => {
     row[shown] = row[score];
 });
 ```
@@ -144,16 +156,17 @@ Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L30-L
 
 ## 6. Lookups
 
-A lookup reads another entity's components by id. It returns null for an entity that's dead, `Entity.none`, or
-missing a component in its `read`.
+A lookup reads another entity's components by id. Each is declared by name under `lookup`, and called by that name
+on the context's `lookup`. It returns null for an entity that's dead, `Entity.none`, or missing a component in its
+`read`.
 
 ```ts
 const follow = System.create({
     name: "guide/lookups/follow",
-    query: { read: [position, target], write: [velocity] },
+    components: { read: [position, target], write: [velocity] },
     lookup: { targets: { read: [position] } },
-}, (row, { targets }) => {
-    const other = targets(row[target]);
+}, (row, { lookup }) => {
+    const other = lookup.targets(row[target]);
     row[velocity] = other === null ? [0, 0, 0] : Vec3.subtract(other[position], row[position]);
 });
 ```
@@ -162,33 +175,33 @@ Example: [`05-lookups.test.ts`](src/guide/05-lookups.test.ts#L24-L46).
 
 - **Rejected:** a lookup reading a component its own system writes, at registration.
 
-## 7. Arguments
+## 7. Input
 
-`args` is a schema for a read-only input to each run, passed as `world.run(system, args)`. A system name and its
-arguments make a replicable transaction.
+`input` is a schema for a read-only value passed to each run, as `world.run(system, input)`, and read as the
+context's `input`. A system name and its input make a replicable transaction.
 
 ```ts
 const place = System.create({
-    name: "guide/arguments/place",
-    args: { type: "object", properties: { x: { type: "number" }, count: { type: "integer" } } },
-}, (_, { args }, commands) => {
-    for (let i = 0; i < args.count; i++) commands.spawn({ [position]: [args.x, i, 0] });
+    name: "guide/input/place",
+    input: { type: "object", properties: { x: { type: "number" }, count: { type: "integer" } } },
+}, ({ input, commands }) => {
+    for (let i = 0; i < input.count; i++) commands.spawn({ [position]: [input.x, i, 0] });
 });
 await world.run(place, { x: 3, count: 2 });
 ```
 
-Example: [`06-arguments.test.ts`](src/guide/06-arguments.test.ts#L17-L30).
+Example: [`06-input.test.ts`](src/guide/06-input.test.ts#L17-L30).
 
-- **Not yet:** a system with arguments can't use `added` or `changed`, or be a member of a composite.
+- **Not yet:** a system with input can't use `added` or `changed`, or be a member of a composite.
 
 ## 8. Sync points
 
-Commands are structural changes. Every run ends in a sync point that applies them together as their net effect: a
+Commands are structural changes, issued through the context's `commands`. Every run ends in a sync point that applies them together as their net effect: a
 spawn isn't visible to later systems in the same run, and a component added and removed within one sync point was
 never there. A run whose system throws still applies its commands, then rejects.
 
 ```ts
-const spawn = System.create({ name: "guide/sync/spawn" }, (_, __, commands) => {
+const spawn = System.create({ name: "guide/sync/spawn" }, ({ commands }) => {
     const entity = commands.spawn({ [unit]: 1 });
     commands.add(entity, { [shield]: true });
     commands.remove(entity, shield);
@@ -211,10 +224,10 @@ inlined. Results match the body run as written.
 const chase = System.create({
     name: "guide/kernels/chase",
     kernel: "cpu",
-    query: { read: [position, velocity, target], write: [velocity] },
+    components: { read: [position, target], write: [velocity] },
     lookup: { targets: { read: [position] } },
-}, (row, { targets }, commands) => {
-    const other = targets(row[target]);
+}, (row, { lookup, commands }) => {
+    const other = lookup.targets(row[target]);
     if (other === null) return;
     row[velocity] = steer(row[velocity], Vec3.subtract(other[position], row[position]), 2);
     // A kernel builds tuple values from their leaves.
@@ -233,26 +246,33 @@ Example: [`08-kernels.test.ts`](src/guide/08-kernels.test.ts#L34-L64), with the 
 
 ## 10. Reductions
 
-A reduction folds what each row contributes into a resource: `"+"`, `"*"`, `"min"`, `"max"`, or bitwise `"&"`, `"|"`
-and `"^"`, leaf by leaf over tuples and structs. Each run replaces the resource with the fold of that run, across
-workers and deterministically for one world configuration.
+A reduction computes one value from many rows, such as a count, a total or bounds, including in kernels running
+across workers, where no row can write a resource. The resource declares the operator as its `reduce` trait: `"+"`,
+`"*"`, `"min"`, `"max"`, or bitwise `"&"`, `"|"` and `"^"`, applied leaf by leaf over tuples and structs. A
+contributing system repeats the operator under `reduce`, and its body contributes with `reduce[resource](value)`.
 
 ```ts
+Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
+
 const measure = System.create({
     name: "guide/reductions/measure",
     kernel: "cpu",
-    query: { read: [position, mass] },
-    resources: { reduce: { [total]: "+", [lowest]: "min" } },
-}, (row, context) => {
+    components: { read: [position, mass] },
+    reduce: { [total]: "+", [lowest]: "min" },
+}, (row, { reduce }) => {
     const [x, y, z] = row[position];
-    context[total](row[mass]);
-    context[lowest]([x, y, z]);
+    reduce[total](row[mass]);
+    reduce[lowest]([x, y, z]);
 });
 ```
 
-Example: [`09-reductions.test.ts`](src/guide/09-reductions.test.ts#L33-L52).
+Example: [`09-reductions.test.ts`](src/guide/09-reductions.test.ts#L34-L82).
 
-- **Rejected:** a reduced resource that the system also reads, writes or filters on, at registration and in types; a query with change filters; two systems reducing one resource.
+- **Each run starts again:** a run in which a contributor runs starts the resource at the operator's identity (0 for `"+"`, the largest value for `"min"`, and so on), and leaves it holding the fold of every contribution in that run. Before the first such run it holds its `default`.
+- **Several systems may contribute** to one resource in a run. They need no order between them, and any system that reads the resource runs after all of them, so it sees the finished fold.
+- **Change filters pass only some rows,** and the fold covers just those: with `changed: [position]`, a fold over what moved.
+- **A failed or skipped run:** when a contributor fails, or every contributor skips the run, the resource keeps its previous value.
+- **Rejected:** an operator that isn't the resource's, a resource without a `reduce` trait, writing a reduced resource, and a contributor that reads or filters on what it reduces into, in types and at registration; a non-bitwise operator on booleans, at `Resource.register`.
 - **Not yet:** reductions in GPU kernels.
 
 ## 11. GPU kernels and render systems
@@ -262,7 +282,7 @@ without. Its values are 4-byte numbers and booleans, so numbers need `precision:
 stay on the GPU until something on the CPU needs them, or `world.synchronize` asks.
 
 ```ts
-const move = System.create({ name: "guide/gpu/move", kernel: "gpu", query: { read: [position, velocity], write: [position] } }, row => {
+const move = System.create({ name: "guide/gpu/move", kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
 const world = await World.create({ gpu: { device }, systems: [spawn, move] });
@@ -270,8 +290,9 @@ const world = await World.create({ gpu: { device }, systems: [spawn, move] });
 
 Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L26-L44).
 
-A render system records GPU work over the GPU copy of the components its accessors name. `Gpu.wgsl(system)` gives
-its shaders' declarations, a function per accessor, and pipelines take `world.gpu.layout`. See the particle sample's
+A render system, made by `System.render`, records GPU work over the GPU copy of the components its `shader.accessors`
+name. Its body is `(gpu, context)`: `gpu` has the device, the run's encoder and a table per archetype. `Gpu.wgsl(system)`
+gives its shaders' declarations, a function per accessor, and pipelines take `world.gpu.layout`. See the particle sample's
 [declaration](src/sample/gpu/particles.ts#L107-L112) and [draw](src/sample/gpu/particles.ts#L118-L146), wired up in
 [`main.ts`](src/sample/gpu/main.ts#L58-L63).
 
@@ -283,6 +304,7 @@ A component's record lists its traits. `type` is the value type; the others are 
 at registration:
 
 - **`derived: true`:** only rules add and remove the component; commands reject it. Its schema has a `default`. See [Rules](#13-rules).
+- **`reduce`:** on a resource, the operator systems reduce into it with. See [Reductions](#10-reductions).
 - **`within: host`:** `host` is another component on the same entity. The component can be on an entity only while
   `host` is too: when `host` leaves, by any cause, the component leaves with it in the same sync point, and one added
   to an entity without `host` is dropped. See [Within](#14-within).
@@ -312,14 +334,14 @@ Example: [`11-traits.type-test.ts`](src/guide/11-traits.type-test.ts), checked b
 
 ## 13. Rules
 
-A rule says that entities matching its query have the components it derives, and only while they match. Rules can
+A rule says that entities matching its `components` have the components it derives, and only while they match. Rules can
 build on what other rules derive, and several can derive one component, which is then present while any of them
 matches. Derived components start at their schema's default, stamped `added`, and systems write their values.
 
 ```ts
-const meshes = Rule.create({ name: "guide/rules/meshes", query: { has: [mesh], not: [hidden] }, derives: [drawn] });
-const sprites = Rule.create({ name: "guide/rules/sprites", query: { has: [sprite], not: [hidden] }, derives: [drawn] });
-const layers = Rule.create({ name: "guide/rules/layers", query: { has: [drawn] }, derives: [layer] });
+const meshes = Rule.create({ name: "guide/rules/meshes", components: { has: [mesh], not: [hidden] }, derive: [drawn] });
+const sprites = Rule.create({ name: "guide/rules/sprites", components: { has: [sprite], not: [hidden] }, derive: [drawn] });
+const layers = Rule.create({ name: "guide/rules/layers", components: { has: [drawn] }, derive: [layer] });
 ```
 
 Example: [`12-rules.test.ts`](src/guide/12-rules.test.ts#L32-L60).
@@ -356,11 +378,11 @@ Component.register(watching, { type: Entity.schema, reference: "weak" });
 Example: [`14-references.test.ts`](src/guide/14-references.test.ts#L20-L41).
 
 - **Only the value a holder ends up with counts:** a reference pointed elsewhere in the same sync point stays.
-- **References change only through commands**, which keeps the index from targets to holders exact. `Component.Writable` leaves them out of `query.write`.
+- **References change only through commands**, which keeps the index from targets to holders exact. `Component.Writable` leaves them out of `components.write`.
 
 ## 16. Finalizers
 
-A finalizer runs inside the sync point, on the main thread, for each entity that stops matching its query: one that
+A finalizer runs inside the sync point, on the main thread, for each entity that stops matching its `components`: one that
 matched after the previous sync point and won't after this one, whatever the cause. It reads the entity's values
 from before the sync point applies. An entity spawned and despawned in the same sync point never matched, so a
 finalizer doesn't run for it, and neither does a change of values alone. It releases what entities hold outside the world,
@@ -368,7 +390,7 @@ such as GPU buffers or DOM nodes. Its commands apply at the next sync point; `di
 still matches.
 
 ```ts
-const release = Finalizer.create({ name: "guide/finalizers/release", query: { read: [position, handle] } }, (row, _, commands) => {
+const release = Finalizer.create({ name: "guide/finalizers/release", components: { read: [position, handle] } }, (row, { commands }) => {
     open.delete(row[handle]);
     const [x, y, z] = row[position];
     commands.spawn({ [position]: [x, y, z], [debris]: true });
@@ -378,20 +400,20 @@ const release = Finalizer.create({ name: "guide/finalizers/release", query: { re
 Example: [`15-finalizers.test.ts`](src/guide/15-finalizers.test.ts#L27-L65).
 
 - **A stop:** a despawn, the loss of a required component by any cause, a required component removed and added again, or an excluded one added.
-- **Rows are read-only.** Lookups see the state before the sync point applies, and resource writes take its tick.
+- **Rows are read-only.** The body is `(row, context)`, whose context has `resources`, `lookup` and `commands`. Lookups see the state before the sync point applies, and resource writes take its tick.
 - **Order:** `before` and `after` among finalizers, then registration order. A finalizer that throws doesn't stop the sync point; the run rejects with the first error once it has applied.
 
 ## 17. Changes finalizers
 
-A changes finalizer sees a sync point's structural changes to its components, grouped by how entities changed, with
-values before and after: for persistence, replication and undo. Without `components`, it sees every component that
-isn't derived.
+A changes finalizer sees a sync point's structural changes to the components it watches, grouped by how entities
+changed, with values before and after: for persistence, replication and undo. Without `watch`, it sees every
+component that isn't derived. Its body is `(changes, context)`.
 
 ```ts
-const save = Finalizer.changes({ name: "guide/changes/save", components: [name, score], resources: { read: [journal], write: [journal] } }, (changes, context) => {
+const save = Finalizer.changes({ name: "guide/changes/save", watch: [name, score], resources: { write: [journal] } }, (changes, { resources }) => {
     const lines = changes.groups.flatMap(group => group.entities.map(entity =>
         `${changes.previous(entity, name) ?? changes.next(entity, name)}: +${group.added.length} -${group.removed.length} score ${changes.previous(entity, score)} → ${changes.next(entity, score)}`));
-    context[journal] = [...context[journal], ...lines];
+    resources[journal] = [...resources[journal], ...lines];
 });
 ```
 
@@ -412,11 +434,11 @@ Rules, `within` and finalizers combine into a lifecycle for things that load asy
 ```ts
 const apply = System.create({
     name: "guide/loading/apply",
-    args: { type: "object", properties: { entity: Entity.schema, token: { type: "integer" }, handle: { type: "integer" } } },
+    input: { type: "object", properties: { entity: Entity.schema, token: { type: "integer" }, handle: { type: "integer" } } },
     lookup: { slots: { read: [meshSlot] } },
-}, (_, { args, slots }, commands) => {
-    if (slots(args.entity)?.[meshSlot] === args.token) commands.add(args.entity, { [meshReady]: args.handle });
-    else loaded.delete(args.handle);
+}, ({ input, lookup, commands }) => {
+    if (lookup.slots(input.entity)?.[meshSlot] === input.token) commands.add(input.entity, { [meshReady]: input.handle });
+    else loaded.delete(input.handle);
 });
 ```
 
@@ -427,6 +449,7 @@ Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L61-L10
 ## 19. Reference
 
 - **Built-in components:** `component`, `persistent` and `shared` are tags in [`src/components/`](src/components/).
+- **Constructed values:** every constructor returns data with a `kind`: `"system"`, `"render"`, `"composite"`, `"rule"`, `"finalizer"` or `"changes"`, its `declaration`, and its `body`.
 - **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/system/system.type-test.ts), [`world.type-test.ts`](src/world/world.type-test.ts), [`rule.type-test.ts`](src/rule/rule.type-test.ts), [`trait.type-test.ts`](src/trait/trait.type-test.ts).
 - **The contract and its reasoning:** [`design.md`](design.md).
 - **A complete application:** the [particle sample](src/sample/particles.ts), run by [`particles.test.ts`](src/sample/particles.test.ts), and its [GPU version](src/sample/gpu/).

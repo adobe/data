@@ -30,7 +30,7 @@ Component.register(target, { type: Entity.schema });
 Component.register(score, { type: { type: "number" } });
 Component.register(tag, { type: { const: true } });
 
-const seed = System.create({ name: "semanticsTest/seed" }, (_, __, commands) => {
+const seed = System.create({ name: "semanticsTest/seed" }, ({ commands }) => {
     // @ts-expect-error untyped callers can store any number as an entity
     commands.spawn({ [position]: [5, 6], [target]: -1, [score]: 0 });
     // @ts-expect-error untyped callers can store any number as an entity
@@ -39,9 +39,9 @@ const seed = System.create({ name: "semanticsTest/seed" }, (_, __, commands) => 
 const chase = System.create({
     name: "semanticsTest/chase",
     kernel: "cpu",
-    query: { read: [target], write: [score] },
+    components: { read: [target], write: [score] },
     lookup: { targets: { read: [position] } },
-}, (row, { targets }) => {
+}, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
     if (other === null) {
         row[score] = -1;
@@ -64,7 +64,7 @@ const run = async (wasm: boolean) => {
 describe("semantics", () => {
     it("a throwing sync point doesn't poison the next one or another world", async () => {
         let poison = false;
-        const spawn = System.create({ name: "semanticsTest/seed" }, (_, __, commands) => {
+        const spawn = System.create({ name: "semanticsTest/seed" }, ({ commands }) => {
             commands.spawn({ [score]: 1 });
             commands.spawn({ [score]: poison ? Symbol("x") as unknown as number : 2 });
         });
@@ -92,9 +92,9 @@ describe("semantics", () => {
     it("re-adding an existing tag keeps its added tick", async () => {
         const seen: number[] = [];
         let entity = Entity.none;
-        const spawn = System.create({ name: "semanticsTest/seed" }, (_, __, commands) => { entity = commands.spawn({ [tag]: true, [score]: 0 }); });
-        const retag = System.create({ name: "semanticsTest/retag" }, (_, __, commands) => { commands.add(entity, { [tag]: true }); });
-        const watch = System.create({ name: "semanticsTest/watch", query: { has: [score], added: [tag] } }, row => { seen.push(row.entity); });
+        const spawn = System.create({ name: "semanticsTest/seed" }, ({ commands }) => { entity = commands.spawn({ [tag]: true, [score]: 0 }); });
+        const retag = System.create({ name: "semanticsTest/retag" }, ({ commands }) => { commands.add(entity, { [tag]: true }); });
+        const watch = System.create({ name: "semanticsTest/watch", components: { has: [score], added: [tag] } }, row => { seen.push(row.entity); });
         const world = createWorld({ workers: 0 });
         await world.systems.register(spawn, retag, watch);
         await world.run(spawn);

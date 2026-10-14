@@ -27,27 +27,27 @@ Component.register(value, { type: { type: "number", precision: 1 } });
 Component.register(seen, { type: { type: "number", precision: 1 } });
 Component.register(flag, { type: { const: true } });
 
-const seed = System.create({ name: "observedTest/seed" }, (_, __, commands) => {
+const seed = System.create({ name: "observedTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 3000; i++) commands.spawn({ [value]: i, [seen]: 0 });
 });
 
 /** Writes every value: until something observes `value`, its stamps are muted. */
-const bump = System.create({ name: "observedTest/bump", kernel: "cpu", query: { read: [value], write: [value] } }, row => {
+const bump = System.create({ name: "observedTest/bump", kernel: "cpu", components: { write: [value] } }, row => {
     row[value] = row[value] + 1;
 });
 
-const watch = System.create({ name: "observedTest/watch", kernel: "cpu", query: { read: [seen], write: [seen], changed: [value] }, after: ["observedTest/bump"] }, row => {
+const watch = System.create({ name: "observedTest/watch", kernel: "cpu", components: { write: [seen], changed: [value] }, after: ["observedTest/bump"] }, row => {
     row[seen] = row[seen] + 1;
 });
 
 /** Counts rows whose `value` was added since it last ran. */
-const fresh = System.create({ name: "observedTest/fresh", query: { read: [seen], write: [seen], added: [value] } }, row => {
+const fresh = System.create({ name: "observedTest/fresh", components: { write: [seen], added: [value] } }, row => {
     row[seen] = row[seen] + 1;
 });
-const flagAll = System.create({ name: "observedTest/flagAll", query: { has: [value] } }, (row, _, commands) => {
+const flagAll = System.create({ name: "observedTest/flagAll", components: { has: [value] } }, (row, { commands }) => {
     commands.add(row.entity, { [flag]: true });
 });
-const spawnOne = System.create({ name: "observedTest/spawnOne" }, (_, __, commands) => {
+const spawnOne = System.create({ name: "observedTest/spawnOne" }, ({ commands }) => {
     commands.spawn({ [value]: -1, [seen]: 0 });
 });
 

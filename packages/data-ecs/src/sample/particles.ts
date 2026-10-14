@@ -37,8 +37,8 @@ Resource.register(count, { type: { type: "integer", minimum: 0, default: 100 } }
 export const spawn = System.create({
     name: "particles/spawn",
     resources: { read: [count], changed: [count] },
-}, (_, context, commands) => {
-    for (let i = 0; i < context[count]; i++) {
+}, ({ resources, commands }) => {
+    for (let i = 0; i < resources[count]; i++) {
         commands.spawn({ [position]: [0, 0, 0], [velocity]: [1, i, 0] });
     }
 });
@@ -47,33 +47,33 @@ export const spawn = System.create({
 export const gravity = System.create({
     name: "particles/gravity",
     kernel: "cpu",
-    query: { read: [velocity], write: [velocity] },
+    components: { write: [velocity] },
     resources: { read: [delta] },
-}, (row, context) => {
+}, (row, { resources }) => {
     const [x, y, z] = row[velocity];
-    row[velocity] = [x, y - 9.8 * context[delta], z];
+    row[velocity] = [x, y - 9.8 * resources[delta], z];
 });
 
 export const integrate = System.create({
     name: "particles/integrate",
     kernel: "cpu",
-    query: { read: [position, velocity], write: [position] },
+    components: { read: [velocity], write: [position] },
     resources: { read: [delta] },
     after: ["particles/gravity"],
-}, (row, context) => {
+}, (row, { resources }) => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];
-    const t = context[delta];
+    const t = resources[delta];
     row[position] = [px + vx * t, py + vy * t, pz + vz * t];
 });
 
 // Transaction carrying frame time into the ECS.
 export const setDelta = System.create({
     name: "particles/setDelta",
-    args: { type: "number" },
+    input: { type: "number" },
     resources: { write: [delta] },
-}, (_, context) => {
-    context[delta] = context.args;
+}, ({ resources, input }) => {
+    resources[delta] = input;
 });
 
 export const main = System.composite({ name: "particles/main", systems: [spawn, gravity, integrate] });

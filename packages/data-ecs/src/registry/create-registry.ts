@@ -1,6 +1,7 @@
 import { layoutOf } from "../layout/layout.js";
 import type { Schema } from "../schema/schema.js";
 import { isTrait } from "../trait/register.js";
+import { isReduction } from "./reduction.js";
 import type { Name as TraitName } from "../trait/name.js";
 import { declareName } from "./declare-name.js";
 
@@ -43,7 +44,16 @@ export const createRegistry = <D extends { readonly [K in keyof D]: AnyDeclarati
         if (declaration.derived === true && !("default" in type || "const" in type)) {
             throw new Error(`Cannot declare ${kind} ${String(name)}: a derived component's type has a default, which it starts at.`);
         }
-        layoutOf(type);
+        const layout = layoutOf(type);
+        if (declaration.reduce !== undefined) {
+            const operator = declaration.reduce;
+            if (kind !== "resource") throw new Error(`Cannot declare ${kind} ${String(name)}: only a resource is reduced.`);
+            if (!isReduction(operator)) throw new Error(`Cannot declare resource ${String(name)}: reduce is one of "+", "*", "min", "max", "&", "|" or "^".`);
+            if (layout.kind !== "linear") throw new Error(`Cannot declare resource ${String(name)}: a reduced resource is numbers or booleans, stored in linear memory.`);
+            if (layout.leaves.some(leaf => leaf.scalar === "boolean") && operator !== "&" && operator !== "|" && operator !== "^") {
+                throw new Error(`Cannot declare resource ${String(name)}: booleans reduce with "&", "|" or "^".`);
+            }
+        }
         declareName(name, kind);
         registered.set(name, Object.freeze({ ...declaration }));
         if (typeof name === "symbol") symbolNames = true;

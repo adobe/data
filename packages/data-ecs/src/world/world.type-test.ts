@@ -12,18 +12,18 @@ const selected: readonly Entity[] = world.query.select([persistent], options);
 const counted: number = world.query.count([persistent]);
 const values: { readonly persistent: true } | null = world.read.entity(entity, [persistent, shared]);
 const value: true | null = world.read.component(entity, shared);
-// @ts-expect-error where may only filter included components
+// @ts-expect-error where may only filter components in has
 world.query.select([persistent], { where: { [shared]: true } });
 // @ts-expect-error read values are readonly
 if (values) values[persistent] = true;
 
 const ran: Promise<void> = world.run(main);
 const moved: Promise<void> = world.run(move, { distance: 1 });
-// @ts-expect-error a system with arguments needs them
+// @ts-expect-error a system with input needs it
 world.run(move);
-// @ts-expect-error arguments must match the schema
+// @ts-expect-error input must match its schema
 world.run(move, { distance: "far" });
-// @ts-expect-error a system without arguments takes none
+// @ts-expect-error a system without input takes none
 world.run(main, {});
 
 const created: World = World.create();

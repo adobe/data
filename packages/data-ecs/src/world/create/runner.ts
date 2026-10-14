@@ -1,4 +1,3 @@
-import type { Commands } from '../../system/commands.js';
 import type { Leaf } from '../../system/leaf.js';
 import type { Archetype } from './archetype.js';
 import { kernelOf } from './attach-kernel.js';
@@ -18,7 +17,7 @@ import { accessorsOf } from '../../gpu/accessors.js';
 import { recordWords } from './gpu.js';
 import { maximumWorkgroups, workgroupSize, type WgslKernel } from './wgsl.js';
 import { allocateArray, freeArray } from './arrays.js';
-import { combine, identityOf, reductionTargets, writeReduction } from './reductions.js';
+import { combine, identityOf, reductionTargets, type ReductionTarget } from './reductions.js';
 import { samePath } from '../../layout/layout.js';
 
 /** One unit of a system's work for a run: the commands it issued, plus its error if it failed partway. */
@@ -57,11 +56,13 @@ export type Runner = {
     /** What workers need to load this system's kernel, given its index. */
     readonly setup: (index: number) => KernelSetup | null;
     readonly start: (args: unknown, workers: Workers | null, index: number) => readonly Chunk[];
+    /** The resources it reduces into, in the order `finish` gives their folds. */
+    readonly targets: readonly ReductionTarget[];
     /**
-     * Once a run's chunks settle: writes each resource it reduces into, unless it failed or skipped its rows, in which
-     * case they keep their values.
+     * Once a run's chunks settle: the leaves of its fold into each target, or null when it failed or skipped its rows,
+     * so it contributes nothing.
      */
-    readonly finish: (failed: boolean) => void;
+    readonly finish: (failed: boolean) => readonly Float64Array[] | null;
     /** For the registrar to call after each sync point once the runner is registered: sizes its reduction partials. */
     readonly afterSync: (() => void) | null;
 };
@@ -69,9 +70,9 @@ export type Runner = {
 /** Throws if the leaf is a kernel that wasn't compiled or doesn't match its schemas. */
 export const createRunner = (state: State, leaf: Leaf): Runner => {
     const { declaration } = leaf;
-    // Method parameters are bivariant, so the runtime can see any leaf's body with erased row and context types.
-    const system: { body(row: object | undefined, context: object, commands: Commands): void } = leaf;
-    const { query, resources } = declaration;
+    // Method parameters are bivariant, so the runtime can see any leaf's body with erased parameter types.
+    const system: { body(subject: unknown, context?: unknown): void } = leaf;
+    const { components: query, resources } = declaration;
     const required = [...new Set([...query?.read ?? [], ...query?.write ?? [], ...query?.has ?? [], ...query?.added ?? [], ...query?.changed ?? []])].map(key => idOf(state, key));
     const excluded = (query?.not ?? []).map(key => idOf(state, key));
     const addedIds = (query?.added ?? []).map(key => idOf(state, key));
@@ -84,7 +85,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         if (description === undefined) throw new Error(`System "${declaration.name}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
         kernel = bindKernel(state, leaf, description);
     }
-    const placement = declaration.render !== undefined ? "render" : declaration.kernel === "gpu" && state.gpu !== null ? "gpu" : "cpu";
+    const placement = leaf.kind === "render" ? "render" : declaration.kernel === "gpu" && state.gpu !== null ? "gpu" : "cpu";
     const failPlacement = (message: string): never => { throw new Error(`System "${declaration.name}" ${message}.`); };
     if (placement !== "cpu" && state.gpu === null) failPlacement("needs a world created with gpu");
     // The build rejects these in compiled kernels; this covers declarations it didn't see.
@@ -92,18 +93,17 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         if (filtered) failPlacement("can't run on the GPU: GPU kernels don't support change filters yet");
         if (declaration.lookup !== undefined && Object.keys(declaration.lookup).length > 0) failPlacement("can't run on the GPU: GPU kernels don't support lookups yet");
     }
-    const targets = reductionTargets(state, declaration.name, resources);
+    const targets = reductionTargets(state, declaration);
     if (targets.length > 0) {
-        if (addedIds.length + changedIds.length > 0) failPlacement("can't reduce with query change filters: a reduction folds every row");
         if (declaration.kernel === "gpu") failPlacement("can't run on the GPU: GPU kernels don't support reductions yet");
-        if (declaration.render !== undefined) failPlacement("can't reduce: a render system records GPU work rather than running rows");
+        if (leaf.kind === "render") failPlacement("can't reduce: a render system records GPU work rather than running rows");
     }
     /** For each partial of the kernel, the target and leaf it folds into. */
     const partialLeaves = (kernel?.description.reductions ?? []).map(reduced => {
         const index = targets.findIndex(target => target.key === reduced.resource);
         const target = targets[index];
         if (target === undefined || target.operator !== reduced.operator) {
-            return failPlacement(`reduces "${String(reduced.resource)}" with "${reduced.operator}", which its resources.reduce doesn't declare`);
+            return failPlacement(`reduces "${String(reduced.resource)}" with "${reduced.operator}", which its reduce doesn't declare`);
         }
         const leaf = target.leaves.findIndex(candidate => samePath(candidate.path, reduced.path));
         if (leaf < 0) return failPlacement(`contributes to "${String(reduced.resource)}" at [${reduced.path.join(", ")}], which isn't a scalar of its value; destructure tuples and structs or build them`);
@@ -114,12 +114,12 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         const exact = target !== undefined && target.leaves.length === shape.leaves.length && target.leaves.every(leaf => shape.leaves.some(path => samePath(path, leaf.path)));
         if (!exact) failPlacement(`contributes a value to "${String(shape.component)}" that doesn't match its schema`);
     }
-    const accessors = declaration.render === undefined ? [] : accessorsOf(declaration.render);
+    const accessors = declaration.shader === undefined ? [] : accessorsOf(declaration.shader);
     if (typeof accessors === "string") return failPlacement(`can't render: ${accessors}`);
     const touches = [...new Set([...query?.read ?? [], ...query?.write ?? []])].map(key => idOf(state, key));
     const writes = (query?.write ?? []).map(key => idOf(state, key));
     const looks = [...new Set(Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []))].map(key => idOf(state, key));
-    if (declaration.render !== undefined && !("draw" in leaf)) failPlacement("has a render declaration but wasn't made by System.render");
+    if ((declaration.shader !== undefined) !== (leaf.kind === "render")) failPlacement("has a shader only when System.render makes it");
     /** Record keys by archetype. */
     const keys = new Map<Archetype, string>();
     const keyOf = (archetype: Archetype): string => {
@@ -135,15 +135,19 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const nextBuffer = (): CommandBuffer => owned[used++] ??= createBuffer();
     const commands = createCommands(state, holder);
     const kernelCommands = createKernelCommands(holder, kernel?.setup.keys ?? [], () => reserve(state.entities));
-    // A kernel's reductions fold in its partials, so only a body that runs as written gets reducer functions.
-    const context = createContext(state, declaration, kernel === null ? targets : []);
+    // A kernel's reductions fold in its partials, so only a body that runs as written gets reducer functions. Render
+    // bodies and GPU kernels issue no commands.
+    const context = createContext(state, declaration, {
+        targets: kernel === null ? targets : [],
+        commands: leaf.kind === "render" || declaration.kernel === "gpu" ? undefined : commands,
+        input: declaration.input !== undefined,
+    });
     /** Partials of the kernel's reductions, one slot per kernel call of a run, in the order its rows run. */
     const partialCount = partialLeaves.length;
     let slots = noPartials;
     let slotsUsed = 0;
     /** Whether the current run ran its rows, so its reductions are written. */
     let ran = false;
-    let runTick = 0;
     /**
      * The most kernel calls a run gives an archetype: one on the main thread; across workers a piece of at least
      * `chunkAlignment` rows each, at most `claimsPerWorker` per worker.
@@ -213,7 +217,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         forEachPassingRange(filtersOf(archetype), since, 0, archetype.count, (start, end) => {
             for (let index = start; index < end; index++) {
                 row.index = index;
-                system.body(value, values, commands);
+                system.body(value, values);
             }
         });
     };
@@ -328,7 +332,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const runRender = (): void => {
         const gpu = state.gpu;
         if (gpu === null || typeof accessors === "string") return;
-        const group = declaration.render?.group ?? 0;
+        const group = declaration.shader?.group ?? 0;
         const tables = matches.filter(archetype => archetype.count > 0).map(archetype => {
             words[0] = archetype.count;
             accessors.forEach((accessor, k) => {
@@ -341,8 +345,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         // Work recorded so far is submitted first, so a body that fails partway loses only its own.
         gpu.submit();
         try {
-            // Only `System.render` makes leaves with a render declaration, and it gives them `draw`.
-            if ("draw" in leaf && typeof leaf.draw === "function") Reflect.apply(leaf.draw, leaf, [{ device: gpu.device, encoder: gpu.encoder(), tables }, context.value]);
+            system.body({ device: gpu.device, encoder: gpu.encoder(), tables }, context.value);
         }
         catch (error) {
             gpu.discard();
@@ -371,7 +374,6 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
 
     const start = (args: unknown, workers: Workers | null, index: number): readonly Chunk[] => {
         const tick = ++state.tick;
-        runTick = tick;
         ran = false;
         slotsUsed = 0;
         used = 0;
@@ -385,7 +387,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             /** -1 passes every row. */
             const since = !filtered || resourcesChanged ? -1 : lastRun;
             context.bind();
-            context.value.args = args;
+            if (declaration.input !== undefined) context.value.input = args;
             if (placement === "render") {
                 refreshMatches();
                 runRender();
@@ -393,7 +395,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             }
             if (query === undefined) {
                 ran = since < 0;
-                if (ran) system.body(undefined, context.value, commands);
+                if (ran) system.body(context.value);
                 return chunks;
             }
             // Only a resource filter, and no resource changed: no row passes.
@@ -431,12 +433,9 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }
     };
 
-    const finish = (failed: boolean): void => {
-        if (!ran || failed || targets.length === 0) return;
-        if (kernel === null) {
-            targets.forEach((target, t) => writeReduction(state, target, context.reduced[t] ?? noPartials, 0, runTick));
-            return;
-        }
+    const finish = (failed: boolean): readonly Float64Array[] | null => {
+        if (!ran || failed || targets.length === 0) return null;
+        if (kernel === null) return context.reduced;
         targets.forEach((target, t) => folded[t]?.fill(identityOf(target.operator)));
         partialLeaves.forEach(({ target, leaf }, k) => {
             const operator = targets[target]?.operator ?? "+";
@@ -444,7 +443,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             if (values === undefined) return;
             for (let slot = 0; slot < slotsUsed; slot++) values[leaf] = combine(operator, values[leaf] ?? NaN, slots[slot * partialCount + k] ?? NaN);
         });
-        targets.forEach((target, t) => writeReduction(state, target, folded[t] ?? noPartials, 0, runTick));
+        return folded;
     };
 
     const setup = (index: number): KernelSetup | null => {
@@ -474,6 +473,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         load,
         setup,
         start,
+        targets,
         finish,
         afterSync: partialCount > 0 ? sizeSlots : null,
     };

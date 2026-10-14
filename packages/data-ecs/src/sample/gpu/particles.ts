@@ -47,11 +47,11 @@ const random = (seed: number): (() => number) => {
     };
 };
 
-/** `args`: the particle count and the field's width and height in pixels. Entity i goes to archetype i % 4. */
+/** `input`: the particle count and the field's width and height in pixels. Entity i goes to archetype i % 4. */
 export const spawn = System.create({
     name: "gpuParticles/spawn",
-    args: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 },
-}, (_, { args: [count, width, height] }, commands) => {
+    input: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 },
+}, ({ input: [count, width, height], commands }) => {
     const next = random(7);
     for (let i = 0; i < count; i++) {
         const p = [next() * width, next() * height, 0] as const;
@@ -73,7 +73,7 @@ export const spawn = System.create({
 export const move = System.create({
     name: "gpuParticles/move",
     kernel: "gpu",
-    query: { read: [position, velocity], write: [position], has: [visible, enabled] },
+    components: { read: [velocity], write: [position], has: [visible, enabled] },
 }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
@@ -82,7 +82,7 @@ export const move = System.create({
 export const moveOnCpu = System.create({
     name: "gpuParticles/moveOnCpu",
     kernel: "cpu",
-    query: { read: [position, velocity], write: [position], has: [visible, enabled] },
+    components: { read: [velocity], write: [position], has: [visible, enabled] },
 }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
@@ -106,8 +106,8 @@ struct Point { @builtin(position) position: vec4f, @location(0) color: vec4f }
 
 const declaration = {
     name: "gpuParticles/draw",
-    query: { has: [visible, enabled] },
-    render: { group: 0, accessors: { particlePosition: position, particleColor: color } },
+    components: { has: [visible, enabled] },
+    shader: { group: 0, accessors: { particlePosition: position, particleColor: color } },
     after: ["gpuParticles/move", "gpuParticles/moveOnCpu"],
 } as const;
 

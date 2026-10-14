@@ -20,23 +20,39 @@ const keyOf = (property: Property | SpreadElement, module: ModuleScope, declared
     return module.has(key.name) && !declared.has(key.name) ? key.name : null;
 };
 
+/** Where a body reaches its commands: a name bound to them, or a context parameter's `commands`. */
+const commandsOf = (parameter: Node | undefined): { readonly name: string; readonly viaContext: boolean } | null => {
+    if (parameter?.type === "Identifier") return { name: parameter.name, viaContext: true };
+    if (parameter?.type !== "ObjectPattern") return null;
+    for (const property of parameter.properties) {
+        if (property.type === "Property" && !property.computed && property.key.type === "Identifier" && property.key.name === "commands") {
+            return property.value.type === "Identifier" ? { name: property.value.name, viaContext: false } : null;
+        }
+    }
+    return null;
+};
+
 /**
- * The spawn sites in a main-thread system body whose values can pass positionally: calls of `commands.spawn` on the
- * body's own `commands` parameter with an object literal of plain keys, each a string or a module-scope constant.
- * A body that redeclares `commands` anywhere is left alone, and so is a key it shadows.
+ * The spawn sites in a main-thread system body whose values can pass positionally: calls of `spawn` on the commands
+ * of the body's own context parameter, at index `context`, with an object literal of plain keys, each a string or a
+ * module-scope constant. A body that redeclares the context or its commands anywhere is left alone, and so is a key
+ * it shadows.
  */
-export const spawnSites = (body: Node, module: ModuleScope): { readonly commands: string; readonly sites: readonly SpawnSite[] } | null => {
+export const spawnSites = (body: Node, module: ModuleScope, context: number): { readonly commands: string; readonly sites: readonly SpawnSite[] } | null => {
     if (body.type !== "ArrowFunctionExpression" && body.type !== "FunctionExpression") return null;
-    const [, , parameter] = body.params;
-    if (parameter?.type !== "Identifier") return null;
-    const commands = parameter.name;
+    const reached = commandsOf(body.params[context]);
+    if (reached === null) return null;
     const declared = new Set<string>();
     declaredIn(body.body, name => declared.add(name));
-    if (declared.has(commands)) return null;
+    if (declared.has(reached.name)) return null;
+    const isCommands = (node: Node): boolean => reached.viaContext
+        ? node.type === "MemberExpression" && !node.computed && !node.optional && node.object.type === "Identifier" && node.object.name === reached.name
+            && node.property.type === "Identifier" && node.property.name === "commands"
+        : node.type === "Identifier" && node.name === reached.name;
     const sites: SpawnSite[] = [];
     const visit = (node: Node): void => {
         if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && !node.optional
-            && node.callee.object.type === "Identifier" && node.callee.object.name === commands
+            && isCommands(node.callee.object)
             && node.callee.property.type === "Identifier" && node.callee.property.name === "spawn"
             && node.arguments.length === 1 && node.arguments[0].type === "ObjectExpression") {
             const { properties } = node.arguments[0];
@@ -54,5 +70,5 @@ export const spawnSites = (body: Node, module: ModuleScope): { readonly commands
         for (const child of children(node)) visit(child);
     };
     visit(body.body);
-    return { commands, sites };
+    return { commands: reached.viaContext ? `${reached.name}.commands` : reached.name, sites };
 };

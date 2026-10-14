@@ -70,43 +70,43 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   ```ts
   export const follow = System.create({
     name: "ai/follow",                       // registered by augmenting Systems: { "ai/follow": true }
-    query: { read: [position, target], write: [velocity] },
+    components: { read: [position, target], write: [velocity] },
     lookup: { targets: { read: [position] } },
     after: ["physics/integrate"],
-  }, (row, { targets }, commands) => {
-    const other = targets(row[target]);
+  }, (row, { lookup }) => {
+    const other = lookup.targets(row[target]);
     if (other !== null) row[velocity] = Vec3.subtract(other[position], row[position]);
   });
 
   export const move = System.create({
     name: "player/move",
-    args: { type: "object", properties: { distance: { type: "number" } } },
-    query: { has: [player], write: [position] },
-  }, (row, { args }) => { /* … */ });
+    input: { type: "object", properties: { distance: { type: "number" } } },
+    components: { has: [player], write: [position] },
+  }, (row, { input }) => { /* … */ });
 
   export const main = System.composite({ name: "main", systems: [input, physics, follow, render] });
   ```
-  - **`System.create` and `System.composite` are identity functions.** They return the system as data and exist for body type inference, a binding the plugin can find, and a value the world can register. Nothing runs when they're called.
-  - **Query:** a system matches entities that have every component in `read`, `write`, `has`, `added` and `changed`, and none in `not`.
-    - A component in both `read` and `write` is read-write.
-    - A component in `write` only is write-only. `tsc` can't enforce that, so the build validator does.
+  - **Constructors return data.** `System.create`, `System.render`, `System.composite`, `Rule.create`, `Finalizer.create` and `Finalizer.changes` return `{ kind, declaration, body }` (a composite and a rule have no body), with `kind` one of `"system"`, `"render"`, `"composite"`, `"rule"`, `"finalizer"` and `"changes"`. They exist for body type inference, a binding the plugin can find, and a value the world can register. Nothing runs when they're called.
+  - **Declaration keys mirror the body's context:** `components` and `resources` say what a system accesses, each with access modes (`read`, `write`) and filters; `lookup`, `reduce` and `input` each appear in the context under the same name.
+  - **Components:** a system matches entities that have every component in `read`, `write`, `has`, `added` and `changed`, and none in `not`.
+    - A component in `write` is readable too, so it's never also in `read`; listing it in both is rejected in types and at registration. The same holds for resources.
     - `added`/`changed` pass when **any** of the listed components was added or changed.
   - **Lookups** are named and read-only, and take an entity ID only: `(entity) => values | null`. They have no change filters and can't be iterated.
   - **Resources:** listing a resource in `changed` makes the filter pass for every row. Kernels can only read resources.
   - **`kernel: "cpu"`** opts a system into being compiled, so it can run in chunks across workers; **`kernel: "gpu"`** narrows the subset so it can also run on the GPU. The term comes from CUDA, WebGPU and Taichi.
     - It's explicit rather than inferred, so a body that leaves the subset fails the build instead of silently running on the main thread.
-    - Type-checked: values in `query` and `lookup` must be linear (numbers, booleans, entities, fixed-length tuples, and structs of those), and resources are read-only. Presence-only lists (`has`, `not`, `added`, `changed`) can name any component.
-    - The build validator checks `args`, since `Schema.ToType` doesn't produce tuples.
+    - Type-checked: values in `components` and `lookup` must be linear (numbers, booleans, entities, fixed-length tuples, and structs of those), and resources are read-only. Presence-only lists (`has`, `not`, `added`, `changed`) can name any component.
+    - The build validator checks `input`, since `Schema.ToType` doesn't produce tuples.
     - Without `kernel`, a system is plain JS on the main thread.
-  - **`query` is optional.** A system with no query is resource-only: it runs once per run, on the main thread, and its `row` is `undefined`.
-  - **`args`** is a schema for a per-run, read-only input, and `run` requires the arguments exactly when it's declared.
-    - A system with arguments can't use `added` or `changed`, because its `lastRun` is shared across runs that receive different arguments.
+  - **`components` is optional.** A system without it runs once per run, on the main thread, and its body takes only the context.
+  - **`input`** is a schema for a per-run, read-only value, and `run` requires it exactly when it's declared.
+    - A system with input can't use `added` or `changed`, because its `lastRun` is shared across runs that receive different input.
     - It can't be a member of a composite yet.
-    - `(system name, arguments)` is a replicable transaction. On a GPU, arguments map to a uniform buffer.
-    - A `Blob` argument can only be stored or forwarded, because its contents can't be read synchronously.
-  - **Body:** `(row, context, commands)`.
-    - `row`: `{ readonly entity }`, plus `read` values (read-only) and `write` values (writable). No component may be named `entity`.
-    - `context`: lookups, resources and `args`, flattened into one object. A lookup named after one of the system's resources, or named `args`, is a type error.
+    - `(system name, input)` is a replicable transaction. On a GPU, input maps to a uniform buffer.
+    - A `Blob` input can only be stored or forwarded, because its contents can't be read synchronously.
+  - **Bodies are `(subject, context)`:** `(row, context)` for a system with `components` and for a finalizer, `(context)` for a system without `components`, `(changes, context)` for a changes finalizer, and `(gpu, context)` for a render system.
+    - `row`: `{ readonly entity }`, plus `read` values (read-only) and `write` values (readable and writable). No component may be named `entity`.
+    - `context` holds each kind under the declaration's own key, present only when the declaration declares something of that kind: `resources` (values, assignable when in `write`), `lookup` (functions by name), `reduce` (contribution functions by resource) and `input`. It also has `commands`, except in GPU kernels and render systems. Keys of different kinds never share a namespace, so nothing can collide.
     - `commands`: `spawn` (returns a real `Entity`), `despawn`, `add` (adds or replaces, marking the component changed) and `remove`. They apply in the order they were issued. They take only `Component.Essential` components, so derived ones are excluded at the type level and rejected at runtime.
   - **Writes to the current row are direct and immediate.** Commands are only for structural changes and for writes to other entities.
   - **Names are global** and should be namespaced (`"physics/integrate"`). Ordering constraints can only name registered systems, never the system itself.
@@ -116,9 +116,10 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 - **Scheduling:**
   - There's no built-in schedule. The app runs its main composite each frame (`world.run(main)`), and transactions or on-demand systems whenever it needs them.
   - Ordering comes from `before`/`after`/`during`, sorted into tiers. Systems in the same tier may run in parallel. A constraint that names a system outside the composite being run is ignored.
-  - **Unordered conflicts throw at registration:** within a composite, two systems that both write a component or resource, or where one reads what the other writes, must have an ordering path between them.
+  - **`during` is a preference,** not a constraint: it pulls systems into the same tier where no ordering path separates them.
+  - **Unordered conflicts throw at registration:** within a composite, two systems that both write a component or resource, or where one reads what the other writes, must have an ordering path between them. Contributors to one reduced resource don't conflict with each other, and every system that reads it is ordered after all of them.
   - **A lookup can't read a component its own system writes;** that also throws at registration. Rejecting it now means hierarchy propagation can later give it defined semantics without breaking anything.
-  - To reuse a system with different placement, spread its declaration and replace the constraints.
+  - To reuse a main-thread system with different placement, spread the leaf with a new declaration, `{ ...move, declaration: { ...move.declaration, after: [...] } }`, which keeps its body. A kernel is compiled from its own `System.create`, so it can't be copied this way.
 - **World** (`src/world/`):
   - `World.create()` returns a world synchronously. `World.create({ systems })` is `create().systems.register(...systems)`, so it returns a `Promise`.
   - `systems.register(...systems): Promise<World>` resolves once worker kernels are loaded, so failures show up at registration and the first run doesn't stall.
@@ -126,14 +127,14 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
     - Registering the same value again does nothing. A different system with a registered name throws. So does a component or resource with no registered schema.
     - Systems are registered up front, not discovered lazily, for three reasons: replication resolves systems by name, transactions shouldn't pay for setup on their first run, and systems can later become queryable entities, as in Flecs.
   - `systems.get(name)` resolves a registered system by name, for replication. Local calls pass systems by value.
-  - `run(system, ...args): Promise<void>` runs a registered system or composite and ends in a sync point.
+  - `run(system, ...input): Promise<void>` runs a registered system or composite and ends in a sync point.
     - It's async because workers can't be joined synchronously on the main thread.
     - An unregistered system throws.
     - A system or finalizer that throws rejects the promise.
     - Each system keeps its own `lastRun`, so it sees every change since it last ran.
   - `dispose()` and `[Symbol.asyncDispose]` wait for pending runs, then terminate workers and release memory, so `await using world = ...` works.
   - Read access from outside the schedule, on the main thread only:
-    - `query`: `select` and `count`. They take `include`, plus `World.Query.Options` (`not`, `where`, `order`).
+    - `query`: `select` and `count`. They take `has`, plus `World.Query.Options` (`not`, `where`, `order`).
     - `read`: `entity`, `component` and `resource`. A dead entity, or one missing a requested component, returns `null`.
   - Reads are valid only between runs, and they return the state as of the last sync point.
   - **Initial state** comes from the resources' schema defaults. A system with `resources: { changed: [level] }` runs on its first run and spawns the entities the level calls for, so no run-once flag is needed.
@@ -151,7 +152,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 - **Matching, not component removal, is the unit of add/remove symmetry.** An entity stops matching a query when a required component is removed, when it's despawned, or when an excluded component is added. Per-component removal is a monitored `With<T>`.
   - Monitored queries are **structural only**. Their `Changed`/`Added` filters are stripped or rejected at the type level, and optional components don't affect matching. Value conditions become tag components set by systems.
   - Replacing a required component within one flush (remove + re-add) counts as a stop plus a start.
-- **Rules (structural derivation):** `Rule.create({ name, query: { has, not }, derives: [component] })`, names in `Rules`: entities matching the query have the derived components.
+- **Rules (structural derivation):** `Rule.create({ name, components: { has, not }, derive: [component] })`, names in `Rules`: entities matching its components have the derived components.
   - **Datalog with stratified negation** over which components each entity has. Rules and `within` declarations are evaluated as one fixed point per stratum; registration rejects a cycle through a negation, which could oscillate, and any cycle through `within`. That makes the closure a pure function of the archetype, cached per archetype, so A→B becomes a single move A→closure(B), and entities never match and then unmatch within a flush. Reference cascades run first, on the values the plan leaves; they only despawn and remove, so the result is the same fixed point.
   - **Union ownership:** a derived component is present while any rule deriving it matches.
   - **Derived components** (`derived: true`) are structurally read-only to user code: commands reject them in types and at runtime; systems write their values. Each starts at its schema's `default`, which the types require, stamped `added`, and a normal `added` system fills it in. No initializer phase is needed, because creation can wait for the next system run and removal can't.
@@ -159,7 +160,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 - **Cascades** are component traits, expanded in Plan with the rules.
   - **`within: host`:** the component exists only while its host does, whatever removes the host; transitively; in command order, so removing a host and adding it back ends its dependents. A derived host a rule keeps never leaves. A dependent added without its host is dropped; the Run report will list it.
   - **`reference: "owner" | "weak"`** on an entity-valued component: when the target despawns, or a reference is written to an entity that won't be alive, `owner` despawns the holder and `weak` removes the component, transitively. Only the value the plan leaves counts, so a reference pointed elsewhere in the same sync point stays. References change only through commands (`Component.Writable` excludes them from `query.write`), which keeps the index of holders by target exact. Without `reference`, a reference dangles and a lookup of it returns null.
-- **Finalizers are the only removal mechanism.** `Finalizer.create({ name, query: { read, has, not }, lookup, resources, before, after }, (row, context, commands) => …)`, names in `Finalizers`. They run inside the sync point, on the main thread, against the final plan and live values from before Apply, with no copying. They are for releasing resources (GPU/DOM handles), updating indexes and adjusting aggregates, and they never miss a removal.
+- **Finalizers are the only removal mechanism.** `Finalizer.create({ name, components: { read, has, not }, lookup, resources, before, after }, (row, { resources, lookup, commands }) => …)`, names in `Finalizers`. They run inside the sync point, on the main thread, against the final plan and live values from before Apply, with no copying. They are for releasing resources (GPU/DOM handles), updating indexes and adjusting aggregates, and they never miss a removal.
   - **A stop:** the entity matched before the sync point and is despawned, loses a required component by any cause (a command, a rule, `within` or a reference), has one removed and added again, or gains an excluded one. An entity spawned and despawned in the same sync point never matched.
   - **Deferred handling:** a consumer that handles removals later appends what it needs (IDs, values) to a queue it owns during Finalize, and works through it whenever it runs. A consumer that tracks stops keeps state about the entities it saw start, and ignores stops for entities it doesn't know.
   - **Run once, against the final plan.** Their structural commands go to the **next** sync point. Re-planning would let a later round bring back a component an earlier round already finalized, for example a freed handle on an entity that survives.
@@ -169,11 +170,16 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   - **Order:** `before` and `after` among finalizers, then registration order. Two that both write a resource, or where one reads what the other writes, must be ordered. Every registered finalizer runs at every sync point; none is in a composite, and the phase costs nothing when none is registered.
   - **Throwing:** the plan still applies, and `run()` rejects with the first error.
   - **`dispose()`** runs per-query finalizers for every live match, so handles are released, and no whole-plan finalizers.
-- **Whole-plan finalizers** see the sync point's structural changes rather than one query's stops, for persistence, replication and structural undo: `Finalizer.changes({ name, components }, (changes, context, commands) => …)`. Changes are grouped by archetype pair (`from`, `to`, null for spawned or despawned, `added`, `removed`, `replaced`, `entities`), filtered to `components`, every component that isn't derived by default; a derived one is rejected. `previous(entity, component)` and `next(entity, component)` give values before and after. They are ordered with per-query finalizers.
+- **Whole-plan finalizers** see the sync point's structural changes rather than one query's stops, for persistence, replication and structural undo: `Finalizer.changes({ name, watch }, (changes, context) => …)`. Changes are grouped by archetype pair (`from`, `to`, null for spawned or despawned, `added`, `removed`, `replaced`, `entities`), filtered to `watch`, every component that isn't derived by default; a derived one is rejected. `previous(entity, component)` and `next(entity, component)` give values before and after. They are ordered with per-query finalizers.
 - **Registration:** `world.systems.register` and `World.create({ systems })` take systems, rules and finalizers; names are unique across the three; `systems.get` returns systems.
 - **Async resources** need no other API: a rule derives a slot; a system with `added: [slot]` writes a fresh token into it and starts the load; the completion calls `world.run(apply, { entity, token, value })`, which adds the ready component (`within: slot`) if the slot's token still matches and releases the value otherwise; a finalizer on the slot aborts the load, and one on the ready component releases it. Shared assets are reference-counted by the loader, since the ECS gives each user exactly one acquire and one release.
 
-- **Reductions.** `resources: { reduce: { [total]: "+", [low]: "min" } }` with `"+" "*" "min" "max" "&" "|" "^"`, applied leaf by leaf to numbers, tuples and structs, and on booleans only bitwise. In the body each reduced resource is a function, `context[total](value)`, that contributes a value; the body can't read the fold, and the resource can't also be read, written or filtered on. After a run the resource holds the fold of that run's contributions from the operator's identity, replacing its value, and is stamped changed only if it differs; a run the system skips, or that fails, leaves it as it was. Its query has no `added` or `changed` filters, since a reduction folds every row, and one system reduces into a resource.
+- **Reductions** compute one value from many rows, in kernels across workers as well as on the main thread.
+  - **The operator is a resource trait,** `[total]: { type: number; reduce: "+" }`, registered the same way: `"+" "*" "min" "max" "&" "|" "^"`, applied leaf by leaf to numbers, tuples and structs, and on booleans only bitwise. A contributing system repeats it, `reduce: { [total]: "+" }`; the types require the two to match and registration checks it again, so changing a resource's operator breaks every contributor.
+  - **The body contributes** with `reduce[total](value)`; it can't read the fold, and a contributor can't read or filter on what it reduces into. A reduced resource is never written, by systems or finalizers.
+  - **Each run starts again:** a run that includes a contributor sets the resource to the operator's identity, and it ends up holding the fold of every contribution in that run, stamped changed only if it differs. Several systems may contribute in one run; they don't conflict with each other, and every system that reads the resource is ordered after all of them. A run without a contributor leaves it as it is, and before the first, it holds its `default`.
+  - **A failed or skipped run:** when a contributor fails, or no contributor runs its rows, the resource keeps its previous value.
+  - **Change filters** are allowed: a contributor folds only the rows that pass.
   - **Partials:** each kernel call folds into its own f64 partial, one per claimed piece across workers, which the main thread combines in piece order once the system's chunks settle. Results are deterministic for one world configuration; exact for min and max, for bitwise operators on 32-bit integers, and for sums and products of integers below 2^53, while other sums and products vary with worker count, as precision does across backends. A result rounds or wraps once when stored; an empty `min` or `max` of integers stores the type's own extreme.
   - **Contributions have a known shape:** a tuple or struct component contributed whole needs its leaves known, as whole-value writes do.
 
@@ -193,16 +199,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 3. **GPU systems.** Pure value reads and writes into component tables, with no structural commands, so the GPU never needs command buffer communication. Still open:
    - **Latency.** Whether a system can declare that its writes become visible to CPU readers only at a later sync point, so readback overlaps the next frame.
    - **Device loss.** Components ahead on the GPU are lost with the device; decide whether a world can fall back to its last CPU copy.
-4. **Bodies, decided:** every body is `(subject, context)`: `(row, context)` for systems and finalizers, `(context)` for a system without a query, `(changes, context)` for changes finalizers and `(gpu, context)` for render systems. The context holds only what the declaration declares, by kind, mirroring the declaration's keys: `resources` (values, assignable where written), `lookup` (functions by name), `reduce` (contribution functions by resource), `args` and `commands`. A key with nothing declared is absent from the type, and from the object at runtime. Implemented with the reduction changes, after the naming review.
-5. **Reductions, decided:**
-   - **The operator is a resource trait:** `[alertness]: { type: number; reduce: "max" }`, registered the same way. Booleans allow `&`, `|` and `^`; numbers, and tuples and structs of them, allow every operator.
-   - **A contributing system repeats it**, `resources: { reduce: { [alertness]: "max" } }`. The types require it to equal the resource's, and registration checks it again, so a change at the resource breaks every contributor. A resource without the trait can't be reduced.
-   - **Several systems may contribute** to one resource in a run. At the start of each run that includes a contributor, the resource is set to the operator's identity, leaf by leaf (0 for `+`, 1 for `*`, +∞ or the type's largest integer for `min`, and so on). After the last contributor it holds the fold of every contribution, and readers are ordered after every contributor. A run without a contributor leaves it as it is, and the `default`, or the value given at creation, is what it holds before the first contributing run.
-   - **Reduced resources are never written,** only reset by the world. A contributor can't read the resource; other systems read the finished fold.
-   - **Change filters are allowed on contributors,** so a run folds only the rows that pass, as "did anything move" needs.
-   - **The body contributes with `reduce[alertness](value)`.**
-6. **Rules and finalizers: per world or program-wide.** Whether they're registered on a world, or like components apply to every world.
-7. **Names across systems, rules and finalizers.** Review the declaration keys (`query`, `resources`, `lookup`, `components`, `derives`, …) together so they're consistent; for example whether `query` becomes `components`, beside `resources`.
+4. **Rules and finalizers: per world or program-wide.** Whether they're registered on a world, or like components apply to every world.
 
 ## Additive later (no breaking change)
 
@@ -218,7 +215,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 - **Hierarchy propagation**, for example a parent's world matrix flowing down to its children. The approach is not decided. Candidates:
   - Bevy: a dedicated system that walks each subtree depth-first, starting from the roots.
   - Depth-level passes: one pass per depth, each reading level d−1 and writing level d.
-  - Flecs-style depth-ordered query: `query: { read: [local], write: [world], <modifier>: parent }`, where `parent` is an Entity-valued component. Don't call the modifier `cascade`; that name is already used for structural cascades.
+  - Flecs-style depth-ordered query: `components: { read: [local], write: [world], <modifier>: parent }`, where `parent` is an Entity-valued component. Don't call the modifier `cascade`; that name is already used for structural cascades.
 
   Sketch of the depth-ordered query:
   - Rows are processed in depth order, and rows at the same depth can run in parallel. A lookup of the parent sees the value the parent was given earlier in the same run.

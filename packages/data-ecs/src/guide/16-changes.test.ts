@@ -26,16 +26,16 @@ Component.register(name, { type: { type: "string" } });
 Component.register(score, { type: { type: "number" } });
 Resource.register(journal, { type: { type: "array", items: { type: "string" }, default: [] } });
 
-// A changes finalizer sees each sync point's structural changes to its components, grouped by how they changed,
-// with values before and after: for persistence, replication and undo.
-const save = Finalizer.changes({ name: "guide/changes/save", components: [name, score], resources: { read: [journal], write: [journal] } }, (changes, context) => {
+// A changes finalizer sees each sync point's structural changes to the components it watches, grouped by how
+// they changed, with values before and after: for persistence, replication and undo.
+const save = Finalizer.changes({ name: "guide/changes/save", watch: [name, score], resources: { write: [journal] } }, (changes, { resources }) => {
     const lines = changes.groups.flatMap(group => group.entities.map(entity =>
         `${changes.previous(entity, name) ?? changes.next(entity, name)}: +${group.added.length} -${group.removed.length} score ${changes.previous(entity, score)} → ${changes.next(entity, score)}`));
-    context[journal] = [...context[journal], ...lines];
+    resources[journal] = [...resources[journal], ...lines];
 });
 
-const spawn = System.create({ name: "guide/changes/spawn" }, (_, __, commands) => { commands.spawn({ [name]: "ada", [score]: 3 }); });
-const retire = System.create({ name: "guide/changes/retire", query: { has: [score] } }, (row, _, commands) => { commands.remove(row.entity, score); });
+const spawn = System.create({ name: "guide/changes/spawn" }, ({ commands }) => { commands.spawn({ [name]: "ada", [score]: 3 }); });
+const retire = System.create({ name: "guide/changes/retire", components: { has: [score] } }, (row, { commands }) => { commands.remove(row.entity, score); });
 
 it("records each sync point's structural changes", async () => {
     await using world = await World.create({ systems: [spawn, retire, save] });

@@ -16,8 +16,9 @@ const bits = "reductionsTest/bits";
 const least = "reductionsTest/least";
 const any = "reductionsTest/any";
 const level = "reductionsTest/level";
-const reads = "reductionsTest/reads";
+const seen = "reductionsTest/seen";
 const wrapped = "reductionsTest/wrapped";
+const summed = "reductionsTest/summed";
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -26,14 +27,15 @@ declare module "@adobe/data-ecs" {
         [heavy]: { type: true };
     }
     export interface Resources {
-        [total]: { type: number };
-        [low]: { type: Vec3 };
-        [bits]: { type: number };
-        [least]: { type: number };
-        [any]: { type: boolean };
+        [total]: { type: number; reduce: "+" };
+        [low]: { type: Vec3; reduce: "min" };
+        [bits]: { type: number; reduce: "|" };
+        [least]: { type: number; reduce: "min" };
+        [any]: { type: boolean; reduce: "|" };
         [level]: { type: number };
-        [reads]: { type: number };
-        [wrapped]: { type: number };
+        [seen]: { type: number };
+        [wrapped]: { type: number; reduce: "+" };
+        [summed]: { type: boolean; reduce: "|" };
     }
     export interface Systems {
         "reductionsTest/spawn": true;
@@ -41,9 +43,14 @@ declare module "@adobe/data-ecs" {
         "reductionsTest/body": true;
         "reductionsTest/filtered": true;
         "reductionsTest/reader": true;
+        "reductionsTest/heavy": true;
+        "reductionsTest/light": true;
+        "reductionsTest/frame": true;
+        "reductionsTest/fails": true;
+        "reductionsTest/changed": true;
+        "reductionsTest/weigh": true;
         "reductionsTest/other": true;
         "reductionsTest/flags": true;
-        "reductionsTest/added": true;
         "reductionsTest/infinite": true;
     }
 }
@@ -51,63 +58,82 @@ declare module "@adobe/data-ecs" {
 Component.register(position, { type: Vec3.schema });
 Component.register(mass, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
 Component.register(heavy, { type: { const: true } });
-Resource.register(total, { type: { type: "number", default: 0 } });
-Resource.register(low, { type: { ...Vec3.schema, default: [0, 0, 0] } });
-Resource.register(bits, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 } });
-Resource.register(least, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 } });
-Resource.register(any, { type: { type: "boolean", default: false } });
+Resource.register(total, { type: { type: "number", default: 0 }, reduce: "+" });
+Resource.register(low, { type: { ...Vec3.schema, default: [0, 0, 0] }, reduce: "min" });
+Resource.register(bits, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 }, reduce: "|" });
+Resource.register(least, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF, default: 0 }, reduce: "min" });
+Resource.register(any, { type: { type: "boolean", default: false }, reduce: "|" });
 Resource.register(level, { type: { type: "number", default: 0 } });
-Resource.register(reads, { type: { type: "number", default: 0 } });
-Resource.register(wrapped, { type: { type: "integer", minimum: -(2 ** 31), maximum: 2 ** 31 - 1, default: 5 } });
+Resource.register(seen, { type: { type: "number", default: 0 } });
+Resource.register(wrapped, { type: { type: "integer", minimum: -(2 ** 31), maximum: 2 ** 31 - 1, default: 5 }, reduce: "+" });
 
 const rows = 3000;
 const positionAt = (i: number): Vec3 => [Math.sin(i) * 100, (i % 97) - 50, i / 7];
 const massAt = (i: number): number => (i * 2654435761) >>> 20;
 
 /** Rows in two archetypes, so a run folds more than one call's partials. */
-const spawn = System.create({ name: "reductionsTest/spawn" }, (_, __, commands) => {
+const spawn = System.create({ name: "reductionsTest/spawn" }, ({ commands }) => {
     for (let i = 0; i < rows; i++) {
         if (i % 3 === 0) commands.spawn({ [position]: positionAt(i), [mass]: massAt(i), [heavy]: true });
         else commands.spawn({ [position]: positionAt(i), [mass]: massAt(i) });
     }
 });
 
-const kernel = System.create({ name: "reductionsTest/kernel", kernel: "cpu", query: { read: [position, mass] }, resources: { reduce: { [total]: "+", [low]: "min", [bits]: "|", [least]: "min" } } }, (row, context) => {
+const kernel = System.create({ name: "reductionsTest/kernel", kernel: "cpu", components: { read: [position, mass] }, reduce: { [total]: "+", [low]: "min", [bits]: "|", [least]: "min" } }, (row, { reduce }) => {
     const [x, y, z] = row[position];
-    context[total](row[mass]);
-    context[total](0.5);
-    context[low]([x, y, z]);
-    context[bits](row[mass]);
-    context[least](row[mass]);
+    reduce[total](row[mass]);
+    reduce[total](0.5);
+    reduce[low]([x, y, z]);
+    reduce[bits](row[mass]);
+    reduce[least](row[mass]);
 });
 
 /** The same reductions, run as written on the main thread. */
-const body = System.create({ name: "reductionsTest/body", query: { read: [position, mass] }, resources: { reduce: { [total]: "+", [low]: "min", [bits]: "|", [least]: "min" } } }, (row, context) => {
+const body = System.create({ name: "reductionsTest/body", components: { read: [position, mass] }, reduce: { [total]: "+", [low]: "min", [bits]: "|", [least]: "min" } }, (row, { reduce }) => {
     const [x, y, z] = row[position];
-    context[total](row[mass]);
-    context[total](0.5);
-    context[low]([x, y, z]);
-    context[bits](row[mass]);
-    context[least](row[mass]);
+    reduce[total](row[mass]);
+    reduce[total](0.5);
+    reduce[low]([x, y, z]);
+    reduce[bits](row[mass]);
+    reduce[least](row[mass]);
 });
 
-const filtered = System.create({ name: "reductionsTest/filtered", kernel: "cpu", query: { read: [mass], has: [heavy] }, resources: { changed: [level], reduce: { [total]: "+", [least]: "min" } } }, (row, context) => {
-    context[total](row[mass]);
-    context[least](row[mass]);
+const filtered = System.create({ name: "reductionsTest/filtered", kernel: "cpu", components: { read: [mass], has: [heavy] }, resources: { changed: [level] }, reduce: { [total]: "+", [least]: "min" } }, (row, { reduce }) => {
+    reduce[total](row[mass]);
+    reduce[least](row[mass]);
 });
 
-const flags = System.create({ name: "reductionsTest/flags", kernel: "cpu", query: { read: [mass] }, resources: { reduce: { [any]: "|" } } }, (row, context) => {
-    context[any](row[mass] > 4000);
+const flags = System.create({ name: "reductionsTest/flags", kernel: "cpu", components: { read: [mass] }, reduce: { [any]: "|" } }, (row, { reduce }) => {
+    reduce[any](row[mass] > 4000);
 });
+
+/** Two contributors to `total`, the heavy rows and the light ones, and a reader of the finished fold. */
+const heavyMass = System.create({ name: "reductionsTest/heavy", kernel: "cpu", components: { read: [mass], has: [heavy] }, reduce: { [total]: "+" } }, (row, { reduce }) => {
+    reduce[total](row[mass]);
+});
+const lightMass = System.create({ name: "reductionsTest/light", components: { read: [mass], not: [heavy] }, reduce: { [total]: "+" } }, (row, { reduce }) => {
+    reduce[total](row[mass]);
+});
+const reader = System.create({ name: "reductionsTest/reader", resources: { read: [total], write: [seen] } }, ({ resources }) => {
+    resources[seen] = resources[total];
+});
+const frame = System.composite({ name: "reductionsTest/frame", systems: [reader, heavyMass, lightMass] });
+
+const weigh = System.create({ name: "reductionsTest/weigh", components: { write: [mass], has: [heavy] } }, row => { row[mass] = 1; });
+const kernelChanged = System.create({ name: "reductionsTest/changed", kernel: "cpu", components: { read: [mass], changed: [mass] }, reduce: { [total]: "+" } }, (row, { reduce }) => {
+    reduce[total](row[mass]);
+});
+
+const masses = (keep: (i: number) => boolean): number => Array.from({ length: rows }, (_, i) => i).filter(keep).reduce((sum, i) => sum + massAt(i), 0);
 
 const expected = () => {
-    const masses = Array.from({ length: rows }, (_, i) => massAt(i));
     const positions = Array.from({ length: rows }, (_, i) => positionAt(i));
+    const values = Array.from({ length: rows }, (_, i) => massAt(i));
     return {
-        total: masses.reduce((sum, value) => sum + value + 0.5, 0),
+        total: masses(() => true) + rows * 0.5,
         low: [0, 1, 2].map(k => Math.fround(Math.min(...positions.map(p => p[k] ?? NaN)))),
-        bits: masses.reduce((or, value) => or | value, 0) >>> 0,
-        least: Math.min(...masses),
+        bits: values.reduce((or, value) => or | value, 0) >>> 0,
+        least: Math.min(...values),
     };
 };
 
@@ -132,47 +158,94 @@ describe("reductions", () => {
             const got = results(world);
             // Positions are f32, so their least is too; sums of integers and halves are exact.
             expect({ ...got, low: got.low?.map(Math.fround) }).toEqual(want);
-            // A second run replaces the fold rather than adding to it.
+            // A second run starts again from the operators' identities rather than adding to the fold.
             await world.run(system);
             expect(results(world).total).toBe(want.total);
             await world.dispose();
         });
     }
 
-    it("leave their resources alone when a resource filter skips the run, and fold to identity over no rows", async () => {
+    it("fold every contributor in a run, start each run again, and give readers the finished fold", async () => {
+        const world = createWorld({ workers: 0 });
+        await world.systems.register(spawn, frame);
+        await world.run(spawn);
+        // The reader is listed first, yet runs after both contributors.
+        await world.run(frame);
+        expect(world.read.resource(total)).toBe(masses(() => true));
+        expect(world.read.resource(seen)).toBe(masses(() => true));
+        await world.run(frame);
+        expect(world.read.resource(total)).toBe(masses(() => true));
+        // A run with one contributor holds that contributor's fold alone.
+        await world.run(heavyMass);
+        expect(world.read.resource(total)).toBe(masses(i => i % 3 === 0));
+        await world.dispose();
+    });
+
+    it("keep the previous value when a contributor fails, or when every contributor skips the run", async () => {
+        let fail = false;
+        const fails = System.create({ name: "reductionsTest/fails", components: { read: [mass], has: [heavy] }, reduce: { [total]: "+" } }, (row, { reduce }) => {
+            reduce[total](row[mass]);
+            if (fail) throw new Error("contributor failed");
+        });
+        const world = createWorld({ workers: 0 });
+        await world.systems.register(spawn, fails, filtered, lightMass);
+        await world.run(spawn);
+        await world.run(fails);
+        const before = world.read.resource(total);
+        fail = true;
+        await expect(world.run(fails)).rejects.toThrow("contributor failed");
+        expect(world.read.resource(total)).toBe(before);
+        // A resource filter passes on its first run; after that `level` doesn't change, so its runs are skipped.
+        await world.run(filtered);
+        await world.run(lightMass);
+        await world.run(filtered);
+        expect(world.read.resource(total)).toBe(masses(i => i % 3 !== 0));
+        await world.dispose();
+    });
+
+    it("fold to the identity over no rows, an empty min of integers as the type's extreme", async () => {
         const world = createWorld({ workers: 0 });
         await world.systems.register(filtered);
-        // No rows yet, and the resource filter passes on the first run: an empty sum, and an empty min of u32s.
         await world.run(filtered);
         expect(world.read.resource(total)).toBe(0);
         expect(world.read.resource(least)).toBe(0xFFFFFFFF);
-        await world.systems.register(spawn);
+        await world.dispose();
+    });
+
+    it("fold only the rows a contributor's change filters pass", async () => {
+        const world = createWorld({ workers: 0 });
+        await world.systems.register(spawn, weigh, kernelChanged);
         await world.run(spawn);
-        // `level` didn't change, so the run is skipped and the empty fold stays.
-        await world.run(filtered);
+        await world.run(kernelChanged);
+        expect(world.read.resource(total)).toBe(masses(() => true));
+        await world.run(weigh);
+        await world.run(kernelChanged);
+        expect(world.read.resource(total)).toBe(rows / 3);
+        // Nothing changed since: the filter passes no rows, so the fold is empty.
+        await world.run(kernelChanged);
         expect(world.read.resource(total)).toBe(0);
         await world.dispose();
     });
 
     it("stamp their resources changed only when the fold differs", async () => {
         let ran = 0;
-        const reader = System.create({ name: "reductionsTest/reader", query: { has: [mass] }, resources: { changed: [total] } }, () => { ran++; });
+        const watcher = System.create({ name: "reductionsTest/reader", components: { has: [mass] }, resources: { changed: [total] } }, () => { ran++; });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(spawn, kernel, reader);
+        await world.systems.register(spawn, kernel, watcher);
         await world.run(spawn);
         await world.run(kernel);
-        await world.run(reader);
+        await world.run(watcher);
         const first = ran;
         expect(first).toBe(rows);
         await world.run(kernel);
-        await world.run(reader);
+        await world.run(watcher);
         expect(ran).toBe(first);
         await world.dispose();
     });
 
     it("store an infinite sum as any write of it, and only an empty min or max as the integer type's extreme", async () => {
-        const infinite = System.create({ name: "reductionsTest/infinite", query: { has: [mass] }, resources: { reduce: { [wrapped]: "+" } } }, (_, context) => {
-            context[wrapped](Infinity);
+        const infinite = System.create({ name: "reductionsTest/infinite", components: { has: [mass] }, reduce: { [wrapped]: "+" } }, (_, { reduce }) => {
+            reduce[wrapped](Infinity);
         });
         const world = createWorld({ workers: 0 });
         await world.systems.register(spawn, infinite);
@@ -192,30 +265,31 @@ describe("reductions", () => {
     });
 
     it("reject what can't be reduced", async () => {
-        const world = createWorld({ workers: 0 });
-        const other = System.create({ name: "reductionsTest/other", query: { has: [mass] }, resources: { reduce: { [total]: "max" } } }, (_, context) => { context[total](1); });
-        await expect(world.systems.register(kernel, other)).rejects.toThrow(`Systems "reductionsTest/kernel" and "reductionsTest/other" both reduce "reductionsTest/total"`);
         // @ts-expect-error booleans reduce bitwise
-        const sum = System.create({ name: "reductionsTest/flags", query: { has: [mass] }, resources: { reduce: { [any]: "+" } } }, (_, context) => { context[any](true); });
-        await expect(createWorld({ workers: 0 }).systems.register(sum)).rejects.toThrow(`booleans reduce with "&", "|" or "^"`);
-        // @ts-expect-error a reduction folds every row, so its query has no change filters
-        const added = System.create({ name: "reductionsTest/added", query: { read: [mass], added: [mass] }, resources: { reduce: { [total]: "+" } } }, (row, context) => { context[total](row[mass]); });
-        await expect(createWorld({ workers: 0 }).systems.register(added)).rejects.toThrow("can't reduce with query change filters");
-        // @ts-expect-error a reduced resource can't also be read
-        const reading = System.create({ name: "reductionsTest/other", query: { has: [mass] }, resources: { read: [total], reduce: { [total]: "+" } } }, (_, context) => { void context[total]; context[total](1); });
+        expect(() => Resource.register(summed, { type: { type: "boolean", default: false }, reduce: "+" })).toThrow(`booleans reduce with "&", "|" or "^"`);
+        // @ts-expect-error a contributor repeats its resource's operator
+        const mismatched = System.create({ name: "reductionsTest/other", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); });
+        await expect(createWorld({ workers: 0 }).systems.register(mismatched)).rejects.toThrow(`reduces "reductionsTest/total" with "max", but it's declared reduce: "+"`);
+        // @ts-expect-error only a resource with a reduce trait is reduced
+        const plain = System.create({ name: "reductionsTest/other", components: { has: [mass] }, reduce: { [level]: "+" } }, (_, { reduce }) => { reduce[level](1); });
+        await expect(createWorld({ workers: 0 }).systems.register(plain)).rejects.toThrow(`reduces "reductionsTest/level", which has no reduce trait`);
+        // @ts-expect-error a reduced resource is never written
+        const writing = System.create({ name: "reductionsTest/other", resources: { write: [total] } }, ({ resources }) => { resources[total] = 1; });
+        await expect(createWorld({ workers: 0 }).systems.register(writing)).rejects.toThrow(`writes "reductionsTest/total", which is reduced`);
+        // @ts-expect-error a contributor doesn't read what it reduces into
+        const reading = System.create({ name: "reductionsTest/other", components: { has: [mass] }, resources: { read: [total] }, reduce: { [total]: "+" } }, (_, { resources, reduce }) => { reduce[total](resources[total]); });
         await expect(createWorld({ workers: 0 }).systems.register(reading)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
-        // @ts-expect-error a reduced resource can't also be filtered on
-        const filtering = System.create({ name: "reductionsTest/other", query: { has: [mass] }, resources: { changed: [total], reduce: { [total]: "+" } } }, (_, context) => { context[total](1); });
+        // @ts-expect-error nor filters on it
+        const filtering = System.create({ name: "reductionsTest/other", components: { has: [mass] }, resources: { changed: [total] }, reduce: { [total]: "+" } }, (_, { reduce }) => { reduce[total](1); });
         await expect(createWorld({ workers: 0 }).systems.register(filtering)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
-        await world.dispose();
     });
 
     it("leave nothing subscribed to sync points from a registration that failed", () => {
         const state = createState(true);
         const registrar = createRegistrar(state);
-        // @ts-expect-error booleans reduce bitwise
-        const sum = System.create({ name: "reductionsTest/flags", query: { has: [mass] }, resources: { reduce: { [any]: "+" } } }, (_, context) => { context[any](true); });
-        expect(() => registrar.register([kernel, sum])).toThrow(`booleans reduce with "&", "|" or "^"`);
+        // @ts-expect-error a contributor repeats its resource's operator
+        const mismatched = System.create({ name: "reductionsTest/other", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); });
+        expect(() => registrar.register([kernel, mismatched])).toThrow(`but it's declared reduce: "+"`);
         expect(state.afterSync.size).toBe(0);
         registrar.register([kernel]).rollback();
         expect(state.afterSync.size).toBe(0);

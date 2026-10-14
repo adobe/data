@@ -35,13 +35,13 @@ describe("staged spawns", () => {
     it("are seen once by `added` observers in earlier, the same and later tiers, and not before the sync point", async () => {
         const seen = { early: 0, same: 0, late: 0 };
         const spawned: Entity[] = [];
-        const early = System.create({ name: "batchesTest/early", query: { added: [score] } }, () => { seen.early++; });
-        const spawn = System.create({ name: "batchesTest/spawn", after: ["batchesTest/early"] }, (_, __, commands) => {
+        const early = System.create({ name: "batchesTest/early", components: { added: [score] } }, () => { seen.early++; });
+        const spawn = System.create({ name: "batchesTest/spawn", after: ["batchesTest/early"] }, ({ commands }) => {
             if (spawned.length > 0) return;
             for (let i = 0; i < 100; i++) spawned.push(commands.spawn({ [position]: [i, i, i], [score]: i, [name]: `${i}`, [tag]: true }));
         });
-        const same = System.create({ name: "batchesTest/same", query: { added: [score] }, after: ["batchesTest/early"] }, () => { seen.same++; });
-        const late = System.create({ name: "batchesTest/late", query: { added: [score] }, after: ["batchesTest/spawn", "batchesTest/same"] }, () => { seen.late++; });
+        const same = System.create({ name: "batchesTest/same", components: { added: [score] }, after: ["batchesTest/early"] }, () => { seen.same++; });
+        const late = System.create({ name: "batchesTest/late", components: { added: [score] }, after: ["batchesTest/spawn", "batchesTest/same"] }, () => { seen.late++; });
         const frame = System.composite({ name: "batchesTest/edit", systems: [early, spawn, same, late] });
         const world = createWorld({ workers: 0 });
         await world.systems.register(frame);
@@ -58,7 +58,7 @@ describe("staged spawns", () => {
 
     it("can be changed, removed, re-added or despawned in the run that spawns them", async () => {
         const spawned: Entity[] = [];
-        const edit = System.create({ name: "batchesTest/edit" }, (_, __, commands) => {
+        const edit = System.create({ name: "batchesTest/edit" }, ({ commands }) => {
             for (let i = 0; i < 4; i++) spawned.push(commands.spawn({ [score]: i, [name]: `${i}` }));
             commands.add(spawned[0], { [score]: 10 });
             commands.remove(spawned[1], name);
@@ -77,7 +77,7 @@ describe("staged spawns", () => {
     it("keep the spawns before a value that can't be written, and release that one's entity", async () => {
         const spawned: Entity[] = [];
         let poison = true;
-        const spawn = System.create({ name: "batchesTest/spawn" }, (_, __, commands) => {
+        const spawn = System.create({ name: "batchesTest/spawn" }, ({ commands }) => {
             for (let i = 0; i < 3; i++) spawned.push(commands.spawn({ [position]: [i, 0, 0], [score]: i }));
             // A symbol can't convert to a number, so writing it throws.
             if (poison) commands.spawn({ [position]: [0, 0, 0], [score]: Symbol("x") as unknown as number });
@@ -95,7 +95,7 @@ describe("staged spawns", () => {
 
     it("take literal values positionally, and go through commands when a value is missing", async () => {
         const spawned: Entity[] = [];
-        const spawn = System.create({ name: "batchesTest/spawn" }, (_, __, commands) => {
+        const spawn = System.create({ name: "batchesTest/spawn" }, ({ commands }) => {
             for (let i = 0; i < 50; i++) spawned.push(commands.spawn({ [position]: [i, i, i], [score]: i, [tag]: true }));
             // Leaving a component out goes through commands, so the entity has only what it names.
             spawned.push(commands.spawn({ [position]: [9, 9, 9], [score]: undefined, [tag]: true }));
@@ -111,7 +111,7 @@ describe("staged spawns", () => {
 
     it("take value objects built before the spawn", async () => {
         const spawned: Entity[] = [];
-        const spawn = System.create({ name: "batchesTest/spawn" }, (_, __, commands) => {
+        const spawn = System.create({ name: "batchesTest/spawn" }, ({ commands }) => {
             for (let i = 0; i < 20; i++) {
                 const values: Component.Values = i % 2 === 0 ? { [position]: [i, 0, 1], [score]: i, [name]: `${i}` } : { [score]: i, [position]: [i, 0, 1], [name]: `${i}` };
                 spawned.push(commands.spawn(values));

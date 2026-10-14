@@ -32,7 +32,6 @@ describe("kernels where WASM can't be compiled", () => {
         WebAssembly.compile = () => Promise.reject(new WebAssembly.CompileError("blocked"));
         try {
             const world = createWorld({ workers: 0 });
-            await world.systems.register(seed, double);
             await world.run(seed);
             await world.run(double);
             expect(world.query.select([value]).map(entity => world.read.component(entity, value))).toEqual([0, 2, 4, 6, 8, 10, 12, 14, 16, 18]);

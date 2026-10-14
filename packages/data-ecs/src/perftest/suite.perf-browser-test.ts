@@ -28,7 +28,6 @@ const framed = async (name: string, run: () => Promise<void>, frames = 240): Pro
 it("move 1M across workers", async () => {
     for (const workers of workerCounts) {
         const world = createWorld({ workers });
-        await world.systems.register(spawn, move);
         await world.run(spawn, 1_000_000);
         report(`move 1M ${label(workers)}`, (await particlesFastest(() => world.run(move))).minimum);
         await framed(`move 1M ${label(workers)}`, () => world.run(move));
@@ -38,7 +37,7 @@ it("move 1M across workers", async () => {
 
 it("follow 1M across workers", async () => {
     for (const workers of workerCounts) {
-        const world = await seeded(() => createWorld({ workers }), 1_000_000, follow);
+        const world = await seeded(() => createWorld({ workers }), 1_000_000);
         report(`follow 1M ${label(workers)}`, await fastest(() => world.run(follow)));
         await framed(`follow 1M ${label(workers)}`, () => world.run(follow));
         await world.dispose();
@@ -47,7 +46,7 @@ it("follow 1M across workers", async () => {
 
 it("chain 6x1M across workers", async () => {
     for (const workers of workerCounts) {
-        const world = await seeded(() => createWorld({ workers }), 1_000_000, chain);
+        const world = await seeded(() => createWorld({ workers }), 1_000_000);
         report(`chain 6x1M ${label(workers)}`, await fastest(() => world.run(chain)));
         await framed(`chain 6x1M ${label(workers)}`, () => world.run(chain));
         await world.dispose();
@@ -56,7 +55,7 @@ it("chain 6x1M across workers", async () => {
 
 it("sparse changed 1M across workers", async () => {
     for (const workers of workerCounts) {
-        const world = await seeded(() => createWorld({ workers }), 1_000_000, poke, observe);
+        const world = await seeded(() => createWorld({ workers }), 1_000_000);
         let frame = 0;
         let best = Infinity;
         for (let i = 0; i < 60; i++) {

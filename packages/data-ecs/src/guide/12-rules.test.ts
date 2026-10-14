@@ -50,7 +50,7 @@ const hide = System.create({ name: "guide/rules/hide", components: { has: [sprit
 });
 
 it("derives components from the components an entity has", async () => {
-    await using world = await World.create({ systems: [spawn, hide, meshes, sprites, layers] });
+    await using world = World.create();
     await world.run(spawn);
     expect(world.query.count([drawn])).toBe(2);
     expect(world.query.select([layer]).map(entity => world.read.component(entity, layer))).toEqual([1, 1]);

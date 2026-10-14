@@ -20,10 +20,14 @@ declare module "@adobe/data-ecs" {
     }
     export interface Systems {
         "batchesTest/spawn": true;
+        "batchesTest/spawn/2": true;
+        "batchesTest/spawn/3": true;
+        "batchesTest/spawn/4": true;
         "batchesTest/early": true;
         "batchesTest/late": true;
         "batchesTest/same": true;
         "batchesTest/edit": true;
+        "batchesTest/edit/2": true;
     }
 }
 Component.register(position, { type: vec3 });
@@ -44,7 +48,6 @@ describe("staged spawns", () => {
         const late = System.create({ name: "batchesTest/late", components: { added: [score] }, after: ["batchesTest/spawn", "batchesTest/same"] }, () => { seen.late++; });
         const frame = System.composite({ name: "batchesTest/edit", systems: [early, spawn, same, late] });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(frame);
         await world.run(frame);
         // Nothing saw the spawns during their own run.
         expect(seen).toEqual({ early: 0, same: 0, late: 0 });
@@ -58,7 +61,7 @@ describe("staged spawns", () => {
 
     it("can be changed, removed, re-added or despawned in the run that spawns them", async () => {
         const spawned: Entity[] = [];
-        const edit = System.create({ name: "batchesTest/edit" }, ({ commands }) => {
+        const edit = System.create({ name: "batchesTest/edit/2" }, ({ commands }) => {
             for (let i = 0; i < 4; i++) spawned.push(commands.spawn({ [score]: i, [name]: `${i}` }));
             commands.add(spawned[0], { [score]: 10 });
             commands.remove(spawned[1], name);
@@ -67,7 +70,6 @@ describe("staged spawns", () => {
             commands.despawn(spawned[3]);
         });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(edit);
         await world.run(edit);
         expect(spawned.map(entity => [world.read.component(entity, score), world.read.component(entity, name)])).toEqual([[10, "0"], [1, null], [2, "again"], [null, null]]);
         expect(world.query.count([score])).toBe(3);
@@ -77,13 +79,12 @@ describe("staged spawns", () => {
     it("keep the spawns before a value that can't be written, and release that one's entity", async () => {
         const spawned: Entity[] = [];
         let poison = true;
-        const spawn = System.create({ name: "batchesTest/spawn" }, ({ commands }) => {
+        const spawn = System.create({ name: "batchesTest/spawn/2" }, ({ commands }) => {
             for (let i = 0; i < 3; i++) spawned.push(commands.spawn({ [position]: [i, 0, 0], [score]: i }));
             // A symbol can't convert to a number, so writing it throws.
             if (poison) commands.spawn({ [position]: [0, 0, 0], [score]: Symbol("x") as unknown as number });
         });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(spawn);
         await expect(world.run(spawn)).rejects.toThrow();
         expect(spawned.map(entity => world.read.component(entity, score))).toEqual([0, 1, 2]);
         poison = false;
@@ -95,13 +96,12 @@ describe("staged spawns", () => {
 
     it("take literal values positionally, and go through commands when a value is missing", async () => {
         const spawned: Entity[] = [];
-        const spawn = System.create({ name: "batchesTest/spawn" }, ({ commands }) => {
+        const spawn = System.create({ name: "batchesTest/spawn/3" }, ({ commands }) => {
             for (let i = 0; i < 50; i++) spawned.push(commands.spawn({ [position]: [i, i, i], [score]: i, [tag]: true }));
             // Leaving a component out goes through commands, so the entity has only what it names.
             spawned.push(commands.spawn({ [position]: [9, 9, 9], [score]: undefined, [tag]: true }));
         });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(spawn);
         await world.run(spawn);
         expect(spawned.slice(0, 50).map(entity => world.read.entity(entity, [position, score, tag]))).toEqual(
             spawned.slice(0, 50).map((_, i) => ({ [position]: [i, i, i], [score]: i, [tag]: true })));
@@ -111,14 +111,13 @@ describe("staged spawns", () => {
 
     it("take value objects built before the spawn", async () => {
         const spawned: Entity[] = [];
-        const spawn = System.create({ name: "batchesTest/spawn" }, ({ commands }) => {
+        const spawn = System.create({ name: "batchesTest/spawn/4" }, ({ commands }) => {
             for (let i = 0; i < 20; i++) {
                 const values: Component.Values = i % 2 === 0 ? { [position]: [i, 0, 1], [score]: i, [name]: `${i}` } : { [score]: i, [position]: [i, 0, 1], [name]: `${i}` };
                 spawned.push(commands.spawn(values));
             }
         });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(spawn);
         await world.run(spawn);
         expect(spawned.map(entity => world.read.entity(entity, [position, score, name]))).toEqual(
             spawned.map((_, i) => ({ [position]: [i, 0, 1], [score]: i, [name]: `${i}` })));

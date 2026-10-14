@@ -14,8 +14,11 @@ export const defaultOf = (key: Key): unknown => {
     return schema !== undefined && "default" in schema ? schema.default : undefined;
 };
 
+/** A resource's value before anything writes it: the one given at the world's creation, or its default. */
+export const initialOf = (state: State, key: Key): unknown => state.initial.has(key) ? state.initial.get(key) : defaultOf(key);
+
 /**
- * Adds any missing resources with their schema defaults, as their own sync point, between runs; commands that are
+ * Adds any missing resources with their initial values, as their own sync point, between runs; commands that are
  * pending stay for the next run.
  */
 export const ensureResources = (state: State, keys: Iterable<Key>): void => {
@@ -23,7 +26,7 @@ export const ensureResources = (state: State, keys: Iterable<Key>): void => {
     const archetype = index < 0 ? undefined : state.archetypes[state.entities.archetype[index]];
     const values: { [key: Key]: unknown } = {};
     for (const key of keys) {
-        if (archetype?.storageOf.has(idOf(state, key)) !== true) values[key] = defaultOf(key);
+        if (archetype?.storageOf.has(idOf(state, key)) !== true) values[key] = initialOf(state, key);
     }
     if (Reflect.ownKeys(values).length === 0) return;
     const buffer = createBuffer();

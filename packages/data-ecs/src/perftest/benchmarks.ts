@@ -27,7 +27,7 @@ export const benchmarks: readonly Benchmark[] = [
     {
         name: "create 1M",
         run: () => fastest(async () => {
-            const world = await World.create({ systems: [spawn] });
+            const world = World.create();
             await world.run(spawn, 1_000_000);
             await world.dispose();
         }, 5000, 2),
@@ -35,7 +35,7 @@ export const benchmarks: readonly Benchmark[] = [
     {
         name: "create flat 1M",
         run: () => fastest(async () => {
-            const world = await World.create({ systems: [spawnFlat] });
+            const world = World.create();
             await world.run(spawnFlat, 1_000_000);
             check(world.query.count([flatVisible, flatEnabled]) === 250_000, "create flat: wrong count");
             await world.dispose();
@@ -44,7 +44,7 @@ export const benchmarks: readonly Benchmark[] = [
     {
         name: "create flat dynamic 1M",
         run: () => fastest(async () => {
-            const world = await World.create({ systems: [spawnFlatDynamic] });
+            const world = World.create();
             await world.run(spawnFlatDynamic, 1_000_000);
             check(world.query.count([flatVisible, flatEnabled]) === 250_000, "create flat dynamic: wrong count");
             await world.dispose();
@@ -53,7 +53,7 @@ export const benchmarks: readonly Benchmark[] = [
     {
         name: "move 1M",
         run: async () => {
-            const world = await World.create({ systems: [spawn, move] });
+            const world = World.create();
             await world.run(spawn, 1_000_000);
             check(world.query.count([particlePosition, visible, enabled]) === 250_000, "move: wrong count");
             const { minimum } = await particlesFastest(() => world.run(move));
@@ -64,7 +64,7 @@ export const benchmarks: readonly Benchmark[] = [
     {
         name: "churn 1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000, churn);
+            const world = await seeded(() => World.create(), 1_000_000);
             let frame = 0;
             const best = await fastest(() => world.run(churn, frame++ % 10));
             check(world.query.count([index]) === 1_000_000, "churn: wrong count");
@@ -75,7 +75,7 @@ export const benchmarks: readonly Benchmark[] = [
     {
         name: "retag 1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000, retag);
+            const world = await seeded(() => World.create(), 1_000_000);
             let frame = 0;
             const best = await fastest(() => world.run(retag, frame++ % 10));
             check(world.query.count([tag]) > 0, "retag: no tags");
@@ -86,7 +86,7 @@ export const benchmarks: readonly Benchmark[] = [
     {
         name: "sparse changed 1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000, poke, observe);
+            const world = await seeded(() => World.create(), 1_000_000);
             const best = await observed(world, poke);
             await world.dispose();
             return best;
@@ -95,7 +95,7 @@ export const benchmarks: readonly Benchmark[] = [
     {
         name: "sparse changed clustered 1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000, pokeCluster, observe);
+            const world = await seeded(() => World.create(), 1_000_000);
             const best = await observed(world, pokeCluster);
             await world.dispose();
             return best;
@@ -104,7 +104,7 @@ export const benchmarks: readonly Benchmark[] = [
     {
         name: "follow 1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000, follow);
+            const world = await seeded(() => World.create(), 1_000_000);
             const best = await fastest(() => world.run(follow));
             await world.dispose();
             return best;
@@ -113,7 +113,7 @@ export const benchmarks: readonly Benchmark[] = [
     {
         name: "emit 1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000, emit);
+            const world = await seeded(() => World.create(), 1_000_000);
             const best = await fastest(() => world.run(emit));
             check(world.query.count([hits]) === 100_000, "emit: wrong count");
             await world.dispose();
@@ -123,7 +123,7 @@ export const benchmarks: readonly Benchmark[] = [
     {
         name: "reduce 1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000, reduce);
+            const world = await seeded(() => World.create(), 1_000_000);
             const best = await fastest(() => world.run(reduce));
             check(world.read.resource(highest) === 999_999 && world.read.resource(indexSum) === 999_999 * 500_000, "reduce: wrong fold");
             await world.dispose();
@@ -133,7 +133,7 @@ export const benchmarks: readonly Benchmark[] = [
     {
         name: "chain 6x1M",
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000, chain);
+            const world = await seeded(() => World.create(), 1_000_000);
             const best = await fastest(() => world.run(chain));
             await world.dispose();
             return best;
@@ -142,7 +142,7 @@ export const benchmarks: readonly Benchmark[] = [
     {
         name: "main thread 50x1K",
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000, smalls);
+            const world = await seeded(() => World.create(), 1_000);
             const best = await fastest(() => world.run(smalls));
             check(totalOf() > 0, "main thread: nothing read");
             await world.dispose();

@@ -52,7 +52,6 @@ describe("reductions across workers", () => {
     for (const wasm of [true, false]) {
         it(`fold every row exactly once, in the same order each run (${wasm ? "WASM" : "JS"})`, async () => {
             const world = createWorld({ workers: 4, minimumChunk: 64, wasm });
-            await world.systems.register(spawn, reduce);
             await world.run(spawn);
             const sums: number[] = [];
             for (let run = 0; run < 4; run++) {

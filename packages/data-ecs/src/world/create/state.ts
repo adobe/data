@@ -76,15 +76,21 @@ export type State = {
     /** While finalizers run: by batch target archetype id, the first row its batches added this sync point, which lookups don't see. */
     born: Map<number, number> | null;
     readonly structure: Structure;
-    /** Registered finalizers, in their order. */
+    /** The program's finalizers this world has activated, in their order. */
     readonly finalizers: FinalizerRunner[];
+    /** The program's rules and finalizers active here, which apply from the first sync point after the world meets their components. */
+    readonly activated: Set<object>;
+    /** The program's version when the world last activated, and whether it has met a component since. */
+    activation: { version: number; met: boolean };
+    /** Resource values given at creation, in place of their defaults. */
+    readonly initial: ReadonlyMap<Key, unknown>;
     /** The world's GPU, where render systems and GPU kernels run. */
     gpu: GpuEngine | null;
     /** With a GPU: archetypes the current sync point changed, whose GPU copies are then out of date. */
     readonly touched: Set<Archetype> | null;
 };
 
-export const createState = (shared?: boolean, wasm = true, simd = true, gpu = false): State => {
+export const createState = (shared?: boolean, wasm = true, simd = true, gpu = false, initial: ReadonlyMap<Key, unknown> = new Map()): State => {
     const memory = createMemory(shared);
     return {
         memory,
@@ -115,6 +121,9 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         born: null,
         structure: createStructure(),
         finalizers: [],
+        activated: new Set(),
+        activation: { version: -1, met: true },
+        initial,
         gpu: null,
         touched: gpu ? new Set() : null,
     };
@@ -159,6 +168,7 @@ export const idOf = (state: State, key: Key): number => {
     structure.references[id] = declaration.reference === "owner" ? owner : declaration.reference === "weak" ? weak : 0;
     if (structure.references[id] !== 0) structure.referenceIds.push(id);
     if (kindOf(key) === "resource") state.resources.add(id);
+    state.activation.met = true;
     return id;
 };
 

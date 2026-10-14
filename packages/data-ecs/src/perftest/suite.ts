@@ -207,10 +207,9 @@ export const report = (name: string, milliseconds: number): void => {
     console.log(`bench ${name}: ${milliseconds.toFixed(3)} ms`);
 };
 
-/** A world seeded with `count` entities, with the given systems registered. */
-export const seeded = async (create: () => World, count: number, ...systems: readonly System[]): Promise<World> => {
+/** A world seeded with `count` entities. Systems register on their first run, which `fastest` leaves out. */
+export const seeded = async (create: () => World, count: number): Promise<World> => {
     const world = create();
-    await world.systems.register(seed, ...systems);
     await world.run(seed, count);
     return world;
 };

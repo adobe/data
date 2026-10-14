@@ -174,8 +174,17 @@ export const checkLeaf = (leaf: Leaf): void => {
     }
 };
 
+const schedules = new WeakMap<System, Schedule>();
+
+/** A system's schedule, created once per system. Throws on a cycle, or on two conflicting leaves with no ordering path between them. */
+export const scheduleOf = (system: System): Schedule => {
+    let schedule = schedules.get(system);
+    if (schedule === undefined) schedules.set(system, schedule = createSchedule(system));
+    return schedule;
+};
+
 /** Orders a system's leaves into tiers. Throws on a cycle, or on two conflicting leaves with no ordering path between them. */
-export const createSchedule = (system: System): Schedule => {
+const createSchedule = (system: System): Schedule => {
     const { entries, expand } = flatten(system);
     const graph = graphOf(entries, expand);
     const accesses = entries.map(entry => accessOf(entry.leaf));

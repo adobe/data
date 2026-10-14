@@ -41,7 +41,7 @@ const bump = System.create({ name: "guide/filters/bump", input: Entity.schema, c
 });
 
 it("runs systems only for what changed since they last ran", async () => {
-    await using world = await World.create({ systems: [load, show, bump] });
+    await using world = World.create();
     await world.run(load);
     await world.run(load);
     expect(world.query.count([enemy])).toBe(2);

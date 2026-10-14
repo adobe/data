@@ -38,7 +38,7 @@ const spawn = System.create({ name: "guide/changes/spawn" }, ({ commands }) => {
 const retire = System.create({ name: "guide/changes/retire", components: { has: [score] } }, (row, { commands }) => { commands.remove(row.entity, score); });
 
 it("records each sync point's structural changes", async () => {
-    await using world = await World.create({ systems: [spawn, retire, save] });
+    await using world = World.create();
     await world.run(spawn);
     await world.run(retire);
     expect(world.read.resource(journal)).toEqual(["ada: +2 -0 score null → 3", "ada: +0 -1 score 3 → null"]);

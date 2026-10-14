@@ -71,7 +71,7 @@ Resource.register(gravity, { type: { type: "number", default: -9.8 } });
 Entities are spawned by systems, and read between runs through `world.query` and `world.read`:
 
 ```ts
-await using world = await World.create({ systems: [spawn] });
+await using world = World.create();
 await world.run(spawn);
 const [first] = world.query.select([position, enemy]);
 expect(world.read.component(first, position)).toEqual([0, 10, 0]);
@@ -80,7 +80,9 @@ expect(world.read.component(first, position)).toEqual([0, 10, 0]);
 Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L4-L38).
 
 - **Registration must match the declaration**, trait for trait, with `type` a schema for the declared type. Otherwise it doesn't compile.
-- **`World.create({ systems })` resolves once its systems are registered.** `await using` disposes the world.
+- **`World.create()` returns the world,** and `await using` disposes it. `World.create({ resources: { [gravity]: -1.6 } })` starts resources at other values than their defaults.
+- **Systems register in a world on their first run there,** which validates them and loads their kernels; the run rejects if that fails. Rules and finalizers apply in every world (sections 13 and 16).
+- **Names are program-wide:** `System.get(name)` finds a system by its name, and a second system, rule or finalizer with a name throws when it's created.
 - **`Entity` is a branded number.** `Entity.none` names no entity: it's what zeroed memory and entity defaults hold, and a lookup of it returns null.
 - **Rejected:** a duplicate name, across components, resources and traits, at registration.
 
@@ -130,9 +132,9 @@ const heal = System.create({ name: "guide/scheduling/heal", components: { write:
 const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal, hit] });
 ```
 
-Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L25-L48).
+Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L25-L47).
 
-- **Rejected:** two members that both write a component or resource, or where one reads what the other writes, with no ordering path between them, at registration.
+- **Rejected:** two members that both write a component or resource, or where one reads what the other writes, with no ordering path between them, at `System.composite`.
 - **Reductions are the exception:** contributors to one resource need no order between them, and its readers run after all of them (section 10).
 
 ## 5. Change filters
@@ -285,7 +287,7 @@ stay on the GPU until something on the CPU needs them, or `world.synchronize` as
 const move = System.create({ name: "guide/gpu/move", kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
-const world = await World.create({ gpu: { device }, systems: [spawn, move] });
+const world = World.create({ gpu: { device } });
 ```
 
 Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L26-L44).
@@ -347,8 +349,9 @@ const layers = Rule.create({ name: "guide/rules/layers", components: { has: [dra
 Example: [`12-rules.test.ts`](src/guide/12-rules.test.ts#L32-L60).
 
 - **The result depends only on which components an entity has,** so it's computed once per archetype, and a change is still a single move.
-- **A rule registered after entities exist** applies at the next sync point.
-- **Rejected:** deriving a component that isn't `derived`, and a cycle of rules through a `not`, which could oscillate, at registration.
+- **Rules apply in every world** from when they're created: a world starts using one once it has met every component in its `has`, before any entity can match it.
+- **A rule created after entities exist,** by a module imported later, applies at the next sync point.
+- **Rejected:** deriving a component that isn't `derived`, matching on a resource, and a cycle of rules through a `not`, which could oscillate, at `Rule.create`.
 
 ## 14. Within
 
@@ -401,7 +404,9 @@ Example: [`15-finalizers.test.ts`](src/guide/15-finalizers.test.ts#L27-L65).
 
 - **A stop:** a despawn, the loss of a required component by any cause, a required component removed and added again, or an excluded one added.
 - **Rows are read-only.** The body is `(row, context)`, whose context has `resources`, `lookup` and `commands`. Lookups see the state before the sync point applies, and resource writes take its tick.
-- **Order:** `before` and `after` among finalizers, then registration order. A finalizer that throws doesn't stop the sync point; the run rejects with the first error once it has applied.
+- **Finalizers apply in every world,** as rules do, once the world has met every component they read or have.
+- **Order:** `before` and `after` among finalizers, then creation order. A finalizer that throws doesn't stop the sync point; the run rejects with the first error once it has applied.
+- **Rejected:** two finalizers that both write a resource, or where one reads what the other writes, with no order between them, and a cycle, at `Finalizer.create`.
 
 ## 17. Changes finalizers
 
@@ -420,7 +425,7 @@ const save = Finalizer.changes({ name: "guide/changes/save", watch: [name, score
 Example: [`16-changes.test.ts`](src/guide/16-changes.test.ts#L29-L45).
 
 - **A group** has `from` and `to` (null for spawned and despawned entities), `added`, `removed`, `replaced` and `entities`.
-- **Rejected:** watching a derived component, at registration and in types.
+- **Rejected:** watching a derived component, at `Finalizer.changes` and in types.
 
 ## 18. Loading resources asynchronously
 

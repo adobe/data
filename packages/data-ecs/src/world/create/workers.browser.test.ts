@@ -170,7 +170,6 @@ const snapshot = (world: World): unknown[] => {
 const simulate = async (workers: number, wasm = true, simd = false): Promise<unknown[]> => {
     const world = createWorld({ workers, minimumChunk: 64, wasm, simd });
     disposals.push(world);
-    await world.systems.register(seed, main);
     await world.run(seed, 2000);
     for (let frame = 0; frame < 12; frame++) await world.run(main);
     return snapshot(world);
@@ -205,7 +204,6 @@ describe("workers", () => {
         const run = async (workers: number): Promise<unknown[]> => {
             const world = createWorld({ workers, minimumChunk: 64 });
             disposals.push(world);
-            await world.systems.register(scatter, integrate);
             await world.run(scatter);
             for (let frame = 0; frame < 3; frame++) await world.run(integrate);
             return snapshot(world);
@@ -218,7 +216,6 @@ describe("workers", () => {
         const ordered = async (workers: number): Promise<unknown[]> => {
             const world = createWorld({ workers, minimumChunk: 64 });
             disposals.push(world);
-            await world.systems.register(seed, main, stamp);
             await world.run(seed, 2000);
             for (let frame = 0; frame < 4; frame++) await world.run(main);
             const [first] = world.query.select([position]);
@@ -231,7 +228,6 @@ describe("workers", () => {
     it("can't touch the resource entity", async () => {
         const world = createWorld({ workers: 2, minimumChunk: 64 });
         disposals.push(world);
-        await world.systems.register(seed, integrate, unlink);
         await world.run(seed, 500);
         await world.run(unlink);
         await world.run(integrate);
@@ -239,7 +235,7 @@ describe("workers", () => {
     });
 
     it("rejects kernel lookups of components outside linear memory", async () => {
-        await expect(createWorld({ workers: 2 }).systems.register(labels)).rejects.toThrow('"workersTest/label", which isn\'t stored in linear memory');
+        await expect(createWorld({ workers: 2 }).run(labels)).rejects.toThrow('"workersTest/label", which isn\'t stored in linear memory');
     });
 
     it("are terminated by dispose", async () => {
@@ -251,10 +247,11 @@ describe("workers", () => {
         };
         try {
             const world = createWorld({ workers: 2 });
-            await world.systems.register(main);
+            // Workers start with the first kernel.
+            await world.run(main);
             await world.dispose();
             expect(terminated).toHaveLength(2);
-            expect(() => world.run(main)).toThrow("disposed");
+            await expect(world.run(main)).rejects.toThrow("disposed");
         }
         finally {
             Worker.prototype.terminate = original;

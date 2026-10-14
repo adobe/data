@@ -1,4 +1,5 @@
 import type { Component } from '../component/component.js';
+import { claim } from '../world/create/program.js';
 import type { Body } from './body.js';
 import type { Leaf } from './leaf.js';
 import type { LinearComponent } from './linear.js';
@@ -44,12 +45,17 @@ type Rendered<D extends RenderDeclaration> = D & { readonly components: { readon
 /**
  * Declares a render system: it runs once per run on the main thread, in schedule order, and records GPU work over
  * the GPU copy of the components its accessors name, which the world uploads first as needed. It needs a world with `gpu`.
+ * Throws if a different system has its name.
  */
 export const render = <const D extends RenderDeclaration>(
     declaration: D,
     body: Body<Rendered<D>>,
-): Leaf<Rendered<D>> => ({
-    kind: "render",
-    declaration: { ...declaration, components: { ...declaration.components, read: [...new Set(Object.values(declaration.shader.accessors))] } },
-    body,
-});
+): Leaf<Rendered<D>> => {
+    const system: Leaf<Rendered<D>> = {
+        kind: "render",
+        declaration: { ...declaration, components: { ...declaration.components, read: [...new Set(Object.values(declaration.shader.accessors))] } },
+        body,
+    };
+    claim(system);
+    return system;
+};

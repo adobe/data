@@ -93,7 +93,7 @@ const spawn = System.create({ name: "guide/loading/spawn" }, ({ commands }) => {
 const hide = System.create({ name: "guide/loading/hide", input: Entity.schema }, ({ input, commands }) => { commands.add(input, { [hidden]: true }); });
 
 it("loads resources asynchronously for derived slots, and releases them when the slot goes", async () => {
-    await using world = await World.create({ systems: [slots, request, apply, release, spawn, hide] });
+    await using world = World.create();
     await world.run(spawn);
     await world.run(request);
     const [ship, rock] = world.read.resource(requests);

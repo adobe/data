@@ -38,10 +38,8 @@ describe("tick stamps only where observed, on workers", () => {
     for (const wasm of [false, true]) {
         it(`start once an observer registers (${wasm ? "WASM" : "JS"} kernels)`, async () => {
             const world = createWorld({ wasm, workers: 2, minimumChunk: 64 });
-            await world.systems.register(seed, bump);
             await world.run(seed);
             await world.run(bump);
-            await world.systems.register(watch);
             // New observers see everything once.
             await world.run(watch);
             await world.run(watch);

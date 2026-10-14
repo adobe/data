@@ -29,7 +29,7 @@ export const spawn = System.create({ name: "guide/components/spawn" }, ({ comman
 });
 
 it("stores components on entities and resources once per world", async () => {
-    await using world = await World.create({ systems: [spawn] });
+    await using world = World.create();
     await world.run(spawn);
     const [first] = world.query.select([position, enemy]);
     expect(world.read.component(first, position)).toEqual([0, 10, 0]);

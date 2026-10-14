@@ -33,7 +33,7 @@ const prune = System.create({ name: "guide/references/prune", components: { read
 });
 
 it("despawns owned entities with their owner, transitively, and drops weak references", async () => {
-    await using world = await World.create({ systems: [spawn, prune] });
+    await using world = World.create();
     await world.run(spawn);
     await world.run(prune);
     expect(world.query.select([node]).map(entity => world.read.component(entity, node))).toEqual(["camera"]);

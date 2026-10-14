@@ -20,6 +20,8 @@ declare module "@adobe/data-ecs" {
     }
     export interface Systems {
         "semanticsTest/seed": true;
+        "semanticsTest/seed/2": true;
+        "semanticsTest/seed/3": true;
         "semanticsTest/chase": true;
         "semanticsTest/retag": true;
         "semanticsTest/watch": true;
@@ -53,7 +55,6 @@ const chase = System.create({
 
 const run = async (wasm: boolean) => {
     const world = createWorld({ wasm, workers: 0 });
-    await world.systems.register(seed, chase);
     await world.run(seed);
     await world.run(chase);
     const result = world.query.select([score]).map(e => world.read.component(e, score));
@@ -64,14 +65,12 @@ const run = async (wasm: boolean) => {
 describe("semantics", () => {
     it("a throwing sync point doesn't poison the next one or another world", async () => {
         let poison = false;
-        const spawn = System.create({ name: "semanticsTest/seed" }, ({ commands }) => {
+        const spawn = System.create({ name: "semanticsTest/seed/2" }, ({ commands }) => {
             commands.spawn({ [score]: 1 });
             commands.spawn({ [score]: poison ? Symbol("x") as unknown as number : 2 });
         });
         const a = createWorld({ workers: 0 });
         const b = createWorld({ workers: 0 });
-        await a.systems.register(spawn);
-        await b.systems.register(spawn);
         await b.run(spawn);
         poison = true;
         await expect(a.run(spawn)).rejects.toThrow();
@@ -92,11 +91,10 @@ describe("semantics", () => {
     it("re-adding an existing tag keeps its added tick", async () => {
         const seen: number[] = [];
         let entity = Entity.none;
-        const spawn = System.create({ name: "semanticsTest/seed" }, ({ commands }) => { entity = commands.spawn({ [tag]: true, [score]: 0 }); });
+        const spawn = System.create({ name: "semanticsTest/seed/3" }, ({ commands }) => { entity = commands.spawn({ [tag]: true, [score]: 0 }); });
         const retag = System.create({ name: "semanticsTest/retag" }, ({ commands }) => { commands.add(entity, { [tag]: true }); });
         const watch = System.create({ name: "semanticsTest/watch", components: { has: [score], added: [tag] } }, row => { seen.push(row.entity); });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(spawn, retag, watch);
         await world.run(spawn);
         await world.run(watch);
         await world.run(retag);

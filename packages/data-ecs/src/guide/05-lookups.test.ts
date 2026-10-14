@@ -38,7 +38,7 @@ const follow = System.create({
 });
 
 it("reads other entities through named lookups", async () => {
-    await using world = await World.create({ systems: [spawn, follow] });
+    await using world = World.create();
     await world.run(spawn);
     await world.run(follow);
     const velocities = world.query.select([velocity], { order: { [velocity]: false } }).map(entity => world.read.component(entity, velocity));

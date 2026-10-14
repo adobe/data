@@ -6,6 +6,7 @@ import { commitBatches } from './batches.js';
 import { applyIndexChanges, cascadeReferences, indexChangesOf, type IndexChanges, type Written } from './cascade.js';
 import { refreshDirectories } from './directories.js';
 import { indexOf, locate, materialize, recycle, release, reserved, type Reserved } from './entities.js';
+import { activate } from './activate.js';
 import { runFinalizers } from './finalizers.js';
 import { defaultOf } from './resources.js';
 import { closureOf, derives, gainsOf } from './structure.js';
@@ -322,6 +323,7 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
  * re-deriving or finalizers, for registration's own changes between runs.
  */
 export const prepareSync = (state: State, isolated = false): boolean => {
+    if (!isolated) activate(state);
     // Taken first, so a sync point that throws can't replay its commands into the next one.
     const queued = state.queued.splice(0);
     const { structure, plan } = state;

@@ -180,7 +180,6 @@ const snapshot = (world: World): unknown[] => world.query.select([position]).map
 
 const simulate = async (wasm: boolean, simd = false): Promise<unknown[]> => {
     const world = createWorld({ wasm, simd });
-    await world.systems.register(seed, main, scale, cull);
     await world.run(seed, 300);
     for (let frame = 0; frame < 120; frame++) {
         await world.run(main);

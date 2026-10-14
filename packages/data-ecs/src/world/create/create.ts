@@ -15,7 +15,9 @@ import { createPool, defaultWorkerCount, type Pool } from './pool.js';
 import { createPublisher } from './publish.js';
 import { count, readComponent, readEntity, select } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
-import { defaultOf, ensureResources, findResource } from './resources.js';
+import { ensureResources, findResource, initialOf } from './resources.js';
+import { ensureProgramResources, activate } from './activate.js';
+import { kindOf } from '../../registry/declare-name.js';
 import { createState, startTicking, type Key } from './state.js';
 
 type Queue = <T>(task: () => T | Promise<T>) => Promise<T>;
@@ -31,14 +33,25 @@ const createQueue = (): Queue => {
 };
 
 /** Internal: tests choose the worker count and chunk size; apps get the platform default. */
-export type WorldOptions = { readonly workers?: number; readonly minimumChunk?: number; readonly wasm?: boolean; readonly simd?: boolean; readonly gpu?: GpuOptions };
+export type WorldOptions = { readonly workers?: number; readonly minimumChunk?: number; readonly wasm?: boolean; readonly simd?: boolean } & Options;
+
+/** Resource values a world starts with, in place of their defaults. */
+export type InitialResources = { readonly [K in Resource.Name]?: Resource.Value<K> };
+
+export type Options = { readonly gpu?: GpuOptions; readonly resources?: InitialResources };
 
 /** Rows below which a kernel's archetype runs on the main thread rather than paying for a round trip. */
 const defaultMinimumChunk = 16384;
 
 export const createWorld = (options: WorldOptions = {}): World => {
     const shared = sharedMemoryAvailable();
-    const state = createState(shared, options.wasm ?? true, options.simd ?? true, options.gpu !== undefined);
+    const initial = new Map<Key, unknown>();
+    const resources = options.resources ?? {};
+    for (const key of Reflect.ownKeys(resources)) {
+        if (kindOf(key) !== "resource") throw new Error(`"${String(key)}" isn't a registered resource.`);
+        initial.set(key, Reflect.get(resources, key));
+    }
+    const state = createState(shared, options.wasm ?? true, options.simd ?? true, options.gpu !== undefined, initial);
     if (options.gpu !== undefined) state.gpu = createGpu(options.gpu.device);
     const registrar = createRegistrar(state);
     const enqueue = createQueue();
@@ -50,6 +63,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
         state, runnerOf: registrar.runnerOf, kernelIndexOf: registrar.kernelIndexOf, workers: null, publish: () => {},
     };
     let disposed = false;
+    const ensured = { version: -1 };
 
     const startPool = (): Pool => {
         const started = createPool(workerCount, state.memory);
@@ -93,15 +107,28 @@ export const createWorld = (options: WorldOptions = {}): World => {
     /** Pure: a resource no registered system uses still reads as its default. */
     const readResource = (key: Key): unknown => {
         const cell = findResource(state, key);
-        return cell === undefined ? defaultOf(key) : readCell(cell.storage, cell.row);
+        return cell === undefined ? initialOf(state, key) : readCell(cell.storage, cell.row);
     };
 
     const world: World = {
         run: (system, ...args) => {
-            checkLive();
-            const schedule = registrar.scheduleOf(system);
             const [value]: readonly unknown[] = args;
-            return enqueue(() => execute(context, schedule, value));
+            let registration: Registration | null = null;
+            try {
+                checkLive();
+                // A system registers in the world the first time it runs here.
+                if (registrar.registered(system) === undefined) registration = registrar.register(system);
+            }
+            catch (error) {
+                return Promise.reject(error);
+            }
+            return enqueue(async () => {
+                if (registration !== null) await complete(registration);
+                ensureProgramResources(state, ensured);
+                const schedule = registrar.registered(system);
+                if (schedule === undefined) throw new Error(`System "${system.declaration.name}" didn't register.`);
+                return execute(context, schedule, value);
+            });
         },
         dispose: () => {
             disposed = true;
@@ -109,6 +136,9 @@ export const createWorld = (options: WorldOptions = {}): World => {
                 // Per-query finalizers release what every live entity they match holds, reading the GPU's writes first.
                 let errors: unknown[] = [];
                 try {
+                    // A finalizer added since the last run still releases what the world's entities hold.
+                    ensureProgramResources(state, ensured);
+                    activate(state);
                     if (state.finalizers.length > 0) {
                         if (state.gpu?.anyAhead() === true) await state.gpu.readback();
                         errors = finalizeAll(state);
@@ -130,22 +160,6 @@ export const createWorld = (options: WorldOptions = {}): World => {
         },
         gpu: state.gpu === null ? null : { device: state.gpu.device, layout: state.gpu.renderLayout },
         [Symbol.asyncDispose]: () => world.dispose(),
-        systems: {
-            register: (...systems: readonly (System | Rule | Finalizer)[]) => {
-                try {
-                    checkLive();
-                    const registration = registrar.register(systems);
-                    return enqueue(async () => {
-                        await complete(registration);
-                        return world;
-                    });
-                }
-                catch (error) {
-                    return Promise.reject(error);
-                }
-            },
-            get: name => registrar.get(name),
-        },
         query: {
             select: (has, options) => select(state, has, options),
             count: (has, options) => count(state, has, options),
@@ -165,12 +179,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
 };
 
 /**
- * Creates a world. With systems, it's `create().systems.register(...systems)`. With `gpu`, render systems and
- * `kernel: "gpu"` kernels run on its device.
+ * Creates a world. With `gpu`, render systems and `kernel: "gpu"` kernels run on its device. `resources` sets values
+ * resources start with in place of their defaults.
  */
-export function create(): World;
-export function create(options: { readonly systems?: readonly (System | Rule | Finalizer)[]; readonly gpu?: GpuOptions }): Promise<World>;
-export function create(options?: { readonly systems?: readonly (System | Rule | Finalizer)[]; readonly gpu?: GpuOptions }): World | Promise<World> {
-    const world = createWorld({ gpu: options?.gpu });
-    return options === undefined ? world : world.systems.register(...options.systems ?? []);
-}
+export const create = (options?: Options): World => createWorld(options);

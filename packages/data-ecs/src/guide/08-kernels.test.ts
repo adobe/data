@@ -52,7 +52,7 @@ const chase = System.create({
 });
 
 it("runs systems compiled as kernels", async () => {
-    await using world = await World.create({ systems: [spawn, integrate, chase] });
+    await using world = World.create();
     await world.run(spawn);
     for (let step = 0; step < 6; step++) {
         await world.run(chase);

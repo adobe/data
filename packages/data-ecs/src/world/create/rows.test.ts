@@ -56,7 +56,6 @@ describe("accessor rows", () => {
             row[count] = row[count] + 1;
         });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(seed, first, other, second);
         await world.run(seed);
         await world.run(first);
         await world.run(other);

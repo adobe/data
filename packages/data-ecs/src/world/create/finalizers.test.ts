@@ -16,6 +16,14 @@ const label = "finalizersTest/label";
 const released = "finalizersTest/released";
 const late = "finalizersTest/late";
 const level = "finalizersTest/level";
+const written = "finalizersTest/written";
+// Finalizers apply in every world, so each test's finalizers match components of their own.
+const counted = "finalizersTest/counted";
+const pendingHandle = "finalizersTest/pendingHandle";
+const respawned = "finalizersTest/respawned";
+const ordered = "finalizersTest/ordered";
+const writing = "finalizersTest/writing";
+const disposing = "finalizersTest/disposing";
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -26,10 +34,17 @@ declare module "@adobe/data-ecs" {
         [parent]: { type: Entity; reference: "owner" };
         [label]: { type: string };
         [late]: { type: number };
+        [counted]: { type: number };
+        [pendingHandle]: { type: number };
+        [respawned]: { type: number };
+        [ordered]: { type: number };
+        [writing]: { type: number };
+        [disposing]: { type: number };
     }
     export interface Resources {
         [released]: { type: number };
         [level]: { type: number };
+        [written]: { type: number };
     }
     export interface Rules {
         "finalizersTest/slots": true;
@@ -45,6 +60,9 @@ declare module "@adobe/data-ecs" {
         "finalizersTest/second": true;
         "finalizersTest/everything": true;
         "finalizersTest/pending": true;
+        "finalizersTest/writerA": true;
+        "finalizersTest/writerB": true;
+        "finalizersTest/late": true;
     }
     export interface Systems {
         "finalizersTest/edit": true;
@@ -61,6 +79,8 @@ Component.register(label, { type: { type: "string" } });
 Component.register(late, { type: { type: "number" } });
 Resource.register(released, { type: { type: "number", default: 0 } });
 Resource.register(level, { type: { type: "number", default: 0 } });
+Resource.register(written, { type: { type: "number", default: 0 } });
+for (const key of [counted, pendingHandle, respawned, ordered, writing, disposing] as const) Component.register(key, { type: { type: "number" } });
 
 const slots = Rule.create({ name: "finalizersTest/slots", components: { has: [source] }, derive: [slot] });
 
@@ -76,7 +96,6 @@ describe("finalizers", () => {
         const seen: [Entity, number][] = [];
         const release = Finalizer.create({ name: "finalizersTest/release", components: { read: [handle], not: [hidden] } }, row => { seen.push([row.entity, row[handle]]); });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(edit, release);
         const run = step(world);
         const spawned: Entity[] = [];
         await run(commands => { for (let i = 0; i < 6; i++) spawned.push(commands.spawn({ [handle]: i * 10 })); });
@@ -101,7 +120,6 @@ describe("finalizers", () => {
         const seen: number[] = [];
         const release = Finalizer.create({ name: "finalizersTest/slotReleased", components: { read: [slot, source] } }, row => { seen.push(row[source]); });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(edit, slots, release);
         const run = step(world);
         let root = Entity.none, child = Entity.none;
         await run(commands => {
@@ -120,19 +138,18 @@ describe("finalizers", () => {
         const found: (number | null)[] = [];
         const count = Finalizer.create({
             name: "finalizersTest/count",
-            components: { read: [handle] },
-            lookup: { handles: { read: [handle] } },
+            components: { read: [counted] },
+            lookup: { handles: { read: [counted] } },
             resources: { write: [released] },
         }, (row, { resources, lookup, commands }) => {
             resources[released] += 1;
-            found.push(lookup.handles(row.entity)?.[handle] ?? null);
-            commands.spawn({ [label]: `after ${row[handle]}` });
+            found.push(lookup.handles(row.entity)?.[counted] ?? null);
+            commands.spawn({ [label]: `after ${row[counted]}` });
         });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(edit, count);
         const run = step(world);
         let a = Entity.none;
-        await run(commands => { a = commands.spawn({ [handle]: 5 }); });
+        await run(commands => { a = commands.spawn({ [counted]: 5 }); });
         await run(commands => commands.despawn(a));
         expect(found).toEqual([5]);
         expect(world.read.resource(released)).toBe(1);
@@ -142,69 +159,77 @@ describe("finalizers", () => {
         await world.dispose();
     });
 
-    it("leave their commands for the next run when a registration adds resources in between", async () => {
+    it("leave their commands for the next run's sync point, even when that run first adds resources", async () => {
         let other = Entity.none;
-        const pending = Finalizer.create({ name: "finalizersTest/pending", components: { read: [handle] } }, (_, { commands }) => { commands.despawn(other); });
+        const pending = Finalizer.create({ name: "finalizersTest/pending", components: { read: [pendingHandle] } }, (_, { commands }) => { commands.despawn(other); });
+        const reads = System.create({ name: "finalizersTest/reads", resources: { read: [level] } }, ({ resources }) => { void resources[level]; });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(edit, pending);
         const run = step(world);
         let a = Entity.none;
-        await run(commands => { a = commands.spawn({ [handle]: 1 }); other = commands.spawn({ [label]: "other" }); });
+        await run(commands => { a = commands.spawn({ [pendingHandle]: 1 }); other = commands.spawn({ [label]: "other" }); });
         await run(commands => commands.despawn(a));
-        await world.systems.register(System.create({ name: "finalizersTest/reads", resources: { read: [level] } }, ({ resources }) => { void resources[level]; }));
         expect(world.read.component(other, label)).toBe("other");
-        await run(() => {});
+        await world.run(reads);
         expect(world.read.component(other, label)).toBeNull();
         await world.dispose();
     });
 
     it("keep reservations they make apart from the indexes their sync point frees", async () => {
-        const respawn = Finalizer.create({ name: "finalizersTest/respawn", components: { read: [handle] } }, (row, { commands }) => {
-            commands.spawn({ [handle]: row[handle] + 100 });
+        const respawn = Finalizer.create({ name: "finalizersTest/respawn", components: { read: [respawned] } }, (row, { commands }) => {
+            commands.spawn({ [respawned]: row[respawned] + 100 });
         });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(edit, respawn);
         const run = step(world);
         const first: Entity[] = [];
-        await run(commands => { for (let i = 0; i < 8; i++) first.push(commands.spawn({ [handle]: i })); });
+        await run(commands => { for (let i = 0; i < 8; i++) first.push(commands.spawn({ [respawned]: i })); });
         await run(commands => { for (const entity of first) commands.despawn(entity); });
-        await run(commands => { for (let i = 0; i < 8; i++) commands.spawn({ [handle]: 1000 + i }); });
-        const live = world.query.select([handle]);
+        await run(commands => { for (let i = 0; i < 8; i++) commands.spawn({ [respawned]: 1000 + i }); });
+        const live = world.query.select([respawned]);
         expect(new Set(live).size).toBe(16);
-        expect(live.map(entity => world.read.component(entity, handle)).sort((x, y) => (x ?? 0) - (y ?? 0)))
+        expect(live.map(entity => world.read.component(entity, respawned)).sort((x, y) => (x ?? 0) - (y ?? 0)))
             .toEqual([100, 101, 102, 103, 104, 105, 106, 107, 1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007]);
         await world.dispose();
     });
 
     it("run in their order, and a throw still applies the sync point, then rejects the run", async () => {
         const order: string[] = [];
-        const second = Finalizer.create({ name: "finalizersTest/second", components: { read: [handle] }, after: ["finalizersTest/first"] }, () => { order.push("second"); });
-        const first = Finalizer.create({ name: "finalizersTest/first", components: { read: [handle] } }, () => { order.push("first"); });
-        const throws = Finalizer.create({ name: "finalizersTest/throws", components: { read: [handle] } }, () => { throw new Error("finalizer failed"); });
+        const second = Finalizer.create({ name: "finalizersTest/second", components: { read: [ordered] }, after: ["finalizersTest/first"] }, () => { order.push("second"); });
+        const first = Finalizer.create({ name: "finalizersTest/first", components: { read: [ordered] } }, () => { order.push("first"); });
+        const throws = Finalizer.create({ name: "finalizersTest/throws", components: { read: [ordered] } }, () => { throw new Error("finalizer failed"); });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(edit, second, first, throws);
         const run = step(world);
         let a = Entity.none;
-        await run(commands => { a = commands.spawn({ [handle]: 1 }); });
+        await run(commands => { a = commands.spawn({ [ordered]: 1 }); });
         await expect(run(commands => commands.despawn(a))).rejects.toThrow("finalizer failed");
         expect(order).toEqual(["first", "second"]);
         expect(world.read.component(a, handle)).toBeNull();
-        const writer = (name: "finalizersTest/first" | "finalizersTest/second") =>
-            Finalizer.create({ name, components: { read: [handle] }, resources: { write: [released] } }, (_, { resources }) => { resources[released] = 1; });
-        await expect(createWorld({ workers: 0 }).systems.register(writer("finalizersTest/first"), writer("finalizersTest/second"))).rejects.toThrow("order them with before or after");
+        const writer = (name: "finalizersTest/writerA" | "finalizersTest/writerB") =>
+            Finalizer.create({ name, components: { read: [writing] }, resources: { write: [written] } }, (_, { resources }) => { resources[written] = 1; });
+        writer("finalizersTest/writerA");
+        expect(() => writer("finalizersTest/writerB")).toThrow("order them with before or after");
         await world.dispose();
+    });
+});
+
+describe("a finalizer created after a world has entities it matches", () => {
+    it("releases them at disposal", async () => {
+        const world = createWorld({ workers: 0 });
+        await step(world)(commands => { commands.spawn({ [disposing]: 4 }); });
+        const seen: number[] = [];
+        Finalizer.create({ name: "finalizersTest/late", components: { read: [disposing] }, resources: { read: [level] } }, row => { seen.push(row[disposing]); });
+        await world.dispose();
+        expect(seen).toEqual([4]);
     });
 });
 
 describe("changes finalizers", () => {
     it("watch by default every component that isn't derived, including ones first used later, and no resources", async () => {
         const seen: unknown[] = [];
-        const everything = Finalizer.changes({ name: "finalizersTest/everything", resources: { read: [released] } }, (changes, { resources }) => {
-            void resources[released];
+        const everything = Finalizer.changes({ name: "finalizersTest/everything", resources: { read: [level] } }, (changes, { resources }) => {
+            void resources[level];
             for (const group of changes.groups) seen.push(group.to);
         });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(edit, everything);
         await step(world)(commands => { commands.spawn({ [late]: 1 }); });
         expect(seen).toEqual([[late]]);
         await world.dispose();
@@ -220,7 +245,6 @@ describe("changes finalizers", () => {
             }
         });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(edit, changes);
         const run = step(world);
         let a = Entity.none, b = Entity.none;
         await run(commands => { a = commands.spawn({ [handle]: 1 }); b = commands.spawn({ [handle]: 2, [label]: "b" }); commands.spawn({ [hidden]: true }); });

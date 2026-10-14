@@ -65,7 +65,7 @@ const report = System.create({ name: "guide/reductions/report", resources: { rea
 const frame = System.composite({ name: "guide/reductions/frame", systems: [report, measure, weigh] });
 
 it("folds rows into resources", async () => {
-    await using world = await World.create({ systems: [spawn, frame] });
+    await using world = World.create();
     await world.run(spawn);
     await world.run(measure);
     expect(world.read.resource(total)).toBe(200);
@@ -73,7 +73,7 @@ it("folds rows into resources", async () => {
 });
 
 it("folds every contributor in a run, starting again each run", async () => {
-    await using world = await World.create({ systems: [spawn, frame] });
+    await using world = World.create();
     await world.run(spawn);
     await world.run(frame);
     await world.run(frame);

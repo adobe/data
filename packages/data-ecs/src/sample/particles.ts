@@ -84,4 +84,4 @@ export const frame = async (world: World, seconds: number): Promise<readonly Vec
     return world.query.select([position]).map((entity: Entity) => world.read.component(entity, position) ?? [0, 0, 0]);
 };
 
-export const start = async (): Promise<World> => World.create({ systems: [setDelta, main] });
+export const start = async (): Promise<World> => World.create();

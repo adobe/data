@@ -29,7 +29,7 @@ const strip = System.create({ name: "guide/within/strip", components: { has: [bo
 });
 
 it("removes a component with its host", async () => {
-    await using world = await World.create({ systems: [spawn, strip] });
+    await using world = World.create();
     await world.run(spawn);
     expect(world.query.count([glow])).toBe(1);
     await world.run(strip);

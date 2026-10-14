@@ -72,7 +72,6 @@ describe("math in kernels", () => {
     for (const wasm of [false, true]) {
         it(`matches the functions called directly (${wasm ? "WASM" : "JS"})`, async () => {
             const world = createWorld({ workers: 0, wasm });
-            await world.systems.register(spawn, transform);
             await world.run(spawn);
             await world.run(transform);
             const read = world.query.select([position]).map(entity => world.read.component(entity, position));
@@ -85,7 +84,6 @@ describe("math in kernels", () => {
     for (const wasm of [false, true]) {
         it(`wraps integers and counts bits as the functions do (${wasm ? "WASM" : "JS"})`, async () => {
             const world = createWorld({ workers: 0, wasm });
-            await world.systems.register(spawnBits, integers);
             await world.run(spawnBits);
             await world.run(integers);
             const entities = world.query.select([bits]);

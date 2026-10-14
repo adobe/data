@@ -574,7 +574,6 @@ describe("declared WGSL builtins", () => {
         const gpuWorld = createWorld({ gpu: { device: await device() } });
         const cpuWorld = createWorld({ workers: 0 });
         for (const world of [gpuWorld, cpuWorld]) {
-            await world.systems.register(spawn, ...cases.map(item => item.system));
             await world.run(spawn);
         }
         const read = (world: ReturnType<typeof createWorld>, output: (typeof cases)[number]["output"]): number[] =>

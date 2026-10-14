@@ -33,7 +33,7 @@ const heal = System.create({ name: "guide/scheduling/heal", components: { write:
 const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal, hit] });
 
 it("orders a composite's members by their constraints", async () => {
-    await using world = await World.create({ systems: [spawn, frame] });
+    await using world = World.create();
     await world.run(spawn);
     await world.run(frame);
     const [entity] = world.query.select([health]);
@@ -41,8 +41,7 @@ it("orders a composite's members by their constraints", async () => {
     expect(world.read.component(entity, health)).toBe(10);
 });
 
-it("rejects two systems that write the same component without an order between them", async () => {
+it("rejects two systems that write the same component without an order between them", () => {
     const regenerate = System.create({ name: "guide/scheduling/regenerate", components: { write: [health] } }, row => { row[health] += 1; });
-    const unordered = System.composite({ name: "guide/scheduling/unordered", systems: [regenerate, hit] });
-    await expect(World.create({ systems: [unordered] })).rejects.toThrow('"guide/scheduling/regenerate" and "guide/scheduling/hit"');
+    expect(() => System.composite({ name: "guide/scheduling/unordered", systems: [regenerate, hit] })).toThrow('"guide/scheduling/regenerate" and "guide/scheduling/hit"');
 });

@@ -47,7 +47,6 @@ describe("traits", () => {
             }
         });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(derived);
         await world.run(derived);
         expect(errors).toEqual(Array.from({ length: 3 }, () => `"${slot}" is derived, so only rules add and remove it.`));
         expect(world.query.count([score])).toBe(1);
@@ -60,7 +59,6 @@ describe("traits", () => {
         const spawn = System.create({ name: "traitsTest/spawn" }, ({ commands }) => { first = commands.spawn({ [score]: 1 }); });
         const lookup = System.create({ name: "traitsTest/lookup", lookup: { scores: { read: [score] } } }, ({ lookup: { scores } }) => { found = scores(Entity.none); });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(spawn, lookup);
         await world.run(spawn);
         await world.run(lookup);
         expect(first).not.toBe(Entity.none);

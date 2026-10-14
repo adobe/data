@@ -1,6 +1,6 @@
 import type { Entity } from '../entity/entity.js';
 import { persistent, shared } from '../components/index.js';
-import type { System } from '../system/system.js';
+import { System } from '../system/system.js';
 import { main, move } from '../system/system.type-test.js';
 import { World } from './world.js';
 
@@ -27,16 +27,19 @@ world.run(move, { distance: "far" });
 world.run(main, {});
 
 const created: World = World.create();
-const createdWithSystems: Promise<World> = World.create({ systems: [main, move] });
-// @ts-expect-error creating with systems is async
-World.create({ systems: [main] }).run(main);
-const registered: Promise<World> = world.systems.register(main, move);
-const found: System | null = world.systems.get("test/move");
-// @ts-expect-error get takes a registered system name
-world.systems.get("test/unregistered");
+const withResources: World = World.create({ resources: { "systemTest/time": 1, "systemTest/total": 0 } });
+// @ts-expect-error a resource's initial value has its type
+World.create({ resources: { "systemTest/time": "now" } });
+// @ts-expect-error resources takes only resource names
+World.create({ resources: { "systemTest/position": 0 } });
+// @ts-expect-error systems register on their first run
+void world.systems;
+const found: System | null = System.get("test/move");
+// @ts-expect-error get takes a declared system name
+System.get("test/unregistered");
 const disposed: Promise<void> = world.dispose();
 const usingDispose = async () => {
     await using scoped = World.create();
     await scoped.run(main);
 };
-void [disposed, usingDispose, selected, counted, value, ran, moved, created, createdWithSystems, registered, found];
+void [disposed, usingDispose, selected, counted, value, ran, moved, created, withResources, found];

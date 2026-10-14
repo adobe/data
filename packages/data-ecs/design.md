@@ -43,7 +43,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   - **Worker count** comes from the platform (`navigator.hardwareConcurrency` minus the main thread). It's not part of the API.
   - **`SharedArrayBuffer` requires cross-origin isolation** (COOP/COEP headers). Without it, every system runs on the main thread.
   - **Subset errors** are reported at build time. An ESLint rule shares the same validator, so errors also show in the editor.
-- **GPU systems.** `World.create({ systems, gpu: { device } })` gives a world the app's device, which it never destroys.
+- **GPU systems.** `World.create({ gpu: { device } })` gives a world the app's device, which it never destroys.
   - **`kernel: "gpu"` declares a GPU kernel.** It runs as a WGSL compute shader compiled from the same Program IR as WASM in a world with a device, and as a `"cpu"` kernel in one without, so it stays portable. Each rule is checked as early as it can be known: types rule out lookups, change filters and commands; the build rejects loops and anything that keeps the body from lowering to a Program; registration rejects f64 or byte values, in every world, since such a declaration can never hold.
   - **Render systems** (`System.render`) run once per run on the main thread in schedule order, read-only. They record into the run's encoder over the GPU copies of the components their accessors name, which are what they read, one table per matched archetype. `Gpu.wgsl(system)` returns their shaders' declarations: the world's bind group at the group they name and a function per component (`fn position(row: u32) -> vec3<f32>`), from schemas alone, so shaders can be written before a world exists. Pipelines take `world.gpu.layout`; bind groups and buffers stay the world's, so they can be replaced as storage grows.
   - **Residency:** a separate GPU heap holds copies of only the storages GPU systems use. Each copy tracks rows the CPU changed since its upload and rows the GPU wrote since its readback. GPU systems upload what the CPU changed first; CPU systems read back what the GPU wrote first. A sync point reads back only archetypes whose existing rows it moves or writes (despawns, adds, removes); spawns only append rows, which are uploaded alone, and a copy that outgrows its block moves on the GPU. GPU-to-GPU chains and rendering never copy back.
@@ -109,7 +109,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
     - `context` holds each kind under the declaration's own key, present only when the declaration declares something of that kind: `resources` (values, assignable when in `write`), `lookup` (functions by name), `reduce` (contribution functions by resource) and `input`. It also has `commands`, except in GPU kernels and render systems. Keys of different kinds never share a namespace, so nothing can collide.
     - `commands`: `spawn` (returns a real `Entity`), `despawn`, `add` (adds or replaces, marking the component changed) and `remove`. They apply in the order they were issued. They take only `Component.Essential` components, so derived ones are excluded at the type level and rejected at runtime.
   - **Writes to the current row are direct and immediate.** Commands are only for structural changes and for writes to other entities.
-  - **Names are global** and should be namespaced (`"physics/integrate"`). Ordering constraints can only name registered systems, never the system itself.
+  - **Names are global** and should be namespaced (`"physics/integrate"`). Ordering constraints can only name systems, never the system itself.
   - **Composites** flatten their members.
     - A composite's constraints apply to every member, and members' own constraints resolve against the flattened set.
     - If the same value appears twice it's flattened to one entry. Two different systems with the same name throw.
@@ -117,19 +117,15 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   - There's no built-in schedule. The app runs its main composite each frame (`world.run(main)`), and transactions or on-demand systems whenever it needs them.
   - Ordering comes from `before`/`after`/`during`, sorted into tiers. Systems in the same tier may run in parallel. A constraint that names a system outside the composite being run is ignored.
   - **`during` is a preference,** not a constraint: it pulls systems into the same tier where no ordering path separates them.
-  - **Unordered conflicts throw at registration:** within a composite, two systems that both write a component or resource, or where one reads what the other writes, must have an ordering path between them. Contributors to one reduced resource don't conflict with each other, and every system that reads it is ordered after all of them.
-  - **A lookup can't read a component its own system writes;** that also throws at registration. Rejecting it now means hierarchy propagation can later give it defined semantics without breaking anything.
+  - **Unordered conflicts throw at `System.composite`:** within a composite, two systems that both write a component or resource, or where one reads what the other writes, must have an ordering path between them. Contributors to one reduced resource don't conflict with each other, and every system that reads it is ordered after all of them.
+  - **A lookup can't read a component its own system writes;** that throws at registration. Rejecting it now means hierarchy propagation can later give it defined semantics without breaking anything.
   - To reuse a system with different placement, spread it with a new declaration, `{ ...move, declaration: { ...move.declaration, after: [...] } }`, which keeps its body; a kernel keeps its compiled form, which is attached to the body.
 - **World** (`src/world/`):
-  - `World.create()` returns a world synchronously. `World.create({ systems })` is `create().systems.register(...systems)`, so it returns a `Promise`.
-  - `systems.register(...systems): Promise<World>` resolves once worker kernels are loaded, so failures show up at registration and the first run doesn't stall.
-    - Registration is serialized with runs, and it can happen at any time, for example for lazily loaded features.
-    - Registering the same value again does nothing. A different system with a registered name throws. So does a component or resource with no registered schema.
-    - Systems are registered up front, not discovered lazily, for three reasons: replication resolves systems by name, transactions shouldn't pay for setup on their first run, and systems can later become queryable entities, as in Flecs.
-  - `systems.get(name)` resolves a registered system by name, for replication. Local calls pass systems by value.
-  - `run(system, ...input): Promise<void>` runs a registered system or composite and ends in a sync point.
+  - `World.create(options?)` returns a world synchronously. `resources` gives values resources start with in place of their defaults; a key that isn't a resource throws.
+  - **Names are program-wide:** `System.create`, `System.render` and `System.composite` record the name, and a different system, rule or finalizer with it throws. `System.get(name)` returns a system by name, for replication; a copy made by spreading is recorded when it first runs. Local calls pass systems by value.
+  - `run(system, ...input): Promise<void>` runs a system or composite and ends in a sync point.
     - It's async because workers can't be joined synchronously on the main thread.
-    - An unregistered system throws.
+    - **Registration is the first run:** the first time a world runs a system, it validates it with its members, adds their resources and loads their kernels, serialized with runs, and the run rejects without recording anything if that fails. A kernel's first run pays for its load; a run before timing work avoids it.
     - A system or finalizer that throws rejects the promise.
     - Each system keeps its own `lastRun`, so it sees every change since it last ran.
   - `dispose()` and `[Symbol.asyncDispose]` wait for pending runs, then terminate workers and release memory, so `await using world = ...` works.
@@ -153,10 +149,10 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   - Monitored queries are **structural only**. Their `Changed`/`Added` filters are stripped or rejected at the type level, and optional components don't affect matching. Value conditions become tag components set by systems.
   - Replacing a required component within one flush (remove + re-add) counts as a stop plus a start.
 - **Rules (structural derivation):** `Rule.create({ name, components: { has, not }, derive: [component] })`, names in `Rules`: entities matching its components have the derived components.
-  - **Datalog with stratified negation** over which components each entity has. Rules and `within` declarations are evaluated as one fixed point per stratum; registration rejects a cycle through a negation, which could oscillate, and any cycle through `within`. That makes the closure a pure function of the archetype, cached per archetype, so A→B becomes a single move A→closure(B), and entities never match and then unmatch within a flush. Reference cascades run first, on the values the plan leaves; they only despawn and remove, so the result is the same fixed point.
+  - **Datalog with stratified negation** over which components each entity has. Rules and `within` declarations are evaluated as one fixed point per stratum; `Rule.create` rejects a cycle through a negation, which could oscillate, and any cycle through `within`. That makes the closure a pure function of the archetype, cached per archetype, so A→B becomes a single move A→closure(B), and entities never match and then unmatch within a flush. Reference cascades run first, on the values the plan leaves; they only despawn and remove, so the result is the same fixed point.
   - **Union ownership:** a derived component is present while any rule deriving it matches.
   - **Derived components** (`derived: true`) are structurally read-only to user code: commands reject them in types and at runtime; systems write their values. Each starts at its schema's `default`, which the types require, stamped `added`, and a normal `added` system fills it in. No initializer phase is needed, because creation can wait for the next system run and removal can't.
-  - **A rule registered after entities exist** applies at the next sync point.
+  - **Program-wide:** `Rule.create` checks the rule against every rule in the program, and throws there, so a world can't hold a rule set that fails. Each world starts using a rule at the first sync point after it has met every component in `has`; until then no entity can match it, so a world pays only for rules over components it uses. A rule created after entities match it, by a module imported later, applies at the next sync point.
 - **Cascades** are component traits, expanded in Plan with the rules.
   - **`within: host`:** the component exists only while its host does, whatever removes the host; transitively; in command order, so removing a host and adding it back ends its dependents. A derived host a rule keeps never leaves. A dependent added without its host is dropped; the Run report will list it.
   - **`reference: "owner" | "weak"`** on an entity-valued component: when the target despawns, or a reference is written to an entity that won't be alive, `owner` despawns the holder and `weak` removes the component, transitively. Only the value the plan leaves counts, so a reference pointed elsewhere in the same sync point stays. References change only through commands (`Component.Writable` excludes them from `query.write`), which keeps the index of holders by target exact. Without `reference`, a reference dangles and a lookup of it returns null.
@@ -167,11 +163,11 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   - **Rows are read-only.** Resource writes take the sync point's tick, so each system sees them once. Finalizers have no change filters, so no `lastRun`.
   - **Lookups** see the state before Apply; entities spawned in the same sync point aren't alive yet.
   - **Never-initialized values:** they must accept these, such as a derived handle still at its default.
-  - **Order:** `before` and `after` among finalizers, then registration order. Two that both write a resource, or where one reads what the other writes, must be ordered. Every registered finalizer runs at every sync point; none is in a composite, and the phase costs nothing when none is registered.
+  - **Program-wide,** as rules are: `Finalizer.create` and `Finalizer.changes` validate and order it with every finalizer in the program, and each world starts using one once it has met every component it reads or has, or for a changes finalizer any it watches; one without them applies from the start. Its resources are added between runs.
+  - **Order:** `before` and `after` among finalizers, then creation order. Two that both write a resource, or where one reads what the other writes, must be ordered. Every active finalizer runs at every sync point; none is in a composite, and the phase costs nothing when none is active.
   - **Throwing:** the plan still applies, and `run()` rejects with the first error.
   - **`dispose()`** runs per-query finalizers for every live match, so handles are released, and no whole-plan finalizers.
 - **Whole-plan finalizers** see the sync point's structural changes rather than one query's stops, for persistence, replication and structural undo: `Finalizer.changes({ name, watch }, (changes, context) => …)`. Changes are grouped by archetype pair (`from`, `to`, null for spawned or despawned, `added`, `removed`, `replaced`, `entities`), filtered to `watch`, every component that isn't derived by default; a derived one is rejected. `previous(entity, component)` and `next(entity, component)` give values before and after. They are ordered with per-query finalizers.
-- **Registration:** `world.systems.register` and `World.create({ systems })` take systems, rules and finalizers; names are unique across the three; `systems.get` returns systems.
 - **Async resources** need no other API: a rule derives a slot; a system with `added: [slot]` writes a fresh token into it and starts the load; the completion calls `world.run(apply, { entity, token, value })`, which adds the ready component (`within: slot`) if the slot's token still matches and releases the value otherwise; a finalizer on the slot aborts the load, and one on the ready component releases it. Shared assets are reference-counted by the loader, since the ECS gives each user exactly one acquire and one release.
 
 - **Reductions** compute one value from many rows, in kernels across workers as well as on the main thread.
@@ -199,14 +195,14 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 3. **GPU systems.** Pure value reads and writes into component tables, with no structural commands, so the GPU never needs command buffer communication. Still open:
    - **Latency.** Whether a system can declare that its writes become visible to CPU readers only at a later sync point, so readback overlaps the next frame.
    - **Device loss.** Components ahead on the GPU are lost with the device; decide whether a world can fall back to its last CPU copy.
-4. **Rules and finalizers: per world or program-wide.** Whether they're registered on a world, or like components apply to every world.
+4. **The GPU device as a resource.** Whether the device becomes a non-numeric resource given through `World.create({ resources })`, replacing the `gpu` option and `world.gpu`, and how replacing the device or losing it then works.
 
 ## Additive later (no breaking change)
 
 - **Async ports:** a port can call `world.run(applyInput, data)`. Direct `world.commands` remains an option.
 - **Run report:** `run(): Promise<World.Report>`, listing commands against dead entities and systems or finalizers that threw. Decide before publishing whether a throw then stops rejecting `run()`, since that changes behavior.
 
-- **Systems as entities:** metadata on systems, plus a query that selects which registered systems to run.
+- **Systems as entities:** metadata on systems, plus a query that selects which systems to run.
 - **Arguments for composites**, passed down to their members.
 - **WGSL helper functions, a minor readability option:** emit each inlined helper as its own WGSL `fn` instead of inlining it into the kernel, as a hand-written shader would. Parameter types come from the argument shapes at each call (a 3-tuple of numbers is `vec3f`, an object a generated `struct`), so a helper called with different shapes is emitted once per shape. GPU drivers inline small functions anyway, so it changes how the shader reads, not how it runs; JS and WASM stay inlined.
 - **Reductions, later:** GPU kernels (a workgroup tree reduction to per-workgroup partials, which needs resources resident on the GPU); four-lane SIMD accumulators, deterministic since pieces are 16-row aligned; contributing a component value of unknown shape whole, as bounds over positions want; lexicographic `min` and `max` over a tuple, for argmin and argmax such as the nearest entity; and per-field operators.

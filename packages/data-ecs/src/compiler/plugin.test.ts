@@ -30,7 +30,9 @@ import { kernelOf } from ${source("../world/create/attach-kernel.ts")};
 import { scaled } from "./helper.ts";
 import { increment } from "fake-math";
 const score = "score";
-const kernel = System.create({ name: "linked", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = increment(scaled(row.entity)); });
+// Names are program-wide, and serving evaluates this module again after an edit.
+globalThis.linkedEvaluations = (globalThis.linkedEvaluations ?? 0) + 1;
+const kernel = System.create({ name: \`linked/\${globalThis.linkedEvaluations}\`, kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = increment(scaled(row.entity)); });
 export const description = kernelOf(kernel);
 `);
 /** An application importing a kernel a library ships uncompiled, from its `dist`. */

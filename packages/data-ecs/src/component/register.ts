@@ -1,8 +1,11 @@
 import { createRegistry, type Registry } from "../registry/create-registry.js";
 import type { Declaration } from "./declaration.js";
 import type { Name } from "./name.js";
+import type { Resource } from "../resource/resource.js";
+import type { Name as TraitName } from "../trait/name.js";
 
-type Declarations = { readonly [K in Name]: Declaration<K> };
+/** A name also declared as a resource or a trait can't be registered: names are unique across the three. */
+type Declarations = { readonly [K in Name]: K extends Resource.Name | TraitName ? never : Declaration<K> };
 
 const registry: Registry<Declarations> = createRegistry<Declarations>("component");
 

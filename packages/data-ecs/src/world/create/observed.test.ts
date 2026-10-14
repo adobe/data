@@ -54,9 +54,7 @@ const spawnOne = System.create({ name: "observedTest/spawnOne" }, ({ commands })
 describe("tick stamps only where observed", () => {
     it("keep `added` from the moment an observer registers, across archetype moves", async () => {
         const world = createWorld();
-        await world.systems.register(seed, flagAll, spawnOne);
         await world.run(seed);
-        await world.systems.register(fresh);
         const counts = (): number[] => world.query.select([seen]).map(entity => world.read.component(entity, seen) ?? -1);
         // Rows that existed before count as added once.
         await world.run(fresh);
@@ -74,10 +72,8 @@ describe("tick stamps only where observed", () => {
     for (const wasm of [false, true]) {
         it(`start once an observer registers (${wasm ? "WASM" : "JS"} kernels)`, async () => {
             const world = createWorld({ wasm });
-            await world.systems.register(seed, bump);
             await world.run(seed);
             await world.run(bump);
-            await world.systems.register(watch);
             // New observers see everything once.
             await world.run(watch);
             await world.run(watch);

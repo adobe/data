@@ -47,7 +47,7 @@ const destroy = System.create({ name: "guide/finalizers/destroy", components: { 
 });
 
 it("releases what entities held when they stop matching", async () => {
-    await using world = await World.create({ systems: [spawn, destroy, release] });
+    await using world = World.create();
     await world.run(spawn);
     await world.run(destroy);
     expect([...open]).toEqual([]);
@@ -57,7 +57,7 @@ it("releases what entities held when they stop matching", async () => {
 });
 
 it("releases what every live entity holds when the world is disposed", async () => {
-    const world = await World.create({ systems: [spawn, release] });
+    const world = World.create();
     await world.run(spawn);
     expect(open.size).toBe(2);
     await world.dispose();

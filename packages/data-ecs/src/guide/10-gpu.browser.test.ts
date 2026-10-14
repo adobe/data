@@ -32,7 +32,7 @@ it("runs GPU kernels on the world's device, and reads their writes back on reque
     const adapter = await navigator.gpu.requestAdapter();
     const device = await adapter?.requestDevice();
     if (device === undefined) throw new Error("No WebGPU device.");
-    const world = await World.create({ gpu: { device }, systems: [spawn, move] });
+    const world = World.create({ gpu: { device } });
     await world.run(spawn);
     await world.run(move);
     await world.run(move);

@@ -23,7 +23,7 @@ const place = System.create({
 });
 
 it("passes an input to each run", async () => {
-    await using world = await World.create({ systems: [place] });
+    await using world = World.create();
     await world.run(place, { x: 3, count: 2 });
     const positions = world.query.select([position], { order: { [position]: true } }).map(entity => world.read.component(entity, position));
     expect(positions).toEqual([[3, 0, 0], [3, 1, 0]]);

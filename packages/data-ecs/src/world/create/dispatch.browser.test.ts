@@ -20,6 +20,7 @@ declare module "@adobe/data-ecs" {
     }
     export interface Systems {
         "dispatchTest/scatter": true; "dispatchTest/seed": true; "dispatchTest/fastA": true; "dispatchTest/slowB": true; "dispatchTest/fastC": true; "dispatchTest/tier": true;
+        "dispatchTest/seed/2": true; "dispatchTest/fastA/2": true; "dispatchTest/slowB/2": true; "dispatchTest/tier/2": true; "dispatchTest/tier/3": true; "dispatchTest/tier/4": true; "dispatchTest/tier/5": true; "dispatchTest/tier/6": true; "dispatchTest/fastC/2": true;
     }
 }
 Component.register(position, { type: vec2 });
@@ -55,21 +56,19 @@ const fastC = System.create({ name: "dispatchTest/fastC", kernel: "cpu", compone
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | "timeout"> =>
     Promise.race([promise, new Promise<"timeout">(resolve => setTimeout(() => resolve("timeout"), ms))]);
 
-const grow = System.create({ name: "dispatchTest/seed" }, ({ commands }) => {
+const grow = System.create({ name: "dispatchTest/seed/2" }, ({ commands }) => {
     for (let i = 0; i < 3000; i++) commands.spawn({ [position]: [i, 1], [velocity]: [2, i % 3], [offset]: 0 });
 });
 let observedRows = 0;
-const bump = System.create({ name: "dispatchTest/fastA", kernel: "cpu", components: { write: [offset] } }, row => {
+const bump = System.create({ name: "dispatchTest/fastA/2", kernel: "cpu", components: { write: [offset] } }, row => {
     row[offset] = row[offset] + 1;
 });
-const watch = System.create({ name: "dispatchTest/slowB", components: { changed: [offset] } }, () => { observedRows++; });
+const watch = System.create({ name: "dispatchTest/slowB/2", components: { changed: [offset] } }, () => { observedRows++; });
 describe("worker dispatch", () => {
     it("reloads kernels on workers when an observer registers", async () => {
         const world = createWorld({ workers: 2, minimumChunk: 64 });
-        await world.systems.register(seed, bump);
         await world.run(seed);
         await world.run(bump);
-        await world.systems.register(watch);
         await world.run(watch);
         observedRows = 0;
         await world.run(bump);
@@ -78,15 +77,14 @@ describe("worker dispatch", () => {
     }, 200000);
     it("keeps worker kernels in step after a failed registration", async () => {
         const world = createWorld({ workers: 2, minimumChunk: 64 });
-        await world.systems.register(seed, bump);
         await world.run(seed);
         await world.run(bump);
         const original = WebAssembly.compile;
         let calls = 0;
         WebAssembly.compile = (bytes: BufferSource) => (++calls === 2 ? Promise.reject(new Error("injected")) : original(bytes));
-        await expect(world.systems.register(watch, fastC)).rejects.toThrow("injected");
+        const later = { ...fastC, declaration: { ...fastC.declaration, name: "dispatchTest/fastC/2", after: ["dispatchTest/slowB/2"] } } as const;
+        await expect(world.run(System.composite({ name: "dispatchTest/tier/2", systems: [watch, later] }))).rejects.toThrow("injected");
         WebAssembly.compile = original;
-        await world.systems.register(watch);
         await world.run(watch);
         observedRows = 0;
         await world.run(bump);
@@ -96,7 +94,6 @@ describe("worker dispatch", () => {
     it("delivers layouts between back-to-back runs", async () => {
         const go = async (workers: number, wasm = true, delay = false) => {
             const world = createWorld({ workers, minimumChunk: 64, wasm });
-            await world.systems.register(grow, fastA);
             for (let frame = 0; frame < 12; frame++) {
                 const r = await withTimeout((async () => { await world.run(grow); if (delay) await new Promise(r => setTimeout(r, 30)); await world.run(fastA); })(), 3000);
                 if (r === "timeout") return "timeout";
@@ -110,19 +107,17 @@ describe("worker dispatch", () => {
         for (let i = 0; i < 2; i++) results.push(diff(await go(3, true, true), alone));
         expect(results).toEqual([0, 0, 0, 0, 0, 0]);
     }, 200000);
-    for (const systems of [[fastA, slowB], [fastA, fastC], [slowB, fastC]] as const) it(`runs tiers of ${systems.map(s => s.declaration.name).join(",")}`, async () => {
-        const tier = System.composite({ name: "dispatchTest/tier", systems: [...systems] });
+    for (const [name, systems] of [["dispatchTest/tier", [fastA, slowB]], ["dispatchTest/tier/3", [fastA, fastC]], ["dispatchTest/tier/4", [slowB, fastC]]] as const) it(`runs tiers of ${systems.map(s => s.declaration.name).join(",")}`, async () => {
+        const tier = System.composite({ name, systems: [...systems] });
         const world = createWorld({ workers: 2, minimumChunk: 64 });
-        await world.systems.register(seed, tier);
         await world.run(seed);
         let result: unknown = "ok";
         for (let frame = 0; frame < 50 && result !== "timeout"; frame++) result = await withTimeout(world.run(tier), 3000);
         expect(result).not.toBe("timeout");
     }, 200000);
     it("fast, message, fast kernels in one tier don't hang", async () => {
-        const tier = System.composite({ name: "dispatchTest/tier", systems: [fastA, slowB, fastC] });
+        const tier = System.composite({ name: "dispatchTest/tier/5", systems: [fastA, slowB, fastC] });
         const world = createWorld({ workers: 2, minimumChunk: 64 });
-        await world.systems.register(seed, tier);
         await world.run(seed);
         let result: unknown = "ok";
         for (let frame = 0; frame < 50 && result !== "timeout"; frame++) result = await withTimeout(world.run(tier), 3000);
@@ -130,9 +125,8 @@ describe("worker dispatch", () => {
     }, 200000);
 
     it("ring overflow followed by a message task in the same tier doesn't hang", async () => {
-        const tier = System.composite({ name: "dispatchTest/tier", systems: [fastA, slowB] });
+        const tier = System.composite({ name: "dispatchTest/tier/6", systems: [fastA, slowB] });
         const world = createWorld({ workers: 1, minimumChunk: 64 });
-        await world.systems.register(scatter, tier);
         await world.run(scatter);
         let result: unknown = "ok";
         for (let frame = 0; frame < 5 && result !== "timeout"; frame++) result = await withTimeout(world.run(tier), 3000);

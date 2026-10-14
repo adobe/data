@@ -107,5 +107,5 @@ check<Equal<typeof slots.kind, "rule">>();
 check<Equal<typeof release.kind, "finalizer">>();
 check<Equal<typeof save, Finalizer.Changes<typeof save.declaration>>>();
 
-// Worlds register systems, rules and finalizers together.
-export const created: Promise<World> = World.create({ systems: [slots, release, save] });
+// Rules and finalizers apply in every world.
+export const created: World = World.create();

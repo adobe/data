@@ -63,7 +63,7 @@ describe("bindKernel", () => {
 
 it("runs a kernel copied by spreading it with a new declaration", async () => {
     const doubleAgain: System = { ...double, declaration: { ...double.declaration, name: "kernelsTest/doubleAgain", after: ["kernelsTest/double"] } };
-    await using world = await World.create({ systems: [spawn, double, doubleAgain] });
+    await using world = World.create();
     await world.run(spawn);
     await world.run(doubleAgain);
     const [entity] = world.query.select([value]);

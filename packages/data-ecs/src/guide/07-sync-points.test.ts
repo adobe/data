@@ -37,7 +37,7 @@ const count = System.create({ name: "guide/sync/count", components: { has: [unit
 const frame = System.composite({ name: "guide/sync/frame", systems: [spawn, count] });
 
 it("applies structural changes at the end of a run, as their net effect", async () => {
-    await using world = await World.create({ systems: [frame] });
+    await using world = World.create();
     await world.run(frame);
     // The spawn wasn't visible to a later system in the same run.
     expect(world.read.resource(counted)).toBe(0);
@@ -52,7 +52,7 @@ it("still applies the commands of a run whose system throws, then rejects", asyn
         commands.spawn({ [unit]: 2 });
         throw new Error("lost connection");
     });
-    await using world = await World.create({ systems: [fail] });
+    await using world = World.create();
     await expect(world.run(fail)).rejects.toThrow("lost connection");
     expect(world.query.count([unit])).toBe(1);
 });

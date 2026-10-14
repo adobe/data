@@ -35,7 +35,13 @@ declare module "@adobe/data-ecs" {
         "createTest/push": true;
         "createTest/main": true;
         "createTest/fail": true;
-        "createTest/edit": true;
+        "createTest/edit/net": true;
+        "createTest/edit/reuse": true;
+        "createTest/edit/rows": true;
+        "createTest/edit/hidden": true;
+        "createTest/edit/swap": true;
+        "createTest/edit/select": true;
+        "createTest/edit/symbols": true;
         "createTest/count": true;
         "createTest/probe": true;
         "createTest/missing": true;
@@ -43,6 +49,9 @@ declare module "@adobe/data-ecs" {
         "createTest/observer": true;
         "createTest/keys": true;
         "createTest/both": true;
+        "createTest/conflicted": true;
+        "createTest/named": true;
+        "createTest/copy": true;
     }
 }
 
@@ -93,7 +102,7 @@ const positions = (world: World): Vec2[] =>
 
 describe("World.create", () => {
     it("spawns once from a changed resource, then integrates", async () => {
-        const world = await World.create({ systems: [main] });
+        const world = World.create();
         await world.run(main);
         expect(positions(world)).toEqual([[0, 0], [1, 0], [2, 0]]);
         await world.run(main);
@@ -102,7 +111,7 @@ describe("World.create", () => {
     });
 
     it("reports each change to a system exactly once", async () => {
-        const world = await World.create({ systems: [main] });
+        const world = World.create();
         await world.run(main);
         // Spawned at the sync point, after watch ran: seen on the next run.
         expect(world.read.resource(seen)).toBe(0);
@@ -119,7 +128,7 @@ describe("World.create", () => {
     it("applies the net structural change of a sync point", async () => {
         let first = Entity.none;
         let second = Entity.none;
-        const edit = System.create({ name: "createTest/edit", input: { type: "string" } }, ({ input, commands }) => {
+        const edit = System.create({ name: "createTest/edit/net", input: { type: "string" } }, ({ input, commands }) => {
             if (input === "spawn") {
                 first = commands.spawn({ [velocity]: 1 });
                 second = commands.spawn({ [velocity]: 2 });
@@ -132,7 +141,7 @@ describe("World.create", () => {
                 commands.add(first, { [label]: "dead" });
             }
         });
-        const world = await World.create({ systems: [edit] });
+        const world = World.create();
         await world.run(edit, "spawn");
         expect(world.query.count([velocity])).toBe(2);
         await world.run(edit, "toggle");
@@ -143,11 +152,11 @@ describe("World.create", () => {
 
     it("reuses a despawned index only after a sync point, with a new generation", async () => {
         const spawned: Entity[] = [];
-        const edit = System.create({ name: "createTest/edit", input: { type: "string" } }, ({ input, commands }) => {
+        const edit = System.create({ name: "createTest/edit/reuse", input: { type: "string" } }, ({ input, commands }) => {
             if (input === "spawn") spawned.push(commands.spawn({ [velocity]: spawned.length }));
             else for (const entity of spawned) commands.despawn(entity);
         });
-        const world = await World.create({ systems: [edit] });
+        const world = World.create();
         await world.run(edit, "spawn");
         await world.run(edit, "despawn");
         await world.run(edit, "spawn");
@@ -160,11 +169,11 @@ describe("World.create", () => {
 
     it("keeps rows consistent across swap-removes and archetype growth", async () => {
         const spawned: Entity[] = [];
-        const edit = System.create({ name: "createTest/edit", input: { type: "string" } }, ({ input, commands }) => {
+        const edit = System.create({ name: "createTest/edit/rows", input: { type: "string" } }, ({ input, commands }) => {
             if (input === "spawn") for (let i = 0; i < 100; i++) spawned.push(commands.spawn({ [velocity]: i, [label]: `${i}` }));
             else for (let i = 0; i < 100; i += 3) commands.remove(spawned[i], label);
         });
-        const world = await World.create({ systems: [edit] });
+        const world = World.create();
         await world.run(edit, "spawn");
         await world.run(edit, "remove");
         spawned.forEach((entity, i) => {
@@ -175,19 +184,19 @@ describe("World.create", () => {
     });
 
     it("hides the resource entity from queries and commands", async () => {
-        const edit = System.create({ name: "createTest/edit", components: {} }, (row, { commands }) => {
+        const edit = System.create({ name: "createTest/edit/hidden", components: {} }, (row, { commands }) => {
             commands.despawn(row.entity);
         });
-        const world = await World.create({ systems: [edit] });
+        const world = World.create();
         expect(world.query.count([])).toBe(0);
         await world.run(edit);
         expect(world.read.resource(seen)).toBe(0);
     });
 
-    it("throws at registration on an unordered conflict", async () => {
+    it("throws at creating a composite with an unordered conflict, naming nothing", () => {
         const push = System.create({ name: "createTest/push", components: { write: [position] } }, row => { row[position] = [0, 0]; });
-        const conflicted = System.composite({ name: "createTest/main", systems: [move, push] });
-        await expect(World.create({ systems: [conflicted] })).rejects.toThrow('"createTest/move" and "createTest/push"');
+        expect(() => System.composite({ name: "createTest/conflicted", systems: [move, push] })).toThrow('"createTest/move" and "createTest/push"');
+        expect(System.get("createTest/conflicted")).toBeNull();
     });
 
     it("gives a body's context only the kinds its declaration declares", async () => {
@@ -196,7 +205,7 @@ describe("World.create", () => {
             keys = Object.keys(context);
             void context.resources[seen];
         });
-        const world = await World.create({ systems: [probe] });
+        const world = World.create();
         await world.run(probe);
         expect(keys).toEqual(["resources", "commands"]);
     });
@@ -204,7 +213,7 @@ describe("World.create", () => {
     it("rejects a key listed in both read and write, since write already makes it readable", async () => {
         // @ts-expect-error write already makes it readable
         const both = System.create({ name: "createTest/both", components: { read: [velocity], write: [velocity] } }, row => { row[velocity] += 1; });
-        await expect(World.create({ systems: [both] })).rejects.toThrow(`lists "createTest/velocity" in both components read and write`);
+        await expect(World.create().run(both)).rejects.toThrow(`lists "createTest/velocity" in both components read and write`);
     });
 
     it("rejects a run when a system throws, still applying its commands", async () => {
@@ -212,7 +221,7 @@ describe("World.create", () => {
             commands.spawn({ [velocity]: 1 });
             throw new Error("boom");
         });
-        const world = await World.create({ systems: [fail] });
+        const world = World.create();
         await expect(world.run(fail)).rejects.toThrow("boom");
         expect(world.query.count([velocity])).toBe(1);
     });
@@ -225,7 +234,7 @@ describe("World.create", () => {
         }, (_, { resources }) => {
             resources[seen] += 1;
         });
-        const world = await World.create({ systems: [spawn, count] });
+        const world = World.create();
         await world.run(spawn);
         await world.run(count);
         expect(world.read.resource(seen)).toBe(3);
@@ -240,21 +249,21 @@ describe("World.create", () => {
             // @ts-expect-error an untyped caller can pass any number
             found = any(1);
         });
-        const world = await World.create({ systems: [probe] });
+        const world = World.create();
         await world.run(probe);
         expect(found).toBeNull();
     });
 
-    it("undoes a registration whose kernels fail to load", async () => {
+    it("undoes a registration whose kernels fail to load, so the next run tries again", async () => {
         const world = World.create();
-        await expect(world.systems.register(missing)).rejects.toThrow();
-        expect(() => world.run(missing)).toThrow("isn't registered");
-        expect(world.systems.get("createTest/missing")).toBeNull();
+        await expect(world.run(missing)).rejects.toThrow();
+        await expect(world.run(missing)).rejects.toThrow();
+        await world.run(spawn);
     });
 
     it("sees a change moved into an older chunk by a swap-remove", async () => {
         const spawned: Entity[] = [];
-        const edit = System.create({ name: "createTest/edit", input: { type: "string" } }, ({ input, commands }) => {
+        const edit = System.create({ name: "createTest/edit/swap", input: { type: "string" } }, ({ input, commands }) => {
             if (input === "spawn") for (let i = 0; i < 2100; i++) spawned.push(commands.spawn({ [velocity]: i }));
             else commands.despawn(spawned[5]);
         });
@@ -265,7 +274,7 @@ describe("World.create", () => {
         const observer = System.create({ name: "createTest/observer", components: { read: [velocity], changed: [velocity] } }, row => {
             changes.push(row[velocity]);
         });
-        const world = await World.create({ systems: [edit, writer, observer] });
+        const world = World.create();
         await world.run(edit, "spawn");
         await world.run(observer);
         changes.length = 0;
@@ -277,10 +286,10 @@ describe("World.create", () => {
     });
 
     it("selects with where and order", async () => {
-        const edit = System.create({ name: "createTest/edit" }, ({ commands }) => {
+        const edit = System.create({ name: "createTest/edit/select" }, ({ commands }) => {
             for (let i = 0; i < 10; i++) commands.spawn({ [position]: [i % 3, i], [velocity]: i });
         });
-        const world = await World.create({ systems: [edit] });
+        const world = World.create();
         await world.run(edit);
         const velocities = (entities: readonly Entity[]): (number | null)[] => entities.map(entity => world.read.component(entity, velocity));
         expect(velocities(world.query.select([velocity], { where: { [velocity]: { "<": 3 } } }))).toEqual([0, 1, 2]);
@@ -294,24 +303,38 @@ describe("World.create", () => {
 
     it("spawns components named by symbols", async () => {
         let spawned = Entity.none;
-        const edit = System.create({ name: "createTest/edit" }, ({ commands }) => {
+        const edit = System.create({ name: "createTest/edit/symbols" }, ({ commands }) => {
             spawned = commands.spawn({ [velocity]: 2, [marker]: 7 });
         });
-        const world = await World.create({ systems: [edit] });
+        const world = World.create();
         await world.run(edit);
         expect(world.read.entity(spawned, [velocity, marker])).toEqual({ [velocity]: 2, [marker]: 7 });
     });
 
-    it("refuses runs as soon as dispose is called", () => {
-        const world = World.create();
-        void world.dispose();
-        expect(() => world.run(main)).toThrow("disposed");
+    it("starts resources at values given at creation, in place of their defaults", async () => {
+        const world = World.create({ resources: { [spawnCount]: 2 } });
+        expect(world.read.resource(spawnCount)).toBe(2);
+        await world.run(spawn);
+        expect(world.query.count([velocity])).toBe(2);
+        expect(World.create().read.resource(spawnCount)).toBe(3);
+        // @ts-expect-error resources takes only resource names
+        expect(() => World.create({ resources: { [velocity]: 1 } })).toThrow(`"createTest/velocity" isn't a registered resource`);
     });
 
-    it("throws for an unregistered system and after dispose", async () => {
+    it("finds systems by name, and a copy once it has run", async () => {
+        const named = System.create({ name: "createTest/named" }, () => {});
+        expect(System.get("createTest/named")).toBe(named);
+        expect(System.get("createTest/main")).toBe(main);
+        expect(() => System.create({ name: "createTest/named" }, () => {})).toThrow('A different system, rule or finalizer named "createTest/named" already exists');
+        const copy = { ...named, declaration: { ...named.declaration, name: "createTest/copy" } } as const;
+        expect(System.get("createTest/copy")).toBeNull();
+        await World.create().run(copy);
+        expect(System.get("createTest/copy")).toBe(copy);
+    });
+
+    it("refuses runs as soon as dispose is called", async () => {
         const world = World.create();
-        expect(() => world.run(main)).toThrow("isn't registered");
-        await world.dispose();
-        await expect(world.systems.register(main)).rejects.toThrow("disposed");
+        void world.dispose();
+        await expect(world.run(main)).rejects.toThrow("disposed");
     });
 });

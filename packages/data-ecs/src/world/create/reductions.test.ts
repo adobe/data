@@ -43,6 +43,7 @@ declare module "@adobe/data-ecs" {
         "reductionsTest/body": true;
         "reductionsTest/filtered": true;
         "reductionsTest/reader": true;
+        "reductionsTest/reader/2": true;
         "reductionsTest/heavy": true;
         "reductionsTest/light": true;
         "reductionsTest/frame": true;
@@ -50,6 +51,12 @@ declare module "@adobe/data-ecs" {
         "reductionsTest/changed": true;
         "reductionsTest/weigh": true;
         "reductionsTest/other": true;
+        "reductionsTest/both": true;
+        "reductionsTest/other/2": true;
+        "reductionsTest/other/3": true;
+        "reductionsTest/other/4": true;
+        "reductionsTest/other/5": true;
+        "reductionsTest/other/6": true;
         "reductionsTest/flags": true;
         "reductionsTest/infinite": true;
     }
@@ -151,7 +158,6 @@ describe("reductions", () => {
     for (const { label, system, wasm } of cases) {
         it(`fold every row's contributions into their resources (${label})`, async () => {
             const world = createWorld({ workers: 0, wasm });
-            await world.systems.register(spawn, system);
             await world.run(spawn);
             await world.run(system);
             const want = expected();
@@ -167,7 +173,6 @@ describe("reductions", () => {
 
     it("fold every contributor in a run, start each run again, and give readers the finished fold", async () => {
         const world = createWorld({ workers: 0 });
-        await world.systems.register(spawn, frame);
         await world.run(spawn);
         // The reader is listed first, yet runs after both contributors.
         await world.run(frame);
@@ -188,7 +193,6 @@ describe("reductions", () => {
             if (fail) throw new Error("contributor failed");
         });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(spawn, fails, filtered, lightMass);
         await world.run(spawn);
         await world.run(fails);
         const before = world.read.resource(total);
@@ -205,7 +209,6 @@ describe("reductions", () => {
 
     it("fold to the identity over no rows, an empty min of integers as the type's extreme", async () => {
         const world = createWorld({ workers: 0 });
-        await world.systems.register(filtered);
         await world.run(filtered);
         expect(world.read.resource(total)).toBe(0);
         expect(world.read.resource(least)).toBe(0xFFFFFFFF);
@@ -214,7 +217,6 @@ describe("reductions", () => {
 
     it("fold only the rows a contributor's change filters pass", async () => {
         const world = createWorld({ workers: 0 });
-        await world.systems.register(spawn, weigh, kernelChanged);
         await world.run(spawn);
         await world.run(kernelChanged);
         expect(world.read.resource(total)).toBe(masses(() => true));
@@ -229,9 +231,8 @@ describe("reductions", () => {
 
     it("stamp their resources changed only when the fold differs", async () => {
         let ran = 0;
-        const watcher = System.create({ name: "reductionsTest/reader", components: { has: [mass] }, resources: { changed: [total] } }, () => { ran++; });
+        const watcher = System.create({ name: "reductionsTest/reader/2", components: { has: [mass] }, resources: { changed: [total] } }, () => { ran++; });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(spawn, kernel, watcher);
         await world.run(spawn);
         await world.run(kernel);
         await world.run(watcher);
@@ -248,7 +249,6 @@ describe("reductions", () => {
             reduce[wrapped](Infinity);
         });
         const world = createWorld({ workers: 0 });
-        await world.systems.register(spawn, infinite);
         await world.run(spawn);
         await world.run(infinite);
         expect(world.read.resource(wrapped)).toBe(0);
@@ -257,7 +257,6 @@ describe("reductions", () => {
 
     it("fold booleans bitwise", async () => {
         const world = createWorld({ workers: 0 });
-        await world.systems.register(spawn, flags);
         await world.run(spawn);
         await world.run(flags);
         expect(world.read.resource(any)).toBe(true);
@@ -269,29 +268,31 @@ describe("reductions", () => {
         expect(() => Resource.register(summed, { type: { type: "boolean", default: false }, reduce: "+" })).toThrow(`booleans reduce with "&", "|" or "^"`);
         // @ts-expect-error a contributor repeats its resource's operator
         const mismatched = System.create({ name: "reductionsTest/other", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); });
-        await expect(createWorld({ workers: 0 }).systems.register(mismatched)).rejects.toThrow(`reduces "reductionsTest/total" with "max", but it's declared reduce: "+"`);
+        await expect(createWorld({ workers: 0 }).run(mismatched)).rejects.toThrow(`reduces "reductionsTest/total" with "max", but it's declared reduce: "+"`);
         // @ts-expect-error only a resource with a reduce trait is reduced
-        const plain = System.create({ name: "reductionsTest/other", components: { has: [mass] }, reduce: { [level]: "+" } }, (_, { reduce }) => { reduce[level](1); });
-        await expect(createWorld({ workers: 0 }).systems.register(plain)).rejects.toThrow(`reduces "reductionsTest/level", which has no reduce trait`);
+        const plain = System.create({ name: "reductionsTest/other/2", components: { has: [mass] }, reduce: { [level]: "+" } }, (_, { reduce }) => { reduce[level](1); });
+        await expect(createWorld({ workers: 0 }).run(plain)).rejects.toThrow(`reduces "reductionsTest/level", which has no reduce trait`);
         // @ts-expect-error a reduced resource is never written
-        const writing = System.create({ name: "reductionsTest/other", resources: { write: [total] } }, ({ resources }) => { resources[total] = 1; });
-        await expect(createWorld({ workers: 0 }).systems.register(writing)).rejects.toThrow(`writes "reductionsTest/total", which is reduced`);
+        const writing = System.create({ name: "reductionsTest/other/3", resources: { write: [total] } }, ({ resources }) => { resources[total] = 1; });
+        await expect(createWorld({ workers: 0 }).run(writing)).rejects.toThrow(`writes "reductionsTest/total", which is reduced`);
         // @ts-expect-error a contributor doesn't read what it reduces into
-        const reading = System.create({ name: "reductionsTest/other", components: { has: [mass] }, resources: { read: [total] }, reduce: { [total]: "+" } }, (_, { resources, reduce }) => { reduce[total](resources[total]); });
-        await expect(createWorld({ workers: 0 }).systems.register(reading)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
+        const reading = System.create({ name: "reductionsTest/other/4", components: { has: [mass] }, resources: { read: [total] }, reduce: { [total]: "+" } }, (_, { resources, reduce }) => { reduce[total](resources[total]); });
+        await expect(createWorld({ workers: 0 }).run(reading)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
         // @ts-expect-error nor filters on it
-        const filtering = System.create({ name: "reductionsTest/other", components: { has: [mass] }, resources: { changed: [total] }, reduce: { [total]: "+" } }, (_, { reduce }) => { reduce[total](1); });
-        await expect(createWorld({ workers: 0 }).systems.register(filtering)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
+        const filtering = System.create({ name: "reductionsTest/other/5", components: { has: [mass] }, resources: { changed: [total] }, reduce: { [total]: "+" } }, (_, { reduce }) => { reduce[total](1); });
+        await expect(createWorld({ workers: 0 }).run(filtering)).rejects.toThrow(`reduces "reductionsTest/total", so it can't also read, write or filter on it`);
     });
 
     it("leave nothing subscribed to sync points from a registration that failed", () => {
         const state = createState(true);
         const registrar = createRegistrar(state);
         // @ts-expect-error a contributor repeats its resource's operator
-        const mismatched = System.create({ name: "reductionsTest/other", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); });
-        expect(() => registrar.register([kernel, mismatched])).toThrow(`but it's declared reduce: "+"`);
+        const mismatched = System.create({ name: "reductionsTest/other/6", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); });
+        // @ts-expect-error the mismatched member doesn't type-check, so neither does its composite
+        const both = System.composite({ name: "reductionsTest/both", systems: [kernel, mismatched] });
+        expect(() => registrar.register(both)).toThrow(`but it's declared reduce: "+"`);
         expect(state.afterSync.size).toBe(0);
-        registrar.register([kernel]).rollback();
+        registrar.register(kernel).rollback();
         expect(state.afterSync.size).toBe(0);
     });
 });

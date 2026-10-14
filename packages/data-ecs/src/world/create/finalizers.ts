@@ -266,7 +266,7 @@ export const finalizeAll = (state: State): unknown[] => {
  * Finalizers in run order: `before` and `after` first, then registration order. Throws for a cycle, and for two that
  * both write a resource, or where one reads what the other writes, with no ordering between them.
  */
-export const orderFinalizers = (runners: readonly FinalizerRunner[]): FinalizerRunner[] => {
+export const orderFinalizers = <T extends { readonly name: string; readonly finalizer: Finalizer }>(runners: readonly T[]): T[] => {
     const indexByName = new Map(runners.map((runner, index) => [runner.name, index]));
     const successors = runners.map(() => new Set<number>());
     runners.forEach((runner, index) => {

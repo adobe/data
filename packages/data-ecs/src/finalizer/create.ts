@@ -1,3 +1,4 @@
+import { addFinalizer } from '../world/create/program.js';
 import type { Resource } from '../resource/resource.js';
 import type { Listed, Property } from '../system/property.js';
 import type { ChangeSet, Context, Row, Watched } from './body.js';
@@ -11,14 +12,28 @@ type Ordering<N> = { readonly before?: readonly Exclude<Name, N>[]; readonly aft
 type Validate<D extends Declaration | ChangesDeclaration> = Ordering<D["name"]>
     & { readonly resources?: { readonly read?: readonly Exclude<Resource.Name, Listed<Property<D, "resources">, "write">>[] } };
 
-/** Declares a finalizer for each entity that stops matching its components. Returns it as data; nothing runs. */
+/**
+ * Declares a finalizer for each entity that stops matching its components, which applies in every world. Returns it
+ * as data. Throws if a different system, rule or finalizer has its name, or the program's finalizers can't be ordered.
+ */
 export const create = <const D extends Declaration>(
     declaration: D & Validate<D>,
     body: (row: Row<D>, context: Context<D>) => void,
-): Leaf<D> => ({ kind: "finalizer", declaration, body });
+): Leaf<D> => {
+    const finalizer: Leaf<D> = { kind: "finalizer", declaration, body };
+    addFinalizer(finalizer);
+    return finalizer;
+};
 
-/** Declares a finalizer of each sync point's structural changes. Returns it as data; nothing runs. */
+/**
+ * Declares a finalizer of each sync point's structural changes, which applies in every world. Returns it as data.
+ * Throws as `create` does.
+ */
 export const changes = <const D extends ChangesDeclaration>(
     declaration: D & Validate<D>,
     body: (changes: ChangeSet<Watched<D>>, context: Context<D>) => void,
-): Changes<D> => ({ kind: "changes", declaration, body });
+): Changes<D> => {
+    const finalizer: Changes<D> = { kind: "changes", declaration, body };
+    addFinalizer(finalizer);
+    return finalizer;
+};

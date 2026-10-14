@@ -50,7 +50,7 @@ const count = System.create({ name: "guide/systems/count", resources: { write: [
 });
 
 it("runs a body for each row its components match", async () => {
-    await using world = await World.create({ systems: [spawn, move, count] });
+    await using world = World.create();
     await world.run(spawn);
     await world.run(move);
     expect(world.query.select([position], { not: [frozen] }).map(entity => world.read.component(entity, position))).toEqual([[1, 0, 0]]);

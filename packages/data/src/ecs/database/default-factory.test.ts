@@ -75,6 +75,48 @@ describe("insert-time default-factory (full plugin chain)", () => {
     });
 });
 
+// An index whose key or order reads a default-factory column must file the row
+// under the value the archetype MINTED, not the omitted insert payload.
+describe("indexes over a default-factory component", () => {
+    const indexedPlugin = Database.Plugin.create({
+        components: { guid, value },
+        archetypes: { Node: ["guid", "value"] } as const,
+        indexes: {
+            byValue: { key: "value", order: { by: ["guid"] } },
+            byGuid: { key: "guid" },
+        },
+        transactions: {
+            addNode(t, args: { value: number }) {
+                return t.archetypes.Node.insert(args);
+            },
+            adoptNode(t, args: { value: number; guid: number }) {
+                return t.archetypes.Node.insert(args);
+            },
+        },
+    });
+
+    const create = () => {
+        let next = 1000;
+        return Database.create(indexedPlugin, { defaultFactories: { guid: () => next-- } });
+    };
+
+    it("orders a row with a minted default-factory value on insert", () => {
+        const db = create();
+        const minted = db.transactions.addNode({ value: 1 }); // guid 1000
+        const supplied = db.transactions.adoptNode({ value: 1, guid: 2000 });
+        const mintedLater = db.transactions.addNode({ value: 1 }); // guid 999
+
+        expect(db.indexes.byValue.find({ value: 1 })).toEqual([mintedLater, minted, supplied]);
+    });
+
+    it("keys a row by a minted default-factory value on insert", () => {
+        const db = create();
+        const minted = db.transactions.addNode({ value: 1 }); // guid 1000
+
+        expect(db.indexes.byGuid.find({ guid: 1000 })).toEqual([minted]);
+    });
+});
+
 // Compile-time checks — the payoff for consumers: inside a transaction / system
 // body (the mutable store `t`), default-factory components are optional at insert
 // while every other component stays required. This is the shape the ~30 insert

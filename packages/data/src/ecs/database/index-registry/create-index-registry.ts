@@ -74,8 +74,10 @@ export interface IndexRegistry {
     /**
      * Reflect a single insert into the entity's archetype. Dispatches to only
      * the indexes applicable to that archetype — O(applicable), not O(indexes).
+     * Reads the STORED row rather than taking the insert payload: the archetype
+     * mints `defaultFactory` components the payload omits.
      */
-    applyInsert(entity: Entity, archetype: IndexableArchetype, values: Readonly<Record<string, unknown>>): void;
+    applyInsert(entity: Entity, archetype: IndexableArchetype): void;
     /**
      * Reflect a single update by re-reading the entity's full values. `from`
      * is the archetype before the update, `to` the archetype after (they
@@ -239,9 +241,13 @@ export const createIndexRegistry = (
         return "<index>";
     };
 
-    const applyInsert = (entity: Entity, archetype: IndexableArchetype, values: Readonly<Record<string, unknown>>): void => {
+    const applyInsert = (entity: Entity, archetype: IndexableArchetype): void => {
         if (indexes.size === 0) return;
-        for (const idx of indexesFor(archetype)) idx.add(entity, values);
+        const applicable = indexesFor(archetype);
+        if (applicable.length === 0) return;
+        const values = read(entity);
+        if (values === null) return;
+        for (const idx of applicable) idx.add(entity, values);
     };
 
     const applyUpdate = (entity: Entity, from: IndexableArchetype | null, to: IndexableArchetype | null): void => {

@@ -98,9 +98,10 @@ export function createStore<
     // delete). Higher layers (`db.indexes`, `t.indexes`) expose this same
     // map by reference.
     //
-    // The reader is only used for `applyUpdate` — the patch passed to
-    // `store.update` may omit components an index covers, so the registry
-    // re-reads the full record to recompute the key. Seeding goes through
+    // The reader serves `applyInsert` and `applyUpdate` — an insert payload may
+    // omit `defaultFactory` components the archetype mints, and an update patch
+    // may omit components an index covers, so the registry re-reads the stored
+    // record to compute the key. Seeding goes through
     // `seedIndexFromArchetypes` instead (see below).
     const indexRegistry = createIndexRegistry(
         // `core.read` already excludes `id` (the identity is never a useful index
@@ -266,7 +267,7 @@ export function createStore<
             // the applicable indexes.
             indexRegistry.checkUniqueAvailableForInsert(archetype, values);
             const entity = rawInsert(values);
-            indexRegistry.applyInsert(entity, archetype, values);
+            indexRegistry.applyInsert(entity, archetype);
             return entity;
         };
     };

@@ -1,6 +1,6 @@
 import { declarationOf } from '../../registry/create-registry.js';
 import type { Leaf } from '../../system/leaf.js';
-import type { Definition } from '../../system/definition.js';
+import { requireDefinition, type Definition } from '../../system/definition.js';
 import { createRunner, type Runner } from './runner.js';
 import { checkLeaf, isLeaf, reducedBy, scheduleOf, type Schedule } from './schedule.js';
 import { idOf, type Key, type State } from './state.js';
@@ -27,7 +27,7 @@ const systemsOf = (root: Definition): Definition[] => {
     const visit = (system: Definition): void => {
         if (all.has(system)) return;
         all.add(system);
-        if (!isLeaf(system)) for (const member of system.declaration.systems) visit(member);
+        if (!isLeaf(system)) for (const member of system.declaration.systems) visit(requireDefinition(member));
     };
     visit(root);
     return [...all];

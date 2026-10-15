@@ -82,7 +82,7 @@ Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L4-L38).
 - **Registration must match the declaration**, trait for trait, with `type` a schema for the declared type. Otherwise it doesn't compile.
 - **`World.create()` returns the world,** and `await using` disposes it. `World.create({ resources: { [gravity]: -1.6 } })` starts resources at other values than their defaults.
 - **Systems register in a world on their first run there,** which validates them and loads their kernels; the run rejects if that fails. Rules and finalizers apply in every world (sections 13 and 16).
-- **A system is its name:** `System.create` returns `{ name }`, typed with the input `run` takes with it. The world keeps the declaration and body.
+- **A system is its name:** what `System.create` returns is typed as its `name` and the input `run` takes with it, nothing more.
 - **Names are program-wide:** `System.get(name)` finds a system by its name, and a second system, rule or finalizer with a name throws when it's created.
 - **`Entity` is a branded number.** `Entity.none` names no entity: it's what zeroed memory and entity defaults hold, and a lookup of it returns null.
 - **Rejected:** a duplicate name, across components, resources and traits, at registration.
@@ -458,7 +458,7 @@ Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L61-L10
 - **Built-in components:** `component`, `persistent` and `shared` are tags in [`src/components/`](src/components/).
 - **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value`, `With` and `Where`; `Resource.Name` and `Value`; `System`, `System.Name` and `System.Commands`; and `World`. Everything else is inferred from the values the API returns.
 - **Emitted declarations:** a library that exports those values emits declarations naming the package's own modules, through `@adobe/data-ecs/internal/*`, which holds types only. Code imports from `@adobe/data-ecs`.
-- **Constructors:** `System.create`, `System.render` and `System.composite` return a system, `{ name }`. `Rule.create`, `Finalizer.create` and `Finalizer.changes` return nothing; they apply in every world.
+- **Constructors:** `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Rule.create`, `Finalizer.create` and `Finalizer.changes` return nothing; they apply in every world.
 - **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/system/system.type-test.ts), [`world.type-test.ts`](src/world/world.type-test.ts), [`rule.type-test.ts`](src/rule/rule.type-test.ts), [`trait.type-test.ts`](src/trait/trait.type-test.ts).
 - **The contract and its reasoning:** [`design.md`](design.md).
 - **A complete application:** the [particle sample](src/sample/particles.ts), run by [`particles.test.ts`](src/sample/particles.test.ts), and its [GPU version](src/sample/gpu/).

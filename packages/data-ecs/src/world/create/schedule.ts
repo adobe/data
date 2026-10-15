@@ -1,6 +1,6 @@
 import type { Composite } from '../../system/composite.js';
 import type { Leaf } from '../../system/leaf.js';
-import type { Definition } from '../../system/definition.js';
+import { requireDefinition, type Definition } from '../../system/definition.js';
 import type { Key } from './state.js';
 
 /**
@@ -62,7 +62,7 @@ const flatten = (root: Definition): { readonly entries: readonly Entry[]; readon
     };
 
     const visitComposite = (composite: Composite, constraints: readonly Constraints[]): readonly number[] =>
-        composite.declaration.systems.flatMap(member => visit(member, constraints));
+        composite.declaration.systems.flatMap(member => visit(requireDefinition(member), constraints));
 
     visit(root, []);
     return { entries, expand };

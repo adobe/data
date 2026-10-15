@@ -23,11 +23,10 @@ declare module "@adobe/data-ecs" {
 }
 
 describe("Component.register", () => {
-    it("registers a frozen declaration", () => {
+    it("registers the declaration", () => {
         Component.register(parent, { type: Entity.schema, reference: "owner" });
         const declaration = Component.declaration(parent);
         expect(declaration).toEqual({ type: Entity.schema, reference: "owner" });
-        expect(Object.isFrozen(declaration)).toBe(true);
         expect(Component.declaration("persistent")).toEqual({ type: { const: true } });
     });
     it("rejects a duplicate name", () => {

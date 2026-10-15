@@ -1,7 +1,7 @@
 import type { Component } from '../component/component.js';
 import { claim } from '../world/create/program.js';
 import type { Body } from './body.js';
-import { define, type Definition } from './definition.js';
+import type { Leaf } from './leaf.js';
 import type { LinearComponent } from './linear.js';
 import type { Name } from './name.js';
 import type { System } from './system.js';
@@ -52,11 +52,12 @@ export const render = <const D extends RenderDeclaration>(
     declaration: D,
     body: Body<Rendered<D>>,
 ): System<D["name"]> => {
-    const definition: Definition = {
+    const system: Leaf & System<D["name"]> = {
         kind: "render",
+        name: declaration.name,
         declaration: { ...declaration, components: { ...declaration.components, read: [...new Set(Object.values(declaration.shader.accessors))] } },
         body,
     };
-    claim(definition);
-    return define(declaration.name, definition);
+    claim(system);
+    return system;
 };

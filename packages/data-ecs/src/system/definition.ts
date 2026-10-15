@@ -3,22 +3,19 @@ import type { Leaf } from './leaf.js';
 import type { Name } from './name.js';
 import type { System } from './system.js';
 
-/** What the implementation knows of a system: its kind, declaration and body. */
+/** What the implementation knows of a system: the value a constructor returned, with its kind, declaration and body. */
 export type Definition = Leaf | Composite;
 
-const definitions = new WeakMap<object, Definition>();
-const systems = new WeakMap<Definition, System<Name, unknown>>();
-
-/** The system a constructor returns for a definition: its name, frozen. `I` is the input its declaration takes. */
-export const define = <N extends Name, I>(name: N, definition: Definition): System<N, I> => {
-    const system = Object.freeze({ name });
-    definitions.set(system, definition);
-    systems.set(definition, system);
-    return system;
-};
+/** Only constructors make values with a system's kind and a declaration. */
+const isDefinition = (system: System<Name, unknown>): system is System<Name, unknown> & Definition =>
+    "declaration" in system && "kind" in system && (system.kind === "system" || system.kind === "render" || system.kind === "composite");
 
 /** A system's definition, or undefined for a value no constructor returned. */
-export const definitionOf = (system: System<Name, unknown>): Definition | undefined => definitions.get(system);
+export const definitionOf = (system: System<Name, unknown>): Definition | undefined => isDefinition(system) ? system : undefined;
 
-/** The system a constructor returned for a definition. */
-export const systemOf = (definition: Definition): System<Name, unknown> | undefined => systems.get(definition);
+/** A system's definition. Throws for a value no constructor returned. */
+export const requireDefinition = (system: System<Name, unknown>): Definition => {
+    const definition = definitionOf(system);
+    if (definition === undefined) throw new Error(`"${String(system.name)}" isn't a system a System constructor returned.`);
+    return definition;
+};

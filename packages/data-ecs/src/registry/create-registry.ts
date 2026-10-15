@@ -15,7 +15,7 @@ export type Registry<D> = {
      * already declared, a trait isn't registered, or the schema declares a GPU layout it can't meet.
      */
     readonly register: <K extends keyof D & (string | symbol)>(name: K, declaration: D[K]) => void;
-    /** The frozen declaration of a registered name. */
+    /** The declaration of a registered name. */
     readonly declaration: (name: keyof D & (string | symbol)) => AnyDeclaration | undefined;
 };
 
@@ -55,7 +55,7 @@ export const createRegistry = <D extends { readonly [K in keyof D]: AnyDeclarati
             }
         }
         declareName(name, kind);
-        registered.set(name, Object.freeze({ ...declaration }));
+        registered.set(name, declaration);
         if (typeof name === "symbol") symbolNames = true;
     };
     return { register, declaration: name => registered.get(name) };

@@ -28,8 +28,8 @@ Component.register(value, { type: { type: "number" } });
 Component.register(other, { type: { type: "number" } });
 
 /** Systems built as values, so each test can reuse names without claiming them program-wide. */
-const leaf = (declaration: Declaration): Leaf => ({ kind: "system", declaration, body: () => {} });
-const composite = (declaration: Composite["declaration"]): Composite => ({ kind: "composite", declaration });
+const leaf = (declaration: Declaration): Leaf => ({ kind: "system", name: declaration.name, declaration, body: () => {} });
+const composite = (declaration: Composite["declaration"]): Composite => ({ kind: "composite", name: declaration.name, declaration });
 
 const names = (system: Definition): string[][] => scheduleOf(system).tiers.map(tier => tier.map(leaf => leaf.declaration.name));
 

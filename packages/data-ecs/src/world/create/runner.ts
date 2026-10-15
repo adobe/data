@@ -1,6 +1,5 @@
 import type { Leaf } from '../../system/leaf.js';
 import type { Archetype } from './archetype.js';
-import { systemOf } from '../../system/definition.js';
 import { kernelOf } from './attach-kernel.js';
 import { readCell } from './cells.js';
 import { createCommands } from './commands.js';
@@ -82,8 +81,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const filtered = addedIds.length + changedIds.length + resourceChanged.length > 0;
     let kernel: BoundKernel | null = null;
     if (declaration.kernel !== undefined) {
-        const system = systemOf(leaf);
-        const description = system === undefined ? undefined : kernelOf(system);
+        const description = kernelOf(leaf);
         if (description === undefined) throw new Error(`System "${declaration.name}" is a kernel but wasn't compiled; add kernelPlugin() to the Vite config.`);
         kernel = bindKernel(state, leaf, description);
     }

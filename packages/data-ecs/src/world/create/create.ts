@@ -3,7 +3,7 @@ import type { Entity } from '../../entity/entity.js';
 import type { Finalizer } from '../../finalizer/created.js';
 import type { Rule } from '../../rule/created.js';
 import type { Resource } from '../../resource/resource.js';
-import { definitionOf, type Definition } from '../../system/definition.js';
+import { requireDefinition, type Definition } from '../../system/definition.js';
 import type { World } from '../world.js';
 import type { GpuOptions } from '../gpu.js';
 import { createGpu } from './gpu.js';
@@ -120,8 +120,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
             let definition: Definition | undefined;
             try {
                 checkLive();
-                definition = definitionOf(system);
-                if (definition === undefined) throw new Error("World.run takes a system a System constructor returned.");
+                definition = requireDefinition(system);
                 // A system registers in the world the first time it runs here.
                 if (registrar.registered(definition) === undefined) registration = registrar.register(definition);
             }

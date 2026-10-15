@@ -273,8 +273,8 @@ export const orderFinalizers = <T extends { readonly name: string; readonly fina
     const successors = runners.map(() => new Set<number>());
     runners.forEach((runner, index) => {
         const { before, after } = runner.finalizer.declaration;
-        for (const name of before ?? []) { const other = indexByName.get(name); if (other !== undefined) successors[index].add(other); }
-        for (const name of after ?? []) { const other = indexByName.get(name); if (other !== undefined) successors[other].add(index); }
+        for (const { name } of before ?? []) { const other = indexByName.get(name); if (other !== undefined) successors[index].add(other); }
+        for (const { name } of after ?? []) { const other = indexByName.get(name); if (other !== undefined) successors[other].add(index); }
     });
     const incoming = runners.map(() => 0);
     for (const next of successors) for (const other of next) incoming[other]++;

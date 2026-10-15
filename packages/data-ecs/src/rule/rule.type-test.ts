@@ -44,12 +44,21 @@ Rule.create({ name: "ruleTypeTest/slots", components: { has: [source], not: [hid
 // @ts-expect-error a rule derives only derived components
 Rule.create({ name: "ruleTypeTest/slots", components: { has: [source] }, derive: [source] });
 
+// A finalizer's context holds only what it declares, and its commands.
+const other = Finalizer.create({ name: "ruleTypeTest/other", components: { read: [source] } }, (_, context) => {
+    // @ts-expect-error no resources declared
+    void context.resources;
+    // @ts-expect-error no lookups declared
+    void context.lookup;
+    void context.commands;
+});
+
 // Per-query finalizers read the stopping row; it's read-only.
 Finalizer.create({
     name: "ruleTypeTest/release",
     components: { read: [slot, parent], not: [hidden] },
     resources: { read: [time] },
-    after: ["ruleTypeTest/other"],
+    after: [other],
 }, (row, { resources, commands }) => {
     const value: number = row[slot];
     const target: Entity = row[parent];
@@ -63,14 +72,6 @@ Finalizer.create({
     resources[time] = 0;
     void value; void now;
 });
-// A finalizer's context holds only what it declares, and its commands.
-Finalizer.create({ name: "ruleTypeTest/other", components: { read: [source] } }, (_, context) => {
-    // @ts-expect-error no resources declared
-    void context.resources;
-    // @ts-expect-error no lookups declared
-    void context.lookup;
-    void context.commands;
-});
 Finalizer.create({
     name: "ruleTypeTest/other",
     components: {},
@@ -78,7 +79,7 @@ Finalizer.create({
     resources: { read: [time], write: [time] },
 }, () => {});
 // @ts-expect-error a finalizer can't order itself
-Finalizer.create({ name: "ruleTypeTest/other", components: {}, before: ["ruleTypeTest/other"] }, () => {});
+Finalizer.create({ name: "ruleTypeTest/other", components: {}, before: [other] }, () => {});
 
 // Changes finalizers see only the essential components they watch.
 Finalizer.changes({ name: "ruleTypeTest/save", watch: [source, parent] }, (changes, { commands }) => {
@@ -104,10 +105,9 @@ System.create({ name: "ruleTypeTest/move", components: { read: [parent], write: 
 System.create({ name: "ruleTypeTest/move", components: { write: [parent] } }, () => {});
 check<Equal<Extract<Writable, typeof parent | typeof source>, typeof source>>();
 
-// Rules and finalizers return nothing: no API takes them.
+// A rule returns nothing, since nothing references one; a finalizer is its name, for ordering others.
 check<Equal<ReturnType<typeof Rule.create>, void>>();
-check<Equal<ReturnType<typeof Finalizer.create>, void>>();
-check<Equal<ReturnType<typeof Finalizer.changes>, void>>();
+check<Equal<typeof other, Finalizer<"ruleTypeTest/other">>>();
 
 // Rules and finalizers apply in every world.
 export const created: World = World.create();

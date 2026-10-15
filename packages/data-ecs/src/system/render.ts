@@ -35,9 +35,9 @@ type RenderDeclaration = {
     readonly components?: { readonly has?: readonly Component.Name[]; readonly not?: readonly Component.Name[] };
     readonly resources?: { readonly read?: readonly Resource.Name[] };
     readonly shader: Shader;
-    readonly before?: readonly Name[];
-    readonly after?: readonly Name[];
-    readonly during?: readonly Name[];
+    readonly before?: readonly System<Name, unknown>[];
+    readonly after?: readonly System<Name, unknown>[];
+    readonly during?: readonly System<Name, unknown>[];
 };
 
 /** A render declaration with the components its accessors name as `components.read`. */

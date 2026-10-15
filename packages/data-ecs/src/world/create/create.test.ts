@@ -73,7 +73,7 @@ const spawn = System.create({
 const move = System.create({
     name: "createTest/move",
     components: { read: [velocity], write: [position], not: [frozen] },
-    after: ["createTest/spawn"],
+    after: [spawn],
 }, row => {
     const [x, y] = row[position];
     row[position] = [x, y + row[velocity]];
@@ -84,7 +84,7 @@ const watch = System.create({
     name: "createTest/watch",
     components: { changed: [position] },
     resources: { write: [seen] },
-    after: ["createTest/move"],
+    after: [move],
 }, (_, { resources }) => {
     resources[seen] += 1;
 });

@@ -95,7 +95,7 @@ const split = System.create({
     name: "workersTest/split",
     kernel: "cpu",
     components: { read: [position], has: [velocity] },
-    after: ["workersTest/integrate"],
+    after: [integrate],
 }, (row, { commands }) => {
     const [x, y] = row[position];
     if (y > 3) {
@@ -110,7 +110,7 @@ const follow = System.create({
     kernel: "cpu",
     components: { read: [position, target], write: [offset] },
     lookup: { targets: { read: [position] } },
-    after: ["workersTest/split"],
+    after: [split],
 }, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
     const [x] = row[position];

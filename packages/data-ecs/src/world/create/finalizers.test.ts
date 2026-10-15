@@ -193,8 +193,8 @@ describe("finalizers", () => {
 
     it("run in their order, and a throw still applies the sync point, then rejects the run", async () => {
         const order: string[] = [];
-        Finalizer.create({ name: "finalizersTest/second", components: { read: [ordered] }, after: ["finalizersTest/first"] }, () => { order.push("second"); });
-        Finalizer.create({ name: "finalizersTest/first", components: { read: [ordered] } }, () => { order.push("first"); });
+        const second = Finalizer.create({ name: "finalizersTest/second", components: { read: [ordered] } }, () => { order.push("second"); });
+        Finalizer.create({ name: "finalizersTest/first", components: { read: [ordered] }, before: [second] }, () => { order.push("first"); });
         Finalizer.create({ name: "finalizersTest/throws", components: { read: [ordered] } }, () => { throw new Error("finalizer failed"); });
         const world = createWorld({ workers: 0 });
         const run = step(world);

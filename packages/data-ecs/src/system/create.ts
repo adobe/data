@@ -14,9 +14,9 @@ import type { System } from './system.js';
 import type { Listed, Property } from './property.js';
 
 type Ordering<N> = {
-    readonly before?: readonly Exclude<Name, N>[];
-    readonly after?: readonly Exclude<Name, N>[];
-    readonly during?: readonly Exclude<Name, N>[];
+    readonly before?: readonly System<Exclude<Name, N>, unknown>[];
+    readonly after?: readonly System<Exclude<Name, N>, unknown>[];
+    readonly during?: readonly System<Exclude<Name, N>, unknown>[];
 };
 
 type Reduced<D extends Declaration> = keyof Property<D, "reduce"> & Resource.Name;

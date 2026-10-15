@@ -93,7 +93,7 @@ const bounce = System.create({
     kernel: "cpu",
     components: { write: [position, velocity, bounces, flipped] },
     resources: { read: [floor] },
-    after: ["wasmTest/integrate"],
+    after: [integrate],
 }, (row, { resources }) => {
     const [x, y] = row[position];
     const [vx, vy] = row[velocity];
@@ -112,7 +112,7 @@ const tally = System.create({
     name: "wasmTest/tally",
     kernel: "cpu",
     components: { read: [bounces, flipped, position], write: [score] },
-    after: ["wasmTest/bounce"],
+    after: [bounce],
 }, row => {
     let total = 0;
     for (let i = 0; i < 10; i++) {
@@ -139,7 +139,7 @@ const drift = System.create({
     kernel: "cpu",
     components: { read: [velocity], write: [position] },
     resources: { read: [seconds] },
-    after: ["wasmTest/tally"],
+    after: [tally],
 }, (row, { resources }) => {
     const [x, y] = row[position];
     const [vx, vy] = row[velocity];
@@ -152,7 +152,7 @@ const react = System.create({
     name: "wasmTest/react",
     kernel: "cpu",
     components: { write: [score], changed: [bounces] },
-    after: ["wasmTest/tally"],
+    after: [tally],
 }, row => {
     row[score] = row[score] + 1000;
 });
@@ -163,7 +163,7 @@ const chase = System.create({
     kernel: "cpu",
     components: { read: [target], write: [score] },
     lookup: { targets: { read: [position, flipped] } },
-    after: ["wasmTest/react", "wasmTest/drift"],
+    after: [react, drift],
 }, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
     if (other === null) {

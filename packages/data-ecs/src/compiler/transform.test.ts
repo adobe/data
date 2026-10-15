@@ -309,7 +309,7 @@ describe("particles", () => {
 
         const integrate = await compile(`const kernel = System.create({
             name: "particles/integrate", kernel: "cpu",
-            components: { read: [velocity], write: [position] }, resources: { read: [delta] }, after: ["particles/gravity"],
+            components: { read: [velocity], write: [position] }, resources: { read: [delta] }, after: [{ name: "particles/gravity" }],
         }, (row, { resources }) => {
             const [px, py, pz] = row[position];
             const [vx, vy, vz] = row[velocity];

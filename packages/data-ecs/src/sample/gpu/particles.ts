@@ -108,7 +108,7 @@ const declaration = {
     name: "gpuParticles/draw",
     components: { has: [visible, enabled] },
     shader: { group: 0, accessors: { particlePosition: position, particleColor: color } },
-    after: ["gpuParticles/move", "gpuParticles/moveOnCpu"],
+    after: [move, moveOnCpu],
 } as const;
 
 /**

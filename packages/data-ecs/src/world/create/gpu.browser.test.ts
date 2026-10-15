@@ -97,27 +97,27 @@ const move = System.create({ name: "gpuTest/move", kernel: "gpu", components: { 
     row[position] = [px + vx, py + vy * 2, pz + vz];
 });
 
-const moveAgain = System.create({ name: "gpuTest/moveAgain", kernel: "gpu", components: { read: [velocity], write: [position] }, after: ["gpuTest/reset"] }, row => {
-    const [px, py, pz] = row[position];
-    const [vx, vy, vz] = row[velocity];
-    row[position] = [px + vx, py + vy, pz + vz];
-});
-
 /** Between two GPU kernels: reads what the first wrote, and changes what both read. */
-const reset = System.create({ name: "gpuTest/reset", components: { write: [position, velocity] }, after: ["gpuTest/move"] }, row => {
+const reset = System.create({ name: "gpuTest/reset", components: { write: [position, velocity] }, after: [move] }, row => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];
     row[position] = [px * 2, py, pz + 100];
     row[velocity] = [vz, vx, vy];
 });
 
+const moveAgain = System.create({ name: "gpuTest/moveAgain", kernel: "gpu", components: { read: [velocity], write: [position] }, after: [reset] }, row => {
+    const [px, py, pz] = row[position];
+    const [vx, vy, vz] = row[velocity];
+    row[position] = [px + vx, py + vy, pz + vz];
+});
+
 /** Between two GPU kernels: changes only what they read, so nothing needs reading back first. */
-const turn = System.create({ name: "gpuTest/turn", components: { write: [velocity] }, after: ["gpuTest/move"] }, row => {
+const turn = System.create({ name: "gpuTest/turn", components: { write: [velocity] }, after: [move] }, row => {
     const [vx, vy, vz] = row[velocity];
     row[velocity] = [vz * 3, vx, vy];
 });
 
-const moveLater = System.create({ name: "gpuTest/moveLater", kernel: "gpu", components: { read: [velocity], write: [position] }, after: ["gpuTest/turn"] }, row => {
+const moveLater = System.create({ name: "gpuTest/moveLater", kernel: "gpu", components: { read: [velocity], write: [position] }, after: [turn] }, row => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];
     row[position] = [px + vx, py + vy, pz + vz];
@@ -156,7 +156,7 @@ const follow = System.create({
     name: "gpuTest/follow",
     components: { read: [followed], write: [score] },
     lookup: { leader: { read: [position] } },
-    after: ["gpuTest/move"],
+    after: [move],
 }, (row, { lookup: { leader } }) => {
     row[score] = leader(row[followed])?.[position][0] ?? -1;
 });
@@ -180,7 +180,7 @@ const spawnFew = System.create({ name: "gpuTest/churn" }, ({ commands }) => {
 });
 
 /** A render body that fails after starting its pass. */
-const fail = System.render({ name: "gpuTest/fail", shader: { accessors: { place: position } }, after: ["gpuTest/move"] }, ({ encoder }) => {
+const fail = System.render({ name: "gpuTest/fail", shader: { accessors: { place: position } }, after: [move] }, ({ encoder }) => {
     encoder.beginComputePass();
     throw new Error("draw failed");
 });
@@ -505,7 +505,7 @@ describe("render systems", () => {
             name: "gpuTest/copy/2",
             components: { has: [tag] },
             shader: { group: 0, accessors: { place: position } },
-            after: ["gpuTest/move"],
+            after: [move],
         }, ({ encoder, tables }) => {
             const pass = encoder.beginComputePass();
             pass.setPipeline(pipeline);

@@ -15,8 +15,8 @@ type Entry = Constraints & { readonly leaf: Leaf };
 
 export const isLeaf = (system: Definition): system is Leaf => system.kind !== "composite";
 
-const add = (target: Set<string>, names: readonly string[] | undefined): void => {
-    for (const name of names ?? []) target.add(name);
+const add = (target: Set<string>, systems: readonly { readonly name: string }[] | undefined): void => {
+    for (const { name } of systems ?? []) target.add(name);
 };
 
 /** Walks a system, applying each composite's constraints to all its members. The root's own constraints are ignored. */

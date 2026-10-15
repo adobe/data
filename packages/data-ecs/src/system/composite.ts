@@ -6,11 +6,11 @@ export type CompositeDeclaration = {
     readonly name: Name;
     readonly systems: readonly System[];
     /** Hard constraint, applied to every member. */
-    readonly before?: readonly Name[];
+    readonly before?: readonly System<Name, unknown>[];
     /** Hard constraint, applied to every member. */
-    readonly after?: readonly Name[];
+    readonly after?: readonly System<Name, unknown>[];
     /** Soft constraint, applied to every member. */
-    readonly during?: readonly Name[];
+    readonly during?: readonly System<Name, unknown>[];
 };
 
 /** A system made of subsystems; members are flattened and ordered by their constraints. */

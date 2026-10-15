@@ -4,9 +4,10 @@ import type { Listed, Property } from '../system/property.js';
 import type { ChangeSet, Context, Row, Watched } from './body.js';
 import type { ChangesDeclaration, Declaration } from './declaration.js';
 import type { Changes, Leaf } from './created.js';
+import type { Finalizer } from './finalizer.js';
 import type { Name } from './name.js';
 
-type Ordering<N> = { readonly before?: readonly Exclude<Name, N>[]; readonly after?: readonly Exclude<Name, N>[] };
+type Ordering<N> = { readonly before?: readonly Finalizer<Exclude<Name, N>>[]; readonly after?: readonly Finalizer<Exclude<Name, N>>[] };
 
 /** A resource in `write` is readable too, so it isn't also in `read`. */
 type Validate<D extends Declaration | ChangesDeclaration> = Ordering<D["name"]>
@@ -18,9 +19,10 @@ type Validate<D extends Declaration | ChangesDeclaration> = Ordering<D["name"]>
 export const create = <const D extends Declaration>(
     declaration: D & Validate<D>,
     body: (row: Row<D>, context: Context<D>) => void,
-): void => {
-    const finalizer: Leaf<D> = { kind: "finalizer", declaration, body };
+): Finalizer<D["name"]> => {
+    const finalizer: Leaf<D> & Finalizer<D["name"]> = { kind: "finalizer", name: declaration.name, declaration, body };
     addFinalizer(finalizer);
+    return finalizer;
 };
 
 /**
@@ -30,7 +32,8 @@ export const create = <const D extends Declaration>(
 export const changes = <const D extends ChangesDeclaration>(
     declaration: D & Validate<D>,
     body: (changes: ChangeSet<Watched<D>>, context: Context<D>) => void,
-): void => {
-    const finalizer: Changes<D> = { kind: "changes", declaration, body };
+): Finalizer<D["name"]> => {
+    const finalizer: Changes<D> & Finalizer<D["name"]> = { kind: "changes", name: declaration.name, declaration, body };
     addFinalizer(finalizer);
+    return finalizer;
 };

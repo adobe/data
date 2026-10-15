@@ -1,6 +1,7 @@
 import type { Component } from '../component/component.js';
 import type { Resource } from '../resource/resource.js';
 import type { Lookup } from '../system/access.js';
+import type { Finalizer } from './finalizer.js';
 import type { Name } from './name.js';
 import type { Essential } from '../component/value.js';
 import type { Reduced } from '../resource/reduction.js';
@@ -11,8 +12,8 @@ type Shared = {
     readonly lookup?: { readonly [name: string]: Lookup };
     /** Writes take the sync point's tick, so each system sees them once. A resource in `write` is also readable. */
     readonly resources?: { readonly read?: readonly Resource.Name[]; readonly write?: readonly Exclude<Resource.Name, Reduced>[] };
-    readonly before?: readonly Name[];
-    readonly after?: readonly Name[];
+    readonly before?: readonly Finalizer[];
+    readonly after?: readonly Finalizer[];
 };
 
 /** A finalizer that runs for each entity that stops matching its components. */

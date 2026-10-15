@@ -3,6 +3,7 @@ import type { Schema } from '../schema/schema.js';
 import type { ComponentAccess, Lookup, ResourceAccess } from './access.js';
 import type { Name } from './name.js';
 import type { Shader } from './render.js';
+import type { System } from './system.js';
 import type { OperatorOf, Reduced } from '../resource/reduction.js';
 
 export type Declaration = {
@@ -27,9 +28,9 @@ export type Declaration = {
     /** Makes this a render system (see `render`): its body records GPU work over the GPU copy of the components it names. */
     readonly shader?: Shader;
     /** Hard constraint. */
-    readonly before?: readonly Name[];
+    readonly before?: readonly System<Name, unknown>[];
     /** Hard constraint. */
-    readonly after?: readonly Name[];
+    readonly after?: readonly System<Name, unknown>[];
     /** Soft constraint: prefers the same tier, where nothing orders them apart. */
-    readonly during?: readonly Name[];
+    readonly during?: readonly System<Name, unknown>[];
 };

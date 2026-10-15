@@ -157,23 +157,23 @@ export const chain1 = System.create({ name: "suite/chain1", kernel: "cpu", compo
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain2 = System.create({ name: "suite/chain2", kernel: "cpu", components: { write: [velocity] }, after: ["suite/chain1"] }, row => {
+export const chain2 = System.create({ name: "suite/chain2", kernel: "cpu", components: { write: [velocity] }, after: [chain1] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain3 = System.create({ name: "suite/chain3", kernel: "cpu", components: { write: [velocity] }, after: ["suite/chain2"] }, row => {
+export const chain3 = System.create({ name: "suite/chain3", kernel: "cpu", components: { write: [velocity] }, after: [chain2] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain4 = System.create({ name: "suite/chain4", kernel: "cpu", components: { write: [velocity] }, after: ["suite/chain3"] }, row => {
+export const chain4 = System.create({ name: "suite/chain4", kernel: "cpu", components: { write: [velocity] }, after: [chain3] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain5 = System.create({ name: "suite/chain5", kernel: "cpu", components: { write: [velocity] }, after: ["suite/chain4"] }, row => {
+export const chain5 = System.create({ name: "suite/chain5", kernel: "cpu", components: { write: [velocity] }, after: [chain4] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain6 = System.create({ name: "suite/chain6", kernel: "cpu", components: { write: [velocity] }, after: ["suite/chain5"] }, row => {
+export const chain6 = System.create({ name: "suite/chain6", kernel: "cpu", components: { write: [velocity] }, after: [chain5] }, row => {
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });

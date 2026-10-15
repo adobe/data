@@ -127,7 +127,7 @@ which are hard constraints. `during` is a preference: it puts systems in the sam
 apart. Systems with no ordering path between them may run in parallel.
 
 ```ts
-const heal = System.create({ name: "guide/scheduling/heal", components: { write: [health] }, after: [hit.name] }, row => {
+const heal = System.create({ name: "guide/scheduling/heal", components: { write: [health] }, after: [hit] }, row => {
     row[health] = Math.min(row[health] * 2, 10);
 });
 const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal, hit] });
@@ -135,7 +135,7 @@ const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal,
 
 Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L25-L47).
 
-- **Constraints name systems:** import the other system and use its `name`. A literal name orders against one this module can't import, such as a module that imports this one.
+- **Constraints take systems:** `before`, `after` and `during` list the systems themselves, imported from their modules. When two modules import each other, one of them declares the order.
 - **Rejected:** two members that both write a component or resource, or where one reads what the other writes, with no ordering path between them, at `System.composite`.
 - **Reductions are the exception:** contributors to one resource need no order between them, and its readers run after all of them (section 10).
 
@@ -407,7 +407,7 @@ Example: [`15-finalizers.test.ts`](src/guide/15-finalizers.test.ts#L27-L65).
 - **A stop:** a despawn, the loss of a required component by any cause, a required component removed and added again, or an excluded one added.
 - **Rows are read-only.** The body is `(row, context)`, whose context has `resources`, `lookup` and `commands`. Lookups see the state before the sync point applies, and resource writes take its tick.
 - **Finalizers apply in every world,** as rules do, once the world has met every component they read or have.
-- **Order:** `before` and `after` among finalizers, then creation order. A finalizer that throws doesn't stop the sync point; the run rejects with the first error once it has applied.
+- **Order:** `before` and `after` list other finalizers, which `Finalizer.create` and `Finalizer.changes` return; then creation order. A finalizer that throws doesn't stop the sync point; the run rejects with the first error once it has applied.
 - **Rejected:** two finalizers that both write a resource, or where one reads what the other writes, with no order between them, and a cycle, at `Finalizer.create`.
 
 ## 17. Changes finalizers
@@ -456,9 +456,9 @@ Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L61-L10
 ## 19. Reference
 
 - **Built-in components:** `component`, `persistent` and `shared` are tags in [`src/components/`](src/components/).
-- **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value`, `With` and `Where`; `Resource.Name` and `Value`; `System`, `System.Name` and `System.Commands`; and `World`. Everything else is inferred from the values the API returns.
+- **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value`, `With` and `Where`; `Resource.Name` and `Value`; `System`, `System.Name` and `System.Commands`; `Finalizer`; and `World`. Everything else is inferred from the values the API returns.
 - **Emitted declarations:** a library that exports those values emits declarations naming the package's own modules, through `@adobe/data-ecs/internal/*`, which holds types only. Code imports from `@adobe/data-ecs`.
-- **Constructors:** `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Rule.create`, `Finalizer.create` and `Finalizer.changes` return nothing; they apply in every world.
+- **Constructors:** `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Finalizer.create` and `Finalizer.changes` return a finalizer, typed as its `name`. `Rule.create` returns nothing. Rules and finalizers apply in every world.
 - **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/system/system.type-test.ts), [`world.type-test.ts`](src/world/world.type-test.ts), [`rule.type-test.ts`](src/rule/rule.type-test.ts), [`trait.type-test.ts`](src/trait/trait.type-test.ts).
 - **The contract and its reasoning:** [`design.md`](design.md).
 - **A complete application:** the [particle sample](src/sample/particles.ts), run by [`particles.test.ts`](src/sample/particles.test.ts), and its [GPU version](src/sample/gpu/).

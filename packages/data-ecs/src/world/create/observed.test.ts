@@ -36,7 +36,7 @@ const bump = System.create({ name: "observedTest/bump", kernel: "cpu", component
     row[value] = row[value] + 1;
 });
 
-const watch = System.create({ name: "observedTest/watch", kernel: "cpu", components: { write: [seen], changed: [value] }, after: ["observedTest/bump"] }, row => {
+const watch = System.create({ name: "observedTest/watch", kernel: "cpu", components: { write: [seen], changed: [value] }, after: [bump] }, row => {
     row[seen] = row[seen] + 1;
 });
 

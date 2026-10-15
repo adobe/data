@@ -31,7 +31,7 @@ const spawn = System.create({ name: "guide/sync/spawn" }, ({ commands }) => {
     commands.add(entity, { [shield]: true });
     commands.remove(entity, shield);
 });
-const count = System.create({ name: "guide/sync/count", components: { has: [unit] }, resources: { write: [counted] }, after: ["guide/sync/spawn"] }, (_, { resources }) => {
+const count = System.create({ name: "guide/sync/count", components: { has: [unit] }, resources: { write: [counted] }, after: [spawn] }, (_, { resources }) => {
     resources[counted] += 1;
 });
 const frame = System.composite({ name: "guide/sync/frame", systems: [spawn, count] });

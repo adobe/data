@@ -59,7 +59,7 @@ export const integrate = System.create({
     kernel: "cpu",
     components: { read: [velocity], write: [position] },
     resources: { read: [delta] },
-    after: ["particles/gravity"],
+    after: [gravity],
 }, (row, { resources }) => {
     const [px, py, pz] = row[position];
     const [vx, vy, vz] = row[velocity];

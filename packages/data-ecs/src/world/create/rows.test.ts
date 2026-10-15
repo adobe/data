@@ -47,11 +47,11 @@ describe("accessor rows", () => {
             seen.push({ entity: row.entity, position: value, count: row[count], flag: row[flag] });
             row[count] = row[count] + 10;
         });
-        const other = System.create({ name: "rowsTest/other", components: { write: [position] }, after: ["rowsTest/first"] }, row => {
+        const other = System.create({ name: "rowsTest/other", components: { write: [position] }, after: [first] }, row => {
             const [x, y, z] = row[position];
             row[position] = [x + 100, y, z];
         });
-        const second = System.create({ name: "rowsTest/second", components: { read: [position, flag], write: [count] }, after: ["rowsTest/other"] }, row => {
+        const second = System.create({ name: "rowsTest/second", components: { read: [position, flag], write: [count] }, after: [other] }, row => {
             seen.push({ entity: row.entity, position: row[position], count: row[count], flag: row[flag] });
             row[count] = row[count] + 1;
         });

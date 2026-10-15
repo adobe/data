@@ -68,7 +68,7 @@ export const follow = System.create({
     name: "test/follow",
     components: { read: [target, position], write: [velocity] },
     lookup: { targets: { read: [position] } },
-    after: ["test/integrate"],
+    after: [integrate],
 }, (row, { lookup: { targets } }) => {
     const other = targets(row[target]);
     if (other !== null) {
@@ -130,12 +130,12 @@ System.create({
 System.create({
     name: "test/integrate",
     // @ts-expect-error a system can't be ordered against itself
-    before: ["test/integrate"],
+    before: [integrate],
 }, () => {});
 
 System.create({
     name: "test/integrate",
-    // @ts-expect-error ordering names must be registered systems
+    // @ts-expect-error ordering takes systems
     after: ["test/unregistered"],
 }, () => {});
 

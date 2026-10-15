@@ -52,10 +52,6 @@ const fastC = System.create({ name: "dispatchTest/fastC", kernel: "cpu", compone
     const [vx, vy] = row[velocity];
     row[offset] = vx + vy;
 });
-const later = System.create({ name: "dispatchTest/fastC/2", kernel: "cpu", components: { read: [velocity], write: [offset] }, after: ["dispatchTest/slowB/2"] }, row => {
-    const [vx, vy] = row[velocity];
-    row[offset] = vx + vy;
-});
 
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | "timeout"> =>
     Promise.race([promise, new Promise<"timeout">(resolve => setTimeout(() => resolve("timeout"), ms))]);
@@ -68,6 +64,10 @@ const bump = System.create({ name: "dispatchTest/fastA/2", kernel: "cpu", compon
     row[offset] = row[offset] + 1;
 });
 const watch = System.create({ name: "dispatchTest/slowB/2", components: { changed: [offset] } }, () => { observedRows++; });
+const later = System.create({ name: "dispatchTest/fastC/2", kernel: "cpu", components: { read: [velocity], write: [offset] }, after: [watch] }, row => {
+    const [vx, vy] = row[velocity];
+    row[offset] = vx + vy;
+});
 describe("worker dispatch", () => {
     it("reloads kernels on workers when an observer registers", async () => {
         const world = createWorld({ workers: 2, minimumChunk: 64 });

@@ -16,8 +16,6 @@ export type ReadonlyValue<K extends Name> = Value<K> extends Primitive ? Value<K
 /** Components that declare trait `T`, with a value assignable to `V`. */
 export type With<T extends TraitName, V = unknown> = { [K in Name]: Components[K] extends { readonly [P in T]: V } ? K : never }[Name];
 
-/** Components whose value type is assignable to `V`, as `Where<Entity>` for entity references. */
-export type Where<V> = { [K in Name]: [Value<K>] extends [V] ? K : never }[Name];
 
 /** Components only rules add and remove. */
 export type Derived = With<"derived">;

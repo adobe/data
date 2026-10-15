@@ -9,7 +9,7 @@ import { accessorsOf, declarationsOf } from './accessors.js';
  * `ecs_count()`. Depends only on registered schemas, so pipelines can be built before any world exists.
  * Throws if the system isn't a render system or a component can't be read on the GPU.
  */
-export const wgsl = (system: System<Name, unknown>): string => {
+export const wgsl = (system: System<unknown>): string => {
     const definition = definitionOf(system);
     const shader = definition?.kind === "render" ? definition.declaration.shader : undefined;
     if (shader === undefined) throw new Error(`System "${system.name}" isn't a render system.`);

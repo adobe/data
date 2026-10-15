@@ -163,7 +163,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
             const ids = new Set(components.map(key => state.ids.get(key)));
             return enqueue(() => gpu.readback(state.archetypes.flatMap(archetype => archetype.storages.filter(storage => ids.has(storage.component)))));
         },
-        gpu: state.gpu === null ? null : { device: state.gpu.device, layout: state.gpu.renderLayout },
+        gpu: state.gpu === null ? null : { layout: state.gpu.renderLayout },
         [Symbol.asyncDispose]: () => world.dispose(),
         query: {
             select: (has, options) => select(state, has, options),

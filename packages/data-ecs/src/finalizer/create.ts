@@ -17,10 +17,9 @@ type Validate<D extends Declaration | ChangesDeclaration> =
 export const create = <const D extends Declaration>(
     declaration: D & Validate<D>,
     body: (row: Row<D>, context: Context<D>) => void,
-): Finalizer<D["name"]> => {
-    const finalizer: Leaf<D> & Finalizer<D["name"]> = { kind: "finalizer", name: declaration.name, declaration, body };
-    addFinalizer(finalizer);
-    return finalizer;
+): Finalizer => {
+    const finalizer: Leaf<D> = { kind: "finalizer", name: declaration.name, declaration, body };
+    return addFinalizer(finalizer);
 };
 
 /**
@@ -30,8 +29,7 @@ export const create = <const D extends Declaration>(
 export const changes = <const D extends ChangesDeclaration>(
     declaration: D & Validate<D>,
     body: (changes: ChangeSet<Watched<D>>, context: Context<D>) => void,
-): Finalizer<D["name"]> => {
-    const finalizer: Changes<D> & Finalizer<D["name"]> = { kind: "changes", name: declaration.name, declaration, body };
-    addFinalizer(finalizer);
-    return finalizer;
+): Finalizer => {
+    const finalizer: Changes<D> = { kind: "changes", name: declaration.name, declaration, body };
+    return addFinalizer(finalizer);
 };

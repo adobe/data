@@ -43,7 +43,6 @@ Component.register(label, { type: { type: "string" }, [instanced]: true });
 // Types filter components by their traits and value types.
 type Guide = typeof transform | typeof label | typeof meshSlot | typeof meshReady | typeof parent;
 check<Equal<Extract<Component.With<typeof instanced>, Guide>, typeof transform>>();
-check<Equal<Extract<Component.Where<Entity>, Guide>, typeof parent>>();
 check<Equal<Extract<Component.With<"derived">, Guide>, typeof meshSlot>>();
 check<Equal<Extract<Component.With<"reference", "owner">, Guide>, typeof parent>>();
 

@@ -1,4 +1,4 @@
 /** A finalizer, known by its name. */
-export type Finalizer<N extends string = string> = { readonly name: N };
+export type Finalizer = { readonly name: string };
 
 export * as Finalizer from './index.js';

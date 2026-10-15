@@ -76,6 +76,10 @@ const all: readonly Component.Name[] = [source, hidden, sprite, slot, visible, r
 const components = (world: ReturnType<typeof createWorld>, entity: Entity) => all.filter(key => world.read.component(entity, key) !== null);
 
 describe("rules", () => {
+    it("accept a rule declared again the same, as a module evaluated again declares it, and reject a different one", () => {
+        Rule.create({ name: "rulesTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] });
+        expect(() => Rule.create({ name: "rulesTest/slots", components: { has: [source] }, derive: [slot] })).toThrow("already exists");
+    });
     it("derive components where they match, from the schema default, and remove them where they stop", async () => {
         const world = createWorld({ workers: 0 });
         const step = at(world);

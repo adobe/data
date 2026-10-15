@@ -3,7 +3,8 @@ import type { Schema } from "../schema/schema.js";
 import { isTrait } from "../trait/register.js";
 import { isReduction } from "./reduction.js";
 import type { Name as TraitName } from "../trait/name.js";
-import { declareName } from "./declare-name.js";
+import { declareName, kindOf } from "./declare-name.js";
+import { sameDeclaration } from "./same-declaration.js";
 
 /** A registered declaration, as any consumer iterating components or resources sees it: its `type` and other traits. */
 export type AnyDeclaration = { readonly type: Schema } & { readonly [T in TraitName]?: unknown };
@@ -15,8 +16,6 @@ export type Registry<D> = {
      * already declared, a trait isn't registered, or the schema declares a GPU layout it can't meet.
      */
     readonly register: <K extends keyof D & (string | symbol)>(name: K, declaration: D[K]) => void;
-    /** The declaration of a registered name. */
-    readonly declaration: (name: keyof D & (string | symbol)) => AnyDeclaration | undefined;
 };
 
 const registered = new Map<string | symbol, AnyDeclaration>();
@@ -34,6 +33,9 @@ export const schemaOf = (name: string | symbol): Schema | undefined => registere
 /** The constraint makes each `D[K]` an `AnyDeclaration` without evaluating `D`'s generic declaration type. */
 export const createRegistry = <D extends { readonly [K in keyof D]: AnyDeclaration }>(kind: "component" | "resource"): Registry<D> => {
     const register = <K extends keyof D & (string | symbol)>(name: K, declaration: D[K]): void => {
+        // A module evaluated again registers the same declaration again.
+        const existing = registered.get(name);
+        if (existing !== undefined && kindOf(name) === kind && sameDeclaration(existing, declaration)) return;
         for (const trait of Reflect.ownKeys(declaration)) {
             if (!isTrait(trait)) throw new Error(`Cannot declare ${kind} ${String(name)}: ${String(trait)} isn't a registered trait.`);
         }
@@ -58,5 +60,5 @@ export const createRegistry = <D extends { readonly [K in keyof D]: AnyDeclarati
         registered.set(name, declaration);
         if (typeof name === "symbol") symbolNames = true;
     };
-    return { register, declaration: name => registered.get(name) };
+    return { register };
 };

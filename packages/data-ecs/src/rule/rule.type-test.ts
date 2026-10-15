@@ -94,7 +94,7 @@ check<Equal<Extract<Writable, typeof parent | typeof source>, typeof source>>();
 
 // A rule returns nothing, since nothing references one; a finalizer is its name, for ordering others.
 check<Equal<ReturnType<typeof Rule.create>, void>>();
-check<Equal<typeof other, Finalizer<"ruleTypeTest/other">>>();
+check<Equal<typeof other, Finalizer>>();
 
 // Rules and finalizers apply in every world.
 export const created: World = World.create();

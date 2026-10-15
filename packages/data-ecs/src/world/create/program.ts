@@ -1,6 +1,7 @@
 import type { Finalizer } from '../../finalizer/created.js';
 import { declarationOf } from '../../registry/create-registry.js';
 import { kindOf } from '../../registry/declare-name.js';
+import { sameDeclaration } from '../../registry/same-declaration.js';
 import type { Rule } from '../../rule/created.js';
 import type { Definition } from '../../system/definition.js';
 import { strataOf, type RuleFacts } from './closure.js';
@@ -17,20 +18,27 @@ const rules: Rule[] = [];
 let finalizers: readonly Finalizer[] = [];
 let created = 0;
 
-/** Records each item's name. Throws, recording none, if a different system, rule or finalizer has one. */
-export const claim = (...items: readonly (Definition | Rule | Finalizer)[]): void => {
+type Item = Definition | Rule | Finalizer;
+
+/** The item already named as `item` is, when it's the same kind with the same declaration: a module evaluated again. */
+const repeated = (item: Item): Item | undefined => {
+    const existing = named.get(item.declaration.name);
+    return existing !== undefined && existing.kind === item.kind && sameDeclaration(existing.declaration, item.declaration) ? existing : undefined;
+};
+
+/**
+ * Records each item's name, replacing one a module evaluated again declared the same. Throws, recording none, if a
+ * different system, rule or finalizer has one.
+ */
+export const claim = (...items: readonly Item[]): void => {
     for (const item of items) {
         const { name } = item.declaration;
         const existing = named.get(name);
-        if (existing !== undefined && existing !== item) throw new Error(`A different system, rule or finalizer named "${name}" already exists.`);
+        if (existing !== undefined && existing !== item && repeated(item) === undefined) {
+            throw new Error(`A different system, rule or finalizer named "${name}" already exists; if a module was evaluated again with a changed declaration, reload the page.`);
+        }
     }
     for (const item of items) named.set(item.declaration.name, item);
-};
-
-/** A system created or run anywhere in the program, by name. */
-export const systemNamed = (name: string): Definition | null => {
-    const item = named.get(name);
-    return item === undefined || item.kind === "rule" || item.kind === "finalizer" || item.kind === "changes" ? null : item;
 };
 
 const requireComponent = (kind: string, name: string, key: Key): void => {
@@ -63,6 +71,8 @@ const checkStrata = (all: readonly Rule[]): void => {
 
 /** Adds a rule to the program. Throws if it derives a component that isn't derived, or its rules cycle through a negation. */
 export const addRule = (rule: Rule): void => {
+    // The same rule, from a module evaluated again, is already in the program.
+    if (repeated(rule) !== undefined) return;
     const { name, components, derive } = rule.declaration;
     for (const key of [...components.has ?? [], ...components.not ?? [], ...derive]) requireComponent("Rule", name, key);
     for (const key of derive) {
@@ -81,8 +91,21 @@ const checkLists = (name: string, what: string, lists: { readonly read?: readonl
     if (both !== undefined) throw new Error(`Finalizer "${name}" lists "${String(both)}" in both ${what} read and write; write already makes it readable.`);
 };
 
-/** Adds a finalizer to the program. Throws for an invalid declaration, or an order that cycles or leaves a resource conflict. */
-export const addFinalizer = (finalizer: Finalizer): void => {
+/**
+ * Adds a finalizer to the program, and returns it. The same finalizer from a module evaluated again keeps its place
+ * in every world, with the new body. Throws for an invalid declaration, or an order that cycles or leaves a resource
+ * conflict.
+ */
+export const addFinalizer = (finalizer: Finalizer): Finalizer => {
+    const existing = repeated(finalizer);
+    if (existing?.kind === "finalizer" && finalizer.kind === "finalizer") {
+        existing.body = finalizer.body;
+        return existing;
+    }
+    if (existing?.kind === "changes" && finalizer.kind === "changes") {
+        existing.body = finalizer.body;
+        return existing;
+    }
     const { name, resources, lookup } = finalizer.declaration;
     checkLists(name, "resources", resources);
     for (const key of resources?.write ?? []) {
@@ -106,6 +129,7 @@ export const addFinalizer = (finalizer: Finalizer): void => {
     claim(finalizer);
     finalizers = ordered.map(item => item.finalizer);
     created++;
+    return finalizer;
 };
 
 /** Counts rules and finalizers added, so a world can tell when one was added since it last looked. */

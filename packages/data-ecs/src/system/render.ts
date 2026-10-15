@@ -35,9 +35,9 @@ type RenderDeclaration = {
     readonly components?: { readonly has?: readonly Component.Name[]; readonly not?: readonly Component.Name[] };
     readonly resources?: { readonly read?: readonly Resource.Name[] };
     readonly shader: Shader;
-    readonly before?: readonly System<Name, unknown>[];
-    readonly after?: readonly System<Name, unknown>[];
-    readonly during?: readonly System<Name, unknown>[];
+    readonly before?: readonly System<unknown>[];
+    readonly after?: readonly System<unknown>[];
+    readonly during?: readonly System<unknown>[];
 };
 
 /** A render declaration with the components its accessors name as `components.read`. */
@@ -51,8 +51,8 @@ type Rendered<D extends RenderDeclaration> = D & { readonly components: { readon
 export const render = <const D extends RenderDeclaration>(
     declaration: D,
     body: Body<Rendered<D>>,
-): System<D["name"]> => {
-    const system: Leaf & System<D["name"]> = {
+): System => {
+    const system: Leaf & System = {
         kind: "render",
         name: declaration.name,
         declaration: { ...declaration, components: { ...declaration.components, read: [...new Set(Object.values(declaration.shader.accessors))] } },

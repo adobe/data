@@ -268,7 +268,7 @@ describe("reductions", () => {
         // @ts-expect-error a contributor repeats its resource's operator
         const mismatched = System.create({ name: "reductionsTest/other/6", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); });
         const both = System.composite({ name: "reductionsTest/both", systems: [kernel, mismatched] });
-        const definition = (system: System<Name, unknown>) => {
+        const definition = (system: System<unknown>) => {
             const found = definitionOf(system);
             if (found === undefined) throw new Error("not a system");
             return found;

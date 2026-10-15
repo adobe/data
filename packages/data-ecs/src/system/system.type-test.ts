@@ -138,9 +138,9 @@ export const main = System.composite({ name: "test/main", systems: [integrate, f
 System.composite({ name: "test/main", systems: [move] });
 
 // A system is its name and the input `run` takes with it.
-check<Equal<typeof integrate, System<"test/integrate">>>();
-check<Equal<typeof move, System<"test/move", { readonly distance: number }>>>();
-check<Equal<typeof main, System<"test/main">>>();
+check<Equal<typeof integrate, System>>();
+check<Equal<typeof move, System<{ readonly distance: number }>>>();
+check<Equal<typeof main, System>>();
 
 const label = 'systemTest/label';
 const path = 'systemTest/path';

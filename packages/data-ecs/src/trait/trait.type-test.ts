@@ -122,7 +122,6 @@ check<Equal<Component.Value<typeof parent>, Entity>>();
 check<Equal<Component.Value<typeof link>, { readonly to: Entity; readonly weight: number }>>();
 check<Equal<Extract<Component.With<"reference">, Ours>, typeof parent | typeof follows>>();
 check<Equal<Extract<Component.With<"reference", "owner">, Ours>, typeof parent>>();
-check<Equal<Extract<Component.Where<Entity>, Ours>, typeof parent | typeof follows>>();
 check<Equal<Extract<Derived, Ours>, typeof slot>>();
 check<Equal<Extract<Component.With<typeof gpuOnly>, Ours>, typeof pair>>();
 type Persisted = Exclude<Essential, Component.With<typeof nonPersistent>>;

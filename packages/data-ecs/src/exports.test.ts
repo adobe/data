@@ -20,7 +20,8 @@ const install = (): void => {
     const config = ts.getParsedCommandLineOfConfigFile(join(packageRoot, "tsconfig.json"), { outDir: join(installed, "dist"), emitDeclarationOnly: true, composite: false, incremental: false, sourceMap: false }, { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => {} });
     if (config === undefined) throw new Error("No tsconfig.json.");
     const program = ts.createProgram([join(packageRoot, "src", "index.ts")], config.options);
-    expect(messages(program.emit().diagnostics)).toEqual([]);
+    // Its own sources check without the test runner's Node types, as a consumer's build sees them.
+    expect(messages([...ts.getPreEmitDiagnostics(program), ...program.emit().diagnostics])).toEqual([]);
     mkdirSync(join(temporary, "node_modules", "@webgpu"), { recursive: true });
     cpSync(join(packageRoot, "node_modules", "@webgpu", "types"), join(temporary, "node_modules", "@webgpu", "types"), { recursive: true, dereference: true });
 };

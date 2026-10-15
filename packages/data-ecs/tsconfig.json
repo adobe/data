@@ -11,7 +11,13 @@
       "@adobe/data-ecs": [
         "./src/index.ts"
       ]
-    }
+    },
+    "lib": [
+      "ES2024",
+      "ESNext.Disposable",
+      "DOM",
+      "DOM.Iterable"
+    ]
   },
   "include": [
     "src/**/*"

@@ -8,6 +8,18 @@ import { World } from './world.js';
 declare const world: World;
 declare const entity: Entity;
 
+const point = 'worldTypeTest/point';
+declare module '@adobe/data-ecs' {
+    export interface Components {
+        [point]: { type: { x: number } };
+    }
+}
+const read = world.read.entity(entity, [point]);
+if (read !== null) {
+    // @ts-expect-error values read from the world are read-only
+    read[point].x = 1;
+}
+
 const options: Options<[typeof persistent]> = { not: [shared], where: { [persistent]: true }, order: { [persistent]: true } };
 const selected: readonly Entity[] = world.query.select([persistent], options);
 const counted: number = world.query.count([persistent]);
@@ -35,10 +47,9 @@ World.create({ resources: { "systemTest/time": "now" } });
 World.create({ resources: { "systemTest/position": 0 } });
 // @ts-expect-error systems register on their first run
 void world.systems;
-const found: System<string, unknown> | null = System.get("test/move");
 const disposed: Promise<void> = world.dispose();
 const usingDispose = async () => {
     await using scoped = World.create();
     await scoped.run(main);
 };
-void [disposed, usingDispose, selected, counted, value, ran, moved, created, withResources, found];
+void [disposed, usingDispose, selected, counted, value, ran, moved, created, withResources];

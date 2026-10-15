@@ -28,9 +28,9 @@ export type Declaration = {
     /** Makes this a render system (see `render`): its body records GPU work over the GPU copy of the components it names. */
     readonly shader?: Shader;
     /** Hard constraint. */
-    readonly before?: readonly System<Name, unknown>[];
+    readonly before?: readonly System<unknown>[];
     /** Hard constraint. */
-    readonly after?: readonly System<Name, unknown>[];
+    readonly after?: readonly System<unknown>[];
     /** Soft constraint: prefers the same tier, where nothing orders them apart. */
-    readonly during?: readonly System<Name, unknown>[];
+    readonly during?: readonly System<unknown>[];
 };

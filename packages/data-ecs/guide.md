@@ -80,12 +80,12 @@ expect(world.read.component(first, position)).toEqual([0, 10, 0]);
 Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L4-L35).
 
 - **Registration must match the declaration**, trait for trait, with `type` a schema for the declared type. Otherwise it doesn't compile.
-- **`World.create()` returns the world,** and `await using` disposes it. `World.create({ resources: { [gravity]: -1.6 } })` starts resources at other values than their defaults.
+- **`World.create()` returns the world,** and `await using` disposes it; the TypeScript `lib` needs `ESNext.Disposable`. `World.create({ resources: { [gravity]: -1.6 } })` starts resources at other values than their defaults.
 - **Systems register in a world on their first run there,** which validates them and loads their kernels; the run rejects if that fails. Rules and finalizers apply in every world (sections 13 and 16).
 - **A system is its name:** what `System.create` returns is typed as its `name` and the input `run` takes with it, nothing more.
-- **Names are program-wide:** `System.get(name)` finds a system by its name, and a second system, rule or finalizer with a name throws when it's created.
+- **Names are program-wide:** a second system, rule or finalizer with a name throws when it's created, unless its declaration is the same, as when a hot reload evaluates its module again. A system declared again is a new system; a finalizer keeps its place in every world, with the new body.
 - **`Entity` is a branded number.** `Entity.none` names no entity: it's what zeroed memory and entity defaults hold, and a lookup of it returns null.
-- **Rejected:** a duplicate name, across components, resources and traits, at registration.
+- **Rejected:** a name across components, resources and traits registered again with a different declaration, at registration. The same declaration again is accepted, for hot reload.
 
 ## 3. Systems
 
@@ -328,12 +328,12 @@ declare module "@adobe/data-ecs" {
 Trait.register(instanced);
 
 check<Equal<Extract<Component.With<typeof instanced>, Guide>, typeof transform>>();
-check<Equal<Extract<Component.Where<Entity>, Guide>, typeof parent>>();
+check<Equal<Extract<Component.With<"reference", "owner">, Guide>, typeof parent>>();
 ```
 
 Example: [`11-traits.type-test.ts`](src/guide/11-traits.type-test.ts), checked by the compiler alone.
 
-- **Filters:** `Component.With<Trait, Value?>` and `Component.Where<ValueType>`; `Component.With<"derived">` is the derived components, which commands don't take.
+- **Filters:** `Component.With<Trait, Value?>`; `Component.With<"derived">` is the derived components, which commands don't take.
 - **Rejected:** a trait value its definition doesn't allow on that component, a missing or undeclared trait, or a schema that doesn't match the type, in types; an unregistered trait, at registration.
 
 ## 13. Rules
@@ -456,7 +456,7 @@ Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L49-L96
 ## 19. Reference
 
 - **Built-in components:** `component`, `persistent` and `shared` are tags in [`src/components/`](src/components/).
-- **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value`, `With` and `Where`; `Resource.Name` and `Value`; `System` and `System.Commands`; `Finalizer`; and `World`. Everything else is inferred from the values the API returns.
+- **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value` and `With`; `Resource.Name` and `Value`; `System` and `System.Commands`; `Finalizer`; and `World`. Everything else is inferred from the values the API returns.
 - **Emitted declarations:** a library that exports those values emits declarations naming the package's own modules, through `@adobe/data-ecs/internal/*`, which holds types only. Code imports from `@adobe/data-ecs`.
 - **Constructors:** `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Finalizer.create` and `Finalizer.changes` return a finalizer, typed as its `name`. `Rule.create` returns nothing. Rules and finalizers apply in every world.
 - **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/system/system.type-test.ts), [`world.type-test.ts`](src/world/world.type-test.ts), [`rule.type-test.ts`](src/rule/rule.type-test.ts), [`trait.type-test.ts`](src/trait/trait.type-test.ts).

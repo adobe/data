@@ -24,9 +24,11 @@ const respawned = "finalizersTest/respawned";
 const ordered = "finalizersTest/ordered";
 const writing = "finalizersTest/writing";
 const disposing = "finalizersTest/disposing";
+const reloaded = "finalizersTest/reloaded";
 
 declare module "@adobe/data-ecs" {
     export interface Components {
+        [reloaded]: { type: number };
         [handle]: { type: number };
         [hidden]: { type: true };
         [source]: { type: number };
@@ -58,7 +60,7 @@ Component.register(late, { type: { type: "number" } });
 Resource.register(released, { type: { type: "number", default: 0 } });
 Resource.register(level, { type: { type: "number", default: 0 } });
 Resource.register(written, { type: { type: "number", default: 0 } });
-for (const key of [counted, pendingHandle, respawned, ordered, writing, disposing] as const) Component.register(key, { type: { type: "number" } });
+for (const key of [counted, pendingHandle, respawned, ordered, writing, disposing, reloaded] as const) Component.register(key, { type: { type: "number" } });
 
 Rule.create({ name: "finalizersTest/slots", components: { has: [source] }, derive: [slot] });
 
@@ -185,6 +187,22 @@ describe("finalizers", () => {
             Finalizer.create({ name, components: { read: [writing] }, resources: { write: [written] } }, (_, { resources }) => { resources[written] = 1; });
         writer("finalizersTest/writerA");
         expect(() => writer("finalizersTest/writerB")).toThrow("order them with before or after");
+        await world.dispose();
+    });
+});
+
+describe("a finalizer declared again the same, as a module evaluated again declares it", () => {
+    it("keeps its place in each world, and runs its new body once", async () => {
+        const seen: string[] = [];
+        const first = Finalizer.create({ name: "finalizersTest/reloaded", components: { read: [reloaded] } }, () => { seen.push("first"); });
+        const world = createWorld({ workers: 0 });
+        let entity = Entity.none;
+        await step(world)(commands => { entity = commands.spawn({ [reloaded]: 1 }); });
+        const again = Finalizer.create({ name: "finalizersTest/reloaded", components: { read: [reloaded] } }, () => { seen.push("again"); });
+        expect(again).toBe(first);
+        await step(world)(commands => { commands.despawn(entity); });
+        expect(seen).toEqual(["again"]);
+        expect(() => Finalizer.create({ name: "finalizersTest/reloaded", components: { read: [handle] } }, () => {})).toThrow("already exists");
         await world.dispose();
     });
 });

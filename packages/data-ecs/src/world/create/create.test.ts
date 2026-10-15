@@ -171,7 +171,7 @@ describe("World.create", () => {
     it("throws at creating a composite with an unordered conflict, naming nothing", () => {
         const push = System.create({ name: "createTest/push", components: { write: [position] } }, row => { row[position] = [0, 0]; });
         expect(() => System.composite({ name: "createTest/conflicted", systems: [move, push] })).toThrow('"createTest/move" and "createTest/push"');
-        expect(System.get("createTest/conflicted")).toBeNull();
+        expect(() => System.composite({ name: "createTest/conflicted", systems: [move] })).not.toThrow();
     });
 
     it("gives a body's context only the kinds its declaration declares", async () => {
@@ -296,12 +296,14 @@ describe("World.create", () => {
         expect(() => World.create({ resources: { [velocity]: 1 } })).toThrow(`"createTest/velocity" isn't a registered resource`);
     });
 
-    it("finds systems by name", () => {
-        const named = System.create({ name: "createTest/named" }, () => {});
-        expect(System.get("createTest/named")).toBe(named);
-        expect(System.get("createTest/main")).toBe(main);
+    it("accepts a system declared again the same, as a module evaluated again declares it, and rejects a different one", async () => {
+        const first = System.create({ name: "createTest/named", resources: { write: [seen] } }, ({ resources }) => { resources[seen] = 1; });
+        const again = System.create({ name: "createTest/named", resources: { write: [seen] } }, ({ resources }) => { resources[seen] = 2; });
         expect(() => System.create({ name: "createTest/named" }, () => {})).toThrow('A different system, rule or finalizer named "createTest/named" already exists');
-        expect(System.get("createTest/copy")).toBeNull();
+        await using world = World.create();
+        await world.run(first);
+        await world.run(again);
+        expect(world.read.resource(seen)).toBe(2);
     });
 
     it("refuses runs as soon as dispose is called", async () => {

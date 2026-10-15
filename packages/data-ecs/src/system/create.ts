@@ -1,5 +1,5 @@
 import type { Component } from '../component/component.js';
-import { claim, systemNamed } from '../world/create/program.js';
+import { claim } from '../world/create/program.js';
 import { scheduleOf } from '../world/create/schedule.js';
 import type { Resource } from '../resource/resource.js';
 import type { Schema } from '../schema/schema.js';
@@ -50,8 +50,8 @@ type Validate<D extends Declaration> =
     & { readonly shader?: never };
 
 /** Declares a system, findable by name with `get`; nothing runs. Throws if a different one has its name. */
-export const create = <const D extends Declaration>(declaration: D & Validate<D>, body: Body<D>): System<D["name"], InputOf<D>> => {
-    const system: Leaf & System<D["name"], InputOf<D>> = { kind: "system", name: declaration.name, declaration, body };
+export const create = <const D extends Declaration>(declaration: D & Validate<D>, body: Body<D>): System<InputOf<D>> => {
+    const system: Leaf & System<InputOf<D>> = { kind: "system", name: declaration.name, declaration, body };
     claim(system);
     return system;
 };
@@ -60,14 +60,9 @@ export const create = <const D extends Declaration>(declaration: D & Validate<D>
  * Declares a system made of subsystems, findable by name with `get`. Throws if a different one has its name, its
  * members are ordered in a cycle, or two of them conflict with no order between them.
  */
-export const composite = <const D extends CompositeDeclaration>(declaration: D): System<D["name"]> => {
-    const system: Composite & System<D["name"]> = { kind: "composite", name: declaration.name, declaration };
+export const composite = <const D extends CompositeDeclaration>(declaration: D): System => {
+    const system: Composite & System = { kind: "composite", name: declaration.name, declaration };
     scheduleOf(system);
     claim(system);
     return system;
-};
-
-/** A system by name, with whatever input it takes. */
-export const get = (name: Name): System<Name, unknown> | null => {
-    return systemNamed(name);
 };

@@ -231,21 +231,36 @@ describe("the gpuDevice resource", () => {
         await world.dispose();
     });
 
-    it("rebuilds on a new device once the old one is lost, from the CPU's copies", async () => {
+    it("sets itself to null once the device is lost, so the world goes on without it until a new one is set", async () => {
         const lost = await device();
         const world = createWorld({ workers: 0, resources: { gpuDevice: lost } });
         const cpuWorld = createWorld({ workers: 0 });
-        await world.run(spawn);
-        await cpuWorld.run(spawn);
+        let changes = 0;
+        const watchDevice = System.create({ name: "gpuTest/watchDevice", resources: { read: [gpuDevice], changed: [gpuDevice] } }, ({ resources }) => {
+            void resources[gpuDevice];
+            changes++;
+        });
+        let drawn = 0;
+        const draw = System.render({ name: "gpuTest/drawWhileLost", shader: { accessors: { place: position } } }, () => { drawn++; });
+        for (const each of [world, cpuWorld]) await each.run(spawn);
+        await world.run(watchDevice);
         // This move stays on the lost device, so it's lost with it.
         await world.run(move);
         lost.destroy();
         await lost.lost;
-        await expect(world.run(move)).rejects.toThrow("GPU device was lost");
+        // Nothing fails: the move runs on the CPU from the CPU's copies, and the render system is skipped.
+        await world.run(move);
+        await world.run(draw);
+        expect(drawn).toBe(0);
+        expect(world.read.resource(gpuDevice)).toBeNull();
+        await world.run(watchDevice);
+        expect(changes).toBe(2);
         nextDevice = await device();
         await world.run(setDevice);
         await world.run(move);
-        await cpuWorld.run(move);
+        await world.run(draw);
+        expect(drawn).toBe(1);
+        for (let i = 0; i < 2; i++) await cpuWorld.run(move);
         await world.synchronize([position]);
         expect(positions(world)).toEqual(positions(cpuWorld));
         await world.dispose();
@@ -267,10 +282,11 @@ describe("the gpuDevice resource", () => {
         await cpuWorld.dispose();
     });
 
-    it("runs GPU kernels on the CPU again when set to null, and rejects render systems", async () => {
+    it("runs GPU kernels on the CPU again when set to null, and skips render systems", async () => {
         const world = createWorld({ workers: 2, minimumChunk: 1, resources: { gpuDevice: await device() } });
         const cpuWorld = createWorld({ workers: 0 });
-        const draw = System.render({ name: "gpuTest/drawUntilNull", shader: { accessors: { place: position } } }, () => {});
+        let drawn = 0;
+        const draw = System.render({ name: "gpuTest/drawUntilNull", shader: { accessors: { place: position } } }, () => { drawn++; });
         for (const each of [world, cpuWorld]) await each.run(spawn);
         await world.run(draw);
         await world.run(move);
@@ -280,7 +296,8 @@ describe("the gpuDevice resource", () => {
         for (let i = 0; i < 2; i++) await cpuWorld.run(move);
         // On the CPU, reads see writes at once.
         expect(positions(world)).toEqual(positions(cpuWorld));
-        await expect(world.run(draw)).rejects.toThrow("needs a world with a gpu device");
+        await world.run(draw);
+        expect(drawn).toBe(1);
         await world.dispose();
         await cpuWorld.dispose();
     });

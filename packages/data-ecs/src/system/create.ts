@@ -15,16 +15,20 @@ import type { Listed, Property } from './property.js';
 
 type Reduced<D extends Declaration> = keyof Property<D, "reduce"> & Resource.Name;
 type Written<D, K extends "components" | "resources"> = Listed<Property<D, K>, "write">;
+type Is<D> = Listed<Property<D, "resources">, "is">;
 
 /**
  * A key in `write` is readable too, so it isn't also in `read`. A system doesn't read or filter on what it reduces
- * into, since the fold is only finished after every contributor runs.
+ * into, since the fold is only finished after every contributor runs. A condition in `is` is readable too, and isn't
+ * written or also in `not`.
  */
 type Lists<D extends Declaration> = {
     readonly components?: { readonly read?: readonly Exclude<Component.Name, Written<D, "components">>[] };
     readonly resources?: {
-        readonly read?: readonly Exclude<Resource.Name, Written<D, "resources"> | Reduced<D>>[];
+        readonly read?: readonly Exclude<Resource.Name, Written<D, "resources"> | Reduced<D> | Is<D>>[];
+        readonly write?: readonly Exclude<Resource.Name, Is<D>>[];
         readonly changed?: readonly Exclude<Resource.Name, Reduced<D>>[];
+        readonly not?: readonly Exclude<Resource.Name, Is<D>>[];
     };
 };
 

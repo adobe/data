@@ -89,8 +89,10 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
                 break;
             case "resources":
                 for (const [list, value] of properties(property.value, "resources")) {
-                    if (list === "read") resources = identifiers(value.value, module);
+                    // A condition in `is` is readable too; one in `not` is only checked before the kernel runs.
+                    if (list === "read" || list === "is") resources = [...resources, ...identifiers(value.value, module)];
                     else if (list === "changed") changedResources = identifiers(value.value, module);
+                    else if (list === "not") continue;
                     else fail(value, `resources.${list} is not allowed in a kernel declaration`);
                 }
                 break;

@@ -42,6 +42,18 @@ export const ensureResources = (state: State, keys: Iterable<Key>): void => {
     synchronizeAlone(state, buffer);
 };
 
+/** Sets a resource as its own sync point, between runs, so systems see the change as they see any write. */
+export const setResource = (state: State, key: Key, value: unknown): void => {
+    if (findResource(state, key) === undefined) {
+        // No registered system uses it yet; it starts at this value when one does.
+        state.initial.set(key, value);
+        return;
+    }
+    const buffer = createBuffer();
+    pushValues(state, buffer, addCommand, state.resourceEntity, { [key]: value });
+    synchronizeAlone(state, buffer);
+};
+
 /** Where a resource lives now, or `undefined` if no registered system uses it. Valid until the next sync point. */
 export const findResource = (state: State, key: Key): ResourceCell | undefined => {
     if (state.resourceEntity < 0) return undefined;

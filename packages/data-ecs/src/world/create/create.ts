@@ -15,7 +15,7 @@ import { createPool, defaultWorkerCount, type Pool } from './pool.js';
 import { createPublisher } from './publish.js';
 import { count, readComponent, readEntity, select } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
-import { ensureResources, findResource, initialOf } from './resources.js';
+import { ensureResources, findResource, initialOf, setResource } from './resources.js';
 import { ensureProgramResources, activate } from './activate.js';
 import { kindOf } from '../../registry/declare-name.js';
 import { createState, startTicking, type Key } from './state.js';
@@ -123,11 +123,13 @@ export const createWorld = (options: WorldOptions = {}): World => {
     };
 
     /**
-     * After each run: the world's GPU storage follows its `gpuDevice` resource. A new device gets the storage, after
-     * what's ahead on the old one is read back, unless the old one is lost; `kernel: "gpu"` systems move with it, and
-     * run on the CPU again without a device.
+     * Before and after each run: the world's GPU storage follows its `gpuDevice` resource, which the world sets to null
+     * once the device is lost. A new device gets the storage, after what's ahead on the old one is read back unless it
+     * was lost; `kernel: "gpu"` systems move with it, and run on the CPU again without a device.
      */
     const followDevice = async (): Promise<void> => {
+        // A lost device is no device: systems that need one are skipped, and systems watching it see the change.
+        if (state.gpu !== null && state.gpu.lost() !== null && world.read.resource(gpuDevice) === state.gpu.device) setResource(state, gpuDevice, null);
         const device = world.read.resource(gpuDevice);
         const current = state.gpu;
         if (device === (current?.device ?? null)) return;
@@ -159,6 +161,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
             return enqueue(async () => {
                 if (registration !== null) await complete(registration);
                 ensureProgramResources(state, ensured);
+                await followDevice();
                 const schedule = registrar.registered(definition);
                 if (schedule === undefined) throw new Error(`System "${system.name}" didn't register.`);
                 try {

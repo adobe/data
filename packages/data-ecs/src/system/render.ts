@@ -5,6 +5,8 @@ import type { Leaf } from './leaf.js';
 import type { LinearComponent } from './linear.js';
 import type { Name } from './name.js';
 import type { System } from './system.js';
+import type { Condition } from '../resource/condition.js';
+import { gpuDevice } from '../resources/gpu-device.js';
 import type { Resource } from '../resource/resource.js';
 
 /**
@@ -33,7 +35,8 @@ type RenderDeclaration = {
     readonly name: Name;
     /** It reads the components its accessors name. */
     readonly components?: { readonly has?: readonly Component.Name[]; readonly not?: readonly Component.Name[] };
-    readonly resources?: { readonly read?: readonly Resource.Name[] };
+    /** It runs only while `gpuDevice` is set, as if `is` listed it. */
+    readonly resources?: { readonly read?: readonly Resource.Name[]; readonly is?: readonly Condition[]; readonly not?: readonly Condition[] };
     readonly shader: Shader;
     readonly before?: readonly System<unknown>[];
     readonly after?: readonly System<unknown>[];
@@ -45,7 +48,8 @@ type Rendered<D extends RenderDeclaration> = D & { readonly components: { readon
 
 /**
  * Declares a render system: it runs once per run on the main thread, in schedule order, and records GPU work over
- * the GPU copy of the components its accessors name, which the world uploads first as needed. It needs a world with a `gpu` device.
+ * the GPU copy of the components its accessors name, which the world uploads first as needed. It runs only while the
+ * world has a `gpuDevice`.
  * Throws if a different system has its name.
  */
 export const render = <const D extends RenderDeclaration>(
@@ -55,7 +59,11 @@ export const render = <const D extends RenderDeclaration>(
     const system: Leaf & System = {
         kind: "render",
         name: declaration.name,
-        declaration: { ...declaration, components: { ...declaration.components, read: [...new Set(Object.values(declaration.shader.accessors))] } },
+        declaration: {
+            ...declaration,
+            components: { ...declaration.components, read: [...new Set(Object.values(declaration.shader.accessors))] },
+            resources: { ...declaration.resources, is: [...new Set([...declaration.resources?.is ?? [], gpuDevice])] },
+        },
         body,
     };
     claim(system);

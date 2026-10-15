@@ -235,7 +235,7 @@ export const createContext = (state: State, declaration: Pick<Declaration, "look
         Object.defineProperty(value, "lookup", { value: lookups, enumerable: true });
     }
     const writes = new Set<Key>(resources?.write);
-    const keys = [...new Set<Key>([...resources?.read ?? [], ...writes])];
+    const keys = [...new Set<Key>([...resources?.read ?? [], ...resources?.is ?? [], ...writes])];
     const cells: (ResourceCell | undefined)[] = keys.map(() => undefined);
     if (keys.length > 0) {
         const values = own();

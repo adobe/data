@@ -26,12 +26,8 @@ export const execute = async (context: ExecuteContext, schedule: Schedule, args:
     const { gpu } = context.state;
     if (gpu === null) return executeTiers(context, schedule, args);
     const lost = gpu.lost();
-    if (lost !== null) {
-        // Runs that don't use the GPU go on, so a system can set `gpuDevice` to a new device.
-        const usesGpu = schedule.tiers.some(tier => tier.some(leaf => context.runnerOf(leaf).placement !== "cpu"));
-        if (usesGpu) throw new Error(`The world's GPU device was lost: ${lost}; set gpuDevice to a new device.`);
-        return executeTiers(context, schedule, args);
-    }
+    // Lost since the run started; the world sets gpuDevice to null before the next one.
+    if (lost !== null) throw new Error(`The world's GPU device was lost during this run: ${lost}.`);
     const earlier = gpu.takeError();
     if (earlier !== null) throw new Error(`An earlier run's GPU work failed: ${earlier}`);
     // The run's GPU work, its render bodies' included, reports its errors to the next run: waiting for them here would

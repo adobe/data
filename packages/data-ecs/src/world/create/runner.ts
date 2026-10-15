@@ -87,7 +87,6 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     }
     const placement = leaf.kind === "render" ? "render" : declaration.kernel === "gpu" && state.gpu !== null ? "gpu" : "cpu";
     const failPlacement = (message: string): never => { throw new Error(`System "${declaration.name}" ${message}.`); };
-    if (placement !== "cpu" && state.gpu === null) failPlacement("needs a world with a gpu device");
     // The build rejects these in compiled kernels; this covers declarations it didn't see.
     if (declaration.kernel === "gpu") {
         if (filtered) failPlacement("can't run on the GPU: GPU kernels don't support change filters yet");
@@ -355,6 +354,16 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }
     };
 
+    const conditionIs = (resources?.is ?? []).map(key => idOf(state, key));
+    const conditionNot = (resources?.not ?? []).map(key => idOf(state, key));
+    /** Whether a condition's value is neither `null` nor `false`. */
+    const holding = (id: number): boolean => {
+        const { storage, row } = resourceCell(state, state.keys[id]);
+        const value = readCell(storage, row);
+        return value !== null && value !== false;
+    };
+    const holds = (): boolean => conditionIs.every(holding) && !conditionNot.some(holding);
+
     /** A GPU kernel that could never run on the GPU is rejected in every world, with or without one. */
     const load = async (): Promise<void> => {
         if (kernel === null) return;
@@ -375,8 +384,10 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     };
 
     const start = (args: unknown, workers: Workers | null, index: number): readonly Chunk[] => {
-        const tick = ++state.tick;
         ran = false;
+        // A system whose conditions don't hold is skipped, successfully, and keeps its `lastRun`.
+        if (!holds()) return [];
+        const tick = ++state.tick;
         slotsUsed = 0;
         used = 0;
         holder.buffer = nextBuffer();

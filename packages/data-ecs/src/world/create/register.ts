@@ -1,4 +1,5 @@
-import { declarationOf } from '../../registry/create-registry.js';
+import { conditional, declarationOf } from '../../registry/create-registry.js';
+import { kindOf } from '../../registry/declare-name.js';
 import type { Leaf } from '../../system/leaf.js';
 import { requireDefinition, type Definition } from '../../system/definition.js';
 import { createRunner, type Runner } from './runner.js';
@@ -40,7 +41,7 @@ const keysOf = (leaf: Leaf): { readonly components: readonly Key[]; readonly res
     const { components: access, lookup, resources } = leaf.declaration;
     const components = [...access?.read ?? [], ...access?.write ?? [], ...access?.has ?? [], ...access?.not ?? [], ...access?.added ?? [], ...access?.changed ?? []];
     for (const name in lookup) components.push(...lookup[name].read ?? [], ...lookup[name].has ?? [], ...lookup[name].not ?? []);
-    return { components, resources: [...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? [], ...reducedBy(leaf)] };
+    return { components, resources: [...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? [], ...reducedBy(leaf)] };
 };
 
 /** Throws if a key is in both `read` and `write`: `write` already makes it readable. */
@@ -67,6 +68,27 @@ const checkReductions = (leaf: Leaf): void => {
     }
 };
 
+/**
+ * Throws if a condition isn't a resource whose value can be `null` or `false`, is in both `is` and `not`, or is also
+ * read or written: `is` already makes it readable.
+ */
+const checkConditions = (leaf: Leaf): void => {
+    const { name, resources } = leaf.declaration;
+    const is = resources?.is ?? [];
+    const not = resources?.not ?? [];
+    const listed = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? []]);
+    for (const key of [...is, ...not]) {
+        const declaration = declarationOf(key);
+        if (kindOf(key) !== "resource" || declaration === undefined) throw new Error(`System "${name}" runs on the condition of "${String(key)}", which isn't a registered resource.`);
+        const { type } = declaration;
+        if (type !== undefined && !conditional(type)) throw new Error(`System "${name}" runs on the condition of "${String(key)}", which is never null or false.`);
+    }
+    for (const key of is) {
+        if (not.includes(key)) throw new Error(`System "${name}" lists "${String(key)}" in both resources is and not.`);
+        if (listed.has(key)) throw new Error(`System "${name}" lists "${String(key)}" in resources is and in read or write; is already makes it readable.`);
+    }
+};
+
 export const createRegistrar = (state: State): Registrar => {
     const schedules = new Map<Definition, Schedule>();
     const runners = new Map<Leaf, Runner>();
@@ -90,6 +112,7 @@ export const createRegistrar = (state: State): Registrar => {
                     if (declarationOf(key)?.reference !== undefined) throw new Error(`System "${name}" writes "${String(key)}", a reference, which changes only through commands.`);
                 }
                 checkReductions(system);
+                checkConditions(system);
                 const keys = keysOf(system);
                 for (const key of keys.components) idOf(state, key);
                 for (const key of keys.resources) {

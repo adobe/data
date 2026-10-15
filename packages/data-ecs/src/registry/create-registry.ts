@@ -10,6 +10,11 @@ import { sameDeclaration } from "./same-declaration.js";
 const allowsNull = (schema: Schema): boolean =>
     ("type" in schema && schema.type === "null") || ("const" in schema && schema.const === null) || ("anyOf" in schema && schema.anyOf.some(allowsNull));
 
+/** Whether a schema accepts `null` or `false`, so a system can run on the condition of a value of it. */
+export const conditional = (schema: Schema): boolean =>
+    allowsNull(schema) || ("type" in schema && schema.type === "boolean") || ("const" in schema && schema.const === false)
+    || ("anyOf" in schema && schema.anyOf.some(conditional));
+
 /**
  * A registered declaration, as any consumer iterating components or resources sees it: its `type` and other traits.
  * Without `type`, the value isn't data, and `default` is what it starts at.

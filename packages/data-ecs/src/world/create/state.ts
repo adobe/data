@@ -83,14 +83,14 @@ export type State = {
     /** The program's version when the world last activated, and whether it has met a component since. */
     activation: { version: number; met: boolean };
     /** Resource values given at creation, in place of their defaults. */
-    readonly initial: ReadonlyMap<Key, unknown>;
+    readonly initial: Map<Key, unknown>;
     /** The world's GPU, where render systems and GPU kernels run. */
     gpu: GpuEngine | null;
     /** With a GPU: archetypes the current sync point changed, whose GPU copies are then out of date. */
     touched: Set<Archetype> | null;
 };
 
-export const createState = (shared?: boolean, wasm = true, simd = true, gpu = false, initial: ReadonlyMap<Key, unknown> = new Map()): State => {
+export const createState = (shared?: boolean, wasm = true, simd = true, gpu = false, initial: Map<Key, unknown> = new Map()): State => {
     const memory = createMemory(shared);
     return {
         memory,

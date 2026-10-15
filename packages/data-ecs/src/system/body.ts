@@ -1,6 +1,7 @@
 import type { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
 import type { Resource } from '../resource/resource.js';
+import type { Holding } from '../resource/condition.js';
 import type { Schema } from '../schema/schema.js';
 import type { Commands } from './commands.js';
 import type { Declaration } from './declaration.js';
@@ -13,7 +14,8 @@ export type Row<D extends Declaration> =
     { readonly entity: Entity }
     & Values<Listed<Property<D, "components">, "read">, Listed<Property<D, "components">, "write">, Component.Name, ComponentValues>;
 
-type Resources<D> = Listed<Property<D, "resources">, "read"> | Listed<Property<D, "resources">, "write">;
+type Resources<D> = Listed<Property<D, "resources">, "read"> | Listed<Property<D, "resources">, "write"> | Is<D>;
+type Is<D> = Listed<Property<D, "resources">, "is">;
 type Reduced<D> = keyof Property<D, "reduce"> & Resource.Name;
 
 /**
@@ -22,7 +24,8 @@ type Reduced<D> = keyof Property<D, "reduce"> & Resource.Name;
  */
 export type Context<D extends Declaration> =
     ([Resources<D>] extends [never] ? {} : {
-        readonly resources: Values<Listed<Property<D, "resources">, "read">, Listed<Property<D, "resources">, "write">, Resource.Name, ResourceValues>;
+        readonly resources: Values<Listed<Property<D, "resources">, "read">, Listed<Property<D, "resources">, "write">, Resource.Name, ResourceValues>
+            & { readonly [K in Is<D> & Resource.Name]: Holding<K> };
     })
     & ([keyof Property<D, "lookup">] extends [never] ? {} : {
         readonly lookup: { readonly [K in keyof Property<D, "lookup">]: LookupFunction<Property<D, "lookup">[K]> };

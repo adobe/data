@@ -5,6 +5,9 @@ const score = "guide/filters/score";
 const shown = "guide/filters/shown";
 const level = "guide/filters/level";
 const enemy = "guide/filters/enemy";
+const paused = "guide/filters/paused";
+const map = "guide/filters/map";
+const steps = "guide/filters/steps";
 
 declare module "@adobe/data-ecs" {
     interface Components {
@@ -14,6 +17,9 @@ declare module "@adobe/data-ecs" {
     }
     interface Resources {
         [level]: { type: number };
+        [paused]: { type: boolean };
+        [map]: { type: { readonly width: number } | null };
+        [steps]: { type: number };
     }
 }
 
@@ -21,6 +27,9 @@ Component.register(score, { type: { type: "number" } });
 Component.register(shown, { type: { type: "number" } });
 Component.register(enemy, { type: { const: true } });
 Resource.register(level, { type: { type: "number", default: 1 } });
+Resource.register(paused, { type: { type: "boolean", default: false } });
+Resource.register(map, { type: { anyOf: [{ type: "object", properties: { width: { type: "number" } } }, { type: "null" }] } });
+Resource.register(steps, { type: { type: "number", default: 0 } });
 
 // A resource in `changed` passes every run after it changes, and the first run: no run-once flag is needed.
 const load = System.create({ name: "guide/filters/load", resources: { read: [level], changed: [level] } }, ({ resources, commands }) => {
@@ -46,4 +55,22 @@ it("runs systems only for what changed since they last ran", async () => {
     await world.run(show);
     expect(world.read.component(first, shown)).toBe(10);
     expect(world.read.component(second, shown)).toBe(0);
+});
+
+// A system runs only while each resource in `is` is neither null nor false, and each in `not` is; otherwise it's
+// skipped, which isn't a failure. `is` reads the value narrowed: here `map` isn't null.
+const step = System.create({ name: "guide/filters/step", resources: { is: [map], not: [paused], write: [steps] } }, ({ resources }) => {
+    resources[steps] += resources[map].width;
+});
+const pause = System.create({ name: "guide/filters/pause", resources: { write: [paused] } }, ({ resources }) => { resources[paused] = true; });
+const open = System.create({ name: "guide/filters/open", resources: { write: [map] } }, ({ resources }) => { resources[map] = { width: 4 }; });
+
+it("runs systems only while their conditions hold", async () => {
+    await using world = World.create();
+    await world.run(step);
+    await world.run(open);
+    await world.run(step);
+    await world.run(pause);
+    await world.run(step);
+    expect(world.read.resource(steps)).toBe(4);
 });

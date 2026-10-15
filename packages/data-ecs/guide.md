@@ -9,7 +9,7 @@ with the reasoning behind each rule.
 2. [Components and resources](#2-components-and-resources)
 3. [Systems](#3-systems)
 4. [Scheduling and composites](#4-scheduling-and-composites)
-5. [Change filters](#5-change-filters)
+5. [Change filters and conditions](#5-change-filters-and-conditions)
 6. [Lookups](#6-lookups)
 7. [Input](#7-input)
 8. [Sync points](#8-sync-points)
@@ -140,7 +140,7 @@ Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L17-L39).
 - **Rejected:** two members that both write a component or resource, or where one reads what the other writes, with no ordering path between them, at `System.composite`.
 - **Reductions are the exception:** contributors to one resource need no order between them, and its readers run after all of them (section 10).
 
-## 5. Change filters
+## 5. Change filters and conditions
 
 `added` and `changed` pass rows whose listed components were added or written since that system last ran, so each
 system sees each change once. Only rows a body actually writes are marked changed. A resource in `resources.changed`
@@ -155,9 +155,25 @@ const show = System.create({ name: "guide/filters/show", components: { read: [sc
 });
 ```
 
-Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L25-L49).
+Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L34-L58).
 
 - **`changed` is conservative:** it means "may have changed".
+
+A condition says whether a system runs at all. With `resources: { is: [...] }` it runs only while each resource is
+neither `null` nor `false`, and reads it narrowed so; with `not`, only while each is. Otherwise it's skipped, which
+isn't a failure, so systems ordered after it still run.
+
+```ts
+const step = System.create({ name: "guide/filters/step", resources: { is: [map], not: [paused], write: [steps] } }, ({ resources }) => {
+    resources[steps] += resources[map].width;
+});
+```
+
+Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L60-L76).
+
+- **Conditions are resources whose type allows `null` or `false`:** a number or string is never a condition, so `0` and `""` can't turn a system off.
+- **A skipped system keeps its `lastRun`,** so once it runs again it sees every change since it last ran.
+- **Rejected:** a condition that's never `null` or `false`, one in both `is` and `not`, and one in `is` that's also read or written, in types and at registration.
 
 ## 6. Lookups
 
@@ -302,8 +318,9 @@ gives its shaders' declarations, a function per accessor, and pipelines take `Gp
 [declaration](src/sample/gpu/particles.ts#L100-L105) and [draw](src/sample/gpu/particles.ts#L111-L139), wired up in
 [`main.ts`](src/sample/gpu/main.ts#L59-L63).
 
-- **Setting it, at any time,** moves the world's GPU storage and `kernel: "gpu"` systems onto the new device, after reading back what's ahead on the old one. With `null`, GPU kernels run on the CPU again, and render systems reject until there's a device.
-- **A lost device** rejects runs that use the GPU, until a system sets `gpuDevice` to a new one. Writes on the GPU not yet read back are lost with the old device, so the world rebuilds from the CPU's copies.
+- **Render systems run only while there's a device,** as if their `is` listed `gpuDevice`; otherwise they're skipped.
+- **Setting it, at any time,** moves the world's GPU storage and `kernel: "gpu"` systems onto the new device, after reading back what's ahead on the old one. With `null`, GPU kernels run on the CPU again.
+- **A lost device makes `gpuDevice` null** at the next sync point, so nothing fails: GPU kernels run on the CPU from the CPU's copies, render systems are skipped, and a system with `changed: [gpuDevice]` sees the loss. Writes on the GPU not yet read back are lost with the device. Setting a new device moves everything back.
 - **Not yet:** lookups, change filters, commands, loops and reductions in GPU kernels.
 
 ## 12. Traits

@@ -20,10 +20,6 @@ declare module "@adobe/data-ecs" {
         [sum]: { type: number; reduce: "+" };
         [largest]: { type: number; reduce: "max" };
     }
-    export interface Systems {
-        "reductionsBrowserTest/spawn": true;
-        "reductionsBrowserTest/reduce": true;
-    }
 }
 
 Component.register(weight, { type: { type: "number", precision: 1 } });

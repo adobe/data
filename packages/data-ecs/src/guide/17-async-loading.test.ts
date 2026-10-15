@@ -23,18 +23,6 @@ declare module "@adobe/data-ecs" {
         [nextToken]: { type: number };
         [requests]: { type: readonly Request[] };
     }
-    interface Rules {
-        "guide/loading/slots": true;
-    }
-    interface Finalizers {
-        "guide/loading/release": true;
-    }
-    interface Systems {
-        "guide/loading/spawn": true;
-        "guide/loading/request": true;
-        "guide/loading/apply": true;
-        "guide/loading/hide": true;
-    }
 }
 
 Component.register(meshSource, { type: { type: "string" } });

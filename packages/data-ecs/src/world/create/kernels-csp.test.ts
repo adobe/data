@@ -9,10 +9,6 @@ declare module "@adobe/data-ecs" {
     export interface Components {
         [value]: { type: number };
     }
-    export interface Systems {
-        "kernelsCspTest/seed": true;
-        "kernelsCspTest/double": true;
-    }
 }
 
 Component.register(value, { type: { type: "number", precision: 1 } });

@@ -7,11 +7,9 @@ import type { Changes, Leaf } from './created.js';
 import type { Finalizer } from './finalizer.js';
 import type { Name } from './name.js';
 
-type Ordering<N> = { readonly before?: readonly Finalizer<Exclude<Name, N>>[]; readonly after?: readonly Finalizer<Exclude<Name, N>>[] };
-
 /** A resource in `write` is readable too, so it isn't also in `read`. */
-type Validate<D extends Declaration | ChangesDeclaration> = Ordering<D["name"]>
-    & { readonly resources?: { readonly read?: readonly Exclude<Resource.Name, Listed<Property<D, "resources">, "write">>[] } };
+type Validate<D extends Declaration | ChangesDeclaration> =
+    { readonly resources?: { readonly read?: readonly Exclude<Resource.Name, Listed<Property<D, "resources">, "write">>[] } };
 
 /**
  * Declares a finalizer for each entity that stops matching its components, which applies in every world. Throws if a different system, rule or finalizer has its name, or the program's finalizers can't be ordered.

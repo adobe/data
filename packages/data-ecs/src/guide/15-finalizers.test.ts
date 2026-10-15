@@ -11,13 +11,6 @@ declare module "@adobe/data-ecs" {
         [handle]: { type: number };
         [debris]: { type: true };
     }
-    interface Finalizers {
-        "guide/finalizers/release": true;
-    }
-    interface Systems {
-        "guide/finalizers/spawn": true;
-        "guide/finalizers/destroy": true;
-    }
 }
 
 Component.register(position, { type: Vec3.schema });

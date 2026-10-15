@@ -22,13 +22,6 @@ declare module '@adobe/data-ecs' {
         [visible]: { type: true };
         [enabled]: { type: true };
     }
-    export interface Systems {
-        "gpuParticles/spawn": true;
-        "gpuParticles/move": true;
-        "gpuParticles/moveOnCpu": true;
-        "gpuParticles/draw": true;
-        "gpuParticles/frame": true;
-    }
 }
 
 Component.register(position, { type: Vec3.schema });

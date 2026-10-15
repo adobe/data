@@ -30,14 +30,6 @@ declare module '@adobe/data-ecs' {
         [bounds]: { type: readonly [number, number, number]; reduce: "min" };
         [total]: { type: number; reduce: "+" };
     }
-    export interface Systems {
-        "test/draw": true;
-        "test/integrate": true;
-        "test/follow": true;
-        "test/move": true;
-        "test/tally": true;
-        "test/main": true;
-    }
 }
 
 // Row: read values are read-only, write values writable, others absent.
@@ -126,12 +118,6 @@ System.create({
     // @ts-expect-error write already makes a resource readable
     resources: { read: [score], write: [score] },
 }, ({ resources }) => { resources[score] += 1; });
-
-System.create({
-    name: "test/integrate",
-    // @ts-expect-error a system can't be ordered against itself
-    before: [integrate],
-}, () => {});
 
 System.create({
     name: "test/integrate",

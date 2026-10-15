@@ -18,10 +18,6 @@ declare module "@adobe/data-ecs" {
         "dispatchTest/a": { type: true }; "dispatchTest/b": { type: true }; "dispatchTest/c": { type: true }; "dispatchTest/d": { type: true };
         "dispatchTest/e": { type: true }; "dispatchTest/f": { type: true }; "dispatchTest/g": { type: true };
     }
-    export interface Systems {
-        "dispatchTest/scatter": true; "dispatchTest/seed": true; "dispatchTest/fastA": true; "dispatchTest/slowB": true; "dispatchTest/fastC": true; "dispatchTest/tier": true;
-        "dispatchTest/seed/2": true; "dispatchTest/fastA/2": true; "dispatchTest/slowB/2": true; "dispatchTest/tier/2": true; "dispatchTest/tier/3": true; "dispatchTest/tier/4": true; "dispatchTest/tier/5": true; "dispatchTest/tier/6": true; "dispatchTest/fastC/2": true;
-    }
 }
 Component.register(position, { type: vec2 });
 Component.register(velocity, { type: vec2 });

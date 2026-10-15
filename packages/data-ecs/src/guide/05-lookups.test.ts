@@ -11,10 +11,6 @@ declare module "@adobe/data-ecs" {
         [velocity]: { type: Vec3 };
         [target]: { type: Entity };
     }
-    interface Systems {
-        "guide/lookups/spawn": true;
-        "guide/lookups/follow": true;
-    }
 }
 
 Component.register(position, { type: Vec3.schema });

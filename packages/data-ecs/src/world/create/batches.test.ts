@@ -19,17 +19,6 @@ declare module "@adobe/data-ecs" {
         [name]: { type: string };
         [tag]: { type: true };
     }
-    export interface Systems {
-        "batchesTest/spawn": true;
-        "batchesTest/spawn/2": true;
-        "batchesTest/spawn/3": true;
-        "batchesTest/spawn/4": true;
-        "batchesTest/early": true;
-        "batchesTest/late": true;
-        "batchesTest/same": true;
-        "batchesTest/edit": true;
-        "batchesTest/edit/2": true;
-    }
 }
 Component.register(position, { type: vec3 });
 Component.register(score, { type: { type: "number", precision: 1 } });

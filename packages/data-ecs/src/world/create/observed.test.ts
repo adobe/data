@@ -13,14 +13,6 @@ declare module "@adobe/data-ecs" {
         [seen]: { type: number };
         [flag]: { type: true };
     }
-    export interface Systems {
-        "observedTest/seed": true;
-        "observedTest/bump": true;
-        "observedTest/watch": true;
-        "observedTest/fresh": true;
-        "observedTest/flagAll": true;
-        "observedTest/spawnOne": true;
-    }
 }
 
 Component.register(value, { type: { type: "number", precision: 1 } });

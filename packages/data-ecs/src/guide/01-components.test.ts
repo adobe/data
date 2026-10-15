@@ -14,9 +14,6 @@ declare module "@adobe/data-ecs" {
     interface Resources {
         [gravity]: { type: number };
     }
-    interface Systems {
-        "guide/components/spawn": true;
-    }
 }
 
 Component.register(position, { type: Vec3.schema });

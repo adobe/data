@@ -18,14 +18,6 @@ declare module "@adobe/data-ecs" {
         [score]: { type: number };
         [tag]: { type: true };
     }
-    export interface Systems {
-        "semanticsTest/seed": true;
-        "semanticsTest/seed/2": true;
-        "semanticsTest/seed/3": true;
-        "semanticsTest/chase": true;
-        "semanticsTest/retag": true;
-        "semanticsTest/watch": true;
-    }
 }
 Component.register(position, { type: vec2 });
 Component.register(target, { type: Entity.schema });

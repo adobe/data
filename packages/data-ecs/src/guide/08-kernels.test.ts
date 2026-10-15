@@ -14,11 +14,6 @@ declare module "@adobe/data-ecs" {
         [target]: { type: Entity };
         [spark]: { type: true };
     }
-    interface Systems {
-        "guide/kernels/spawn": true;
-        "guide/kernels/integrate": true;
-        "guide/kernels/chase": true;
-    }
 }
 
 Component.register(position, { type: Vec3.schema });

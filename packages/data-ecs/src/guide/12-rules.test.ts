@@ -15,15 +15,6 @@ declare module "@adobe/data-ecs" {
         [drawn]: { type: true; derived: true };
         [layer]: { type: number; derived: true };
     }
-    interface Rules {
-        "guide/rules/meshes": true;
-        "guide/rules/sprites": true;
-        "guide/rules/layers": true;
-    }
-    interface Systems {
-        "guide/rules/spawn": true;
-        "guide/rules/hide": true;
-    }
 }
 
 Component.register(mesh, { type: { type: "number" } });

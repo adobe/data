@@ -9,10 +9,6 @@ declare module "@adobe/data-ecs" {
         [position]: { type: Vec3 };
         [velocity]: { type: Vec3 };
     }
-    interface Systems {
-        "guide/gpu/spawn": true;
-        "guide/gpu/move": true;
-    }
 }
 
 // GPU kernels read and write 4-byte values: numbers with precision 1, as `Vec3.schema` is.

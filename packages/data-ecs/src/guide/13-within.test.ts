@@ -9,10 +9,6 @@ declare module "@adobe/data-ecs" {
         [body]: { type: number };
         [glow]: { type: number; within: typeof body };
     }
-    interface Systems {
-        "guide/within/spawn": true;
-        "guide/within/strip": true;
-    }
 }
 
 Component.register(body, { type: { type: "number" } });

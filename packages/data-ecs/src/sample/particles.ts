@@ -19,13 +19,6 @@ declare module '@adobe/data-ecs' {
         [delta]: { type: number };
         [count]: { type: number };
     }
-    export interface Systems {
-        "particles/spawn": true;
-        "particles/integrate": true;
-        "particles/gravity": true;
-        "particles/setDelta": true;
-        "particles/main": true;
-    }
 }
 
 Component.register(position, { type: Vec3.schema });

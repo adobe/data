@@ -26,17 +26,6 @@ declare module '@adobe/data-ecs' {
     export interface Resources {
         [time]: { type: number };
     }
-    export interface Rules {
-        "ruleTypeTest/slots": true;
-    }
-    export interface Finalizers {
-        "ruleTypeTest/release": true;
-        "ruleTypeTest/save": true;
-        "ruleTypeTest/other": true;
-    }
-    export interface Systems {
-        "ruleTypeTest/move": true;
-    }
 }
 
 // Rules derive only derived components.
@@ -78,8 +67,6 @@ Finalizer.create({
     // @ts-expect-error write already makes a resource readable
     resources: { read: [time], write: [time] },
 }, () => {});
-// @ts-expect-error a finalizer can't order itself
-Finalizer.create({ name: "ruleTypeTest/other", components: {}, before: [other] }, () => {});
 
 // Changes finalizers see only the essential components they watch.
 Finalizer.changes({ name: "ruleTypeTest/save", watch: [source, parent] }, (changes, { commands }) => {

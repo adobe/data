@@ -35,9 +35,7 @@ World.create({ resources: { "systemTest/time": "now" } });
 World.create({ resources: { "systemTest/position": 0 } });
 // @ts-expect-error systems register on their first run
 void world.systems;
-const found: System<System.Name, unknown> | null = System.get("test/move");
-// @ts-expect-error get takes a declared system name
-System.get("test/unregistered");
+const found: System<string, unknown> | null = System.get("test/move");
 const disposed: Promise<void> = world.dispose();
 const usingDispose = async () => {
     await using scoped = World.create();

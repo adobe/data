@@ -16,11 +16,6 @@ declare module "@adobe/data-ecs" {
         [ready]: { type: true; within: typeof slot };
         [parent]: { type: Entity; reference: "owner" };
     }
-    export interface Systems {
-        "traitsTest/spawn": true;
-        "traitsTest/derived": true;
-        "traitsTest/lookup": true;
-    }
 }
 
 Component.register(score, { type: { type: "number" } });

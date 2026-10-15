@@ -11,10 +11,6 @@ declare module "@adobe/data-ecs" {
         [parent]: { type: Entity; reference: "owner" };
         [watching]: { type: Entity; reference: "weak" };
     }
-    interface Systems {
-        "guide/references/spawn": true;
-        "guide/references/prune": true;
-    }
 }
 
 Component.register(node, { type: { type: "string" } });

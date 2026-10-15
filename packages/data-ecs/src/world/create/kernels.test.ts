@@ -21,12 +21,6 @@ declare module "@adobe/data-ecs" {
     export interface Resources {
         [scale]: { type: number };
     }
-    export interface Systems {
-        "kernelsTest/read": true;
-        "kernelsTest/spawn": true;
-        "kernelsTest/double": true;
-        "kernelsTest/doubleAgain": true;
-    }
 }
 
 Component.register(value, { type: { type: "number" } });

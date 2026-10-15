@@ -36,18 +36,6 @@ declare module "@adobe/data-ecs" {
         [seconds]: { type: number };
         [floor]: { type: number };
     }
-    export interface Systems {
-        "wasmTest/seed": true;
-        "wasmTest/integrate": true;
-        "wasmTest/bounce": true;
-        "wasmTest/tally": true;
-        "wasmTest/scale": true;
-        "wasmTest/main": true;
-        "wasmTest/drift": true;
-        "wasmTest/react": true;
-        "wasmTest/chase": true;
-        "wasmTest/cull": true;
-    }
 }
 
 Component.register(position, { type: { ...vec2, layout: "storage" } });

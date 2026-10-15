@@ -11,8 +11,5 @@ export { System } from './system/system.js';
 export { Trait } from './trait/trait.js';
 export { World } from './world/world.js';
 export type { Components } from './component/types.js';
-export type { Finalizers } from './finalizer/types.js';
 export type { Resources } from './resource/types.js';
-export type { Rules } from './rule/types.js';
-export type { Systems } from './system/types.js';
 export type { Traits } from './trait/types.js';

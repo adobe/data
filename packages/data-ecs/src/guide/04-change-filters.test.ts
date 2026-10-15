@@ -15,11 +15,6 @@ declare module "@adobe/data-ecs" {
     interface Resources {
         [level]: { type: number };
     }
-    interface Systems {
-        "guide/filters/load": true;
-        "guide/filters/show": true;
-        "guide/filters/bump": true;
-    }
 }
 
 Component.register(score, { type: { type: "number" } });

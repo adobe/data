@@ -13,12 +13,6 @@ declare module "@adobe/data-ecs" {
     interface Resources {
         [counted]: { type: number };
     }
-    interface Systems {
-        "guide/sync/spawn": true;
-        "guide/sync/count": true;
-        "guide/sync/frame": true;
-        "guide/sync/fail": true;
-    }
 }
 
 Component.register(unit, { type: { type: "number" } });

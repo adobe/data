@@ -14,7 +14,7 @@ export type World = {
      * Runs a system or composite, ending in a sync point. The first time it runs here, the world registers it with
      * its members and loads their kernels. Rejects if that fails, or if a system or finalizer throws.
      */
-    run<I>(system: System<System.Name, I>, ...input: Input<NoInfer<I>>): Promise<void>;
+    run<I>(system: System<string, I>, ...input: Input<NoInfer<I>>): Promise<void>;
     /** Waits for pending runs, then terminates workers and releases memory. The world is unusable afterwards. */
     dispose(): Promise<void>;
     [Symbol.asyncDispose](): Promise<void>;

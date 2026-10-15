@@ -13,12 +13,6 @@ import type { Name } from './name.js';
 import type { System } from './system.js';
 import type { Listed, Property } from './property.js';
 
-type Ordering<N> = {
-    readonly before?: readonly System<Exclude<Name, N>, unknown>[];
-    readonly after?: readonly System<Exclude<Name, N>, unknown>[];
-    readonly during?: readonly System<Exclude<Name, N>, unknown>[];
-};
-
 type Reduced<D extends Declaration> = keyof Property<D, "reduce"> & Resource.Name;
 type Written<D, K extends "components" | "resources"> = Listed<Property<D, K>, "write">;
 
@@ -49,8 +43,7 @@ type GpuKernel = {
 };
 
 type Validate<D extends Declaration> =
-    Ordering<D["name"]>
-    & Lists<D>
+    Lists<D>
     & (D extends { readonly input: Schema } ? { readonly components?: { readonly added?: never; readonly changed?: never } } : {})
     & (D extends { readonly kernel: "cpu" | "gpu" } ? Kernel : {})
     & (D extends { readonly kernel: "gpu" } ? GpuKernel : {})
@@ -67,7 +60,7 @@ export const create = <const D extends Declaration>(declaration: D & Validate<D>
  * Declares a system made of subsystems, findable by name with `get`. Throws if a different one has its name, its
  * members are ordered in a cycle, or two of them conflict with no order between them.
  */
-export const composite = <const D extends CompositeDeclaration>(declaration: D & Ordering<D["name"]>): System<D["name"]> => {
+export const composite = <const D extends CompositeDeclaration>(declaration: D): System<D["name"]> => {
     const system: Composite & System<D["name"]> = { kind: "composite", name: declaration.name, declaration };
     scheduleOf(system);
     claim(system);

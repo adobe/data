@@ -14,14 +14,6 @@ declare module "@adobe/data-ecs" {
         [value]: { type: number };
         [other]: { type: number };
     }
-    export interface Systems {
-        "scheduleTest/a": true;
-        "scheduleTest/b": true;
-        "scheduleTest/c": true;
-        "scheduleTest/d": true;
-        "scheduleTest/group": true;
-        "scheduleTest/root": true;
-    }
 }
 
 Component.register(value, { type: { type: "number" } });

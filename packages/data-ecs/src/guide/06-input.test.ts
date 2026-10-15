@@ -7,9 +7,6 @@ declare module "@adobe/data-ecs" {
     interface Components {
         [position]: { type: Vec3 };
     }
-    interface Systems {
-        "guide/input/place": true;
-    }
 }
 
 Component.register(position, { type: Vec3.schema });

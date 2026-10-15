@@ -19,13 +19,6 @@ declare module "@adobe/data-ecs" {
         [lowest]: { type: Vec3; reduce: "min" };
         [seen]: { type: number };
     }
-    interface Systems {
-        "guide/reductions/spawn": true;
-        "guide/reductions/measure": true;
-        "guide/reductions/weigh": true;
-        "guide/reductions/report": true;
-        "guide/reductions/frame": true;
-    }
 }
 
 Component.register(position, { type: Vec3.schema });

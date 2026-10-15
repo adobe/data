@@ -11,11 +11,6 @@ declare module "@adobe/data-ecs" {
         [value]: { type: number };
         [seen]: { type: number };
     }
-    export interface Systems {
-        "observedWorkersTest/seed": true;
-        "observedWorkersTest/bump": true;
-        "observedWorkersTest/watch": true;
-    }
 }
 
 Component.register(value, { type: { type: "number", precision: 1 } });

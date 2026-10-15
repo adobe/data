@@ -13,13 +13,6 @@ declare module "@adobe/data-ecs" {
     interface Resources {
         [journal]: { type: readonly string[] };
     }
-    interface Finalizers {
-        "guide/changes/save": true;
-    }
-    interface Systems {
-        "guide/changes/spawn": true;
-        "guide/changes/retire": true;
-    }
 }
 
 Component.register(name, { type: { type: "string" } });

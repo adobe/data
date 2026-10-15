@@ -30,7 +30,6 @@ import { Component, System, World } from "@adobe/data-ecs";
 export const position = "exportsTest/position";
 declare module "@adobe/data-ecs" {
     interface Components { [position]: { type: number } }
-    interface Systems { "exportsTest/move": true; "exportsTest/all": true; "exportsTest/draw": true }
 }
 Component.register(position, { type: { type: "number" } });
 export const move = System.create({ name: "exportsTest/move", components: { write: [position] } }, row => { row[position] += 1; });

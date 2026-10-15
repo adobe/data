@@ -12,9 +12,6 @@ declare module "@adobe/data-ecs" {
         [color]: { type: number };
         [visible]: { type: true };
     }
-    export interface Systems {
-        "renderTest/draw": true;
-    }
 }
 
 describe("render systems", () => {

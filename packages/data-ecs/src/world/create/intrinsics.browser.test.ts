@@ -86,27 +86,6 @@ declare module "@adobe/data-ecs" {
         [ua]: { type: U32 };
         [uo]: { type: U32 };
     }
-    export interface Systems {
-        "intrinsicsTest/spawn": true;
-        "intrinsicsTest/vec2f": true;
-        "intrinsicsTest/vec2fScalar": true;
-        "intrinsicsTest/vec2i": true;
-        "intrinsicsTest/vec2u": true;
-        "intrinsicsTest/vec3f": true;
-        "intrinsicsTest/vec3fScalar": true;
-        "intrinsicsTest/vec3i": true;
-        "intrinsicsTest/vec3u": true;
-        "intrinsicsTest/vec4f": true;
-        "intrinsicsTest/vec4fScalar": true;
-        "intrinsicsTest/vec4i": true;
-        "intrinsicsTest/vec4u": true;
-        "intrinsicsTest/mat4x4": true;
-        "intrinsicsTest/mat4x4Vector": true;
-        "intrinsicsTest/mat4x4Scalar": true;
-        "intrinsicsTest/quat": true;
-        "intrinsicsTest/quatScalar": true;
-        "intrinsicsTest/u32": true;
-    }
 }
 
 Component.register(f2a, { type: Vec2.schema });

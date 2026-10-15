@@ -40,17 +40,6 @@ declare module "@adobe/data-ecs" {
     export interface Resources {
         [seconds]: { type: number };
     }
-    export interface Systems {
-        "workersTest/seed": true;
-        "workersTest/integrate": true;
-        "workersTest/split": true;
-        "workersTest/follow": true;
-        "workersTest/main": true;
-        "workersTest/stamp": true;
-        "workersTest/unlink": true;
-        "workersTest/labels": true;
-        "workersTest/scatter": true;
-    }
 }
 
 Component.register(position, { type: vec2 });

@@ -39,24 +39,6 @@ declare module "@adobe/data-ecs" {
         [tagged]: { type: true };
         [tag]: { type: true; derived: true };
     }
-    export interface Rules {
-        "rulesTest/slots": true;
-        "rulesTest/visible": true;
-        "rulesTest/sprites": true;
-        "rulesTest/bad": true;
-        "rulesTest/late": true;
-        "rulesTest/tag": true;
-    }
-    export interface Systems {
-        "rulesTest/edit": true;
-        "rulesTest/spawn": true;
-        "rulesTest/write": true;
-        "rulesTest/added": true;
-        "rulesTest/visible": true;
-        "rulesTest/cycle": true;
-        "rulesTest/tagged": true;
-        "rulesTest/writeReference": true;
-    }
 }
 
 Component.register(source, { type: { type: "number" } });

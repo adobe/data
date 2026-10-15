@@ -17,11 +17,6 @@ declare module "@adobe/data-ecs" {
         [delta]: { type: number };
         [frames]: { type: number };
     }
-    interface Systems {
-        "guide/systems/spawn": true;
-        "guide/systems/move": true;
-        "guide/systems/count": true;
-    }
 }
 
 Component.register(position, { type: Vec3.schema });

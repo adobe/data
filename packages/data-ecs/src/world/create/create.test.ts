@@ -28,31 +28,6 @@ declare module "@adobe/data-ecs" {
         [spawnCount]: { type: number };
         [seen]: { type: number };
     }
-    export interface Systems {
-        "createTest/spawn": true;
-        "createTest/move": true;
-        "createTest/watch": true;
-        "createTest/push": true;
-        "createTest/main": true;
-        "createTest/fail": true;
-        "createTest/edit/net": true;
-        "createTest/edit/reuse": true;
-        "createTest/edit/rows": true;
-        "createTest/edit/hidden": true;
-        "createTest/edit/swap": true;
-        "createTest/edit/select": true;
-        "createTest/edit/symbols": true;
-        "createTest/count": true;
-        "createTest/probe": true;
-        "createTest/missing": true;
-        "createTest/writer": true;
-        "createTest/observer": true;
-        "createTest/keys": true;
-        "createTest/both": true;
-        "createTest/conflicted": true;
-        "createTest/named": true;
-        "createTest/copy": true;
-    }
 }
 
 Component.register(position, { type: { type: "array", items: { type: "number" }, minItems: 2, maxItems: 2 } });

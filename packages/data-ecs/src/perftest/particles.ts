@@ -24,10 +24,6 @@ declare module "@adobe/data-ecs" {
         [visible]: { type: true };
         [enabled]: { type: true };
     }
-    export interface Systems {
-        "perf/spawn": true;
-        "perf/move": true;
-    }
 }
 
 Component.register(color, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });

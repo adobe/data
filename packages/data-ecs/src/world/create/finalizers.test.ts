@@ -46,28 +46,6 @@ declare module "@adobe/data-ecs" {
         [level]: { type: number };
         [written]: { type: number };
     }
-    export interface Rules {
-        "finalizersTest/slots": true;
-    }
-    export interface Finalizers {
-        "finalizersTest/release": true;
-        "finalizersTest/slotReleased": true;
-        "finalizersTest/count": true;
-        "finalizersTest/respawn": true;
-        "finalizersTest/throws": true;
-        "finalizersTest/changes": true;
-        "finalizersTest/first": true;
-        "finalizersTest/second": true;
-        "finalizersTest/everything": true;
-        "finalizersTest/pending": true;
-        "finalizersTest/writerA": true;
-        "finalizersTest/writerB": true;
-        "finalizersTest/late": true;
-    }
-    export interface Systems {
-        "finalizersTest/edit": true;
-        "finalizersTest/reads": true;
-    }
 }
 
 Component.register(handle, { type: { type: "number" } });

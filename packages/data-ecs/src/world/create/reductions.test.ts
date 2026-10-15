@@ -39,29 +39,6 @@ declare module "@adobe/data-ecs" {
         [wrapped]: { type: number; reduce: "+" };
         [summed]: { type: boolean; reduce: "|" };
     }
-    export interface Systems {
-        "reductionsTest/spawn": true;
-        "reductionsTest/kernel": true;
-        "reductionsTest/body": true;
-        "reductionsTest/filtered": true;
-        "reductionsTest/reader": true;
-        "reductionsTest/reader/2": true;
-        "reductionsTest/heavy": true;
-        "reductionsTest/light": true;
-        "reductionsTest/frame": true;
-        "reductionsTest/fails": true;
-        "reductionsTest/changed": true;
-        "reductionsTest/weigh": true;
-        "reductionsTest/other": true;
-        "reductionsTest/both": true;
-        "reductionsTest/other/2": true;
-        "reductionsTest/other/3": true;
-        "reductionsTest/other/4": true;
-        "reductionsTest/other/5": true;
-        "reductionsTest/other/6": true;
-        "reductionsTest/flags": true;
-        "reductionsTest/infinite": true;
-    }
 }
 
 Component.register(position, { type: Vec3.schema });

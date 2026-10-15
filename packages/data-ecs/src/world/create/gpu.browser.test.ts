@@ -34,42 +34,6 @@ declare module "@adobe/data-ecs" {
         [sums]: { type: Vec3.I32 };
         [ownedBy]: { type: Entity; reference: "owner" };
     }
-    export interface Systems {
-        "gpuTest/spawn": true;
-        "gpuTest/move": true;
-        "gpuTest/moveAgain": true;
-        "gpuTest/reset": true;
-        "gpuTest/frame": true;
-        "gpuTest/frame/2": true;
-        "gpuTest/spawnOne": true;
-        "gpuTest/grow": true;
-        "gpuTest/copy": true;
-        "gpuTest/count": true;
-        "gpuTest/target": true;
-        "gpuTest/copy/2": true;
-        "gpuTest/entityScore": true;
-        "gpuTest/watch": true;
-        "gpuTest/turn": true;
-        "gpuTest/turning": true;
-        "gpuTest/moveLater": true;
-        "gpuTest/spawnNumbers": true;
-        "gpuTest/numbers": true;
-        "gpuTest/flagScore": true;
-        "gpuTest/spawnFollower": true;
-        "gpuTest/follow": true;
-        "gpuTest/following": true;
-        "gpuTest/poison": true;
-        "gpuTest/fail": true;
-        "gpuTest/failing": true;
-        "gpuTest/churn": true;
-        "gpuTest/invalid": true;
-        "gpuTest/transform": true;
-        "gpuTest/spawnIntegers": true;
-        "gpuTest/integers": true;
-        "gpuTest/shading": true;
-        "gpuTest/spawnOwned": true;
-        "gpuTest/despawnOwner": true;
-    }
 }
 
 Component.register(position, { type: vec3 });

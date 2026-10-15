@@ -9,14 +9,6 @@ declare module "@adobe/data-ecs" {
         [health]: { type: number };
         [damage]: { type: number };
     }
-    interface Systems {
-        "guide/scheduling/spawn": true;
-        "guide/scheduling/hit": true;
-        "guide/scheduling/heal": true;
-        "guide/scheduling/frame": true;
-        "guide/scheduling/unordered": true;
-        "guide/scheduling/regenerate": true;
-    }
 }
 
 Component.register(health, { type: { type: "number" } });

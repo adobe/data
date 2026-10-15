@@ -19,12 +19,6 @@ declare module "@adobe/data-ecs" {
         [flag]: { type: boolean };
         [tag]: { type: true };
     }
-    export interface Systems {
-        "rowsTest/seed": true;
-        "rowsTest/first": true;
-        "rowsTest/other": true;
-        "rowsTest/second": true;
-    }
 }
 
 Component.register(position, { type: vec3 });

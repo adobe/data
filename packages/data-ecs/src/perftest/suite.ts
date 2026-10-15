@@ -26,26 +26,6 @@ declare module "@adobe/data-ecs" {
         [tag]: { type: true };
         [hits]: { type: number };
     }
-    export interface Systems {
-        "suite/seed": true;
-        "suite/churn": true;
-        "suite/retag": true;
-        "suite/poke": true;
-        "suite/observe": true;
-        "suite/pokeCluster": true;
-        "suite/follow": true;
-        "suite/emit": true;
-        "suite/chain1": true;
-        "suite/chain2": true;
-        "suite/chain3": true;
-        "suite/chain4": true;
-        "suite/chain5": true;
-        "suite/chain6": true;
-        "suite/chain": true;
-        [small: `suite/small${number}`]: true;
-        "suite/smalls": true;
-        "suite/reduce": true;
-    }
 }
 
 export const indexSum = "suite/indexSum";

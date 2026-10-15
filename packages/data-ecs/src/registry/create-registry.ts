@@ -6,8 +6,15 @@ import type { Name as TraitName } from "../trait/name.js";
 import { declareName, kindOf } from "./declare-name.js";
 import { sameDeclaration } from "./same-declaration.js";
 
-/** A registered declaration, as any consumer iterating components or resources sees it: its `type` and other traits. */
-export type AnyDeclaration = { readonly type: Schema } & { readonly [T in TraitName]?: unknown };
+/** Whether a schema accepts `null`, so a value of it may start there. */
+const allowsNull = (schema: Schema): boolean =>
+    ("type" in schema && schema.type === "null") || ("const" in schema && schema.const === null) || ("anyOf" in schema && schema.anyOf.some(allowsNull));
+
+/**
+ * A registered declaration, as any consumer iterating components or resources sees it: its `type` and other traits.
+ * Without `type`, the value isn't data, and `default` is what it starts at.
+ */
+export type AnyDeclaration = { readonly type?: Schema; readonly default?: unknown } & { readonly [T in TraitName]?: unknown };
 
 /** `D` maps each name to the declaration its registration requires. */
 export type Registry<D> = {
@@ -37,13 +44,14 @@ export const createRegistry = <D extends { readonly [K in keyof D]: AnyDeclarati
         const existing = registered.get(name);
         if (existing !== undefined && kindOf(name) === kind && sameDeclaration(existing, declaration)) return;
         for (const trait of Reflect.ownKeys(declaration)) {
-            if (!isTrait(trait)) throw new Error(`Cannot declare ${kind} ${String(name)}: ${String(trait)} isn't a registered trait.`);
+            if (trait !== "default" && !isTrait(trait)) throw new Error(`Cannot declare ${kind} ${String(name)}: ${String(trait)} isn't a registered trait.`);
         }
         const { type } = declaration;
-        if (declaration.reference !== undefined && !("format" in type && type.format === "entity")) {
+        if (type !== undefined && "default" in declaration) throw new Error(`Cannot declare ${kind} ${String(name)}: its schema holds its default.`);
+        if (declaration.reference !== undefined && !(type !== undefined && "format" in type && type.format === "entity")) {
             throw new Error(`Cannot declare ${kind} ${String(name)}: a reference's type is Entity.schema.`);
         }
-        if (declaration.derived === true && !("default" in type || "const" in type)) {
+        if (declaration.derived === true && type !== undefined && !("default" in type || "const" in type || allowsNull(type))) {
             throw new Error(`Cannot declare ${kind} ${String(name)}: a derived component's type has a default, which it starts at.`);
         }
         const layout = layoutOf(type);

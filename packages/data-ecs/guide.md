@@ -47,7 +47,7 @@ which `tsconfig.json` maps to the package source.
 
 A component or resource is an exported key, a string or a symbol, namespaced like `"game/position"`. Its traits,
 `type` first, come from augmenting `Components` or `Resources`; registering it gives the schema for that type. A resource always has a
-value, so its schema has a `default`.
+value, so its schema has a `default`, which a type that allows `null` may leave out to start at `null`.
 
 ```ts
 export const position = "guide/components/position";
@@ -80,7 +80,8 @@ expect(world.read.component(first, position)).toEqual([0, 10, 0]);
 Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L4-L35).
 
 - **Registration must match the declaration**, trait for trait, with `type` a schema for the declared type. Otherwise it doesn't compile.
-- **`World.create()` returns the world,** and `await using` disposes it; the TypeScript `lib` needs `ESNext.Disposable`. `World.create({ resources: { [gravity]: -1.6 } })` starts resources at other values than their defaults.
+- **Values that aren't data,** such as a `Blob`, an `HTMLElement` or a `GPUDevice`, are declared by their type alone: registration leaves `type` out, as `Component.register(element, {})`, and a resource gives its `default` on the declaration unless its type allows `null`. The world stores them as they are, so only main-thread systems use them.
+- **`World.create()` returns the world,** and `await using` disposes it; the TypeScript `lib` needs `ESNext.Disposable`. `World.create({ [gravity]: -1.6 })` starts resources at other values than their defaults.
 - **Systems register in a world on their first run there,** which validates them and loads their kernels; the run rejects if that fails. Rules and finalizers apply in every world (sections 13 and 16).
 - **A system is its name:** what `System.create` returns is typed as its `name` and the input `run` takes with it, nothing more.
 - **Names are program-wide:** a second system, rule or finalizer with a name throws when it's created, unless its declaration is the same, as when a hot reload evaluates its module again. A system declared again is a new system; a finalizer keeps its place in every world, with the new body.
@@ -281,8 +282,8 @@ Example: [`09-reductions.test.ts`](src/guide/09-reductions.test.ts#L27-L75).
 
 ## 11. GPU kernels and render systems
 
-The built-in `gpu` resource is the world's device, set at creation and `null` without one; systems read it but
-don't write it. `kernel: "gpu"` runs a system as a compute shader in a world with a device, and as a `"cpu"` kernel in one
+The built-in `gpuDevice` resource is the device the world's GPU storage lives on, for compute and render alike, or `null`
+without one. It's an ordinary resource: give it at creation, or have a main-thread system set it later. `kernel: "gpu"` runs a system as a compute shader in a world with a device, and as a `"cpu"` kernel in one
 without. Its values are 4-byte numbers and booleans, so numbers need `precision: 1`, as the math schemas have. Writes
 stay on the GPU until something on the CPU needs them, or `world.synchronize` asks.
 
@@ -290,7 +291,7 @@ stay on the GPU until something on the CPU needs them, or `world.synchronize` as
 const move = System.create({ name: "guide/gpu/move", kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
-const world = World.create({ resources: { [gpu]: device } });
+const world = World.create({ gpuDevice: device });
 ```
 
 Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L22-L41).
@@ -299,8 +300,10 @@ A render system, made by `System.render`, records GPU work over the GPU copy of 
 name. Its body is `(gpu, context)`: `gpu` has the device, the run's encoder and a table per archetype. `Gpu.wgsl(system)`
 gives its shaders' declarations, a function per accessor, and pipelines take `Gpu.layout(device)`, the same object for a device every time. See the particle sample's
 [declaration](src/sample/gpu/particles.ts#L100-L105) and [draw](src/sample/gpu/particles.ts#L111-L139), wired up in
-[`main.ts`](src/sample/gpu/main.ts#L60-L64).
+[`main.ts`](src/sample/gpu/main.ts#L59-L63).
 
+- **Setting it later** moves `kernel: "gpu"` systems onto the device. Render systems reject until there's a device.
+- **A lost device** rejects runs that use the GPU, until a system sets `gpuDevice` to a new one. The world then rebuilds on it from the CPU's copies, so GPU writes not yet read back are lost with the old device. Changing a device that isn't lost, or setting `null`, ends the world.
 - **Not yet:** lookups, change filters, commands, loops and reductions in GPU kernels.
 
 ## 12. Traits
@@ -308,7 +311,7 @@ gives its shaders' declarations, a function per accessor, and pipelines take `Gp
 A component's record lists its traits. `type` is the value type; the others are declared the same way and given again
 at registration:
 
-- **`derived: true`:** only rules add and remove the component; commands reject it. Its schema has a `default`. See [Rules](#13-rules).
+- **`derived: true`:** only rules add and remove the component; commands reject it. Its schema has a `default`, or starts at `null` when its type allows it. See [Rules](#13-rules).
 - **`reduce`:** on a resource, the operator systems reduce into it with. See [Reductions](#10-reductions).
 - **`within: host`:** `host` is another component on the same entity. The component can be on an entity only while
   `host` is too: when `host` leaves, by any cause, the component leaves with it in the same sync point, and one added
@@ -457,7 +460,7 @@ Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L49-L96
 ## 19. Reference
 
 - **Built-in components:** `component`, `persistent` and `shared` are tags in [`src/components/`](src/components/).
-- **Built-in resources:** `gpu`, the world's device, in [`src/resources/`](src/resources/).
+- **Built-in resources:** `gpuDevice`, the world's device, in [`src/resources/`](src/resources/).
 - **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value` and `With`; `Resource.Name` and `Value`; `System` and `System.Commands`; `Finalizer`; and `World`. Everything else is inferred from the values the API returns.
 - **Emitted declarations:** a library that exports those values emits declarations naming the package's own modules, through `@adobe/data-ecs/internal/*`, which holds types only. Code imports from `@adobe/data-ecs`.
 - **Constructors:** `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Finalizer.create` and `Finalizer.changes` return a finalizer, typed as its `name`. `Rule.create` returns nothing. Rules and finalizers apply in every world.

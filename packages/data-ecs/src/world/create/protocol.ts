@@ -63,7 +63,7 @@ export type ToWorker =
     | { readonly kind: "memory"; readonly memory: WebAssembly.Memory }
     /** Wait on this worker's task ring in shared memory until asked to leave. Offsets are bytes into the memory. */
     | { readonly kind: "window"; readonly control: number; readonly statuses: number; readonly payloads: number; readonly claims: number; readonly worker: number; readonly epoch: number }
-    | { readonly kind: "layout"; readonly schemas: readonly (readonly [number, Schema])[]; readonly entities: EntitiesLayout; readonly archetypes: readonly ArchetypeLayout[] }
+    | { readonly kind: "layout"; readonly schemas: readonly (readonly [number, Schema | undefined])[]; readonly entities: EntitiesLayout; readonly archetypes: readonly ArchetypeLayout[] }
     | { readonly kind: "kernels"; readonly task: number; readonly kernels: readonly KernelSetup[] }
     | {
         readonly kind: "run";

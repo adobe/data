@@ -1,1 +1,1 @@
-export * from './gpu.js';
+export * from './gpu-device.js';

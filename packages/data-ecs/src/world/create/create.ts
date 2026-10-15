@@ -5,7 +5,7 @@ import type { Rule } from '../../rule/created.js';
 import type { Resource } from '../../resource/resource.js';
 import { requireDefinition, type Definition } from '../../system/definition.js';
 import type { World } from '../world.js';
-import { gpu as gpuDevice } from '../../resources/gpu.js';
+import { gpuDevice } from '../../resources/gpu-device.js';
 import { createGpu } from './gpu.js';
 import { readCell } from './cells.js';
 import { finalizeAll } from './finalizers.js';
@@ -35,13 +35,17 @@ const createQueue = (): Queue => {
     };
 };
 
-/** Internal: tests choose the worker count and chunk size; apps get the platform default. */
-export type WorldOptions = { readonly workers?: number; readonly minimumChunk?: number; readonly wasm?: boolean; readonly simd?: boolean } & Options;
-
 /** Resource values a world starts with, in place of their defaults. */
 export type InitialResources = { readonly [K in Resource.Name]?: Resource.Value<K> };
 
-export type Options = { readonly resources?: InitialResources };
+/** Internal: tests choose the worker count and chunk size; apps get the platform default. */
+export type WorldOptions = {
+    readonly workers?: number;
+    readonly minimumChunk?: number;
+    readonly wasm?: boolean;
+    readonly simd?: boolean;
+    readonly resources?: InitialResources;
+};
 
 /** Rows below which a kernel's archetype runs on the main thread rather than paying for a round trip. */
 const defaultMinimumChunk = 16384;
@@ -67,6 +71,8 @@ export const createWorld = (options: WorldOptions = {}): World => {
         state, runnerOf: registrar.runnerOf, kernelIndexOf: registrar.kernelIndexOf, workers: null, publish: () => {},
     };
     let disposed = false;
+    /** Why the world ended before it was disposed: its device changed. */
+    let ended: Error | null = null;
     const ensured = { version: -1 };
 
     const startPool = (): Pool => {
@@ -106,12 +112,34 @@ export const createWorld = (options: WorldOptions = {}): World => {
 
     const checkLive = (): void => {
         if (disposed) throw new Error("The world is disposed.");
+        if (ended !== null) throw ended;
     };
 
     /** Pure: a resource no registered system uses still reads as its default. */
     const readResource = (key: Key): unknown => {
         const cell = findResource(state, key);
         return cell === undefined ? initialOf(state, key) : readCell(cell.storage, cell.row);
+    };
+
+    /**
+     * After each run: the world's GPU storage follows its `gpuDevice` resource. Setting it builds the storage and moves
+     * `kernel: "gpu"` systems onto the device. Replacing a lost device rebuilds it there, from the CPU's copies.
+     * Changing a device that isn't lost, or setting null, ends the world.
+     */
+    const followDevice = async (): Promise<void> => {
+        const device = world.read.resource(gpuDevice);
+        const current = state.gpu;
+        if (device === (current?.device ?? null)) return;
+        if (device === null || (current !== null && current.lost() === null)) {
+            ended = new Error(device === null
+                ? "The world's gpuDevice was set to null, so the world has ended."
+                : "The world's gpuDevice changed while its device wasn't lost, so the world has ended.");
+            throw ended;
+        }
+        current?.destroy();
+        state.gpu = createGpu(device);
+        state.touched = new Set();
+        await Promise.all(registrar.placeOnGpu().map(runner => runner.load()));
     };
 
     const world: World = {
@@ -133,7 +161,12 @@ export const createWorld = (options: WorldOptions = {}): World => {
                 ensureProgramResources(state, ensured);
                 const schedule = registrar.registered(definition);
                 if (schedule === undefined) throw new Error(`System "${system.name}" didn't register.`);
-                return execute(context, schedule, value);
+                try {
+                    await execute(context, schedule, value);
+                }
+                finally {
+                    await followDevice();
+                }
             });
         },
         dispose: () => {
@@ -184,7 +217,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
 };
 
 /**
- * Creates a world. `resources` sets values resources start with in place of their defaults. With `[gpu]: device`,
- * render systems and `kernel: "gpu"` kernels run on that device.
+ * Creates a world, with resources starting at these values in place of their defaults. With `gpuDevice`, render
+ * systems and `kernel: "gpu"` kernels run on that device.
  */
-export const create = (options?: Options): World => createWorld(options);
+export const create = (resources?: InitialResources): World => createWorld({ resources });

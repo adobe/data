@@ -271,7 +271,9 @@ const gpuLayoutOf = (schema: Schema): "storage" | "vertex" | undefined =>
  * How a schema's values are stored. Throws when a schema declares a GPU `layout` it can't meet,
  * naming the leaf and the fix, so registration fails rather than the GPU upload.
  */
-export const layoutOf = (schema: Schema): Layout => {
+/** A value without a schema isn't data, so it's stored as it is. */
+export const layoutOf = (schema: Schema | undefined): Layout => {
+    if (schema === undefined) return { kind: "object" };
     if ("const" in schema) return { kind: "constant", value: schema.const };
     const rules: Rules = gpuLayoutOf(schema) ?? "cpu";
     const shape = shapeOf(schema);

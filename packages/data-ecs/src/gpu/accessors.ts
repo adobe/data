@@ -1,5 +1,5 @@
 import { layoutOf, type Leaf } from '../layout/layout.js';
-import { schemaOf } from '../registry/create-registry.js';
+import { declarationOf } from '../registry/create-registry.js';
 import type { Shader } from '../system/render.js';
 
 /** A WGSL function reading one component of a row from the GPU copy of a render system's table. */
@@ -36,9 +36,9 @@ export const accessorsOf = (shader: Shader): readonly Accessor[] | string => {
     for (const [name, key] of entries) {
         const component = String(key);
         if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || name.startsWith("ecs_") || reserved.has(name)) return `"${name}" isn't usable as a WGSL function name`;
-        const schema = schemaOf(key);
-        if (schema === undefined) return `"${component}" has no registered schema`;
-        const layout = layoutOf(schema);
+        const declaration = declarationOf(key);
+        if (declaration === undefined) return `"${component}" has no registered schema`;
+        const layout = layoutOf(declaration.type);
         if (layout.kind !== "linear") return `"${component}" isn't stored in linear memory`;
         const { leaves, stride } = layout;
         const types = leaves.map(typeOf);

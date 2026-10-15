@@ -27,7 +27,7 @@ const install = (): void => {
 };
 
 const consumer = `
-import { Component, System, World, gpu } from "@adobe/data-ecs";
+import { Component, System, World, gpuDevice } from "@adobe/data-ecs";
 export const position = "exportsTest/position";
 declare module "@adobe/data-ecs" {
     interface Components { [position]: { type: number } }
@@ -38,7 +38,7 @@ export const all = System.composite({ name: "exportsTest/all", systems: [move] }
 export const draw = System.render({ name: "exportsTest/draw", shader: { accessors: {} } }, () => {});
 export const world = World.create();
 export const read = (entity: Parameters<World["read"]["entity"]>[0]) => world.read.entity(entity, [position]);
-export const device = world.read.resource(gpu);
+export const device = world.read.resource(gpuDevice);
 export const query = world.query;
 `;
 

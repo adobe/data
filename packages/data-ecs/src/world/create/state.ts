@@ -87,7 +87,7 @@ export type State = {
     /** The world's GPU, where render systems and GPU kernels run. */
     gpu: GpuEngine | null;
     /** With a GPU: archetypes the current sync point changed, whose GPU copies are then out of date. */
-    readonly touched: Set<Archetype> | null;
+    touched: Set<Archetype> | null;
 };
 
 export const createState = (shared?: boolean, wasm = true, simd = true, gpu = false, initial: ReadonlyMap<Key, unknown> = new Map()): State => {

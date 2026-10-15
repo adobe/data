@@ -40,11 +40,11 @@ world.run(move, { distance: "far" });
 world.run(main, {});
 
 const created: World = World.create();
-const withResources: World = World.create({ resources: { "systemTest/time": 1, "systemTest/total": 0 } });
+const withResources: World = World.create({ "systemTest/time": 1, "systemTest/total": 0 });
 // @ts-expect-error a resource's initial value has its type
-World.create({ resources: { "systemTest/time": "now" } });
+World.create({ "systemTest/time": "now" });
 // @ts-expect-error resources takes only resource names
-World.create({ resources: { "systemTest/position": 0 } });
+World.create({ "systemTest/position": 0 });
 // @ts-expect-error systems register on their first run
 void world.systems;
 const disposed: Promise<void> = world.dispose();

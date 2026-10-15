@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import { Entity } from "../../entity/entity.js";
 import { Resource } from "../../resource/resource.js";
-import { gpu } from "../../resources/gpu.js";
+import { gpuDevice } from "../../resources/gpu-device.js";
 import { System } from "../../system/system.js";
 import { World } from "../world.js";
 import { attachKernel } from "./attach-kernel.js";
@@ -288,24 +288,21 @@ describe("World.create", () => {
     });
 
     it("starts resources at values given at creation, in place of their defaults", async () => {
-        const world = World.create({ resources: { [spawnCount]: 2 } });
+        const world = World.create({ [spawnCount]: 2 });
         expect(world.read.resource(spawnCount)).toBe(2);
         await world.run(spawn);
         expect(world.query.count([velocity])).toBe(2);
         expect(World.create().read.resource(spawnCount)).toBe(3);
         // @ts-expect-error resources takes only resource names
-        expect(() => World.create({ resources: { [velocity]: 1 } })).toThrow(`"createTest/velocity" isn't a registered resource`);
+        expect(() => World.create({ [velocity]: 1 })).toThrow(`"createTest/velocity" isn't a registered resource`);
     });
 
-    it("has the gpu resource, null without a device, which systems read but don't write", async () => {
+    it("has the gpuDevice resource, null without a device", async () => {
         await using world = World.create();
-        expect(world.read.resource(gpu)).toBeNull();
+        expect(world.read.resource(gpuDevice)).toBeNull();
         let seen: unknown = undefined;
-        await world.run(System.create({ name: "createTest/readGpu", resources: { read: [gpu] } }, ({ resources }) => { seen = resources[gpu]; }));
+        await world.run(System.create({ name: "createTest/readDevice", resources: { read: [gpuDevice] } }, ({ resources }) => { seen = resources[gpuDevice]; }));
         expect(seen).toBeNull();
-        // @ts-expect-error the device is set when the world is created
-        const replace = System.create({ name: "createTest/writeGpu", resources: { write: [gpu] } }, ({ resources }) => { resources[gpu] = null; });
-        await expect(world.run(replace)).rejects.toThrow('writes "gpu", which is set when the world is created');
     });
 
     it("accepts a system declared again the same, as a module evaluated again declares it, and rejects a different one", async () => {

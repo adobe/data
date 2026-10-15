@@ -1,4 +1,3 @@
-import { gpu } from '../../resources/gpu.js';
 import type { Finalizer } from '../../finalizer/created.js';
 import { declarationOf } from '../../registry/create-registry.js';
 import { kindOf } from '../../registry/declare-name.js';
@@ -109,11 +108,8 @@ export const addFinalizer = (finalizer: Finalizer): Finalizer => {
     }
     const { name, resources, lookup } = finalizer.declaration;
     checkLists(name, "resources", resources);
-    // Any key, since only untyped callers can list `gpu`.
-    const writes: readonly Key[] = resources?.write ?? [];
-    for (const key of writes) {
+    for (const key of resources?.write ?? []) {
         if (declarationOf(key)?.reduce !== undefined) throw new Error(`Finalizer "${name}" writes "${String(key)}", which is reduced; only its contributors' fold sets it.`);
-        if (key === gpu) throw new Error(`Finalizer "${name}" writes "gpu", which is set when the world is created.`);
     }
     for (const key of [...resources?.read ?? [], ...resources?.write ?? []]) {
         if (kindOf(key) !== "resource") throw new Error(`Finalizer "${name}" uses resource "${String(key)}", which isn't a registered resource.`);

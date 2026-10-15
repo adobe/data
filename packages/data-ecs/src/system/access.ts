@@ -1,4 +1,3 @@
-import type { gpu } from '../resources/gpu.js';
 import type { Component } from '../component/component.js';
 import type { Resource } from '../resource/resource.js';
 import type { Writable } from '../component/value.js';
@@ -23,13 +22,10 @@ export type ComponentAccess = {
 /** Read-only access to other entities, by entity only. */
 export type Lookup = Pick<ComponentAccess, "read" | "has" | "not">;
 
-/**
- * A resource in `write` is also readable, so it's never listed in `read` as well. Reduced resources are never written,
- * and neither is `gpu`, which is set when the world is created.
- */
+/** A resource in `write` is also readable, so it's never listed in `read` as well. Reduced resources are never written. */
 export type ResourceAccess = {
     readonly read?: readonly Resource.Name[];
-    readonly write?: readonly Exclude<Resource.Name, Reduced | typeof gpu>[];
+    readonly write?: readonly Exclude<Resource.Name, Reduced>[];
     /** Passes every row when any of these changed since the system last ran. */
     readonly changed?: readonly Resource.Name[];
 };

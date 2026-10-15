@@ -61,7 +61,7 @@ export type GpuEngine = {
     readonly disturb: (disturbed: ReadonlySet<Archetype>) => void;
     /** After a sync point: the archetypes it changed, whose new rows, or all rows if disturbed, are uploaded next. */
     readonly touched: (archetypes: Iterable<Archetype>) => void;
-    /** Set once the device is lost; later runs reject with it. */
+    /** Set once the device is lost; later runs that use the GPU reject with it, and readbacks keep the CPU's copies. */
     readonly lost: () => string | null;
     /** Records the first error a run's scopes report, for the next run to reject with. */
     readonly reportErrors: (validation: Promise<GPUError | null>, memory: Promise<GPUError | null>) => void;
@@ -215,6 +215,11 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
     };
 
     const readback = async (storages?: readonly Storage[]): Promise<void> => {
+        // A lost device's copies are gone, so the CPU's last copies stand.
+        if (lostReason !== null) {
+            ahead.clear();
+            return;
+        }
         const pending = storages === undefined ? [...ahead] : storages.flatMap(storage => {
             const resident = residents.get(storage);
             return resident !== undefined && ahead.has(resident) ? [resident] : [];

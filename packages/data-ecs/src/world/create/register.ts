@@ -1,4 +1,3 @@
-import { gpu } from '../../resources/gpu.js';
 import { declarationOf } from '../../registry/create-registry.js';
 import type { Leaf } from '../../system/leaf.js';
 import { requireDefinition, type Definition } from '../../system/definition.js';
@@ -20,6 +19,8 @@ export type Registrar = {
     readonly kernelIndexOf: (runner: Runner) => number;
     /** Every registered kernel runner. */
     readonly kernels: () => readonly Runner[];
+    /** Rebuilds the runners of `kernel: "gpu"` systems for the world's device, new or replacing a lost one; returns them to load. */
+    readonly placeOnGpu: () => readonly Runner[];
 };
 
 /** Every system in a tree, the root included. */
@@ -61,11 +62,8 @@ const checkReductions = (leaf: Leaf): void => {
         if (declared === undefined) throw new Error(`System "${name}" reduces "${String(key)}", which has no reduce trait.`);
         if (declared !== operator) throw new Error(`System "${name}" reduces "${String(key)}" with "${String(operator)}", but it's declared reduce: "${String(declared)}".`);
     }
-    // Any key, since only untyped callers can list `gpu`.
-    const writes: readonly Key[] = resources?.write ?? [];
-    for (const key of writes) {
+    for (const key of resources?.write ?? []) {
         if (declarationOf(key)?.reduce !== undefined) throw new Error(`System "${name}" writes "${String(key)}", which is reduced; only its contributors' fold sets it.`);
-        if (key === gpu) throw new Error(`System "${name}" writes "gpu", which is set when the world is created.`);
     }
 };
 
@@ -131,5 +129,20 @@ export const createRegistrar = (state: State): Registrar => {
         return runner;
     };
 
-    return { register, registered, runnerOf, kernelIndexOf: runner => kernelIndexes.get(runner) ?? -1, kernels: () => [...kernelIndexes.keys()] };
+    const placeOnGpu = (): readonly Runner[] => {
+        const placed: Runner[] = [];
+        for (const [leaf, old] of runners) {
+            if (leaf.declaration.kernel !== "gpu") continue;
+            const runner = createRunner(state, leaf);
+            runners.set(leaf, runner);
+            if (old.afterSync !== null) state.afterSync.delete(old.afterSync);
+            if (runner.afterSync !== null) state.afterSync.add(runner.afterSync);
+            kernelIndexes.delete(old);
+            if (runner.kernel !== null) kernelIndexes.set(runner, nextKernel++);
+            placed.push(runner);
+        }
+        return placed;
+    };
+
+    return { register, registered, runnerOf, kernelIndexOf: runner => kernelIndexes.get(runner) ?? -1, kernels: () => [...kernelIndexes.keys()], placeOnGpu };
 };

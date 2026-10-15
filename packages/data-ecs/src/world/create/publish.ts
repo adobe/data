@@ -45,10 +45,10 @@ export const createPublisher = (state: State, pool: Pool): (() => void) => {
     let entitiesSent: EntitiesLayout | null = null;
     return () => {
         // Workers never touch resources, so their schemas, defaults included, stay on the main thread.
-        const schemas: (readonly [number, Schema])[] = [];
+        // A value that isn't data has no schema; workers store it as an object they never touch.
+        const schemas: (readonly [number, Schema | undefined])[] = [];
         for (let id = schemasSent; id < state.keys.length; id++) {
-            const schema = schemaOf(state.keys[id]);
-            if (schema !== undefined && !state.resources.has(id)) schemas.push([id, schema]);
+            if (!state.resources.has(id)) schemas.push([id, schemaOf(state.keys[id])]);
         }
         const changed = state.archetypes.filter(archetype => !archetype.resource && versions.get(archetype) !== archetype.version);
         const entities = entitiesLayout(state);

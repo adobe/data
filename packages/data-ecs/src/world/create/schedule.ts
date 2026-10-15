@@ -1,6 +1,6 @@
 import type { Composite } from '../../system/composite.js';
 import type { Leaf } from '../../system/leaf.js';
-import type { System } from '../../system/system.js';
+import type { Definition } from '../../system/definition.js';
 import type { Key } from './state.js';
 
 /**
@@ -13,20 +13,20 @@ type Constraints = { readonly before: Set<string>; readonly after: Set<string>; 
 
 type Entry = Constraints & { readonly leaf: Leaf };
 
-export const isLeaf = (system: System): system is Leaf => system.kind !== "composite";
+export const isLeaf = (system: Definition): system is Leaf => system.kind !== "composite";
 
 const add = (target: Set<string>, names: readonly string[] | undefined): void => {
     for (const name of names ?? []) target.add(name);
 };
 
 /** Walks a system, applying each composite's constraints to all its members. The root's own constraints are ignored. */
-const flatten = (root: System): { readonly entries: readonly Entry[]; readonly expand: ReadonlyMap<string, readonly number[]> } => {
+const flatten = (root: Definition): { readonly entries: readonly Entry[]; readonly expand: ReadonlyMap<string, readonly number[]> } => {
     const entries: Entry[] = [];
     const indexOf = new Map<Leaf, number>();
-    const named = new Map<string, System>();
+    const named = new Map<string, Definition>();
     const expand = new Map<string, number[]>();
 
-    const visit = (system: System, inherited: readonly Constraints[]): readonly number[] => {
+    const visit = (system: Definition, inherited: readonly Constraints[]): readonly number[] => {
         const { name } = system.declaration;
         const existing = named.get(name);
         if (existing !== undefined && existing !== system) throw new Error(`Two different systems are named "${name}".`);
@@ -174,17 +174,17 @@ export const checkLeaf = (leaf: Leaf): void => {
     }
 };
 
-const schedules = new WeakMap<System, Schedule>();
+const schedules = new WeakMap<Definition, Schedule>();
 
 /** A system's schedule, created once per system. Throws on a cycle, or on two conflicting leaves with no ordering path between them. */
-export const scheduleOf = (system: System): Schedule => {
+export const scheduleOf = (system: Definition): Schedule => {
     let schedule = schedules.get(system);
     if (schedule === undefined) schedules.set(system, schedule = createSchedule(system));
     return schedule;
 };
 
 /** Orders a system's leaves into tiers. Throws on a cycle, or on two conflicting leaves with no ordering path between them. */
-const createSchedule = (system: System): Schedule => {
+const createSchedule = (system: Definition): Schedule => {
     const { entries, expand } = flatten(system);
     const graph = graphOf(entries, expand);
     const accesses = entries.map(entry => accessOf(entry.leaf));

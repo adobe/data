@@ -4,6 +4,8 @@ import { Vec3 } from "../../math/index.js";
 import { Resource } from "../../resource/resource.js";
 import { System } from "../../system/system.js";
 import { createWorld } from "./create.js";
+import { definitionOf } from "../../system/definition.js";
+import type { Name } from "../../system/name.js";
 import { createRegistrar } from "./register.js";
 import { createState } from "./state.js";
 
@@ -288,11 +290,15 @@ describe("reductions", () => {
         const registrar = createRegistrar(state);
         // @ts-expect-error a contributor repeats its resource's operator
         const mismatched = System.create({ name: "reductionsTest/other/6", components: { has: [mass] }, reduce: { [total]: "max" } }, (_, { reduce }) => { reduce[total](1); });
-        // @ts-expect-error the mismatched member doesn't type-check, so neither does its composite
         const both = System.composite({ name: "reductionsTest/both", systems: [kernel, mismatched] });
-        expect(() => registrar.register(both)).toThrow(`but it's declared reduce: "+"`);
+        const definition = (system: System<Name, unknown>) => {
+            const found = definitionOf(system);
+            if (found === undefined) throw new Error("not a system");
+            return found;
+        };
+        expect(() => registrar.register(definition(both))).toThrow(`but it's declared reduce: "+"`);
         expect(state.afterSync.size).toBe(0);
-        registrar.register(kernel).rollback();
+        registrar.register(definition(kernel)).rollback();
         expect(state.afterSync.size).toBe(0);
     });
 });

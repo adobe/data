@@ -28,7 +28,7 @@ Resource.register(journal, { type: { type: "array", items: { type: "string" }, d
 
 // A changes finalizer sees each sync point's structural changes to the components it watches, grouped by how
 // they changed, with values before and after: for persistence, replication and undo.
-const save = Finalizer.changes({ name: "guide/changes/save", watch: [name, score], resources: { write: [journal] } }, (changes, { resources }) => {
+Finalizer.changes({ name: "guide/changes/save", watch: [name, score], resources: { write: [journal] } }, (changes, { resources }) => {
     const lines = changes.groups.flatMap(group => group.entities.map(entity =>
         `${changes.previous(entity, name) ?? changes.next(entity, name)}: +${group.added.length} -${group.removed.length} score ${changes.previous(entity, score)} → ${changes.next(entity, score)}`));
     resources[journal] = [...resources[journal], ...lines];

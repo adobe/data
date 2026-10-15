@@ -73,7 +73,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
     name: "ai/follow",                       // registered by augmenting Systems: { "ai/follow": true }
     components: { read: [position, target], write: [velocity] },
     lookup: { targets: { read: [position] } },
-    after: ["physics/integrate"],
+    after: [integrate.name],                 // imported from the physics module
   }, (row, { lookup }) => {
     const other = lookup.targets(row[target]);
     if (other !== null) row[velocity] = Vec3.subtract(other[position], row[position]);
@@ -87,7 +87,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 
   export const main = System.composite({ name: "main", systems: [input, physics, follow, render] });
   ```
-  - **Constructors return data.** `System.create`, `System.render`, `System.composite`, `Rule.create`, `Finalizer.create` and `Finalizer.changes` return `{ kind, declaration, body }` (a composite and a rule have no body), with `kind` one of `"system"`, `"render"`, `"composite"`, `"rule"`, `"finalizer"` and `"changes"`. They exist for body type inference, a binding the plugin can find, and a value the world can register. Nothing runs when they're called.
+  - **A system is its name.** `System.create`, `System.render` and `System.composite` return a frozen `{ name }`, typed `System<Name, Input>` with the input `run` takes, and the implementation keeps the declaration and body by that value. They exist for body type inference, a binding the plugin can find, and a value the world can run. `Rule.create`, `Finalizer.create` and `Finalizer.changes` return nothing, since no API takes a rule or finalizer. Nothing runs when they're called.
   - **Declaration keys mirror the body's context:** `components` and `resources` say what a system accesses, each with access modes (`read`, `write`) and filters; `lookup`, `reduce` and `input` each appear in the context under the same name.
   - **Components:** a system matches entities that have every component in `read`, `write`, `has`, `added` and `changed`, and none in `not`.
     - A component in `write` is readable too, so it's never also in `read`; listing it in both is rejected in types and at registration. The same holds for resources.
@@ -120,10 +120,9 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   - **`during` is a preference,** not a constraint: it pulls systems into the same tier where no ordering path separates them.
   - **Unordered conflicts throw at `System.composite`:** within a composite, two systems that both write a component or resource, or where one reads what the other writes, must have an ordering path between them. Contributors to one reduced resource don't conflict with each other, and every system that reads it is ordered after all of them.
   - **A lookup can't read a component its own system writes;** that throws at registration. Rejecting it now means hierarchy propagation can later give it defined semantics without breaking anything.
-  - To reuse a system with different placement, spread it with a new declaration, `{ ...move, declaration: { ...move.declaration, after: [...] } }`, which keeps its body; a kernel keeps its compiled form, which is attached to the body.
 - **World** (`src/world/`):
   - `World.create(options?)` returns a world synchronously. `resources` gives values resources start with in place of their defaults; a key that isn't a resource throws.
-  - **Names are program-wide:** `System.create`, `System.render` and `System.composite` record the name, and a different system, rule or finalizer with it throws. `System.get(name)` returns a system by name, for replication; a copy made by spreading is recorded when it first runs. Local calls pass systems by value.
+  - **Names are program-wide:** `System.create`, `System.render` and `System.composite` record the name, and a different system, rule or finalizer with it throws. `System.get(name)` returns a system by name, for replication. Constraints name systems by importing them and using `name`, or by a literal name for one a module can't import.
   - `run(system, ...input): Promise<void>` runs a system or composite and ends in a sync point.
     - It's async because workers can't be joined synchronously on the main thread.
     - **Registration is the first run:** the first time a world runs a system, it validates it with its members, adds their resources and loads their kernels, serialized with runs, and the run rejects without recording anything if that fails. A kernel's first run pays for its load; a run before timing work avoids it.

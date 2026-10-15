@@ -75,9 +75,9 @@ Component.register(late, { type: { const: true }, derived: true });
 Component.register(tagged, { type: { const: true } });
 Component.register(tag, { type: { const: true }, derived: true });
 
-const slots = Rule.create({ name: "rulesTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] });
-const shown = Rule.create({ name: "rulesTest/visible", components: { has: [slot] }, derive: [visible] });
-const sprites = Rule.create({ name: "rulesTest/sprites", components: { has: [sprite] }, derive: [visible] });
+Rule.create({ name: "rulesTest/slots", components: { has: [source], not: [hidden] }, derive: [slot] });
+Rule.create({ name: "rulesTest/visible", components: { has: [slot] }, derive: [visible] });
+Rule.create({ name: "rulesTest/sprites", components: { has: [sprite] }, derive: [visible] });
 Rule.create({ name: "rulesTest/tag", components: { has: [tagged] }, derive: [tag] });
 
 /** Runs `edit` with commands once, as its own run. */

@@ -321,15 +321,12 @@ describe("World.create", () => {
         expect(() => World.create({ resources: { [velocity]: 1 } })).toThrow(`"createTest/velocity" isn't a registered resource`);
     });
 
-    it("finds systems by name, and a copy once it has run", async () => {
+    it("finds systems by name", () => {
         const named = System.create({ name: "createTest/named" }, () => {});
         expect(System.get("createTest/named")).toBe(named);
         expect(System.get("createTest/main")).toBe(main);
         expect(() => System.create({ name: "createTest/named" }, () => {})).toThrow('A different system, rule or finalizer named "createTest/named" already exists');
-        const copy = { ...named, declaration: { ...named.declaration, name: "createTest/copy" } } as const;
         expect(System.get("createTest/copy")).toBeNull();
-        await World.create().run(copy);
-        expect(System.get("createTest/copy")).toBe(copy);
     });
 
     it("refuses runs as soon as dispose is called", async () => {

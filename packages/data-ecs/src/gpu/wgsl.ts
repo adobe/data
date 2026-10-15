@@ -1,4 +1,6 @@
-import type { Leaf } from '../system/leaf.js';
+import { definitionOf } from '../system/definition.js';
+import type { Name } from '../system/name.js';
+import type { System } from '../system/system.js';
 import { accessorsOf, declarationsOf } from './accessors.js';
 
 /**
@@ -7,9 +9,11 @@ import { accessorsOf, declarationsOf } from './accessors.js';
  * `ecs_count()`. Depends only on registered schemas, so pipelines can be built before any world exists.
  * Throws if the system isn't a render system or a component can't be read on the GPU.
  */
-export const wgsl = (system: Leaf): string => {
-    const { shader, name } = system.declaration;
-    if (shader === undefined) throw new Error(`System "${name}" isn't a render system.`);
+export const wgsl = (system: System<Name, unknown>): string => {
+    const definition = definitionOf(system);
+    const shader = definition?.kind === "render" ? definition.declaration.shader : undefined;
+    if (shader === undefined) throw new Error(`System "${system.name}" isn't a render system.`);
+    const { name } = system;
     const accessors = accessorsOf(shader);
     if (typeof accessors === "string") throw new Error(`Render system "${name}": ${accessors}.`);
     return declarationsOf(shader.group ?? 0, accessors);

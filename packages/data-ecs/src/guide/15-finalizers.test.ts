@@ -29,7 +29,7 @@ const open = new Set<number>();
 
 // A finalizer runs inside the sync point for each entity that stops matching its query, whatever the cause, reading
 // its values from before the sync point applies. Its commands apply at the next sync point.
-const release = Finalizer.create({ name: "guide/finalizers/release", components: { read: [position, handle] } }, (row, { commands }) => {
+Finalizer.create({ name: "guide/finalizers/release", components: { read: [position, handle] } }, (row, { commands }) => {
     open.delete(row[handle]);
     const [x, y, z] = row[position];
     commands.spawn({ [position]: [x, y, z], [debris]: true });

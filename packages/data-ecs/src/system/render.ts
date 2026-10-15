@@ -1,9 +1,10 @@
 import type { Component } from '../component/component.js';
 import { claim } from '../world/create/program.js';
 import type { Body } from './body.js';
-import type { Leaf } from './leaf.js';
+import { define, type Definition } from './definition.js';
 import type { LinearComponent } from './linear.js';
 import type { Name } from './name.js';
+import type { System } from './system.js';
 import type { Resource } from '../resource/resource.js';
 
 /**
@@ -50,12 +51,12 @@ type Rendered<D extends RenderDeclaration> = D & { readonly components: { readon
 export const render = <const D extends RenderDeclaration>(
     declaration: D,
     body: Body<Rendered<D>>,
-): Leaf<Rendered<D>> => {
-    const system: Leaf<Rendered<D>> = {
+): System<D["name"]> => {
+    const definition: Definition = {
         kind: "render",
         declaration: { ...declaration, components: { ...declaration.components, read: [...new Set(Object.values(declaration.shader.accessors))] } },
         body,
     };
-    claim(system);
-    return system;
+    claim(definition);
+    return define(declaration.name, definition);
 };

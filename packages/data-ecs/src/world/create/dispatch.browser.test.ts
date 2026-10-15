@@ -52,6 +52,10 @@ const fastC = System.create({ name: "dispatchTest/fastC", kernel: "cpu", compone
     const [vx, vy] = row[velocity];
     row[offset] = vx + vy;
 });
+const later = System.create({ name: "dispatchTest/fastC/2", kernel: "cpu", components: { read: [velocity], write: [offset] }, after: ["dispatchTest/slowB/2"] }, row => {
+    const [vx, vy] = row[velocity];
+    row[offset] = vx + vy;
+});
 
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | "timeout"> =>
     Promise.race([promise, new Promise<"timeout">(resolve => setTimeout(() => resolve("timeout"), ms))]);
@@ -82,7 +86,6 @@ describe("worker dispatch", () => {
         const original = WebAssembly.compile;
         let calls = 0;
         WebAssembly.compile = (bytes: BufferSource) => (++calls === 2 ? Promise.reject(new Error("injected")) : original(bytes));
-        const later = { ...fastC, declaration: { ...fastC.declaration, name: "dispatchTest/fastC/2", after: ["dispatchTest/slowB/2"] } } as const;
         await expect(world.run(System.composite({ name: "dispatchTest/tier/2", systems: [watch, later] }))).rejects.toThrow("injected");
         WebAssembly.compile = original;
         await world.run(watch);
@@ -107,7 +110,7 @@ describe("worker dispatch", () => {
         for (let i = 0; i < 2; i++) results.push(diff(await go(3, true, true), alone));
         expect(results).toEqual([0, 0, 0, 0, 0, 0]);
     }, 200000);
-    for (const [name, systems] of [["dispatchTest/tier", [fastA, slowB]], ["dispatchTest/tier/3", [fastA, fastC]], ["dispatchTest/tier/4", [slowB, fastC]]] as const) it(`runs tiers of ${systems.map(s => s.declaration.name).join(",")}`, async () => {
+    for (const [name, systems] of [["dispatchTest/tier", [fastA, slowB]], ["dispatchTest/tier/3", [fastA, fastC]], ["dispatchTest/tier/4", [slowB, fastC]]] as const) it(`runs tiers of ${systems.map(s => s.name).join(",")}`, async () => {
         const tier = System.composite({ name, systems: [...systems] });
         const world = createWorld({ workers: 2, minimumChunk: 64 });
         await world.run(seed);

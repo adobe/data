@@ -3,6 +3,7 @@ import { Component } from "../../component/component.js";
 import { Resource } from "../../resource/resource.js";
 import { System } from "../../system/system.js";
 import { World } from "../../world/world.js";
+import { definitionOf } from "../../system/definition.js";
 import { attachKernel } from "./attach-kernel.js";
 import { bindKernel } from "./kernels.js";
 import type { KernelDescription } from "./kernel.js";
@@ -46,7 +47,9 @@ const describing = (overrides: Partial<KernelDescription>): KernelDescription =>
     ({ columns: [], shapes: [], resources: [], lookups: [], keys: [], url: "unused", program: null, reductions: [], reducedShapes: [], ...overrides });
 
 const bind = (overrides: Partial<KernelDescription>): void => {
-    bindKernel(createState(), attachKernel(system, describing(overrides)), describing(overrides));
+    const definition = definitionOf(attachKernel(system, describing(overrides)));
+    if (definition === undefined || definition.kind === "composite") throw new Error("not a leaf");
+    bindKernel(createState(), definition, describing(overrides));
 };
 
 describe("bindKernel", () => {
@@ -59,13 +62,4 @@ describe("bindKernel", () => {
     it("rejects a whole-value write of a component the system only reads", () => {
         expect(() => bind({ shapes: [{ component: value, leaves: [[]] }] })).toThrow("isn't in its components' write");
     });
-});
-
-it("runs a kernel copied by spreading it with a new declaration", async () => {
-    const doubleAgain: System = { ...double, declaration: { ...double.declaration, name: "kernelsTest/doubleAgain", after: ["kernelsTest/double"] } };
-    await using world = World.create();
-    await world.run(spawn);
-    await world.run(doubleAgain);
-    const [entity] = world.query.select([value]);
-    expect(world.read.component(entity, value)).toBe(6);
 });

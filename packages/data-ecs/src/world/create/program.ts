@@ -2,7 +2,7 @@ import type { Finalizer } from '../../finalizer/created.js';
 import { declarationOf } from '../../registry/create-registry.js';
 import { kindOf } from '../../registry/declare-name.js';
 import type { Rule } from '../../rule/created.js';
-import type { System } from '../../system/system.js';
+import type { Definition } from '../../system/definition.js';
 import { strataOf, type RuleFacts } from './closure.js';
 import { orderFinalizers } from './finalizers.js';
 import type { Key } from './state.js';
@@ -11,14 +11,14 @@ import type { Key } from './state.js';
  * The program's systems, rules and finalizers. Names are unique across all three. Rules and finalizers apply in every
  * world, each from the first sync point after the world has met every component it needs.
  */
-const named = new Map<string, System | Rule | Finalizer>();
+const named = new Map<string, Definition | Rule | Finalizer>();
 const rules: Rule[] = [];
 /** In the order every world runs them. */
 let finalizers: readonly Finalizer[] = [];
 let created = 0;
 
 /** Records each item's name. Throws, recording none, if a different system, rule or finalizer has one. */
-export const claim = (...items: readonly (System | Rule | Finalizer)[]): void => {
+export const claim = (...items: readonly (Definition | Rule | Finalizer)[]): void => {
     for (const item of items) {
         const { name } = item.declaration;
         const existing = named.get(name);
@@ -28,7 +28,7 @@ export const claim = (...items: readonly (System | Rule | Finalizer)[]): void =>
 };
 
 /** A system created or run anywhere in the program, by name. */
-export const systemNamed = (name: string): System | null => {
+export const systemNamed = (name: string): Definition | null => {
     const item = named.get(name);
     return item === undefined || item.kind === "rule" || item.kind === "finalizer" || item.kind === "changes" ? null : item;
 };

@@ -27,7 +27,7 @@ const hit = System.create({ name: "guide/scheduling/hit", components: { read: [d
     row[health] -= row[damage];
 });
 // Ordering comes only from before, after and during; systems in one tier may run in parallel.
-const heal = System.create({ name: "guide/scheduling/heal", components: { write: [health] }, after: ["guide/scheduling/hit"] }, row => {
+const heal = System.create({ name: "guide/scheduling/heal", components: { write: [health] }, after: [hit.name] }, row => {
     row[health] = Math.min(row[health] * 2, 10);
 });
 const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal, hit] });

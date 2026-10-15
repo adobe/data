@@ -5,6 +5,7 @@ import { Resource } from "../../resource/resource.js";
 import type { Schema } from "../../schema/schema.js";
 import { System } from "../../system/system.js";
 import type { World } from "../world.js";
+import { definitionOf } from "../../system/definition.js";
 import { kernelOf } from "./attach-kernel.js";
 import { createWorld } from "./create.js";
 import { bindKernel } from "./kernels.js";
@@ -194,9 +195,11 @@ const simulate = async (wasm: boolean, simd = false): Promise<unknown[]> => {
 describe("WASM kernels", () => {
     it("are generated for every kernel here, with SIMD only where lanes line up", () => {
         const wasmOf = (system: typeof integrate | typeof bounce | typeof tally | typeof scale | typeof drift | typeof chase) => {
+            const definition = definitionOf(system);
+            if (definition === undefined || definition.kind === "composite") throw new Error("not a leaf");
             const description = kernelOf(system);
             if (description === undefined) throw new Error("not compiled");
-            return bindKernel(createState(), system, description).wasm;
+            return bindKernel(createState(), definition, description).wasm;
         };
         expect([integrate, bounce, tally, scale, drift].map(system => wasmOf(system)?.vectorized)).toEqual([false, false, false, false, true]);
         expect(wasmOf(chase)).not.toBeNull();

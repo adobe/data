@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
-import { System } from "../../system/system.js";
-import type { Composite, CompositeDeclaration } from "../../system/composite.js";
+import type { Composite } from "../../system/composite.js";
 import type { Declaration } from "../../system/declaration.js";
+import type { Definition } from "../../system/definition.js";
 import type { Leaf } from "../../system/leaf.js";
 import { scheduleOf } from "./schedule.js";
 
@@ -28,10 +28,10 @@ Component.register(value, { type: { type: "number" } });
 Component.register(other, { type: { type: "number" } });
 
 /** Systems built as values, so each test can reuse names without claiming them program-wide. */
-const leaf = (declaration: Declaration & { readonly input?: undefined }): Leaf<Declaration & { readonly input?: undefined }> => ({ kind: "system", declaration, body: () => {} });
-const composite = (declaration: CompositeDeclaration): Composite => ({ kind: "composite", declaration });
+const leaf = (declaration: Declaration): Leaf => ({ kind: "system", declaration, body: () => {} });
+const composite = (declaration: Composite["declaration"]): Composite => ({ kind: "composite", declaration });
 
-const names = (system: System): string[][] => scheduleOf(system).tiers.map(tier => tier.map(leaf => leaf.declaration.name));
+const names = (system: Definition): string[][] => scheduleOf(system).tiers.map(tier => tier.map(leaf => leaf.declaration.name));
 
 describe("scheduleOf", () => {
     it("tiers by longest ordering path, keeping flatten order within a tier", () => {

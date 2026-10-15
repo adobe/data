@@ -59,7 +59,7 @@ const load = async (path: string): Promise<number> => {
 };
 
 // 1. A rule derives a slot for every visible entity with a mesh source.
-const slots = Rule.create({ name: "guide/loading/slots", components: { has: [meshSource], not: [hidden] }, derive: [meshSlot] });
+Rule.create({ name: "guide/loading/slots", components: { has: [meshSource], not: [hidden] }, derive: [meshSlot] });
 
 // 2. Each new slot gets a fresh token, and its load is requested; the application starts requested loads.
 const request = System.create({
@@ -84,7 +84,7 @@ const apply = System.create({
 });
 
 // 4. When the slot goes, its mesh goes with it, and the finalizer releases what was loaded.
-const release = Finalizer.create({ name: "guide/loading/release", components: { read: [meshReady] } }, row => { loaded.delete(row[meshReady]); });
+Finalizer.create({ name: "guide/loading/release", components: { read: [meshReady] } }, row => { loaded.delete(row[meshReady]); });
 
 const spawn = System.create({ name: "guide/loading/spawn" }, ({ commands }) => {
     commands.spawn({ [meshSource]: "ship.glb" });

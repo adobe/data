@@ -4,9 +4,10 @@ import { scheduleOf } from '../world/create/schedule.js';
 import type { Resource } from '../resource/resource.js';
 import type { Schema } from '../schema/schema.js';
 import type { Body } from './body.js';
-import type { CompositeDeclaration, Composite } from './composite.js';
+import type { CompositeDeclaration } from './composite.js';
 import type { Declaration } from './declaration.js';
-import type { Leaf } from './leaf.js';
+import { define, definitionOf, systemOf, type Definition } from './definition.js';
+import type { InputOf } from './input.js';
 import type { LinearComponent, LinearResource } from './linear.js';
 import type { Name } from './name.js';
 import type { System } from './system.js';
@@ -55,23 +56,31 @@ type Validate<D extends Declaration> =
     & (D extends { readonly kernel: "gpu" } ? GpuKernel : {})
     & { readonly shader?: never };
 
-/** Declares a system, findable by name with `get`. Returns its declaration and body as data; nothing runs. Throws if a different one has its name. */
-export const create = <const D extends Declaration>(declaration: D & Validate<D>, body: Body<D>): Leaf<D> => {
-    const system: Leaf<D> = { kind: "system", declaration, body };
-    claim(system);
-    return system;
+/** Declares a system, findable by name with `get`; nothing runs. Throws if a different one has its name. */
+export const create = <const D extends Declaration>(declaration: D & Validate<D>, body: Body<D>): System<D["name"], InputOf<D>> => {
+    const definition: Definition = { kind: "system", declaration, body };
+    claim(definition);
+    return define<D["name"], InputOf<D>>(declaration.name, definition);
 };
 
 /**
  * Declares a system made of subsystems, findable by name with `get`. Throws if a different one has its name, its
  * members are ordered in a cycle, or two of them conflict with no order between them.
  */
-export const composite = <const D extends CompositeDeclaration>(declaration: D & Ordering<D["name"]>): Composite<D> => {
-    const system: Composite<D> = { kind: "composite", declaration };
-    scheduleOf(system);
-    claim(system);
-    return system;
+export const composite = <const D extends CompositeDeclaration>(declaration: D & Ordering<D["name"]>): System<D["name"]> => {
+    const systems = declaration.systems.map(member => {
+        const definition = definitionOf(member);
+        if (definition === undefined) throw new Error(`Composite "${declaration.name}" has a member that no System constructor returned.`);
+        return definition;
+    });
+    const definition: Definition = { kind: "composite", declaration: { ...declaration, systems } };
+    scheduleOf(definition);
+    claim(definition);
+    return define(declaration.name, definition);
 };
 
-/** A system by name: one created, or copied and run in any world. */
-export const get = (name: Name): System | null => systemNamed(name);
+/** A system by name, with whatever input it takes. */
+export const get = (name: Name): System<Name, unknown> | null => {
+    const definition = systemNamed(name);
+    return (definition === null ? undefined : systemOf(definition)) ?? null;
+};

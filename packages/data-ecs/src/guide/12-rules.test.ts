@@ -34,11 +34,11 @@ Component.register(drawn, { type: { const: true }, derived: true });
 Component.register(layer, { type: { type: "number", default: 1 }, derived: true });
 
 // Entities matching a rule's query have the components it derives, and only while they match.
-const meshes = Rule.create({ name: "guide/rules/meshes", components: { has: [mesh], not: [hidden] }, derive: [drawn] });
+Rule.create({ name: "guide/rules/meshes", components: { has: [mesh], not: [hidden] }, derive: [drawn] });
 // Several rules may derive one component: it's present while any matches.
-const sprites = Rule.create({ name: "guide/rules/sprites", components: { has: [sprite], not: [hidden] }, derive: [drawn] });
+Rule.create({ name: "guide/rules/sprites", components: { has: [sprite], not: [hidden] }, derive: [drawn] });
 // Rules can build on what others derive.
-const layers = Rule.create({ name: "guide/rules/layers", components: { has: [drawn] }, derive: [layer] });
+Rule.create({ name: "guide/rules/layers", components: { has: [drawn] }, derive: [layer] });
 
 const spawn = System.create({ name: "guide/rules/spawn" }, ({ commands }) => {
     commands.spawn({ [mesh]: 1 });

@@ -1,6 +1,8 @@
 import type { Entity } from '../entity/entity.js';
 import { System } from './system.js';
-import type { Input } from './input.js';
+
+type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
+const check = <_T extends true>() => { };
 
 const position = 'systemTest/position';
 const velocity = 'systemTest/velocity';
@@ -149,12 +151,10 @@ export const main = System.composite({ name: "test/main", systems: [integrate, f
 // @ts-expect-error a system with input can't be a composite member
 System.composite({ name: "test/main", systems: [move] });
 
-const noInput: Input<typeof integrate> = [];
-const moveInput: Input<typeof move> = [{ distance: 1 }];
-const compositeInput: Input<typeof main> = [];
-// @ts-expect-error input has its schema's type
-const wrongInput: Input<typeof move> = [{ distance: "far" }];
-void [noInput, moveInput, compositeInput, wrongInput];
+// A system is its name and the input `run` takes with it.
+check<Equal<typeof integrate, System<"test/integrate">>>();
+check<Equal<typeof move, System<"test/move", { readonly distance: number }>>>();
+check<Equal<typeof main, System<"test/main">>>();
 
 const label = 'systemTest/label';
 const path = 'systemTest/path';

@@ -1,9 +1,8 @@
 import { declarationOf } from '../../registry/create-registry.js';
 import type { Leaf } from '../../system/leaf.js';
-import type { System } from '../../system/system.js';
+import type { Definition } from '../../system/definition.js';
 import { createRunner, type Runner } from './runner.js';
 import { checkLeaf, isLeaf, reducedBy, scheduleOf, type Schedule } from './schedule.js';
-import { claim } from './program.js';
 import { idOf, type Key, type State } from './state.js';
 
 /** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */
@@ -12,9 +11,9 @@ export type Registration = { readonly resources: readonly Key[]; readonly ticked
 
 export type Registrar = {
     /** Validates and records a system with all its members. Throws without recording anything on failure. */
-    readonly register: (system: System) => Registration;
+    readonly register: (system: Definition) => Registration;
     /** A registered system's schedule. */
-    readonly registered: (system: System) => Schedule | undefined;
+    readonly registered: (system: Definition) => Schedule | undefined;
     readonly runnerOf: (leaf: Leaf) => Runner;
     /** A kernel runner's index, as workers know it. */
     readonly kernelIndexOf: (runner: Runner) => number;
@@ -23,9 +22,9 @@ export type Registrar = {
 };
 
 /** Every system in a tree, the root included. */
-const systemsOf = (root: System): System[] => {
-    const all = new Set<System>();
-    const visit = (system: System): void => {
+const systemsOf = (root: Definition): Definition[] => {
+    const all = new Set<Definition>();
+    const visit = (system: Definition): void => {
         if (all.has(system)) return;
         all.add(system);
         if (!isLeaf(system)) for (const member of system.declaration.systems) visit(member);
@@ -67,14 +66,14 @@ const checkReductions = (leaf: Leaf): void => {
 };
 
 export const createRegistrar = (state: State): Registrar => {
-    const schedules = new Map<System, Schedule>();
+    const schedules = new Map<Definition, Schedule>();
     const runners = new Map<Leaf, Runner>();
     const kernelIndexes = new Map<Runner, number>();
     /** Never reused, so a rolled-back kernel's index can't alias a worker's loaded kernel. */
     let nextKernel = 0;
 
-    const register = (root: System): Registration => {
-        const addedSchedules = new Map<System, Schedule>();
+    const register = (root: Definition): Registration => {
+        const addedSchedules = new Map<Definition, Schedule>();
         const addedRunners = new Map<Leaf, Runner>();
         const resources = new Set<Key>();
         for (const system of systemsOf(root)) {
@@ -98,8 +97,6 @@ export const createRegistrar = (state: State): Registrar => {
                 addedRunners.set(system, createRunner(state, system));
             }
         }
-        // A copy made by spreading a system is named when it first runs.
-        claim(...addedSchedules.keys());
         for (const [system, schedule] of addedSchedules) schedules.set(system, schedule);
         for (const [leaf, runner] of addedRunners) {
             runners.set(leaf, runner);
@@ -122,7 +119,7 @@ export const createRegistrar = (state: State): Registrar => {
         return { resources: [...resources], ticked, kernels, rollback };
     };
 
-    const registered = (system: System): Schedule | undefined => schedules.get(system);
+    const registered = (system: Definition): Schedule | undefined => schedules.get(system);
 
     const runnerOf = (leaf: Leaf): Runner => {
         const runner = runners.get(leaf);

@@ -82,6 +82,7 @@ Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L4-L38).
 - **Registration must match the declaration**, trait for trait, with `type` a schema for the declared type. Otherwise it doesn't compile.
 - **`World.create()` returns the world,** and `await using` disposes it. `World.create({ resources: { [gravity]: -1.6 } })` starts resources at other values than their defaults.
 - **Systems register in a world on their first run there,** which validates them and loads their kernels; the run rejects if that fails. Rules and finalizers apply in every world (sections 13 and 16).
+- **A system is its name:** `System.create` returns `{ name }`, typed with the input `run` takes with it. The world keeps the declaration and body.
 - **Names are program-wide:** `System.get(name)` finds a system by its name, and a second system, rule or finalizer with a name throws when it's created.
 - **`Entity` is a branded number.** `Entity.none` names no entity: it's what zeroed memory and entity defaults hold, and a lookup of it returns null.
 - **Rejected:** a duplicate name, across components, resources and traits, at registration.
@@ -126,7 +127,7 @@ which are hard constraints. `during` is a preference: it puts systems in the sam
 apart. Systems with no ordering path between them may run in parallel.
 
 ```ts
-const heal = System.create({ name: "guide/scheduling/heal", components: { write: [health] }, after: ["guide/scheduling/hit"] }, row => {
+const heal = System.create({ name: "guide/scheduling/heal", components: { write: [health] }, after: [hit.name] }, row => {
     row[health] = Math.min(row[health] * 2, 10);
 });
 const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal, hit] });
@@ -134,6 +135,7 @@ const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal,
 
 Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L25-L47).
 
+- **Constraints name systems:** import the other system and use its `name`. A literal name orders against one this module can't import, such as a module that imports this one.
 - **Rejected:** two members that both write a component or resource, or where one reads what the other writes, with no ordering path between them, at `System.composite`.
 - **Reductions are the exception:** contributors to one resource need no order between them, and its readers run after all of them (section 10).
 
@@ -341,9 +343,9 @@ build on what other rules derive, and several can derive one component, which is
 matches. Derived components start at their schema's default, stamped `added`, and systems write their values.
 
 ```ts
-const meshes = Rule.create({ name: "guide/rules/meshes", components: { has: [mesh], not: [hidden] }, derive: [drawn] });
-const sprites = Rule.create({ name: "guide/rules/sprites", components: { has: [sprite], not: [hidden] }, derive: [drawn] });
-const layers = Rule.create({ name: "guide/rules/layers", components: { has: [drawn] }, derive: [layer] });
+Rule.create({ name: "guide/rules/meshes", components: { has: [mesh], not: [hidden] }, derive: [drawn] });
+Rule.create({ name: "guide/rules/sprites", components: { has: [sprite], not: [hidden] }, derive: [drawn] });
+Rule.create({ name: "guide/rules/layers", components: { has: [drawn] }, derive: [layer] });
 ```
 
 Example: [`12-rules.test.ts`](src/guide/12-rules.test.ts#L32-L60).
@@ -393,7 +395,7 @@ such as GPU buffers or DOM nodes. Its commands apply at the next sync point; `di
 still matches.
 
 ```ts
-const release = Finalizer.create({ name: "guide/finalizers/release", components: { read: [position, handle] } }, (row, { commands }) => {
+Finalizer.create({ name: "guide/finalizers/release", components: { read: [position, handle] } }, (row, { commands }) => {
     open.delete(row[handle]);
     const [x, y, z] = row[position];
     commands.spawn({ [position]: [x, y, z], [debris]: true });
@@ -415,7 +417,7 @@ changed, with values before and after: for persistence, replication and undo. Wi
 component that isn't derived. Its body is `(changes, context)`.
 
 ```ts
-const save = Finalizer.changes({ name: "guide/changes/save", watch: [name, score], resources: { write: [journal] } }, (changes, { resources }) => {
+Finalizer.changes({ name: "guide/changes/save", watch: [name, score], resources: { write: [journal] } }, (changes, { resources }) => {
     const lines = changes.groups.flatMap(group => group.entities.map(entity =>
         `${changes.previous(entity, name) ?? changes.next(entity, name)}: +${group.added.length} -${group.removed.length} score ${changes.previous(entity, score)} → ${changes.next(entity, score)}`));
     resources[journal] = [...resources[journal], ...lines];
@@ -456,7 +458,7 @@ Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L61-L10
 - **Built-in components:** `component`, `persistent` and `shared` are tags in [`src/components/`](src/components/).
 - **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value`, `With` and `Where`; `Resource.Name` and `Value`; `System`, `System.Name` and `System.Commands`; and `World`. Everything else is inferred from the values the API returns.
 - **Emitted declarations:** a library that exports those values emits declarations naming the package's own modules, through `@adobe/data-ecs/internal/*`, which holds types only. Code imports from `@adobe/data-ecs`.
-- **Constructed values:** every constructor returns data with a `kind`: `"system"`, `"render"`, `"composite"`, `"rule"`, `"finalizer"` or `"changes"`, its `declaration`, and its `body`.
+- **Constructors:** `System.create`, `System.render` and `System.composite` return a system, `{ name }`. `Rule.create`, `Finalizer.create` and `Finalizer.changes` return nothing; they apply in every world.
 - **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/system/system.type-test.ts), [`world.type-test.ts`](src/world/world.type-test.ts), [`rule.type-test.ts`](src/rule/rule.type-test.ts), [`trait.type-test.ts`](src/trait/trait.type-test.ts).
 - **The contract and its reasoning:** [`design.md`](design.md).
 - **A complete application:** the [particle sample](src/sample/particles.ts), run by [`particles.test.ts`](src/sample/particles.test.ts), and its [GPU version](src/sample/gpu/).

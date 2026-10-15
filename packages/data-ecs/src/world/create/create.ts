@@ -3,7 +3,7 @@ import type { Entity } from '../../entity/entity.js';
 import type { Finalizer } from '../../finalizer/created.js';
 import type { Rule } from '../../rule/created.js';
 import type { Resource } from '../../resource/resource.js';
-import type { System } from '../../system/system.js';
+import { definitionOf, type Definition } from '../../system/definition.js';
 import type { World } from '../world.js';
 import type { GpuOptions } from '../gpu.js';
 import { createGpu } from './gpu.js';
@@ -117,10 +117,13 @@ export const createWorld = (options: WorldOptions = {}): World => {
         run: (system, ...args) => {
             const [value]: readonly unknown[] = args;
             let registration: Registration | null = null;
+            let definition: Definition | undefined;
             try {
                 checkLive();
+                definition = definitionOf(system);
+                if (definition === undefined) throw new Error("World.run takes a system a System constructor returned.");
                 // A system registers in the world the first time it runs here.
-                if (registrar.registered(system) === undefined) registration = registrar.register(system);
+                if (registrar.registered(definition) === undefined) registration = registrar.register(definition);
             }
             catch (error) {
                 return Promise.reject(error);
@@ -128,8 +131,8 @@ export const createWorld = (options: WorldOptions = {}): World => {
             return enqueue(async () => {
                 if (registration !== null) await complete(registration);
                 ensureProgramResources(state, ensured);
-                const schedule = registrar.registered(system);
-                if (schedule === undefined) throw new Error(`System "${system.declaration.name}" didn't register.`);
+                const schedule = registrar.registered(definition);
+                if (schedule === undefined) throw new Error(`System "${system.name}" didn't register.`);
                 return execute(context, schedule, value);
             });
         },

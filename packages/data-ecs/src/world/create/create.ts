@@ -71,8 +71,6 @@ export const createWorld = (options: WorldOptions = {}): World => {
         state, runnerOf: registrar.runnerOf, kernelIndexOf: registrar.kernelIndexOf, workers: null, publish: () => {},
     };
     let disposed = false;
-    /** Why the world ended before it was disposed: its device changed. */
-    let ended: Error | null = null;
     const ensured = { version: -1 };
 
     const startPool = (): Pool => {
@@ -81,6 +79,19 @@ export const createWorld = (options: WorldOptions = {}): World => {
         context.workers = { pool: started, minimumChunk: options.minimumChunk ?? defaultMinimumChunk, next: 0 };
         context.publish = createPublisher(state, started);
         return started;
+    };
+
+    /** Gives workers every kernel whose main-thread load is newer than theirs, including ones a failed registration reloaded. */
+    const loadOnWorkers = async (): Promise<void> => {
+        const behind = registrar.kernels().filter(runner => runner.kernel?.staleOnWorkers() === true);
+        if (workerCount === 0 || behind.length === 0) return;
+        const workers = pool ?? startPool();
+        context.publish();
+        const setups = behind.flatMap(runner => runner.setup(registrar.kernelIndexOf(runner)) ?? []);
+        const results = await Promise.all(Array.from({ length: workers.size }, (_, worker) => workers.request(worker, { kind: "kernels", kernels: setups })));
+        const failed = results.find(result => result.error !== undefined);
+        if (failed?.error !== undefined) throw failed.error;
+        for (const runner of behind) runner.kernel?.loadedOnWorkers();
     };
 
     /** Adds resources, then loads kernels on the main thread and in every worker. Undoes the registration if loading fails. */
@@ -93,16 +104,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
             // Workers see the new tick arrays before the next run's tasks.
             context.publish();
             await Promise.all(kernels.map(runner => runner.load()));
-            // Workers get every kernel whose main-thread load is newer than theirs, including ones a failed registration reloaded.
-            const behind = registrar.kernels().filter(runner => runner.kernel?.staleOnWorkers() === true);
-            if (workerCount === 0 || behind.length === 0) return;
-            const workers = pool ?? startPool();
-            context.publish();
-            const setups = behind.flatMap(runner => runner.setup(registrar.kernelIndexOf(runner)) ?? []);
-            const results = await Promise.all(Array.from({ length: workers.size }, (_, worker) => workers.request(worker, { kind: "kernels", kernels: setups })));
-            const failed = results.find(result => result.error !== undefined);
-            if (failed?.error !== undefined) throw failed.error;
-            for (const runner of behind) runner.kernel?.loadedOnWorkers();
+            await loadOnWorkers();
         }
         catch (error) {
             registration.rollback();
@@ -112,7 +114,6 @@ export const createWorld = (options: WorldOptions = {}): World => {
 
     const checkLive = (): void => {
         if (disposed) throw new Error("The world is disposed.");
-        if (ended !== null) throw ended;
     };
 
     /** Pure: a resource no registered system uses still reads as its default. */
@@ -122,24 +123,23 @@ export const createWorld = (options: WorldOptions = {}): World => {
     };
 
     /**
-     * After each run: the world's GPU storage follows its `gpuDevice` resource. Setting it builds the storage and moves
-     * `kernel: "gpu"` systems onto the device. Replacing a lost device rebuilds it there, from the CPU's copies.
-     * Changing a device that isn't lost, or setting null, ends the world.
+     * After each run: the world's GPU storage follows its `gpuDevice` resource. A new device gets the storage, after
+     * what's ahead on the old one is read back, unless the old one is lost; `kernel: "gpu"` systems move with it, and
+     * run on the CPU again without a device.
      */
     const followDevice = async (): Promise<void> => {
         const device = world.read.resource(gpuDevice);
         const current = state.gpu;
         if (device === (current?.device ?? null)) return;
-        if (device === null || (current !== null && current.lost() === null)) {
-            ended = new Error(device === null
-                ? "The world's gpuDevice was set to null, so the world has ended."
-                : "The world's gpuDevice changed while its device wasn't lost, so the world has ended.");
-            throw ended;
+        if (current !== null) {
+            // A lost device's copies are gone, so its readback keeps the CPU's.
+            await current.readback();
+            current.destroy();
         }
-        current?.destroy();
-        state.gpu = createGpu(device);
-        state.touched = new Set();
-        await Promise.all(registrar.placeOnGpu().map(runner => runner.load()));
+        state.gpu = device === null ? null : createGpu(device);
+        state.touched = device === null ? null : new Set();
+        await Promise.all(registrar.placeGpuKernels().map(runner => runner.load()));
+        await loadOnWorkers();
     };
 
     const world: World = {

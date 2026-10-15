@@ -252,14 +252,37 @@ describe("the gpuDevice resource", () => {
         await cpuWorld.dispose();
     });
 
-    it("ends the world when a device that isn't lost changes, or it's set to null", async () => {
-        for (const next of [await device(), null]) {
-            const world = createWorld({ workers: 0, resources: { gpuDevice: await device() } });
-            nextDevice = next;
-            await expect(world.run(setDevice)).rejects.toThrow("so the world has ended");
-            await expect(world.run(spawn)).rejects.toThrow("so the world has ended");
-            await world.dispose();
-        }
+    it("moves to another device, reading back what's ahead on the one it leaves", async () => {
+        const world = createWorld({ workers: 0, resources: { gpuDevice: await device() } });
+        const cpuWorld = createWorld({ workers: 0 });
+        for (const each of [world, cpuWorld]) await each.run(spawn);
+        await world.run(move);
+        nextDevice = await device();
+        await world.run(setDevice);
+        await world.run(move);
+        for (let i = 0; i < 2; i++) await cpuWorld.run(move);
+        await world.synchronize([position]);
+        expect(positions(world)).toEqual(positions(cpuWorld));
+        await world.dispose();
+        await cpuWorld.dispose();
+    });
+
+    it("runs GPU kernels on the CPU again when set to null, and rejects render systems", async () => {
+        const world = createWorld({ workers: 2, minimumChunk: 1, resources: { gpuDevice: await device() } });
+        const cpuWorld = createWorld({ workers: 0 });
+        const draw = System.render({ name: "gpuTest/drawUntilNull", shader: { accessors: { place: position } } }, () => {});
+        for (const each of [world, cpuWorld]) await each.run(spawn);
+        await world.run(draw);
+        await world.run(move);
+        nextDevice = null;
+        await world.run(setDevice);
+        await world.run(move);
+        for (let i = 0; i < 2; i++) await cpuWorld.run(move);
+        // On the CPU, reads see writes at once.
+        expect(positions(world)).toEqual(positions(cpuWorld));
+        await expect(world.run(draw)).rejects.toThrow("needs a world with a gpu device");
+        await world.dispose();
+        await cpuWorld.dispose();
     });
 });
 

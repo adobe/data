@@ -19,8 +19,8 @@ export type Registrar = {
     readonly kernelIndexOf: (runner: Runner) => number;
     /** Every registered kernel runner. */
     readonly kernels: () => readonly Runner[];
-    /** Rebuilds the runners of `kernel: "gpu"` systems for the world's device, new or replacing a lost one; returns them to load. */
-    readonly placeOnGpu: () => readonly Runner[];
+    /** Rebuilds the runners of `kernel: "gpu"` systems for the world's current device, or for the CPU without one; returns them to load. */
+    readonly placeGpuKernels: () => readonly Runner[];
 };
 
 /** Every system in a tree, the root included. */
@@ -129,7 +129,7 @@ export const createRegistrar = (state: State): Registrar => {
         return runner;
     };
 
-    const placeOnGpu = (): readonly Runner[] => {
+    const placeGpuKernels = (): readonly Runner[] => {
         const placed: Runner[] = [];
         for (const [leaf, old] of runners) {
             if (leaf.declaration.kernel !== "gpu") continue;
@@ -144,5 +144,5 @@ export const createRegistrar = (state: State): Registrar => {
         return placed;
     };
 
-    return { register, registered, runnerOf, kernelIndexOf: runner => kernelIndexes.get(runner) ?? -1, kernels: () => [...kernelIndexes.keys()], placeOnGpu };
+    return { register, registered, runnerOf, kernelIndexOf: runner => kernelIndexes.get(runner) ?? -1, kernels: () => [...kernelIndexes.keys()], placeGpuKernels };
 };

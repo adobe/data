@@ -302,8 +302,8 @@ gives its shaders' declarations, a function per accessor, and pipelines take `Gp
 [declaration](src/sample/gpu/particles.ts#L100-L105) and [draw](src/sample/gpu/particles.ts#L111-L139), wired up in
 [`main.ts`](src/sample/gpu/main.ts#L59-L63).
 
-- **Setting it later** moves `kernel: "gpu"` systems onto the device. Render systems reject until there's a device.
-- **A lost device** rejects runs that use the GPU, until a system sets `gpuDevice` to a new one. The world then rebuilds on it from the CPU's copies, so GPU writes not yet read back are lost with the old device. Changing a device that isn't lost, or setting `null`, ends the world.
+- **Setting it, at any time,** moves the world's GPU storage and `kernel: "gpu"` systems onto the new device, after reading back what's ahead on the old one. With `null`, GPU kernels run on the CPU again, and render systems reject until there's a device.
+- **A lost device** rejects runs that use the GPU, until a system sets `gpuDevice` to a new one. Writes on the GPU not yet read back are lost with the old device, so the world rebuilds from the CPU's copies.
 - **Not yet:** lookups, change filters, commands, loops and reductions in GPU kernels.
 
 ## 12. Traits

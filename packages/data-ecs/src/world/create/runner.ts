@@ -331,7 +331,9 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
 
     const runRender = (): void => {
         const gpu = state.gpu;
-        if (gpu === null || typeof accessors === "string") return;
+        // The device may be set to null after the system registered.
+        if (gpu === null) return failPlacement("needs a world with a gpu device");
+        if (typeof accessors === "string") return;
         const group = declaration.shader?.group ?? 0;
         const tables = matches.filter(archetype => archetype.count > 0).map(archetype => {
             words[0] = archetype.count;

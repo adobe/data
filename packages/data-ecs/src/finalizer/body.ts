@@ -5,6 +5,7 @@ import type { Commands } from '../system/commands.js';
 import type { Listed, Property } from '../system/property.js';
 import type { LookupFunction, ResourceValues, Values } from '../system/values.js';
 import type { ChangesDeclaration, Declaration } from './declaration.js';
+import type { Essential, ReadonlyValue } from '../component/value.js';
 
 /** The entity that stopped matching, with its `read` values as they are before the sync point applies. */
 export type Row<D extends Declaration> =
@@ -23,7 +24,7 @@ export type Context<D extends Declaration | ChangesDeclaration> =
     & { readonly commands: Commands };
 
 /** The components a changes finalizer sees. */
-export type Watched<D extends ChangesDeclaration> = Property<D, "watch"> extends readonly Component.Essential[] ? Listed<D, "watch"> & Component.Essential : Component.Essential;
+export type Watched<D extends ChangesDeclaration> = Property<D, "watch"> extends readonly Essential[] ? Listed<D, "watch"> & Essential : Essential;
 
 /** Entities whose components changed the same way: `from` and `to` are null for those spawned and despawned. */
 export type Group<C extends Component.Name> = {
@@ -40,7 +41,7 @@ export type Group<C extends Component.Name> = {
 export type ChangeSet<C extends Component.Name> = {
     readonly groups: readonly Group<C>[];
     /** The value before the sync point, or null if the entity didn't have it. */
-    previous<K extends C>(entity: Entity, component: K): Component.ReadonlyValue<K> | null;
+    previous<K extends C>(entity: Entity, component: K): ReadonlyValue<K> | null;
     /** The value after it, or null if the entity won't have it. */
-    next<K extends C>(entity: Entity, component: K): Component.ReadonlyValue<K> | null;
+    next<K extends C>(entity: Entity, component: K): ReadonlyValue<K> | null;
 };

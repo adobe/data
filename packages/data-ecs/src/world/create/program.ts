@@ -1,7 +1,7 @@
-import type { Finalizer } from '../../finalizer/finalizer.js';
+import type { Finalizer } from '../../finalizer/created.js';
 import { declarationOf } from '../../registry/create-registry.js';
 import { kindOf } from '../../registry/declare-name.js';
-import type { Rule } from '../../rule/rule.js';
+import type { Rule } from '../../rule/created.js';
 import type { System } from '../../system/system.js';
 import { strataOf, type RuleFacts } from './closure.js';
 import { orderFinalizers } from './finalizers.js';

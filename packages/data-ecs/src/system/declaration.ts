@@ -3,6 +3,7 @@ import type { Schema } from '../schema/schema.js';
 import type { ComponentAccess, Lookup, ResourceAccess } from './access.js';
 import type { Name } from './name.js';
 import type { Shader } from './render.js';
+import type { OperatorOf, Reduced } from '../resource/reduction.js';
 
 export type Declaration = {
     readonly name: Name;
@@ -20,7 +21,7 @@ export type Declaration = {
     readonly lookup?: { readonly [name: string]: Lookup };
     readonly resources?: ResourceAccess;
     /** The resources its body contributes to, each with the operator its `reduce` trait declares. */
-    readonly reduce?: { readonly [K in Resource.Reduced]?: Resource.OperatorOf<K> };
+    readonly reduce?: { readonly [K in Reduced]?: OperatorOf<K> };
     /** The value passed to each run. A system with input can't use `added` or `changed`. */
     readonly input?: Schema;
     /** Makes this a render system (see `render`): its body records GPU work over the GPU copy of the components it names. */

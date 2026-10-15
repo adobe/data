@@ -331,7 +331,7 @@ check<Equal<Extract<Component.Where<Entity>, Guide>, typeof parent>>();
 
 Example: [`11-traits.type-test.ts`](src/guide/11-traits.type-test.ts), checked by the compiler alone.
 
-- **Filters:** `Component.With<Trait, Value?>`, `Component.Where<ValueType>`, `Component.Derived`, `Component.Essential` (what commands take), and `Component.Writable` (what systems may write: everything but references).
+- **Filters:** `Component.With<Trait, Value?>` and `Component.Where<ValueType>`; `Component.With<"derived">` is the derived components, which commands don't take.
 - **Rejected:** a trait value its definition doesn't allow on that component, a missing or undeclared trait, or a schema that doesn't match the type, in types; an unregistered trait, at registration.
 
 ## 13. Rules
@@ -381,7 +381,7 @@ Component.register(watching, { type: Entity.schema, reference: "weak" });
 Example: [`14-references.test.ts`](src/guide/14-references.test.ts#L20-L41).
 
 - **Only the value a holder ends up with counts:** a reference pointed elsewhere in the same sync point stays.
-- **References change only through commands**, which keeps the index from targets to holders exact. `Component.Writable` leaves them out of `components.write`.
+- **References change only through commands**, which keeps the index from targets to holders exact. Systems can't list them in `components.write`.
 
 ## 16. Finalizers
 
@@ -454,6 +454,8 @@ Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L61-L10
 ## 19. Reference
 
 - **Built-in components:** `component`, `persistent` and `shared` are tags in [`src/components/`](src/components/).
+- **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value`, `With` and `Where`; `Resource.Name` and `Value`; `System`, `System.Name` and `System.Commands`; and `World`. Everything else is inferred from the values the API returns.
+- **Emitted declarations:** a library that exports those values emits declarations naming the package's own modules, through `@adobe/data-ecs/internal/*`, which holds types only. Code imports from `@adobe/data-ecs`.
 - **Constructed values:** every constructor returns data with a `kind`: `"system"`, `"render"`, `"composite"`, `"rule"`, `"finalizer"` or `"changes"`, its `declaration`, and its `body`.
 - **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/system/system.type-test.ts), [`world.type-test.ts`](src/world/world.type-test.ts), [`rule.type-test.ts`](src/rule/rule.type-test.ts), [`trait.type-test.ts`](src/trait/trait.type-test.ts).
 - **The contract and its reasoning:** [`design.md`](design.md).

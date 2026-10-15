@@ -1,5 +1,6 @@
 import type { Entity } from '../entity/entity.js';
 import { System } from './system.js';
+import type { Input } from './input.js';
 
 const position = 'systemTest/position';
 const velocity = 'systemTest/velocity';
@@ -148,11 +149,11 @@ export const main = System.composite({ name: "test/main", systems: [integrate, f
 // @ts-expect-error a system with input can't be a composite member
 System.composite({ name: "test/main", systems: [move] });
 
-const noInput: System.Input<typeof integrate> = [];
-const moveInput: System.Input<typeof move> = [{ distance: 1 }];
-const compositeInput: System.Input<typeof main> = [];
+const noInput: Input<typeof integrate> = [];
+const moveInput: Input<typeof move> = [{ distance: 1 }];
+const compositeInput: Input<typeof main> = [];
 // @ts-expect-error input has its schema's type
-const wrongInput: System.Input<typeof move> = [{ distance: "far" }];
+const wrongInput: Input<typeof move> = [{ distance: "far" }];
 void [noInput, moveInput, compositeInput, wrongInput];
 
 const label = 'systemTest/label';

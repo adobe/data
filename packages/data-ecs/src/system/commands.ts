@@ -1,8 +1,9 @@
 import type { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
+import type { Essential } from '../component/value.js';
 
 /** Values for any subset of the components commands may add: every one but those rules derive. */
-type EssentialValues = { readonly [K in Component.Essential]?: Component.Value<K> };
+type EssentialValues = { readonly [K in Essential]?: Component.Value<K> };
 
 /** Structural changes and writes to other entities, applied in issue order at the next sync point. */
 export type Commands = {
@@ -11,5 +12,5 @@ export type Commands = {
     despawn(entity: Entity): void;
     /** Adds or replaces values, marking them changed. */
     add(entity: Entity, values: EssentialValues): void;
-    remove(entity: Entity, ...components: readonly Component.Essential[]): void;
+    remove(entity: Entity, ...components: readonly Essential[]): void;
 };

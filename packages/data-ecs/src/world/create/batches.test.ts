@@ -4,6 +4,7 @@ import type { Entity } from "../../entity/entity.js";
 import type { Schema } from "../../schema/schema.js";
 import { System } from "../../system/system.js";
 import { createWorld } from "./create.js";
+import type { Values } from '../../component/values.js';
 
 type Vec3 = readonly [number, number, number];
 const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
@@ -113,7 +114,7 @@ describe("staged spawns", () => {
         const spawned: Entity[] = [];
         const spawn = System.create({ name: "batchesTest/spawn/4" }, ({ commands }) => {
             for (let i = 0; i < 20; i++) {
-                const values: Component.Values = i % 2 === 0 ? { [position]: [i, 0, 1], [score]: i, [name]: `${i}` } : { [score]: i, [position]: [i, 0, 1], [name]: `${i}` };
+                const values: Values = i % 2 === 0 ? { [position]: [i, 0, 1], [score]: i, [name]: `${i}` } : { [score]: i, [position]: [i, 0, 1], [name]: `${i}` };
                 spawned.push(commands.spawn(values));
             }
         });

@@ -1,5 +1,6 @@
 import { Component } from "../component/component.js";
 import { System } from "../system/system.js";
+import type { Values } from '../component/values.js';
 
 // Mirrors adobe/data's ecs2 `create` perftest (packages/data/src/perftest/ecs2-perf.ts): 1M particles of eight scalar
 // components, interleaved over four archetypes by visible/enabled, each with its own values.
@@ -54,7 +55,7 @@ export const spawnFlat = System.create({ name: "flat/spawn", input: { type: "int
 /** The same spawns with each value object built first, so the compiler can't pass values positionally. */
 export const spawnFlatDynamic = System.create({ name: "flat/dynamic", input: { type: "integer" } }, ({ input, commands }) => {
     for (let i = 0; i < input; i++) {
-        const values: Component.Values = { [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i };
+        const values: Values = { [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i };
         switch (i % 4) {
             case 0: commands.spawn({ ...values, [visible]: true, [enabled]: true }); break;
             case 1: commands.spawn({ ...values, [visible]: true }); break;

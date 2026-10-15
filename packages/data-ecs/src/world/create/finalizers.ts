@@ -1,6 +1,6 @@
 import type { Component } from '../../component/component.js';
 import type { Entity } from '../../entity/entity.js';
-import type { Finalizer } from '../../finalizer/finalizer.js';
+import type { Finalizer } from '../../finalizer/created.js';
 import type { ChangeSet } from '../../finalizer/body.js';
 import type { Commands } from '../../system/commands.js';
 import type { Archetype } from './archetype.js';
@@ -11,6 +11,8 @@ import { asEntity, indexOf, locate } from './entities.js';
 import { createContext, rowBinder, type Context } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
 import type { Queued } from './synchronize.js';
+import type { Essential, ReadonlyValue } from '../../component/value.js';
+import type { Leaf } from '../../finalizer/created.js';
 
 /** A registered finalizer, resolved for a world: what it matches or watches, its context, and the buffer its commands go to. */
 export type FinalizerRunner = {
@@ -90,7 +92,7 @@ const guarded = (errors: unknown[], body: () => void): void => {
 };
 
 /** Each entity that stops matching: it matched before, and is despawned, no longer matches, or had a required component replaced. */
-const finalizeStops = (state: State, runner: FinalizerRunner, leaf: Finalizer.Leaf, errors: unknown[]): void => {
+const finalizeStops = (state: State, runner: FinalizerRunner, leaf: Leaf, errors: unknown[]): void => {
     // Rows and contexts are built to each finalizer's declaration, so its body accepts them.
     const finalizer: Untyped = leaf;
     const { plan, archetypes, entities } = state;
@@ -136,17 +138,17 @@ export const commandValue = (state: State, queued: readonly Queued[], entry: num
 export const isMissing = (value: unknown): boolean => value === missing;
 
 /** A watched component's name: watched components are registered and not derived, so they're essential. */
-const essential = (state: State, id: number): Component.Essential => state.keys[id] as Component.Essential;
+const essential = (state: State, id: number): Essential => state.keys[id] as Essential;
 
 /** The sync point's structural changes to a changes finalizer's components, grouped by how they changed. */
-const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queued[]): ChangeSet<Component.Essential> => {
+const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queued[]): ChangeSet<Essential> => {
     const { plan, archetypes, entities } = state;
     const { watches } = runner;
-    const names = (archetype: Archetype | null): Component.Essential[] | null =>
+    const names = (archetype: Archetype | null): Essential[] | null =>
         archetype === null ? null : archetype.components.filter(watches).map(id => essential(state, id));
-    const groups = new Map<string, { from: Component.Essential[] | null; to: Component.Essential[] | null; added: Component.Essential[]; removed: Component.Essential[]; replaced: Component.Essential[]; entities: Entity[] }>();
+    const groups = new Map<string, { from: Essential[] | null; to: Essential[] | null; added: Essential[]; removed: Essential[]; replaced: Essential[]; entities: Entity[] }>();
     /** By `from` and `to` archetype ids: the watched components on each side, and those added and removed. */
-    const pairs = new Map<number, { readonly before: Component.Essential[] | null; readonly after: Component.Essential[] | null; readonly added: Component.Essential[]; readonly removed: Component.Essential[] }>();
+    const pairs = new Map<number, { readonly before: Essential[] | null; readonly after: Essential[] | null; readonly added: Essential[]; readonly removed: Essential[] }>();
     const pairOf = (from: Archetype | null, to: Archetype | null) => {
         const key = ((from?.id ?? -1) + 1) * 0x200000 + (to?.id ?? -1) + 1;
         let pair = pairs.get(key);
@@ -206,8 +208,8 @@ const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queue
     return {
         groups: [...groups.values()],
         // Stored and commanded values match each component's registered schema, so they have its type.
-        previous: <K extends Component.Essential>(entity: Entity, key: K) => (bornHere(entity) ? null : live(entity, idOf(state, key))) as Component.ReadonlyValue<K> | null,
-        next: <K extends Component.Essential>(entity: Entity, key: K) => next(entity, idOf(state, key)) as Component.ReadonlyValue<K> | null,
+        previous: <K extends Essential>(entity: Entity, key: K) => (bornHere(entity) ? null : live(entity, idOf(state, key))) as ReadonlyValue<K> | null,
+        next: <K extends Essential>(entity: Entity, key: K) => next(entity, idOf(state, key)) as ReadonlyValue<K> | null,
     };
 };
 
@@ -225,7 +227,7 @@ export const runFinalizers = (state: State, queued: readonly Queued[], born: Map
             if (finalizer.kind === "finalizer") finalizeStops(state, runner, finalizer, errors);
             else {
                 // The context is built to the finalizer's declaration, so its body accepts it.
-                const changes: { body(changes: ChangeSet<Component.Essential>, context: object): void } = finalizer;
+                const changes: { body(changes: ChangeSet<Essential>, context: object): void } = finalizer;
                 guarded(errors, () => changes.body(changesOf(state, runner, queued), runner.context.value));
             }
             if (runner.target.buffer.count > 0) {

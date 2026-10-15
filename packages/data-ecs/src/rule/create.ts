@@ -1,6 +1,6 @@
 import { addRule } from '../world/create/program.js';
 import type { Declaration } from './declaration.js';
-import type { Rule } from './rule.js';
+import type { Rule } from './created.js';
 
 /**
  * Declares a rule, which applies in every world. Returns it as data. Throws if a different system, rule or finalizer

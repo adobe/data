@@ -2,12 +2,13 @@ import type { Entity } from '../entity/entity.js';
 import { persistent, shared } from '../components/index.js';
 import { System } from '../system/system.js';
 import { main, move } from '../system/system.type-test.js';
+import type { Options } from './query/options.js';
 import { World } from './world.js';
 
 declare const world: World;
 declare const entity: Entity;
 
-const options: World.Query.Options<[typeof persistent]> = { not: [shared], where: { [persistent]: true }, order: { [persistent]: true } };
+const options: Options<[typeof persistent]> = { not: [shared], where: { [persistent]: true }, order: { [persistent]: true } };
 const selected: readonly Entity[] = world.query.select([persistent], options);
 const counted: number = world.query.count([persistent]);
 const values: { readonly persistent: true } | null = world.read.entity(entity, [persistent, shared]);

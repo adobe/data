@@ -3,6 +3,7 @@ import type { Components } from '../component/types.js';
 import type { Entity } from '../entity/entity.js';
 import type { Resource } from '../resource/resource.js';
 import type { IsLinear } from '../system/linear.js';
+import type { Reduction } from '../resource/reduction.js';
 
 /**
  * The value each trait allows on the component or resource `N`. Augment it, with this exact type parameter, to
@@ -31,6 +32,6 @@ export interface Traits<N extends Component.Name | Resource.Name> {
      * operator's identity and leaves it holding the fold of every contribution. Booleans fold bitwise.
      */
     readonly reduce: N extends Resource.Name
-        ? [Resource.Value<N>] extends [boolean] ? "&" | "|" | "^" : IsLinear<Resource.Value<N>> extends true ? Resource.Reduction : never
+        ? [Resource.Value<N>] extends [boolean] ? "&" | "|" | "^" : IsLinear<Resource.Value<N>> extends true ? Reduction : never
         : never;
 }

@@ -4,6 +4,9 @@ import { Finalizer } from '../finalizer/finalizer.js';
 import { System } from '../system/system.js';
 import { World } from '../world/world.js';
 import { Rule } from './rule.js';
+import type { Writable } from '../component/value.js';
+import type { ChangeSet } from '../finalizer/body.js';
+import type { Changes } from '../finalizer/created.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };
@@ -80,7 +83,7 @@ Finalizer.create({ name: "ruleTypeTest/other", components: {}, before: ["ruleTyp
 
 // Changes finalizers see only the essential components they watch.
 const save = Finalizer.changes({ name: "ruleTypeTest/save", watch: [source, parent] }, (changes, { commands }) => {
-    check<Equal<typeof changes, Finalizer.ChangeSet<typeof source | typeof parent>>>();
+    check<Equal<typeof changes, ChangeSet<typeof source | typeof parent>>>();
     void commands;
     for (const group of changes.groups) {
         check<Equal<typeof group.from, readonly (typeof source | typeof parent)[] | null>>();
@@ -100,12 +103,12 @@ Finalizer.changes({ name: "ruleTypeTest/save", watch: [slot] }, () => {});
 System.create({ name: "ruleTypeTest/move", components: { read: [parent], write: [source] } }, row => { row[source] = row[parent]; });
 // @ts-expect-error a reference changes only through commands
 System.create({ name: "ruleTypeTest/move", components: { write: [parent] } }, () => {});
-check<Equal<Extract<Component.Writable, typeof parent | typeof source>, typeof source>>();
+check<Equal<Extract<Writable, typeof parent | typeof source>, typeof source>>();
 
 // Each value says what it is.
 check<Equal<typeof slots.kind, "rule">>();
 check<Equal<typeof release.kind, "finalizer">>();
-check<Equal<typeof save, Finalizer.Changes<typeof save.declaration>>>();
+check<Equal<typeof save, Changes<typeof save.declaration>>>();
 
 // Rules and finalizers apply in every world.
 export const created: World = World.create();

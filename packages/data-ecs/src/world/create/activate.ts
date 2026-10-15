@@ -1,5 +1,5 @@
-import type { Finalizer } from '../../finalizer/finalizer.js';
-import type { Rule } from '../../rule/rule.js';
+import type { Finalizer } from '../../finalizer/created.js';
+import type { Rule } from '../../rule/created.js';
 import type { RuleFacts } from './closure.js';
 import { createFinalizerRunner, type FinalizerRunner } from './finalizers.js';
 import { programFinalizers, programRules, programVersion, triggersOf } from './program.js';

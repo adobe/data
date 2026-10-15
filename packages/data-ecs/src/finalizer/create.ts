@@ -3,7 +3,7 @@ import type { Resource } from '../resource/resource.js';
 import type { Listed, Property } from '../system/property.js';
 import type { ChangeSet, Context, Row, Watched } from './body.js';
 import type { ChangesDeclaration, Declaration } from './declaration.js';
-import type { Changes, Leaf } from './finalizer.js';
+import type { Changes, Leaf } from './created.js';
 import type { Name } from './name.js';
 
 type Ordering<N> = { readonly before?: readonly Exclude<Name, N>[]; readonly after?: readonly Exclude<Name, N>[] };

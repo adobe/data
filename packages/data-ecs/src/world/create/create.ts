@@ -1,7 +1,7 @@
 import type { Component } from '../../component/component.js';
 import type { Entity } from '../../entity/entity.js';
-import type { Finalizer } from '../../finalizer/finalizer.js';
-import type { Rule } from '../../rule/rule.js';
+import type { Finalizer } from '../../finalizer/created.js';
+import type { Rule } from '../../rule/created.js';
 import type { Resource } from '../../resource/resource.js';
 import type { System } from '../../system/system.js';
 import type { World } from '../world.js';
@@ -19,6 +19,9 @@ import { ensureResources, findResource, initialOf } from './resources.js';
 import { ensureProgramResources, activate } from './activate.js';
 import { kindOf } from '../../registry/declare-name.js';
 import { createState, startTicking, type Key } from './state.js';
+import type { ReadonlyValue } from '../../component/value.js';
+import type { ValuesOf } from '../../component/values-of.js';
+import type { ReadonlyValue as ReadonlyResourceValue } from '../../resource/value.js';
 
 type Queue = <T>(task: () => T | Promise<T>) => Promise<T>;
 
@@ -166,13 +169,13 @@ export const createWorld = (options: WorldOptions = {}): World => {
         },
         read: {
             // Stored values match each component's registered schema, so they have its type.
-            entity: <const C extends readonly Component.Name[]>(entity: Entity, components: C) => readEntity(state, entity, components) as Component.ValuesOf<C> | null,
+            entity: <const C extends readonly Component.Name[]>(entity: Entity, components: C) => readEntity(state, entity, components) as ValuesOf<C> | null,
             component: <C extends Component.Name>(entity: Entity, component: C) => {
                 const value = readComponent(state, entity, component);
                 // Stored values match each component's registered schema, so they have its type.
-                return value === undefined ? null : value as Component.ReadonlyValue<C>;
+                return value === undefined ? null : value as ReadonlyValue<C>;
             },
-            resource: <R extends Resource.Name>(key: R) => readResource(key) as Resource.ReadonlyValue<R>,
+            resource: <R extends Resource.Name>(key: R) => readResource(key) as ReadonlyResourceValue<R>,
         },
     };
     return world;

@@ -5,6 +5,8 @@ import type { Commands } from '../system/commands.js';
 import type { IsLinear } from '../system/linear.js';
 import type { Components } from '../component/types.js';
 import { Trait } from './trait.js';
+import type { Derived, Essential } from '../component/value.js';
+import type { Reduced } from '../resource/reduction.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };
@@ -121,9 +123,9 @@ check<Equal<Component.Value<typeof link>, { readonly to: Entity; readonly weight
 check<Equal<Extract<Component.With<"reference">, Ours>, typeof parent | typeof follows>>();
 check<Equal<Extract<Component.With<"reference", "owner">, Ours>, typeof parent>>();
 check<Equal<Extract<Component.Where<Entity>, Ours>, typeof parent | typeof follows>>();
-check<Equal<Extract<Component.Derived, Ours>, typeof slot>>();
+check<Equal<Extract<Derived, Ours>, typeof slot>>();
 check<Equal<Extract<Component.With<typeof gpuOnly>, Ours>, typeof pair>>();
-type Persisted = Exclude<Component.Essential, Component.With<typeof nonPersistent>>;
+type Persisted = Exclude<Essential, Component.With<typeof nonPersistent>>;
 check<Equal<Extract<Persisted, Ours>, Exclude<Ours, typeof slot | typeof cache>>>();
 check<Equal<Resource.Value<typeof time>, number>>();
 
@@ -151,5 +153,5 @@ Resource.register(anyFlag, { type: { type: "boolean", default: false }, reduce: 
 Resource.register(named, { type: { type: "string", default: "" }, reduce: "max" });
 // @ts-expect-error reduce is a resource trait
 Component.register(reducedComponent, { type: { type: "number" }, reduce: "+" });
-check<Equal<Resource.Reduced & typeof sum, typeof sum>>();
-check<Equal<Resource.Reduced & typeof time, never>>();
+check<Equal<Reduced & typeof sum, typeof sum>>();
+check<Equal<Reduced & typeof time, never>>();

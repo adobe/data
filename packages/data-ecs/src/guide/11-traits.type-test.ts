@@ -44,10 +44,8 @@ Component.register(label, { type: { type: "string" }, [instanced]: true });
 type Guide = typeof transform | typeof label | typeof meshSlot | typeof meshReady | typeof parent;
 check<Equal<Extract<Component.With<typeof instanced>, Guide>, typeof transform>>();
 check<Equal<Extract<Component.Where<Entity>, Guide>, typeof parent>>();
-check<Equal<Extract<Component.Derived, Guide>, typeof meshSlot>>();
-// Commands take only essential components, and systems write only writable ones.
-check<Equal<Extract<Component.Essential, Guide>, Exclude<Guide, typeof meshSlot>>>();
-check<Equal<Extract<Component.Writable, Guide>, Exclude<Guide, typeof parent>>>();
+check<Equal<Extract<Component.With<"derived">, Guide>, typeof meshSlot>>();
+check<Equal<Extract<Component.With<"reference", "owner">, Guide>, typeof parent>>();
 
 export const spawn = (commands: System.Commands): void => {
     // @ts-expect-error only rules add and remove derived components

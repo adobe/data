@@ -45,7 +45,7 @@ type Rendered<D extends RenderDeclaration> = D & { readonly components: { readon
 
 /**
  * Declares a render system: it runs once per run on the main thread, in schedule order, and records GPU work over
- * the GPU copy of the components its accessors name, which the world uploads first as needed. It needs a world with `gpu`.
+ * the GPU copy of the components its accessors name, which the world uploads first as needed. It needs a world with a `gpu` device.
  * Throws if a different system has its name.
  */
 export const render = <const D extends RenderDeclaration>(

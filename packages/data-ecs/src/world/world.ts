@@ -37,11 +37,6 @@ export type World = {
     };
     /** Brings the CPU copies of these components up to date with GPU writes, queued with runs. */
     synchronize(components: readonly Component.Name[]): Promise<void>;
-    /**
-     * The world's GPU, or null for a world created without one. Render pipelines that use `Gpu.wgsl` declarations take
-     * `layout` at the group they name.
-     */
-    readonly gpu: { readonly layout: GPUBindGroupLayout } | null;
 };
 
 export * as World from './index.js';

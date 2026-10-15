@@ -281,7 +281,8 @@ Example: [`09-reductions.test.ts`](src/guide/09-reductions.test.ts#L27-L75).
 
 ## 11. GPU kernels and render systems
 
-`kernel: "gpu"` runs a system as a compute shader in a world created with a device, and as a `"cpu"` kernel in one
+The built-in `gpu` resource is the world's device, set at creation and `null` without one; systems read it but
+don't write it. `kernel: "gpu"` runs a system as a compute shader in a world with a device, and as a `"cpu"` kernel in one
 without. Its values are 4-byte numbers and booleans, so numbers need `precision: 1`, as the math schemas have. Writes
 stay on the GPU until something on the CPU needs them, or `world.synchronize` asks.
 
@@ -289,16 +290,16 @@ stay on the GPU until something on the CPU needs them, or `world.synchronize` as
 const move = System.create({ name: "guide/gpu/move", kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
-const world = World.create({ gpu: { device } });
+const world = World.create({ resources: { [gpu]: device } });
 ```
 
-Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L22-L40).
+Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L22-L41).
 
 A render system, made by `System.render`, records GPU work over the GPU copy of the components its `shader.accessors`
 name. Its body is `(gpu, context)`: `gpu` has the device, the run's encoder and a table per archetype. `Gpu.wgsl(system)`
-gives its shaders' declarations, a function per accessor, and pipelines take `world.gpu.layout`. See the particle sample's
+gives its shaders' declarations, a function per accessor, and pipelines take `Gpu.layout(device)`, the same object for a device every time. See the particle sample's
 [declaration](src/sample/gpu/particles.ts#L100-L105) and [draw](src/sample/gpu/particles.ts#L111-L139), wired up in
-[`main.ts`](src/sample/gpu/main.ts#L58-L63).
+[`main.ts`](src/sample/gpu/main.ts#L60-L64).
 
 - **Not yet:** lookups, change filters, commands, loops and reductions in GPU kernels.
 
@@ -456,6 +457,7 @@ Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L49-L96
 ## 19. Reference
 
 - **Built-in components:** `component`, `persistent` and `shared` are tags in [`src/components/`](src/components/).
+- **Built-in resources:** `gpu`, the world's device, in [`src/resources/`](src/resources/).
 - **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value` and `With`; `Resource.Name` and `Value`; `System` and `System.Commands`; `Finalizer`; and `World`. Everything else is inferred from the values the API returns.
 - **Emitted declarations:** a library that exports those values emits declarations naming the package's own modules, through `@adobe/data-ecs/internal/*`, which holds types only. Code imports from `@adobe/data-ecs`.
 - **Constructors:** `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Finalizer.create` and `Finalizer.changes` return a finalizer, typed as its `name`. `Rule.create` returns nothing. Rules and finalizers apply in every world.

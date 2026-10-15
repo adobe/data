@@ -5,7 +5,7 @@ import type { Rule } from '../../rule/created.js';
 import type { Resource } from '../../resource/resource.js';
 import { requireDefinition, type Definition } from '../../system/definition.js';
 import type { World } from '../world.js';
-import type { GpuOptions } from '../gpu.js';
+import { gpu as gpuDevice } from '../../resources/gpu.js';
 import { createGpu } from './gpu.js';
 import { readCell } from './cells.js';
 import { finalizeAll } from './finalizers.js';
@@ -41,7 +41,7 @@ export type WorldOptions = { readonly workers?: number; readonly minimumChunk?: 
 /** Resource values a world starts with, in place of their defaults. */
 export type InitialResources = { readonly [K in Resource.Name]?: Resource.Value<K> };
 
-export type Options = { readonly gpu?: GpuOptions; readonly resources?: InitialResources };
+export type Options = { readonly resources?: InitialResources };
 
 /** Rows below which a kernel's archetype runs on the main thread rather than paying for a round trip. */
 const defaultMinimumChunk = 16384;
@@ -54,8 +54,9 @@ export const createWorld = (options: WorldOptions = {}): World => {
         if (kindOf(key) !== "resource") throw new Error(`"${String(key)}" isn't a registered resource.`);
         initial.set(key, Reflect.get(resources, key));
     }
-    const state = createState(shared, options.wasm ?? true, options.simd ?? true, options.gpu !== undefined, initial);
-    if (options.gpu !== undefined) state.gpu = createGpu(options.gpu.device);
+    const device = resources[gpuDevice] ?? null;
+    const state = createState(shared, options.wasm ?? true, options.simd ?? true, device !== null, initial);
+    if (device !== null) state.gpu = createGpu(device);
     const registrar = createRegistrar(state);
     const enqueue = createQueue();
     const workerCount = shared ? options.workers ?? defaultWorkerCount(shared) : 0;
@@ -163,7 +164,6 @@ export const createWorld = (options: WorldOptions = {}): World => {
             const ids = new Set(components.map(key => state.ids.get(key)));
             return enqueue(() => gpu.readback(state.archetypes.flatMap(archetype => archetype.storages.filter(storage => ids.has(storage.component)))));
         },
-        gpu: state.gpu === null ? null : { layout: state.gpu.renderLayout },
         [Symbol.asyncDispose]: () => world.dispose(),
         query: {
             select: (has, options) => select(state, has, options),
@@ -184,7 +184,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
 };
 
 /**
- * Creates a world. With `gpu`, render systems and `kernel: "gpu"` kernels run on its device. `resources` sets values
- * resources start with in place of their defaults.
+ * Creates a world. `resources` sets values resources start with in place of their defaults. With `[gpu]: device`,
+ * render systems and `kernel: "gpu"` kernels run on that device.
  */
 export const create = (options?: Options): World => createWorld(options);

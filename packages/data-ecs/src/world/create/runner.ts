@@ -87,7 +87,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     }
     const placement = leaf.kind === "render" ? "render" : declaration.kernel === "gpu" && state.gpu !== null ? "gpu" : "cpu";
     const failPlacement = (message: string): never => { throw new Error(`System "${declaration.name}" ${message}.`); };
-    if (placement !== "cpu" && state.gpu === null) failPlacement("needs a world created with gpu");
+    if (placement !== "cpu" && state.gpu === null) failPlacement("needs a world with a gpu device");
     // The build rejects these in compiled kernels; this covers declarations it didn't see.
     if (declaration.kernel === "gpu") {
         if (filtered) failPlacement("can't run on the GPU: GPU kernels don't support change filters yet");

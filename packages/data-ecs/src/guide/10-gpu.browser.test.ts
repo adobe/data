@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { Component, System, Vec3, World } from "../index.js";
+import { Component, System, Vec3, World, gpu } from "../index.js";
 
 const position = "guide/gpu/position";
 const velocity = "guide/gpu/velocity";
@@ -28,7 +28,8 @@ it("runs GPU kernels on the world's device, and reads their writes back on reque
     const adapter = await navigator.gpu.requestAdapter();
     const device = await adapter?.requestDevice();
     if (device === undefined) throw new Error("No WebGPU device.");
-    const world = World.create({ gpu: { device } });
+    const world = World.create({ resources: { [gpu]: device } });
+    expect(world.read.resource(gpu)).toBe(device);
     await world.run(spawn);
     await world.run(move);
     await world.run(move);

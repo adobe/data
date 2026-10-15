@@ -1,3 +1,4 @@
+import { gpu } from '../../resources/gpu.js';
 import { declarationOf } from '../../registry/create-registry.js';
 import type { Leaf } from '../../system/leaf.js';
 import { requireDefinition, type Definition } from '../../system/definition.js';
@@ -60,8 +61,11 @@ const checkReductions = (leaf: Leaf): void => {
         if (declared === undefined) throw new Error(`System "${name}" reduces "${String(key)}", which has no reduce trait.`);
         if (declared !== operator) throw new Error(`System "${name}" reduces "${String(key)}" with "${String(operator)}", but it's declared reduce: "${String(declared)}".`);
     }
-    for (const key of resources?.write ?? []) {
+    // Any key, since only untyped callers can list `gpu`.
+    const writes: readonly Key[] = resources?.write ?? [];
+    for (const key of writes) {
         if (declarationOf(key)?.reduce !== undefined) throw new Error(`System "${name}" writes "${String(key)}", which is reduced; only its contributors' fold sets it.`);
+        if (key === gpu) throw new Error(`System "${name}" writes "gpu", which is set when the world is created.`);
     }
 };
 

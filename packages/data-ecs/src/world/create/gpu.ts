@@ -1,10 +1,7 @@
+import { layout, recordBytes } from '../../gpu/layout.js';
 import type { Archetype, Storage } from './archetype.js';
 
-/**
- * Bytes per parameter or table record, the dynamic offset alignment WebGPU guarantees. A record is `u32` words: a
- * row count, then a word address in the heap per column, then, for kernels, scalars as f32 bits.
- */
-export const recordBytes = 256;
+export { recordBytes };
 export const recordWords = recordBytes / 4;
 
 /** Smallest heap block, and the alignment of every block. */
@@ -76,13 +73,7 @@ export type GpuEngine = {
 const sizeClass = (bytes: number): number => Math.max(0, Math.ceil(Math.log2(Math.max(bytes, minimumBlockBytes) / minimumBlockBytes)));
 
 export const createGpu = (device: GPUDevice): GpuEngine => {
-    const shared = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE;
-    const renderLayout = device.createBindGroupLayout({
-        entries: [
-            { binding: 0, visibility: shared, buffer: { type: "read-only-storage" } },
-            { binding: 1, visibility: shared, buffer: { type: "uniform", hasDynamicOffset: true, minBindingSize: recordBytes } },
-        ],
-    });
+    const renderLayout = layout(device);
     const computeLayout = device.createBindGroupLayout({
         entries: [
             { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } },

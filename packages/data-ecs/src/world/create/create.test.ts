@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import { Entity } from "../../entity/entity.js";
 import { Resource } from "../../resource/resource.js";
+import { gpu } from "../../resources/gpu.js";
 import { System } from "../../system/system.js";
 import { World } from "../world.js";
 import { attachKernel } from "./attach-kernel.js";
@@ -294,6 +295,17 @@ describe("World.create", () => {
         expect(World.create().read.resource(spawnCount)).toBe(3);
         // @ts-expect-error resources takes only resource names
         expect(() => World.create({ resources: { [velocity]: 1 } })).toThrow(`"createTest/velocity" isn't a registered resource`);
+    });
+
+    it("has the gpu resource, null without a device, which systems read but don't write", async () => {
+        await using world = World.create();
+        expect(world.read.resource(gpu)).toBeNull();
+        let seen: unknown = undefined;
+        await world.run(System.create({ name: "createTest/readGpu", resources: { read: [gpu] } }, ({ resources }) => { seen = resources[gpu]; }));
+        expect(seen).toBeNull();
+        // @ts-expect-error the device is set when the world is created
+        const replace = System.create({ name: "createTest/writeGpu", resources: { write: [gpu] } }, ({ resources }) => { resources[gpu] = null; });
+        await expect(world.run(replace)).rejects.toThrow('writes "gpu", which is set when the world is created');
     });
 
     it("accepts a system declared again the same, as a module evaluated again declares it, and rejects a different one", async () => {

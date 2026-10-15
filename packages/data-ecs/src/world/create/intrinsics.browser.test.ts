@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import { F32, Mat4x4, Quat, U32, Vec2, Vec3, Vec4 } from "../../math/index.js";
 import { System } from "../../system/system.js";
+import { gpu } from "../../resources/gpu.js";
 import { createWorld } from "./create.js";
 
 const f2a = "intrinsicsTest/f2a";
@@ -550,7 +551,7 @@ const device = async (): Promise<GPUDevice> => {
 
 describe("declared WGSL builtins", () => {
     it("give on the GPU what their functions give on the CPU", async () => {
-        const gpuWorld = createWorld({ gpu: { device: await device() } });
+        const gpuWorld = createWorld({ resources: { [gpu]: await device() } });
         const cpuWorld = createWorld({ workers: 0 });
         for (const world of [gpuWorld, cpuWorld]) {
             await world.run(spawn);

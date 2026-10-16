@@ -1,4 +1,3 @@
-import type { Composite } from '../../system/composite.js';
 import type { Leaf } from '../../system/leaf.js';
 import { requireDefinition, type Definition } from '../../system/definition.js';
 import type { Key } from './state.js';
@@ -9,129 +8,84 @@ import type { Key } from './state.js';
  */
 export type Schedule = { readonly tiers: readonly (readonly Leaf[])[]; readonly reductions: ReadonlyMap<Key, number> };
 
-type Constraints = { readonly before: Set<string>; readonly after: Set<string>; readonly during: Set<string> };
-
-type Entry = Constraints & { readonly leaf: Leaf };
-
 export const isLeaf = (system: Definition): system is Leaf => system.kind !== "composite";
 
-const add = (target: Set<string>, systems: readonly { readonly name: string }[] | undefined): void => {
-    for (const { name } of systems ?? []) target.add(name);
-};
+/** Each system is an interval, from its start node to its end node. */
+const start = (unit: number): number => 2 * unit;
+const end = (unit: number): number => 2 * unit + 1;
 
-/** Walks a system, applying each composite's constraints to all its members. The root's own constraints are ignored. */
-const flatten = (root: Definition): { readonly entries: readonly Entry[]; readonly expand: ReadonlyMap<string, readonly number[]> } => {
-    const entries: Entry[] = [];
-    const indexOf = new Map<Leaf, number>();
-    const named = new Map<string, Definition>();
-    const expand = new Map<string, number[]>();
+type Graph = { readonly units: readonly Definition[]; readonly successors: readonly Set<number>[] };
 
-    const visit = (system: Definition, inherited: readonly Constraints[]): readonly number[] => {
+/**
+ * A leaf runs from its start to its end, and a composite spans its members. `after` and `before` order one system's end
+ * before another's start, and `during` places a system inside another's span. The root's own constraints are ignored,
+ * as are constraints naming systems outside it.
+ */
+const graphOf = (root: Definition): Graph => {
+    const units: Definition[] = [];
+    const members: (readonly number[])[] = [];
+    const indexOf = new Map<Definition, number>();
+    const named = new Map<string, number>();
+    const visit = (system: Definition): number => {
+        const known = indexOf.get(system);
+        if (known !== undefined) return known;
         const { name } = system.declaration;
-        const existing = named.get(name);
-        if (existing !== undefined && existing !== system) throw new Error(`Two different systems are named "${name}".`);
-        named.set(name, system);
-        const own: Constraints = { before: new Set(), after: new Set(), during: new Set() };
-        if (system !== root) {
-            add(own.before, system.declaration.before);
-            add(own.after, system.declaration.after);
-            add(own.during, system.declaration.during);
-        }
-        const constraints = [...inherited, own];
-        const leaves = isLeaf(system) ? [visitLeaf(system, constraints)] : visitComposite(system, constraints);
-        const expansion = expand.get(name) ?? [];
-        for (const index of leaves) if (!expansion.includes(index)) expansion.push(index);
-        expand.set(name, expansion);
-        return leaves;
+        if (named.has(name)) throw new Error(`Two different systems are named "${name}".`);
+        const unit = units.push(system) - 1;
+        indexOf.set(system, unit);
+        named.set(name, unit);
+        members[unit] = isLeaf(system) ? [] : system.declaration.systems.map(member => visit(requireDefinition(member)));
+        return unit;
     };
-
-    const visitLeaf = (leaf: Leaf, constraints: readonly Constraints[]): number => {
-        let index = indexOf.get(leaf);
-        if (index === undefined) {
-            index = entries.length;
-            indexOf.set(leaf, index);
-            entries.push({ leaf, before: new Set(), after: new Set(), during: new Set() });
+    visit(root);
+    const successors = units.flatMap(() => [new Set<number>(), new Set<number>()]);
+    const resolve = (systems: readonly { readonly name: string }[] | undefined): readonly number[] =>
+        (systems ?? []).flatMap(({ name }) => named.get(name) ?? []);
+    units.forEach((system, unit) => {
+        successors[start(unit)].add(end(unit));
+        for (const member of members[unit]) {
+            successors[start(unit)].add(start(member));
+            successors[end(member)].add(end(unit));
         }
-        const entry = entries[index];
-        for (const { before, after, during } of constraints) {
-            for (const name of before) entry.before.add(name);
-            for (const name of after) entry.after.add(name);
-            for (const name of during) entry.during.add(name);
+        if (system === root) return;
+        const { before, after, during } = system.declaration;
+        for (const other of resolve(after)) successors[end(other)].add(start(unit));
+        for (const other of resolve(before)) successors[end(unit)].add(start(other));
+        for (const other of resolve(during)) {
+            successors[start(other)].add(start(unit));
+            successors[end(unit)].add(end(other));
         }
-        return index;
-    };
-
-    const visitComposite = (composite: Composite, constraints: readonly Constraints[]): readonly number[] =>
-        composite.declaration.systems.flatMap(member => visit(requireDefinition(member), constraints));
-
-    visit(root, []);
-    return { entries, expand };
-};
-
-type Graph = { readonly successors: readonly Set<number>[]; readonly during: readonly Set<number>[] };
-
-const graphOf = (entries: readonly Entry[], expand: ReadonlyMap<string, readonly number[]>): Graph => {
-    const successors = entries.map(() => new Set<number>());
-    const predecessors = entries.map(() => new Set<number>());
-    const during = entries.map(() => new Set<number>());
-    /** Whether the edge is new. */
-    const order = (from: number, to: number): boolean => {
-        if (from === to || successors[from].has(to)) return false;
-        successors[from].add(to);
-        predecessors[to].add(from);
-        return true;
-    };
-    entries.forEach((entry, index) => {
-        for (const name of entry.after) for (const other of expand.get(name) ?? []) order(other, index);
-        for (const name of entry.before) for (const other of expand.get(name) ?? []) order(index, other);
-        for (const name of entry.during) for (const other of expand.get(name) ?? []) if (other !== index) { during[index].add(other); during[other].add(index); }
     });
-    // A system during another runs after what that one follows and before what follows it, outside its own members.
-    // Repeated until nothing changes, so a system during one that is itself during another gets both orders.
-    for (let changed = true; changed;) {
-        changed = false;
-        entries.forEach((entry, index) => {
-            for (const name of entry.during) {
-                const members = expand.get(name) ?? [];
-                for (const member of members) {
-                    if (member === index) continue;
-                    for (const previous of predecessors[member]) if (!members.includes(previous) && order(previous, index)) changed = true;
-                    for (const next of successors[member]) if (!members.includes(next) && order(index, next)) changed = true;
-                }
-            }
-        });
-    }
-    return { successors, during };
+    return { units, successors };
 };
 
-/** Kahn's algorithm in flatten order. Throws on a cycle. */
-const topologicalOrder = (entries: readonly Entry[], successors: readonly Set<number>[]): number[] => {
-    const incoming = entries.map(() => 0);
-    for (const next of successors) for (const index of next) incoming[index]++;
+/** Kahn's algorithm over nodes. Throws on a cycle. */
+const topologicalOrder = ({ units, successors }: Graph): number[] => {
+    const incoming = successors.map(() => 0);
+    for (const next of successors) for (const node of next) incoming[node]++;
     const order: number[] = [];
-    const ready = entries.map((_, index) => index).filter(index => incoming[index] === 0);
+    const ready = successors.map((_, node) => node).filter(node => incoming[node] === 0);
     while (ready.length > 0) {
-        ready.sort((a, b) => b - a);
-        const index = ready.pop() ?? 0;
-        order.push(index);
-        for (const next of successors[index]) if (--incoming[next] === 0) ready.push(next);
+        const node = ready.pop() ?? 0;
+        order.push(node);
+        for (const next of successors[node]) if (--incoming[next] === 0) ready.push(next);
     }
-    if (order.length < entries.length) {
-        const cyclic = entries.filter((_, index) => incoming[index] > 0).map(entry => `"${entry.leaf.declaration.name}"`);
+    if (order.length < successors.length) {
+        const cyclic = units.filter((_, unit) => incoming[start(unit)] > 0 || incoming[end(unit)] > 0).map(system => `"${system.declaration.name}"`);
         throw new Error(`Ordering cycle between ${cyclic.join(", ")}.`);
     }
     return order;
 };
 
-/** `reach[a]` has bit `b` set when there's an ordering path from `a` to `b`. */
+/** `reach[a]` has bit `b` set when there's a path from node `a` to node `b`. */
 const reachability = (order: readonly number[], successors: readonly Set<number>[]): Uint32Array[] => {
     const words = Math.ceil(order.length / 32);
     const reach = order.map(() => new Uint32Array(words));
     for (let i = order.length - 1; i >= 0; i--) {
-        const index = order[i];
-        for (const next of successors[index]) {
-            reach[index][next >>> 5] |= 1 << (next & 31);
-            for (let w = 0; w < words; w++) reach[index][w] |= reach[next][w];
+        const node = order[i];
+        for (const next of successors[node]) {
+            reach[node][next >>> 5] |= 1 << (next & 31);
+            for (let w = 0; w < words; w++) reach[node][w] |= reach[next][w];
         }
     }
     return reach;
@@ -139,27 +93,17 @@ const reachability = (order: readonly number[], successors: readonly Set<number>
 
 const reaches = (reach: readonly Uint32Array[], from: number, to: number): boolean => (reach[from][to >>> 5] & (1 << (to & 31))) !== 0;
 
-/** Longest-path tiers, then `during` pairs pulled into the same tier where no ordering path separates them. */
-const tiersOf = (order: readonly number[], graph: Graph, reach: readonly Uint32Array[]): number[] => {
-    const tier = order.map(() => 0);
-    const propagate = (): void => {
-        for (const index of order) for (const next of graph.successors[index]) tier[next] = Math.max(tier[next], tier[index] + 1);
-    };
-    propagate();
-    for (let pass = 0; pass < order.length; pass++) {
-        let changed = false;
-        for (const index of order) {
-            for (const other of graph.during[index]) {
-                if (tier[other] > tier[index] && !reaches(reach, index, other) && !reaches(reach, other, index)) {
-                    tier[index] = tier[other];
-                    changed = true;
-                }
-            }
-        }
-        if (!changed) break;
-        propagate();
+/** Whether one of two systems ends before the other starts. */
+const ordered = (reach: readonly Uint32Array[], a: number, b: number): boolean => reaches(reach, end(a), start(b)) || reaches(reach, end(b), start(a));
+
+/** Each node's tier: the most leaves on any path to it, so a leaf's tier is where it starts. */
+const depthsOf = ({ units, successors }: Graph, order: readonly number[]): number[] => {
+    const depth = successors.map(() => 0);
+    for (const node of order) {
+        const step = node % 2 === 0 && isLeaf(units[node >>> 1]) ? 1 : 0;
+        for (const next of successors[node]) depth[next] = Math.max(depth[next], depth[node] + (next === node + 1 ? step : 0));
     }
-    return tier;
+    return depth;
 };
 
 type Access = { readonly reads: ReadonlySet<Key>; readonly writes: ReadonlySet<Key>; readonly reduces: ReadonlySet<Key> };
@@ -208,29 +152,31 @@ export const scheduleOf = (system: Definition): Schedule => {
 
 /** Orders a system's leaves into tiers. Throws on a cycle, or on two conflicting leaves with no ordering path between them. */
 const createSchedule = (system: Definition): Schedule => {
-    const { entries, expand } = flatten(system);
-    const graph = graphOf(entries, expand);
-    const accesses = entries.map(entry => accessOf(entry.leaf));
+    const graph = graphOf(system);
+    const leaves = graph.units.flatMap((unit, index) => isLeaf(unit) ? [{ leaf: unit, unit: index }] : []);
+    const accesses = leaves.map(({ leaf }) => accessOf(leaf));
     // Leaves that read a resource run after every leaf that reduces into it, so they read the finished fold.
     const reductions = new Map<Key, number>();
     accesses.forEach((access, contributor) => {
         for (const key of access.reduces) {
             reductions.set(key, (reductions.get(key) ?? 0) + 1);
-            accesses.forEach((other, reader) => { if (reader !== contributor && other.reads.has(key)) graph.successors[contributor].add(reader); });
+            accesses.forEach((other, reader) => {
+                if (reader !== contributor && other.reads.has(key)) graph.successors[end(leaves[contributor].unit)].add(start(leaves[reader].unit));
+            });
         }
     });
-    const order = topologicalOrder(entries, graph.successors);
+    const order = topologicalOrder(graph);
     const reach = reachability(order, graph.successors);
-    for (let a = 0; a < entries.length; a++) {
-        for (let b = a + 1; b < entries.length; b++) {
+    for (let a = 0; a < leaves.length; a++) {
+        for (let b = a + 1; b < leaves.length; b++) {
             const key = conflictOf(accesses[a], accesses[b]);
-            if (key !== undefined && !reaches(reach, a, b) && !reaches(reach, b, a)) {
-                throw new Error(`Systems "${entries[a].leaf.declaration.name}" and "${entries[b].leaf.declaration.name}" both access "${String(key)}" and one writes it; order them with before or after.`);
+            if (key !== undefined && !ordered(reach, leaves[a].unit, leaves[b].unit)) {
+                throw new Error(`Systems "${leaves[a].leaf.declaration.name}" and "${leaves[b].leaf.declaration.name}" both access "${String(key)}" and one writes it; order them with before or after.`);
             }
         }
     }
-    const tier = tiersOf(order, graph, reach);
+    const depth = depthsOf(graph, order);
     const tiers: Leaf[][] = [];
-    entries.forEach((entry, index) => (tiers[tier[index]] ??= []).push(entry.leaf));
-    return { tiers: tiers.filter(leaves => leaves !== undefined), reductions };
+    for (const { leaf, unit } of leaves) (tiers[depth[start(unit)]] ??= []).push(leaf);
+    return { tiers: tiers.filter(tier => tier !== undefined), reductions };
 };

@@ -14,7 +14,9 @@
     "typecheck": "tsc -b",
     "test": "pnpm exec playwright install chromium && vitest --run",
     "test:perf": "pnpm exec playwright install chromium && vitest --run --workspace vitest.perf.workspace.ts",
-    "perf": "vite build --config vite.perf.config.ts --logLevel warn && node dist/perf/run.js",
+    "perf": "node scripts/perf.mjs",
+    "perf:browser": "node scripts/perf.mjs --browser",
+    "perf:report": "node scripts/perf.mjs --report",
     "sample": "vite --config vite.sample.config.ts"
   },
   "devDependencies": {

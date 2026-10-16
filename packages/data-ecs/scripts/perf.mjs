@@ -140,7 +140,8 @@ const run = async () => {
 
 const record = ({ environment, results }) => {
     mkdirSync(historyDirectory, { recursive: true });
-    const dirty = git("status", "--porcelain") !== "";
+    // Records themselves don't make the tree dirty.
+    const dirty = git("status", "--porcelain", "--", ".", ":!perf") !== "";
     const entry = {
         commit: git("rev-parse", "--short", "HEAD"),
         dirty,

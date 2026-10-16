@@ -1,0 +1,491 @@
+{
+    "create": {
+        "operation": "Spawning entities of six components, two of them tags, over four archetypes, through a main-thread system and the sync point that applies them: loading a level, a burst of particles.",
+        "per": "spawns",
+        "n": 1000000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 48,
+            "basis": "Each entity writes its 32 bytes of values, its 8-byte entity and its 8-byte location."
+        }
+    },
+    "create flat": {
+        "operation": "The same spawns with eight scalar components each, values passed inline.",
+        "per": "spawns",
+        "n": 1000000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 48,
+            "basis": "Each entity writes its 32 bytes of values, its 8-byte entity and its 8-byte location."
+        }
+    },
+    "create flat dynamic": {
+        "operation": "The same spawns from value objects built first, as spawns from data or from another system's results are.",
+        "per": "spawns",
+        "n": 1000000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 48,
+            "basis": "Each entity writes its 32 bytes of values, its 8-byte entity and its 8-byte location."
+        }
+    },
+    "move": {
+        "operation": "A kernel adding a vec3 to another for the rows with two tags: integration, animation, any per-row update.",
+        "per": "matched rows",
+        "n": 250000,
+        "typical": [
+            1000,
+            1000000
+        ],
+        "best": {
+            "bytes": 36,
+            "basis": "Each row reads 12 bytes of velocity and reads and writes 12 bytes of position."
+        }
+    },
+    "churn": {
+        "operation": "A main-thread system despawning a tenth of its rows and spawning as many: projectiles, particles, pooled UI.",
+        "per": "rows visited",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 29,
+            "basis": "Each row reads 16 bytes; each tenth swaps the last row into its hole, 88 bytes, and spawns one of 44."
+        }
+    },
+    "retag": {
+        "operation": "A main-thread system adding a tag to a tenth of its rows and removing it from another tenth: state flags such as selected or visible that move entities between archetypes.",
+        "per": "rows visited",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 39,
+            "basis": "Each row reads 4 bytes; each fifth moves, copying its 44 bytes and swapping the last row into its hole."
+        }
+    },
+    "sparse changed": {
+        "operation": "A kernel filtered on `changed` after 1% of rows changed, scattered: reacting to edits, such as recomputing bounds of what moved.",
+        "per": "rows in the archetype",
+        "n": 1000000,
+        "typical": [
+            10000,
+            1000000
+        ],
+        "best": {
+            "bytes": 8.24,
+            "basis": "Every chunk has a change, so each row's 8-byte tick is read; the changed 1% read 12 bytes and write 12."
+        }
+    },
+    "sparse changed clustered": {
+        "operation": "The same with the 1% in one contiguous run of rows, as edits to recently spawned entities are.",
+        "per": "rows in the archetype",
+        "n": 1000000,
+        "typical": [
+            10000,
+            1000000
+        ],
+        "best": {
+            "bytes": 0.33,
+            "basis": "Chunk ticks are scanned; the changed 1% read their 8-byte ticks and 24 bytes of values."
+        }
+    },
+    "follow": {
+        "operation": "A kernel looking up another entity per row and reading its position: steering toward targets, constraints, attachments.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 52,
+            "basis": "Each row reads 12 bytes of position and an 8-byte target, the target's 8-byte location and 12-byte position, and writes 12."
+        }
+    },
+    "emit": {
+        "operation": "A kernel issuing an add for a tenth of its rows: hits, events or state changes found by a parallel pass.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 34,
+            "basis": "Each row reads 16 bytes; each tenth moves to a new archetype, about 180 bytes."
+        }
+    },
+    "reduce": {
+        "operation": "A kernel folding every row into a sum and a maximum: totals, bounds, counts.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            1000000
+        ],
+        "best": {
+            "bytes": 4,
+            "basis": "Each row reads its 4-byte value."
+        }
+    },
+    "chain": {
+        "operation": "Six dependent kernels over the same rows, each reading what the one before wrote: a pipeline of per-row steps.",
+        "per": "row passes",
+        "n": 6000000,
+        "typical": [
+            6000,
+            6000000
+        ],
+        "best": {
+            "bytes": 4,
+            "basis": "Fused into one pass, each row reads and writes its 12-byte velocity once for all six."
+        }
+    },
+    "up depth 10": {
+        "operation": "A kernel with `up` computing every row from its parent, over 100K chains of 10: transforms, inherited visibility or style, recomputed in full.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 28,
+            "basis": "Each row reads its 8-byte value, its parent's 8-byte result and 4-byte row, and writes its 8-byte result."
+        }
+    },
+    "up depth 1000": {
+        "operation": "A kernel with `up` computing every row from its parent, over 1K chains of 1,000: transforms, inherited visibility or style, recomputed in full.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 28,
+            "basis": "Each row reads its 8-byte value, its parent's 8-byte result and 4-byte row, and writes its 8-byte result."
+        }
+    },
+    "up one root changed": {
+        "operation": "A filtered kernel with `up` after one root's value changed: moving one object in a scene graph.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 0.0078125,
+            "basis": "Chunk ticks are scanned; the 10 rows of the changed chain run."
+        }
+    },
+    "up after a spawn": {
+        "operation": "A kernel with `up` computing every row, after a spawn into its tree: a node added to a scene graph each frame.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 28,
+            "basis": "The run itself, with the order kept current at O(1) for the spawn."
+        }
+    },
+    "up filtered after churn": {
+        "operation": "A filtered kernel with `up` after one root changed and 100 leaves were despawned and 100 spawned in the tree's archetype: a scene graph with objects coming and going.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 0.0136925,
+            "basis": "Chunk ticks are scanned; the changed chain and the 200 leaves run; the order is patched for 200 rows."
+        }
+    },
+    "up filtered after tagged churn": {
+        "operation": "A filtered kernel with `up` after one root changed and 100 leaves were despawned and 100 spawned, the leaves in an archetype of their own: a scene graph with short-lived children of their own kind, such as effects.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 0.0136925,
+            "basis": "Chunk ticks are scanned; the changed chain and the 200 leaves run; the order is patched for 200 rows."
+        }
+    },
+    "up filtered after a reparent": {
+        "operation": "A filtered kernel with `up` after a subtree of 9 rows moved to another parent: dragging an object to a new group.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 0.0078125,
+            "basis": "Chunk ticks are scanned; the 9 moved rows are renumbered and run."
+        }
+    },
+    "up load": {
+        "operation": "Spawning a forest of 100K chains of 10 and running a kernel with `up` over it once: loading a scene.",
+        "per": "spawns",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 68,
+            "basis": "Each entity writes 24 bytes of values, its entity and its location, then runs once."
+        }
+    },
+    "up small tree in a big world": {
+        "operation": "A kernel with `up` over a tree of 1K rows after a spawn into it, in a world of 1M other entities: a UI or a rig beside a large simulation.",
+        "per": "tree rows",
+        "n": 1000,
+        "typical": [
+            100,
+            10000
+        ],
+        "best": {
+            "bytes": 28,
+            "basis": "The run over the tree, with the order kept current at O(1) for the spawn."
+        }
+    },
+    "main thread": {
+        "operation": "Fifty main-thread systems each reading every row of 1K: many small app systems.",
+        "per": "row reads",
+        "n": 50000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 12,
+            "basis": "Each row read loads its 12-byte position."
+        }
+    },
+    "select": {
+        "operation": "A main-thread `select` with `where`, then reading a component of each result: queries from UI or tools.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 18,
+            "basis": "Each row reads its 4-byte index; each selected half writes its 8-byte entity and reads its location and 12-byte position."
+        }
+    },
+    "move main": {
+        "operation": "A kernel adding a vec3 to another for the rows with two tags: integration, animation, any per-row update.",
+        "per": "matched rows",
+        "n": 250000,
+        "typical": [
+            1000,
+            1000000
+        ],
+        "best": {
+            "bytes": 36,
+            "basis": "Each row reads 12 bytes of velocity and reads and writes 12 bytes of position."
+        }
+    },
+    "follow main": {
+        "operation": "A kernel looking up another entity per row and reading its position: steering toward targets, constraints, attachments.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 52,
+            "basis": "Each row reads 12 bytes of position and an 8-byte target, the target's 8-byte location and 12-byte position, and writes 12."
+        }
+    },
+    "chain main": {
+        "operation": "Six dependent kernels over the same rows, each reading what the one before wrote: a pipeline of per-row steps.",
+        "per": "row passes",
+        "n": 6000000,
+        "typical": [
+            6000,
+            6000000
+        ],
+        "best": {
+            "bytes": 4,
+            "basis": "Fused into one pass, each row reads and writes its 12-byte velocity once for all six."
+        }
+    },
+    "sparse changed main": {
+        "operation": "A kernel filtered on `changed` after 1% of rows changed, scattered: reacting to edits, such as recomputing bounds of what moved.",
+        "per": "rows in the archetype",
+        "n": 1000000,
+        "typical": [
+            10000,
+            1000000
+        ],
+        "best": {
+            "bytes": 8.24,
+            "basis": "Every chunk has a change, so each row's 8-byte tick is read; the changed 1% read 12 bytes and write 12."
+        }
+    },
+    "up depth 10 main": {
+        "operation": "A kernel with `up` computing every row from its parent, over 100K chains of 10: transforms, inherited visibility or style, recomputed in full.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 28,
+            "basis": "Each row reads its 8-byte value, its parent's 8-byte result and 4-byte row, and writes its 8-byte result."
+        }
+    },
+    "up depth 1000 main": {
+        "operation": "A kernel with `up` computing every row from its parent, over 1K chains of 1,000: transforms, inherited visibility or style, recomputed in full.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 28,
+            "basis": "Each row reads its 8-byte value, its parent's 8-byte result and 4-byte row, and writes its 8-byte result."
+        }
+    },
+    "move workers": {
+        "operation": "A kernel adding a vec3 to another for the rows with two tags: integration, animation, any per-row update.",
+        "per": "matched rows",
+        "n": 250000,
+        "typical": [
+            1000,
+            1000000
+        ],
+        "best": {
+            "bytes": 36,
+            "basis": "Each row reads 12 bytes of velocity and reads and writes 12 bytes of position.",
+            "on": "threads"
+        }
+    },
+    "follow workers": {
+        "operation": "A kernel looking up another entity per row and reading its position: steering toward targets, constraints, attachments.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 52,
+            "basis": "Each row reads 12 bytes of position and an 8-byte target, the target's 8-byte location and 12-byte position, and writes 12.",
+            "on": "threads"
+        }
+    },
+    "chain workers": {
+        "operation": "Six dependent kernels over the same rows, each reading what the one before wrote: a pipeline of per-row steps.",
+        "per": "row passes",
+        "n": 6000000,
+        "typical": [
+            6000,
+            6000000
+        ],
+        "best": {
+            "bytes": 4,
+            "basis": "Fused into one pass, each row reads and writes its 12-byte velocity once for all six.",
+            "on": "threads"
+        }
+    },
+    "sparse changed workers": {
+        "operation": "A kernel filtered on `changed` after 1% of rows changed, scattered: reacting to edits, such as recomputing bounds of what moved.",
+        "per": "rows in the archetype",
+        "n": 1000000,
+        "typical": [
+            10000,
+            1000000
+        ],
+        "best": {
+            "bytes": 8.24,
+            "basis": "Every chunk has a change, so each row's 8-byte tick is read; the changed 1% read 12 bytes and write 12.",
+            "on": "threads"
+        }
+    },
+    "up depth 10 workers": {
+        "operation": "A kernel with `up` computing every row from its parent, over 100K chains of 10: transforms, inherited visibility or style, recomputed in full.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 28,
+            "basis": "Each row reads its 8-byte value, its parent's 8-byte result and 4-byte row, and writes its 8-byte result.",
+            "on": "threads"
+        }
+    },
+    "up depth 1000 workers": {
+        "operation": "A kernel with `up` computing every row from its parent, over 1K chains of 1,000: transforms, inherited visibility or style, recomputed in full.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 28,
+            "basis": "Each row reads its 8-byte value, its parent's 8-byte result and 4-byte row, and writes its 8-byte result.",
+            "on": "threads"
+        }
+    },
+    "up depth 10 gpu": {
+        "operation": "A kernel with `up` computing every row from its parent, over 100K chains of 10: transforms, inherited visibility or style, recomputed in full.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each row reads its 4-byte value, its parent's 4-byte result and 4-byte row, and writes its 4-byte result.",
+            "on": "gpu"
+        }
+    },
+    "up depth 1000 gpu": {
+        "operation": "A kernel with `up` computing every row from its parent, over 1K chains of 1,000: transforms, inherited visibility or style, recomputed in full.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 16,
+            "basis": "Each row reads its 4-byte value, its parent's 4-byte result and 4-byte row, and writes its 4-byte result.",
+            "on": "gpu"
+        }
+    }
+}

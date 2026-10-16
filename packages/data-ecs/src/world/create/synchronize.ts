@@ -183,6 +183,7 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
 };
 
 const remove = (state: State, archetype: Archetype, row: number): void => {
+    archetype.rowsChanged = state.tick;
     const moved = swapRemove(archetype, row);
     if (moved !== -1) state.entities.row[indexOf(moved)] = row;
 };
@@ -245,6 +246,7 @@ const applyEntry = (state: State, queued: readonly Queued[], entry: number, tick
     }
     const to = archetypes[plan.to[entry]];
     const fromRow = from === null ? -1 : entities.row[index];
+    if (to !== from) to.rowsChanged = tick;
     const toRow = to === from ? fromRow : insertRow(state.memory, to, entity);
     if (from !== null && to !== from) {
         const moves = movesOf(from, to);
@@ -268,7 +270,7 @@ const applyEntry = (state: State, queued: readonly Queued[], entry: number, tick
         state.touched.add(to);
         if (from !== null) state.touched.add(from);
     }
-    if (from !== null && to !== from) entities.moved[index] = entities.lastMove = tick;
+    if (from !== null && to !== from) entities.moved[index] = tick;
     entities.archetype[index] = to.id;
     entities.row[index] = toRow;
 };
@@ -365,10 +367,8 @@ export const prepareSync = (state: State, isolated = false): boolean => {
             };
             index = indexChangesOf(state, queued, fromOf, [...born].map(([id, first]) => [state.archetypes[id], first] as const));
         }
-        // Rows move, appear and go, and references change, only where this finds one doing so.
-        let structural = written.length > 0 || plan.spawned > 0;
-        for (let entry = 0; entry < plan.count && !structural; entry++) structural = plan.despawned[entry] !== 0 || plan.from[entry] !== plan.to[entry];
-        if (structural) state.structures++;
+        // References change only here: each component written to is stamped.
+        for (let k = 1; k < written.length; k += 3) state.referencesWritten[written[k]] = tick;
         presize(state);
         state.syncing = { queued, reservations, reserved: state.entities.length, tick, born, index, deriving, isolated };
         return true;

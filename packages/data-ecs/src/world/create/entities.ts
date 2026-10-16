@@ -43,8 +43,6 @@ export type Entities = Reservations & {
      * row whose parent reference was removed.
      */
     moved: Float64Array;
-    /** The newest tick in `moved`. */
-    lastMove: number;
     free: Int32Array;
     length: number;
     /** Indexes freed during the current sync point, reusable after it. */
@@ -66,7 +64,6 @@ export const createEntities = (memory: Memory): Entities => {
         row: allocateArray(memory, Uint32Array, initialCapacity),
         generation: allocateArray(memory, Uint32Array, initialCapacity).fill(0),
         moved: allocateArray(memory, Float64Array, initialCapacity).fill(0),
-        lastMove: 0,
         length: 1,
         released: [],
     };

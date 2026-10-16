@@ -201,6 +201,15 @@ describe("up", () => {
         expect(ecs.read.component(mixed.underAnchored, world)).toBe(13);
     });
 
+    it("reads a parent the query doesn't match again after it moves to another archetype", async () => {
+        await using ecs = createWorld({ workers: 0 });
+        await ecs.run(spawnMixed);
+        await ecs.run(propagateKernel);
+        await ecs.run(System.create({ name: "upTest/moveUnmatched" }, ({ commands }) => { commands.add(mixed.unmatched, { [anchor]: true, [world]: 80 }); }));
+        await ecs.run(propagateKernel);
+        expect(ecs.read.component(mixed.underUnmatched, world)).toBe(90);
+    });
+
     it("reads booleans through up", async () => {
         await using ecs = createWorld({ workers: 0 });
         const tree: Entity[] = [];

@@ -94,14 +94,24 @@ export const createUp = (state: State, up: Up) => {
         return readable[id] === 1;
     };
 
-    /** The order of the last call, kept while no sync point applies commands, since only those move rows. */
-    let kept: { readonly structures: number; readonly matches: number; readonly order: Order } | null = null;
+    /**
+     * The order of the last call, with the archetypes it depends on, its matched ones and its parents', and when their
+     * rows and its parent references last changed: kept until they change, which only sync points do.
+     */
+    let kept: { readonly matches: number; readonly references: number; readonly built: number; readonly watched: readonly Archetype[]; readonly order: Order } | null = null;
+
+    const isKept = (matches: readonly Archetype[]): boolean => {
+        if (kept === null || kept.matches !== matches.length || (state.referencesWritten[through] ?? 0) !== kept.references) return false;
+        for (const archetype of kept.watched) if (archetype.rowsChanged > kept.built) return false;
+        return true;
+    };
 
     /** The matched rows in depth order from the roots. Rows on or under a parent cycle are in none. */
     const levels = (matches: readonly Archetype[]): Order => {
-        if (kept !== null && kept.structures === state.structures && kept.matches === matches.length) return kept.order;
+        if (kept !== null && isKept(matches)) return kept.order;
         const result = orderOf(matches);
-        kept = { structures: state.structures, matches: matches.length, order: result };
+        const watched = [...new Set([...matches, ...parentArchetypeIds.map(id => state.archetypes[id])])];
+        kept = { matches: matches.length, references: state.referencesWritten[through] ?? 0, built: state.tick, watched, order: result };
         return result;
     };
 
@@ -272,7 +282,7 @@ export const createUp = (state: State, up: Up) => {
      * reference, or what is read of parents, changed, or some entity moved.
      */
     const anyChanged = (matches: readonly Archetype[], filters: readonly number[], since: number): boolean => {
-        if (state.entities.lastMove > since) return true;
+        for (const archetype of matches) if (archetype.rowsChanged > since) return true;
         for (const archetype of matches) if (newer(archetype, filters, since) || newer(archetype, [through], since)) return true;
         for (const id of parentArchetypeIds) if (newer(state.archetypes[id], read, since)) return true;
         return false;

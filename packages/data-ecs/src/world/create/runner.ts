@@ -340,8 +340,9 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             list = allocateArray(state.memory, Int32Array, matched);
             parentList = allocateArray(state.memory, Int32Array, matched);
         }
-        // Without a moved entity, changes are pushed down from the rows that changed, so unchanged subtrees cost a check of their chunks.
-        const pushed = since >= 0 && state.entities.lastMove <= since;
+        // While no matched archetype's rows changed, changes are pushed down from the rows that changed, so unchanged
+        // subtrees cost a check of their chunks; a row moved in, as removing its parent reference moves it, is checked alone.
+        const pushed = since >= 0 && matches.every(archetype => archetype.rowsChanged <= since);
         if (pushed) {
             if (dirty.length < matched) dirty = new Uint8Array(matched);
             dirty.fill(0, 0, matched);

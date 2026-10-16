@@ -119,7 +119,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 - **Scheduling:**
   - There's no built-in schedule. The app runs its main composite each frame (`world.run(main)`), and transactions or on-demand systems whenever it needs them.
   - Ordering comes from `before`/`after`/`during`, sorted into tiers. Systems in the same tier may run in parallel. A constraint that names a system outside the composite being run is ignored.
-  - **`during` is a preference,** not a constraint: it pulls systems into the same tier where no ordering path separates them.
+  - **`during` places a system alongside another:** after what that system follows and before what follows it, both by its own constraints and by others', outside a composite's own members. No-op systems ordered one after another are phases, and systems during different phases are ordered with each other. Where no ordering path separates them, the two share a tier.
   - **Unordered conflicts throw at `System.composite`:** within a composite, two systems that both write a component or resource, or where one reads what the other writes, must have an ordering path between them. Contributors to one reduced resource don't conflict with each other, and every system that reads it is ordered after all of them.
   - **A lookup can't read a component its own system writes;** that throws at registration. Rejecting it now means hierarchy propagation can later give it defined semantics without breaking anything.
 - **World** (`src/world/`):

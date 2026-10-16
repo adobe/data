@@ -72,12 +72,35 @@ type Graph = { readonly successors: readonly Set<number>[]; readonly during: rea
 
 const graphOf = (entries: readonly Entry[], expand: ReadonlyMap<string, readonly number[]>): Graph => {
     const successors = entries.map(() => new Set<number>());
+    const predecessors = entries.map(() => new Set<number>());
     const during = entries.map(() => new Set<number>());
+    /** Whether the edge is new. */
+    const order = (from: number, to: number): boolean => {
+        if (from === to || successors[from].has(to)) return false;
+        successors[from].add(to);
+        predecessors[to].add(from);
+        return true;
+    };
     entries.forEach((entry, index) => {
-        for (const name of entry.after) for (const other of expand.get(name) ?? []) if (other !== index) successors[other].add(index);
-        for (const name of entry.before) for (const other of expand.get(name) ?? []) if (other !== index) successors[index].add(other);
+        for (const name of entry.after) for (const other of expand.get(name) ?? []) order(other, index);
+        for (const name of entry.before) for (const other of expand.get(name) ?? []) order(index, other);
         for (const name of entry.during) for (const other of expand.get(name) ?? []) if (other !== index) { during[index].add(other); during[other].add(index); }
     });
+    // A system during another runs after what that one follows and before what follows it, outside its own members.
+    // Repeated until nothing changes, so a system during one that is itself during another gets both orders.
+    for (let changed = true; changed;) {
+        changed = false;
+        entries.forEach((entry, index) => {
+            for (const name of entry.during) {
+                const members = expand.get(name) ?? [];
+                for (const member of members) {
+                    if (member === index) continue;
+                    for (const previous of predecessors[member]) if (!members.includes(previous) && order(previous, index)) changed = true;
+                    for (const next of successors[member]) if (!members.includes(next) && order(index, next)) changed = true;
+                }
+            }
+        });
+    }
     return { successors, during };
 };
 

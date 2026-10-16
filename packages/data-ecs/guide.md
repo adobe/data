@@ -123,9 +123,9 @@ Example: [`02-systems.test.ts`](src/guide/02-systems.test.ts#L33-L55).
 
 ## 4. Scheduling and composites
 
-There's no built-in schedule: the application runs a composite each frame. Order comes from `before` and `after`,
-which are hard constraints. `during` is a preference: it puts systems in the same tier where nothing orders them
-apart. Systems with no ordering path between them may run in parallel.
+There's no built-in schedule: the application runs a composite each frame. Order comes from `before`, `after` and
+`during`. A system during another runs alongside it: after what that system follows and before what follows it. Systems
+with no ordering path between them may run in parallel.
 
 ```ts
 const heal = System.create({ name: "guide/scheduling/heal", components: { write: [health] }, after: [hit] }, row => {
@@ -134,10 +134,28 @@ const heal = System.create({ name: "guide/scheduling/heal", components: { write:
 const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal, hit] });
 ```
 
-Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L17-L39).
+Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L17-L38).
+
+Phases are systems that do nothing, ordered one after another. Systems during a phase are then ordered with every
+system in the phases before and after it, so systems in different phases never conflict:
+
+```ts
+const update = System.create({ name: "guide/scheduling/update" }, () => {});
+const render = System.create({ name: "guide/scheduling/render", after: [update] }, () => {});
+const poison = System.create({ name: "guide/scheduling/poison", components: { write: [health] }, during: [update] }, row => {
+    row[health] -= 1;
+});
+const report = System.create({ name: "guide/scheduling/report", components: { read: [health] }, during: [render] }, row => {
+    seen.push(row[health]);
+});
+const phased = System.composite({ name: "guide/scheduling/phased", systems: [report, poison, update, render] });
+```
+
+Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L40-L58).
 
 - **Constraints take systems:** `before`, `after` and `during` list the systems themselves, imported from their modules. When two modules import each other, one of them declares the order.
-- **Rejected:** two members that both write a component or resource, or where one reads what the other writes, with no ordering path between them, at `System.composite`.
+- **During a composite:** a system runs after what the composite follows and before what follows it, not between its members.
+- **Rejected:** two members that both write a component or resource, or where one reads what the other writes, with no ordering path between them, at `System.composite`. That includes two such systems during the same phase, which need an order between them. A `during` that contradicts `before` or `after` is an ordering cycle.
 - **Reductions are the exception:** contributors to one resource need no order between them, and its readers run after all of them (section 10).
 
 ## 5. Change filters and conditions

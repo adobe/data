@@ -54,6 +54,46 @@ describe("scheduleOf", () => {
             .toEqual([["scheduleTest/a"], ["scheduleTest/b", "scheduleTest/c"], ["scheduleTest/d"]]);
     });
 
+    it("orders a system during another between what that system follows and what follows it", () => {
+        const update = leaf({ name: "scheduleTest/update" });
+        const render = leaf({ name: "scheduleTest/render", after: [update] });
+        const writer = leaf({ name: "scheduleTest/writer", components: { write: [value] }, during: [update] });
+        const reader = leaf({ name: "scheduleTest/reader", components: { read: [value] }, during: [render] });
+        expect(names(composite({ name: "scheduleTest/root", systems: [reader, writer, update, render] })))
+            .toEqual([["scheduleTest/writer", "scheduleTest/update"], ["scheduleTest/reader", "scheduleTest/render"]]);
+    });
+
+    it("takes the order of a system during a system that is itself during another", () => {
+        const update = leaf({ name: "scheduleTest/update" });
+        const render = leaf({ name: "scheduleTest/render", after: [update] });
+        const physics = leaf({ name: "scheduleTest/physics", during: [update] });
+        const writer = leaf({ name: "scheduleTest/writer", components: { write: [value] }, during: [physics] });
+        const reader = leaf({ name: "scheduleTest/reader", components: { read: [value] }, during: [render] });
+        expect(names(composite({ name: "scheduleTest/root", systems: [reader, writer, physics, update, render] })))
+            .toEqual([["scheduleTest/writer", "scheduleTest/physics", "scheduleTest/update"], ["scheduleTest/reader", "scheduleTest/render"]]);
+    });
+
+    it("orders a system during a composite around the composite, not between its members", () => {
+        const start = leaf({ name: "scheduleTest/start", components: { write: [other] } });
+        const a = leaf({ name: "scheduleTest/a" });
+        const b = leaf({ name: "scheduleTest/b", after: [a] });
+        const group = composite({ name: "scheduleTest/group", systems: [a, b], after: [start] });
+        const end = leaf({ name: "scheduleTest/end", components: { read: [value] }, after: [group] });
+        const c = leaf({ name: "scheduleTest/c", components: { read: [other], write: [value] }, during: [group] });
+        expect(names(composite({ name: "scheduleTest/root", systems: [c, start, group, end] })))
+            .toEqual([["scheduleTest/start"], ["scheduleTest/c", "scheduleTest/a"], ["scheduleTest/b"], ["scheduleTest/end"]]);
+    });
+
+    it("still throws on conflicting systems during one system, and on a during that contradicts before or after", () => {
+        const update = leaf({ name: "scheduleTest/update" });
+        const render = leaf({ name: "scheduleTest/render", after: [update] });
+        const a = leaf({ name: "scheduleTest/a", components: { write: [value] }, during: [update] });
+        const b = leaf({ name: "scheduleTest/b", components: { write: [value] }, during: [update] });
+        expect(() => scheduleOf(composite({ name: "scheduleTest/root", systems: [update, render, a, b] }))).toThrow('"scheduleTest/a" and "scheduleTest/b"');
+        const late = leaf({ name: "scheduleTest/late", during: [update], after: [render] });
+        expect(() => scheduleOf(composite({ name: "scheduleTest/root", systems: [update, render, late] }))).toThrow("Ordering cycle");
+    });
+
     it("ignores constraints naming systems outside the one being scheduled", () => {
         const a = leaf({ name: "scheduleTest/a", after: [{ name: "scheduleTest/d" }] });
         expect(names(composite({ name: "scheduleTest/root", systems: [a] }))).toEqual([["scheduleTest/a"]]);

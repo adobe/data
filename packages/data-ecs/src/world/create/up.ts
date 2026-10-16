@@ -329,15 +329,21 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
     const levels = (matches: readonly Archetype[]): Order => {
         update(matches);
         if (kept !== null && isKept(matches)) return kept.order;
-        const parentIds = new Set<number>();
-        const result = orderOf(matches, parentIds);
+        const result = orderOf(matches);
         stale = false;
-        kept = { matches: matches.length, built: state.tick, watched: [...new Set([...matches, ...[...parentIds].map(id => state.archetypes[id])])], order: result };
+        const watched = new Set(matches);
+        for (let id = 0; id < state.archetypes.length; id++) if (parentSeen[id] === 1) watched.add(state.archetypes[id]);
+        kept = { matches: matches.length, built: state.tick, watched: [...watched], order: result };
         return result;
     };
 
-    const orderOf = (matches: readonly Archetype[], parentIds: Set<number>): Order => {
+    /** By archetype id: whether some matched row's parent is in it, from the last order. */
+    let parentSeen = new Uint8Array(0);
+
+    const orderOf = (matches: readonly Archetype[]): Order => {
         const { archetype: archetypeOf, row: rowOf } = state.entities;
+        if (parentSeen.length < state.archetypes.length) parentSeen = new Uint8Array(Math.max(state.archetypes.length, 2 * parentSeen.length));
+        parentSeen.fill(0);
         let count = 0;
         for (const archetype of matches) count += archetype.count;
         depths = fit(depths, count);
@@ -362,7 +368,7 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
                     continue;
                 }
                 const parentArchetype = archetypeOf[parent];
-                parentIds.add(parentArchetype);
+                parentSeen[parentArchetype] = 1;
                 rowParents[global] = rowOf[parent];
                 const known = parentArchetype < readable.length ? readable[parentArchetype] : 0;
                 keys[global] = (known === 0 ? isReadable(parentArchetype) : known === 1) ? parentArchetype : -1;

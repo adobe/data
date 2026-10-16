@@ -1,6 +1,6 @@
 // Runs the benchmarks, compares them with what this machine recorded last, and records them.
 //
-//   pnpm perf [filter]           node benchmarks whose names include filter, compared with the last record
+//   pnpm perf [filter]           node benchmarks whose names match the regular expression filter, compared with the last record
 //   pnpm perf:browser            chromium benchmarks: main thread, workers and GPU
 //   add --record                 append the results to perf/history and regenerate perf/README.md
 //   pnpm perf:report             regenerate perf/README.md from perf/history

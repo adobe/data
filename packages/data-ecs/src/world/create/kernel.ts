@@ -53,6 +53,8 @@ export type Kernel = (
     /** Each reduction's partial for this call, at `partial + k`: loaded first, folded into, and stored last. */
     partials: Float64Array,
     partial: number,
+    /** For a kernel that reads `up`: the rows it runs are `rows[start]` to `rows[end - 1]`, rather than `start` to `end - 1`. */
+    rows?: Int32Array,
 ) => void;
 
 /** How kernels issue commands. `kind` is 1 for despawn, 2 for add, 3 for remove; `key` indexes the kernel's `keys`. */

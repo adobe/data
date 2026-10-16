@@ -268,7 +268,7 @@ const applyEntry = (state: State, queued: readonly Queued[], entry: number, tick
         state.touched.add(to);
         if (from !== null) state.touched.add(from);
     }
-    if (from !== null && to !== from) entities.moved[index] = tick;
+    if (from !== null && to !== from) entities.moved[index] = entities.lastMove = tick;
     entities.archetype[index] = to.id;
     entities.row[index] = toRow;
 };
@@ -330,6 +330,7 @@ export const prepareSync = (state: State, isolated = false): boolean => {
     const { structure, plan } = state;
     // Finalizers' spawns are reserved during the last sync point, so their batches are pending without a reservation.
     if (queued.every(({ buffer }) => buffer.count === 0) && !reserved(state.entities) && state.carried === null && !structure.rederive) return false;
+    state.structures++;
     plan.count = 0;
     plan.spawned = 0;
     let reservations: Reserved | null = null;

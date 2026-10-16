@@ -106,13 +106,16 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             "(booleans, strides, offsets) => {",
             ...[...booleans].map(index => `const b${index} = booleans[${index}];`),
             ...strided.map(index => `const s${index} = strides[${index}], o${index} = offsets[${index}];`),
-            "return (columns, start, end, resources, lookups, keys, args, commands, tick, partials, partial) => {",
+            "return (columns, start, end, resources, lookups, keys, args, commands, tick, partials, partial, rows) => {",
             ...locals,
             preludeCode,
             ...accumulators.map((local, k) => `let ${localName(unit, local)} = partials[partial + ${k}];`),
-            ...[...unit.stampedPerCall].map(chunks =>
+            // A kernel that reads `up` runs a list of rows, which needn't be consecutive, so each stamps its own chunk.
+            ...up !== null ? [] : [...unit.stampedPerCall].map(chunks =>
                 `if (start < end) for (let k = start >> ${chunkShift}, last = (end - 1) >> ${chunkShift}; k <= last; k++) c${chunks}[k] = tick;`),
-            `${rowLabel}: for (let ${["i = start", ...strided.map(index => `x${index} = start * s${index} + o${index}`)].join(", ")}; i < end; ${["i++", ...strided.map(index => `x${index} += s${index}`)].join(", ")}) {`,
+            up !== null
+                ? `${rowLabel}: for (let n = start; n < end; n++) { const i = rows[n]; ${[...strided.map(index => `const x${index} = i * s${index} + o${index};`), ...[...unit.stampedPerCall].map(chunks => `c${chunks}[i >> ${chunkShift}] = tick;`)].join(" ")}`
+                : `${rowLabel}: for (let ${["i = start", ...strided.map(index => `x${index} = start * s${index} + o${index}`)].join(", ")}; i < end; ${["i++", ...strided.map(index => `x${index} += s${index}`)].join(", ")}) {`,
             kernel,
             "}",
             ...accumulators.map((local, k) => `partials[partial + ${k}] = ${localName(unit, local)};`),

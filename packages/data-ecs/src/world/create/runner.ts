@@ -10,7 +10,7 @@ import { createBuffer, createKernelCommands, emptyBuffer, type CommandBuffer } f
 import { reserve } from './entities.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
-import { createContext, createObjectLookup, rowBinder } from './rows.js';
+import { createContext, rowBinder } from './rows.js';
 import { scalarValues } from './wasm.js';
 import { idOf, type State } from './state.js';
 import { accessorsOf } from '../../gpu/accessors.js';
@@ -98,7 +98,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     }
     if (declaration.up !== undefined && query === undefined) failPlacement("uses up, which orders rows, without components");
     const up = declaration.up === undefined ? null : createUp(state, declaration.up);
-    const upValues = declaration.up === undefined ? null : createObjectLookup(state, { read: declaration.up.read });
+    const upLookups = up === null || kernel === null ? [] : [...kernel.lookups, up.kernelLookup];
     const targets = reductionTargets(state, declaration);
     if (targets.length > 0) {
         if (declaration.kernel === "gpu") failPlacement("can't run on the GPU: GPU kernels don't support reductions yet");
@@ -252,54 +252,76 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             run(columns, start, end, values, bound.lookups, bound.description.keys, args, kernelCommands, tick, slots, slot * partialCount));
     };
 
-    /** Runs one range of an `up` system's rows, each reading its parent's values. */
-    const runUpRange = (archetype: Archetype, start: number, end: number, values: readonly unknown[], args: unknown, tick: number, slot: number): void => {
+    /** Rows of one archetype for an `up` run, by row, reused. */
+    let list = new Int32Array(0);
+    /** By index among the matched rows: whether a filtered `up` run must run it. */
+    let dirty = new Uint8Array(0);
+
+    /** Runs the first `count` rows `list` holds, of one archetype, each reading its parent's values. */
+    const runUpRows = (archetype: Archetype, count: number, values: readonly unknown[], args: unknown, tick: number, slot: number): void => {
         if (kernel !== null) {
-            kernel.kernel()(kernel.columnsOf(archetype), start, end, values, kernel.lookups, kernel.description.keys, args, kernelCommands, tick, slots, slot * partialCount);
+            kernel.kernel()(kernel.columnsOf(archetype), 0, count, values, upLookups, kernel.description.keys, args, kernelCommands, tick, slots, slot * partialCount, list);
             return;
         }
-        if (up === null || upValues === null) return;
+        if (up === null) return;
         const row = bindRow(archetype);
         const upContext = context.value;
-        for (let index = start; index < end; index++) {
+        const rows = archetype.entities;
+        for (let k = 0; k < count; k++) {
+            const index = list[k];
             row.index = index;
-            const parent = up.parentEntityOf(archetype, index);
-            upContext.up = parent < 0 ? null : upValues(asEntity(parent));
+            upContext.up = up.objectLookup(asEntity(rows[index]));
             system.body(row.value, upContext);
         }
     };
 
     /**
      * Runs an `up` system's rows level by level from the roots, on the main thread. With change filters, a row also
-     * passes when its parent, or what it reads of its parent, changed: decided before its level runs, since its parent
-     * ran in an earlier one.
+     * passes when its parent may have changed: decided before its level runs, since its parent ran in an earlier one.
      */
     const runUp = (since: number, values: readonly unknown[], args: unknown, tick: number): void => {
         if (up === null) return;
         const slot = partialCount === 0 ? 0 : takeSlots(1);
-        const passing: { archetype: Archetype; start: number; end: number }[] = [];
-        const add = (archetype: Archetype, start: number, end: number): void => { passing.push({ archetype, start, end }); };
-        for (const level of up.levels(matches)) {
-            passing.length = 0;
-            for (const { archetype, start, end } of level) {
-                const from = sinceFor(archetype, since);
-                if (from < 0) {
-                    add(archetype, start, end);
-                    continue;
-                }
-                const filters = filtersOf(archetype);
-                let first = -1;
-                for (let index = start; index < end; index++) {
-                    const passes = filters.some(filter => filter.ticks[index] > from) || up.parentChanged(archetype, index, from);
-                    if (passes && first < 0) first = index;
-                    else if (!passes && first >= 0) {
-                        add(archetype, first, index);
-                        first = -1;
+        const { rows, ends, levels, owners, bases } = up.levels(matches);
+        const ownFilters = [...addedIds, ...changedIds];
+        if (since >= 0 && !up.anyChanged(matches, ownFilters, since)) return;
+        const froms = matches.map(archetype => sinceFor(archetype, since));
+        const filters = matches.map(archetype => filtersOf(archetype));
+        if (list.length < rows.length) list = new Int32Array(rows.length);
+        // Without a moved entity, changes are pushed down from the rows that changed, so unchanged subtrees cost a check of their chunks.
+        const pushed = since >= 0 && state.entities.lastMove <= since;
+        if (pushed) {
+            if (dirty.length < rows.length) dirty = new Uint8Array(rows.length);
+            dirty.fill(0, 0, rows.length);
+            up.seed(matches, ownFilters, since, dirty);
+        }
+        let first = 0;
+        for (let level = 0; level < levels; level++) {
+            const end = ends[level];
+            // Rows of one archetype are consecutive within a level.
+            for (let k = first; k < end;) {
+                const owner = owners[rows[k]];
+                const archetype = matches[owner];
+                const base = bases[archetype.id];
+                const from = froms[owner];
+                const passing = filters[owner];
+                let count = 0;
+                const entities = archetype.entities;
+                for (; k < end && owners[rows[k]] === owner; k++) {
+                    const index = rows[k] - base;
+                    if (pushed) {
+                        if (from >= 0 && dirty[rows[k]] === 0) continue;
+                        up.markChildren(entities[index] >>> 0, dirty);
+                        list[count++] = index;
+                        continue;
                     }
+                    let passes = from < 0;
+                    for (let f = 0; f < passing.length && !passes; f++) passes = passing[f].ticks[index] > from;
+                    if (passes || up.parentChanged(archetype, index, from)) list[count++] = index;
                 }
-                if (first >= 0) add(archetype, first, end);
+                if (count > 0) runUpRows(archetype, count, values, args, tick, slot);
             }
-            for (const range of passing) runUpRange(range.archetype, range.start, range.end, values, args, tick, slot);
+            first = end;
         }
     };
 

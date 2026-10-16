@@ -31,6 +31,8 @@ export type State = {
     readonly resources: Set<number>;
     /** The newest tick handed out. Systems and sync points each take the next one. */
     tick: number;
+    /** Counts sync points that applied commands: rows move, and references change, only in those. */
+    structures: number;
     /** Command buffers for the next sync point, in merge order. */
     readonly queued: Queued[];
     resourceEntity: number;
@@ -106,6 +108,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         queued: [],
         resourceEntity: -1,
         observed: new Set(),
+        structures: 0,
         ticked: new Set(),
         batches: [],
         batchByKey: new Map(),

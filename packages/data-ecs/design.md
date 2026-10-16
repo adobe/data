@@ -127,10 +127,11 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
     - A row's depth counts its ancestors among the matched rows: a row whose parent doesn't match is a root of this system's order.
     - With change filters, a row also passes when its parent reference, or what it reads of its parent, changed since the system last ran, decided on ticks, so a parent another system wrote counts too. Those components keep ticks and kernels keep their stamps. A row that moved to another archetype since then passes too, since removing its parent reference moves it; the entity table keeps the tick of each entity's last move.
     - Rows on or under a parent cycle don't run. They'll be listed in the run report once it exists.
-    - **Order:** rows run depth by depth, and within a depth in groups of one archetype whose parents share one archetype, each in storage order. Groups of a depth never read each other's writes, so values don't depend on the grouping; commands and reductions follow it, deterministically. The order, each row's parent row and the children of each parent are rebuilt in O(rows) only after a sync point that applied commands, since only those move rows or change references.
+    - **Order:** rows run depth by depth, and within a depth in groups of one archetype whose parents share one archetype, each in storage order. Groups of a depth never read each other's writes, so values don't depend on the grouping; commands and reductions follow it, deterministically. The order, each row's parent row and the children of each parent change only at sync points, since only those move rows or change references.
     - **Kernels read `up` straight from the parent's columns:** a call covers one group, so it binds the parent archetype's columns once, and each row reads its parent's leaf at the parent's row. A leaf's stride and offset depend only on its component's layout, so they're the same in every archetype. `up === null` holds for the whole call.
     - **Filtered runs push changes down:** rows are marked from chunk ticks, of their own filters, their parent reference and the parent values they read, and each row that runs marks its children, so a run costs a check of each chunk plus the subtrees that changed, and nothing when nothing did. After an entity moved, rows are checked one by one instead.
-    - Phase 1 runs on the main thread, as JS kernels or main-thread bodies.
+    - **`kernel: "gpu"` systems may declare `up`;** what `read` lists must be made of 4-byte scalars, as the rest of a GPU kernel's values are.
+    - **In a main-thread body, `context.up` is one reused object,** valid only while its row runs, as `row` is.
 - **World** (`src/world/`):
   - `World.create(resources?)` returns a world synchronously, with resources starting at the given values in place of their defaults; a key that isn't a resource throws. Built-in names are plain (`gpuDevice`), so they need no import there.
   - **Names are program-wide:** `System.create`, `System.render` and `System.composite` record the name, and a different system, rule or finalizer with it throws. One declared again the same, as a hot reload does, is accepted: a system is then a new one, and a finalizer keeps its place in every world with the new body. Constraints list the systems themselves, imported from their modules; when two modules import each other, one declares the order.
@@ -216,11 +217,6 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 - **Reductions, later:** GPU kernels (a workgroup tree reduction to per-workgroup partials, which needs resources resident on the GPU); four-lane SIMD accumulators, deterministic since pieces are 16-row aligned; contributing a component value of unknown shape whole, as bounds over positions want; lexicographic `min` and `max` over a tuple, for argmin and argmax such as the nearest entity; and per-field operators.
 - **Rules and finalizers, later:** derived entities (rules that spawn), `within` with several hosts, finalizers as kernels, value changes in whole-plan finalizers, why an entity stopped, relationship conditions, and the Run report listing dropped dependents.
 - **Unregistering systems.** This needs a decision on what happens to a system's `lastRun` and artifacts.
-- **`up`, later:**
-  - The order kept current at Plan through the index from targets to holders, instead of rebuilt after each sync point that applies commands: a reparent walks up from the new parent to find a cycle, and renumbers the subtree. Kept as row lists, since depth in the archetype would split tables and archetype ids are positional.
-  - Depths across workers, with a barrier per depth, and narrow depths fused into one sequential piece; WASM, passing each group's parent column addresses as it passes its own.
-  - GPU kernels: a dispatch per group, binding the parent archetype's buffers and a buffer of parent rows; groups of a depth share a pass.
-  - For full recomputes of an associative composition, such as matrix products, pointer jumping on the GPU: log(depth) dispatches, each composing a row with its 2^k-th ancestor.
 
 ## Phase 2+: performance
 
@@ -240,12 +236,23 @@ Measured with `pnpm perf` (benchmarks bundled as in production, on plain node) a
 - **Main-thread reads:** `select`/`count` compile `where` once and resolve storages per archetype; single-component reads go straight to the storage.
 - **Main-thread spawns:** staged into a batch per component set and block-copied at the sync point. The plugin rewrites `commands.spawn({ ... })` with literal keys in main-thread systems into a per-site function with one parameter per value, writing each through a writer specialized to its column, so nothing is generated at runtime and nothing needs `'unsafe-eval'`. Other spawns read values by key.
 - **Main-thread systems:** one accessor row per set of reads and writes, in fast properties, shared across systems and archetypes and rebound per pass; getters and setters specialized per layout; resource cells resolved once per run.
+- **`up`:**
+  - The order (groups of one depth, archetype and parent archetype, with row and parent-row lists in the arena) is kept until an archetype starts matching, rows of its matched or parents' archetypes change (`rowsChanged`), or its reference component is written (`referencesWritten`), then rebuilt in O(rows).
+  - Filtered runs keep marked rows in lists by depth, seeded from chunk ticks, so they cost the chunks checked plus the rows that run.
+  - WASM kernels run a group's row list, with the parent archetype's column addresses as parameters.
+  - Workers take one depth at a time as claimed pieces, with a barrier per depth; depths too small to split run on the main thread without a wait.
+  - The GPU runs a dispatch per group, in order, within one pass; row lists live in the heap and upload only when the order changes.
+  - Main-thread bodies read parents through one reused accessor row.
 
 ### Next
 
 - **U32 ticks,** if tick bandwidth matters for observed components. Halves tick memory and the change-filter scan's bandwidth, which bounds uniformly sparse filters. Comparisons use wrapping subtraction relative to the current tick, with a periodic clamp pass at a sync point, like Bevy's `check_change_ticks`, covering cell, `lastRun` and chunk ticks.
 - **Compiled main-thread systems.** Accessor rows copy tuples out on every read and share one megamorphic body call site; compiling main-thread systems (or a JS-only kernel mode) would remove both. A per-system loop alone measured 5–10%.
 - **Kernel fusion, once real workloads show fusable pipelines.** Consecutive per-row kernels over the same archetypes, each reading what the previous one wrote at the same row, become one pass. It cuts dispatch and memory passes: chain 6×1M spends its time streaming 12 MB six times. Fusion must keep each system's tick, `lastRun`, change filters and command order.
+- **`up`:**
+  - **Incremental order.** A spawn into the tree rebuilds the order: about 36 ms per 1M rows. The plan, in `up-order.md`, keeps the order current at the sync point in exact storage order: a cheaper rebuild, a journal of spawned and moved rows for filtered runs, child lists per `through`, groups as segments patched by block moves, and the full rebuild as the oracle.
+  - **Deep, narrow trees, not planned until a workload needs them.** They cost a barrier per depth on workers and about 4.5 µs per dispatch on the GPU. Workers could take whole subtrees each, with no barriers, and the GPU could use pointer jumping for associative compositions such as matrix products: log(depth) dispatches, each composing a row with its 2^k-th ancestor.
+  - **Parent values copied into a dense column per group, not planned.** It would let kernels vectorize across rows, but the copy does the same scattered parent reads the kernel does, adds a pass and a barrier per depth, and costs rows × bytes read (64 MB for a mat4 over 1M rows). Wide fan-out already keeps a parent in cache, and heavy bodies such as mat4 products already vectorize within a row, so the estimated gain is under about 15% for compute-heavy bodies, and a loss for light ones.
 - **WASM commands.** Encode kernel commands into a shared-memory buffer from WASM, so command-issuing kernels get WASM and the fast dispatch path. Measured at 18% on emit for a large change while the sync point dominates, so it waits for a faster sync point.
 - **Per-archetype query-match bitsets.** Compute stop/start for each move as `match(from) & ~match(to)` in O(Q/32). Memory scales with archetypes, not archetype-graph edges.
 - **Per-archetype rule-closure cache.**

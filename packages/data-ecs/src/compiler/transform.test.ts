@@ -990,6 +990,16 @@ describe("declared access", () => {
             "row[score] = row[mass] * resources[delta] + row[position][0];"))).toBe("compiled");
     });
 
+    test("a kernel reads every component it lists in up.read, and up holds only those", async () => {
+        const up = (kind: string, read: string, body: string) =>
+            `const kernel = System.create({ name: "a", kernel: "${kind}", components: { read: [mass], write: [score] }, up: { through: target, read: [${read}] } }, (row, { up }) => { ${body} });`;
+        const propagate = "row[score] = (up === null ? 0 : up[score]) + row[mass];";
+        expect(await failure(up("cpu", "score, position", propagate))).toBe("position is in up.read but never read; remove it");
+        expect(await failure(up("cpu", "score", "row[score] = up === null ? row[mass] : up[position];"))).toBe("up is indexed by a component in up.read");
+        expect(await failure(up("gpu", "score", propagate))).toBe("a GPU kernel can't use up yet");
+        expect(await failure(up("cpu", "score", propagate))).toBe("compiled");
+    });
+
     test("a main-thread system uses every component and resource it lists, where its body shows every access", async () => {
         const unread = "mass is in components read but never read; remove it, or move it to components has to keep requiring it";
         expect(await failure(system("components: { read: [position, mass], write: [velocity] }", "(row) => { row[velocity] = row[position]; }"))).toBe(unread);

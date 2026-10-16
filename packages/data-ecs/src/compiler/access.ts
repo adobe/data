@@ -2,7 +2,7 @@ import type { Node } from 'estree';
 import { entityRead } from './columns.js';
 import { fail } from './failure.js';
 import type { Key } from './key.js';
-import { number, type Expression } from './ir.js';
+import { local, number, type Expression } from './ir.js';
 import { mathConstants, mathFunctions } from './math.js';
 import { scalar } from './scalar.js';
 import type { Scope } from './scope.js';
@@ -50,7 +50,8 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
             if (name === "reduce") return { kind: "reducers" };
             if (name === "commands") return { kind: "commands" };
             if (name === "input" && signature.input) return { kind: "dynamic", expression: { kind: "args", path: [] } };
-            return fail(node, "the context holds the declared resources, lookup, reduce and input, and commands");
+            if (name === "up" && scope.unit.up !== null) return { kind: "found", lookup: signature.lookups.length, expression: local(scope.unit.up) };
+            return fail(node, "the context holds the declared resources, lookup, reduce, input and up, and commands");
         case "resources": {
             const index = key.kind === "binding" ? signature.resources.indexOf(key.name) : -1;
             if (key.kind !== "binding" || index < 0) return fail(node, `${key.kind === "binding" ? key.name : "resources"} is not in resources read`);
@@ -66,11 +67,17 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
             return lookup >= 0 ? { kind: "lookup", lookup } : fail(node, "lookup holds the declaration's lookups, by name");
         }
         case "found": {
-            const lookup = signature.lookups[value.lookup];
+            // The lookup after the declaration's is `up`'s.
+            const up = value.lookup === signature.lookups.length ? signature.up : null;
+            const lookup = up ?? signature.lookups[value.lookup];
             const index = key.kind === "binding" ? (lookup?.read ?? []).indexOf(key.name) : -1;
-            if (lookup === undefined || key.kind !== "binding" || index < 0) return fail(node, "a lookup result is indexed by a component in that lookup's read");
-            const used = scope.unit.used.lookups;
-            used.set(lookup.name, (used.get(lookup.name) ?? new Set()).add(key.name));
+            if (lookup === undefined || key.kind !== "binding" || index < 0) return fail(node, up === null ? "a lookup result is indexed by a component in that lookup's read" : "up is indexed by a component in up.read");
+            if (up !== null) scope.unit.used.up.add(key.name);
+            else {
+                const used = scope.unit.used.lookups;
+                const name = signature.lookups[value.lookup]?.name ?? "";
+                used.set(name, (used.get(name) ?? new Set()).add(key.name));
+            }
             return { kind: "dynamic", expression: { kind: "element", object: value.expression, index: number(index), optional } };
         }
         case "dynamic":

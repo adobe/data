@@ -35,6 +35,10 @@ export type Context<D extends Declaration> =
         readonly reduce: { readonly [K in Reduced<D>]: (value: Resource.Value<K>) => void };
     })
     & (Property<D, "input"> extends Schema ? { readonly input: Schema.ToType<Property<D, "input">> } : {})
+    & (Property<D, "up"> extends object ? {
+        /** The parent's `up.read` values, or null for a row without a parent. */
+        readonly up: { readonly [K in Listed<Property<D, "up">, "read"> & Component.Name]: Component.Value<K> } | null;
+    } : {})
     & (D extends { readonly kernel: "gpu" } | { readonly shader: object } ? {} : { readonly commands: Commands });
 
 /** `(row, context)` for a system with `components`, `(context)` for one without, and `(gpu, context)` for a render system. */

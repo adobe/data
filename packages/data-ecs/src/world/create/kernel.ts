@@ -165,6 +165,8 @@ export type KernelDescription = {
     readonly shapes: readonly Shape[];
     readonly resources: readonly Key[];
     readonly lookups: readonly string[];
+    /** Whether it reads `up`, as a lookup after the declaration's. */
+    readonly up?: boolean;
     readonly keys: readonly Key[];
     /** A module exporting `create`, importable from the main thread and from workers. */
     readonly url: string;

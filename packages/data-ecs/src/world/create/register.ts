@@ -41,8 +41,33 @@ const keysOf = (leaf: Leaf): { readonly components: readonly Key[]; readonly res
     const { components: access, lookup, resources } = leaf.declaration;
     const components = [...access?.read ?? [], ...access?.write ?? [], ...access?.has ?? [], ...access?.not ?? [], ...access?.added ?? [], ...access?.changed ?? []];
     for (const name in lookup) components.push(...lookup[name].read ?? [], ...lookup[name].has ?? [], ...lookup[name].not ?? []);
+    const { up } = leaf.declaration;
+    if (up !== undefined) components.push(up.through, ...up.read ?? []);
     return { components, resources: [...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? [], ...reducedBy(leaf)] };
 };
+
+/** Throws if `up.through` isn't a registered reference component. */
+const checkUp = (leaf: Leaf): void => {
+    const { name, up } = leaf.declaration;
+    if (up === undefined) return;
+    if (kindOf(up.through) !== "component" || declarationOf(up.through)?.reference === undefined) {
+        throw new Error(`System "${name}": up.through "${String(up.through)}" isn't a reference component.`);
+    }
+};
+
+/** For a filtered `up` leaf: its parent reference and what it reads of its parent, whose changes also pass a row. */
+const upObserved = (leaf: Leaf): readonly Key[] => {
+    const { components, resources, up } = leaf.declaration;
+    const filtered = (components?.added?.length ?? 0) + (components?.changed?.length ?? 0) + (resources?.changed?.length ?? 0) > 0;
+    return up === undefined || !filtered ? [] : [up.through, ...up.read ?? []];
+};
+
+/** The components a leaf needs ticks on: those it filters on, and those `upObserved` gives. */
+const tickedBy = (leaf: Leaf): readonly Key[] =>
+    [...leaf.declaration.components?.added ?? [], ...leaf.declaration.components?.changed ?? [], ...upObserved(leaf)];
+
+/** The components whose `changed` stamps a leaf reads, so kernels writing them must keep their stamps. */
+const observedBy = (leaf: Leaf): readonly Key[] => [...leaf.declaration.components?.changed ?? [], ...upObserved(leaf)];
 
 /** Throws if a key is in both `read` and `write`: `write` already makes it readable. */
 const checkLists = (kind: string, name: string, what: string, lists: { readonly read?: readonly Key[]; readonly write?: readonly Key[] } | undefined): void => {
@@ -113,6 +138,7 @@ export const createRegistrar = (state: State): Registrar => {
                 }
                 checkReductions(system);
                 checkConditions(system);
+                checkUp(system);
                 const keys = keysOf(system);
                 for (const key of keys.components) idOf(state, key);
                 for (const key of keys.resources) {
@@ -130,7 +156,7 @@ export const createRegistrar = (state: State): Registrar => {
         }
         // New `changed` filters observe more components, so kernels that muted their stamps must load again.
         const observedBefore = new Set(state.observed);
-        for (const leaf of addedRunners.keys()) for (const key of leaf.declaration.components?.changed ?? []) state.observed.add(idOf(state, key));
+        for (const leaf of addedRunners.keys()) for (const key of observedBy(leaf)) state.observed.add(idOf(state, key));
         const kernels = [...kernelIndexes.keys()].filter(runner => runner.kernel?.stale() === true);
         const rollback = (): void => {
             for (const system of addedSchedules.keys()) schedules.delete(system);
@@ -140,7 +166,7 @@ export const createRegistrar = (state: State): Registrar => {
             state.observed.clear();
             for (const id of observedBefore) state.observed.add(id);
         };
-        const ticked = [...addedRunners.keys()].flatMap(leaf => [...leaf.declaration.components?.added ?? [], ...leaf.declaration.components?.changed ?? []].map(key => idOf(state, key)));
+        const ticked = [...addedRunners.keys()].flatMap(leaf => tickedBy(leaf).map(key => idOf(state, key)));
         return { resources: [...resources], ticked, kernels, rollback };
     };
 

@@ -35,12 +35,14 @@ type Lists<D extends Declaration> = {
 type Kernel = {
     readonly components?: { readonly read?: readonly LinearComponent[]; readonly write?: readonly LinearComponent[] };
     readonly lookup?: { readonly [name: string]: { readonly read?: readonly LinearComponent[] } };
+    readonly up?: { readonly read?: readonly LinearComponent[] };
     readonly resources?: { readonly read?: readonly LinearResource[]; readonly write?: never };
 };
 
 /** What a GPU kernel can't use yet, beyond any kernel's limits. */
 type GpuKernel = {
     readonly lookup?: { readonly [name: string]: never };
+    readonly up?: { readonly [key: string]: never };
     readonly components?: { readonly added?: never; readonly changed?: never };
     readonly resources?: { readonly changed?: never };
     readonly reduce?: { readonly [K in Resource.Name]?: never };
@@ -51,6 +53,8 @@ type Validate<D extends Declaration> =
     & (D extends { readonly input: Schema } ? { readonly components?: { readonly added?: never; readonly changed?: never } } : {})
     & (D extends { readonly kernel: "cpu" | "gpu" } ? Kernel : {})
     & (D extends { readonly kernel: "gpu" } ? GpuKernel : {})
+    // `up` orders rows, so a system without them has none.
+    & (Property<D, "components"> extends undefined ? { readonly up?: { readonly [key: string]: never } } : {})
     & { readonly shader?: never };
 
 /** Declares a system, findable by name with `get`; nothing runs. Throws if a different one has its name. */

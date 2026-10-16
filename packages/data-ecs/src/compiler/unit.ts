@@ -45,7 +45,9 @@ export type Unit = {
     /** Each leaf a reduction folds into: its resource (an index into `Signature.reduced`), path and accumulator local. */
     readonly accumulators: { readonly reduced: number; readonly path: readonly (number | string)[]; readonly local: number }[];
     /** The components, resources and lookup results the body reads and writes, to check the declaration lists only those. */
-    readonly used: { readonly read: Set<string>; readonly write: Set<string>; readonly resources: Set<string>; readonly lookups: Map<string, Set<string>> };
+    readonly used: { readonly read: Set<string>; readonly write: Set<string>; readonly resources: Set<string>; readonly lookups: Map<string, Set<string>>; readonly up: Set<string> };
+    /** The local holding each row's `up`, looked up before the body; its lookup comes after the declaration's. */
+    readonly up: number | null;
     /** Helpers and constants being inlined, to reject recursion. */
     readonly active: Set<string>;
     readonly next: () => number;
@@ -55,9 +57,13 @@ export type Unit = {
 
 export const createUnit = (signature: Signature, module: Module, expression: ExpressionCompiler, statement: StatementCompiler, link: Link | null = null, target: "cpu" | "gpu" = "cpu"): Unit => {
     let counter = 0;
+    const names = new Map<number, string>();
+    const up = signature.up === null ? null : counter++;
+    if (up !== null) names.set(up, "up");
     return {
-        signature, module, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names: new Map(), shapes: new Set(), reducedShapes: new Set(), keys: [], accumulators: [], active: new Set(),
-        used: { read: new Set(), write: new Set(), resources: new Set(), lookups: new Map() },
+        signature, module, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], accumulators: [], active: new Set(),
+        used: { read: new Set(), write: new Set(), resources: new Set(), lookups: new Map(), up: new Set() },
+        up,
         next: () => counter++, expression, statement,
     };
 };

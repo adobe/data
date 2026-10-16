@@ -13,6 +13,7 @@ import { unconditionalChunks } from './stamps.js';
 import { chunkShift, type Program } from '../world/create/kernel.js';
 import { rootScope } from './scope.js';
 import { signature } from './signature.js';
+import { entityRead } from './columns.js';
 import { rowLabel, statement } from './statement.js';
 import { createUnit } from './unit.js';
 import type { Value } from './value.js';
@@ -49,6 +50,8 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     const scope = rootScope(unit, false);
     const prelude: Out = [];
     const rows: Out = [];
+    // Each row's `up` is looked up before its body, from the row's entity: its lookup comes after the declaration's.
+    if (unit.up !== null) rows.push({ kind: "lookup", local: unit.up, lookup: unit.signature.lookups.length, entity: entityRead(unit) });
     body.params.forEach((param, index) => bind(param, parameterValues[index] ?? { kind: "row" }, "const", scope, index === 0 ? rows : prelude));
     if (body.body.type === "BlockStatement") {
         for (const item of body.body.body) statement(item, scope, rows);
@@ -60,9 +63,11 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     const kernel = printStatements(unit, resolve(rows));
     const preludeCode = printStatements(unit, resolve(prelude));
     const accumulators = unit.accumulators.map(entry => entry.local);
-    const program = toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined, accumulators);
-    const { signature: { resources, lookups, filtered, reduced }, columns, booleans, keys } = unit;
+    const { signature: { resources, lookups, up, filtered, reduced }, columns, booleans, keys } = unit;
+    // `up` runs on the main thread, as JS.
+    const program = up !== null ? null : toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined, accumulators);
     if (target === "gpu") {
+        if (up !== null) fail(declaration, "a GPU kernel can't use up yet");
         if (lookups.length > 0) fail(declaration, "a GPU kernel can't use lookups yet");
         if (filtered) fail(declaration, "a GPU kernel can't use change filters yet");
         if (reduced.length > 0) fail(declaration, "a GPU kernel can't use reductions yet");
@@ -70,12 +75,12 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         else if (loops(program.body)) fail(body, "a GPU kernel can't use loops or labeled blocks yet");
     }
     const contributed = new Set(unit.accumulators.flatMap(entry => reduced[entry.reduced]?.resource ?? []));
-    requireExact(declaration, { query: unit.used, resources: { read: unit.used.resources, write: new Set(), reduce: contributed }, lookups: unit.used.lookups }, module.bindings);
+    requireExact(declaration, { query: unit.used, resources: { read: unit.used.resources, write: new Set(), reduce: contributed }, lookups: unit.used.lookups, up: unit.used.up }, module.bindings);
     const strided = columns.flatMap((_, index) => unit.chunks.has(index) ? [] : [index]);
     const locals = [
         ...columns.map((_, index) => `const c${index} = columns[${index}];`),
         ...resources.map((_, index) => `const r${index} = resources[${index}];`),
-        ...lookups.map((_, index) => `const l${index} = lookups[${index}];`),
+        ...[...lookups, ...up === null ? [] : [up]].map((_, index) => `const l${index} = lookups[${index}];`),
     ];
     return {
         description: url => [
@@ -84,6 +89,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             `shapes: [${[...unit.shapes].join(", ")}],`,
             `resources: [${resources.join(", ")}],`,
             `lookups: [${lookups.map(lookup => JSON.stringify(lookup.name)).join(", ")}],`,
+            ...up === null ? [] : ["up: true,"],
             `keys: [${keys.join(", ")}],`,
             `url: ${url},`,
             `program: ${serialize(program)},`,

@@ -216,7 +216,7 @@ export const createArrayLookup = (state: State, lookup: Lookup) => {
  * when declared. `bind` resolves the resources' cells for a run; `reduced[t]` holds the leaves of the fold into its
  * `t`th reduction target so far this run.
  */
-export type Context = { readonly value: { input?: unknown }; readonly bind: () => void; readonly reduced: readonly Float64Array[] };
+export type Context = { readonly value: { input?: unknown; up?: unknown }; readonly bind: () => void; readonly reduced: readonly Float64Array[] };
 
 /** What a context holds beyond the declaration's resources and lookups. */
 type Extras = { readonly targets?: readonly ReductionTarget[]; readonly commands?: Commands; readonly input?: boolean };
@@ -226,7 +226,7 @@ const own = (): object => Object.create({});
 
 /** Resource cells are resolved once per run: they move only at sync points. An unresolved resource throws on access. */
 export const createContext = (state: State, declaration: Pick<Declaration, "lookup" | "resources">, { targets = [], commands, input = false }: Extras = {}): Context => {
-    const value: { input?: unknown } = own();
+    const value: { input?: unknown; up?: unknown } = own();
     const { lookup, resources } = declaration;
     const names = Object.keys(lookup ?? {});
     if (names.length > 0) {

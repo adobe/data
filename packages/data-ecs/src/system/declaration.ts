@@ -1,6 +1,6 @@
 import type { Resource } from '../resource/resource.js';
 import type { Schema } from '../schema/schema.js';
-import type { ComponentAccess, Lookup, ResourceAccess } from './access.js';
+import type { ComponentAccess, Lookup, ResourceAccess, Up } from './access.js';
 import type { Name } from './name.js';
 import type { Shader } from './render.js';
 import type { System } from './system.js';
@@ -20,6 +20,12 @@ export type Declaration = {
     /** The entities it runs over, and what it reads and writes of theirs. Omitted for a system that runs once per run, on the main thread. */
     readonly components?: ComponentAccess;
     readonly lookup?: { readonly [name: string]: Lookup };
+    /**
+     * Runs rows in depth order through `through`, so each reads its parent's `read` values after the parent ran, as
+     * the context's `up`, or null for a row without a parent. With change filters, a row also passes when its parent,
+     * or what it reads of its parent, changed since the system last ran. Rows on a parent cycle don't run.
+     */
+    readonly up?: Up;
     readonly resources?: ResourceAccess;
     /** The resources its body contributes to, each with the operator its `reduce` trait declares. */
     readonly reduce?: { readonly [K in Reduced]?: OperatorOf<K> };

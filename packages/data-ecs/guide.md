@@ -20,10 +20,11 @@ with the reasoning behind each rule.
 13. [Rules](#13-rules)
 14. [Within](#14-within)
 15. [Entity references](#15-entity-references)
-16. [Finalizers](#16-finalizers)
-17. [Changes finalizers](#17-changes-finalizers)
-18. [Loading resources asynchronously](#18-loading-resources-asynchronously)
-19. [Reference](#19-reference)
+16. [Hierarchies](#16-hierarchies)
+17. [Finalizers](#17-finalizers)
+18. [Changes finalizers](#18-changes-finalizers)
+19. [Loading resources asynchronously](#19-loading-resources-asynchronously)
+20. [Reference](#20-reference)
 
 ## 1. Setup
 
@@ -96,7 +97,8 @@ in `write` is readable too, so it's never also listed in `read`. Values are repl
 
 The context holds what the body uses besides its row, each kind under the declaration's own key, and only the keys
 the declaration declares: `resources` (values, assignable when in `write`), `lookup` (section 6), `reduce`
-(section 10), `input` (section 7), and `commands` (section 8), which every system but a GPU kernel has.
+(section 10), `input` (section 7), `up` (section 16), and `commands` (section 8), which every system but a GPU kernel
+has.
 
 ```ts
 const move = System.create({
@@ -446,7 +448,32 @@ Example: [`14-references.test.ts`](src/guide/14-references.test.ts#L16-L37).
 - **Only the value a holder ends up with counts:** a reference pointed elsewhere in the same sync point stays.
 - **References change only through commands**, which keeps the index from targets to holders exact. Systems can't list them in `components.write`.
 
-## 16. Finalizers
+## 16. Hierarchies
+
+`up` runs a system's rows in depth order through a reference component, parent first, and its context's `up` holds
+what `read` lists of the row's parent, or null for a row without one. A parent's value is the one written earlier in
+the same run, so one run carries a change down a whole tree.
+
+```ts
+const place = System.create({
+    name: "guide/hierarchies/place",
+    kernel: "cpu",
+    components: { read: [offset], write: [position], changed: [offset] },
+    up: { through: parent, read: [position] },
+}, (row, { up }) => {
+    row[position] = (up === null ? 0 : up[position]) + row[offset];
+});
+```
+
+Example: [`18-hierarchies.test.ts`](src/guide/18-hierarchies.test.ts#L20-L49).
+
+- **`through` doesn't narrow the match:** rows without it are roots. Its value is a reference, so the tree changes only at sync points.
+- **`up.read` may name what the system writes:** unlike a lookup, which can't, since `up` reads a parent only after it ran.
+- **With change filters,** a row also passes when its parent reference changed, or what it reads of its parent changed since the system last ran, so unchanged subtrees don't run.
+- **Rows on or under a parent cycle don't run.**
+- **Not yet:** `up` systems run on the main thread, as JS, not across workers, as WASM or on the GPU.
+
+## 17. Finalizers
 
 A finalizer runs inside the sync point, on the main thread, for each entity that stops matching its `components`: one that
 matched after the previous sync point and won't after this one, whatever the cause. It reads the entity's values
@@ -471,7 +498,7 @@ Example: [`15-finalizers.test.ts`](src/guide/15-finalizers.test.ts#L20-L58).
 - **Order:** `before` and `after` list other finalizers, which `Finalizer.create` and `Finalizer.changes` return; then creation order. A finalizer that throws doesn't stop the sync point; the run rejects with the first error once it has applied.
 - **Rejected:** two finalizers that both write a resource, or where one reads what the other writes, with no order between them, and a cycle, at `Finalizer.create`.
 
-## 17. Changes finalizers
+## 18. Changes finalizers
 
 A changes finalizer sees a sync point's structural changes to the components it watches, grouped by how entities
 changed, with values before and after: for persistence, replication and undo. Without `watch`, it sees every
@@ -490,7 +517,7 @@ Example: [`16-changes.test.ts`](src/guide/16-changes.test.ts#L22-L38).
 - **A group** has `from` and `to` (null for spawned and despawned entities), `added`, `removed`, `replaced` and `entities`.
 - **Rejected:** watching a derived component, at `Finalizer.changes` and in types.
 
-## 18. Loading resources asynchronously
+## 19. Loading resources asynchronously
 
 Rules, `within` and finalizers combine into a lifecycle for things that load asynchronously, such as meshes from files:
 
@@ -514,7 +541,7 @@ Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L49-L98
 
 - **Shared assets:** many entities using one file are counted by the loader. The ECS gives each user exactly one acquire (`added`) and one release (a finalizer).
 
-## 19. Reference
+## 20. Reference
 
 - **Built-in components:** `component`, `persistent` and `shared` are tags in [`src/components/`](src/components/).
 - **Built-in resources:** `gpuDevice`, the world's device, in [`src/resources/`](src/resources/).

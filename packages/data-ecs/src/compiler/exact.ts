@@ -10,6 +10,8 @@ export type Used = {
     readonly resources: (Access & { readonly reduce: ReadonlySet<string> }) | null;
     /** The components read from each lookup's results, by lookup name: null for one whose results aren't followed. */
     readonly lookups: ReadonlyMap<string, ReadonlySet<string> | null> | null;
+    /** The components read from `up`, when the body's uses are all known. */
+    readonly up?: ReadonlySet<string>;
 };
 
 /** An object literal's plain-named properties; none for anything else. */
@@ -53,6 +55,10 @@ export const requireExact = (declaration: ObjectExpression, used: Used, module: 
         requireUsed(resources.get("read"), used.resources.read, module, name => `${name} is in resources read but never read; remove it`);
         requireUsed(resources.get("write"), used.resources.write, module, name => `${name} is in resources write but never written; remove it, or move it to resources read if it's only read`);
         requireContributed(declared.get("reduce"), used.resources.reduce, module);
+    }
+    if (used.up !== undefined) {
+        requireUsed(fields(declared.get("up")).get("read"), used.up, module,
+            name => `${name} is in up.read but never read; remove it`);
     }
     if (used.lookups !== null) {
         for (const [lookup, value] of fields(declared.get("lookup"))) {

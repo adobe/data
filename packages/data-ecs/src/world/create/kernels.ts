@@ -7,6 +7,7 @@ import { createArrayLookup } from './rows.js';
 import { commandIdOf, idOf, type Key, type State } from './state.js';
 import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
 import { createDirectory, lookupParameters } from './directories.js';
+import { createUp } from './up.js';
 import { generateWgsl, type WgslKernel } from './wgsl.js';
 
 export type BoundKernel = {
@@ -109,7 +110,13 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             if (state.layouts[idOf(state, key)].kind === "object") fail(`a lookup reads "${String(key)}", which isn't stored in linear memory.`);
         }
     }
-    const lookups = declaredLookups.map(declared => createArrayLookup(state, declared));
+    const { up } = leaf.declaration;
+    if ((description.up === true) !== (up !== undefined)) fail(description.up === true ? "reads up, which its declaration doesn't declare." : "its declaration declares up, which it doesn't read.");
+    // `up` is looked up by each row's entity, after the declaration's lookups.
+    const lookups = [
+        ...declaredLookups.map(declared => createArrayLookup(state, declared)),
+        ...up === undefined ? [] : [createUp(state, up).lookupBy(createArrayLookup(state, { read: up.read }))],
+    ];
     const ids = (keys: readonly Key[] | undefined): number[] => (keys ?? []).map(key => idOf(state, key));
     const setup = {
         sources,

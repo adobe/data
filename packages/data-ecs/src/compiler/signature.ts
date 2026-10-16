@@ -6,6 +6,9 @@ import type { ModuleScope } from './module-scope.js';
 
 export type Lookup = { readonly name: string; readonly read: readonly string[] };
 
+/** The reference rows run down, and what the context's `up` reads of the entity it names. */
+export type Up = { readonly through: string; readonly read: readonly string[] };
+
 /** A resource the kernel reduces into, by its module-scope binding name. */
 export type Reduced = { readonly resource: string; readonly operator: Reduction };
 
@@ -16,6 +19,7 @@ export type Signature = {
     readonly resources: readonly string[];
     readonly reduced: readonly Reduced[];
     readonly lookups: readonly Lookup[];
+    readonly up: Up | null;
     readonly input: boolean;
     /** Whether it filters on `added` or `changed` components, or on changed resources. */
     readonly filtered: boolean;
@@ -81,6 +85,7 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
     let reduced: readonly Reduced[] = [];
     let changedResources: readonly string[] = [];
     let input = false;
+    let up: Up | null = null;
     const lookups: Lookup[] = [];
     for (const [name, property] of properties(declaration, "a kernel declaration")) {
         switch (name) {
@@ -104,6 +109,20 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
                     lookups.push({ name: lookup, read: lists(value.value, `lookup.${lookup}`, ["read", "has", "not"], module).get("read") ?? [] });
                 }
                 break;
+            case "up": {
+                let through: string | undefined;
+                let read: readonly string[] = [];
+                for (const [field, value] of properties(property.value, "up")) {
+                    if (field === "through") {
+                        const node = value.value;
+                        through = node.type === "Identifier" && module.has(node.name) ? node.name : fail(node, "up.through is an identifier bound at module scope");
+                    }
+                    else if (field === "read") read = identifiers(value.value, module);
+                    else fail(value, `up.${field} is not allowed in a kernel declaration`);
+                }
+                up = { through: through ?? fail(property, "up needs through"), read };
+                break;
+            }
             case "input":
                 input = true;
                 break;
@@ -121,5 +140,5 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
     const both = (components.get("read") ?? []).find(key => write.includes(key));
     if (both !== undefined) fail(declaration, `${both} is in both components read and write; write already makes it readable`);
     const rowFiltered = (components.get("added")?.length ?? 0) + (components.get("changed")?.length ?? 0) > 0;
-    return { read: new Set(components.get("read")), write: new Set(write), resources, reduced, lookups, input, filtered: changedResources.length > 0 || rowFiltered };
+    return { read: new Set(components.get("read")), write: new Set(write), resources, reduced, lookups, up, input, filtered: changedResources.length > 0 || rowFiltered };
 };

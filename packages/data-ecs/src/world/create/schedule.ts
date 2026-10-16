@@ -117,9 +117,10 @@ export const reducedBy = (leaf: Leaf): readonly Key[] => {
 
 /** Reads include change filters, since they observe writers' ticks. Presence-only lists don't conflict. */
 export const accessOf = (leaf: Leaf): Access => {
-    const { components, lookup, resources } = leaf.declaration;
+    const { components, lookup, resources, up } = leaf.declaration;
     const reads = new Set<Key>([...components?.read ?? [], ...components?.added ?? [], ...components?.changed ?? [], ...resources?.read ?? [], ...resources?.changed ?? []]);
     for (const name in lookup) for (const key of lookup[name].read ?? []) reads.add(key);
+    if (up !== undefined) for (const key of [up.through, ...up.read ?? []]) reads.add(key);
     const writes = new Set<Key>([...components?.write ?? [], ...resources?.write ?? []]);
     return { reads, writes, reduces: new Set(reducedBy(leaf)) };
 };

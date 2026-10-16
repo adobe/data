@@ -10,7 +10,7 @@ import { createBuffer, createKernelCommands, emptyBuffer, type CommandBuffer } f
 import { reserve } from './entities.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
-import { createContext, rowBinder } from './rows.js';
+import { createContext, createObjectLookup, rowBinder } from './rows.js';
 import { scalarValues } from './wasm.js';
 import { idOf, type State } from './state.js';
 import { accessorsOf } from '../../gpu/accessors.js';
@@ -20,6 +20,8 @@ import { allocateArray, freeArray } from './arrays.js';
 import { combine, identityOf, reductionTargets, type ReductionTarget } from './reductions.js';
 import { samePath } from '../../layout/layout.js';
 import { inputFor } from './input.js';
+import { createUp } from './up.js';
+import { asEntity } from './entities.js';
 
 /** One unit of a system's work for a run: the commands it issued, plus its error if it failed partway. */
 export type ChunkResult = { readonly commands: CommandBuffer; readonly error?: unknown };
@@ -92,7 +94,11 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     if (declaration.kernel === "gpu") {
         if (filtered) failPlacement("can't run on the GPU: GPU kernels don't support change filters yet");
         if (declaration.lookup !== undefined && Object.keys(declaration.lookup).length > 0) failPlacement("can't run on the GPU: GPU kernels don't support lookups yet");
+        if (declaration.up !== undefined) failPlacement("can't run on the GPU: GPU kernels don't support up yet");
     }
+    if (declaration.up !== undefined && query === undefined) failPlacement("uses up, which orders rows, without components");
+    const up = declaration.up === undefined ? null : createUp(state, declaration.up);
+    const upValues = declaration.up === undefined ? null : createObjectLookup(state, { read: declaration.up.read });
     const targets = reductionTargets(state, declaration);
     if (targets.length > 0) {
         if (declaration.kernel === "gpu") failPlacement("can't run on the GPU: GPU kernels don't support reductions yet");
@@ -118,7 +124,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     if (typeof accessors === "string") return failPlacement(`can't render: ${accessors}`);
     const touches = [...new Set([...query?.read ?? [], ...query?.write ?? []])].map(key => idOf(state, key));
     const writes = (query?.write ?? []).map(key => idOf(state, key));
-    const looks = [...new Set(Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []))].map(key => idOf(state, key));
+    const looks = [...new Set([...Object.values(declaration.lookup ?? {}).flatMap(lookup => lookup.read ?? []), ...declaration.up?.read ?? []])].map(key => idOf(state, key));
     if ((declaration.shader !== undefined) !== (leaf.kind === "render")) failPlacement("has a shader only when System.render makes it");
     /** Record keys by archetype. */
     const keys = new Map<Archetype, string>();
@@ -244,6 +250,57 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         const run = bound.kernel();
         forEachPassingRange(filters, since, 0, archetype.count, (start, end) =>
             run(columns, start, end, values, bound.lookups, bound.description.keys, args, kernelCommands, tick, slots, slot * partialCount));
+    };
+
+    /** Runs one range of an `up` system's rows, each reading its parent's values. */
+    const runUpRange = (archetype: Archetype, start: number, end: number, values: readonly unknown[], args: unknown, tick: number, slot: number): void => {
+        if (kernel !== null) {
+            kernel.kernel()(kernel.columnsOf(archetype), start, end, values, kernel.lookups, kernel.description.keys, args, kernelCommands, tick, slots, slot * partialCount);
+            return;
+        }
+        if (up === null || upValues === null) return;
+        const row = bindRow(archetype);
+        const upContext = context.value;
+        for (let index = start; index < end; index++) {
+            row.index = index;
+            const parent = up.parentEntityOf(archetype, index);
+            upContext.up = parent < 0 ? null : upValues(asEntity(parent));
+            system.body(row.value, upContext);
+        }
+    };
+
+    /**
+     * Runs an `up` system's rows level by level from the roots, on the main thread. With change filters, a row also
+     * passes when its parent, or what it reads of its parent, changed: decided before its level runs, since its parent
+     * ran in an earlier one.
+     */
+    const runUp = (since: number, values: readonly unknown[], args: unknown, tick: number): void => {
+        if (up === null) return;
+        const slot = partialCount === 0 ? 0 : takeSlots(1);
+        const passing: { archetype: Archetype; start: number; end: number }[] = [];
+        const add = (archetype: Archetype, start: number, end: number): void => { passing.push({ archetype, start, end }); };
+        for (const level of up.levels(matches)) {
+            passing.length = 0;
+            for (const { archetype, start, end } of level) {
+                const from = sinceFor(archetype, since);
+                if (from < 0) {
+                    add(archetype, start, end);
+                    continue;
+                }
+                const filters = filtersOf(archetype);
+                let first = -1;
+                for (let index = start; index < end; index++) {
+                    const passes = filters.some(filter => filter.ticks[index] > from) || up.parentChanged(archetype, index, from);
+                    if (passes && first < 0) first = index;
+                    else if (!passes && first >= 0) {
+                        add(archetype, first, index);
+                        first = -1;
+                    }
+                }
+                if (first >= 0) add(archetype, first, end);
+            }
+            for (const range of passing) runUpRange(range.archetype, range.start, range.end, values, args, tick, slot);
+        }
     };
 
     /** WASM kernels with few enough scalars dispatch through shared memory. */
@@ -414,8 +471,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
                 if (ran) system.body(context.value);
                 return chunks;
             }
-            // Only a resource filter, and no resource changed: no row passes.
-            if (since >= 0 && addedIds.length + changedIds.length === 0) return chunks;
+            // Only a resource filter, and no resource changed: no row passes, unless its parent changed.
+            if (since >= 0 && addedIds.length + changedIds.length === 0 && up === null) return chunks;
             ran = true;
             refreshMatches();
             const values = kernel?.description.resources.map(key => {
@@ -424,6 +481,10 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             }) ?? [];
             if (placement === "gpu") {
                 runOnGpu(values, args, tick);
+                return chunks;
+            }
+            if (up !== null) {
+                runUp(since, values, args, tick);
                 return chunks;
             }
             for (const archetype of matches) {

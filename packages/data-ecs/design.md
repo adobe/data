@@ -50,7 +50,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   - **Change filters:** a GPU kernel's writes stamp each written column once with the run's tick, and `changed` filters pass a whole column when its stamp is newer than their `lastRun`, so writes on the GPU cost nothing per row on the CPU.
   - **Ordering:** a queue write lands before recorded but unsubmitted work, so recorded work is submitted before each upload. Each run's encoder is submitted at its end, before the sync point; `run` resolves then, not when the GPU finishes.
   - **Reads outside runs** see values a GPU kernel wrote only after `await world.synchronize(components)`, queued with runs.
-  - **GPU errors:** a run's GPU work, its render bodies' included, runs in validation and out-of-memory error scopes; the first error they report makes the next run reject, since waiting for them would hold every run until the GPU process catches up. A lost device makes later runs reject.
+  - **GPU errors:** a run's GPU work, its render bodies' included, runs in validation and out-of-memory error scopes; the first error they report makes the next run reject, since waiting for them would hold every run until the GPU process catches up.
   - **Numbers on the GPU:** arithmetic is f32. Integer column reads, bitwise operators and locals assigned only integers stay i32 or u32, so integer chains keep every bit, and stores wrap as in JS. WGSL is the standard where JS differs only for NaN or infinite inputs or results: WGSL leaves those indeterminate, and GPU kernels use its own `min`, `max`, `%`, truthiness and conversions there. Where JS differs for finite values, as `Math.round` and `**` do, the GPU keeps JS's result; the math types follow WGSL instead.
 
 ## Phase 0: contract decisions
@@ -121,7 +121,13 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   - Ordering comes from `before`/`after`/`during`, sorted into tiers. Systems in the same tier may run in parallel. A constraint that names a system outside the composite being run is ignored.
   - **`during` places a system alongside another:** after what that system follows and before what follows it, both by its own constraints and by others', outside a composite's own members. No-op systems ordered one after another are phases, and systems during different phases are ordered with each other. Where no ordering path separates them, the two share a tier.
   - **Unordered conflicts throw at `System.composite`:** within a composite, two systems that both write a component or resource, or where one reads what the other writes, must have an ordering path between them. Contributors to one reduced resource don't conflict with each other, and every system that reads it is ordered after all of them.
-  - **A lookup can't read a component its own system writes;** that throws at registration. Rejecting it now means hierarchy propagation can later give it defined semantics without breaking anything.
+  - **A lookup can't read a component its own system writes;** that throws at registration. `up` can, since it reads a parent only after the parent ran.
+  - **`up: { through, read }` runs rows in depth order** through `through`, a reference component, parent first, and the context's `up` holds what `read` lists of the row's parent, or null without one. A parent's value is the one written earlier in the same run, so one run carries a change down a whole tree, and results don't depend on chunking. It's Flecs's depth-ordered (`cascade`) iteration, with the parent's values in the context.
+    - `through` doesn't narrow the match: rows without it are roots. References change only through commands, so the tree changes only at sync points.
+    - A row's depth counts its ancestors among the matched rows: a row whose parent doesn't match is a root of this system's order.
+    - With change filters, a row also passes when its parent reference, or what it reads of its parent, changed since the system last ran, decided on ticks, so a parent another system wrote counts too. Those components keep ticks and kernels keep their stamps.
+    - Rows on or under a parent cycle don't run. They'll be listed in the run report once it exists.
+    - Phase 1 sorts the matched rows by depth each run, in O(rows), and runs them level by level on the main thread, as JS kernels or main-thread bodies.
 - **World** (`src/world/`):
   - `World.create(resources?)` returns a world synchronously, with resources starting at the given values in place of their defaults; a key that isn't a resource throws. Built-in names are plain (`gpuDevice`), so they need no import there.
   - **Names are program-wide:** `System.create`, `System.render` and `System.composite` record the name, and a different system, rule or finalizer with it throws. One declared again the same, as a hot reload does, is accepted: a system is then a new one, and a finalizer keeps its place in every world with the new body. Constraints list the systems themselves, imported from their modules; when two modules import each other, one declares the order.
@@ -193,7 +199,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
    - **Helpers return early:** a `return` inside an `if` splits the block, each branch running its own statements and then the rest, and the values merge as a conditional's do.
    - **Grammar:** `src/compiler/subset.md`.
    - **Value semantics** for tuple and struct locals, matching component values: locals are scalarized to one local per leaf.
-2. **Non-local matching.** Relationship pairs with variables (`(ChildOf, $p)` where `$p` has X) depend on another entity's archetype, and sparse-set components aren't part of the archetype. Should monitors support these, and how?
+2. **Non-local matching.** Per row, lookups with `has` and `not` and `up` already match on another entity, such as children whose parent has X. Still open: rules with one hop through a reference component, such as a child that has `visible` while its parent does, evaluated at Plan in depth order, with the index from targets to holders re-evaluating holders when a target's archetype changes. General relationship variables (`(ChildOf, $p)` where `$p` has X) aren't planned: they make matching depend on any entity's archetype, need a reverse index per variable, and break the closure cached per archetype.
 3. **GPU systems.** Pure value reads and writes into component tables, with no structural commands, so the GPU never needs command buffer communication. Still open:
    - **Latency.** Whether a system can declare that its writes become visible to CPU readers only at a later sync point, so readback overlaps the next frame.
 
@@ -207,16 +213,12 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 - **Reductions, later:** GPU kernels (a workgroup tree reduction to per-workgroup partials, which needs resources resident on the GPU); four-lane SIMD accumulators, deterministic since pieces are 16-row aligned; contributing a component value of unknown shape whole, as bounds over positions want; lexicographic `min` and `max` over a tuple, for argmin and argmax such as the nearest entity; and per-field operators.
 - **Rules and finalizers, later:** derived entities (rules that spawn), `within` with several hosts, finalizers as kernels, value changes in whole-plan finalizers, why an entity stopped, relationship conditions, and the Run report listing dropped dependents.
 - **Unregistering systems.** This needs a decision on what happens to a system's `lastRun` and artifacts.
-- **Hierarchy propagation**, for example a parent's world matrix flowing down to its children. The approach is not decided. Candidates:
-  - Bevy: a dedicated system that walks each subtree depth-first, starting from the roots.
-  - Depth-level passes: one pass per depth, each reading level d−1 and writing level d.
-  - Flecs-style depth-ordered query: `components: { read: [local], write: [world], <modifier>: parent }`, where `parent` is an Entity-valued component. Don't call the modifier `cascade`; that name is already used for structural cascades.
-
-  Sketch of the depth-ordered query:
-  - Rows are processed in depth order, and rows at the same depth can run in parallel. A lookup of the parent sees the value the parent was given earlier in the same run.
-  - A row is processed if its own inputs changed or its parent was written this run, so subtrees with no changes cost nothing.
-  - Depth storage: phase 1 sorts rows by depth on every run. Phase 2 maintains depth at Plan, or in the archetype (see non-local matching).
-  - A cycle in `parent` chains is reported as data.
+- **`up`, later:**
+  - Depth and each level's rows kept at Plan through the index from targets to holders, instead of sorted each run: a reparent walks up from the new parent to find a cycle, and renumbers the subtree. Kept as row lists, since depth in the archetype would split tables and archetype ids are positional.
+  - Dirty rows pushed to children level by level, so a run costs a scan of chunk ticks plus the subtrees that changed.
+  - Levels across workers, with a barrier per level, and narrow levels fused into one sequential piece; WASM, through the lookup directories.
+  - GPU kernels: a dispatch per level, over its dirty rows.
+  - For full recomputes of an associative composition, such as matrix products, pointer jumping on the GPU: log(depth) dispatches, each composing a row with its 2^k-th ancestor.
 
 ## Phase 2+: performance
 

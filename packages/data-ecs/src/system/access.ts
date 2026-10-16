@@ -23,6 +23,13 @@ export type ComponentAccess = {
 /** Read-only access to other entities, by entity only. */
 export type Lookup = Pick<ComponentAccess, "read" | "has" | "not">;
 
+/**
+ * The parent each row's values flow down from: the entity its `through` reference names, read before the row. Rows
+ * run parent first, so a parent's value is the one written earlier in the same run, and `read` may name components the
+ * system writes.
+ */
+export type Up = { readonly through: Component.With<"reference">; readonly read?: readonly Component.Name[] };
+
 /** A resource in `write` is also readable, so it's never listed in `read` as well. Reduced resources are never written. */
 export type ResourceAccess = {
     readonly read?: readonly Resource.Name[];

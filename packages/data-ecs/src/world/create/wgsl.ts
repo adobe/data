@@ -165,7 +165,14 @@ fn roundHalfUp(x: f32) -> f32 { let down = floor(x); return select(down, down + 
  * Generates a compute shader for a kernel program, or the reason it can't run on the GPU: lookups, loops, f64 or
  * entity columns, or byte stores.
  */
-export const generateWgsl = (program: Program, columns: readonly WasmColumn[], scalarTypes: (scalar: WasmScalar) => unknown): WgslKernel | string => {
+export const generateWgsl = (program: Program, columns: readonly WasmColumn[], scalarTypes: (scalar: WasmScalar) => unknown, upColumns: readonly WasmColumn[] = []): WgslKernel | string => {
+    /**
+     * Reading `up`, a dispatch's record has, after the columns, the word addresses of its rows and their parents' rows,
+     * whether they have a parent, and each parent column's address; the scalars follow.
+     */
+    const upMode = program.up === true;
+    const upWords = upMode ? 3 + upColumns.length : 0;
+    const upWord = (index: number): string => `parameters[${1 + columns.length + index}]`;
     if ((program.reductions?.length ?? 0) > 0) return "it uses reductions";
     const scalars: WasmScalar[] = [];
     const scalarIndex = new Map<string, number>();
@@ -189,10 +196,10 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
         return `${base(column)} + row * ${stride / 4}u + ${offset / 4}u`;
     };
 
-    const read = (column: number): Value => {
-        const { view, boolean } = columns[column];
+    /** A 4-byte element of a column, of the row's or, for `up`, of its parent's, at `index`. */
+    const readElement = ({ view, boolean }: WasmColumn, address: () => string): Value => {
         if (view === "u8") return fail("it reads a byte value, such as a boolean in the CPU layout; give the component a \"storage\" layout");
-        const element = `memory[${word(column)}]`;
+        const element = `memory[${address()}]`;
         if (boolean) return bool(`${element} != 0u`);
         switch (view) {
             case "f32": return f32(`bitcast<f32>(${element})`);
@@ -200,6 +207,11 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
             case "i32": return i32(`bitcast<i32>(${element})`);
             default: return fail("it reads an f64 value, such as an entity or a precision-2 number");
         }
+    };
+    const read = (column: number): Value => readElement(columns[column], () => word(column));
+    const readUp = (column: number): Value => {
+        const { stride, offset } = upColumns[column];
+        return readElement(upColumns[column], () => stride % 4 !== 0 || offset % 4 !== 0 ? fail("a component isn't laid out in 4-byte words") : `${upWord(3 + column)} + parent * ${stride / 4}u + ${offset / 4}u`);
     };
 
     const store = (column: number, value: Value): string => {
@@ -224,10 +236,11 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
     const assigned: (Kind | undefined)[] = new Array<Kind | undefined>(program.locals);
     const kindOf = (expression: Expression): Kind => {
         switch (expression.kind) {
-            case "column": {
-                const { view, boolean } = columns[expression.column];
-                return boolean ? "bool" : view === "u32" ? "u32" : view === "i32" ? "i32" : "f32";
+            case "column": case "upLeaf": {
+                const column = expression.kind === "upLeaf" ? upColumns[expression.column] : columns[expression.column];
+                return column === undefined ? "f32" : column.boolean ? "bool" : column.view === "u32" ? "u32" : column.view === "i32" ? "i32" : "f32";
             }
+            case "upFound": return "bool";
             case "local": return localKinds[expression.local];
             case "unary": return expression.operator === "!" ? "bool" : expression.operator === "~" ? "i32" : "f32";
             case "binary":
@@ -295,9 +308,11 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
             case "number": return { code: literal(expression.value), type: "f32", literal: expression.value };
             case "boolean": return bool(String(expression.value));
             case "column": return read(expression.column);
+            case "upLeaf": return readUp(expression.column);
+            case "upFound": return bool(`(${upWord(2)} != 0u)`);
             case "resource": case "args": {
                 const scalar: WasmScalar = expression.kind === "args" ? { source: "args", path: expression.path } : { source: "resource", index: expression.index, path: expression.path };
-                return f32(`bitcast<f32>(parameters[${1 + columns.length + scalarOf(scalar)}])`);
+                return f32(`bitcast<f32>(parameters[${1 + columns.length + upWords + scalarOf(scalar)}])`);
             }
             case "local": return { code: localName(expression.local), type: localKinds[expression.local] };
             case "unary": {
@@ -428,16 +443,16 @@ export const generateWgsl = (program: Program, columns: readonly WasmColumn[], s
         const code = `@group(0) @binding(0) var<storage, read_write> memory: array<u32>;
 @group(0) @binding(1) var<storage, read> parameters: array<u32>;
 ${helpers}
-fn kernelRow(row: u32) {
+fn kernelRow(row: u32${upMode ? ", parent: u32" : ""}) {
 ${locals}
 ${body}
 }
 
 @compute @workgroup_size(${workgroupSize})
 fn main(@builtin(global_invocation_id) id: vec3u, @builtin(num_workgroups) groups: vec3u) {
-    let row = id.x + id.y * groups.x * ${workgroupSize}u;
-    if (row >= parameters[0]) { return; }
-    kernelRow(row);
+    let ${upMode ? "slot" : "row"} = id.x + id.y * groups.x * ${workgroupSize}u;
+    if (${upMode ? "slot" : "row"} >= parameters[0]) { return; }
+    ${upMode ? `kernelRow(memory[${upWord(0)} + slot], memory[${upWord(1)} + slot]);` : "kernelRow(row);"}
 }
 `;
         return { code, scalars };

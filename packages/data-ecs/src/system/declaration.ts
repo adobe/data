@@ -12,7 +12,7 @@ export type Declaration = {
      * Compiled to a kernel, which the build rejects if the body leaves the kernel subset. Values in `components` and
      * `lookup` must be linear and resources read-only. Without it, the system runs as written on the main thread.
      * - `"cpu"`: runs in chunks across workers, as WASM where the body allows, or on the main thread.
-     * - `"gpu"`: also has no lookups, change filters, commands or loops, and only 4-byte scalar values. It runs as a
+     * - `"gpu"`: also has no lookups, change filters, commands or loops, and only 4-byte scalar values, its `up` included. It runs as a
      *   compute shader in a world with a GPU, and as a `"cpu"` kernel in one without. Its writes mark whole columns
      *   changed.
      */

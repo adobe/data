@@ -53,13 +53,15 @@ System.create({
     up: { through: parent, read: [name] },
 }, () => {});
 
+// A GPU kernel reads up too.
 System.create({
     name: "upTypeTest/gpu",
     kernel: "gpu",
-    components: { write: [world] },
-    // @ts-expect-error a GPU kernel can't use up yet
+    components: { read: [local], write: [world] },
     up: { through: parent, read: [world] },
-}, () => {});
+}, (row, { up }) => {
+    row[world] = up === null ? row[local] : up[world] + row[local];
+});
 
 System.create({
     name: "upTypeTest/rowless",

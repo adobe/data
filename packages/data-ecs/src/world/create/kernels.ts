@@ -241,7 +241,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         gpu: () => description.program === null
             ? "it issues commands or uses values that aren't numbers"
             : description.lookups.length > 0 ? "it uses lookups"
-            : generateWgsl(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType),
+            : generateWgsl(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, upWasmColumns),
     };
     return bound;
 };

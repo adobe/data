@@ -42,7 +42,6 @@ type Kernel = {
 /** What a GPU kernel can't use yet, beyond any kernel's limits. */
 type GpuKernel = {
     readonly lookup?: { readonly [name: string]: never };
-    readonly up?: { readonly [key: string]: never };
     readonly components?: { readonly added?: never; readonly changed?: never };
     readonly resources?: { readonly changed?: never };
     readonly reduce?: { readonly [K in Resource.Name]?: never };

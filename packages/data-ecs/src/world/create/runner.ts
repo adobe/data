@@ -94,7 +94,6 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     if (declaration.kernel === "gpu") {
         if (filtered) failPlacement("can't run on the GPU: GPU kernels don't support change filters yet");
         if (declaration.lookup !== undefined && Object.keys(declaration.lookup).length > 0) failPlacement("can't run on the GPU: GPU kernels don't support lookups yet");
-        if (declaration.up !== undefined) failPlacement("can't run on the GPU: GPU kernels don't support up yet");
     }
     if (declaration.up !== undefined && query === undefined) failPlacement("uses up, which orders rows, without components");
     const up = declaration.up === undefined ? null : createUp(state, declaration.up);
@@ -500,6 +499,72 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }
     };
 
+    /** The component ids of the parent columns an `up` kernel reads, in order. */
+    const upIds = (kernel?.description.upColumns ?? []).map(column => column.kind === "field" ? idOf(state, column.component) : -1);
+    /** The order whose row lists the GPU holds. */
+    let uploadedOrder: object | null = null;
+
+    /**
+     * An `up` kernel on the GPU: a dispatch per group, in order, in one pass, which keeps each depth's writes visible to
+     * the next. Each record has the group's row count, its archetype's columns, its rows' and parents' rows' addresses,
+     * whether it has a parent, the parent archetype's columns, and the scalars.
+     */
+    const runUpOnGpu = (values: readonly unknown[], args: unknown, tick: number): void => {
+        const gpu = state.gpu;
+        if (gpu === null || pipeline === null || kernel === null || up === null) return failPlacement("isn't loaded on the GPU");
+        const order = up.levels(matches);
+        const total = order.groups === 0 ? 0 : order.groupEnds[order.groups - 1];
+        const fresh = order !== uploadedOrder;
+        const rowsAddress = gpu.uploadIndexes(`${declaration.name}:rows`, order.rows, total, fresh);
+        const parentsAddress = gpu.uploadIndexes(`${declaration.name}:parents`, order.parents, total, fresh);
+        uploadedOrder = order;
+        const { sources } = kernel.setup;
+        const scalars = scalarValues(pipeline.kernel.scalars, values, args);
+        const dispatches: { readonly offset: number; readonly count: number }[] = [];
+        for (let group = 0, start = 0; group < order.groups; start = order.groupEnds[group++]) {
+            const count = order.groupEnds[group] - start;
+            if (count === 0) continue;
+            const archetype = matches[order.groupOwners[group]];
+            const parentId = order.groupParents[group];
+            const parent = parentId < 0 ? null : state.archetypes[parentId];
+            words[0] = count;
+            sources.forEach((source, k) => {
+                const storage = source.kind === "field" ? archetype.storageById[source.id] : undefined;
+                words[1 + k] = storage === undefined ? 0 : gpu.upload(archetype, storage);
+            });
+            const base = 1 + sources.length;
+            words[base] = rowsAddress + start;
+            words[base + 1] = parentsAddress + start;
+            words[base + 2] = parent === null ? 0 : 1;
+            upIds.forEach((id, k) => {
+                const storage = parent?.storageById[id];
+                words[base + 3 + k] = parent === null || storage === undefined ? 0 : gpu.upload(parent, storage);
+            });
+            scalars.forEach((value, s) => { floats[base + 3 + upIds.length + s] = value; });
+            dispatches.push({ offset: gpu.record(`${declaration.name}:up:${group}`, words), count });
+        }
+        if (dispatches.length > 0) {
+            const pass = gpu.encoder().beginComputePass();
+            pass.setPipeline(pipeline.compute);
+            for (const { offset, count } of dispatches) {
+                pass.setBindGroup(0, gpu.computeGroup(), [offset]);
+                const groups = Math.ceil(count / workgroupSize);
+                const x = Math.min(groups, maximumWorkgroups);
+                pass.dispatchWorkgroups(x, Math.ceil(groups / x));
+            }
+            pass.end();
+        }
+        for (const archetype of matches) {
+            if (archetype.count === 0) continue;
+            for (const id of writes) {
+                const storage = archetype.storageById[id];
+                if (storage === undefined) continue;
+                gpu.markGpuWrites(archetype, storage);
+                if (storage.ticked) storage.columnChanged = tick;
+            }
+        }
+    };
+
     const runRender = (): void => {
         const gpu = state.gpu;
         // The device may be set to null after the system registered.
@@ -544,7 +609,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         if (declaration.kernel !== "gpu") return;
         const generated = kernel.gpu();
         if (typeof generated === "string") return failPlacement(`can't run on the GPU: ${generated}`);
-        if (1 + kernel.setup.sources.length + generated.scalars.length > recordWords) failPlacement(`can't run on the GPU: it uses more than ${recordWords - 1} columns and values`);
+        const upWords = up === null ? 0 : 3 + (kernel.description.upColumns?.length ?? 0);
+        if (1 + kernel.setup.sources.length + upWords + generated.scalars.length > recordWords) failPlacement(`can't run on the GPU: it uses more than ${recordWords - 1} columns and values`);
         const gpu = state.gpu;
         if (placement !== "gpu" || gpu === null) return;
         const { device } = gpu;
@@ -593,7 +659,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
                 return readCell(storage, row);
             }) ?? [];
             if (placement === "gpu") {
-                runOnGpu(values, args, tick);
+                if (up !== null) runUpOnGpu(values, args, tick);
+                else runOnGpu(values, args, tick);
                 return chunks;
             }
             if (up !== null) {

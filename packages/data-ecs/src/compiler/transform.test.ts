@@ -997,7 +997,7 @@ describe("declared access", () => {
         const propagate = "row[score] = (up === null ? 0 : up[score]) + row[mass];";
         expect(await failure(up("cpu", "score, position", propagate))).toBe("position is in up.read but never read; remove it");
         expect(await failure(up("cpu", "score", "row[score] = up === null ? row[mass] : up[position];"))).toBe("up is indexed by a component in up.read");
-        expect(await failure(up("gpu", "score", propagate))).toBe("a GPU kernel can't use up yet");
+        expect(await failure(up("gpu", "score", propagate))).toBe("compiled");
         expect(await failure(up("cpu", "score", propagate))).toBe("compiled");
     });
 

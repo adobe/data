@@ -8,18 +8,51 @@ import { createWorld } from "./create.js";
 const local = "upBrowserTest/local";
 const world = "upBrowserTest/world";
 const parent = "upBrowserTest/parent";
+const offset = "upBrowserTest/offset";
+const placed = "upBrowserTest/placed";
+const marked = "upBrowserTest/marked";
 
 declare module "@adobe/data-ecs" {
     interface Components {
         [local]: { type: number };
         [world]: { type: number };
         [parent]: { type: Entity; reference: "owner" };
+        [offset]: { type: number };
+        [placed]: { type: number };
+        [marked]: { type: true };
     }
 }
 
 Component.register(local, { type: { type: "number" } });
 Component.register(world, { type: { type: "number" } });
 Component.register(parent, { type: Entity.schema, reference: "owner" });
+Component.register(offset, { type: { type: "number", precision: 1 } });
+Component.register(placed, { type: { type: "number", precision: 1 } });
+Component.register(marked, { type: { const: true } });
+import { gpuDevice } from "../../resources/gpu-device.js";
+
+const place = System.create({
+    name: "upBrowserTest/place",
+    kernel: "gpu",
+    components: { read: [offset], write: [placed] },
+    up: { through: parent, read: [placed] },
+}, (row, { up }) => {
+    row[placed] = up === null ? row[offset] : up[placed] + row[offset];
+});
+/** Trees whose children are in two archetypes, so a depth's rows have parents in several. */
+const plant = System.create({ name: "upBrowserTest/plant" }, ({ commands }) => {
+    for (let tree = 0; tree < 50; tree++) {
+        let level = [commands.spawn({ [offset]: tree, [placed]: 0 })];
+        for (let depth = 1; depth < 12; depth++) {
+            const next = [];
+            for (const at of level.slice(0, 2)) {
+                next.push(commands.spawn({ [offset]: depth, [placed]: 0, [parent]: at }));
+                next.push(commands.spawn({ [offset]: -1, [placed]: 0, [parent]: at, [marked]: true }));
+            }
+            level = next;
+        }
+    }
+});
 
 const propagate = System.create({
     name: "upBrowserTest/propagate",
@@ -77,5 +110,28 @@ describe("up", () => {
         const parallel = await simulate(2, true);
         expect(parallel.values).toEqual(alone.values);
         expect(parallel.windows).toBeGreaterThan(0);
+    });
+});
+
+const device = async (): Promise<GPUDevice> => {
+    const adapter = await navigator.gpu.requestAdapter();
+    if (adapter === null) throw new Error("No WebGPU adapter.");
+    return adapter.requestDevice();
+};
+
+const placements = async (gpu: GPUDevice | null): Promise<readonly (number | null)[]> => {
+    const ecs = createWorld({ workers: 0, resources: { [gpuDevice]: gpu } });
+    disposals.push(ecs);
+    await ecs.run(plant);
+    await ecs.run(place);
+    await ecs.run(place);
+    await ecs.synchronize([placed]);
+    return ecs.query.select([placed]).map(entity => ecs.read.component(entity, placed)).sort((a, b) => (a ?? 0) - (b ?? 0));
+};
+
+describe("up on the GPU", () => {
+    it("runs depth by depth, a dispatch per group, as on the CPU", async () => {
+        const cpu = await placements(null);
+        expect(await placements(await device())).toEqual(cpu);
     });
 });

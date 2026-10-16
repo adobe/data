@@ -63,7 +63,6 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     const { signature: { resources, lookups, up, filtered, reduced }, columns, booleans, keys } = unit;
     const program = toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined, accumulators, unit.up);
     if (target === "gpu") {
-        if (up !== null) fail(declaration, "a GPU kernel can't use up yet");
         if (lookups.length > 0) fail(declaration, "a GPU kernel can't use lookups yet");
         if (filtered) fail(declaration, "a GPU kernel can't use change filters yet");
         if (reduced.length > 0) fail(declaration, "a GPU kernel can't use reductions yet");

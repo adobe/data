@@ -46,6 +46,11 @@ export type GpuEngine = {
     readonly discard: () => void;
     /** The word address of a storage's GPU copy, uploading rows the CPU changed first. */
     readonly upload: (archetype: Archetype, storage: Storage) => number;
+    /**
+     * The word address of a block for `key` holding the first `count` elements of `array`, written when `changed` or
+     * when the block moves, such as the row lists an `up` system's dispatches read.
+     */
+    readonly uploadIndexes: (key: string, array: Int32Array, count: number, changed: boolean) => number;
     /** Writes a record for `key` (one per system and archetype) and returns its dynamic offset. */
     readonly record: (key: string, words: Uint32Array) => number;
     readonly markCpuWrites: (archetype: Archetype, storage: Storage) => void;
@@ -184,6 +189,25 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         return resident.offset / 4;
     };
 
+    const indexBlocks = new Map<string, { offset: number; bytes: number }>();
+    const uploadIndexes = (key: string, array: Int32Array, count: number, changed: boolean): number => {
+        const bytes = Math.max(minimumBlockBytes, count * 4);
+        let block = indexBlocks.get(key);
+        let write = changed;
+        if (block === undefined || block.bytes < bytes) {
+            if (block !== undefined) (freeBlocks[sizeClass(block.bytes)] ??= []).push(block.offset);
+            block = { offset: allocate(bytes), bytes: minimumBlockBytes * 2 ** sizeClass(bytes) };
+            indexBlocks.set(key, block);
+            write = true;
+        }
+        if (write && count > 0) {
+            // A queue write lands before work recorded but not yet submitted, which may read the old lists.
+            submit();
+            device.queue.writeBuffer(heap, block.offset, array, 0, count);
+        }
+        return block.offset / 4;
+    };
+
     const scratch = new Uint32Array(recordWords);
     const record = (key: string, words: Uint32Array): number => {
         let slot = slots.get(key);
@@ -277,6 +301,7 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         submit,
         discard: () => { encoder = null; },
         upload,
+        uploadIndexes,
         record,
         markCpuWrites,
         markGpuWrites,

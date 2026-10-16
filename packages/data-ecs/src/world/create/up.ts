@@ -1,6 +1,5 @@
 import type { Up } from '../../system/access.js';
 import type { Archetype, Storage } from './archetype.js';
-import { readCell } from './cells.js';
 import { generationOf, indexOf } from './entities.js';
 import { chunkShift } from './kernel.js';
 import { idOf, type Key, type State } from './state.js';
@@ -336,17 +335,5 @@ export const createUp = (state: State, up: Up) => {
         return false;
     };
 
-    /** For a main-thread body: the `read` values of the parent at a row of an archetype, by component, or null without one. */
-    const objectLookup = (parentArchetype: number, row: number): object | null => {
-        if (parentArchetype < 0) return null;
-        const parent = state.archetypes[parentArchetype];
-        const result: { [key: Key]: unknown } = {};
-        for (let k = 0; k < read.length; k++) {
-            const storage = parent.storageById[read[k]];
-            result[readKeys[k]] = storage === undefined ? undefined : readCell(storage, row);
-        }
-        return result;
-    };
-
-    return { levels, anyChanged, parentChanged, seed, markChildren, objectLookup };
+    return { levels, anyChanged, parentChanged, seed, markChildren };
 };

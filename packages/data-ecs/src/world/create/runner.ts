@@ -10,7 +10,7 @@ import { createBuffer, createKernelCommands, emptyBuffer, type CommandBuffer } f
 import { reserve } from './entities.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
-import { createContext, rowBinder } from './rows.js';
+import { createContext, parentBinder, rowBinder } from './rows.js';
 import { scalarValues } from './wasm.js';
 import { idOf, type State } from './state.js';
 import { accessorsOf } from '../../gpu/accessors.js';
@@ -187,6 +187,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const matches: Archetype[] = [];
     let checked = 0;
     const bindRow = rowBinder(state, query?.read ?? [], query?.write ?? []);
+    const bindParent = parentBinder(state, declaration.up?.read ?? []);
     let lastRun = 0;
 
     function refreshMatches(): void {
@@ -281,10 +282,13 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }
         if (up === null) return;
         const row = bindRow(archetype);
+        // The parent's row is bound after the system's own, for the archetype both may share.
+        const parentRow = parentArchetype < 0 ? null : bindParent(state.archetypes[parentArchetype]);
         const upContext = context.value;
+        upContext.up = parentRow === null ? null : parentRow.value;
         for (let n = start; n < end; n++) {
             row.index = rows[n];
-            upContext.up = up.objectLookup(parentArchetype, parents[n]);
+            if (parentRow !== null) parentRow.index = parents[n];
             system.body(row.value, upContext);
         }
     };

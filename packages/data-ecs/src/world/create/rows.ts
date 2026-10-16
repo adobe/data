@@ -128,6 +128,20 @@ const createRow = (state: State, archetype: Archetype, keys: readonly Key[], ids
 };
 
 /**
+ * Binds a read-only accessor row of its own, for the parents an `up` system reads, to an archetype. It isn't shared,
+ * so binding it never moves the row a system runs over, even when both read the same components.
+ */
+export const parentBinder = (state: State, reads: readonly Key[]): (archetype: Archetype) => Row => {
+    const ids = reads.map(key => idOf(state, key));
+    let row: Row | null = null;
+    return archetype => {
+        if (row === null) row = createRow(state, archetype, reads, ids, []);
+        else row.bind(archetype);
+        return row;
+    };
+};
+
+/**
  * Binds the accessor row for `reads` and `writes` to an archetype. The row is shared by every main-thread system that
  * declares the same ones, so a body sees one row shape whichever system or archetype it runs over. Main-thread systems
  * run one at a time, so a binding lasts for one system's pass over one archetype.

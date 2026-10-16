@@ -49,7 +49,13 @@ export const createUp = (state: State, up: Up) => {
     let slotRows = new Int32Array(0);
     let slotParents = new Int32Array(0);
     let slotGlobals = new Int32Array(0);
+    /** By index among the matched rows: the parent's row, its entity index or -1, and its archetype id when readable or -1. */
+    let rowParents = new Int32Array(0);
+    let rowParentEntities = new Int32Array(0);
     let keys = new Int32Array(0);
+    let placed = new Int32Array(0);
+    /** By archetype id: whether some row's parent is in it. */
+    let parentSeen = new Uint8Array(0);
     let groupEnds = new Int32Array(0);
     let groupOwners = new Int32Array(0);
     let groupParents = new Int32Array(0);
@@ -104,6 +110,11 @@ export const createUp = (state: State, up: Up) => {
             count += archetype.count;
         }
         parents = fit(parents, count);
+        rowParents = fit(rowParents, count);
+        rowParentEntities = fit(rowParentEntities, count);
+        keys = fit(keys, count);
+        if (parentSeen.length < state.archetypes.length) parentSeen = new Uint8Array(Math.max(state.archetypes.length, 2 * parentSeen.length));
+        parentSeen.fill(0);
         depths = fit(depths, count);
         owners = fit(owners, count);
         order = fit(order, count);
@@ -127,12 +138,18 @@ export const createUp = (state: State, up: Up) => {
                 if (parent <= 0 || index >= length || archetypeOf[index] < 0 || generation[index] !== generationOf(parent)) {
                     parentArchetypes[self] = -1;
                     parents[base + row] = -1;
+                    rowParentEntities[base + row] = -1;
+                    keys[base + row] = -1;
                     continue;
                 }
                 const parentArchetype = archetypeOf[index];
                 const parentRow = rowOf[index];
                 parentArchetypes[self] = parentArchetype;
                 parentRows[self] = parentRow;
+                rowParents[base + row] = parentRow;
+                rowParentEntities[base + row] = index;
+                keys[base + row] = isReadable(parentArchetype) ? parentArchetype : -1;
+                parentSeen[parentArchetype] = 1;
                 parentEntities[self] = index;
                 const parentBase = bases[parentArchetype];
                 parents[base + row] = parentBase < 0 ? -1 : parentBase + parentRow;
@@ -166,64 +183,54 @@ export const createUp = (state: State, up: Up) => {
         children = fit(children, count);
         if (childStarts.length < entities.length + 1) childStarts = new Int32Array(Math.max(entities.length + 1, 2 * childStarts.length));
         childStarts.fill(0, 0, entities.length + 1);
-        for (const archetype of matches) for (let row = 0; row < archetype.count; row++) {
-            const self = archetype.entities[row] >>> 0;
-            if (parentArchetypes[self] >= 0) childStarts[parentEntities[self] + 1]++;
-        }
+        for (let row = 0; row < count; row++) if (rowParentEntities[row] >= 0) childStarts[rowParentEntities[row] + 1]++;
         for (let index = 1; index <= entities.length; index++) childStarts[index] += childStarts[index - 1];
-        const placed = childStarts.slice(0, entities.length);
-        for (const archetype of matches) for (let row = 0; row < archetype.count; row++) {
-            const self = archetype.entities[row] >>> 0;
-            if (parentArchetypes[self] >= 0) children[placed[parentEntities[self]]++] = bases[archetype.id] + row;
-        }
-        const parentIds = new Set<number>();
-        for (const archetype of matches) for (let row = 0; row < archetype.count; row++) {
-            const parent = parentArchetypes[archetype.entities[row] >>> 0];
-            if (parent >= 0) parentIds.add(parent);
-        }
-        parentArchetypeIds = [...parentIds];
+        placed = fit(placed, entities.length);
+        placed.set(childStarts.subarray(0, entities.length));
+        for (let row = 0; row < count; row++) if (rowParentEntities[row] >= 0) children[placed[rowParentEntities[row]]++] = row;
+        const parentIds: number[] = [];
+        for (let id = 0; id < state.archetypes.length; id++) if (parentSeen[id] === 1) parentIds.push(id);
+        parentArchetypeIds = parentIds;
         // Within each depth and archetype, which `order` already keeps together, rows are grouped by their parents'
         // archetype, stably, so a kernel call binds one parent archetype's columns.
         const total = counts[deepest] ?? 0;
         slotRows = fit(slotRows, total);
         slotParents = fit(slotParents, total);
         slotGlobals = fit(slotGlobals, total);
-        keys = fit(keys, total);
-        for (let k = 0; k < total; k++) {
-            const global = order[k];
-            const archetype = matches[owners[global]];
-            const self = archetype.entities[global - bases[archetype.id]] >>> 0;
-            const parent = parentArchetypes[self];
-            keys[k] = parent >= 0 && isReadable(parent) ? parent : -1;
-        }
-        let groups = 0;
         groupEnds = fit(groupEnds, total);
         groupOwners = fit(groupOwners, total);
         groupParents = fit(groupParents, total);
+        let groups = 0;
+        const place = (slot: number, global: number, base: number): void => {
+            slotRows[slot] = global - base;
+            slotGlobals[slot] = global;
+            slotParents[slot] = rowParents[global];
+        };
         let depthStart = 0;
         for (let depth = 0; depth <= deepest; depth++) {
             const depthEnd = counts[depth];
             for (let start = depthStart; start < depthEnd;) {
                 const owner = owners[order[start]];
+                const base = bases[matches[owner].id];
+                const first = keys[order[start]];
                 let end = start + 1;
-                while (end < depthEnd && owners[order[end]] === owner) end++;
-                const parentKeys = [...new Set(keys.subarray(start, end))].sort((a, b) => a - b);
-                let slot = start;
-                for (const parentKey of parentKeys) {
-                    for (let k = start; k < end; k++) {
-                        if (keys[k] !== parentKey) continue;
-                        const global = order[k];
-                        const archetype = matches[owner];
-                        const local = global - bases[archetype.id];
-                        slotRows[slot] = local;
-                        slotGlobals[slot] = global;
-                        slotParents[slot] = parentKey < 0 ? -1 : parentRows[archetype.entities[local] >>> 0];
-                        slot++;
-                    }
-                    groupEnds[groups] = slot;
+                let uniform = true;
+                for (; end < depthEnd && owners[order[end]] === owner; end++) if (keys[order[end]] !== first) uniform = false;
+                if (uniform) {
+                    for (let k = start; k < end; k++) place(k, order[k], base);
+                    groupEnds[groups] = end;
                     groupOwners[groups] = owner;
-                    groupParents[groups] = parentKey;
-                    groups++;
+                    groupParents[groups++] = first;
+                }
+                else {
+                    let slot = start;
+                    const parentKeys = [...new Set(order.subarray(start, end).map(global => keys[global]))].sort((a, b) => a - b);
+                    for (const parentKey of parentKeys) {
+                        for (let k = start; k < end; k++) if (keys[order[k]] === parentKey) place(slot++, order[k], base);
+                        groupEnds[groups] = slot;
+                        groupOwners[groups] = owner;
+                        groupParents[groups++] = parentKey;
+                    }
                 }
                 start = end;
             }

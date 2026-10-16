@@ -104,12 +104,12 @@ describe("World.create", () => {
     it("applies the net structural change of a sync point", async () => {
         let first = Entity.none;
         let second = Entity.none;
-        const edit = System.create({ name: "createTest/edit/net", input: { type: "string" } }, ({ input, commands }) => {
-            if (input === "spawn") {
+        const edit = System.create({ name: "createTest/edit/net", input: { type: "object", properties: { action: { type: "string" } } } }, ({ input, commands }) => {
+            if (input.action === "spawn") {
                 first = commands.spawn({ [velocity]: 1 });
                 second = commands.spawn({ [velocity]: 2 });
             }
-            if (input === "toggle") {
+            if (input.action === "toggle") {
                 commands.add(first, { [frozen]: true });
                 commands.remove(first, frozen);
                 commands.add(second, { [velocity]: 5, [label]: "second" });
@@ -118,9 +118,9 @@ describe("World.create", () => {
             }
         });
         const world = World.create();
-        await world.run(edit, "spawn");
+        await world.run(edit, { action: "spawn" });
         expect(world.query.count([velocity])).toBe(2);
-        await world.run(edit, "toggle");
+        await world.run(edit, { action: "toggle" });
         expect(world.read.entity(first, [velocity])).toBeNull();
         expect(world.read.entity(second, [velocity, label])).toEqual({ [velocity]: 5, [label]: "second" });
         expect(world.query.select([velocity])).toEqual([second]);
@@ -128,14 +128,14 @@ describe("World.create", () => {
 
     it("reuses a despawned index only after a sync point, with a new generation", async () => {
         const spawned: Entity[] = [];
-        const edit = System.create({ name: "createTest/edit/reuse", input: { type: "string" } }, ({ input, commands }) => {
-            if (input === "spawn") spawned.push(commands.spawn({ [velocity]: spawned.length }));
+        const edit = System.create({ name: "createTest/edit/reuse", input: { type: "object", properties: { action: { type: "string" } } } }, ({ input, commands }) => {
+            if (input.action === "spawn") spawned.push(commands.spawn({ [velocity]: spawned.length }));
             else for (const entity of spawned) commands.despawn(entity);
         });
         const world = World.create();
-        await world.run(edit, "spawn");
-        await world.run(edit, "despawn");
-        await world.run(edit, "spawn");
+        await world.run(edit, { action: "spawn" });
+        await world.run(edit, { action: "despawn" });
+        await world.run(edit, { action: "spawn" });
         const [old, reused] = spawned;
         expect(reused >>> 0).toBe(old >>> 0);
         expect(reused).not.toBe(old);
@@ -145,13 +145,13 @@ describe("World.create", () => {
 
     it("keeps rows consistent across swap-removes and archetype growth", async () => {
         const spawned: Entity[] = [];
-        const edit = System.create({ name: "createTest/edit/rows", input: { type: "string" } }, ({ input, commands }) => {
-            if (input === "spawn") for (let i = 0; i < 100; i++) spawned.push(commands.spawn({ [velocity]: i, [label]: `${i}` }));
+        const edit = System.create({ name: "createTest/edit/rows", input: { type: "object", properties: { action: { type: "string" } } } }, ({ input, commands }) => {
+            if (input.action === "spawn") for (let i = 0; i < 100; i++) spawned.push(commands.spawn({ [velocity]: i, [label]: `${i}` }));
             else for (let i = 0; i < 100; i += 3) commands.remove(spawned[i], label);
         });
         const world = World.create();
-        await world.run(edit, "spawn");
-        await world.run(edit, "remove");
+        await world.run(edit, { action: "spawn" });
+        await world.run(edit, { action: "remove" });
         spawned.forEach((entity, i) => {
             expect(world.read.component(entity, velocity)).toBe(i);
             expect(world.read.component(entity, label)).toBe(i % 3 === 0 ? null : `${i}`);
@@ -239,8 +239,8 @@ describe("World.create", () => {
 
     it("sees a change moved into an older chunk by a swap-remove", async () => {
         const spawned: Entity[] = [];
-        const edit = System.create({ name: "createTest/edit/swap", input: { type: "string" } }, ({ input, commands }) => {
-            if (input === "spawn") for (let i = 0; i < 2100; i++) spawned.push(commands.spawn({ [velocity]: i }));
+        const edit = System.create({ name: "createTest/edit/swap", input: { type: "object", properties: { action: { type: "string" } } } }, ({ input, commands }) => {
+            if (input.action === "spawn") for (let i = 0; i < 2100; i++) spawned.push(commands.spawn({ [velocity]: i }));
             else commands.despawn(spawned[5]);
         });
         const writer = System.create({ name: "createTest/writer", components: { write: [velocity] } }, row => {
@@ -251,12 +251,12 @@ describe("World.create", () => {
             changes.push(row[velocity]);
         });
         const world = World.create();
-        await world.run(edit, "spawn");
+        await world.run(edit, { action: "spawn" });
         await world.run(observer);
         changes.length = 0;
         // The last row (in the third chunk) changes; then a despawn moves it into row 5, in the first chunk.
         await world.run(writer);
-        await world.run(edit, "despawn");
+        await world.run(edit, { action: "despawn" });
         await world.run(observer);
         expect(changes).toEqual([-1]);
     });

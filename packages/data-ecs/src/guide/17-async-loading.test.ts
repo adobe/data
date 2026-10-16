@@ -78,7 +78,9 @@ const spawn = System.create({ name: "guide/loading/spawn" }, ({ commands }) => {
     commands.spawn({ [meshSource]: "ship.glb" });
     commands.spawn({ [meshSource]: "rock.glb" });
 });
-const hide = System.create({ name: "guide/loading/hide", input: Entity.schema }, ({ input, commands }) => { commands.add(input, { [hidden]: true }); });
+const hide = System.create({ name: "guide/loading/hide", input: { type: "object", properties: { entity: Entity.schema } } }, ({ input, commands }) => {
+    commands.add(input.entity, { [hidden]: true });
+});
 
 it("loads resources asynchronously for derived slots, and releases them when the slot goes", async () => {
     await using world = World.create();
@@ -86,11 +88,11 @@ it("loads resources asynchronously for derived slots, and releases them when the
     await world.run(request);
     const [ship, rock] = world.read.resource(requests);
     // The rock is hidden before its load completes, so its result is stale when it arrives.
-    await world.run(hide, rock.entity);
+    await world.run(hide, { entity: rock.entity });
     for (const { entity, token, path } of [ship, rock]) await world.run(apply, { entity, token, handle: await load(path) });
     expect(world.query.select([meshReady]).map(entity => loaded.get(world.read.component(entity, meshReady) ?? 0))).toEqual(["ship.glb"]);
     expect([...loaded.values()]).toEqual(["ship.glb"]);
-    await world.run(hide, ship.entity);
+    await world.run(hide, { entity: ship.entity });
     expect(world.query.count([meshReady])).toBe(0);
     expect(loaded.size).toBe(0);
 });

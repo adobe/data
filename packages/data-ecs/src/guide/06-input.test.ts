@@ -25,3 +25,23 @@ it("passes an input to each run", async () => {
     const positions = world.query.select([position], { order: { [position]: true } }).map(entity => world.read.component(entity, position));
     expect(positions).toEqual([[3, 0, 0], [3, 1, 0]]);
 });
+
+// A composite takes every field of its members' inputs, and each member reads the fields it declares.
+const drift = System.create({
+    name: "guide/input/drift",
+    input: { type: "object", properties: { dx: { type: "number" } } },
+    components: { write: [position] },
+}, (row, { input }) => {
+    const [x, y, z] = row[position];
+    row[position] = [x + input.dx, y, z];
+});
+const frame = System.composite({ name: "guide/input/frame", systems: [place, drift] });
+
+it("passes a composite's input to its members", async () => {
+    await using world = World.create();
+    await world.run(place, { x: 3, count: 2 });
+    await world.run(frame, { x: 0, count: 1, dx: 1 });
+    const positions = world.query.select([position], { order: { [position]: true } }).map(entity => world.read.component(entity, position));
+    // drift moves the entities there before the run; the one place spawns arrives at its sync point.
+    expect(positions).toEqual([[0, 0, 0], [4, 0, 0], [4, 1, 0]]);
+});

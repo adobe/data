@@ -63,16 +63,16 @@ export const integrate = System.create({
 // Transaction carrying frame time into the ECS.
 export const setDelta = System.create({
     name: "particles/setDelta",
-    input: { type: "number" },
+    input: { type: "object", properties: { seconds: { type: "number" } } },
     resources: { write: [delta] },
 }, ({ resources, input }) => {
-    resources[delta] = input;
+    resources[delta] = input.seconds;
 });
 
 export const main = System.composite({ name: "particles/main", systems: [spawn, gravity, integrate] });
 
 export const frame = async (world: World, seconds: number): Promise<readonly Vec3[]> => {
-    await world.run(setDelta, seconds);
+    await world.run(setDelta, { seconds });
     await world.run(main);
     return world.query.select([position]).map((entity: Entity) => world.read.component(entity, position) ?? [0, 0, 0]);
 };

@@ -216,8 +216,9 @@ Example: [`05-lookups.test.ts`](src/guide/05-lookups.test.ts#L20-L42).
 
 ## 7. Input
 
-`input` is a schema for a read-only value passed to each run, as `world.run(system, input)`, and read as the
-context's `input`. A system name and its input make a replicable transaction.
+`input` is an object schema of named fields for a read-only value passed to each run, as
+`world.run(system, input)`, and read as the context's `input`. A system name and its input make a replicable
+transaction.
 
 ```ts
 const place = System.create({
@@ -231,7 +232,28 @@ await world.run(place, { x: 3, count: 2 });
 
 Example: [`06-input.test.ts`](src/guide/06-input.test.ts#L14-L27).
 
-- **Not yet:** a system with input can't use `added` or `changed`, or be a member of a composite.
+A composite takes every field of its members' inputs, and each member reads the fields it declares:
+
+```ts
+const drift = System.create({
+    name: "guide/input/drift",
+    input: { type: "object", properties: { dx: { type: "number" } } },
+    components: { write: [position] },
+}, (row, { input }) => {
+    const [x, y, z] = row[position];
+    row[position] = [x + input.dx, y, z];
+});
+const frame = System.composite({ name: "guide/input/frame", systems: [place, drift] });
+await world.run(frame, { x: 0, count: 1, dx: 1 });
+```
+
+Example: [`06-input.test.ts`](src/guide/06-input.test.ts#L29-L47).
+
+- **Shared fields:** a field several members declare is one value for all of them. Its type must be the same in each,
+  or the composite is a type error at each member that differs, and `System.composite` throws naming both systems.
+  A field optional in one member and required in another is required.
+- **Workers** receive only the fields their system declares.
+- **Not yet:** a system with input can't use `added` or `changed`.
 
 ## 8. Sync points
 
@@ -488,7 +510,7 @@ const apply = System.create({
 });
 ```
 
-Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L49-L96).
+Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L49-L98).
 
 - **Shared assets:** many entities using one file are counted by the loader. The ECS gives each user exactly one acquire (`added`) and one release (a finalizer).
 

@@ -127,15 +127,16 @@ System.create({
 
 System.create({
     name: "test/move",
-    input: { type: "number" },
+    input: { type: "object", properties: { distance: { type: "number" } } },
     // @ts-expect-error a system with input can't use change filters
     components: { changed: [position] },
 }, () => {});
 
 export const main = System.composite({ name: "test/main", systems: [integrate, follow, tally] });
+const moving = System.composite({ name: "test/moving", systems: [move] });
 
-// @ts-expect-error a system with input can't be a composite member
-System.composite({ name: "test/main", systems: [move] });
+// A composite takes its members' input.
+check<Equal<typeof moving, System<{ readonly distance: number }>>>();
 
 // A system is its name and the input `run` takes with it.
 check<Equal<typeof integrate, System>>();

@@ -63,13 +63,13 @@ Rule.create({ name: "rulesTest/sprites", components: { has: [sprite] }, derive: 
 Rule.create({ name: "rulesTest/tag", components: { has: [tagged] }, derive: [tag] });
 
 /** Runs `edit` with commands once, as its own run. */
-const edit = System.create({ name: "rulesTest/edit", input: { type: "integer" } }, ({ input, commands }) => {
-    for (const step of steps[input] ?? []) step(commands);
+const edit = System.create({ name: "rulesTest/edit", input: { type: "object", properties: { step: { type: "integer" } } } }, ({ input, commands }) => {
+    for (const step of steps[input.step] ?? []) step(commands);
 });
 let steps: ((commands: System.Commands) => void)[][] = [];
 const at = (world: ReturnType<typeof createWorld>) => async (...run: ((commands: System.Commands) => void)[]) => {
     steps = [...steps, run];
-    await world.run(edit, steps.length - 1);
+    await world.run(edit, { step: steps.length - 1 });
 };
 
 const all: readonly Component.Name[] = [source, hidden, sprite, slot, visible, ready, glow, owned, follows, mark];
@@ -117,7 +117,7 @@ describe("rules", () => {
     it("apply in a world from the first sync point after it meets their components, deriving on the first spawn", async () => {
         const spawn = System.create({ name: "rulesTest/tagged" }, ({ commands }) => { commands.spawn({ [tagged]: true }); });
         const world = createWorld({ workers: 0 });
-        await world.run(edit, -1);
+        await world.run(edit, { step: -1 });
         expect(world.query.count([tag])).toBe(0);
         await world.run(spawn);
         expect(world.query.count([tagged, tag])).toBe(1);

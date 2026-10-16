@@ -40,11 +40,11 @@ const random = (seed: number): (() => number) => {
     };
 };
 
-/** `input`: the particle count and the field's width and height in pixels. Entity i goes to archetype i % 4. */
+/** The particle count, and the field's width and height in pixels. Entity i goes to archetype i % 4. */
 export const spawn = System.create({
     name: "gpuParticles/spawn",
-    input: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 },
-}, ({ input: [count, width, height], commands }) => {
+    input: { type: "object", properties: { count: { type: "integer" }, width: { type: "number" }, height: { type: "number" } } },
+}, ({ input: { count, width, height }, commands }) => {
     const next = random(7);
     for (let i = 0; i < count; i++) {
         const p = [next() * width, next() * height, 0] as const;

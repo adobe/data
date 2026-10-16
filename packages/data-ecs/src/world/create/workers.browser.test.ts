@@ -60,10 +60,10 @@ const scatter = System.create({ name: "workersTest/scatter" }, ({ commands }) =>
 });
 Resource.register(seconds, { type: { type: "number", default: 0.25 } });
 
-/** Spawns `input` moving entities, each following the one before it. */
-const seed = System.create({ name: "workersTest/seed", input: { type: "integer" } }, ({ input, commands }) => {
+/** Spawns `count` moving entities, each following the one before it. */
+const seed = System.create({ name: "workersTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
     let previous = commands.spawn({ [position]: [0, 0], [velocity]: [1, 0] });
-    for (let i = 1; i < input; i++) {
+    for (let i = 1; i < input.count; i++) {
         previous = commands.spawn({ [position]: [i, 0], [velocity]: [1, i % 7], [target]: previous });
     }
 });
@@ -112,11 +112,11 @@ const main = System.composite({ name: "workersTest/main", systems: [integrate, s
 const stamp = System.create({
     name: "workersTest/stamp",
     kernel: "cpu",
-    input: Entity.schema,
+    input: { type: "object", properties: { entity: Entity.schema } },
     components: { read: [position] },
 }, (row, { input, commands }) => {
     const [x, y] = row[position];
-    commands.add(input, { [offset]: x * 1000 + y });
+    commands.add(input.entity, { [offset]: x * 1000 + y });
 });
 
 /** Despawns entity 1, the resource entity, since index 0 is never an entity and registration reserves the next first. */
@@ -159,7 +159,7 @@ const snapshot = (world: World): unknown[] => {
 const simulate = async (workers: number, wasm = true, simd = false): Promise<unknown[]> => {
     const world = createWorld({ workers, minimumChunk: 64, wasm, simd });
     disposals.push(world);
-    await world.run(seed, 2000);
+    await world.run(seed, { count: 2000 });
     for (let frame = 0; frame < 12; frame++) await world.run(main);
     return snapshot(world);
 };
@@ -205,10 +205,10 @@ describe("workers", () => {
         const ordered = async (workers: number): Promise<unknown[]> => {
             const world = createWorld({ workers, minimumChunk: 64 });
             disposals.push(world);
-            await world.run(seed, 2000);
+            await world.run(seed, { count: 2000 });
             for (let frame = 0; frame < 4; frame++) await world.run(main);
             const [first] = world.query.select([position]);
-            await world.run(stamp, first);
+            await world.run(stamp, { entity: first });
             return [world.read.component(first, offset), world.query.select([position]).map(entity => world.read.component(entity, position))];
         };
         expect(await ordered(3)).toEqual(await ordered(0));
@@ -217,7 +217,7 @@ describe("workers", () => {
     it("can't touch the resource entity", async () => {
         const world = createWorld({ workers: 2, minimumChunk: 64 });
         disposals.push(world);
-        await world.run(seed, 500);
+        await world.run(seed, { count: 500 });
         await world.run(unlink);
         await world.run(integrate);
         expect(world.read.resource(seconds)).toBe(0.25);

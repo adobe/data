@@ -61,7 +61,7 @@ const start = async (): Promise<void> => {
     const { draw, ready } = createDraw(device, Gpu.layout(device), context, format);
     await ready;
     const frame = System.composite({ name: "gpuParticles/frame", systems: [...moving, draw] });
-    await world.run(spawn, [count, canvas.width, canvas.height]);
+    await world.run(spawn, { count, width: canvas.width, height: canvas.height });
     /** For automated checks: a few drawn particles' positions, brought back from the GPU. */
     Reflect.set(globalThis, "sampleProbe", async () => {
         await world.synchronize([position]);

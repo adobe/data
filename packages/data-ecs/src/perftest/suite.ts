@@ -46,36 +46,36 @@ Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFF
 Component.register(tag, { type: { const: true } });
 Component.register(hits, { type: { type: "number", precision: 1 } });
 
-/** `input` entities, each targeting the one spawned before it. */
-export const seed = System.create({ name: "suite/seed", input: { type: "integer" } }, ({ input, commands }) => {
+/** `count` entities, each targeting the one spawned before it. */
+export const seed = System.create({ name: "suite/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
     let previous = commands.spawn({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [index]: 0 });
-    for (let i = 1; i < input; i++) {
+    for (let i = 1; i < input.count; i++) {
         previous = commands.spawn({ [position]: [i, i * 0.5, -i], [velocity]: [1, 0, 0], [index]: i, [target]: previous });
     }
 });
 
 /** Despawns a tenth of the entities and spawns as many replacements. */
-export const churn = System.create({ name: "suite/churn", input: { type: "integer" }, components: { read: [index, position] } }, (row, { input, commands }) => {
-    if (row[index] % 10 !== input) return;
+export const churn = System.create({ name: "suite/churn", input: { type: "object", properties: { group: { type: "integer" } } }, components: { read: [index, position] } }, (row, { input, commands }) => {
+    if (row[index] % 10 !== input.group) return;
     commands.despawn(row.entity);
     commands.spawn({ [position]: row[position], [velocity]: [0, 0, 0], [index]: row[index] });
 });
 
 /** Adds the tag to one tenth and removes it from another: a fifth of the entities move archetype. */
-export const retag = System.create({ name: "suite/retag", input: { type: "integer" }, components: { read: [index] } }, (row, { input, commands }) => {
+export const retag = System.create({ name: "suite/retag", input: { type: "object", properties: { group: { type: "integer" } } }, components: { read: [index] } }, (row, { input, commands }) => {
     const group = row[index] % 10;
-    if (group === input) commands.add(row.entity, { [tag]: true });
-    else if (group === (input + 5) % 10) commands.remove(row.entity, tag);
+    if (group === input.group) commands.add(row.entity, { [tag]: true });
+    else if (group === (input.group + 5) % 10) commands.remove(row.entity, tag);
 });
 
 /** Writes 1% of positions. */
 export const poke = System.create({
     name: "suite/poke",
     kernel: "cpu",
-    input: { type: "integer" },
+    input: { type: "object", properties: { group: { type: "integer" } } },
     components: { read: [index], write: [position] },
 }, (row, { input }) => {
-    if (row[index] % 100 === input) {
+    if (row[index] % 100 === input.group) {
         const [x, y, z] = row[position];
         row[position] = [x + 1, y, z];
     }
@@ -85,10 +85,10 @@ export const poke = System.create({
 export const pokeCluster = System.create({
     name: "suite/pokeCluster",
     kernel: "cpu",
-    input: { type: "integer" },
+    input: { type: "object", properties: { group: { type: "integer" } } },
     components: { read: [index], write: [position] },
 }, (row, { input }) => {
-    const group = row[index] - input * 10_000;
+    const group = row[index] - input.group * 10_000;
     if (group >= 0 && group < 10_000) {
         const [x, y, z] = row[position];
         row[position] = [x + 1, y, z];
@@ -190,7 +190,7 @@ export const report = (name: string, milliseconds: number): void => {
 /** A world seeded with `count` entities. Systems register on their first run, which `fastest` leaves out. */
 export const seeded = async (create: () => World, count: number): Promise<World> => {
     const world = create();
-    await world.run(seed, count);
+    await world.run(seed, { count });
     return world;
 };
 

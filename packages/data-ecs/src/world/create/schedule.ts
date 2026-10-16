@@ -1,5 +1,6 @@
 import type { Leaf } from '../../system/leaf.js';
 import { requireDefinition, type Definition } from '../../system/definition.js';
+import { checkInputs } from './input.js';
 import type { Key } from './state.js';
 
 /**
@@ -150,10 +151,14 @@ export const scheduleOf = (system: Definition): Schedule => {
     return schedule;
 };
 
-/** Orders a system's leaves into tiers. Throws on a cycle, or on two conflicting leaves with no ordering path between them. */
+/**
+ * Orders a system's leaves into tiers. Throws on a cycle, on two conflicting leaves with no ordering path between them, or
+ * on inputs that don't merge.
+ */
 const createSchedule = (system: Definition): Schedule => {
     const graph = graphOf(system);
     const leaves = graph.units.flatMap((unit, index) => isLeaf(unit) ? [{ leaf: unit, unit: index }] : []);
+    checkInputs(leaves.map(({ leaf }) => leaf));
     const accesses = leaves.map(({ leaf }) => accessOf(leaf));
     // Leaves that read a resource run after every leaf that reduces into it, so they read the finished fold.
     const reductions = new Map<Key, number>();

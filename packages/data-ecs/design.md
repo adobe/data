@@ -102,9 +102,9 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
     - The build validator checks `input`, since `Schema.ToType` doesn't produce tuples.
     - Without `kernel`, a system is plain JS on the main thread.
   - **`components` is optional.** A system without it runs once per run, on the main thread, and its body takes only the context.
-  - **`input`** is a schema for a per-run, read-only value, and `run` requires it exactly when it's declared.
+  - **`input`** is an object schema of named fields for a per-run, read-only value, and `run` requires it exactly when it's declared.
     - A system with input can't use `added` or `changed`, because its `lastRun` is shared across runs that receive different input.
-    - It can't be a member of a composite yet.
+    - **A composite's input** has every field of its members' inputs, and each member receives the fields it declares, so workers get only those. A field several members declare is one value for all of them, with the same schema in each: a different type is a compile-time error at each member that differs, and `System.composite` throws naming both. A field optional in one and required in another is required.
     - `(system name, input)` is a replicable transaction. On a GPU, input maps to a uniform buffer.
     - A `Blob` input can only be stored or forwarded, because its contents can't be read synchronously.
   - **Bodies are `(subject, context)`:** `(row, context)` for a system with `components` and for a finalizer, `(context)` for a system without `components`, `(changes, context)` for a changes finalizer, and `(gpu, context)` for a render system.
@@ -203,7 +203,6 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 - **Run report:** `run(): Promise<World.Report>`, listing commands against dead entities and systems or finalizers that threw. Decide before publishing whether a throw then stops rejecting `run()`, since that changes behavior.
 
 - **Systems as entities:** metadata on systems, plus a query that selects which systems to run.
-- **Arguments for composites**, passed down to their members.
 - **WGSL helper functions, a minor readability option:** emit each inlined helper as its own WGSL `fn` instead of inlining it into the kernel, as a hand-written shader would. Parameter types come from the argument shapes at each call (a 3-tuple of numbers is `vec3f`, an object a generated `struct`), so a helper called with different shapes is emitted once per shape. GPU drivers inline small functions anyway, so it changes how the shader reads, not how it runs; JS and WASM stay inlined.
 - **Reductions, later:** GPU kernels (a workgroup tree reduction to per-workgroup partials, which needs resources resident on the GPU); four-lane SIMD accumulators, deterministic since pieces are 16-row aligned; contributing a component value of unknown shape whole, as bounds over positions want; lexicographic `min` and `max` over a tuple, for argmin and argmax such as the nearest entity; and per-field operators.
 - **Rules and finalizers, later:** derived entities (rules that spawn), `within` with several hosts, finalizers as kernels, value changes in whole-plan finalizers, why an entity stopped, relationship conditions, and the Run report listing dropped dependents.

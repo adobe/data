@@ -28,7 +28,7 @@ const framed = async (name: string, run: () => Promise<void>, frames = 240): Pro
 it("move 1M across workers", async () => {
     for (const workers of workerCounts) {
         const world = createWorld({ workers });
-        await world.run(spawn, 1_000_000);
+        await world.run(spawn, { count: 1_000_000 });
         report(`move 1M ${label(workers)}`, (await particlesFastest(() => world.run(move))).minimum);
         await framed(`move 1M ${label(workers)}`, () => world.run(move));
         await world.dispose();
@@ -59,7 +59,7 @@ it("sparse changed 1M across workers", async () => {
         let frame = 0;
         let best = Infinity;
         for (let i = 0; i < 60; i++) {
-            await world.run(poke, frame++ % 100);
+            await world.run(poke, { group: frame++ % 100 });
             const start = performance.now();
             await world.run(observe);
             if (i >= 10) best = Math.min(best, performance.now() - start);

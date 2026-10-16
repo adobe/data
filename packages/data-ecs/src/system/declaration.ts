@@ -23,14 +23,14 @@ export type Declaration = {
     readonly resources?: ResourceAccess;
     /** The resources its body contributes to, each with the operator its `reduce` trait declares. */
     readonly reduce?: { readonly [K in Reduced]?: OperatorOf<K> };
-    /** The value passed to each run. A system with input can't use `added` or `changed`. */
-    readonly input?: Schema;
+    /** The object of named fields passed to each run. A system with input can't use `added` or `changed`. */
+    readonly input?: Extract<Schema, { readonly type: "object" }>;
     /** Makes this a render system (see `render`): its body records GPU work over the GPU copy of the components it names. */
     readonly shader?: Shader;
     /** Hard constraint. */
     readonly before?: readonly System<unknown>[];
     /** Hard constraint. */
     readonly after?: readonly System<unknown>[];
-    /** Soft constraint: prefers the same tier, where nothing orders them apart. */
+    /** Runs inside the span of the systems listed: after what they follow and before what follows them. */
     readonly during?: readonly System<unknown>[];
 };

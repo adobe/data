@@ -40,8 +40,8 @@ const show = System.create({ name: "guide/filters/show", components: { read: [sc
     row[shown] = row[score];
 });
 // Only rows the body writes are marked changed, so a conditional write marks only the rows it reaches.
-const bump = System.create({ name: "guide/filters/bump", input: Entity.schema, components: { write: [score] } }, (row, { input }) => {
-    if (row.entity === input) row[score] += 10;
+const bump = System.create({ name: "guide/filters/bump", input: { type: "object", properties: { entity: Entity.schema } }, components: { write: [score] } }, (row, { input }) => {
+    if (row.entity === input.entity) row[score] += 10;
 });
 
 it("runs systems only for what changed since they last ran", async () => {
@@ -51,7 +51,7 @@ it("runs systems only for what changed since they last ran", async () => {
     expect(world.query.count([enemy])).toBe(2);
     await world.run(show);
     const [first, second] = world.query.select([score]);
-    await world.run(bump, first);
+    await world.run(bump, { entity: first });
     await world.run(show);
     expect(world.read.component(first, shown)).toBe(10);
     expect(world.read.component(second, shown)).toBe(0);

@@ -65,10 +65,12 @@ for (const key of [counted, pendingHandle, respawned, ordered, writing, disposin
 Rule.create({ name: "finalizersTest/slots", components: { has: [source] }, derive: [slot] });
 
 let steps: ((commands: System.Commands) => void)[] = [];
-const edit = System.create({ name: "finalizersTest/edit", input: { type: "integer" } }, ({ input, commands }) => { steps[input]?.(commands); });
+const edit = System.create({ name: "finalizersTest/edit", input: { type: "object", properties: { step: { type: "integer" } } } }, ({ input, commands }) => {
+    steps[input.step]?.(commands);
+});
 const step = (world: ReturnType<typeof createWorld>) => async (run: (commands: System.Commands) => void) => {
     steps = [...steps, run];
-    await world.run(edit, steps.length - 1);
+    await world.run(edit, { step: steps.length - 1 });
 };
 
 describe("finalizers", () => {

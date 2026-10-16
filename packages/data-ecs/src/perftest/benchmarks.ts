@@ -15,7 +15,7 @@ const observed = async (world: World, writer: typeof poke | typeof pokeCluster):
     let frame = 0;
     let best = Infinity;
     for (let i = 0; i < 60; i++) {
-        await world.run(writer, frame++ % 100);
+        await world.run(writer, { group: frame++ % 100 });
         const start = performance.now();
         await world.run(observe);
         if (i >= 10) best = Math.min(best, performance.now() - start);
@@ -28,7 +28,7 @@ export const benchmarks: readonly Benchmark[] = [
         name: "create 1M",
         run: () => fastest(async () => {
             const world = World.create();
-            await world.run(spawn, 1_000_000);
+            await world.run(spawn, { count: 1_000_000 });
             await world.dispose();
         }, 5000, 2),
     },
@@ -36,7 +36,7 @@ export const benchmarks: readonly Benchmark[] = [
         name: "create flat 1M",
         run: () => fastest(async () => {
             const world = World.create();
-            await world.run(spawnFlat, 1_000_000);
+            await world.run(spawnFlat, { count: 1_000_000 });
             check(world.query.count([flatVisible, flatEnabled]) === 250_000, "create flat: wrong count");
             await world.dispose();
         }, 5000, 2),
@@ -45,7 +45,7 @@ export const benchmarks: readonly Benchmark[] = [
         name: "create flat dynamic 1M",
         run: () => fastest(async () => {
             const world = World.create();
-            await world.run(spawnFlatDynamic, 1_000_000);
+            await world.run(spawnFlatDynamic, { count: 1_000_000 });
             check(world.query.count([flatVisible, flatEnabled]) === 250_000, "create flat dynamic: wrong count");
             await world.dispose();
         }, 5000, 2),
@@ -54,7 +54,7 @@ export const benchmarks: readonly Benchmark[] = [
         name: "move 1M",
         run: async () => {
             const world = World.create();
-            await world.run(spawn, 1_000_000);
+            await world.run(spawn, { count: 1_000_000 });
             check(world.query.count([particlePosition, visible, enabled]) === 250_000, "move: wrong count");
             const { minimum } = await particlesFastest(() => world.run(move));
             await world.dispose();
@@ -66,7 +66,7 @@ export const benchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = await seeded(() => World.create(), 1_000_000);
             let frame = 0;
-            const best = await fastest(() => world.run(churn, frame++ % 10));
+            const best = await fastest(() => world.run(churn, { group: frame++ % 10 }));
             check(world.query.count([index]) === 1_000_000, "churn: wrong count");
             await world.dispose();
             return best;
@@ -77,7 +77,7 @@ export const benchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = await seeded(() => World.create(), 1_000_000);
             let frame = 0;
-            const best = await fastest(() => world.run(retag, frame++ % 10));
+            const best = await fastest(() => world.run(retag, { group: frame++ % 10 }));
             check(world.query.count([tag]) > 0, "retag: no tags");
             await world.dispose();
             return best;

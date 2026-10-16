@@ -7,7 +7,7 @@ import type { Body } from './body.js';
 import type { Composite, CompositeDeclaration } from './composite.js';
 import type { Leaf } from './leaf.js';
 import type { Declaration } from './declaration.js';
-import type { InputOf } from './input.js';
+import type { CheckMembers, CompositeInputOf, InputOf } from './input.js';
 import type { LinearComponent, LinearResource } from './linear.js';
 import type { Name } from './name.js';
 import type { System } from './system.js';
@@ -64,8 +64,8 @@ export const create = <const D extends Declaration>(declaration: D & Validate<D>
  * Declares a system made of subsystems, findable by name with `get`. Throws if a different one has its name, its
  * members are ordered in a cycle, or two of them conflict with no order between them.
  */
-export const composite = <const D extends CompositeDeclaration>(declaration: D): System => {
-    const system: Composite & System = { kind: "composite", name: declaration.name, declaration };
+export const composite = <const D extends CompositeDeclaration>(declaration: D & { readonly systems: CheckMembers<D["systems"]> }): System<CompositeInputOf<D["systems"]>> => {
+    const system: Composite & System<CompositeInputOf<D["systems"]>> = { kind: "composite", name: declaration.name, declaration };
     scheduleOf(system);
     claim(system);
     return system;

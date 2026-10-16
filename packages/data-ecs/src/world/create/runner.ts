@@ -19,6 +19,7 @@ import { maximumWorkgroups, workgroupSize, type WgslKernel } from './wgsl.js';
 import { allocateArray, freeArray } from './arrays.js';
 import { combine, identityOf, reductionTargets, type ReductionTarget } from './reductions.js';
 import { samePath } from '../../layout/layout.js';
+import { inputFor } from './input.js';
 
 /** One unit of a system's work for a run: the commands it issued, plus its error if it failed partway. */
 export type ChunkResult = { readonly commands: CommandBuffer; readonly error?: unknown };
@@ -136,6 +137,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const kernelCommands = createKernelCommands(holder, kernel?.setup.keys ?? [], () => reserve(state.entities));
     // A kernel's reductions fold in its partials, so only a body that runs as written gets reducer functions. Render
     // bodies and GPU kernels issue no commands.
+    const ownInput = inputFor(leaf);
     const context = createContext(state, declaration, {
         targets: kernel === null ? targets : [],
         commands: leaf.kind === "render" || declaration.kernel === "gpu" ? undefined : commands,
@@ -383,11 +385,12 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         pipeline = { compute, kernel: generated };
     };
 
-    const start = (args: unknown, workers: Workers | null, index: number): readonly Chunk[] => {
+    const start = (input: unknown, workers: Workers | null, index: number): readonly Chunk[] => {
         ran = false;
         // A system whose conditions don't hold is skipped, successfully, and keeps its `lastRun`.
         if (!holds()) return [];
         const tick = ++state.tick;
+        const args = ownInput(input);
         slotsUsed = 0;
         used = 0;
         holder.buffer = nextBuffer();

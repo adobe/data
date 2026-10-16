@@ -31,7 +31,7 @@ export type State = {
     readonly resources: Set<number>;
     /** The newest tick handed out. Systems and sync points each take the next one. */
     tick: number;
-    /** Counts sync points that applied commands: rows move, and references change, only in those. */
+    /** Counts sync points that moved, spawned or despawned a row, or wrote a reference: what depends only on those is kept between them. */
     structures: number;
     /** Command buffers for the next sync point, in merge order. */
     readonly queued: Queued[];

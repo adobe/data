@@ -330,7 +330,6 @@ export const prepareSync = (state: State, isolated = false): boolean => {
     const { structure, plan } = state;
     // Finalizers' spawns are reserved during the last sync point, so their batches are pending without a reservation.
     if (queued.every(({ buffer }) => buffer.count === 0) && !reserved(state.entities) && state.carried === null && !structure.rederive) return false;
-    state.structures++;
     plan.count = 0;
     plan.spawned = 0;
     let reservations: Reserved | null = null;
@@ -366,6 +365,10 @@ export const prepareSync = (state: State, isolated = false): boolean => {
             };
             index = indexChangesOf(state, queued, fromOf, [...born].map(([id, first]) => [state.archetypes[id], first] as const));
         }
+        // Rows move, appear and go, and references change, only where this finds one doing so.
+        let structural = written.length > 0 || plan.spawned > 0;
+        for (let entry = 0; entry < plan.count && !structural; entry++) structural = plan.despawned[entry] !== 0 || plan.from[entry] !== plan.to[entry];
+        if (structural) state.structures++;
         presize(state);
         state.syncing = { queued, reservations, reserved: state.entities.length, tick, born, index, deriving, isolated };
         return true;

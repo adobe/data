@@ -268,6 +268,7 @@ const applyEntry = (state: State, queued: readonly Queued[], entry: number, tick
         state.touched.add(to);
         if (from !== null) state.touched.add(from);
     }
+    if (from !== null && to !== from) entities.moved[index] = tick;
     entities.archetype[index] = to.id;
     entities.row[index] = toRow;
 };

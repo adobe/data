@@ -23,7 +23,8 @@ export type Declaration = {
     /**
      * Runs rows in depth order through `through`, so each reads its parent's `read` values after the parent ran, as
      * the context's `up`, or null for a row without a parent. With change filters, a row also passes when its parent,
-     * or what it reads of its parent, changed since the system last ran. Rows on a parent cycle don't run.
+     * or what it reads of its parent, changed since the system last ran, or it moved to another archetype, as removing
+     * its parent moves it. Rows on or under a parent cycle don't run.
      */
     readonly up?: Up;
     readonly resources?: ResourceAccess;

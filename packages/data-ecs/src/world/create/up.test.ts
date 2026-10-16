@@ -71,7 +71,9 @@ const bump = System.create({ name: "upTest/bump", input: { type: "object", prope
 });
 const loop = System.create({ name: "upTest/loop" }, ({ commands }) => {
     commands.add(entities.root, { [parent]: entities.grandchild });
+    commands.spawn({ [label]: "under", [local]: 5, [world]: 0, [parent]: entities.child });
 });
+const orphan = System.create({ name: "upTest/orphan" }, ({ commands }) => { commands.remove(entities.grandchild, parent); });
 
 const worlds = (read: (entity: Entity) => number | null): { [name: string]: number | null } =>
     Object.fromEntries(Object.entries(entities).map(([name, entity]) => [name, read(entity)]));
@@ -118,6 +120,18 @@ describe("up", () => {
         await ecs.run(propagateChanged);
         expect(ran).toEqual(["grandchild"]);
         expect(ecs.read.component(entities.grandchild, world)).toBe(111);
+    });
+
+    it("passes a row whose parent reference was removed, with change filters", async () => {
+        await using ecs = createWorld({ workers: 0 });
+        await ecs.run(spawn);
+        await ecs.run(nest);
+        await ecs.run(propagateChanged);
+        ran.length = 0;
+        await ecs.run(orphan);
+        await ecs.run(propagateChanged);
+        expect(ran).toEqual(["grandchild"]);
+        expect(ecs.read.component(entities.grandchild, world)).toBe(100);
     });
 
     it("doesn't run rows on or under a parent cycle", async () => {

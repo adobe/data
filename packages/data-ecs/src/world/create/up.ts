@@ -107,8 +107,13 @@ export const createUp = (state: State, up: Up) => {
         return result;
     };
 
-    /** Whether a row's parent reference, or what it reads of its parent, changed after `since`. */
+    /**
+     * Whether a row's parent may have changed after `since`: its parent reference or what it reads of its parent
+     * changed, or the row moved to another archetype, as removing its parent reference moves it.
+     */
     const parentChanged = (archetype: Archetype, row: number, since: number): boolean => {
+        const self = locate(state.entities, archetype.entities[row] ?? 0);
+        if (self >= 0 && state.entities.moved[self] > since) return true;
         const storage = archetype.storageById[through];
         if (storage === undefined) return false;
         if ((storage.added[row] ?? 0) > since || (storage.changed[row] ?? 0) > since) return true;

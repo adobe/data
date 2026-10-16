@@ -469,7 +469,7 @@ Example: [`18-hierarchies.test.ts`](src/guide/18-hierarchies.test.ts#L20-L49).
 
 - **`through` doesn't narrow the match:** rows without it are roots. Its value is a reference, so the tree changes only at sync points.
 - **`up.read` may name what the system writes:** unlike a lookup, which can't, since `up` reads a parent only after it ran.
-- **With change filters,** a row also passes when its parent reference changed, or what it reads of its parent changed since the system last ran, so unchanged subtrees don't run.
+- **With change filters,** a row also passes when its parent reference changed, or what it reads of its parent changed since the system last ran, or it moved to another archetype, as removing its parent moves it. Unchanged subtrees don't run.
 - **Rows on or under a parent cycle don't run.**
 - **Not yet:** `up` systems run on the main thread, as JS, not across workers, as WASM or on the GPU.
 

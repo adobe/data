@@ -34,34 +34,62 @@ Latest `c2c445f8`, 2026-10-16. Copy bandwidth in GB/s by working set:
 
 ### node 24.15.0
 
-Latest `c2c445f8`, 2026-10-16. Copy bandwidth in GB/s by working set:
-- One thread: 121 at 512 KB, 113 at 2 MB, 69.3 at 8 MB, 66.1 at 32 MB, 89.5 at 128 MB.
+Latest `c768c2e8`, 2026-10-16. Copy bandwidth in GB/s by working set:
+- One thread: 121 at 512 KB, 107 at 2 MB, 63.5 at 8 MB, 73.6 at 32 MB, 94.3 at 128 MB.
 
 | Benchmark | Per | N | Typical N | ms | ns per N | Best ns per N | × best | Room, ms | Change |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| create | spawns | 1M | 100–100K | 93.8 | 93.8 | 0.398 | 236× | 93.4 |  |
-| create flat | spawns | 1M | 100–100K | 70.4 | 70.4 | 0.398 | 177× | 70 |  |
-| create flat dynamic | spawns | 1M | 100–100K | 224 | 224 | 0.398 | 563× | 224 |  |
-| move | matched rows | 250K | 1K–1M | 0.0916 | 0.367 | 0.298 | 1.23× | 0.017 |  |
-| churn | rows visited | 1M | 1K–100K | 19 | 19 | 0.24 | 79.2× | 18.8 |  |
-| retag | rows visited | 1M | 1K–100K | 41.6 | 41.6 | 0.323 | 129× | 41.3 |  |
-| sparse changed | rows in the archetype | 1M | 10K–1M | 1.25 | 1.25 | 0.0683 | 18.3× | 1.18 |  |
-| sparse changed clustered | rows in the archetype | 1M | 10K–1M | 0.021 | 0.021 | 0.00273 | 7.69× | 0.0183 |  |
-| follow | rows | 1M | 1K–100K | 3.87 | 3.87 | 0.431 | 8.99× | 3.44 |  |
-| emit | rows | 1M | 1K–100K | 10.2 | 10.2 | 0.282 | 36.1× | 9.88 |  |
-| reduce | rows | 1M | 1K–1M | 0.934 | 0.934 | 0.0331 | 28.2× | 0.901 |  |
-| chain | row passes | 6M | 6K–6M | 1.6 | 0.267 | 0.0331 | 8.07× | 1.41 |  |
-| up depth 10 | rows | 1M | 1K–100K | 2.05 | 2.05 | 0.232 | 8.85× | 1.82 |  |
-| up depth 1000 | rows | 1M | 1K–100K | 2.4 | 2.4 | 0.232 | 10.4× | 2.17 |  |
-| up one root changed | rows | 1M | 1K–100K | 0.0296 | 0.0296 | 0.0000647 | 458× | 0.0296 |  |
-| up after a spawn | rows | 1M | 1K–100K | 36.7 | 36.7 | 0.232 | 158× | 36.5 |  |
-| up filtered after churn | rows | 1M | 1K–100K | 50.1 | 50.1 | 0.000113 | 441,304× | 50.1 |  |
-| up filtered after tagged churn | rows | 1M | 1K–100K | 49.4 | 49.4 | 0.000113 | 435,275× | 49.4 |  |
-| up filtered after a reparent | rows | 1M | 1K–100K | 34.5 | 34.5 | 0.0000647 | 532,688× | 34.5 |  |
-| up load | spawns | 1M | 1K–100K | 413 | 413 | 0.563 | 733× | 413 |  |
-| up small tree in a big world | tree rows | 1K | 100–10K | 2.31 | 2,314 | 0.232 | 9,972× | 2.31 |  |
-| main thread | row reads | 50K | 1K–100K | 0.494 | 9.88 | 0.0994 | 99.3× | 0.489 |  |
-| select | rows | 1M | 100–100K | 28 | 28 | 0.149 | 188× | 27.9 |  |
+| create | spawns | 1M | 100–100K | 85.9 | 85.9 | 0.397 | 216× | 85.5 | −8% |
+| create flat | spawns | 1M | 100–100K | 67.4 | 67.4 | 0.397 | 170× | 67 | −4% |
+| create flat dynamic | spawns | 1M | 100–100K | 225 | 225 | 0.397 | 568× | 225 | +1% |
+| move | matched rows | 250K | 1K–1M | 0.0914 | 0.366 | 0.298 | 1.23× | 0.017 | −0% |
+| churn | rows visited | 1M | 1K–100K | 19.4 | 19.4 | 0.24 | 80.9× | 19.2 | +2% |
+| retag | rows visited | 1M | 1K–100K | 43.7 | 43.7 | 0.323 | 136× | 43.4 | +5% |
+| sparse changed | rows in the archetype | 1M | 10K–1M | 1.12 | 1.12 | 0.0681 | 16.5× | 1.06 | −10% faster |
+| sparse changed clustered | rows in the archetype | 1M | 10K–1M | 0.0237 | 0.0237 | 0.00273 | 8.69× | 0.021 | +13% slower |
+| follow | rows | 1M | 1K–100K | 3.85 | 3.85 | 0.43 | 8.96× | 3.42 | −1% |
+| emit | rows | 1M | 1K–100K | 10.4 | 10.4 | 0.281 | 36.9× | 10.1 | +2% |
+| reduce | rows | 1M | 1K–1M | 0.934 | 0.934 | 0.0331 | 28.2× | 0.9 | −0% |
+| chain | row passes | 6M | 6K–6M | 1.6 | 0.266 | 0.0331 | 8.05× | 1.4 | −0% |
+| up depth 10 | rows | 1M | 1K–100K | 2.06 | 2.06 | 0.232 | 8.9× | 1.83 | +0% |
+| up depth 1000 | rows | 1M | 1K–100K | 2.43 | 2.43 | 0.232 | 10.5× | 2.2 | +1% |
+| up one root changed | rows | 1M | 1K–100K | 0.0304 | 0.0304 | 0.0000646 | 470× | 0.0303 | +3% |
+| up after a spawn | rows | 1M | 1K–100K | 25.3 | 25.3 | 0.232 | 109× | 25.1 | −31% faster |
+| up filtered after churn | rows | 1M | 1K–100K | 0.0581 | 0.0581 | 0.000113 | 513× | 0.058 | 861× faster |
+| up filtered after tagged churn | rows | 1M | 1K–100K | 0.0905 | 0.0905 | 0.000113 | 800× | 0.0904 | 545× faster |
+| up filtered after a reparent | rows | 1M | 1K–100K | 0.022 | 0.022 | 0.0000646 | 341× | 0.022 | 1,565× faster |
+| up load | spawns | 1M | 1K–100K | 463 | 463 | 0.562 | 822× | 462 | +12% slower |
+| up small tree in a big world | tree rows | 1K | 100–10K | 0.28 | 280 | 0.232 | 1,209× | 0.28 | 8.26× faster |
+| main thread | row reads | 50K | 1K–100K | 0.502 | 10 | 0.0992 | 101× | 0.497 | +2% |
+| select | rows | 1M | 100–100K | 27.8 | 27.8 | 0.149 | 187× | 27.7 | −1% |
+
+History, ns per N, oldest first:
+
+| Benchmark | `c2c445f8` 10-16 | `c768c2e8` 10-16 |
+|---|---:|---:|
+| create | 93.8 | 85.9 |
+| create flat | 70.4 | 67.4 |
+| create flat dynamic | 224 | 225 |
+| move | 0.367 | 0.366 |
+| churn | 19 | 19.4 |
+| retag | 41.6 | 43.7 |
+| sparse changed | 1.25 | 1.12 |
+| sparse changed clustered | 0.021 | 0.0237 |
+| follow | 3.87 | 3.85 |
+| emit | 10.2 | 10.4 |
+| reduce | 0.934 | 0.934 |
+| chain | 0.267 | 0.266 |
+| up depth 10 | 2.05 | 2.06 |
+| up depth 1000 | 2.4 | 2.43 |
+| up one root changed | 0.0296 | 0.0304 |
+| up after a spawn | 36.7 | 25.3 |
+| up filtered after churn | 50.1 | 0.0581 |
+| up filtered after tagged churn | 49.4 | 0.0905 |
+| up filtered after a reparent | 34.5 | 0.022 |
+| up load | 413 | 463 |
+| up small tree in a big world | 2,314 | 280 |
+| main thread | 9.88 | 10 |
+| select | 28 | 27.8 |
 
 ## Benchmarks
 

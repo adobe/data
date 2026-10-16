@@ -53,6 +53,14 @@ const propagateChanged = System.create({
     ran.push(row[label]);
     row[world] = (up === null ? 0 : up[world]) + row[local];
 });
+const propagateAdded = System.create({
+    name: "upTest/propagateAdded",
+    components: { read: [local, label], write: [world], added: [local] },
+    up: { through: parent, read: [world] },
+}, (row, { up }) => {
+    ran.push(row[label]);
+    row[world] = (up === null ? 0 : up[world]) + row[local];
+});
 const propagateChangedKernel = System.create({
     name: "upTest/propagateChangedKernel",
     kernel: "cpu",
@@ -138,6 +146,17 @@ describe("up", () => {
         await ecs.run(propagateChanged);
         expect(ran).toEqual(["root", "child", "grandchild"]);
         expect(worlds(entity => ecs.read.component(entity, world))).toEqual({ root: 2, grandchild: 112, child: 12, other: 1000 });
+    });
+
+    it("doesn't pass a row whose component an added filter names only changed", async () => {
+        await using ecs = createWorld({ workers: 0 });
+        await ecs.run(spawn);
+        await ecs.run(nest);
+        await ecs.run(propagateAdded);
+        ran.length = 0;
+        await ecs.run(bump, { entity: entities.root });
+        await ecs.run(propagateAdded);
+        expect(ran).toEqual([]);
     });
 
     it("passes a row whose parent a kernel wrote earlier in the run, with change filters", async () => {

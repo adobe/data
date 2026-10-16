@@ -59,6 +59,9 @@ const count = value => value >= 1e6 ? `${number(value / 1e6)}M` : value >= 1e3 ?
 const change = (now, before) => {
     if (before === undefined) return "";
     const fraction = now / before - 1;
+    // Past a factor of two, a percentage hides the size of the change.
+    if (now < before / 2) return `${number(before / now)}× faster`;
+    if (now > before * 2) return `${number(now / before)}× slower`;
     const text = `${fraction >= 0 ? "+" : "−"}${Math.round(Math.abs(fraction) * 100)}%`;
     return fraction > noise ? `${text} slower` : fraction < -noise ? `${text} faster` : text;
 };

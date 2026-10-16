@@ -38,11 +38,6 @@ export type Entities = Reservations & {
     archetype: Int32Array;
     row: Uint32Array;
     generation: Uint32Array;
-    /**
-     * The tick of the sync point that last moved each entity to another archetype, so a filtered `up` system passes a
-     * row whose parent reference was removed.
-     */
-    moved: Float64Array;
     free: Int32Array;
     length: number;
     /** Indexes freed during the current sync point, reusable after it. */
@@ -63,7 +58,6 @@ export const createEntities = (memory: Memory): Entities => {
         archetype,
         row: allocateArray(memory, Uint32Array, initialCapacity),
         generation: allocateArray(memory, Uint32Array, initialCapacity).fill(0),
-        moved: allocateArray(memory, Float64Array, initialCapacity).fill(0),
         length: 1,
         released: [],
     };
@@ -112,11 +106,9 @@ export const materialize = (memory: Memory, entities: Entities): Reserved => {
         entities.archetype = growArray(memory, entities.archetype, Int32Array, capacity, entities.length);
         entities.row = growArray(memory, entities.row, Uint32Array, capacity, entities.length);
         entities.generation = growArray(memory, entities.generation, Uint32Array, capacity, entities.length);
-        entities.moved = growArray(memory, entities.moved, Float64Array, capacity, entities.length);
     }
     entities.archetype.fill(-1, entities.length, length);
     entities.generation.fill(0, entities.length, length);
-    entities.moved.fill(0, entities.length, length);
     entities.length = length;
     cursor[tableLength] = length;
     return { reused, firstNew };

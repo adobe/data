@@ -5,6 +5,7 @@ import { readCell, writeCell } from './cells.js';
 import { commitBatches } from './batches.js';
 import { applyIndexChanges, cascadeReferences, indexChangesOf, type IndexChanges, type Written } from './cascade.js';
 import { refreshDirectories } from './directories.js';
+import { record } from './journal.js';
 import { indexOf, locate, materialize, recycle, release, reserved, type Reserved } from './entities.js';
 import { activate } from './activate.js';
 import { runFinalizers } from './finalizers.js';
@@ -236,6 +237,7 @@ const applyEntry = (state: State, queued: readonly Queued[], entry: number, tick
     const entity = plan.entity[entry];
     const index = indexOf(entity);
     const from = plan.from[entry] < 0 ? null : archetypes[plan.from[entry]];
+    if (plan.despawned[entry] === 1 || plan.to[entry] !== plan.from[entry]) record(state.journal, index, entities.length);
     if (plan.despawned[entry] === 1) {
         if (from !== null) {
             remove(state, from, entities.row[index]);
@@ -270,7 +272,6 @@ const applyEntry = (state: State, queued: readonly Queued[], entry: number, tick
         state.touched.add(to);
         if (from !== null) state.touched.add(from);
     }
-    if (from !== null && to !== from) entities.moved[index] = tick;
     entities.archetype[index] = to.id;
     entities.row[index] = toRow;
 };
@@ -367,8 +368,15 @@ export const prepareSync = (state: State, isolated = false): boolean => {
             };
             index = indexChangesOf(state, queued, fromOf, [...born].map(([id, first]) => [state.archetypes[id], first] as const));
         }
-        // References change only here: each component written to is stamped.
+        // References change only here: each component written to is stamped, and each holder journaled, as are spawns.
         for (let k = 1; k < written.length; k += 3) state.referencesWritten[written[k]] = tick;
+        if (state.journal.readers > 0) {
+            for (let k = 0; k < written.length; k += 3) record(state.journal, indexOf(written[k]), state.entities.length);
+            for (const [id, first] of born) {
+                const archetype = state.archetypes[id];
+                for (let row = first; row < archetype.count; row++) record(state.journal, indexOf(archetype.entities[row]), state.entities.length);
+            }
+        }
         presize(state);
         state.syncing = { queued, reservations, reserved: state.entities.length, tick, born, index, deriving, isolated };
         return true;

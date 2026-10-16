@@ -20,7 +20,7 @@ import { allocateArray, freeArray } from './arrays.js';
 import { combine, identityOf, reductionTargets, type ReductionTarget } from './reductions.js';
 import { samePath, type TypedArray } from '../../layout/layout.js';
 import { inputFor } from './input.js';
-import { createUp } from './up.js';
+import { createUp, type Run } from './up.js';
 
 /** One unit of a system's work for a run: the commands it issued, plus its error if it failed partway. */
 export type ChunkResult = { readonly commands: CommandBuffer; readonly error?: unknown };
@@ -96,7 +96,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         if (declaration.lookup !== undefined && Object.keys(declaration.lookup).length > 0) failPlacement("can't run on the GPU: GPU kernels don't support lookups yet");
     }
     if (declaration.up !== undefined && query === undefined) failPlacement("uses up, which orders rows, without components");
-    const up = declaration.up === undefined ? null : createUp(state, declaration.up);
+    const up = declaration.up === undefined ? null : createUp(state, declaration.up, filtered);
     const targets = reductionTargets(state, declaration);
     if (targets.length > 0) {
         if (declaration.kernel === "gpu") failPlacement("can't run on the GPU: GPU kernels don't support reductions yet");
@@ -251,13 +251,6 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             run(columns, start, end, values, bound.lookups, bound.description.keys, args, kernelCommands, tick, slots, slot * partialCount));
     };
 
-    /** A filtered `up` run's rows of one group, and their parents' rows, reused. */
-    let list: Int32Array = new Int32Array(0);
-    let parentList: Int32Array = new Int32Array(0);
-    /** By index among the matched rows: whether a pushed `up` run marked it; cleared after the run. */
-    let dirty = new Uint8Array(0);
-    /** By depth: the rows a pushed `up` run marked. */
-    const buckets: number[][] = [];
     const noColumns: readonly TypedArray[] = [];
 
     /**
@@ -295,147 +288,62 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }
     };
 
-    /** Rows of one archetype for an `up` run, whose parents share an archetype: `rows[start]` to `rows[end - 1]`. */
-    type UpRows = { readonly archetype: Archetype; readonly parentArchetype: number; readonly rows: Int32Array; readonly parents: Int32Array; readonly start: number; readonly end: number };
-
     /** Posts listed rows to workers as claimed pieces of a WASM kernel, which takes `up`'s addresses after the lookups. */
-    const postUp = (workers: Workers, index: number, job: UpRows, values: readonly unknown[], args: unknown, tick: number): Promise<TaskResult>[] => {
+    const postUp = (workers: Workers, index: number, run: Run, values: readonly unknown[], args: unknown, tick: number): Promise<TaskResult>[] => {
         if (kernel === null || kernel.wasm === null) return [];
-        const parentColumns = job.parentArchetype < 0 ? noColumns : kernel.upColumnsOf(state.archetypes[job.parentArchetype]);
+        const parentColumns = run.parent < 0 ? noColumns : kernel.upColumnsOf(state.archetypes[run.parent]);
         const scalars = [
             ...kernel.lookupParameters(),
-            job.rows.byteOffset, job.parents.byteOffset, job.parentArchetype >= 0 ? 1 : 0,
+            run.rows.byteOffset, run.parents.byteOffset, run.parent >= 0 ? 1 : 0,
             ...(kernel.description.upColumns ?? []).map((_, k) => parentColumns[k]?.byteOffset ?? 0),
             ...scalarValues(kernel.wasm.scalars, values, args),
         ];
-        const count = job.end - job.start;
+        const count = run.end - run.start;
         const { pool } = workers;
         const participants = Math.min(pool.size, Math.ceil(count / minimumFor(workers)));
         const first = workers.next;
         workers.next = (first + participants) % pool.size;
         const grain = Math.ceil(count / (participants * claimsPerWorker) / chunkAlignment) * chunkAlignment;
-        return pool.claimed(first, participants, { kernel: index, archetype: job.archetype.id, start: job.start, end: job.end, tick, lastRun: -1, scalars, partials: -1, partialBytes: 0 }, grain);
+        return pool.claimed(first, participants, { kernel: index, archetype: matches[run.owner].id, start: run.start, end: run.end, tick, lastRun: -1, scalars, partials: -1, partialBytes: 0 }, grain);
     };
 
     /**
      * Runs an `up` system's rows depth by depth from the roots, each depth's groups on the main thread or, for a WASM
-     * kernel without reductions, across workers, settling before the next depth starts. With change filters, a row
-     * also passes when its parent may have changed: decided once the depth before it ran. Returns a chunk when workers
-     * run any of it.
+     * kernel without reductions, across workers, settling before the next depth starts. With change filters, only the
+     * rows `up` marks run: those passing the filters, and those whose parent changed. Returns a chunk when workers run
+     * any of it.
      */
     const runUp = (since: number, values: readonly unknown[], args: unknown, tick: number, workers: Workers | null, index: number): Promise<readonly ChunkResult[]> | null => {
         if (up === null) return null;
         const slot = partialCount === 0 ? 0 : takeSlots(1);
-        const order = up.levels(matches);
-        const ownFilters = [...addedIds, ...changedIds];
-        if (since >= 0 && !up.anyChanged(matches, ownFilters, since)) return null;
-        const froms = matches.map(archetype => sinceFor(archetype, since));
-        const filters = matches.map(archetype => filtersOf(archetype));
-        let matched = 0;
-        for (const archetype of matches) matched += archetype.count;
-        if (list.length < matched) {
-            // In the arena, so WASM kernels can address them.
-            if (list.length > 0) {
-                freeArray(state.memory, list);
-                freeArray(state.memory, parentList);
-            }
-            list = allocateArray(state.memory, Int32Array, matched);
-            parentList = allocateArray(state.memory, Int32Array, matched);
-        }
-        const { rows, parents, groupEnds, groupDepths, groupOwners, groupParents, depths, slots, slotGroups } = order;
-        /** Rows passing in a filtered run go to `list` from here on, so a depth's groups each keep their own. */
-        let listed = 0;
-
-        // While no matched archetype's rows changed, rows are marked from the chunks that changed and run marking their
-        // children, so a run costs its chunks' checks and the rows that run; a row moved in, as removing its parent
-        // reference moves it, is checked on its own instead.
-        const pushed = since >= 0 && matches.every(archetype => archetype.rowsChanged <= since);
-        const marked: number[] = [];
-        const mark = (global: number): void => {
-            const depth = depths[global];
-            if (dirty[global] !== 0 || depth < 0) return;
-            dirty[global] = 1;
-            marked.push(global);
-            buckets[depth].push(global);
-        };
-        if (pushed) {
-            if (dirty.length < matched) dirty = new Uint8Array(matched);
-            for (let depth = 0; depth < order.levels; depth++) (buckets[depth] ??= []).length = 0;
-            up.seed(matches, ownFilters, since, mark);
-            // An archetype whose whole column changed, as a GPU kernel's writes do, runs every row.
-            let base = 0;
-            matches.forEach((archetype, owner) => {
-                if (froms[owner] < 0) for (let row = 0; row < archetype.count; row++) mark(base + row);
-                base += archetype.count;
-            });
-        }
-        let depth = 0;
-        const nextMarked = (): UpRows[] => {
-            while (depth < order.levels && buckets[depth].length === 0) depth++;
-            const jobs: UpRows[] = [];
-            if (depth >= order.levels) return jobs;
-            const bucket = buckets[depth++].sort((a, b) => slots[a] - slots[b]);
-            let first = listed;
-            let current = -1;
-            const flush = (): void => {
-                if (current >= 0 && listed > first) jobs.push({ archetype: matches[groupOwners[current]], parentArchetype: groupParents[current], rows: list, parents: parentList, start: first, end: listed });
-                first = listed;
+        let next: () => readonly Run[] | null;
+        let clear = (): void => {};
+        if (since < 0) {
+            const order = up.levels(matches);
+            let depth = 0;
+            next = () => {
+                if (depth >= order.levels) return null;
+                const runs: Run[] = [];
+                for (let group = order.depthGroups[depth]; group < order.depthGroups[depth + 1]; group++) {
+                    const start = group === 0 ? 0 : order.groupEnds[group - 1];
+                    runs.push({ owner: order.groupOwners[group], parent: order.groupParents[group], rows: order.rows, parents: order.parents, start, end: order.groupEnds[group] });
+                }
+                depth++;
+                return runs;
             };
-            for (const global of bucket) {
-                const at = slots[global];
-                if (slotGroups[at] !== current) {
-                    flush();
-                    current = slotGroups[at];
-                }
-                up.markChildren(matches[groupOwners[current]].entities[rows[at]] >>> 0, mark);
-                list[listed] = rows[at];
-                parentList[listed++] = parents[at];
-            }
-            flush();
-            return jobs;
-        };
-
-        let group = 0;
-        let start = 0;
-        /** Otherwise the next depth's rows that run, by group: every row, or with filters those passing them or whose parent changed. */
-        const nextDepth = (): UpRows[] => {
-            if (pushed) return nextMarked();
-            const jobs: UpRows[] = [];
-            const current = groupDepths[group];
-            for (; group < order.groups && groupDepths[group] === current; start = groupEnds[group++]) {
-                const end = groupEnds[group];
-                const owner = groupOwners[group];
-                const parentArchetype = groupParents[group];
-                const archetype = matches[owner];
-                const from = froms[owner];
-                if (from < 0) {
-                    jobs.push({ archetype, parentArchetype, rows, parents, start, end });
-                    continue;
-                }
-                const passing = filters[owner];
-                const first = listed;
-                for (let n = start; n < end; n++) {
-                    const row = rows[n];
-                    let passes = false;
-                    for (let f = 0; f < passing.length && !passes; f++) passes = passing[f].ticks[row] > from;
-                    if (!passes && !up.parentChanged(archetype, row, from)) continue;
-                    list[listed] = row;
-                    parentList[listed++] = parents[n];
-                }
-                if (listed > first) jobs.push({ archetype, parentArchetype, rows: list, parents: parentList, start: first, end: listed });
-            }
-            return jobs;
-        };
-        const more = (): boolean => pushed ? depth < order.levels : group < order.groups;
-        const clear = (): void => {
-            for (const global of marked) dirty[global] = 0;
-        };
-        const runLocally = (job: UpRows): void => runUpRows(job.archetype, job.parentArchetype, job.rows, job.parents, job.start, job.end, values, args, tick, slot);
+        }
+        else {
+            const pass = up.filtered(matches, addedIds, changedIds, since);
+            if (pass === null) return null;
+            next = pass.next;
+            clear = pass.clear;
+        }
+        const runLocally = (run: Run): void => runUpRows(matches[run.owner], run.parent, run.rows, run.parents, run.start, run.end, values, args, tick, slot);
         const parallel = workers !== null && kernel !== null && kernel.wasm !== null && kernel.compiled() !== null && partialCount === 0
             && kernel.lookupParameters().length + 3 + (kernel.description.upColumns?.length ?? 0) + kernel.wasm.scalars.length <= maximumScalars;
         if (!parallel || workers === null) {
             try {
-                while (more()) for (const job of nextDepth()) runLocally(job);
+                for (let runs = next(); runs !== null; runs = next()) for (const run of runs) runLocally(run);
             }
             finally {
                 clear();
@@ -445,11 +353,11 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         return (async (): Promise<readonly ChunkResult[]> => {
             const results: ChunkResult[] = [];
             try {
-                while (more()) {
+                for (let runs = next(); runs !== null; runs = next()) {
                     const pending: Promise<TaskResult>[] = [];
-                    for (const job of nextDepth()) {
-                        if (job.end - job.start >= minimumFor(workers)) pending.push(...postUp(workers, index, job, values, args, tick));
-                        else runLocally(job);
+                    for (const run of runs) {
+                        if (run.end - run.start >= minimumFor(workers)) pending.push(...postUp(workers, index, run, values, args, tick));
+                        else runLocally(run);
                     }
                     // A depth run on the main thread alone needs no wait.
                     if (pending.length === 0) continue;

@@ -13,6 +13,7 @@ import { createPlan, type Plan } from './plan.js';
 import { createStructure, owner, restratify, weak, type Structure } from './structure.js';
 import { layoutOf, type Layout } from '../../layout/layout.js';
 import { createMemory, type Memory } from './memory.js';
+import { createJournal, type Journal } from './journal.js';
 import type { Row } from './rows.js';
 
 export type Key = string | symbol;
@@ -33,6 +34,8 @@ export type State = {
     tick: number;
     /** By component id: the tick of the last sync point that wrote a reference into it. */
     readonly referencesWritten: number[];
+    /** The entities sync points spawned, despawned, moved or wrote references of, for `up` systems. */
+    readonly journal: Journal;
     /** Command buffers for the next sync point, in merge order. */
     readonly queued: Queued[];
     resourceEntity: number;
@@ -109,6 +112,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         resourceEntity: -1,
         observed: new Set(),
         referencesWritten: [],
+        journal: createJournal(),
         ticked: new Set(),
         batches: [],
         batchByKey: new Map(),

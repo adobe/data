@@ -33,6 +33,7 @@ const requireWritable = (node: Node, scope: Scope, component: string): void => {
 const targetValue = (node: SourceExpression | Pattern, scope: Scope, out: Out): Value => {
     const value = scope.unit.expression(node, scope, out);
     if (value.kind === "component") {
+        if (value.up === true) return fail(node, "up is read-only");
         requireWritable(node, scope, value.component);
         // Values are immutable: a write replaces the whole component value.
         if (value.path.length > 0) return fail(node, "component values are immutable; write the whole value");

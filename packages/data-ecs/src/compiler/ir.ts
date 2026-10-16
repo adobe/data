@@ -22,6 +22,8 @@ export type Expression =
     | { readonly kind: "number"; readonly value: number }
     | { readonly kind: "boolean"; readonly value: boolean }
     | { readonly kind: "column"; readonly column: number }
+    /** A column of the row's parent, at the parent's row: `Unit.upColumns`. */
+    | { readonly kind: "upColumn"; readonly column: number }
     | { readonly kind: "resource"; readonly index: number; readonly path: Path }
     | { readonly kind: "args"; readonly path: Path }
     | { readonly kind: "local"; readonly local: number }

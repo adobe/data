@@ -127,7 +127,10 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
     - A row's depth counts its ancestors among the matched rows: a row whose parent doesn't match is a root of this system's order.
     - With change filters, a row also passes when its parent reference, or what it reads of its parent, changed since the system last ran, decided on ticks, so a parent another system wrote counts too. Those components keep ticks and kernels keep their stamps. A row that moved to another archetype since then passes too, since removing its parent reference moves it; the entity table keeps the tick of each entity's last move.
     - Rows on or under a parent cycle don't run. They'll be listed in the run report once it exists.
-    - Phase 1 sorts the matched rows by depth each run, in O(rows), and runs them level by level on the main thread, as JS kernels or main-thread bodies.
+    - **Order:** rows run depth by depth, and within a depth in groups of one archetype whose parents share one archetype, each in storage order. Groups of a depth never read each other's writes, so values don't depend on the grouping; commands and reductions follow it, deterministically. The order, each row's parent row and the children of each parent are rebuilt in O(rows) only after a sync point that applied commands, since only those move rows or change references.
+    - **Kernels read `up` straight from the parent's columns:** a call covers one group, so it binds the parent archetype's columns once, and each row reads its parent's leaf at the parent's row. A leaf's stride and offset depend only on its component's layout, so they're the same in every archetype. `up === null` holds for the whole call.
+    - **Filtered runs push changes down:** rows are marked from chunk ticks, of their own filters, their parent reference and the parent values they read, and each row that runs marks its children, so a run costs a check of each chunk plus the subtrees that changed, and nothing when nothing did. After an entity moved, rows are checked one by one instead.
+    - Phase 1 runs on the main thread, as JS kernels or main-thread bodies.
 - **World** (`src/world/`):
   - `World.create(resources?)` returns a world synchronously, with resources starting at the given values in place of their defaults; a key that isn't a resource throws. Built-in names are plain (`gpuDevice`), so they need no import there.
   - **Names are program-wide:** `System.create`, `System.render` and `System.composite` record the name, and a different system, rule or finalizer with it throws. One declared again the same, as a hot reload does, is accepted: a system is then a new one, and a finalizer keeps its place in every world with the new body. Constraints list the systems themselves, imported from their modules; when two modules import each other, one declares the order.
@@ -214,10 +217,9 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 - **Rules and finalizers, later:** derived entities (rules that spawn), `within` with several hosts, finalizers as kernels, value changes in whole-plan finalizers, why an entity stopped, relationship conditions, and the Run report listing dropped dependents.
 - **Unregistering systems.** This needs a decision on what happens to a system's `lastRun` and artifacts.
 - **`up`, later:**
-  - Depth and each level's rows kept at Plan through the index from targets to holders, instead of sorted each run: a reparent walks up from the new parent to find a cycle, and renumbers the subtree. Kept as row lists, since depth in the archetype would split tables and archetype ids are positional.
-  - Dirty rows pushed to children level by level, so a run costs a scan of chunk ticks plus the subtrees that changed.
-  - Levels across workers, with a barrier per level, and narrow levels fused into one sequential piece; WASM, through the lookup directories.
-  - GPU kernels: a dispatch per level, over its dirty rows.
+  - The order kept current at Plan through the index from targets to holders, instead of rebuilt after each sync point that applies commands: a reparent walks up from the new parent to find a cycle, and renumbers the subtree. Kept as row lists, since depth in the archetype would split tables and archetype ids are positional.
+  - Depths across workers, with a barrier per depth, and narrow depths fused into one sequential piece; WASM, passing each group's parent column addresses as it passes its own.
+  - GPU kernels: a dispatch per group, binding the parent archetype's buffers and a buffer of parent rows; groups of a depth share a pass.
   - For full recomputes of an associative composition, such as matrix products, pointer jumping on the GPU: log(depth) dispatches, each composing a row with its 2^k-th ancestor.
 
 ## Phase 2+: performance

@@ -8,6 +8,9 @@ const local = "upTest/local";
 const world = "upTest/world";
 const parent = "upTest/parent";
 const label = "upTest/label";
+const visible = "upTest/visible";
+const shown = "upTest/shown";
+const anchor = "upTest/anchor";
 
 declare module "@adobe/data-ecs" {
     interface Components {
@@ -15,6 +18,9 @@ declare module "@adobe/data-ecs" {
         [world]: { type: number };
         [parent]: { type: Entity; reference: "owner" };
         [label]: { type: string };
+        [visible]: { type: boolean };
+        [shown]: { type: boolean };
+        [anchor]: { type: true };
     }
 }
 
@@ -22,6 +28,9 @@ Component.register(local, { type: { type: "number" } });
 Component.register(world, { type: { type: "number" } });
 Component.register(parent, { type: Entity.schema, reference: "owner" });
 Component.register(label, { type: { type: "string" } });
+Component.register(visible, { type: { type: "boolean" } });
+Component.register(shown, { type: { type: "boolean" } });
+Component.register(anchor, { type: { const: true } });
 
 const ran: string[] = [];
 const propagate = System.create({
@@ -77,6 +86,32 @@ const orphan = System.create({ name: "upTest/orphan" }, ({ commands }) => { comm
 
 const worlds = (read: (entity: Entity) => number | null): { [name: string]: number | null } =>
     Object.fromEntries(Object.entries(entities).map(([name, entity]) => [name, read(entity)]));
+
+const show = System.create({
+    name: "upTest/show",
+    kernel: "cpu",
+    components: { read: [visible], write: [shown] },
+    up: { through: parent, read: [shown] },
+}, (row, { up }) => {
+    row[shown] = up === null ? row[visible] : up[shown] && row[visible];
+});
+
+/** Children of one archetype whose parents are in three: a matched one, one the query doesn't match, and one without `world`. */
+const mixed: { [name: string]: Entity } = {};
+const spawnMixed = System.create({ name: "upTest/spawnMixed" }, ({ commands }) => {
+    mixed.root = commands.spawn({ [local]: 1, [world]: 0 });
+    mixed.anchored = commands.spawn({ [local]: 2, [world]: 0, [anchor]: true });
+    mixed.unmatched = commands.spawn({ [world]: 50 });
+    mixed.bare = commands.spawn({ [label]: "bare" });
+    mixed.underRoot = commands.spawn({ [local]: 10, [world]: 0, [parent]: mixed.root });
+    mixed.underUnmatched = commands.spawn({ [local]: 10, [world]: 0, [parent]: mixed.unmatched });
+    mixed.underAnchored = commands.spawn({ [local]: 10, [world]: 0, [parent]: mixed.anchored });
+    mixed.underBare = commands.spawn({ [local]: 10, [world]: 0, [parent]: mixed.bare });
+});
+const growParents = System.create({ name: "upTest/growParents" }, ({ commands }) => {
+    for (let i = 0; i < 100; i++) commands.spawn({ [local]: 0, [world]: 0, [anchor]: true });
+});
+const shift = System.create({ name: "upTest/shift", components: { write: [local], has: [anchor] } }, row => { row[local] += 1; });
 
 describe("up", () => {
     for (const [kind, system] of [["main-thread", propagate], ["kernel", propagateKernel]] as const) {
@@ -142,6 +177,37 @@ describe("up", () => {
         ran.length = 0;
         await ecs.run(propagate);
         expect(ran).toEqual(["other"]);
+    });
+
+    it("reads parents in several archetypes, including ones the query doesn't match, and null for one without what up reads", async () => {
+        await using ecs = createWorld({ workers: 0 });
+        await ecs.run(spawnMixed);
+        await ecs.run(propagateKernel);
+        const values = Object.fromEntries(Object.entries(mixed).map(([name, entity]) => [name, ecs.read.component(entity, world)]));
+        expect(values).toEqual({ root: 1, anchored: 2, unmatched: 50, bare: null, underRoot: 11, underUnmatched: 60, underAnchored: 12, underBare: 10 });
+    });
+
+    it("reads a parent's archetype again after it grows", async () => {
+        await using ecs = createWorld({ workers: 0 });
+        await ecs.run(spawnMixed);
+        await ecs.run(propagateKernel);
+        await ecs.run(growParents);
+        await ecs.run(shift);
+        await ecs.run(propagateKernel);
+        expect(ecs.read.component(mixed.underAnchored, world)).toBe(13);
+    });
+
+    it("reads booleans through up", async () => {
+        await using ecs = createWorld({ workers: 0 });
+        const tree: Entity[] = [];
+        await ecs.run(System.create({ name: "upTest/spawnShown" }, ({ commands }) => {
+            const top = commands.spawn({ [visible]: false, [shown]: true });
+            tree.push(top, commands.spawn({ [visible]: true, [shown]: true, [parent]: top }));
+            const other = commands.spawn({ [visible]: true, [shown]: false });
+            tree.push(other, commands.spawn({ [visible]: true, [shown]: false, [parent]: other }));
+        }));
+        await ecs.run(show);
+        expect(tree.map(entity => ecs.read.component(entity, shown))).toEqual([false, false, true, true]);
     });
 
     it("rejects a through that isn't a reference, for untyped declarations", async () => {

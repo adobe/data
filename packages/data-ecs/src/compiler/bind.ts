@@ -1,7 +1,7 @@
 import type { Identifier, Node, Pattern } from 'estree';
 import { access } from './access.js';
 import { set } from './booleans.js';
-import { fieldRead } from './columns.js';
+import { componentRead } from './columns.js';
 import { dataValue, mapLeaves, toData } from './data.js';
 import { fail } from './failure.js';
 import { local, type Expression } from './ir.js';
@@ -40,8 +40,8 @@ const declared = (node: Identifier, value: Value, binding: Binding, scope: Scope
         case "tuple": case "struct":
             return dataValue(mapLeaves(toData(value, node, scope), copy));
         case "component": {
-            requireReadable(node, scope, value.component);
-            const snapshot = createSnapshot(keyword, node.name, path => fieldRead(unit, value.component, [...value.path, ...path]));
+            if (value.up !== true) requireReadable(node, scope, value.component);
+            const snapshot = createSnapshot(keyword, node.name, path => componentRead(unit, value, path));
             out.push(snapshotDeclaration(snapshot));
             return { kind: "snapshot", snapshot, path: [] };
         }

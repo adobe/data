@@ -24,6 +24,13 @@ export const printExpression = (unit: Unit, expression: Expression, observed: bo
             unit.booleans.add(column);
             return `(b${column} ? c${column}[x${column}] !== 0 : c${column}[x${column}])`;
         }
+        case "upColumn": {
+            const column = expression.column;
+            const read = `u${column}[p * us${column} + uo${column}]`;
+            if (!observed) return read;
+            unit.upBooleans.add(column);
+            return `(ub${column} ? ${read} !== 0 : ${read})`;
+        }
         case "resource": return `r${expression.index}${printPath(expression.path)}`;
         case "args": return `args${printPath(expression.path)}`;
         case "local": return localName(unit, expression.local);

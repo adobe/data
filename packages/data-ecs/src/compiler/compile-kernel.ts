@@ -13,7 +13,6 @@ import { unconditionalChunks } from './stamps.js';
 import { chunkShift, type Program } from '../world/create/kernel.js';
 import { rootScope } from './scope.js';
 import { signature } from './signature.js';
-import { entityRead } from './columns.js';
 import { rowLabel, statement } from './statement.js';
 import { createUnit } from './unit.js';
 import type { Value } from './value.js';
@@ -50,8 +49,6 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     const scope = rootScope(unit, false);
     const prelude: Out = [];
     const rows: Out = [];
-    // Each row's `up` is looked up before its body, from the row's entity: its lookup comes after the declaration's.
-    if (unit.up !== null) rows.push({ kind: "lookup", local: unit.up, lookup: unit.signature.lookups.length, entity: entityRead(unit) });
     body.params.forEach((param, index) => bind(param, parameterValues[index] ?? { kind: "row" }, "const", scope, index === 0 ? rows : prelude));
     if (body.body.type === "BlockStatement") {
         for (const item of body.body.body) statement(item, scope, rows);
@@ -80,7 +77,12 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     const locals = [
         ...columns.map((_, index) => `const c${index} = columns[${index}];`),
         ...resources.map((_, index) => `const r${index} = resources[${index}];`),
-        ...[...lookups, ...up === null ? [] : [up]].map((_, index) => `const l${index} = lookups[${index}];`),
+        ...lookups.map((_, index) => `const l${index} = lookups[${index}];`),
+        // A call's rows share one parent archetype, whose columns `up` reads at each row's parent row `p`.
+        ...unit.up === null ? [] : [
+            `const ${localName(unit, unit.up)} = found ? true : null;`,
+            ...unit.upColumns.map((_, index) => `const u${index} = upColumns[${index}];`),
+        ],
     ];
     return {
         description: url => [
@@ -89,7 +91,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             `shapes: [${[...unit.shapes].join(", ")}],`,
             `resources: [${resources.join(", ")}],`,
             `lookups: [${lookups.map(lookup => JSON.stringify(lookup.name)).join(", ")}],`,
-            ...up === null ? [] : ["up: true,"],
+            ...up === null ? [] : ["up: true,", `upColumns: [${unit.upColumns.join(", ")}],`],
             `keys: [${keys.join(", ")}],`,
             `url: ${url},`,
             `program: ${serialize(program)},`,
@@ -103,10 +105,12 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         // Per-registration constants live in the closure. Each column's element index `i * s + o` is strength-reduced to
         // an induction variable in the loop update, which `continue rows` still runs.
         create: [
-            "(booleans, strides, offsets) => {",
+            "(booleans, strides, offsets, upBooleans, upStrides, upOffsets) => {",
             ...[...booleans].map(index => `const b${index} = booleans[${index}];`),
+            ...[...unit.upBooleans].map(index => `const ub${index} = upBooleans[${index}];`),
+            ...unit.upColumns.map((_, index) => `const us${index} = upStrides[${index}], uo${index} = upOffsets[${index}];`),
             ...strided.map(index => `const s${index} = strides[${index}], o${index} = offsets[${index}];`),
-            "return (columns, start, end, resources, lookups, keys, args, commands, tick, partials, partial, rows) => {",
+            "return (columns, start, end, resources, lookups, keys, args, commands, tick, partials, partial, rows, parents, upColumns, found) => {",
             ...locals,
             preludeCode,
             ...accumulators.map((local, k) => `let ${localName(unit, local)} = partials[partial + ${k}];`),
@@ -114,7 +118,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             ...up !== null ? [] : [...unit.stampedPerCall].map(chunks =>
                 `if (start < end) for (let k = start >> ${chunkShift}, last = (end - 1) >> ${chunkShift}; k <= last; k++) c${chunks}[k] = tick;`),
             up !== null
-                ? `${rowLabel}: for (let n = start; n < end; n++) { const i = rows[n]; ${[...strided.map(index => `const x${index} = i * s${index} + o${index};`), ...[...unit.stampedPerCall].map(chunks => `c${chunks}[i >> ${chunkShift}] = tick;`)].join(" ")}`
+                ? `${rowLabel}: for (let n = start; n < end; n++) { const i = rows[n], p = parents[n]; ${[...strided.map(index => `const x${index} = i * s${index} + o${index};`), ...[...unit.stampedPerCall].map(chunks => `c${chunks}[i >> ${chunkShift}] = tick;`)].join(" ")}`
                 : `${rowLabel}: for (let ${["i = start", ...strided.map(index => `x${index} = start * s${index} + o${index}`)].join(", ")}; i < end; ${["i++", ...strided.map(index => `x${index} += s${index}`)].join(", ")}) {`,
             kernel,
             "}",

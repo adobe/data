@@ -46,8 +46,13 @@ export type Unit = {
     readonly accumulators: { readonly reduced: number; readonly path: readonly (number | string)[]; readonly local: number }[];
     /** The components, resources and lookup results the body reads and writes, to check the declaration lists only those. */
     readonly used: { readonly read: Set<string>; readonly write: Set<string>; readonly resources: Set<string>; readonly lookups: Map<string, Set<string>>; readonly up: Set<string> };
-    /** The local holding each row's `up`, looked up before the body; its lookup comes after the declaration's. */
+    /** The local holding `up`, set once per call: non-null when the rows of the call have a parent. */
     readonly up: number | null;
+    /** Columns of the parent's components that `up` reads, as source text, indexed by an identity key. */
+    readonly upColumns: string[];
+    readonly upColumnIndex: Map<string, number>;
+    /** Parent columns read where a boolean's identity is observable. */
+    readonly upBooleans: Set<number>;
     /** Helpers and constants being inlined, to reject recursion. */
     readonly active: Set<string>;
     readonly next: () => number;
@@ -63,7 +68,7 @@ export const createUnit = (signature: Signature, module: Module, expression: Exp
     return {
         signature, module, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], accumulators: [], active: new Set(),
         used: { read: new Set(), write: new Set(), resources: new Set(), lookups: new Map(), up: new Set() },
-        up,
+        up, upColumns: [], upColumnIndex: new Map(), upBooleans: new Set(),
         next: () => counter++, expression, statement,
     };
 };

@@ -1,17 +1,25 @@
-import type { Entity } from '../../entity/entity.js';
 import type { Up } from '../../system/access.js';
 import type { Archetype, Storage } from './archetype.js';
 import { readCell } from './cells.js';
-import type { TypedArray } from '../../layout/layout.js';
 import { generationOf, indexOf } from './entities.js';
 import { chunkShift } from './kernel.js';
 import { idOf, type Key, type State } from './state.js';
 
 /**
- * Matched rows in depth order, by their index among the matched rows: `rows` from `ends[d - 1]` (or 0) to `ends[d]`
- * are depth `d`, in storage order. Row `g` is row `g - bases[archetype.id]` of `matches[owners[g]]`.
+ * Matched rows in groups, run in order: each group's rows share a depth, an archetype, `matches[groupOwners[k]]`, and
+ * their parents' archetype, `groupParents[k]`, or -1 without a parent with every component `up` reads. Group `k` is
+ * slots `groupEnds[k - 1]` (or 0) to `groupEnds[k]`; slot `n` is row `rows[n]` of its archetype, whose parent is row
+ * `parents[n]`, and row `globals[n]` among the matched rows. Within a group, rows are in storage order.
  */
-export type Order = { readonly rows: Int32Array; readonly ends: Int32Array; readonly levels: number; readonly owners: Int32Array; readonly bases: Int32Array };
+export type Order = {
+    readonly rows: Int32Array;
+    readonly parents: Int32Array;
+    readonly globals: Int32Array;
+    readonly groups: number;
+    readonly groupEnds: Int32Array;
+    readonly groupOwners: Int32Array;
+    readonly groupParents: Int32Array;
+};
 
 const unknownDepth = -1;
 const visiting = -2;
@@ -38,6 +46,13 @@ export const createUp = (state: State, up: Up) => {
     /** The children of entity index `e` are `children[childStarts[e]]` to `children[childStarts[e + 1] - 1]`. */
     let childStarts = new Int32Array(0);
     let children = new Int32Array(0);
+    let slotRows = new Int32Array(0);
+    let slotParents = new Int32Array(0);
+    let slotGlobals = new Int32Array(0);
+    let keys = new Int32Array(0);
+    let groupEnds = new Int32Array(0);
+    let groupOwners = new Int32Array(0);
+    let groupParents = new Int32Array(0);
     /** By archetype id: the first index of its rows among the matched rows, or -1 when it doesn't match. */
     let bases = new Int32Array(0);
     /** By archetype id: 1 when it has every component `read` lists, 2 when it doesn't, 0 until checked. */
@@ -167,8 +182,54 @@ export const createUp = (state: State, up: Up) => {
             if (parent >= 0) parentIds.add(parent);
         }
         parentArchetypeIds = [...parentIds];
-        // After placing, each depth's count is where the next depth starts.
-        return { rows: order, ends: counts, levels: deepest + 1, owners, bases };
+        // Within each depth and archetype, which `order` already keeps together, rows are grouped by their parents'
+        // archetype, stably, so a kernel call binds one parent archetype's columns.
+        const total = counts[deepest] ?? 0;
+        slotRows = fit(slotRows, total);
+        slotParents = fit(slotParents, total);
+        slotGlobals = fit(slotGlobals, total);
+        keys = fit(keys, total);
+        for (let k = 0; k < total; k++) {
+            const global = order[k];
+            const archetype = matches[owners[global]];
+            const self = archetype.entities[global - bases[archetype.id]] >>> 0;
+            const parent = parentArchetypes[self];
+            keys[k] = parent >= 0 && isReadable(parent) ? parent : -1;
+        }
+        let groups = 0;
+        groupEnds = fit(groupEnds, total);
+        groupOwners = fit(groupOwners, total);
+        groupParents = fit(groupParents, total);
+        let depthStart = 0;
+        for (let depth = 0; depth <= deepest; depth++) {
+            const depthEnd = counts[depth];
+            for (let start = depthStart; start < depthEnd;) {
+                const owner = owners[order[start]];
+                let end = start + 1;
+                while (end < depthEnd && owners[order[end]] === owner) end++;
+                const parentKeys = [...new Set(keys.subarray(start, end))].sort((a, b) => a - b);
+                let slot = start;
+                for (const parentKey of parentKeys) {
+                    for (let k = start; k < end; k++) {
+                        if (keys[k] !== parentKey) continue;
+                        const global = order[k];
+                        const archetype = matches[owner];
+                        const local = global - bases[archetype.id];
+                        slotRows[slot] = local;
+                        slotGlobals[slot] = global;
+                        slotParents[slot] = parentKey < 0 ? -1 : parentRows[archetype.entities[local] >>> 0];
+                        slot++;
+                    }
+                    groupEnds[groups] = slot;
+                    groupOwners[groups] = owner;
+                    groupParents[groups] = parentKey;
+                    groups++;
+                }
+                start = end;
+            }
+            depthStart = depthEnd;
+        }
+        return { rows: slotRows, parents: slotParents, globals: slotGlobals, groups, groupEnds, groupOwners, groupParents };
     };
 
     /** By archetype id: whether some matched row's parent is in it, from the last order. */
@@ -254,55 +315,10 @@ export const createUp = (state: State, up: Up) => {
         return false;
     };
 
-    /** The parent of the row with this entity, when it has `up` values. */
-    const readableParent = (entity: Entity): Archetype | null => {
-        const parentArchetype = parentArchetypes[indexOf(entity)];
-        return parentArchetype >= 0 && isReadable(parentArchetype) ? state.archetypes[parentArchetype] : null;
-    };
-
-    /** By archetype id: each `read` component's scalar view, stride and offset, or a null view to read it whole; kept while its arrays are. */
-    const scalars: ({ readonly version: number; readonly views: readonly (TypedArray | null)[]; readonly strides: Int32Array; readonly offsets: Int32Array } | undefined)[] = [];
-    const scalarsOf = (archetype: Archetype) => {
-        const cached = scalars[archetype.id];
-        if (cached !== undefined && cached.version === archetype.version) return cached;
-        const strides = new Int32Array(read.length);
-        const offsets = new Int32Array(read.length);
-        const views = read.map((component, k) => {
-            const storage = archetype.storageById[component];
-            const layout = storage?.layout;
-            if (storage === undefined || layout?.kind !== "linear" || layout.leaves.length !== 1 || layout.leaves[0].path.length !== 0 || layout.leaves[0].scalar === "boolean") return null;
-            strides[k] = layout.leaves[0].unitStride;
-            offsets[k] = layout.leaves[0].unitOffset;
-            return storage.views[layout.leaves[0].view];
-        });
-        const fresh = { version: archetype.version, views, strides, offsets };
-        scalars[archetype.id] = fresh;
-        return fresh;
-    };
-
-    const values: unknown[] = new Array(read.length);
-    /** For a kernel: the parent's `read` values, in order, in one array reused for every row, or null. */
-    const kernelLookup = (entity: Entity): readonly unknown[] | null => {
-        const parent = readableParent(entity);
-        if (parent === null) return null;
-        const row = parentRows[indexOf(entity)];
-        const { views, strides, offsets } = scalarsOf(parent);
-        for (let k = 0; k < read.length; k++) {
-            const view = views[k];
-            if (view !== null) values[k] = view[row * strides[k] + offsets[k]];
-            else {
-                const storage = parent.storageById[read[k]];
-                values[k] = storage === undefined ? undefined : readCell(storage, row);
-            }
-        }
-        return values;
-    };
-
-    /** For a main-thread body: the parent's `read` values by component, or null. */
-    const objectLookup = (entity: Entity): object | null => {
-        const parent = readableParent(entity);
-        if (parent === null) return null;
-        const row = parentRows[indexOf(entity)];
+    /** For a main-thread body: the `read` values of the parent at a row of an archetype, by component, or null without one. */
+    const objectLookup = (parentArchetype: number, row: number): object | null => {
+        if (parentArchetype < 0) return null;
+        const parent = state.archetypes[parentArchetype];
         const result: { [key: Key]: unknown } = {};
         for (let k = 0; k < read.length; k++) {
             const storage = parent.storageById[read[k]];
@@ -311,5 +327,5 @@ export const createUp = (state: State, up: Up) => {
         return result;
     };
 
-    return { levels, anyChanged, parentChanged, seed, markChildren, kernelLookup, objectLookup };
+    return { levels, anyChanged, parentChanged, seed, markChildren, objectLookup };
 };

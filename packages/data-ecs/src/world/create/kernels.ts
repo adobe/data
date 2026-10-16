@@ -25,6 +25,8 @@ export type BoundKernel = {
     };
     /** The kernel's columns for an archetype, rebuilt after the archetype grows. */
     readonly columnsOf: (archetype: Archetype) => readonly TypedArray[];
+    /** A parent archetype's columns of the parent's components the kernel reads through `up`. */
+    readonly upColumnsOf: (archetype: Archetype) => readonly TypedArray[];
     /** Imports the kernel module and compiles its WASM for the components observed now; `kernel` throws until it resolves. */
     readonly load: () => Promise<void>;
     /** Whether the observed components changed since the last load, so its stamps need regenerating. */
@@ -138,6 +140,28 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         cache.set(archetype, { version: archetype.version, columns });
         return columns;
     };
+    // A leaf's stride and offset depend only on its component's layout, so they're the same in every parent archetype.
+    const upReadable = new Set<Key>(up?.read);
+    const upSources = (description.upColumns ?? []).map(column => {
+        if (column.kind !== "field" || !upReadable.has(column.component)) return fail(`reads "${String(column.kind === "field" ? column.component : column.kind)}" through up, which isn't in up.read.`);
+        const id = idOf(state, column.component);
+        const layout = state.layouts[id];
+        if (layout.kind !== "linear") return fail(`up reads "${String(column.component)}", which isn't stored in linear memory.`);
+        const found = layout.leaves.find(candidate => samePath(candidate.path, column.path));
+        if (found === undefined) return fail(`"${String(column.component)}" has no scalar at [${column.path.join(", ")}]; destructure tuples and structs or index their fields.`);
+        return { id, leaf: found };
+    });
+    const upCache = new Map<Archetype, { version: number; columns: readonly TypedArray[] }>();
+    const upColumnsOf = (archetype: Archetype): readonly TypedArray[] => {
+        const cached = upCache.get(archetype);
+        if (cached !== undefined && cached.version === archetype.version) return cached.columns;
+        const columns = upSources.map(source => {
+            const storage = archetype.storageById[source.id];
+            return storage === undefined ? fail(`a parent's archetype has no "${String(state.keys[source.id])}".`) : storage.views[source.leaf.view];
+        });
+        upCache.set(archetype, { version: archetype.version, columns });
+        return columns;
+    };
     const argsLayout = leaf.declaration.input === undefined ? null : layoutOf(leaf.declaration.input);
     const scalarType = (scalar: WasmScalar): Type | null => scalar.source === "args"
         ? argsLayout === null ? null : leafType(argsLayout, scalar.path)
@@ -175,6 +199,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             const columns = columnsOf(archetype);
             return muted.some(Boolean) ? columns.map((column, k) => muted[k] ? mutedColumn : column) : columns;
         },
+        upColumnsOf,
         wasm: generate(muted),
         compiled: () => compiled,
         kernel: () => loaded ?? fail("its module isn't loaded."),
@@ -187,7 +212,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             bound.setup = { ...setup, muted };
             loadedFor = muted.join();
             const module: KernelModule = await import(/* @vite-ignore */ description.url);
-            loaded = module.create(booleans, strides.map((stride, k) => muted[k] ? 0 : stride), offsets.map((offset, k) => muted[k] ? 0 : offset));
+            loaded = module.create(booleans, strides.map((stride, k) => muted[k] ? 0 : stride), offsets.map((offset, k) => muted[k] ? 0 : offset),
+                upSources.map(source => source.leaf.scalar === "boolean"), upSources.map(source => source.leaf.unitStride), upSources.map(source => source.leaf.unitOffset));
             compiled = null;
             if (bound.wasm === null) return;
             try {

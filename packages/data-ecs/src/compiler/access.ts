@@ -72,7 +72,12 @@ export const access = (value: Value, key: Key, node: Node, scope: Scope, optiona
             const lookup = up ?? signature.lookups[value.lookup];
             const index = key.kind === "binding" ? (lookup?.read ?? []).indexOf(key.name) : -1;
             if (lookup === undefined || key.kind !== "binding" || index < 0) return fail(node, up === null ? "a lookup result is indexed by a component in that lookup's read" : "up is indexed by a component in up.read");
-            if (up !== null) scope.unit.used.up.add(key.name);
+            if (up !== null) {
+                // Read straight from the parent's columns, at the parent's row.
+                if (optional) return fail(node, "up is read only where it isn't null: test up === null first");
+                scope.unit.used.up.add(key.name);
+                return { kind: "component", component: key.name, path: [], up: true };
+            }
             else {
                 const used = scope.unit.used.lookups;
                 const name = signature.lookups[value.lookup]?.name ?? "";

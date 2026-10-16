@@ -55,6 +55,12 @@ export type Kernel = (
     partial: number,
     /** For a kernel that reads `up`: the rows it runs are `rows[start]` to `rows[end - 1]`, rather than `start` to `end - 1`. */
     rows?: Int32Array,
+    /** Each row's parent row, in the parent archetype every row of the call shares. */
+    parents?: Int32Array,
+    /** That archetype's columns of `KernelDescription.upColumns`, empty without a parent. */
+    upColumns?: readonly (Float64Array | Float32Array | Int32Array | Uint32Array | Uint8Array)[],
+    /** Whether the rows have a parent with every component `up` reads. */
+    found?: boolean,
 ) => void;
 
 /** How kernels issue commands. `kind` is 1 for despawn, 2 for add, 3 for remove; `key` indexes the kernel's `keys`. */
@@ -167,8 +173,9 @@ export type KernelDescription = {
     readonly shapes: readonly Shape[];
     readonly resources: readonly Key[];
     readonly lookups: readonly string[];
-    /** Whether it reads `up`, as a lookup after the declaration's. */
+    /** Whether it reads `up`, and the scalar leaves of the parent's components it reads. */
     readonly up?: boolean;
+    readonly upColumns?: readonly Column[];
     readonly keys: readonly Key[];
     /** A module exporting `create`, importable from the main thread and from workers. */
     readonly url: string;
@@ -186,5 +193,5 @@ export type KernelModule = {
      * Called once per registration. Per column `k`: `booleans[k]` is true when it stores booleans as 0 or 1, so reads convert them;
      * a row's element is at `row * strides[k] + offsets[k]`, in elements of the column's array.
      */
-    readonly create: (booleans: readonly boolean[], strides: readonly number[], offsets: readonly number[]) => Kernel;
+    readonly create: (booleans: readonly boolean[], strides: readonly number[], offsets: readonly number[], upBooleans?: readonly boolean[], upStrides?: readonly number[], upOffsets?: readonly number[]) => Kernel;
 };

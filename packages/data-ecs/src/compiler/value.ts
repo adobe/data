@@ -14,7 +14,8 @@ export type Value =
     | { readonly kind: "dynamic"; readonly expression: Expression }
     | { readonly kind: "tuple"; readonly items: readonly Value[] }
     | { readonly kind: "struct"; readonly fields: readonly (readonly [string, Value])[] }
-    | { readonly kind: "component"; readonly component: string; readonly path: Path }
+    /** With `up`, a component of the row's parent, read through `up`. */
+    | { readonly kind: "component"; readonly component: string; readonly path: Path; readonly up?: true }
     | { readonly kind: "snapshot"; readonly snapshot: Snapshot; readonly path: Path }
     | { readonly kind: "found"; readonly lookup: number; readonly expression: Expression }
     | { readonly kind: "lookup"; readonly lookup: number }

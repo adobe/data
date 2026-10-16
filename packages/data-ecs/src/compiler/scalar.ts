@@ -1,5 +1,5 @@
 import type { Node } from 'estree';
-import { fieldRead } from './columns.js';
+import { componentRead, fieldRead } from './columns.js';
 import { fail } from './failure.js';
 import type { Scope } from './scope.js';
 import { local, type Expression } from './ir.js';
@@ -19,6 +19,7 @@ export const scalar = (value: Value, node: Node, scope: Scope): Expression => {
         case "scalar": case "dynamic": case "found":
             return value.expression;
         case "component":
+            if (value.up === true) return componentRead(scope.unit, value);
             requireReadable(node, scope, value.component);
             return fieldRead(scope.unit, value.component, value.path);
         case "snapshot":

@@ -19,6 +19,7 @@ export type Order = {
     readonly globals: Int32Array;
     readonly groups: number;
     readonly groupEnds: Int32Array;
+    readonly groupDepths: Int32Array;
     readonly groupOwners: Int32Array;
     readonly groupParents: Int32Array;
 };
@@ -66,6 +67,7 @@ export const createUp = (state: State, up: Up) => {
     /** By archetype id: whether some row's parent is in it. */
     let parentSeen = new Uint8Array(0);
     let groupEnds = new Int32Array(0);
+    let groupDepths = new Int32Array(0);
     let groupOwners = new Int32Array(0);
     let groupParents = new Int32Array(0);
     /** By archetype id: the first index of its rows among the matched rows, or -1 when it doesn't match. */
@@ -207,6 +209,7 @@ export const createUp = (state: State, up: Up) => {
         slotParents = fitArena(state.memory, slotParents, total);
         slotGlobals = fit(slotGlobals, total);
         groupEnds = fit(groupEnds, total);
+        groupDepths = fit(groupDepths, total);
         groupOwners = fit(groupOwners, total);
         groupParents = fit(groupParents, total);
         let groups = 0;
@@ -228,6 +231,7 @@ export const createUp = (state: State, up: Up) => {
                 if (uniform) {
                     for (let k = start; k < end; k++) place(k, order[k], base);
                     groupEnds[groups] = end;
+                    groupDepths[groups] = depth;
                     groupOwners[groups] = owner;
                     groupParents[groups++] = first;
                 }
@@ -237,6 +241,7 @@ export const createUp = (state: State, up: Up) => {
                     for (const parentKey of parentKeys) {
                         for (let k = start; k < end; k++) if (keys[order[k]] === parentKey) place(slot++, order[k], base);
                         groupEnds[groups] = slot;
+                        groupDepths[groups] = depth;
                         groupOwners[groups] = owner;
                         groupParents[groups++] = parentKey;
                     }
@@ -245,7 +250,7 @@ export const createUp = (state: State, up: Up) => {
             }
             depthStart = depthEnd;
         }
-        return { rows: slotRows, parents: slotParents, globals: slotGlobals, groups, groupEnds, groupOwners, groupParents };
+        return { rows: slotRows, parents: slotParents, globals: slotGlobals, groups, groupEnds, groupDepths, groupOwners, groupParents };
     };
 
     /** By archetype id: whether some matched row's parent is in it, from the last order. */

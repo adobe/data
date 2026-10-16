@@ -81,7 +81,7 @@ const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }
                 if (runner.kernel === null) started[i] = runner.start(args, null, -1);
             });
             // Every chunk settles, even a failed one, so no worker is still writing at the sync point.
-            const settled = await Promise.all(started.map(chunks => Promise.all(chunks)));
+            const settled = await Promise.all(started.map(async chunks => (await Promise.all(chunks)).flat()));
             let failure: { readonly error: unknown } | null = null;
             for (let i = 0; i < settled.length; i++) {
                 let failed = false;

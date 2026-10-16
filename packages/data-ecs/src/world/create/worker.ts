@@ -158,7 +158,7 @@ const load = async (setups: readonly KernelSetup[]): Promise<void> => {
     }));
     // A kernel loaded again may have different columns, such as muted ones now stamped.
     columns.clear();
-    setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset)), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup) }));
+    setups.forEach((setup, i) => kernels.set(setup.index, { setup, kernel: loaded[i].module.create(setup.booleans, setup.strides.map((stride, k) => setup.muted[k] ? 0 : stride), setup.offsets.map((offset, k) => setup.muted[k] ? 0 : offset), setup.up.booleans, setup.up.strides, setup.up.offsets), wasm: loaded[i].wasm, lookups: setup.lookups.map(createLookup) }));
 };
 
 /** A split's claims, as this worker sees them. */

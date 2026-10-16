@@ -52,6 +52,8 @@ export type KernelSetup = {
     readonly keys: readonly number[];
     readonly added: readonly number[];
     readonly changed: readonly number[];
+    /** For a kernel reading `up`: each parent column's boolean flag, stride and offset, the same in every archetype. */
+    readonly up: { readonly booleans: readonly boolean[]; readonly strides: readonly number[]; readonly offsets: readonly number[] };
     /** Whether the kernel reduces: its fast tasks then carry their partials' address and stride after the scalars. */
     readonly reduces: boolean;
     /** The compiled WASM version, which workers instantiate against the shared memory and prefer. */

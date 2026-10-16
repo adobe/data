@@ -2,7 +2,7 @@ import type { Leaf } from '../../system/leaf.js';
 import type { Archetype } from './archetype.js';
 import type { Kernel, KernelDescription, KernelModule } from './kernel.js';
 import { layoutOf, samePath, type Layout, type TypedArray } from '../../layout/layout.js';
-import type { LookupSetup, Source } from './protocol.js';
+import type { LookupSetup, Source , KernelSetup } from './protocol.js';
 import { createArrayLookup } from './rows.js';
 import { commandIdOf, idOf, type Key, type State } from './state.js';
 import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
@@ -22,6 +22,7 @@ export type BoundKernel = {
         readonly keys: readonly number[];
         /** Tick columns whose stamps nothing observes. */
         readonly muted: readonly boolean[];
+        readonly up: KernelSetup["up"];
     };
     /** The kernel's columns for an archetype, rebuilt after the archetype grows. */
     readonly columnsOf: (archetype: Archetype) => readonly TypedArray[];
@@ -151,6 +152,11 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         if (found === undefined) return fail(`"${String(column.component)}" has no scalar at [${column.path.join(", ")}]; destructure tuples and structs or index their fields.`);
         return { id, leaf: found };
     });
+    const upSetup: KernelSetup["up"] = {
+        booleans: upSources.map(source => source.leaf.scalar === "boolean"),
+        strides: upSources.map(source => source.leaf.unitStride),
+        offsets: upSources.map(source => source.leaf.unitOffset),
+    };
     const upCache = new Map<Archetype, { version: number; columns: readonly TypedArray[] }>();
     const upColumnsOf = (archetype: Archetype): readonly TypedArray[] => {
         const cached = upCache.get(archetype);
@@ -200,7 +206,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     const bound: BoundKernel = {
         description,
         lookups,
-        setup: { ...setup, muted },
+        setup: { ...setup, muted, up: upSetup },
         columnsOf: archetype => {
             const columns = columnsOf(archetype);
             return muted.some(Boolean) ? columns.map((column, k) => muted[k] ? mutedColumn : column) : columns;
@@ -215,11 +221,10 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         load: async () => {
             muted = mutedNow();
             bound.wasm = generate(muted);
-            bound.setup = { ...setup, muted };
+            bound.setup = { ...setup, muted, up: upSetup };
             loadedFor = muted.join();
             const module: KernelModule = await import(/* @vite-ignore */ description.url);
-            loaded = module.create(booleans, strides.map((stride, k) => muted[k] ? 0 : stride), offsets.map((offset, k) => muted[k] ? 0 : offset),
-                upSources.map(source => source.leaf.scalar === "boolean"), upSources.map(source => source.leaf.unitStride), upSources.map(source => source.leaf.unitOffset));
+            loaded = module.create(booleans, strides.map((stride, k) => muted[k] ? 0 : stride), offsets.map((offset, k) => muted[k] ? 0 : offset), upSetup.booleans, upSetup.strides, upSetup.offsets);
             compiled = null;
             if (bound.wasm === null) return;
             try {

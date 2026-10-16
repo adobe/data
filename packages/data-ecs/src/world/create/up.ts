@@ -21,6 +21,11 @@ export type Order = {
     readonly groupDepths: Int32Array;
     readonly groupOwners: Int32Array;
     readonly groupParents: Int32Array;
+    /** By row among the matched rows: its depth, -1 or less on or under a cycle, and its slot. By slot: its group. */
+    readonly depths: Int32Array;
+    readonly slots: Int32Array;
+    readonly slotGroups: Int32Array;
+    readonly levels: number;
 };
 
 const unknownDepth = -1;
@@ -67,6 +72,8 @@ export const createUp = (state: State, up: Up) => {
     let parentSeen = new Uint8Array(0);
     let groupEnds = new Int32Array(0);
     let groupDepths = new Int32Array(0);
+    let slotOf = new Int32Array(0);
+    let slotGroups = new Int32Array(0);
     let groupOwners = new Int32Array(0);
     let groupParents = new Int32Array(0);
     /** By archetype id: the first index of its rows among the matched rows, or -1 when it doesn't match. */
@@ -259,7 +266,15 @@ export const createUp = (state: State, up: Up) => {
             }
             depthStart = depthEnd;
         }
-        return { rows: slotRows, parents: slotParents, globals: slotGlobals, groups, groupEnds, groupDepths, groupOwners, groupParents };
+        slotOf = fit(slotOf, count);
+        slotGroups = fit(slotGroups, total);
+        for (let group = 0, start = 0; group < groups; start = groupEnds[group++]) {
+            for (let slot = start; slot < groupEnds[group]; slot++) {
+                slotOf[slotGlobals[slot]] = slot;
+                slotGroups[slot] = group;
+            }
+        }
+        return { rows: slotRows, parents: slotParents, globals: slotGlobals, groups, groupEnds, groupDepths, groupOwners, groupParents, depths, slots: slotOf, slotGroups, levels: deepest + 1 };
     };
 
     /** By archetype id: whether some matched row's parent is in it, from the last order. */
@@ -289,8 +304,8 @@ export const createUp = (state: State, up: Up) => {
     };
 
     /** Marks the children of the entity at `index` dirty. */
-    const markChildren = (index: number, dirty: Uint8Array): void => {
-        for (let k = childStarts[index], end = childStarts[index + 1]; k < end; k++) dirty[children[k]] = 1;
+    const markChildren = (index: number, mark: (row: number) => void): void => {
+        for (let k = childStarts[index], end = childStarts[index + 1]; k < end; k++) mark(children[k]);
     };
 
     /** Marks rows whose ticks of these components are newer than `since`, chunk by chunk, calling `mark` for each. */
@@ -313,14 +328,14 @@ export const createUp = (state: State, up: Up) => {
      * Marks the rows that may pass after `since` without a moved entity: those whose `filters` or parent reference
      * changed, and the children of parents whose `read` values changed. Rows that run mark their children as they go.
      */
-    const seed = (matches: readonly Archetype[], filters: readonly number[], since: number, dirty: Uint8Array): void => {
+    const seed = (matches: readonly Archetype[], filters: readonly number[], since: number, mark: (row: number) => void): void => {
         for (const archetype of matches) {
             const base = bases[archetype.id];
-            changedRows(archetype, [...filters, through], since, row => { dirty[base + row] = 1; });
+            changedRows(archetype, [...filters, through], since, row => mark(base + row));
         }
         for (const id of parentArchetypeIds) {
             const archetype = state.archetypes[id];
-            changedRows(archetype, read, since, row => markChildren(archetype.entities[row] >>> 0, dirty));
+            changedRows(archetype, read, since, row => markChildren(archetype.entities[row] >>> 0, mark));
         }
     };
 

@@ -1,6 +1,7 @@
 import { World } from "../world/world.js";
 import { enabled as flatEnabled, spawnFlat, spawnFlatDynamic, visible as flatVisible } from "./flat.js";
 import { enabled, fastest as particlesFastest, move, position as particlePosition, spawn, visible } from "./particles.js";
+import { forest, local as hierarchyLocal, nudge, parent as hierarchyParent, propagate, propagateChanged, sprout } from "./hierarchy.js";
 import { chain, churn, emit, fastest, follow, highest, hits, index, indexSum, observe, poke, pokeCluster, position, reduce, retag, seeded, smalls, tag, totalOf } from "./suite.js";
 
 /** Benchmarks shared by vitest (`*.perf-test.ts`) and the bundled node runner (`run.ts`). Each resolves to milliseconds. */
@@ -135,6 +136,51 @@ export const benchmarks: readonly Benchmark[] = [
         run: async () => {
             const world = await seeded(() => World.create(), 1_000_000);
             const best = await fastest(() => world.run(chain));
+            await world.dispose();
+            return best;
+        },
+    },
+    ...[[100_000, 10], [1_000, 1_000]].map(([roots, depth]) => ({
+        name: `up 1M depth ${depth}`,
+        run: async (): Promise<number> => {
+            const world = World.create();
+            await world.run(forest, { roots, depth });
+            const best = await fastest(() => world.run(propagate));
+            await world.dispose();
+            return best;
+        },
+    })),
+    {
+        name: "up 1M one root changed",
+        run: async () => {
+            const world = World.create();
+            await world.run(forest, { roots: 100_000, depth: 10 });
+            const roots = world.query.select([hierarchyLocal], { not: [hierarchyParent] });
+            await world.run(propagateChanged);
+            let best = Infinity;
+            for (let i = 0; i < 60; i++) {
+                await world.run(nudge, { entity: roots[0] });
+                const start = performance.now();
+                await world.run(propagateChanged);
+                if (i >= 10) best = Math.min(best, performance.now() - start);
+            }
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "up 1M after a spawn into it",
+        run: async () => {
+            const world = World.create();
+            await world.run(forest, { roots: 100_000, depth: 10 });
+            const roots = world.query.select([hierarchyLocal], { not: [hierarchyParent] });
+            let best = Infinity;
+            for (let i = 0; i < 30; i++) {
+                await world.run(sprout, { entity: roots[0] });
+                const start = performance.now();
+                await world.run(propagate);
+                if (i >= 5) best = Math.min(best, performance.now() - start);
+            }
             await world.dispose();
             return best;
         },

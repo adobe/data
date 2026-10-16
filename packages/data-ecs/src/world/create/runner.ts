@@ -254,8 +254,10 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     /** A filtered `up` run's rows of one group, and their parents' rows, reused. */
     let list: Int32Array = new Int32Array(0);
     let parentList: Int32Array = new Int32Array(0);
-    /** By index among the matched rows: whether a filtered `up` run must run it. */
+    /** By index among the matched rows: whether a pushed `up` run marked it; cleared after the run. */
     let dirty = new Uint8Array(0);
+    /** By depth: the rows a pushed `up` run marked. */
+    const buckets: number[][] = [];
     const noColumns: readonly TypedArray[] = [];
 
     /**
@@ -340,32 +342,73 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             list = allocateArray(state.memory, Int32Array, matched);
             parentList = allocateArray(state.memory, Int32Array, matched);
         }
-        // While no matched archetype's rows changed, changes are pushed down from the rows that changed, so unchanged
-        // subtrees cost a check of their chunks; a row moved in, as removing its parent reference moves it, is checked alone.
-        const pushed = since >= 0 && matches.every(archetype => archetype.rowsChanged <= since);
-        if (pushed) {
-            if (dirty.length < matched) dirty = new Uint8Array(matched);
-            dirty.fill(0, 0, matched);
-            up.seed(matches, ownFilters, since, dirty);
-        }
-        const { rows, parents, globals, groupEnds, groupDepths, groupOwners, groupParents } = order;
-        let group = 0;
-        let start = 0;
+        const { rows, parents, groupEnds, groupDepths, groupOwners, groupParents, depths, slots, slotGroups } = order;
         /** Rows passing in a filtered run go to `list` from here on, so a depth's groups each keep their own. */
         let listed = 0;
-        /** The next depth's rows that run, by group. */
-        const nextDepth = (): UpRows[] => {
+
+        // While no matched archetype's rows changed, rows are marked from the chunks that changed and run marking their
+        // children, so a run costs its chunks' checks and the rows that run; a row moved in, as removing its parent
+        // reference moves it, is checked on its own instead.
+        const pushed = since >= 0 && matches.every(archetype => archetype.rowsChanged <= since);
+        const marked: number[] = [];
+        const mark = (global: number): void => {
+            const depth = depths[global];
+            if (dirty[global] !== 0 || depth < 0) return;
+            dirty[global] = 1;
+            marked.push(global);
+            buckets[depth].push(global);
+        };
+        if (pushed) {
+            if (dirty.length < matched) dirty = new Uint8Array(matched);
+            for (let depth = 0; depth < order.levels; depth++) (buckets[depth] ??= []).length = 0;
+            up.seed(matches, ownFilters, since, mark);
+            // An archetype whose whole column changed, as a GPU kernel's writes do, runs every row.
+            let base = 0;
+            matches.forEach((archetype, owner) => {
+                if (froms[owner] < 0) for (let row = 0; row < archetype.count; row++) mark(base + row);
+                base += archetype.count;
+            });
+        }
+        let depth = 0;
+        const nextMarked = (): UpRows[] => {
+            while (depth < order.levels && buckets[depth].length === 0) depth++;
             const jobs: UpRows[] = [];
-            const depth = groupDepths[group];
-            for (; group < order.groups && groupDepths[group] === depth; start = groupEnds[group++]) {
+            if (depth >= order.levels) return jobs;
+            const bucket = buckets[depth++].sort((a, b) => slots[a] - slots[b]);
+            let first = listed;
+            let current = -1;
+            const flush = (): void => {
+                if (current >= 0 && listed > first) jobs.push({ archetype: matches[groupOwners[current]], parentArchetype: groupParents[current], rows: list, parents: parentList, start: first, end: listed });
+                first = listed;
+            };
+            for (const global of bucket) {
+                const at = slots[global];
+                if (slotGroups[at] !== current) {
+                    flush();
+                    current = slotGroups[at];
+                }
+                up.markChildren(matches[groupOwners[current]].entities[rows[at]] >>> 0, mark);
+                list[listed] = rows[at];
+                parentList[listed++] = parents[at];
+            }
+            flush();
+            return jobs;
+        };
+
+        let group = 0;
+        let start = 0;
+        /** Otherwise the next depth's rows that run, by group: every row, or with filters those passing them or whose parent changed. */
+        const nextDepth = (): UpRows[] => {
+            if (pushed) return nextMarked();
+            const jobs: UpRows[] = [];
+            const current = groupDepths[group];
+            for (; group < order.groups && groupDepths[group] === current; start = groupEnds[group++]) {
                 const end = groupEnds[group];
                 const owner = groupOwners[group];
                 const parentArchetype = groupParents[group];
                 const archetype = matches[owner];
-                const entities = archetype.entities;
                 const from = froms[owner];
                 if (from < 0) {
-                    if (pushed) for (let n = start; n < end; n++) up.markChildren(entities[rows[n]] >>> 0, dirty);
                     jobs.push({ archetype, parentArchetype, rows, parents, start, end });
                     continue;
                 }
@@ -373,15 +416,9 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
                 const first = listed;
                 for (let n = start; n < end; n++) {
                     const row = rows[n];
-                    if (pushed) {
-                        if (dirty[globals[n]] === 0) continue;
-                        up.markChildren(entities[row] >>> 0, dirty);
-                    }
-                    else {
-                        let passes = false;
-                        for (let f = 0; f < passing.length && !passes; f++) passes = passing[f].ticks[row] > from;
-                        if (!passes && !up.parentChanged(archetype, row, from)) continue;
-                    }
+                    let passes = false;
+                    for (let f = 0; f < passing.length && !passes; f++) passes = passing[f].ticks[row] > from;
+                    if (!passes && !up.parentChanged(archetype, row, from)) continue;
                     list[listed] = row;
                     parentList[listed++] = parents[n];
                 }
@@ -389,17 +426,26 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             }
             return jobs;
         };
+        const more = (): boolean => pushed ? depth < order.levels : group < order.groups;
+        const clear = (): void => {
+            for (const global of marked) dirty[global] = 0;
+        };
         const runLocally = (job: UpRows): void => runUpRows(job.archetype, job.parentArchetype, job.rows, job.parents, job.start, job.end, values, args, tick, slot);
         const parallel = workers !== null && kernel !== null && kernel.wasm !== null && kernel.compiled() !== null && partialCount === 0
             && kernel.lookupParameters().length + 3 + (kernel.description.upColumns?.length ?? 0) + kernel.wasm.scalars.length <= maximumScalars;
         if (!parallel || workers === null) {
-            while (group < order.groups) for (const job of nextDepth()) runLocally(job);
+            try {
+                while (more()) for (const job of nextDepth()) runLocally(job);
+            }
+            finally {
+                clear();
+            }
             return null;
         }
         return (async (): Promise<readonly ChunkResult[]> => {
             const results: ChunkResult[] = [];
             try {
-                while (group < order.groups) {
+                while (more()) {
                     const pending: Promise<TaskResult>[] = [];
                     for (const job of nextDepth()) {
                         if (job.end - job.start >= minimumFor(workers)) pending.push(...postUp(workers, index, job, values, args, tick));
@@ -415,6 +461,9 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             }
             catch (error) {
                 results.push({ commands: emptyBuffer, error });
+            }
+            finally {
+                clear();
             }
             return results;
         })();

@@ -251,8 +251,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     };
 
     /** A filtered `up` run's rows of one group, and their parents' rows, reused. */
-    let list = new Int32Array(0);
-    let parentList = new Int32Array(0);
+    let list: Int32Array = new Int32Array(0);
+    let parentList: Int32Array = new Int32Array(0);
     /** By index among the matched rows: whether a filtered `up` run must run it. */
     let dirty = new Uint8Array(0);
     const noColumns: readonly TypedArray[] = [];
@@ -262,6 +262,18 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
      * with id `parentArchetype`, or -1 when they have none with every component `up` reads.
      */
     const runUpRows = (archetype: Archetype, parentArchetype: number, rows: Int32Array, parents: Int32Array, start: number, end: number, values: readonly unknown[], args: unknown, tick: number, slot: number): void => {
+        if (kernel !== null && kernel.compiled() !== null && kernel.wasm !== null) {
+            const parentColumns = parentArchetype < 0 ? noColumns : kernel.upColumnsOf(state.archetypes[parentArchetype]);
+            const ups = kernel.description.upColumns ?? [];
+            kernel.compiled()?.run(start, end, tick, -1,
+                ...kernel.columnsOf(archetype).map(column => column.byteOffset),
+                ...kernel.lookupParameters(),
+                rows.byteOffset, parents.byteOffset, parentArchetype >= 0 ? 1 : 0,
+                ...ups.map((_, k) => parentColumns[k]?.byteOffset ?? 0),
+                ...scalarValues(kernel.wasm.scalars, values, args),
+                ...partialCount === 0 ? [] : [partialAddress(slot)]);
+            return;
+        }
         if (kernel !== null) {
             const parentColumns = parentArchetype < 0 ? noColumns : kernel.upColumnsOf(state.archetypes[parentArchetype]);
             kernel.kernel()(kernel.columnsOf(archetype), start, end, values, kernel.lookups, kernel.description.keys, args, kernelCommands, tick, slots, slot * partialCount, rows, parents, parentColumns, parentArchetype >= 0);
@@ -292,8 +304,13 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         let matched = 0;
         for (const archetype of matches) matched += archetype.count;
         if (list.length < matched) {
-            list = new Int32Array(matched);
-            parentList = new Int32Array(matched);
+            // In the arena, so WASM kernels can address them.
+            if (list.length > 0) {
+                freeArray(state.memory, list);
+                freeArray(state.memory, parentList);
+            }
+            list = allocateArray(state.memory, Int32Array, matched);
+            parentList = allocateArray(state.memory, Int32Array, matched);
         }
         // Without a moved entity, changes are pushed down from the rows that changed, so unchanged subtrees cost a check of their chunks.
         const pushed = since >= 0 && state.entities.lastMove <= since;

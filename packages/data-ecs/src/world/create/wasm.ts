@@ -155,6 +155,8 @@ export const generateWasm = (
     simdEnabled = true,
     filters = 0,
     lookups: readonly WasmLookup[] = [],
+    /** For a program reading `up`: the columns of the parent's components it reads. */
+    upColumns: readonly WasmColumn[] = [],
 ): WasmKernel | null => {
     const program = withoutIntrinsics(source);
     const scalars: WasmScalar[] = [];
@@ -208,7 +210,8 @@ export const generateWasm = (
             case "logical": return join(typeOf(expression.left), typeOf(expression.right));
             case "conditional": return join(typeOf(expression.consequent), typeOf(expression.alternate));
             case "math": return "number";
-            case "found": return "boolean";
+            case "found": case "upFound": return "boolean";
+            case "upLeaf": return upColumns[expression.column]?.boolean === true ? "boolean" : "number";
             case "lookupLeaf": {
                 const lookup = lookupOfHandle.get(expression.handle);
                 const leaf = lookup === undefined ? null : lookups[lookup]?.leaf(expression.read, expression.path);
@@ -247,6 +250,10 @@ export const generateWasm = (
                 const { view, boolean } = columns[expression.column];
                 return !boolean && (view === "i32" || view === "u32" || view === "u8");
             }
+            case "upLeaf": {
+                const column = upColumns[expression.column];
+                return column !== undefined && !column.boolean && (column.view === "i32" || column.view === "u32" || column.view === "u8");
+            }
             case "number": return Number.isInteger(expression.value) && Math.abs(expression.value) <= 0x7FFFFFFF;
             case "local": return integralLocals[expression.local];
             default: return false;
@@ -276,7 +283,11 @@ export const generateWasm = (
      */
     const lookupParameters = lookups.length === 0 ? 0 : 4 + 2 * lookups.length;
     const lookupParameter = (index: number): number => 4 + columns.length + 2 * filters + index;
-    const scalarParameter = (index: number): number => 4 + columns.length + 2 * filters + lookupParameters + index;
+    /** For `up`: the rows' and their parents' rows' addresses, whether there's a parent, then each parent column's address. */
+    const upMode = program.up === true;
+    const upParameters = upMode ? 3 + upColumns.length : 0;
+    const upParameter = (index: number): number => 4 + columns.length + 2 * filters + lookupParameters + index;
+    const scalarParameter = (index: number): number => 4 + columns.length + 2 * filters + lookupParameters + upParameters + index;
     const code: number[] = [];
     const extraLocals: number[] = [];
     let localBase = 0;
@@ -286,6 +297,8 @@ export const generateWasm = (
         return localBase + program.locals + extraLocals.length - 1;
     };
     let rowLocal = 0;
+    /** For `up`: the current row's parent row. */
+    let parentLocal = 0;
     const address = (column: number): void => {
         code.push(op.localGet, ...unsigned(columnParameter(column)), op.localGet, ...unsigned(rowLocal), op.i32Const, ...signed(columns[column].stride), op.i32Mul, op.i32Add);
     };
@@ -322,9 +335,13 @@ export const generateWasm = (
                 code.push(op.localGet, ...unsigned(scalarParameter(scalarOf(scalar))));
                 return;
             }
-            case "column": {
-                const { view, offset, boolean } = columns[expression.column];
-                address(expression.column);
+            case "upFound": code.push(op.localGet, ...unsigned(upParameter(2)), op.f64ConvertI32U); return;
+            case "upLeaf": case "column": {
+                const { view, offset, boolean } = expression.kind === "upLeaf" ? upColumns[expression.column] : columns[expression.column];
+                if (expression.kind === "upLeaf") {
+                    code.push(op.localGet, ...unsigned(upParameter(3 + expression.column)), op.localGet, ...unsigned(parentLocal), op.i32Const, ...signed(upColumns[expression.column].stride), op.i32Mul, op.i32Add);
+                }
+                else address(expression.column);
                 const memory = (align: number): number[] => [align, ...unsigned(offset)];
                 if (boolean) {
                     code.push(view === "u8" ? op.i32Load8u : op.i32Load, ...memory(view === "u8" ? 0 : 2), op.i32Const, 0, 0x47 /* i32.ne */, op.f64ConvertI32U);
@@ -506,7 +523,8 @@ export const generateWasm = (
      * Their chunks are stamped once per call, for the whole range, instead of on each row.
      */
     const everyRow = new Set<number>();
-    if (filters === 0) {
+    // Listed rows needn't be consecutive, so each stamps its own chunk.
+    if (filters === 0 && !upMode) {
         const ends = (statement: Statement): boolean =>
             statement.kind === "next" || (statement.kind === "if" && (statement.consequent.some(ends) || statement.alternate.some(ends)))
             || ((statement.kind === "block" || statement.kind === "loop") && statement.body.some(ends));
@@ -805,7 +823,7 @@ export const generateWasm = (
                 for (const parameter of expression.arguments) rowsEmit(parameter);
                 emitVectorMath(expression.name, expression.arguments.length);
                 return;
-            case "found": case "lookupLeaf": throw notVectorizable;
+            case "found": case "lookupLeaf": case "upFound": case "upLeaf": throw notVectorizable;
         }
     };
 
@@ -1294,7 +1312,7 @@ export const generateWasm = (
     };
 
     try {
-        const parameterCount = 4 + columns.length + 2 * filters + lookupParameters;
+        const parameterCount = 4 + columns.length + 2 * filters + lookupParameters + upParameters;
         collectFinds(program.body);
         /** Leaves 1 if any filter's tick at `(row >> shift) * 8` in its `parameter` array is newer than `lastRun`. */
         const anyNewer = (parameter: (filter: number) => number, shift: number): void => {
@@ -1340,9 +1358,18 @@ export const generateWasm = (
                 const plan = planLanes();
                 if (acrossElements(plan)) elementsLoop(plan);
             }
-            // for (; row < end; row++) { block next { body } }
+            // for (; row < end; row++) { block next { body } }, where with `up` the row and its parent's are rows[n] and parents[n].
+            const slot = rowLocal;
+            if (upMode) {
+                rowLocal = scratch(i32Type);
+                parentLocal = scratch(i32Type);
+            }
             code.push(op.block, 0x40, op.loop, 0x40);
-            code.push(op.localGet, ...unsigned(rowLocal), op.localGet, 1, op.i32GeS, op.brIf, 1);
+            code.push(op.localGet, ...unsigned(slot), op.localGet, 1, op.i32GeS, op.brIf, 1);
+            if (upMode) {
+                code.push(op.localGet, ...unsigned(upParameter(0)), op.localGet, ...unsigned(slot), op.i32Const, 2, op.i32Shl, op.i32Add, op.i32Load, 2, 0, op.localSet, ...unsigned(rowLocal));
+                code.push(op.localGet, ...unsigned(upParameter(1)), op.localGet, ...unsigned(slot), op.i32Const, 2, op.i32Shl, op.i32Add, op.i32Load, 2, 0, op.localSet, ...unsigned(parentLocal));
+            }
             if (filters > 0) skipChunks();
             code.push(op.block, 0x40);
             // A row that no filter passes goes to the next.
@@ -1356,8 +1383,9 @@ export const generateWasm = (
             else for (const current of program.body) statement(current);
             labels.pop();
             code.push(op.end);
-            code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, 1, op.i32Add, op.localSet, ...unsigned(rowLocal), op.br, 0);
+            code.push(op.localGet, ...unsigned(slot), op.i32Const, 1, op.i32Add, op.localSet, ...unsigned(slot), op.br, 0);
             code.push(op.end, op.end);
+            rowLocal = slot;
             accumulators.forEach((accumulator, k) => {
                 code.push(op.localGet, ...unsigned(partialsParameter), op.localGet, ...unsigned(local(accumulator)), op.f64Store, 3, ...unsigned(8 * k));
             });
@@ -1366,7 +1394,8 @@ export const generateWasm = (
         };
         // Across-rows mode doesn't filter rows, so filtered kernels fuse within rows instead.
         // Accumulators carry from row to row, which neither SIMD mode keeps.
-        let mode: "rows" | "lanes" | "scalar" = !simdEnabled || accumulators.length > 0 ? "scalar" : filters > 0 ? "lanes" : "rows";
+        // Listed rows aren't consecutive, so `up` programs run one row at a time.
+        let mode: "rows" | "lanes" | "scalar" = !simdEnabled || accumulators.length > 0 || upMode ? "scalar" : filters > 0 ? "lanes" : "rows";
         try {
             generate(0, mode);
         }
@@ -1384,7 +1413,7 @@ export const generateWasm = (
         if (scalars.length !== discovered) throw unsupported;
         const vectorized = mode !== "scalar";
 
-        const parameterTypes = [i32Type, i32Type, f64Type, f64Type, ...columns.map(() => i32Type), ...new Array<number>(2 * filters).fill(i32Type), ...new Array<number>(lookupParameters).fill(f64Type), ...scalars.map(() => f64Type), ...accumulators.length > 0 ? [i32Type] : []];
+        const parameterTypes = [i32Type, i32Type, f64Type, f64Type, ...columns.map(() => i32Type), ...new Array<number>(2 * filters).fill(i32Type), ...new Array<number>(lookupParameters).fill(f64Type), ...new Array<number>(upParameters).fill(i32Type), ...scalars.map(() => f64Type), ...accumulators.length > 0 ? [i32Type] : []];
         const localTypesList = [...new Array<number>(program.locals).fill(f64Type)];
         // Locals in order: program locals, then extras in creation order; the row index was the first extra.
         const declared = [...localTypesList.map(type => [1, type]), ...extraLocals.map(type => [1, type])];

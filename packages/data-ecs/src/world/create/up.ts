@@ -4,6 +4,8 @@ import { readCell } from './cells.js';
 import { generationOf, indexOf } from './entities.js';
 import { chunkShift } from './kernel.js';
 import { idOf, type Key, type State } from './state.js';
+import { allocateArray, freeArray } from './arrays.js';
+import type { Memory } from './memory.js';
 
 /**
  * Matched rows in groups, run in order: each group's rows share a depth, an archetype, `matches[groupOwners[k]]`, and
@@ -26,6 +28,13 @@ const visiting = -2;
 /** On a parent cycle, or under one: never run. */
 const cyclic = -3;
 
+/** Grows an array in the arena to at least `length`, without keeping its contents, so WASM can address it. */
+const fitArena = (memory: Memory, array: Int32Array, length: number): Int32Array => {
+    if (array.length >= length) return array;
+    if (array.length > 0) freeArray(memory, array);
+    return allocateArray(memory, Int32Array, Math.max(length, 2 * array.length));
+};
+
 /** Grows an array to at least `length`, without keeping its contents. */
 const fit = (array: Int32Array<ArrayBuffer>, length: number): Int32Array<ArrayBuffer> => array.length >= length ? array : new Int32Array(Math.max(length, 2 * array.length));
 
@@ -46,8 +55,8 @@ export const createUp = (state: State, up: Up) => {
     /** The children of entity index `e` are `children[childStarts[e]]` to `children[childStarts[e + 1] - 1]`. */
     let childStarts = new Int32Array(0);
     let children = new Int32Array(0);
-    let slotRows = new Int32Array(0);
-    let slotParents = new Int32Array(0);
+    let slotRows: Int32Array = new Int32Array(0);
+    let slotParents: Int32Array = new Int32Array(0);
     let slotGlobals = new Int32Array(0);
     /** By index among the matched rows: the parent's row, its entity index or -1, and its archetype id when readable or -1. */
     let rowParents = new Int32Array(0);
@@ -194,8 +203,8 @@ export const createUp = (state: State, up: Up) => {
         // Within each depth and archetype, which `order` already keeps together, rows are grouped by their parents'
         // archetype, stably, so a kernel call binds one parent archetype's columns.
         const total = counts[deepest] ?? 0;
-        slotRows = fit(slotRows, total);
-        slotParents = fit(slotParents, total);
+        slotRows = fitArena(state.memory, slotRows, total);
+        slotParents = fitArena(state.memory, slotParents, total);
         slotGlobals = fit(slotGlobals, total);
         groupEnds = fit(groupEnds, total);
         groupOwners = fit(groupOwners, total);

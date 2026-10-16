@@ -121,6 +121,10 @@ export namespace Program {
          * Reads NaN if nothing was found, as `undefined` does in arithmetic.
          */
         | { readonly kind: "lookupLeaf"; readonly handle: number; readonly read: number; readonly path: Path }
+        /** Whether the rows of the call have a parent with every component `up` reads. */
+        | { readonly kind: "upFound" }
+        /** `upColumns[column]` at the row's parent row; only under a test proving `upFound`. */
+        | { readonly kind: "upLeaf"; readonly column: number }
         /** Lane `lane` of intrinsic region `intrinsic`'s result, which `value` computes from the region's body. */
         | { readonly kind: "lane"; readonly intrinsic: number; readonly lane: number; readonly value: Expression };
 
@@ -155,6 +159,8 @@ export namespace Program {
  */
 export type Program = {
     readonly locals: number;
+    /** Runs a list of rows, each with its parent's row, reading the parent's columns through `upLeaf`. */
+    readonly up?: true;
     readonly handles?: number;
     readonly names?: readonly string[];
     /** Every intrinsic region's id is below it; absent when there are none. */

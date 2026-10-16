@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import { Entity } from "../../entity/entity.js";
 import { System } from "../../system/system.js";
+import { definitionOf } from "../../system/definition.js";
+import { kernelOf } from "./attach-kernel.js";
 import { createWorld } from "./create.js";
+import { bindKernel } from "./kernels.js";
+import { createState } from "./state.js";
 
 const local = "upTest/local";
 const world = "upTest/world";
@@ -208,6 +212,23 @@ describe("up", () => {
         }));
         await ecs.run(show);
         expect(tree.map(entity => ecs.read.component(entity, shown))).toEqual([false, false, true, true]);
+    });
+
+    it("runs as WASM, as JS does", async () => {
+        const definition = definitionOf(propagateKernel);
+        const description = kernelOf(propagateKernel);
+        if (definition === undefined || definition.kind === "composite" || description === undefined) throw new Error("not a compiled leaf");
+        expect(bindKernel(createState(), definition, description).wasm).not.toBeNull();
+        const results = await Promise.all([true, false].map(async wasm => {
+            await using ecs = createWorld({ workers: 0, wasm });
+            await ecs.run(spawnMixed);
+            await ecs.run(propagateKernel);
+            await ecs.run(growParents);
+            await ecs.run(shift);
+            await ecs.run(propagateKernel);
+            return Object.values(mixed).map(entity => ecs.read.component(entity, world));
+        }));
+        expect(results[0]).toEqual(results[1]);
     });
 
     it("rejects a through that isn't a reference, for untyped declarations", async () => {

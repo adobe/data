@@ -183,8 +183,14 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
      * so the WASM drops their stamps and the JS kernel stamps one dummy element.
      */
     const mutedNow = (): boolean[] => sources.map(source => (source.kind === "changed" || source.kind === "chunks") && !state.observed.has(source.id));
+    const upWasmColumns: WasmColumn[] = upSources.map(source => {
+        const layout = state.layouts[source.id];
+        return { view: source.leaf.view, stride: layout.kind === "linear" ? layout.stride : 0, offset: source.leaf.offset, boolean: source.leaf.scalar === "boolean", component: source.id };
+    });
+    // An `up` kernel's runner passes only the rows that pass its filters.
+    const filterCount = up !== undefined ? 0 : (query?.added?.length ?? 0) + (query?.changed?.length ?? 0);
     const generate = (muted: readonly boolean[]): WasmKernel | null => useWasm && description.program !== null
-        ? generateWasm(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, state.simd, (query?.added?.length ?? 0) + (query?.changed?.length ?? 0), wasmLookups)
+        ? generateWasm(description.program, wasmColumns.map((column, k) => muted[k] ? { ...column, muted: true } : column), scalarType, state.simd, filterCount, wasmLookups, upWasmColumns)
         : null;
     let muted = mutedNow();
     let loaded: Kernel | null = null;

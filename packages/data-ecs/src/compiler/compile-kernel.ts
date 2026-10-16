@@ -61,8 +61,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     const preludeCode = printStatements(unit, resolve(prelude));
     const accumulators = unit.accumulators.map(entry => entry.local);
     const { signature: { resources, lookups, up, filtered, reduced }, columns, booleans, keys } = unit;
-    // `up` runs on the main thread, as JS.
-    const program = up !== null ? null : toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined, accumulators);
+    const program = toProgram(statements, target === "gpu" ? local => localName(unit, local) : undefined, accumulators, unit.up);
     if (target === "gpu") {
         if (up !== null) fail(declaration, "a GPU kernel can't use up yet");
         if (lookups.length > 0) fail(declaration, "a GPU kernel can't use lookups yet");

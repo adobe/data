@@ -169,6 +169,7 @@ const interpret = (program: Program, columns: readonly (Float64Array | Uint32Arr
                     return typeof result === "number" ? result : NaN;
                 }
                 case "lane": return evaluate(node.value);
+                case "upFound": case "upLeaf": throw new Error("programs reading up aren't interpreted here");
             }
         };
         const execute = (statements: readonly Program.Statement[]): Signal => {

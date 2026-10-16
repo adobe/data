@@ -17,6 +17,8 @@ const unwrap = (node: Expression): Expression => node.kind === "observe" ? unwra
 type Guards = ReadonlySet<number>;
 const union = (a: Guards, b: Guards): Guards => new Set([...a, ...b]);
 const none: Guards = new Set();
+/** The handle standing for `up`, which isn't looked up. */
+const upHandle = -1;
 
 /**
  * Derives a `Program` from the lowered body, or null if it uses what WASM kernels don't support. Locals are renumbered
@@ -25,7 +27,7 @@ const none: Guards = new Set();
  * guard proving the lookup found its entity, since JS would throw where WASM reads NaN. With `nameOf`, the program
  * carries each local's name.
  */
-export const toProgram = (statements: readonly Statement[], nameOf?: (local: number) => string, accumulators: readonly number[] = []): Program | null => {
+export const toProgram = (statements: readonly Statement[], nameOf?: (local: number) => string, accumulators: readonly number[] = [], upLocal: number | null = null): Program | null => {
     const locals = new Map<number, number>();
     const localIndex = (local: number): number => {
         const existing = locals.get(local);
@@ -37,8 +39,10 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
     const handles = new Map<number, number>();
     const handleOf = (node: Expression): number | undefined => {
         const inner = unwrap(node);
-        return inner.kind === "local" ? handles.get(inner.local) : undefined;
+        return inner.kind !== "local" ? undefined : inner.local === upLocal ? upHandle : handles.get(inner.local);
     };
+    /** Whether `handle` found its entity, or for `up`, whether the call's rows have a parent. */
+    const found = (handle: number): Program.Expression => handle === upHandle ? { kind: "upFound" } : { kind: "found", handle };
     const isNull = (node: Expression): boolean => {
         const inner = unwrap(node);
         return inner.kind === "nullish" && inner.value === "null";
@@ -72,6 +76,7 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
         }
         const handle = handleOf(first);
         if (handle === undefined) return undefined;
+        if (handle === upHandle) return null;
         const [read, ...rest] = keys;
         if (read?.kind !== "number" || (!optional && !guards.has(handle))) return null;
         const path: (number | string)[] = [];
@@ -85,15 +90,17 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
     /** `test` is set where only truthiness matters, so a lookup result may stand for `found`. */
     const expression = (node: Expression, guards: Guards, test: boolean): Program.Expression | undefined => {
         const handle = handleOf(node);
-        if (handle !== undefined) return test ? { kind: "found", handle } : undefined;
+        if (handle !== undefined) return test ? found(handle) : undefined;
         const check = nullTest(node);
         if (check !== undefined) {
-            const found: Program.Expression = { kind: "found", handle: check.handle };
-            return check.found ? found : { kind: "unary", operator: "!", operand: found };
+            const tested = found(check.handle);
+            return check.found ? tested : { kind: "unary", operator: "!", operand: tested };
         }
         switch (node.kind) {
             case "number": case "boolean": case "column": case "resource": case "args":
                 return node;
+            // JS throws reading a parent that isn't there, so WASM reads one only where a test proves it is.
+            case "upColumn": return guards.has(upHandle) ? { kind: "upLeaf", column: node.column } : undefined;
             case "local": return { kind: "local", local: localIndex(node.local) };
             case "unary": {
                 const operand = expression(node.operand, guards, node.operator === "!");
@@ -195,6 +202,7 @@ export const toProgram = (statements: readonly Statement[], nameOf?: (local: num
     const body = block(statements, [], none);
     if (body === undefined) return null;
     const counted = { ...intrinsics === 0 ? {} : { intrinsics }, ...accumulators.length === 0 ? {} : { reductions: accumulators.map(localIndex) } };
+    if (upLocal !== null) Object.assign(counted, { up: true });
     if (nameOf === undefined) return { locals: locals.size, handles: handles.size, ...counted, body };
     const names: string[] = [];
     for (const [original, dense] of locals) names[dense] = nameOf(original);

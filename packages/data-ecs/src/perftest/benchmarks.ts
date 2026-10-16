@@ -25,7 +25,7 @@ const observed = async (world: World, writer: typeof poke | typeof pokeCluster):
 };
 
 /** The fastest run of `measured` right after `before` runs, over `rounds` rounds after `warmup`. */
-const after = async (before: () => Promise<void>, measured: () => Promise<void>, rounds = 30, warmup = 5): Promise<number> => {
+const after = async (before: () => Promise<void>, measured: () => Promise<void>, rounds = 100, warmup = 20): Promise<number> => {
     let best = Infinity;
     for (let i = 0; i < rounds; i++) {
         await before();
@@ -250,7 +250,7 @@ export const benchmarks: readonly Benchmark[] = [
         best: { bytes: chunkScan, basis: "Chunk ticks are scanned; the 10 rows of the changed chain run." },
         run: async () => {
             const { world, roots } = await filteredForest();
-            const best = await after(() => world.run(nudge, { entity: roots[0] }), () => world.run(propagateChanged), 60, 10);
+            const best = await after(() => world.run(nudge, { entity: roots[0] }), () => world.run(propagateChanged));
             await world.dispose();
             return best;
         },
@@ -337,7 +337,7 @@ export const benchmarks: readonly Benchmark[] = [
             await world.run(spawn, { count: 1_000_000 });
             await world.run(forest, { roots: 100, depth: 10 });
             const roots = world.query.select([hierarchyLocal], { not: [hierarchyParent] });
-            const best = await after(() => world.run(sprout, { entity: roots[0] }), () => world.run(propagate), 60, 10);
+            const best = await after(() => world.run(sprout, { entity: roots[0] }), () => world.run(propagate));
             await world.dispose();
             return best;
         },

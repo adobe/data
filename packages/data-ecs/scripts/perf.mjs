@@ -1,6 +1,7 @@
 // Runs the benchmarks, compares them with what this machine recorded last, and records them.
 //
-//   pnpm perf [filter]           node benchmarks whose names match the regular expression filter, compared with the last record
+//   pnpm perf [filter]           node benchmarks whose names match the regular expression filter, each in a process
+//                                of its own, compared with the last record
 //   pnpm perf:browser            chromium benchmarks: main thread, workers and GPU
 //   add --record                 append the results to perf/history and regenerate perf/README.md
 //   pnpm perf:report             regenerate perf/README.md from perf/history
@@ -80,10 +81,10 @@ const latest = records => {
     return found;
 };
 
-/** Runs a command, passing its output through, and collects the perf lines it prints. */
-const collect = (command, args) => new Promise((done, failed) => {
+/** Runs a command, passing its output through, and collects the perf lines it prints, after the given environment. */
+const collect = (command, args, known) => new Promise((done, failed) => {
     const child = spawn(command, args, { cwd: root, stdio: ["ignore", "pipe", "inherit"] });
-    let environment;
+    let environment = known;
     const results = [];
     let pending = "";
     const line = text => {
@@ -138,7 +139,13 @@ const run = async () => {
         return collect("pnpm", ["exec", "vitest", "--run", "--workspace", "vitest.perf.workspace.ts", "--project", "perf-browser"]);
     }
     execFileSync("pnpm", ["exec", "vite", "build", "--config", "vite.perf.config.ts", "--logLevel", "warn"], { cwd: root, stdio: "inherit" });
-    return collect("node", ["dist/perf/run.js", ...(filter === undefined ? [] : [filter])]);
+    // Each benchmark runs in a fresh process, so none inherits another's heap or compiled code.
+    const { environment } = await collect("node", ["dist/perf/run.js", "--environment"]);
+    const pattern = filter === undefined ? null : new RegExp(filter);
+    const names = execFileSync("node", ["dist/perf/run.js", "--names"], { cwd: root, encoding: "utf8" }).split("\n").filter(name => name !== "" && (pattern === null || pattern.test(name)));
+    const results = [];
+    for (const name of names) results.push(...(await collect("node", ["dist/perf/run.js", name], environment)).results);
+    return { environment, results };
 };
 
 const record = ({ environment, results }) => {

@@ -318,6 +318,8 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
     let owners = new Int32Array(0);
     let order = new Int32Array(0);
     let counts = new Int32Array(0);
+    /** By index in `matches`: the index of its first row among the matched rows. */
+    let bases = new Int32Array(0);
 
     const isKept = (matches: readonly Archetype[]): boolean => {
         if (kept === null || stale || kept.matches !== matches.length) return false;
@@ -340,17 +342,18 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
     /** By archetype id: whether some matched row's parent is in it, from the last order. */
     let parentSeen = new Uint8Array(0);
 
-    const orderOf = (matches: readonly Archetype[]): Order => {
+    /**
+     * Records each matched row's depth, archetype, parent row, and parent's archetype when readable or -1, by index
+     * among the matched rows, and flags the parents' archetypes. Returns the deepest depth.
+     */
+    const scanRows = (matches: readonly Archetype[], count: number): number => {
         const { archetype: archetypeOf, row: rowOf } = state.entities;
         if (parentSeen.length < state.archetypes.length) parentSeen = new Uint8Array(Math.max(state.archetypes.length, 2 * parentSeen.length));
         parentSeen.fill(0);
-        let count = 0;
-        for (const archetype of matches) count += archetype.count;
         depths = fit(depths, count);
         rowParents = fit(rowParents, count);
         keys = fit(keys, count);
         owners = fit(owners, count);
-        order = fit(order, count);
         let deepest = -1;
         let global = 0;
         for (let a = 0; a < matches.length; a++) {
@@ -374,14 +377,24 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
                 keys[global] = (known === 0 ? isReadable(parentArchetype) : known === 1) ? parentArchetype : -1;
             }
         }
-        // A counting sort by depth keeps storage order within each depth.
+        return deepest;
+    };
+
+    /** Orders the matched rows by depth, keeping storage order within each: `counts[d]` ends depth `d` in `order`. */
+    const sortByDepth = (count: number, deepest: number): void => {
+        order = fit(order, count);
         counts = fit(counts, deepest + 2);
         counts.fill(0, 0, deepest + 2);
         for (let k = 0; k < count; k++) if (depths[k] >= 0) counts[depths[k] + 1]++;
         for (let depth = 1; depth <= deepest + 1; depth++) counts[depth] += counts[depth - 1];
         for (let k = 0; k < count; k++) if (depths[k] >= 0) order[counts[depths[k]]++] = k;
-        // Within each depth and archetype, which `order` already keeps together, rows are grouped by their parents'
-        // archetype, stably, so a kernel call binds one parent archetype's columns.
+    };
+
+    /**
+     * Within each depth and archetype, which `order` already keeps together, groups rows by their parents' archetype,
+     * stably, so a kernel call binds one parent archetype's columns. Returns the number of groups.
+     */
+    const groupRows = (matches: readonly Archetype[], deepest: number): number => {
         const total = counts[deepest] ?? 0;
         slotRows = fitArena(state.memory, slotRows, total);
         slotParents = fitArena(state.memory, slotParents, total);
@@ -390,12 +403,15 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
         groupOwners = fit(groupOwners, total);
         groupParents = fit(groupParents, total);
         depthGroups = fit(depthGroups, deepest + 2);
-        let groups = 0;
-        const bases = new Int32Array(matches.length);
+        bases = fit(bases, matches.length);
+        bases[0] = 0;
         for (let a = 1; a < matches.length; a++) bases[a] = bases[a - 1] + matches[a - 1].count;
-        const place = (slot: number, global: number): void => {
-            slotRows[slot] = global - bases[owners[global]];
-            slotParents[slot] = rowParents[global];
+        let groups = 0;
+        const close = (end: number, depth: number, owner: number, parent: number): void => {
+            groupEnds[groups] = end;
+            groupDepths[groups] = depth;
+            groupOwners[groups] = owner;
+            groupParents[groups++] = parent;
         };
         let depthStart = 0;
         for (let depth = 0; depth <= deepest; depth++) {
@@ -408,21 +424,15 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
                 let uniform = true;
                 for (; end < depthEnd && owners[order[end]] === owner; end++) if (keys[order[end]] !== first) uniform = false;
                 if (uniform) {
-                    for (let k = start; k < end; k++) place(k, order[k]);
-                    groupEnds[groups] = end;
-                    groupDepths[groups] = depth;
-                    groupOwners[groups] = owner;
-                    groupParents[groups++] = first;
+                    place(start, end, owner, -2);
+                    close(end, depth, owner, first);
                 }
                 else {
                     let slot = start;
                     const parentKeys = [...new Set(order.subarray(start, end).map(k => keys[k]))].sort((a, b) => a - b);
                     for (const parentKey of parentKeys) {
-                        for (let k = start; k < end; k++) if (keys[order[k]] === parentKey) place(slot++, order[k]);
-                        groupEnds[groups] = slot;
-                        groupDepths[groups] = depth;
-                        groupOwners[groups] = owner;
-                        groupParents[groups++] = parentKey;
+                        slot = place(start, end, slot, parentKey);
+                        close(slot, depth, owner, parentKey);
                     }
                 }
                 start = end;
@@ -430,6 +440,31 @@ export const createUp = (state: State, up: Up, isFiltered: boolean) => {
             depthStart = depthEnd;
         }
         depthGroups[deepest + 1] = groups;
+        return groups;
+    };
+
+    /**
+     * Places `order[start]` to `order[end - 1]` in slots: all of them from `start` when `key` is -2, otherwise those
+     * whose parent key is `key`, from `slot`. Returns the next slot.
+     */
+    const place = (start: number, end: number, slot: number, key: number): number => {
+        const all = key === -2;
+        let at = all ? start : slot;
+        for (let k = start; k < end; k++) {
+            const global = order[k];
+            if (!all && keys[global] !== key) continue;
+            slotRows[at] = global - bases[owners[global]];
+            slotParents[at++] = rowParents[global];
+        }
+        return at;
+    };
+
+    const orderOf = (matches: readonly Archetype[]): Order => {
+        let count = 0;
+        for (const archetype of matches) count += archetype.count;
+        const deepest = scanRows(matches, count);
+        sortByDepth(count, deepest);
+        const groups = groupRows(matches, deepest);
         return { rows: slotRows, parents: slotParents, groups, groupEnds, groupDepths, groupOwners, groupParents, depthGroups, levels: deepest + 1 };
     };
 

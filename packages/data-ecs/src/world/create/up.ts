@@ -85,7 +85,8 @@ export const createUp = (state: State, up: Up) => {
     let owners = new Int32Array(0);
     let order = new Int32Array(0);
     let counts = new Int32Array(0);
-    const stack: number[] = [];
+    /** The rows of one walk up a parent chain, deepest first. */
+    let stack = new Int32Array(0);
 
     /** Whether an archetype holds every component `read` lists, so a parent in it has `up` values. */
     const isReadable = (id: number): boolean => {
@@ -175,7 +176,8 @@ export const createUp = (state: State, up: Up) => {
                 parentRows[self] = parentRow;
                 rowParents[base + row] = parentRow;
                 rowParentEntities[base + row] = index;
-                keys[base + row] = isReadable(parentArchetype) ? parentArchetype : -1;
+                const known = parentArchetype < readable.length ? readable[parentArchetype] : 0;
+                keys[base + row] = (known === 0 ? isReadable(parentArchetype) : known === 1) ? parentArchetype : -1;
                 parentSeen[parentArchetype] = 1;
                 parentEntities[self] = index;
                 const parentBase = bases[parentArchetype];
@@ -183,21 +185,20 @@ export const createUp = (state: State, up: Up) => {
             }
         }
         depths.fill(unknownDepth, 0, count);
+        stack = fit(stack, count);
         let deepest = -1;
         for (let start = 0; start < count; start++) {
             if (depths[start] !== unknownDepth) continue;
             let current = start;
+            let height = 0;
             while (current >= 0 && depths[current] === unknownDepth) {
                 depths[current] = visiting;
-                stack.push(current);
+                stack[height++] = current;
                 current = parents[current];
             }
             let depth = current < 0 ? -1 : depths[current];
             const onCycle = depth === visiting || depth === cyclic;
-            while (stack.length > 0) {
-                const row = stack.pop() ?? 0;
-                depths[row] = onCycle ? cyclic : ++depth;
-            }
+            while (height > 0) depths[stack[--height]] = onCycle ? cyclic : ++depth;
             if (!onCycle) deepest = Math.max(deepest, depth);
         }
         // A counting sort by depth keeps storage order within each depth.

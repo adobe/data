@@ -31,6 +31,48 @@ world.query.select([persistent], { where: { [shared]: true } });
 // @ts-expect-error read values are readonly
 if (values) values[persistent] = true;
 
+// Observing an entity: required components are present, optional ones possibly; without options, every one possibly.
+const observedWhole: Observe<{ readonly [K in typeof point | typeof shared]?: unknown } | null> = world.observe.entity(entity);
+const observedBoth: Observe<({ readonly [point]: { readonly x: number } } & { readonly [shared]?: true }) | null> = world.observe.entity(entity, { required: [point], optional: [shared] });
+const stopEntity: () => void = world.observe.entity(entity, { required: [point] })(value => {
+    const x: number | null = value === null ? null : value[point].x;
+    void x;
+});
+world.observe.entity(entity, { optional: [point] })(value => {
+    // @ts-expect-error an optional component may be absent
+    void value?.[point].x;
+});
+world.observe.entity(entity, { required: [point], optional: [shared] })(value => {
+    if (value === null) return;
+    const x: number = value[point].x;
+    const maybe: true | undefined = value[shared];
+    // @ts-expect-error an optional component may be absent
+    const surely: true = value[shared];
+    // @ts-expect-error only listed components are observed
+    void value[persistent];
+    // @ts-expect-error observed values are read-only
+    value[point].x = 1;
+    void [x, maybe, surely];
+});
+world.observe.entity(entity)(value => {
+    if (value === null) return;
+    const x: number | undefined = value[point]?.x;
+    // @ts-expect-error every component may be absent
+    void value[point].x;
+    // @ts-expect-error observed values are read-only
+    value[shared] = true;
+    void x;
+});
+// @ts-expect-error options are an object, not a list
+world.observe.entity(entity, [point]);
+// @ts-expect-error an observed entity may be dead
+world.observe.entity(entity)((value: object) => { void value; });
+// @ts-expect-error a component's value has its type
+world.observe.entity(entity, { required: [point] })((value: { readonly [point]: string } | null) => { void value; });
+// @ts-expect-error options list only components
+world.observe.entity(entity, { optional: ["systemTest/time"] });
+void [observedWhole, observedBoth, stopEntity];
+
 const ran: Promise<World.Report> = world.run(main);
 const moved: Promise<World.Report> = world.run(move, { distance: 1 });
 const reported = async () => {

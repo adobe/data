@@ -16,7 +16,7 @@ import { execute, type ExecuteContext } from './execute.js';
 import { sharedMemoryAvailable } from './memory.js';
 import { createPool, defaultWorkerCount, type Pool } from './pool.js';
 import { createPublisher } from './publish.js';
-import { count, createComponentReader, readEntity, select } from './reads.js';
+import { count, createComponentReader, readEntity, select, type EntityOptions } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
 import { ensureResources, findResource, initialOf, setResource } from './resources.js';
 import { ensureProgramResources, activate } from './activate.js';
@@ -111,8 +111,17 @@ export const createWorld = (options: WorldOptions = {}): World => {
         }
         catch (error) {
             registration.rollback();
+            observers.reassert();
             throw error;
         }
+    };
+
+    /** Once entity observers start kernels' stamps for more components: kernels that dropped them load again. */
+    const reloadObserved = async (): Promise<void> => {
+        // Workers see the new tick arrays before the next run's tasks.
+        context.publish();
+        await Promise.all(registrar.kernels().filter(runner => runner.kernel?.stale() === true).map(runner => runner.load()));
+        await loadOnWorkers();
     };
 
     const checkLive = (): void => {
@@ -171,6 +180,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
             return enqueue(async () => {
                 if (registration !== null) await complete(registration);
                 ensureProgramResources(state, ensured);
+                if (observers.start()) await reloadObserved();
                 if (deviceChanged()) await followDevice();
                 const schedule = registrar.registered(definition);
                 if (schedule === undefined) throw new Error(`System "${system.name}" didn't register.`);
@@ -217,6 +227,8 @@ export const createWorld = (options: WorldOptions = {}): World => {
         observe: {
             // Stored values match each resource's registered schema, so they have its type.
             resource: <R extends Resource.Name>(key: R) => observers.resource(key) as Observe<ReadonlyResourceValue<R>>,
+            // Stored values match each component's registered schema, so they have its type.
+            entity: ((entity: Entity, options?: EntityOptions) => observers.entity(entity, options)) as World["observe"]["entity"],
         },
         query: {
             select: (has, options) => select(state, has, options),
@@ -224,7 +236,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
         },
         read: {
             // Stored values match each component's registered schema, so they have its type.
-            entity: <const C extends readonly Component.Name[]>(entity: Entity, components: C) => readEntity(state, entity, components) as ValuesOf<C> | null,
+            entity: <const C extends readonly Component.Name[]>(entity: Entity, components: C) => readEntity(state, entity, { required: components }) as ValuesOf<C> | null,
             component: <C extends Component.Name>(entity: Entity, component: C) => {
                 const value = readComponent(entity, component);
                 // Stored values match each component's registered schema, so they have its type.

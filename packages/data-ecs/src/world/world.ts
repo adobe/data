@@ -46,6 +46,21 @@ export type World = {
          * notifications before it resolves.
          */
         resource<R extends Resource.Name>(name: R): Observe<ReadonlyResourceValue<R>>;
+        /**
+         * Every component an entity has, each possibly present, or `null` once it's dead: now, during the subscribing call,
+         * then after each run that wrote a component it has, added or removed one, or despawned it, with the run's other
+         * notifications before it resolves.
+         */
+        entity(entity: Entity): Observe<{ readonly [K in Component.Name]?: ReadonlyValue<K> } | null>;
+        /**
+         * An entity's required components and those optional ones it has, or `null` while it's dead or lacks a required
+         * one: now, then after each run that wrote a listed component of it, added or removed one, or despawned it. Other
+         * components' changes don't notify.
+         */
+        entity<const R extends readonly Component.Name[] = [], const O extends readonly Component.Name[] = []>(
+            entity: Entity,
+            options: { readonly required?: R; readonly optional?: O },
+        ): Observe<({ readonly [K in R[number]]: ReadonlyValue<K> } & { readonly [K in O[number]]?: ReadonlyValue<K> }) | null>;
     };
     /** Brings the CPU copies of these components up to date with GPU writes, queued with runs. */
     synchronize(components: readonly Component.Name[]): Promise<void>;

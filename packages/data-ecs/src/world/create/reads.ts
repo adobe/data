@@ -174,18 +174,30 @@ export const createComponentReader = (state: State) => {
     };
 };
 
-/** The listed components of a live entity, or `null` if it's dead or lacks any. */
-export const readEntity = (state: State, entity: Entity, components: readonly Key[]): object | null => {
+/** The components `read.entity` and `observe.entity` take: without them, every component the entity has. */
+export type EntityOptions = { readonly required?: readonly Key[]; readonly optional?: readonly Key[] };
+
+/** A live entity's required components and the optional ones it has, or every one without options; `null` if it's dead or lacks a required one. */
+export const readEntity = (state: State, entity: Entity, options: EntityOptions | undefined): object | null => {
     const index = locate(state.entities, entity);
     if (index < 0) return null;
     const archetype = state.archetypes[state.entities.archetype[index]];
     const row = state.entities.row[index];
     const values: { [key: Key]: unknown } = {};
-    for (const key of components) {
+    if (options === undefined) {
+        for (const storage of archetype.storages) values[state.keys[storage.component]] = readCell(storage, row);
+        return values;
+    }
+    for (const key of options.required ?? []) {
         const id = state.ids.get(key);
         const storage = id === undefined ? undefined : archetype.storageById[id];
         if (storage === undefined) return null;
         values[key] = readCell(storage, row);
+    }
+    for (const key of options.optional ?? []) {
+        const id = state.ids.get(key);
+        const storage = id === undefined ? undefined : archetype.storageById[id];
+        if (storage !== undefined) values[key] = readCell(storage, row);
     }
     return values;
 };

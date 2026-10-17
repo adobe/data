@@ -184,9 +184,11 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
 };
 
 const remove = (state: State, archetype: Archetype, row: number): void => {
-    archetype.rowsChanged = state.tick;
     const moved = swapRemove(archetype, row);
-    if (moved !== -1) state.entities.row[indexOf(moved)] = row;
+    if (moved === -1) return;
+    state.entities.row[indexOf(moved)] = row;
+    // Its row changed, so what `up` keeps of it does.
+    record(state.journal, indexOf(moved), state.entities.length);
 };
 
 const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Archetype, toRow: number, from: Archetype | null, fresh: readonly number[] | undefined, tick: number): void => {
@@ -248,7 +250,6 @@ const applyEntry = (state: State, queued: readonly Queued[], entry: number, tick
     }
     const to = archetypes[plan.to[entry]];
     const fromRow = from === null ? -1 : entities.row[index];
-    if (to !== from) to.rowsChanged = tick;
     const toRow = to === from ? fromRow : insertRow(state.memory, to, entity);
     if (from !== null && to !== from) {
         const moves = movesOf(from, to);

@@ -325,8 +325,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
                 if (depth >= order.levels) return null;
                 const runs: Run[] = [];
                 for (let group = order.depthGroups[depth]; group < order.depthGroups[depth + 1]; group++) {
-                    const start = group === 0 ? 0 : order.groupEnds[group - 1];
-                    runs.push({ owner: order.groupOwners[group], parent: order.groupParents[group], rows: order.rows, parents: order.parents, start, end: order.groupEnds[group] });
+                    if (order.groupEnds[group] === order.groupStarts[group]) continue;
+                    runs.push({ owner: order.groupOwners[group], parent: order.groupParents[group], rows: order.rows, parents: order.parents, start: order.groupStarts[group], end: order.groupEnds[group] });
                 }
                 depth++;
                 return runs;
@@ -475,15 +475,15 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         const gpu = state.gpu;
         if (gpu === null || pipeline === null || kernel === null || up === null) return failPlacement("isn't loaded on the GPU");
         const order = up.levels(matches);
-        const total = order.groups === 0 ? 0 : order.groupEnds[order.groups - 1];
         const fresh = order !== uploadedOrder;
-        const rowsAddress = gpu.uploadIndexes(`${declaration.name}:rows`, order.rows, total, fresh);
-        const parentsAddress = gpu.uploadIndexes(`${declaration.name}:parents`, order.parents, total, fresh);
+        const rowsAddress = gpu.uploadIndexes(`${declaration.name}:rows`, order.rows, order.size, fresh);
+        const parentsAddress = gpu.uploadIndexes(`${declaration.name}:parents`, order.parents, order.size, fresh);
         uploadedOrder = order;
         const { sources } = kernel.setup;
         const scalars = scalarValues(pipeline.kernel.scalars, values, args);
         const dispatches: { readonly offset: number; readonly count: number }[] = [];
-        for (let group = 0, start = 0; group < order.groups; start = order.groupEnds[group++]) {
+        for (let group = 0; group < order.groups; group++) {
+            const start = order.groupStarts[group];
             const count = order.groupEnds[group] - start;
             if (count === 0) continue;
             const archetype = matches[order.groupOwners[group]];

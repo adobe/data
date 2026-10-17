@@ -98,8 +98,6 @@ export type Archetype = {
     readonly resource: boolean;
     /** Incremented whenever arrays are replaced, so cached views can be refreshed. */
     version: number;
-    /** The tick of the last sync point that added, removed or moved its rows, so what depends on them is kept until then. */
-    rowsChanged: number;
 };
 
 const initialCapacity = 16;
@@ -162,7 +160,6 @@ export const createArchetype = (memory: Memory, id: number, components: readonly
         removing: [],
         moves: [],
         entities: allocateArray(memory, Float64Array, initialCapacity),
-        rowsChanged: 0,
         count: 0,
         capacity: initialCapacity,
         resource,

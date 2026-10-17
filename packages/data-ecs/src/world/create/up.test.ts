@@ -94,6 +94,9 @@ const loop = System.create({ name: "upTest/loop" }, ({ commands }) => {
     commands.add(entities.root, { [parent]: entities.grandchild });
     commands.spawn({ [label]: "under", [local]: 5, [world]: 0, [parent]: entities.child });
 });
+/** Puts the root under the grandchild, two levels below it, then under `other`. */
+const close = System.create({ name: "upTest/close" }, ({ commands }) => { commands.add(entities.root, { [parent]: entities.grandchild }); });
+const open = System.create({ name: "upTest/open" }, ({ commands }) => { commands.add(entities.root, { [parent]: entities.other }); });
 const orphan = System.create({ name: "upTest/orphan" }, ({ commands }) => { commands.remove(entities.grandchild, parent); });
 
 const worlds = (read: (entity: Entity) => number | null): { [name: string]: number | null } =>
@@ -190,6 +193,19 @@ describe("up", () => {
         await ecs.run(propagateChanged);
         expect(ran).toEqual(["grandchild"]);
         expect(ecs.read.component(entities.grandchild, world)).toBe(100);
+    });
+
+    it("finds a cycle a reparent closes after the tree was built, and runs its rows again once it opens", async () => {
+        await using ecs = createWorld({ workers: 0 });
+        await ecs.run(spawn);
+        await ecs.run(nest);
+        await ecs.run(propagateKernel);
+        await ecs.run(close);
+        await ecs.run(propagateKernel);
+        expect(worlds(entity => ecs.read.component(entity, world))).toEqual({ root: 1, grandchild: 111, child: 11, other: 1000 });
+        await ecs.run(open);
+        await ecs.run(propagateKernel);
+        expect(worlds(entity => ecs.read.component(entity, world))).toEqual({ root: 1001, grandchild: 1111, child: 1011, other: 1000 });
     });
 
     it("doesn't run rows on or under a parent cycle", async () => {

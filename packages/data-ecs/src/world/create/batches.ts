@@ -236,7 +236,6 @@ export const commitBatches = (state: State, tick: number, born: Map<number, numb
             entities.row[index] = start + i;
         }
         target.count += n;
-        target.rowsChanged = tick;
         state.touched?.add(target);
         batch.count = 0;
         committed += n;

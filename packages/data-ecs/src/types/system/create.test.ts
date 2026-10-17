@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../component/component.js";
-import { definitionOf, itemNamed, threadOf } from "../registry/index.js";
+import { definitionOf, itemNamed, requireDefinition, scheduleOf, threadOf } from "../registry/index.js";
 import { Resource } from "../resource/resource.js";
-import { gpuDevice } from "../resources/index.js";
+import { clock, gpuDevice, report } from "../resources/index.js";
 import { System } from "./system.js";
 
 const position = "typesSystemTest/position";
@@ -42,9 +42,18 @@ describe("System.create", () => {
         expect(itemNamed("typesSystemTest/move")).toBe(move);
         expect(definitionOf({ name: "typesSystemTest/move" })).toBe(undefined);
     });
-    it("rejects a name used twice, even with the same declaration, recording nothing", () => {
-        System.create({ name: "typesSystemTest/twice" }, () => {});
-        expect(() => System.create({ name: "typesSystemTest/twice" }, () => {})).toThrow('A system, rule or finalizer named "typesSystemTest/twice" already exists.');
+    it("accepts the same declaration again as a new system, as a module evaluated again makes it, and rejects a different one", () => {
+        const first = System.create({ name: "typesSystemTest/twice", components: { read: [position] } }, () => {});
+        const again = System.create({ name: "typesSystemTest/twice", components: { read: [position] } }, () => {});
+        expect(again).not.toBe(first);
+        expect(itemNamed("typesSystemTest/twice")).toBe(again);
+        expect(definitionOf(first)).toBe(first);
+        expect(() => System.create({ name: "typesSystemTest/twice", components: { write: [position] } }, () => {})).toThrow('A different system, rule or finalizer named "typesSystemTest/twice" already exists');
+        expect(itemNamed("typesSystemTest/twice")).toBe(again);
+    });
+    it("rejects writing what only the world writes, for untyped callers", () => {
+        expect(() => create({ name: "typesSystemTest/clock", resources: { write: [clock] } })).toThrow(`writes "clock", which only the world writes`);
+        expect(() => create({ name: "typesSystemTest/report", resources: { write: [report] } })).toThrow(`writes "report", which only the world writes`);
     });
     it("rejects what types reject, for untyped callers", () => {
         expect(() => create({ name: "typesSystemTest/both", components: { read: [position], write: [position] } })).toThrow("in both components read and write");
@@ -73,6 +82,16 @@ describe("System.composite", () => {
         const frame = System.composite({ name: "typesSystemTest/frame", systems: [show, name] });
         expect(definitionOf(frame)?.kind).toBe("composite");
         expect(() => System.composite({ name: "typesSystemTest/frame", systems: [show] })).toThrow("already exists");
+    });
+    it("rejects members ordered in a cycle, and conflicting members with no order between them", () => {
+        const first = System.create({ name: "typesSystemTest/first", components: { write: [position] } }, () => {});
+        const second = System.create({ name: "typesSystemTest/second", components: { read: [position] }, after: [first] }, () => {});
+        const third = System.create({ name: "typesSystemTest/third", components: { read: [position] } }, () => {});
+        expect(scheduleOf(requireDefinition(System.composite({ name: "typesSystemTest/ordered", systems: [second, first] }))).tiers.map(tier => tier.map(leaf => leaf.name))).toEqual([["typesSystemTest/first"], ["typesSystemTest/second"]]);
+        expect(() => System.composite({ name: "typesSystemTest/unordered", systems: [first, third] })).toThrow('Systems "typesSystemTest/first" and "typesSystemTest/third" both access "typesSystemTest/position" and one writes it');
+        const looped = System.create({ name: "typesSystemTest/looped", before: [first], after: [second] }, () => {});
+        expect(() => System.composite({ name: "typesSystemTest/cycle", systems: [first, second, looped] })).toThrow("Ordering cycle");
+        expect(itemNamed("typesSystemTest/unordered")).toBe(undefined);
     });
     it("rejects a member no constructor returned, and an input field two members declare differently", () => {
         expect(() => System.composite({ name: "typesSystemTest/forged", systems: [{ name: "typesSystemTest/showMember" }] })).toThrow('member "typesSystemTest/showMember" isn\'t a system a System constructor returned');

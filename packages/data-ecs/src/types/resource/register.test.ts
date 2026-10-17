@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../component/component.js";
 import { declarationOf, kindOf, threadOfDeclaration } from "../registry/index.js";
-import { gpuDevice, workers } from "../resources/index.js";
+import { threadClaims, threadPort, threadStatus } from "../components/index.js";
+import { always, cadence, clock, gpuDevice, report, wake, workers } from "../resources/index.js";
 import { Resource } from "./resource.js";
 
 const time = "typesResourceTest/time";
@@ -40,18 +41,34 @@ describe("Resource.register", () => {
         expect(() => register(Symbol(), { type: { type: "boolean", default: false } })).toThrow("a symbol name needs a description");
         expect(() => register(Symbol("typesResourceTest/symbol"), { type: { type: "boolean", default: false } })).toThrow("already declared as a resource");
     });
-    it("rejects a name registered twice, and one also declared as a component", () => {
-        expect(() => Resource.register(time, { type: { type: "number", default: 0 } })).toThrow(`Cannot declare resource "${time}": already declared as a resource.`);
+    it("accepts the same declaration again, and rejects a different one or one also declared as a component", () => {
+        expect(() => Resource.register(time, { type: { type: "number", default: 0 } })).not.toThrow();
+        expect(() => Resource.register(time, { type: { type: "number", default: 1 } })).toThrow(`Cannot declare resource "${time}": already declared as a resource.`);
         // @ts-expect-error a name declared as both a component and a resource can't be registered as either
         Component.register(shared, { type: { const: true } });
         // @ts-expect-error a name declared as both a component and a resource can't be registered as either
         expect(() => Resource.register(shared, { type: { const: true, default: true } })).toThrow("already declared as a component");
     });
-    it("declares gpuDevice on \"world\" and workers, the kernel pool's size, starting at 0", () => {
+    it("declares gpuDevice on \"world\", and the loop's state as resources", () => {
         expect(declarationOf(gpuDevice)).toEqual({});
         expect(threadOfDeclaration(declarationOf(gpuDevice) ?? {})).toBe("world");
+        // Node has no Worker, so its platform default is no pool.
         expect(declarationOf(workers)).toEqual({ type: { type: "integer", minimum: 0, default: 0 } });
         expect(threadOfDeclaration(declarationOf(workers) ?? {})).toBe(null);
+        const defaults = [cadence, always, wake, clock, report].map(name => {
+            const type = declarationOf(name)?.type;
+            return type !== undefined && "default" in type ? type.default : undefined;
+        });
+        expect(defaults).toEqual([{ kind: "frame" }, false, Infinity, { now: 0, delta: 0, tick: 0 }, { failures: [], skipped: [], dropped: 0 }]);
+        expect(declarationOf(wake)?.reduce).toBe("min");
+        expect([cadence, always, wake, clock, report].map(name => threadOfDeclaration(declarationOf(name) ?? {}))).toEqual(["world", null, null, null, "world"]);
+    });
+    it("declares a joined thread's components", () => {
+        expect([threadPort, threadClaims, threadStatus].map(name => declarationOf(name))).toEqual([
+            { transfer: true },
+            { type: { type: "array", items: { type: "string" } } },
+            { type: { anyOf: [{ const: "joining" }, { const: "joined" }, { const: "gone" }] } },
+        ]);
     });
     it("checks thread and transfer as far as values tell", () => {
         Resource.register(cache, { default: new Map(), thread: "main" });

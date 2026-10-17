@@ -106,7 +106,8 @@ export namespace Schema {
     export type ForType<T> = Schema &
     (
         [T] extends [boolean] ? ForNonUnion<T> :
-        IsUnion<T> extends true ? OrSchema & { anyOf: readonly ForTypeEach<T>[] } :
+        // A union of strings, such as an augmentable set of names, may also be described as any string.
+        IsUnion<T> extends true ? (OrSchema & { anyOf: readonly ForTypeEach<T>[] }) | ([T] extends [string] ? StringSchema : never) :
         ForNonUnion<T>
     );
 
@@ -119,9 +120,10 @@ export namespace Schema {
         [T] extends [false] ? ConstSchema & { const: T } :
         [T] extends [boolean] ? BooleanSchema :
         [T] extends [Entity] ? EntitySchema :
-        [T] extends [string] ? StringSchema :
+        [T] extends [string] ? (string extends T ? StringSchema : ConstSchema & { const: T }) :
         [T] extends [number] ? (NumberSchema | IntegerSchema) :
         T extends readonly (infer U)[] ? ArraySchema<ForType<U> & Schema> :
-        T extends object ? ObjectSchema<Extract<keyof T, string>> & { properties: { [P in keyof T]-?: ForType<T[P]> } } :
+        // An optional property's schema describes its value when present.
+        T extends object ? ObjectSchema<Extract<keyof T, string>> & { properties: { [P in keyof T]-?: ForType<Exclude<T[P], undefined>> } } :
         never;
 }

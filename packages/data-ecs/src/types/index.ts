@@ -5,6 +5,7 @@ export { Finalizer } from './finalizer/finalizer.js';
 export type { Gpu } from './gpu/gpu.js';
 export type * from './math/math.js';
 export * from './resources/index.js';
+export type { Cadence } from './resources/cadence.js';
 export { Resource } from './resource/resource.js';
 export { Rule } from './rule/rule.js';
 export type { Schema } from './schema/schema.js';

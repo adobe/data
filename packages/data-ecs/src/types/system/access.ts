@@ -3,6 +3,7 @@ import type { Resource } from '../resource/resource.js';
 import type { Writable } from '../component/value.js';
 import type { Condition } from '../resource/condition.js';
 import type { Reduced } from '../resource/reduction.js';
+import type { WorldWritten } from '../resource/written.js';
 
 /**
  * Matches every component in `read`, `write`, `has`, `added` and `changed`, and excludes `not`. A component in `write`
@@ -30,10 +31,13 @@ export type Lookup = Pick<ComponentAccess, "read" | "has" | "not">;
  */
 export type Up = { readonly through: Component.With<"reference">; readonly read?: readonly Component.Name[] };
 
-/** A resource in `write` is also readable, so it's never listed in `read` as well. Reduced resources are never written. */
+/**
+ * A resource in `write` is also readable, so it's never listed in `read` as well. Reduced resources are never written,
+ * nor are those only the world writes.
+ */
 export type ResourceAccess = {
     readonly read?: readonly Resource.Name[];
-    readonly write?: readonly Exclude<Resource.Name, Reduced>[];
+    readonly write?: readonly Exclude<Resource.Name, Reduced | WorldWritten>[];
     /** Passes every row when any of these changed since the system last ran. */
     readonly changed?: readonly Resource.Name[];
     /** Runs only while each of these is neither `null` nor `false`, and reads it as such. Otherwise it's skipped, successfully. */

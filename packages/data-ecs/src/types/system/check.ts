@@ -1,5 +1,7 @@
 import { definitionOf } from '../registry/program.js';
+import { scheduleOf } from '../registry/schedule.js';
 import { threadOf } from '../registry/threads.js';
+import { checkWorldWritten } from '../registry/written.js';
 import type { Schema } from '../schema/schema.js';
 import type { Composite } from './composite.js';
 import type { Definition } from './definition.js';
@@ -23,6 +25,7 @@ export const checkLeaf = (leaf: Leaf): void => {
     const { name, components, resources, lookup, input } = declaration;
     checkLists(name, "components", components);
     checkLists(name, "resources", resources);
+    checkWorldWritten(`System "${name}"`, resources?.write);
     const writes = new Set<Key>(components?.write);
     for (const lookupName in lookup) {
         for (const key of lookup[lookupName].read ?? []) {
@@ -49,25 +52,11 @@ const leavesOf = (system: Definition, leaves: Set<Leaf>): Set<Leaf> => {
     return leaves;
 };
 
-/** Throws for a member no System constructor returned, or an input field two members declare with different schemas. */
+/**
+ * Throws for a member no System constructor returned, members ordered in a cycle, two that conflict with no order
+ * between them, or an input field two members declare with different schemas.
+ */
 export const checkComposite = (composite: Composite): void => {
-    const fields = new Map<string, { readonly schema: Schema; readonly system: string }>();
-    for (const { declaration: { name, input } } of leavesOf(composite, new Set())) {
-        if (input === undefined) continue;
-        for (const [field, property] of Object.entries(input.properties)) {
-            const seen = fields.get(field);
-            if (seen === undefined) fields.set(field, { schema: property, system: name });
-            else if (!sameValue(seen.schema, property)) {
-                throw new Error(`Systems "${seen.system}" and "${name}" declare input field "${field}" with different schemas.`);
-            }
-        }
-    }
-};
-
-/** Whether two JSON values are equal, key order aside. */
-const sameValue = (a: unknown, b: unknown): boolean => {
-    if (a === b) return true;
-    if (typeof a !== "object" || typeof b !== "object" || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false;
-    const keys = Object.keys(a);
-    return keys.length === Object.keys(b).length && keys.every(key => Object.hasOwn(b, key) && sameValue(Reflect.get(a, key), Reflect.get(b, key)));
+    leavesOf(composite, new Set());
+    scheduleOf(composite);
 };

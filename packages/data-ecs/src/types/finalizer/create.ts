@@ -2,6 +2,7 @@ import { declarationOf } from '../registry/declarations.js';
 import { kindOf } from '../registry/names.js';
 import { addFinalizer } from '../registry/program.js';
 import { threadOf } from '../registry/threads.js';
+import { checkWorldWritten } from '../registry/written.js';
 import type { Resource } from '../resource/resource.js';
 import type { Listed, Property } from '../system/property.js';
 import type { OneThread, ThreadsOf } from '../system/threads.js';
@@ -21,6 +22,7 @@ const checkResources = (name: string, resources: { readonly read?: readonly Key[
     const writes = new Set(resources?.write);
     const both = (resources?.read ?? []).find(key => writes.has(key));
     if (both !== undefined) throw new Error(`Finalizer "${name}" lists "${String(both)}" in both resources read and write; write already makes it readable.`);
+    checkWorldWritten(`Finalizer "${name}"`, resources?.write);
     for (const key of writes) {
         if (declarationOf(key)?.reduce !== undefined) throw new Error(`Finalizer "${name}" writes "${String(key)}", which is reduced; only its contributors' fold sets it.`);
     }
@@ -38,8 +40,7 @@ export const create = <const D extends Declaration>(
     const finalizer: Leaf<D> = { kind: "finalizer", name: declaration.name, declaration, body };
     checkResources(declaration.name, declaration.resources);
     threadOf(declaration, "Finalizer");
-    addFinalizer(finalizer);
-    return finalizer;
+    return addFinalizer(finalizer);
 };
 
 /**
@@ -56,6 +57,5 @@ export const changes = <const D extends ChangesDeclaration>(
         if (kindOf(key) !== "component") throw new Error(`Finalizer "${declaration.name}" watches "${String(key)}", which isn't a registered component.`);
         if (declarationOf(key)?.derived === true) throw new Error(`Finalizer "${declaration.name}" watches "${String(key)}", which is derived; it sees only components user code adds and removes.`);
     }
-    addFinalizer(finalizer);
-    return finalizer;
+    return addFinalizer(finalizer);
 };

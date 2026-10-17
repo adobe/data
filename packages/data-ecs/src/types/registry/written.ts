@@ -1,0 +1,14 @@
+import { clock } from '../resources/clock.js';
+import { report } from '../resources/report.js';
+
+/** Resources only the world writes. */
+const worldWritten: ReadonlySet<string | symbol> = new Set([clock, report]);
+
+/** Throws if `writes` lists a resource only the world writes. */
+export const checkWorldWritten = (what: string, writes: readonly (string | symbol)[] | undefined): void => {
+    const found = writes?.find(key => worldWritten.has(key));
+    if (found !== undefined) throw new Error(`${what} writes "${String(found)}", which only the world writes.`);
+};
+
+/** Whether only the world writes a resource. */
+export const isWorldWritten = (key: string | symbol): boolean => worldWritten.has(key);

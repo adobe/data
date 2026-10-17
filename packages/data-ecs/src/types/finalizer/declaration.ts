@@ -5,13 +5,14 @@ import type { Finalizer } from './finalizer.js';
 import type { Name } from './name.js';
 import type { Essential } from '../component/value.js';
 import type { Reduced } from '../resource/reduction.js';
+import type { WorldWritten } from '../resource/written.js';
 
 type Shared = {
     readonly name: Name;
     /** Read-only access to other entities, as they are before the sync point applies. */
     readonly lookup?: { readonly [name: string]: Lookup };
     /** Writes take the sync point's tick, so each system sees them once. A resource in `write` is also readable. */
-    readonly resources?: { readonly read?: readonly Resource.Name[]; readonly write?: readonly Exclude<Resource.Name, Reduced>[] };
+    readonly resources?: { readonly read?: readonly Resource.Name[]; readonly write?: readonly Exclude<Resource.Name, Reduced | WorldWritten>[] };
     readonly before?: readonly Finalizer[];
     readonly after?: readonly Finalizer[];
 };

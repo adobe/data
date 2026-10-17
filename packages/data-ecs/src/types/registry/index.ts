@@ -1,13 +1,20 @@
 /** What registration recorded, for the implementation to read. Not part of the public interface. */
 export type { AnyDeclaration } from './declarations.js';
-export { declarationOf, threadOfDeclaration } from './declarations.js';
+export { declarationOf, hasSymbolNames, schemaOf, threadOfDeclaration } from './declarations.js';
 export type { Kind } from './names.js';
 export { kindOf } from './names.js';
 export type { Item } from './program.js';
-export { definitionOf, itemNamed, programFinalizers, programRules } from './program.js';
+export { definitionOf, itemNamed, programFinalizers, programRules, programVersion, requireDefinition } from './program.js';
+export type { Schedule } from './schedule.js';
+export { accessOf, isLeaf, reducedBy, scheduleOf } from './schedule.js';
+export type { RuleFacts, Strata } from './strata.js';
+export { strataOf } from './strata.js';
 export type { Placed } from './threads.js';
 export { threadOf } from './threads.js';
 export { isTrait } from './traits.js';
+export { isWorldWritten } from './written.js';
+export { sameDeclaration } from './same-declaration.js';
+export { allowsNull, isStruct } from './schemas.js';
 export type { Definition } from '../system/definition.js';
 export type { Leaf } from '../system/leaf.js';
 export type { Composite } from '../system/composite.js';

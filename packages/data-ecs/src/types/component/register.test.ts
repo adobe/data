@@ -51,9 +51,11 @@ describe("Component.register", () => {
         expect(threadOfDeclaration({ type: { type: "object", properties: { at: { type: "number" } }, required: [] } })).toBe("world");
         expect([parent, label, placed, position].map(name => threadOfDeclaration(declarationOf(name) ?? {}))).toEqual([null, "world", "typesComponentTest", null]);
     });
-    it("rejects a name registered twice, even with the same declaration, and a name of another kind", () => {
+    it("accepts the same declaration again, as a module evaluated again makes it, and rejects a different one or a name of another kind", () => {
         Component.register(count, { type: { type: "number" } });
-        expect(() => Component.register(count, { type: { type: "number" } })).toThrow(`Cannot declare component "${count}": already declared as a component.`);
+        expect(() => Component.register(count, { type: { type: "number" } })).not.toThrow();
+        expect(() => register(count, { type: { type: "integer" } })).toThrow(`Cannot declare component "${count}": already declared as a component.`);
+        expect(declarationOf(count)).toEqual({ type: { type: "number" } });
         // @ts-expect-error derived names a trait, not a component
         expect(() => Component.register("derived", { type: { const: true } })).toThrow("already declared as a trait");
         expect(kindOf(count)).toBe("component");
@@ -65,6 +67,9 @@ describe("Component.register", () => {
         expect(() => register("typesComponentTest/reduced", { type: { type: "number" }, reduce: "+" })).toThrow("only a resource is reduced");
         expect(declarationOf("typesComponentTest/badReference")).toBe(undefined);
         expect(kindOf("typesComponentTest/badReference")).toBe(undefined);
+    });
+    it("rejects a schema whose GPU layout can't hold it", () => {
+        expect(() => register("typesComponentTest/storageText", { type: { type: "array", items: { type: "string" }, layout: "storage" } })).toThrow("layout needs numbers");
     });
     it("checks thread and transfer as far as values tell", () => {
         expect(() => register("typesComponentTest/placedStruct", { type: { type: "number" }, thread: "main" })).toThrow("a struct lives in shared memory, so it has no thread");
@@ -79,7 +84,7 @@ describe("Component.register", () => {
         expect(() => register(marked, { type: { const: true }, [mark]: true })).toThrow(`${mark} isn't a registered trait`);
         Trait.register(mark);
         Component.register(marked, { type: { const: true }, [mark]: true });
-        expect(() => Trait.register(mark)).toThrow(`Cannot declare trait "${mark}": already declared as a trait.`);
+        expect(() => Trait.register(mark)).not.toThrow();
         Component.register(slot, { type: { type: "number", default: 0 }, derived: true });
         expect(declarationOf(slot)).toEqual({ type: { type: "number", default: 0 }, derived: true });
     });

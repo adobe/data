@@ -286,7 +286,7 @@
         }
     },
     "select": {
-        "operation": "A main-thread `select` with `where`, then reading a component of each result: queries from UI or tools.",
+        "operation": "The first value of `observe.select` with `where`, given while subscribing: a query from UI or tools.",
         "per": "rows",
         "n": 1000000,
         "typical": [
@@ -294,8 +294,8 @@
             100000
         ],
         "best": {
-            "bytes": 18,
-            "basis": "Each row reads its 4-byte index; each selected half writes its 8-byte entity and reads its location and 12-byte position."
+            "bytes": 8,
+            "basis": "Each row reads its 4-byte index; each selected half writes its 8-byte entity."
         }
     },
     "move main": {

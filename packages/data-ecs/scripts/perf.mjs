@@ -3,7 +3,8 @@
 //   pnpm perf [filter]           node benchmarks whose names match the regular expression filter, each in a process
 //                                of its own, compared with the last record
 //   pnpm perf:browser            chromium benchmarks: main thread, workers and GPU
-//   add --record                 append the results to perf/history and regenerate perf/README.md
+//   add --record                 append the results to perf/history and regenerate perf/README.md, keeping the
+//                                faster of two processes per node benchmark
 //   pnpm perf:report             regenerate perf/README.md from perf/history
 //
 // Results are kept per machine, since times only compare on the same hardware.
@@ -82,7 +83,7 @@ const latest = records => {
 };
 
 /** Runs a command, passing its output through, and collects the perf lines it prints, after the given environment. */
-const collect = (command, args, known) => new Promise((done, failed) => {
+const collect = (command, args, known, quiet = false) => new Promise((done, failed) => {
     const child = spawn(command, args, { cwd: root, stdio: ["ignore", "pipe", "inherit"] });
     let environment = known;
     const results = [];
@@ -94,7 +95,7 @@ const collect = (command, args, known) => new Promise((done, failed) => {
         else if (resultAt >= 0) {
             const result = JSON.parse(text.slice(resultAt + "perf-result ".length));
             results.push(result);
-            progress(environment, result);
+            if (!quiet) progress(environment, result);
         } else if (flags.has("--verbose")) console.log(text);
     };
     child.stdout.on("data", data => {
@@ -143,8 +144,20 @@ const run = async () => {
     const { environment } = await collect("node", ["dist/perf/run.js", "--environment"]);
     const pattern = filter === undefined ? null : new RegExp(filter);
     const names = execFileSync("node", ["dist/perf/run.js", "--names"], { cwd: root, encoding: "utf8" }).split("\n").filter(name => name !== "" && (pattern === null || pattern.test(name)));
+    // A record keeps the faster of two processes per benchmark, so one disturbed process doesn't stand.
+    const repeats = flags.has("--record") ? 2 : 1;
     const results = [];
-    for (const name of names) results.push(...(await collect("node", ["dist/perf/run.js", name], environment)).results);
+    for (const name of names) {
+        let fastest;
+        for (let k = 0; k < repeats; k++) {
+            for (const result of (await collect("node", ["dist/perf/run.js", name], environment, true)).results) {
+                if (fastest === undefined || result.milliseconds < fastest.milliseconds) fastest = result;
+            }
+        }
+        if (fastest === undefined) continue;
+        progress(environment, fastest);
+        results.push(fastest);
+    }
     return { environment, results };
 };
 

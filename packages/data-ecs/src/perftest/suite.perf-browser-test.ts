@@ -163,11 +163,11 @@ const benchmarks = (device: GPUDevice): readonly Benchmark[] => [
                 await seeded(() => world, 1_000_000);
                 let frame = 0;
                 let best = Infinity;
-                for (let i = 0; i < 60; i++) {
+                for (let i = 0; i < 200; i++) {
                     await world.run(poke, { group: frame++ % 100 });
                     const start = performance.now();
                     await world.run(observe);
-                    if (i >= 10) best = Math.min(best, performance.now() - start);
+                    if (i >= 20) best = Math.min(best, performance.now() - start);
                 }
                 return best;
             }),

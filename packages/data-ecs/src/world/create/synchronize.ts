@@ -8,7 +8,7 @@ import { refreshDirectories } from './directories.js';
 import { record } from './journal.js';
 import { indexOf, locate, materialize, recycle, release, reserved, type Reserved } from './entities.js';
 import { activate } from './activate.js';
-import { runFinalizers } from './finalizers.js';
+import { runFinalizers, type Thrown } from './finalizers.js';
 import { defaultOf } from './resources.js';
 import { closureOf, derives, gainsOf } from './structure.js';
 import { archetypeOf, movesOf, withComponent, withoutComponent, type State } from './state.js';
@@ -142,10 +142,16 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
             else {
                 entry = slots[index];
                 if (entry >= 0) {
-                    if (plan.entity[entry] !== entity || plan.despawned[entry] === 1) continue;
+                    if (plan.entity[entry] !== entity || plan.despawned[entry] === 1) {
+                        plan.dropped++;
+                        continue;
+                    }
                 }
                 else {
-                    if (locate(state.entities, entity) < 0) continue;
+                    if (locate(state.entities, entity) < 0) {
+                        plan.dropped++;
+                        continue;
+                    }
                     const from = state.entities.archetype[index];
                     entry = addEntry(state, entity, index, from, from);
                 }
@@ -313,6 +319,7 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     for (let entry = 0; entry < plan.count; entry++) plan.slots[indexOf(plan.entity[entry])] = -1;
     plan.count = 0;
     plan.spawned = 0;
+    plan.dropped = 0;
     plan.more.clear();
     plan.fresh.clear();
     // Systems reuse their buffers next run.
@@ -336,6 +343,7 @@ export const prepareSync = (state: State, isolated = false): boolean => {
     if (queued.every(({ buffer }) => buffer.count === 0) && !reserved(state.entities) && state.carried === null && !structure.rederive) return false;
     plan.count = 0;
     plan.spawned = 0;
+    plan.dropped = 0;
     let reservations: Reserved | null = null;
     try {
         reservations = merged(state.carried, materialize(state.memory, state.entities));
@@ -392,15 +400,15 @@ export const prepareSync = (state: State, isolated = false): boolean => {
 
 /**
  * The second half: runs finalizers against the plan, then applies it. A finalizer that throws doesn't stop the sync
- * point; the first error is thrown once it has applied.
+ * point; what each threw is returned once it has applied.
  */
-export const applySync = (state: State): void => {
+export const applySync = (state: State): readonly Thrown[] => {
     const syncing = state.syncing;
-    if (syncing === null) return;
+    if (syncing === null) return [];
     const { queued, reservations, tick, born, index, deriving, isolated } = syncing;
     const tableLength = syncing.reserved;
     const { plan } = state;
-    let errors: unknown[] = [];
+    let errors: Thrown[] = [];
     try {
         if (state.finalizers.length > 0 && !isolated) {
             errors = runFinalizers(state, queued, born);
@@ -424,7 +432,7 @@ export const applySync = (state: State): void => {
     }
     // Only after a sync point that applied, so a failing one keeps its own error.
     for (const after of state.afterSync) after();
-    if (errors.length > 0) throw errors[0];
+    return errors;
 };
 
 /** Applies every queued command as one sync point with a new tick, then empties the queue. */

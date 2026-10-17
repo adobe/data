@@ -69,9 +69,10 @@ export type GpuEngine = {
     /** Set once the device is lost; later runs that use the GPU reject with it, and readbacks keep the CPU's copies. */
     readonly lost: () => string | null;
     /** Records the first error a run's scopes report, for the next run to reject with. */
-    readonly reportErrors: (validation: Promise<GPUError | null>, memory: Promise<GPUError | null>) => void;
+    /** Keeps the first error of a run's GPU work, with the name of the system whose run submitted it. */
+    readonly reportErrors: (name: string, validation: Promise<GPUError | null>, memory: Promise<GPUError | null>) => void;
     /** The recorded error, cleared. */
-    readonly takeError: () => string | null;
+    readonly takeError: () => { readonly name: string; readonly message: string } | null;
     readonly destroy: () => void;
 };
 
@@ -95,7 +96,7 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
     let groups: { render: GPUBindGroup; compute: GPUBindGroup } | null = null;
     let encoder: GPUCommandEncoder | null = null;
     let lostReason: string | null = null;
-    let recorded: string | null = null;
+    let recorded: { readonly name: string; readonly message: string } | null = null;
     const residents = new Map<Storage, Resident>();
     const ahead = new Set<Resident>();
     void device.lost.then(info => { lostReason = info.message === "" ? info.reason : info.message; });
@@ -315,11 +316,11 @@ export const createGpu = (device: GPUDevice): GpuEngine => {
         disturb: disturbed => { disturbedNow = disturbed; },
         touched,
         lost: () => lostReason,
-        reportErrors: (validation, memory) => {
+        reportErrors: (name, validation, memory) => {
             void (async () => {
                 const [invalid, exhausted] = await Promise.all([validation, memory]);
-                if (invalid !== null) recorded ??= `validation: ${invalid.message}`;
-                else if (exhausted !== null) recorded ??= `out of memory: ${exhausted.message}`;
+                if (invalid !== null) recorded ??= { name, message: `validation: ${invalid.message}` };
+                else if (exhausted !== null) recorded ??= { name, message: `out of memory: ${exhausted.message}` };
             })();
         },
         takeError: () => {

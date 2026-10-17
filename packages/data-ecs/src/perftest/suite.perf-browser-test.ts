@@ -84,7 +84,7 @@ const gpuBandwidth = async (device: GPUDevice): Promise<number> => {
 };
 
 /** Milliseconds per run on the GPU: runs submitted back to back, timed until the GPU finishes them. */
-const gpuFastest = async (device: GPUDevice, run: () => Promise<void>, batch = 20): Promise<number> => {
+const gpuFastest = async (device: GPUDevice, run: () => Promise<unknown>, batch = 20): Promise<number> => {
     for (let i = 0; i < batch; i++) await run();
     await device.queue.onSubmittedWorkDone();
     let best = Infinity;

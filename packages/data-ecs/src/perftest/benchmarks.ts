@@ -25,7 +25,7 @@ const observed = async (world: World, writer: typeof poke | typeof pokeCluster):
 };
 
 /** The fastest run of `measured` right after `before` runs, over `rounds` rounds after `warmup`. */
-const after = async (before: () => Promise<void>, measured: () => Promise<void>, rounds = 100, warmup = 20): Promise<number> => {
+const after = async (before: () => Promise<unknown>, measured: () => Promise<unknown>, rounds = 100, warmup = 20): Promise<number> => {
     let best = Infinity;
     for (let i = 0; i < rounds; i++) {
         await before();

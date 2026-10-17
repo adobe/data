@@ -7,6 +7,8 @@ export type Plan = {
     count: number;
     /** Entries made by spawns; each consumed one reservation. */
     spawned: number;
+    /** Commands that did nothing, since their entity wasn't alive. */
+    dropped: number;
     entity: Float64Array<ArrayBuffer>;
     /** Archetype id, or -1 for an entity spawned in this sync point. */
     from: Int32Array<ArrayBuffer>;
@@ -34,6 +36,7 @@ const initialEntries = 64;
 export const createPlan = (): Plan => ({
     count: 0,
     spawned: 0,
+    dropped: 0,
     entity: new Float64Array(initialEntries),
     from: new Int32Array(initialEntries),
     to: new Int32Array(initialEntries),

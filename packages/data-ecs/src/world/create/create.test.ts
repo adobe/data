@@ -205,14 +205,41 @@ describe("World.create", () => {
         await expect(World.create().run(both)).rejects.toThrow(`lists "createTest/velocity" in both components read and write`);
     });
 
-    it("rejects a run when a system throws, still applying its commands", async () => {
+    it("reports a system that throws, still applying its commands", async () => {
         const fail = System.create({ name: "createTest/fail" }, ({ commands }) => {
             commands.spawn({ [velocity]: 1 });
             throw new Error("boom");
         });
         const world = World.create();
-        await expect(world.run(fail)).rejects.toThrow("boom");
+        const [failure] = (await world.run(fail)).failures;
+        expect([failure.kind, failure.name, failure.message]).toEqual(["system", "createTest/fail", "boom"]);
+        expect(failure.stack).toContain("boom");
         expect(world.query.count([velocity])).toBe(1);
+    });
+
+    it("reports what isn't an Error as text, without a stack", async () => {
+        const fail = System.create({ name: "createTest/failText" }, () => {
+            // A value that isn't an Error, which user code may throw.
+            throw { code: 7 };
+        });
+        await using world = World.create();
+        expect((await world.run(fail)).failures).toEqual([{ kind: "system", name: "createTest/failText", message: "[object Object]", stack: null }]);
+    });
+
+    it("reports the systems a failed tier skips, and the commands that did nothing", async () => {
+        const doomed = System.create({ name: "createTest/doomed" }, ({ commands }) => {
+            const entity = commands.spawn({ [velocity]: 1 });
+            commands.despawn(entity);
+            commands.add(entity, { [frozen]: true });
+            commands.despawn(entity);
+        });
+        const fails = System.create({ name: "createTest/failsFirst" }, () => { throw new Error("first"); });
+        const later = System.create({ name: "createTest/later", after: [fails] }, () => {});
+        await using world = World.create();
+        expect(await world.run(doomed)).toEqual({ failures: [], skipped: [], dropped: 2 });
+        const report = await world.run(System.composite({ name: "createTest/failedTier", systems: [fails, later] }));
+        expect(report.skipped).toEqual(["createTest/later"]);
+        expect(report.failures.map(failure => failure.name)).toEqual(["createTest/failsFirst"]);
     });
 
     it("skips every row when a system's only filter is an unchanged resource", async () => {

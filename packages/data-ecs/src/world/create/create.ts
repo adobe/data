@@ -8,7 +8,7 @@ import type { World } from '../world.js';
 import { gpuDevice } from '../../resources/gpu-device.js';
 import { createGpu } from './gpu.js';
 import { readCell } from './cells.js';
-import { finalizeAll } from './finalizers.js';
+import { finalizeAll, type Thrown } from './finalizers.js';
 import { execute, type ExecuteContext } from './execute.js';
 import { sharedMemoryAvailable } from './memory.js';
 import { createPool, defaultWorkerCount, type Pool } from './pool.js';
@@ -166,7 +166,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
                 const schedule = registrar.registered(definition);
                 if (schedule === undefined) throw new Error(`System "${system.name}" didn't register.`);
                 try {
-                    await execute(context, schedule, value);
+                    return await execute(context, schedule, value, system.name);
                 }
                 finally {
                     await followDevice();
@@ -177,7 +177,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
             disposed = true;
             return enqueue(async () => {
                 // Per-query finalizers release what every live entity they match holds, reading the GPU's writes first.
-                let errors: unknown[] = [];
+                let errors: Thrown[] = [];
                 try {
                     // A finalizer added since the last run still releases what the world's entities hold.
                     ensureProgramResources(state, ensured);
@@ -191,7 +191,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
                     state.gpu?.destroy();
                     await pool?.terminate();
                 }
-                if (errors.length > 0) throw errors[0];
+                if (errors.length > 0) throw errors[0].error;
             });
         },
         synchronize: components => {

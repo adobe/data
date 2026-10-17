@@ -41,12 +41,13 @@ it("applies structural changes at the end of a run, as their net effect", async 
     expect(world.query.count([shield])).toBe(0);
 });
 
-it("still applies the commands of a run whose system throws, then rejects", async () => {
+it("still applies the commands of a run whose system throws, and reports the failure", async () => {
     const fail = System.create({ name: "guide/sync/fail" }, ({ commands }) => {
         commands.spawn({ [unit]: 2 });
         throw new Error("lost connection");
     });
     await using world = World.create();
-    await expect(world.run(fail)).rejects.toThrow("lost connection");
+    const { failures } = await world.run(fail);
+    expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "system", name: "guide/sync/fail", message: "lost connection" }]);
     expect(world.query.count([unit])).toBe(1);
 });

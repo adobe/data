@@ -7,6 +7,8 @@ import type { GpuEngine } from './gpu.js';
 import { applySync, prepareSync } from './synchronize.js';
 import { locate } from './entities.js';
 import { combine, identityOf, writeReduction, type ReductionTarget } from './reductions.js';
+import type { Failure, Report } from '../report.js';
+import { failureOf } from './failures.js';
 
 export type ExecuteContext = {
     readonly state: State;
@@ -18,27 +20,28 @@ export type ExecuteContext = {
 };
 
 /**
- * Runs a schedule tier by tier, then applies one sync point. Within a tier, kernels start first so workers
- * run while main-thread systems do; commands merge in tier order, then chunk order, whichever thread ran them.
- * A failing system rejects the run after its tier finishes; later tiers are skipped, and commands so far still apply.
+ * Runs a schedule tier by tier, then applies one sync point, and reports what went wrong. Within a tier, kernels start
+ * first so workers run while main-thread systems do; commands merge in tier order, then chunk order, whichever thread
+ * ran them. A failing system stops the run after its tier finishes: later tiers are skipped, and commands so far still
+ * apply. `name` is the system the run was given, which the GPU's errors are reported under.
  */
-export const execute = async (context: ExecuteContext, schedule: Schedule, args: unknown): Promise<void> => {
+export const execute = async (context: ExecuteContext, schedule: Schedule, args: unknown, name: string): Promise<Report> => {
     const { gpu } = context.state;
-    if (gpu === null) return executeTiers(context, schedule, args);
+    if (gpu === null) return executeTiers(context, schedule, args, []);
     const lost = gpu.lost();
     // Lost since the run started; the world sets gpuDevice to null before the next one.
     if (lost !== null) throw new Error(`The world's GPU device was lost during this run: ${lost}.`);
+    // An earlier run's GPU work reports its errors to this run: waiting for them there would hold every run until the
+    // GPU process catches up.
     const earlier = gpu.takeError();
-    if (earlier !== null) throw new Error(`An earlier run's GPU work failed: ${earlier}`);
-    // The run's GPU work, its render bodies' included, reports its errors to the next run: waiting for them here would
-    // hold every run until the GPU process catches up.
+    const failures = earlier === null ? [] : [failureOf("gpu", earlier.name, earlier.message)];
     gpu.device.pushErrorScope("out-of-memory");
     gpu.device.pushErrorScope("validation");
     try {
-        await executeTiers(context, schedule, args);
+        return await executeTiers(context, schedule, args, failures);
     }
     finally {
-        gpu.reportErrors(gpu.device.popErrorScope(), gpu.device.popErrorScope());
+        gpu.reportErrors(name, gpu.device.popErrorScope(), gpu.device.popErrorScope());
     }
 };
 
@@ -65,12 +68,15 @@ const contribute = (state: State, folds: ReadonlyMap<unknown, Fold>, runner: Run
     });
 };
 
-const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }: ExecuteContext, schedule: Schedule, args: unknown): Promise<void> => {
+const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }: ExecuteContext, schedule: Schedule, args: unknown, failures: Failure[]): Promise<Report> => {
     const { gpu } = state;
     const folds = new Map<unknown, Fold>();
     for (const [key, contributors] of schedule.reductions) folds.set(key, { target: null, values: [], remaining: contributors, ran: false, failed: false });
+    const skipped: string[] = [];
+    let dropped = 0;
     try {
-        for (const tier of schedule.tiers) {
+        for (let t = 0; t < schedule.tiers.length; t++) {
+            const tier = schedule.tiers[t];
             const runners = tier.map(runnerOf);
             if (gpu !== null) await readAhead(state, gpu, runners);
             const started: (readonly Chunk[])[] = new Array(runners.length);
@@ -82,22 +88,25 @@ const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }
             });
             // Every chunk settles, even a failed one, so no worker is still writing at the sync point.
             const settled = await Promise.all(started.map(async chunks => (await Promise.all(chunks)).flat()));
-            let failure: { readonly error: unknown } | null = null;
+            let tierFailed = false;
             for (let i = 0; i < settled.length; i++) {
                 let failed = false;
                 for (const { commands, error } of settled[i] ?? []) {
                     // Systems can't touch the resource entity; only registration adds resources.
                     if (commands.count > 0) state.queued.push({ buffer: commands, guarded: true });
-                    if (error !== undefined) {
-                        failed = true;
-                        failure ??= { error };
-                    }
+                    // A system's first failure stands for it; its other chunks often fail the same way.
+                    if (error !== undefined && !failed) failures.push(failureOf("system", tier[i].name, error));
+                    if (error !== undefined) failed = true;
                 }
+                if (failed) tierFailed = true;
                 const runner = runners[i];
                 if (runner !== undefined && runner.targets.length > 0) contribute(state, folds, runner, runner.finish(failed), failed);
             }
             if (gpu !== null) markWrites(gpu, runners);
-            if (failure !== null) throw failure.error;
+            if (tierFailed) {
+                for (const later of schedule.tiers.slice(t + 1)) for (const leaf of later) skipped.push(leaf.name);
+                break;
+            }
         }
     }
     finally {
@@ -119,7 +128,8 @@ const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }
                     }
                     finally {
                         // Applied even when the readback fails, which only a lost device makes it do: the CPU state stays whole.
-                        applySync(state);
+                        dropped = state.plan.dropped;
+                        for (const { name, error } of applySync(state)) failures.push(failureOf("finalizer", name, error));
                     }
                 }
             }
@@ -135,6 +145,7 @@ const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }
             publish();
         }
     }
+    return { failures, skipped, dropped };
 };
 
 /**

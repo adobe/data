@@ -261,7 +261,7 @@ Example: [`06-input.test.ts`](src/guide/06-input.test.ts#L29-L47).
 
 Commands are structural changes, issued through the context's `commands`. Every run ends in a sync point that applies them together as their net effect: a
 spawn isn't visible to later systems in the same run, and a component added and removed within one sync point was
-never there. A run whose system throws still applies its commands, then rejects.
+never there. A run whose system throws still applies its commands, and the run's report lists the failure.
 
 ```ts
 const spawn = System.create({ name: "guide/sync/spawn" }, ({ commands }) => {
@@ -271,10 +271,11 @@ const spawn = System.create({ name: "guide/sync/spawn" }, ({ commands }) => {
 });
 ```
 
-Example: [`07-sync-points.test.ts`](src/guide/07-sync-points.test.ts#L22-L52).
+Example: [`07-sync-points.test.ts`](src/guide/07-sync-points.test.ts#L22-L53).
 
 - **`spawn` returns a real entity at once,** which can be stored, including in the spawner's own row.
-- **Commands against dead entities do nothing.**
+- **Commands against dead entities do nothing;** the run's report counts them as `dropped`.
+- **`run()` resolves to a report:** `failures` lists each system, finalizer or GPU work that failed, with its `kind`, `name`, `message` and `stack`, and `skipped` the systems of tiers after a failure. It rejects only when the run can't happen or finish: registration fails, the world is disposed, its GPU device is lost, or the sync point can't apply a command's value.
 
 ## 9. Kernels
 
@@ -495,7 +496,7 @@ Example: [`15-finalizers.test.ts`](src/guide/15-finalizers.test.ts#L20-L58).
 - **A stop:** a despawn, the loss of a required component by any cause, a required component removed and added again, or an excluded one added.
 - **Rows are read-only.** The body is `(row, context)`, whose context has `resources`, `lookup` and `commands`. Lookups see the state before the sync point applies, and resource writes take its tick.
 - **Finalizers apply in every world,** as rules do, once the world has met every component they read or have.
-- **Order:** `before` and `after` list other finalizers, which `Finalizer.create` and `Finalizer.changes` return; then creation order. A finalizer that throws doesn't stop the sync point; the run rejects with the first error once it has applied.
+- **Order:** `before` and `after` list other finalizers, which `Finalizer.create` and `Finalizer.changes` return; then creation order. A finalizer that throws doesn't stop the sync point; the run's report lists it.
 - **Rejected:** two finalizers that both write a resource, or where one reads what the other writes, with no order between them, and a cycle, at `Finalizer.create`.
 
 ## 18. Changes finalizers

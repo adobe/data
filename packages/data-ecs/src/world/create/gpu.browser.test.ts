@@ -523,13 +523,13 @@ describe("render systems", () => {
     it("that fail lose only their own work", async () => {
         const world = createWorld({ resources: { gpuDevice: await device() } });
         await world.run(spawn);
-        await expect(world.run(failing)).rejects.toThrow("draw failed");
+        expect((await world.run(failing)).failures.map(failure => failure.message)).toEqual(["draw failed"]);
         await world.synchronize([position]);
         expect(positions(world)[0]).toEqual([1, 0, 0.5]);
         await world.dispose();
     });
 
-    it("that record invalid work make the next run reject with the GPU's error", async () => {
+    it("that record invalid work make the next run report the GPU's error, under the run that submitted it", async () => {
         // A dispatch without a pipeline is a validation error when the encoder finishes.
         const invalid = System.render({ name: "gpuTest/invalid", shader: { accessors: { place: position } } }, ({ encoder }) => {
             const pass = encoder.beginComputePass();
@@ -542,8 +542,10 @@ describe("render systems", () => {
         await world.run(invalid);
         // The device reports the error once it has processed the run's work.
         await own.queue.onSubmittedWorkDone();
-        await expect(world.run(spawn)).rejects.toThrow(/An earlier run's GPU work failed: validation/);
-        await world.run(spawn);
+        const [failure] = (await world.run(spawn)).failures;
+        expect([failure.kind, failure.name]).toEqual(["gpu", "gpuTest/invalid"]);
+        expect(failure.message).toMatch(/^validation: /);
+        expect((await world.run(spawn)).failures).toEqual([]);
         await world.dispose();
     });
 

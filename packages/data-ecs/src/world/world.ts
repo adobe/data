@@ -6,6 +6,7 @@ import type { ReadonlyValue as ReadonlyResourceValue } from '../resource/value.j
 import type { Input } from '../system/input.js';
 import type { System } from '../system/system.js';
 import type { Options } from './query/options.js';
+import type { Report } from './report.js';
 
 /**
  * `query` and `read` are for use outside the schedule, on the main thread.
@@ -14,10 +15,13 @@ import type { Options } from './query/options.js';
  */
 export type World = {
     /**
-     * Runs a system or composite, ending in a sync point. The first time it runs here, the world registers it with
-     * its members and loads their kernels. Rejects if that fails, or if a system or finalizer throws.
+     * Runs a system or composite, ending in a sync point, and resolves to what went wrong, if anything: systems,
+     * finalizers and GPU work that failed, systems skipped after a failed tier, and commands that did nothing. The first
+     * time it runs here, the world registers it with its members and loads their kernels. Rejects only when the run
+     * can't happen or finish: registration fails, the world is disposed, its GPU device is lost, or its sync point
+     * can't apply a command's value.
      */
-    run<I>(system: System<I>, ...input: Input<NoInfer<I>>): Promise<void>;
+    run<I>(system: System<I>, ...input: Input<NoInfer<I>>): Promise<Report>;
     /** Waits for pending runs, then terminates workers and releases memory. The world is unusable afterwards. */
     dispose(): Promise<void>;
     [Symbol.asyncDispose](): Promise<void>;

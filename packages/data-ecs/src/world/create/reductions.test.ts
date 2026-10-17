@@ -176,7 +176,7 @@ describe("reductions", () => {
         await world.run(fails);
         const before = world.read.resource(total);
         fail = true;
-        await expect(world.run(fails)).rejects.toThrow("contributor failed");
+        expect((await world.run(fails)).failures.map(failure => failure.message)).toEqual(["contributor failed"]);
         expect(world.read.resource(total)).toBe(before);
         // A resource filter passes on its first run; after that `level` doesn't change, so its runs are skipped.
         await world.run(filtered);

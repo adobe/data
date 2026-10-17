@@ -65,7 +65,7 @@ describe("semantics", () => {
         const b = createWorld({ workers: 0 });
         await b.run(spawn);
         poison = true;
-        await expect(a.run(spawn)).rejects.toThrow();
+        expect((await a.run(spawn)).failures).toHaveLength(1);
         poison = false;
         const errors: string[] = [];
         await b.run(spawn).catch(e => errors.push("b:" + String(e)));

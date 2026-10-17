@@ -85,14 +85,17 @@ const fromOf = (state: State, entry: number): Archetype | null => {
 
 type Untyped = { body(row: object, context: object): void };
 
-/** Calls `body`, keeping the first error for after the sync point applies. */
-const guarded = (errors: unknown[], body: () => void): void => {
+/** What a finalizer threw, by its name, kept for after the sync point applies. */
+export type Thrown = { readonly name: string; readonly error: unknown };
+
+/** Calls `body`, keeping what it throws. */
+const guarded = (errors: Thrown[], name: string, body: () => void): void => {
     try { body(); }
-    catch (error) { errors.push(error); }
+    catch (error) { errors.push({ name, error }); }
 };
 
 /** Each entity that stops matching: it matched before, and is despawned, no longer matches, or had a required component replaced. */
-const finalizeStops = (state: State, runner: FinalizerRunner, leaf: Leaf, errors: unknown[]): void => {
+const finalizeStops = (state: State, runner: FinalizerRunner, leaf: Leaf, errors: Thrown[]): void => {
     // Rows and contexts are built to each finalizer's declaration, so its body accepts them.
     const finalizer: Untyped = leaf;
     const { plan, archetypes, entities } = state;
@@ -112,7 +115,7 @@ const finalizeStops = (state: State, runner: FinalizerRunner, leaf: Leaf, errors
         const row = bind(archetype);
         for (const entry of stopped) {
             row.index = entities.row[indexOf(plan.entity[entry])];
-            guarded(errors, () => finalizer.body(row.value, runner.context.value));
+            guarded(errors, leaf.name, () => finalizer.body(row.value, runner.context.value));
         }
     }
 };
@@ -217,8 +220,8 @@ const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queue
  * Runs every finalizer against the planned sync point, before it applies, in their order. Their commands queue for the
  * next sync point. Returns the errors they threw, for after the sync point applies.
  */
-export const runFinalizers = (state: State, queued: readonly Queued[], born: Map<number, number>): unknown[] => {
-    const errors: unknown[] = [];
+export const runFinalizers = (state: State, queued: readonly Queued[], born: Map<number, number>): Thrown[] => {
+    const errors: Thrown[] = [];
     state.born = born;
     try {
         for (const runner of state.finalizers) {
@@ -228,7 +231,7 @@ export const runFinalizers = (state: State, queued: readonly Queued[], born: Map
             else {
                 // The context is built to the finalizer's declaration, so its body accepts it.
                 const changes: { body(changes: ChangeSet<Essential>, context: object): void } = finalizer;
-                guarded(errors, () => changes.body(changesOf(state, runner, queued), runner.context.value));
+                guarded(errors, finalizer.name, () => changes.body(changesOf(state, runner, queued), runner.context.value));
             }
             if (runner.target.buffer.count > 0) {
                 state.queued.push({ buffer: runner.target.buffer, guarded: true });
@@ -243,8 +246,8 @@ export const runFinalizers = (state: State, queued: readonly Queued[], born: Map
 };
 
 /** At disposal: every per-query finalizer runs for every live entity it matches, so the handles they release are. */
-export const finalizeAll = (state: State): unknown[] => {
-    const errors: unknown[] = [];
+export const finalizeAll = (state: State): Thrown[] => {
+    const errors: Thrown[] = [];
     for (const runner of state.finalizers) {
         const { finalizer: leaf } = runner;
         if (leaf.kind !== "finalizer") continue;
@@ -256,7 +259,7 @@ export const finalizeAll = (state: State): unknown[] => {
             const row = bind(archetype);
             for (let index = 0; index < archetype.count; index++) {
                 row.index = index;
-                guarded(errors, () => finalizer.body(row.value, runner.context.value));
+                guarded(errors, leaf.name, () => finalizer.body(row.value, runner.context.value));
             }
         }
     }

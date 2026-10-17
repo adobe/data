@@ -30,8 +30,22 @@ world.query.select([persistent], { where: { [shared]: true } });
 // @ts-expect-error read values are readonly
 if (values) values[persistent] = true;
 
-const ran: Promise<void> = world.run(main);
-const moved: Promise<void> = world.run(move, { distance: 1 });
+const ran: Promise<World.Report> = world.run(main);
+const moved: Promise<World.Report> = world.run(move, { distance: 1 });
+const reported = async () => {
+    const { failures, skipped, dropped } = await world.run(main);
+    for (const failure of failures) {
+        const kind: "system" | "finalizer" | "gpu" = failure.kind;
+        const text: string = `${failure.name}: ${failure.message}`;
+        const stack: string | null = failure.stack;
+        void [kind, text, stack];
+    }
+    const names: readonly string[] = skipped;
+    const count: number = dropped;
+    // @ts-expect-error a report is read-only
+    failures.push({ kind: "system", name: "", message: "", stack: null });
+    void [names, count];
+};
 // @ts-expect-error a system with input needs it
 world.run(move);
 // @ts-expect-error input must match its schema
@@ -52,4 +66,4 @@ const usingDispose = async () => {
     await using scoped = World.create();
     await scoped.run(main);
 };
-void [disposed, usingDispose, selected, counted, value, ran, moved, created, withResources];
+void [disposed, usingDispose, selected, counted, value, ran, moved, reported, created, withResources];

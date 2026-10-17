@@ -173,7 +173,7 @@ export const smalls = System.composite({
 export const totalOf = (): number => total;
 
 /** Fastest of repeated runs within a time budget, like the adobe/data harness. */
-export const fastest = async (run: () => Promise<void>, budget = 1000, warmup = 10): Promise<number> => {
+export const fastest = async (run: () => Promise<unknown>, budget = 1000, warmup = 10): Promise<number> => {
     for (let warm = 0; warm < warmup; warm++) await run();
     let minimum = Infinity;
     const end = performance.now() + budget;

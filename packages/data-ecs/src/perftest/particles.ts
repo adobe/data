@@ -58,7 +58,7 @@ export const move = System.create({
 });
 
 /** Fastest of repeated runs within a time budget, like the adobe/data harness. */
-export const fastest = async (run: () => Promise<void>, budget = 1000): Promise<{ readonly minimum: number; readonly passes: number }> => {
+export const fastest = async (run: () => Promise<unknown>, budget = 1000): Promise<{ readonly minimum: number; readonly passes: number }> => {
     for (let warm = 0; warm < 20; warm++) await run();
     let minimum = Infinity;
     let passes = 0;

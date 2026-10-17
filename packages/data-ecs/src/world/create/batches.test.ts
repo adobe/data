@@ -75,7 +75,7 @@ describe("staged spawns", () => {
             if (poison) commands.spawn({ [position]: [0, 0, 0], [score]: Symbol("x") as unknown as number });
         });
         const world = createWorld({ workers: 0 });
-        await expect(world.run(spawn)).rejects.toThrow();
+        expect((await world.run(spawn)).failures).toHaveLength(1);
         expect(spawned.map(entity => world.read.component(entity, score))).toEqual([0, 1, 2]);
         poison = false;
         await world.run(spawn);

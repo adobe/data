@@ -68,9 +68,9 @@ let steps: ((commands: System.Commands) => void)[] = [];
 const edit = System.create({ name: "finalizersTest/edit", input: { type: "object", properties: { step: { type: "integer" } } } }, ({ input, commands }) => {
     steps[input.step]?.(commands);
 });
-const step = (world: ReturnType<typeof createWorld>) => async (run: (commands: System.Commands) => void) => {
+const step = (world: ReturnType<typeof createWorld>) => (run: (commands: System.Commands) => void) => {
     steps = [...steps, run];
-    await world.run(edit, { step: steps.length - 1 });
+    return world.run(edit, { step: steps.length - 1 });
 };
 
 describe("finalizers", () => {
@@ -173,7 +173,7 @@ describe("finalizers", () => {
         await world.dispose();
     });
 
-    it("run in their order, and a throw still applies the sync point, then rejects the run", async () => {
+    it("run in their order, and a throw still applies the sync point and is reported", async () => {
         const order: string[] = [];
         const second = Finalizer.create({ name: "finalizersTest/second", components: { read: [ordered] } }, () => { order.push("second"); });
         Finalizer.create({ name: "finalizersTest/first", components: { read: [ordered] }, before: [second] }, () => { order.push("first"); });
@@ -182,7 +182,8 @@ describe("finalizers", () => {
         const run = step(world);
         let a = Entity.none;
         await run(commands => { a = commands.spawn({ [ordered]: 1 }); });
-        await expect(run(commands => commands.despawn(a))).rejects.toThrow("finalizer failed");
+        const { failures } = await run(commands => commands.despawn(a));
+        expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "finalizer", name: "finalizersTest/throws", message: "finalizer failed" }]);
         expect(order).toEqual(["first", "second"]);
         expect(world.read.component(a, handle)).toBeNull();
         const writer = (name: "finalizersTest/writerA" | "finalizersTest/writerB") =>

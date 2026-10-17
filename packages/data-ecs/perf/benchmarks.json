@@ -487,5 +487,109 @@
             "basis": "Each row reads its 4-byte value, its parent's 4-byte result and 4-byte row, and writes its 4-byte result.",
             "on": "gpu"
         }
+    },
+    "run idle": {
+        "operation": "Running one system no entity matches, in a world of 10K entities: the fixed cost of every system in every frame.",
+        "per": "runs",
+        "n": 1,
+        "typical": [
+            1,
+            1
+        ],
+        "best": {
+            "bytes": 64,
+            "basis": "A run reads at least one cache line of its system's state."
+        }
+    },
+    "run 50 idle": {
+        "operation": "Running fifty systems no entity matches, as one composite: the fixed cost per system of a frame of many systems.",
+        "per": "systems",
+        "n": 50,
+        "typical": [
+            10,
+            200
+        ],
+        "best": {
+            "bytes": 64,
+            "basis": "A run reads at least one cache line of its system's state."
+        }
+    },
+    "sync point one spawn": {
+        "operation": "Running a system that spawns one entity, so its run ends with a sync point that applies one command: the fixed cost of a structural change.",
+        "per": "runs",
+        "n": 1,
+        "typical": [
+            1,
+            1
+        ],
+        "best": {
+            "bytes": 128,
+            "basis": "The spawn writes its 28 bytes of values, its entity and its location, and the run reads its system's state."
+        }
+    },
+    "move 1K": {
+        "operation": "A kernel adding a vec3 to another for the rows with two tags, at a size a typical system sees.",
+        "per": "matched rows",
+        "n": 1000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 36,
+            "basis": "Each row reads 12 bytes of velocity and reads and writes 12 bytes of position."
+        }
+    },
+    "move 10K": {
+        "operation": "A kernel adding a vec3 to another for the rows with two tags, at a size a typical system sees.",
+        "per": "matched rows",
+        "n": 10000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 36,
+            "basis": "Each row reads 12 bytes of velocity and reads and writes 12 bytes of position."
+        }
+    },
+    "main thread 1K": {
+        "operation": "One main-thread system reading every row: app logic over a typical number of entities.",
+        "per": "row reads",
+        "n": 1000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 12,
+            "basis": "Each row read loads its 12-byte position."
+        }
+    },
+    "main thread 10K": {
+        "operation": "One main-thread system reading every row: app logic over a typical number of entities.",
+        "per": "row reads",
+        "n": 10000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 12,
+            "basis": "Each row read loads its 12-byte position."
+        }
+    },
+    "up depth 10 10K": {
+        "operation": "A kernel with `up` computing every row from its parent, over 1K chains of 10: a scene graph of typical size.",
+        "per": "rows",
+        "n": 10000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 28,
+            "basis": "Each row reads its 8-byte value, its parent's 8-byte result and 4-byte row, and writes its 8-byte result."
+        }
     }
 }

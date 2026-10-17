@@ -22,5 +22,12 @@
   "include": [
     "src/**/*"
   ],
-  "references": []
+  "exclude": [
+    "src/types"
+  ],
+  "references": [
+    {
+      "path": "./src/types"
+    }
+  ]
 }

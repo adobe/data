@@ -1,0 +1,15 @@
+/** What registration recorded, for the implementation to read. Not part of the public interface. */
+export type { AnyDeclaration } from './declarations.js';
+export { declarationOf, threadOfDeclaration } from './declarations.js';
+export type { Kind } from './names.js';
+export { kindOf } from './names.js';
+export type { Item } from './program.js';
+export { definitionOf, itemNamed, programFinalizers, programRules } from './program.js';
+export type { Placed } from './threads.js';
+export { threadOf } from './threads.js';
+export { isTrait } from './traits.js';
+export type { Definition } from '../system/definition.js';
+export type { Leaf } from '../system/leaf.js';
+export type { Composite } from '../system/composite.js';
+export type { Rule } from '../rule/created.js';
+export type { Finalizer } from '../finalizer/created.js';

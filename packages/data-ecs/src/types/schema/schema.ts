@@ -1,0 +1,127 @@
+import type { Entity } from '../entity/entity.js';
+
+/** Any value representable in JSON. */
+type JSONValue = string | number | boolean | null | readonly JSONValue[] | { readonly [key: string]: JSONValue };
+
+/**
+ * How a linear value is laid out in memory, and a promise that it's GPU compatible: registration throws if it isn't.
+ * - `storage`: WGSL storage-buffer layout, so a shader's matching `array<T>` reads the column directly.
+ * - `vertex`: tightly packed, as WebGPU vertex buffers expect.
+ * Without it, the value is packed tightly for the CPU and may use any linear type.
+ */
+type GpuLayout = 'storage' | 'vertex';
+
+interface ObjectSchema<K extends string = string> {
+    readonly type: 'object',
+    readonly properties: { readonly [P in K]: Schema };
+    readonly required?: readonly K[];
+    readonly layout?: GpuLayout;
+}
+
+interface StringSchema {
+    readonly type: 'string';
+    readonly minLength?: number;
+    readonly maxLength?: number;
+}
+
+interface ArraySchema<T extends Schema> {
+    readonly type: 'array';
+    readonly items: T;
+    readonly layout?: GpuLayout;
+    readonly minItems?: number;
+    readonly maxItems?: number;
+}
+
+interface NumberSchema {
+    readonly type: 'number';
+    readonly minimum?: number;
+    readonly maximum?: number;
+    readonly precision?: 1 | 2;
+}
+
+/** An entity reference: an f64 integer, typed `Entity`. Every entity-typed value uses it, so references can be found by schema. */
+interface EntitySchema {
+    readonly type: 'integer';
+    readonly format: 'entity';
+}
+
+interface IntegerSchema {
+    readonly type: 'integer';
+    readonly format?: never;
+    readonly minimum?: number;
+    readonly maximum?: number;
+}
+
+interface BooleanSchema {
+    readonly type: 'boolean';
+}
+
+interface NullSchema {
+    readonly type: 'null';
+}
+
+/** Matches exactly one JSON value of any shape. */
+interface ConstSchema {
+    /** The value alone fully describes the schema; combining it with `type` is redundant and disallowed. */
+    readonly type?: never;
+    readonly const: JSONValue;
+}
+
+interface AndSchema {
+    readonly allOf: readonly Schema[];
+}
+
+interface OrSchema {
+    readonly anyOf: readonly Schema[];
+}
+
+export type Schema = EntitySchema | ObjectSchema | StringSchema | ArraySchema<Schema> | NumberSchema | IntegerSchema | BooleanSchema | NullSchema | ConstSchema | AndSchema | OrSchema;
+
+type UnionToIntersection<U> = (U extends unknown ? (x: U) => void : never) extends (x: infer I) => void ? I : never;
+
+export namespace Schema {
+    /** Object properties are all required unless `required` is present, then only those listed are. */
+    type ObjectToType<T extends ObjectSchema> =
+        T extends { required: readonly (infer R)[] }
+            ? { readonly [P in Extract<R, keyof T['properties']>]: Schema.ToType<T['properties'][P]> }
+              & { readonly [P in Exclude<keyof T['properties'], R>]?: Schema.ToType<T['properties'][P]> }
+            : { readonly [P in keyof T['properties']]: Schema.ToType<T['properties'][P]> };
+
+    /** A literal `const` narrows the type; otherwise the structural type is used. */
+    export type ToType<T extends Schema> =
+        T extends AndSchema ? UnionToIntersection<Schema.ToType<T['allOf'][number]>> :
+        T extends OrSchema ? Schema.ToType<T['anyOf'][number]> :
+        T extends { const: infer C } ? C :
+        T extends EntitySchema ? Entity :
+        T extends ObjectSchema ? ObjectToType<T> :
+        T extends StringSchema ? string :
+        T extends ArraySchema<infer U> ? readonly Schema.ToType<U>[] :
+        T extends NumberSchema ? number :
+        T extends IntegerSchema ? number :
+        T extends BooleanSchema ? boolean :
+        T extends NullSchema ? null :
+        never;
+
+    /** The schemas whose `ToType` is `T`; constrains a schema to describe a known type. */
+    export type ForType<T> = Schema &
+    (
+        [T] extends [boolean] ? ForNonUnion<T> :
+        IsUnion<T> extends true ? OrSchema & { anyOf: readonly ForTypeEach<T>[] } :
+        ForNonUnion<T>
+    );
+
+    type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
+    type ForTypeEach<T> = T extends unknown ? ForType<T> : never;
+
+    type ForNonUnion<T> =
+        [T] extends [null] ? NullSchema :
+        [T] extends [true] ? ConstSchema & { const: T } :
+        [T] extends [false] ? ConstSchema & { const: T } :
+        [T] extends [boolean] ? BooleanSchema :
+        [T] extends [Entity] ? EntitySchema :
+        [T] extends [string] ? StringSchema :
+        [T] extends [number] ? (NumberSchema | IntegerSchema) :
+        T extends readonly (infer U)[] ? ArraySchema<ForType<U> & Schema> :
+        T extends object ? ObjectSchema<Extract<keyof T, string>> & { properties: { [P in keyof T]-?: ForType<T[P]> } } :
+        never;
+}

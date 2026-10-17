@@ -1,0 +1,73 @@
+import { definitionOf } from '../registry/program.js';
+import { threadOf } from '../registry/threads.js';
+import type { Schema } from '../schema/schema.js';
+import type { Composite } from './composite.js';
+import type { Definition } from './definition.js';
+import type { Leaf } from './leaf.js';
+
+type Key = string | symbol;
+
+/** Throws if a key is in both `read` and `write`: `write` already makes it readable. */
+const checkLists = (name: string, what: string, lists: { readonly read?: readonly Key[]; readonly write?: readonly Key[] } | undefined): void => {
+    const writes = new Set(lists?.write);
+    const both = (lists?.read ?? []).find(key => writes.has(key));
+    if (both !== undefined) throw new Error(`System "${name}" lists "${String(both)}" in both ${what} read and write; write already makes it readable.`);
+};
+
+/**
+ * Throws for a leaf that lists a key in both `read` and `write`, has a lookup reading a component it writes, takes input
+ * that isn't an object schema, or uses object components and resources of different threads.
+ */
+export const checkLeaf = (leaf: Leaf): void => {
+    const { declaration } = leaf;
+    const { name, components, resources, lookup, input } = declaration;
+    checkLists(name, "components", components);
+    checkLists(name, "resources", resources);
+    const writes = new Set<Key>(components?.write);
+    for (const lookupName in lookup) {
+        for (const key of lookup[lookupName].read ?? []) {
+            if (writes.has(key)) throw new Error(`System "${name}": lookup "${lookupName}" reads "${String(key)}", which the system writes.`);
+        }
+    }
+    if (input !== undefined) {
+        const schema: Schema = input;
+        if (!("type" in schema) || schema.type !== "object" || typeof schema.properties !== "object" || schema.properties === null) {
+            throw new Error(`System "${name}": input is an object schema of named fields.`);
+        }
+    }
+    threadOf(declaration, "System");
+};
+
+/** Every leaf under a system, each once. Throws for a member no System constructor returned. */
+const leavesOf = (system: Definition, leaves: Set<Leaf>): Set<Leaf> => {
+    if (system.kind !== "composite") return leaves.add(system);
+    for (const member of system.declaration.systems) {
+        const definition = definitionOf(member);
+        if (definition === undefined) throw new Error(`System "${system.name}": member "${member.name}" isn't a system a System constructor returned.`);
+        leavesOf(definition, leaves);
+    }
+    return leaves;
+};
+
+/** Throws for a member no System constructor returned, or an input field two members declare with different schemas. */
+export const checkComposite = (composite: Composite): void => {
+    const fields = new Map<string, { readonly schema: Schema; readonly system: string }>();
+    for (const { declaration: { name, input } } of leavesOf(composite, new Set())) {
+        if (input === undefined) continue;
+        for (const [field, property] of Object.entries(input.properties)) {
+            const seen = fields.get(field);
+            if (seen === undefined) fields.set(field, { schema: property, system: name });
+            else if (!sameValue(seen.schema, property)) {
+                throw new Error(`Systems "${seen.system}" and "${name}" declare input field "${field}" with different schemas.`);
+            }
+        }
+    }
+};
+
+/** Whether two JSON values are equal, key order aside. */
+const sameValue = (a: unknown, b: unknown): boolean => {
+    if (a === b) return true;
+    if (typeof a !== "object" || typeof b !== "object" || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false;
+    const keys = Object.keys(a);
+    return keys.length === Object.keys(b).length && keys.every(key => Object.hasOwn(b, key) && sameValue(Reflect.get(a, key), Reflect.get(b, key)));
+};

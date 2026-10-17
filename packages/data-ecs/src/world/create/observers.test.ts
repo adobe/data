@@ -259,6 +259,18 @@ describe("observing entities", () => {
         expect(failures.map(({ kind, message }) => ({ kind, message }))).toEqual([{ kind: "observer", message: "observer failed" }]);
         expect(seen).toEqual([{ [weight]: 1 }, { [weight]: 3 }]);
     });
+    it("gives an observer subscribed during a run the writes later in that run", async () => {
+        await using world = World.create();
+        await world.run(create);
+        const seen: unknown[] = [];
+        const subscribe = System.create({ name: "observersTest/subscribeEntity" }, () => {
+            world.observe.entity(target, { required: [weight] })(value => seen.push(value));
+        });
+        const later = System.create({ name: "observersTest/laterWeigh", components: { write: [weight] }, after: [subscribe] }, row => { row[weight] += 2; });
+        await world.run(System.composite({ name: "observersTest/subscribeThenWeigh", systems: [subscribe, later] }));
+        await world.run(warm);
+        expect(seen).toEqual([{ [weight]: 1 }, { [weight]: 3 }]);
+    });
 });
 
 describe("entity observers' structural changes", () => {
@@ -451,6 +463,139 @@ describe("observing queries", () => {
         await world.run(join);
         await world.run(leave);
         expect(seen).toEqual([1, 2]);
+    });
+});
+
+const rank = "observersTest/rank";
+const second = "observersTest/second";
+
+declare module "@adobe/data-ecs" {
+    interface Components {
+        [rank]: { type: number };
+        [second]: { type: number };
+    }
+}
+
+Component.register(rank, { type: { type: "number" } });
+Component.register(second, { type: { type: "number" } });
+
+/** What `rankAll` spawns: each entity's rank, second key, and whether it's marked, which puts it in another archetype. */
+let ranks: readonly (readonly [number, number, boolean])[] = [];
+/** The entities `rankAll` spawned, in order. */
+let ranked: Entity[] = [];
+const rankAll = System.create({ name: "observersTest/rankAll" }, ({ commands }) => {
+    ranked = ranks.map(([value, key, marked]) => commands.spawn(marked ? { [rank]: value, [second]: key, [marker]: true } : { [rank]: value, [second]: key }));
+});
+/** What `rerank` sets: an index into `ranked` and its new rank. */
+let reranks: readonly (readonly [number, number])[] = [];
+const rerank = System.create({ name: "observersTest/rerank" }, ({ commands }) => {
+    for (const [index, value] of reranks) commands.add(ranked[index], { [rank]: value });
+});
+
+/** A deterministic generator of numbers in [0, 1). */
+const random = (seed: number) => () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+
+describe("observing a page of a query", () => {
+    it("gives the slice at offset of the ordered result, at most limit long", async () => {
+        await using world = World.create();
+        ranks = [5, 3, 9, 0, 7, 1, 8, 2, 6, 4].map(value => [value, 0, false]);
+        await world.run(rankAll);
+        const byRank = [3, 5, 7, 1, 9, 0, 8, 4, 6, 2].map(index => ranked[index]);
+        const page = (offset: number, limit: number): readonly Entity[] => {
+            let value: readonly Entity[] = [];
+            world.observe.select({ required: [rank], order: { [rank]: true }, page: { offset, limit } })(entities => { value = entities; })();
+            return value;
+        };
+        expect(page(0, 3)).toEqual(byRank.slice(0, 3));
+        expect(page(3, 3)).toEqual(byRank.slice(3, 6));
+        expect(page(9, 3)).toEqual(byRank.slice(9));
+        expect(page(12, 3)).toEqual([]);
+        expect(page(2, 0)).toEqual([]);
+    });
+
+    it("without order, gives the slice of storage order, with where applied first", async () => {
+        await using world = World.create();
+        ranks = [5, 3, 9, 0, 7, 1, 8, 2, 6, 4].map((value, index) => [value, 0, index % 3 === 0]);
+        await world.run(rankAll);
+        let all: readonly Entity[] = [];
+        world.observe.select({ required: [rank], where: { [rank]: { ">": 1 } } })(entities => { all = entities; })();
+        let paged: readonly Entity[] = [];
+        world.observe.select({ required: [rank], where: { [rank]: { ">": 1 } }, page: { offset: 2, limit: 4 } })(entities => { paged = entities; })();
+        expect(all).toHaveLength(8);
+        expect(paged).toEqual(all.slice(2, 6));
+        world.observe.select({ required: [rank] })(entities => { all = entities; })();
+        world.observe.select({ required: [rank], page: { offset: 7, limit: 2 } })(entities => { paged = entities; })();
+        expect(paged).toEqual(all.slice(7, 9));
+    });
+
+    it("notifies when a change shifts the page, not for one outside it", async () => {
+        await using world = World.create();
+        ranks = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(value => [value, 0, false]);
+        await world.run(rankAll);
+        const seen: (readonly Entity[])[] = [];
+        world.observe.select({ required: [rank], order: { [rank]: true }, page: { offset: 1, limit: 3 } })(entities => seen.push(entities));
+        reranks = [[8, 7.5], [9, 20]];
+        await world.run(rerank);
+        reranks = [[0, 2.5]];
+        await world.run(rerank);
+        reranks = [[7, 1.5]];
+        await world.run(rerank);
+        reranks = [[5, -1]];
+        await world.run(rerank);
+        expect(seen).toEqual([
+            [ranked[1], ranked[2], ranked[3]],
+            [ranked[2], ranked[0], ranked[3]],
+            [ranked[7], ranked[2], ranked[0]],
+            [ranked[1], ranked[7], ranked[2]],
+        ]);
+    });
+
+    it("selects the same entities as sorting everything and slicing, ties included", async () => {
+        await using world = World.create();
+        const next = random(7);
+        ranks = Array.from({ length: 300 }, () => [Math.floor(next() * 6), Math.floor(next() * 3), next() < 0.4]);
+        await world.run(rankAll);
+        const order = { [rank]: true, [second]: false };
+        let full: readonly Entity[] = [];
+        world.observe.select({ required: [rank, second], order })(entities => { full = entities; });
+        const pages = [[0, 10], [0, 1], [7, 25], [123, 60], [290, 40], [0, 300], [0, 1000], [350, 5], [40, 0]];
+        const latest = pages.map(() => [] as readonly Entity[]);
+        pages.forEach(([offset, limit], index) => {
+            world.observe.select({ required: [rank, second], order, page: { offset, limit } })(entities => { latest[index] = entities; });
+        });
+        const check = (): void => pages.forEach(([offset, limit], index) => expect(latest[index]).toEqual(full.slice(offset, offset + limit)));
+        check();
+        for (let round = 0; round < 5; round++) {
+            reranks = Array.from({ length: 40 }, () => [Math.floor(next() * ranked.length), Math.floor(next() * 6)]);
+            await world.run(rerank);
+            check();
+        }
+        const descending = { [rank]: false };
+        world.observe.select({ required: [rank], order: descending })(entities => { full = entities; })();
+        world.observe.select({ required: [rank], order: descending, page: { offset: 13, limit: 77 } })(entities => expect(entities).toEqual(full.slice(13, 90)))();
+    });
+
+    it("leaves count the total", async () => {
+        await using world = World.create();
+        ranks = [0, 1, 2, 3, 4].map(value => [value, 0, false]);
+        await world.run(rankAll);
+        // Not a literal, so its page passes the type: count ignores it.
+        const paged = { required: [rank], page: { offset: 1, limit: 2 } } as const;
+        const seen: number[] = [];
+        world.observe.count(paged)(count => seen.push(count));
+        expect(seen).toEqual([5]);
+    });
+
+    it("throws when subscribing with an offset or limit that isn't a non-negative integer", async () => {
+        await using world = World.create();
+        for (const page of [{ offset: -1, limit: 1 }, { offset: 1.5, limit: 1 }, { offset: 0, limit: -1 }, { offset: 0, limit: Number.NaN }]) {
+            expect(() => world.observe.select({ required: [rank], page })(() => {})).toThrow("page");
+        }
     });
 });
 

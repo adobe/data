@@ -5,7 +5,7 @@ import type { Archetype, Storage } from './archetype.js';
 import { indexOf, locate } from './entities.js';
 import { journalEnd } from './journal.js';
 import { chunkShift } from './kernel.js';
-import { compileQuery, countOf, matchesArchetype, readEntity, selectInto, type CompiledQuery, type EntityOptions, type QueryOptions } from './reads.js';
+import { compileQuery, countOf, createSelectScratch, matchesArchetype, readEntity, selectInto, type CompiledQuery, type EntityOptions, type QueryOptions } from './reads.js';
 import { idOf, startTicking, type Key, type State } from './state.js';
 
 type Notify = (value: unknown) => void;
@@ -15,9 +15,17 @@ type Watched = { readonly key: Key; readonly id: number; seen: number; readonly 
 
 /**
  * An entity observer: the component ids it lists, required first, or null for the whole entity; `primed` once it had
- * its first value, which waits for a readback while a GPU kernel's writes it needs are on the GPU.
+ * its first value, which waits for a readback while a GPU kernel's writes it needs are on the GPU; and `watching` once
+ * its components keep ticks, before which every run may have changed it.
  */
-type EntityObserver = { notify: Notify | null; primed: boolean; readonly options: EntityOptions | undefined; readonly ids: readonly number[] | null; readonly required: number };
+type EntityObserver = {
+    notify: Notify | null;
+    primed: boolean;
+    watching: boolean;
+    readonly options: EntityOptions | undefined;
+    readonly ids: readonly number[] | null;
+    readonly required: number;
+};
 
 /**
  * A query observer: its compiled query and the components its `where` and `order` read; the archetypes it matches, of
@@ -179,10 +187,13 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
             entities.push(entry);
         }
         const observed = entry;
-        const observer: EntityObserver = { notify, primed: false, options, ids, required: required.length };
+        const observer: EntityObserver = { notify, primed: false, watching: true, options, ids, required: required.length };
         observed.observers.push(observer);
         if (ids !== null) for (const id of ids) request(id);
         else if (observed.archetype >= 0) requestAll(state.archetypes[observed.archetype]);
+        // Until its components' ticks and kernels' stamps start, at the next run, every run is a candidate.
+        const listed = ids ?? (observed.archetype < 0 ? [] : state.archetypes[observed.archetype].components);
+        observer.watching = listed.every(id => !pending.includes(id));
         let active = true;
         const stop = (): void => {
             if (!active) return;
@@ -249,6 +260,8 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
     let reading = false;
     /** Reused while comparing selections: the latest, and by entity index the pass that listed an entity in the last. */
     let scratch: Entity[] = [];
+    /** Reused by paged selections with an `order`. */
+    const selecting = createSelectScratch();
     let listedPass = new Int32Array(0);
     let listedEntity = new Float64Array(0);
     let pass = 0;
@@ -291,7 +304,7 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
         observer.seen = state.tick;
         if (observer.counting) return observer.counted = countOf(state, observer.query);
         const selected: Entity[] = [];
-        selected.length = selectInto(state, observer.query, selected);
+        selected.length = selectInto(state, observer.query, selected, selecting);
         return observer.selected = selected;
     };
 
@@ -437,7 +450,7 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
                 value = observer.counted = counted;
             }
             else {
-                const selected = selectInto(state, observer.query, scratch);
+                const selected = selectInto(state, observer.query, scratch, selecting);
                 if (sameSelection(observer, selected)) continue;
                 value = observer.selected = scratch.slice(0, selected);
             }
@@ -462,7 +475,10 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
         startTicking(state, pending);
         for (const id of pending) state.observed.add(id);
         pending.length = 0;
-        for (const entry of entities) entry.seen = state.tick;
+        for (const entry of entities) {
+            entry.seen = state.tick;
+            for (const observer of entry.observers) observer.watching = true;
+        }
         for (const observer of queries) observer.watching = true;
         return true;
     };
@@ -500,7 +516,11 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
                 const observer = entry.observers[n];
                 const notify = observer.notify;
                 if (notify === null || !observer.primed) continue;
-                if (!changedFor(observer, previous, current, entry.row, seen)) continue;
+                // Not yet watching, it's changed unless it was null and still is.
+                const changed = observer.watching
+                    ? changedFor(observer, previous, current, entry.row, seen)
+                    : hasRequired(previous, observer) || hasRequired(current, observer);
+                if (!changed) continue;
                 try {
                     notify(readEntity(state, entry.entity, observer.options));
                 }

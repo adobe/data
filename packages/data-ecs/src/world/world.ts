@@ -49,13 +49,14 @@ export type World = {
             options: { readonly required?: R; readonly optional?: O },
         ): Observe<({ readonly [K in R[number]]: ReadonlyValue<K> } & { readonly [K in O[number]]?: ReadonlyValue<K> }) | null>;
         /**
-         * The entities a query matches, sorted by `order` if given: now, then after each run whose result differs, a
-         * different set of entities or, with `order`, a different order. Nothing when it's the same, even if matching
-         * entities were written.
+         * The entities a query matches, sorted by `order` if given, and with a `page`, at most `limit` of them from
+         * `offset`: now, then after each run whose result differs, a different set of entities or, with `order`, a
+         * different order. Nothing when it's the same, even if matching entities were written. Throws for a page whose
+         * offset or limit isn't a non-negative integer.
          */
         select<const R extends readonly Component.Name[] = []>(query: Query<R>): Observe<readonly Entity[]>;
-        /** The number of entities a query matches: now, then after each run that changed it. */
-        count<const R extends readonly Component.Name[] = []>(query: Omit<Query<R>, "order">): Observe<number>;
+        /** The number of entities a query matches, the total a page is taken from: now, then after each run that changed it. */
+        count<const R extends readonly Component.Name[] = []>(query: Omit<Query<R>, "order" | "page">): Observe<number>;
     };
 };
 

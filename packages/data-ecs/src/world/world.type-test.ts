@@ -14,7 +14,7 @@ declare module '@adobe/data-ecs' {
         [point]: { type: { x: number } };
     }
 }
-// Observing a query: `where` and `order` name only required components; `count` takes no `order`.
+// Observing a query: `where` and `order` name only required components; `count` takes no `order` or `page`.
 const query: World.Query<[typeof persistent]> = { required: [persistent], not: [shared], where: { [persistent]: true }, order: { [persistent]: true } };
 const selected: Observe<readonly Entity[]> = world.observe.select(query);
 const selectedAll: Observe<readonly Entity[]> = world.observe.select({});
@@ -31,6 +31,12 @@ world.observe.select({ required: [persistent], order: { [shared]: true } });
 world.observe.select({ required: [point], where: { [point]: { x: "one" } } });
 // @ts-expect-error count has no order
 world.observe.count({ required: [persistent], order: { [persistent]: true } });
+// A page: a slice of the ordered result; count gives the total, so it takes none.
+const paged: Observe<readonly Entity[]> = world.observe.select({ required: [persistent], order: { [persistent]: true }, page: { offset: 20, limit: 10 } });
+// @ts-expect-error a page has an offset and a limit
+world.observe.select({ required: [persistent], page: { limit: 10 } });
+// @ts-expect-error count has no page
+world.observe.count({ required: [persistent], page: { offset: 0, limit: 10 } });
 // @ts-expect-error queries list only components
 world.observe.select({ required: ["systemTest/time"] });
 // @ts-expect-error synchronous reads are gone: observing is the way to read
@@ -127,4 +133,4 @@ const usingDispose = async () => {
     await using scoped = World.create();
     await scoped.run(main);
 };
-void [disposed, usingDispose, selected, selectedAll, counted, query, ran, moved, reported, observed, stop, created, withResources];
+void [disposed, usingDispose, selected, paged, selectedAll, counted, query, ran, moved, reported, observed, stop, created, withResources];

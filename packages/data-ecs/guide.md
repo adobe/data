@@ -83,8 +83,8 @@ expect(components?.[position]).toEqual([0, 10, 0]);
 
 Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L5-L37).
 
-- **Queries:** `select` and `count` take `required`, which matches every entity when left out, `not`, and `where`; `select` takes `order` too. `world.observe.entity(entity, { required, optional })` gives just those components, or `null` while the entity is dead or lacks a required one.
-- **Notifications:** `select` notifies when the set of entities differs or, with `order`, their order; `count` when the number does. Nothing notifies when the result is the same, even if matching entities were written.
+- **Queries:** `select` and `count` take `required`, which matches every entity when left out, `not`, and `where`; `select` takes `order` and `page: { offset, limit }` too, a slice of the ordered result for a scrolled list, whose total `count` gives. Without `order` a page follows storage order, so stable pages need an `order`. `world.observe.entity(entity, { required, optional })` gives just those components, or `null` while the entity is dead or lacks a required one.
+- **Notifications:** `select` notifies when the set of entities differs or, with `order`, their order, and with a `page`, only when the page does; `count` when the number does. Nothing notifies when the result is the same, even if matching entities were written.
 - **An observer that throws** during a run is an `"observer"` failure in the run's report; one that throws on its first value throws to the subscriber.
 - **Registration must match the declaration**, trait for trait, with `type` a schema for the declared type. Otherwise it doesn't compile.
 - **Values that aren't data,** such as a `Blob`, an `HTMLElement` or a `GPUDevice`, are declared by their type alone: registration leaves `type` out, as `Component.register(element, {})`, and a resource gives its `default` on the declaration unless its type allows `null`. The world stores them as they are, so only main-thread systems use them.

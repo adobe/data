@@ -153,13 +153,25 @@ export const count = (state: State, has: readonly Key[], options: Options = {}):
     return total;
 };
 
-/** One component of a live entity, or `undefined` if it's dead or lacks it. */
-export const readComponent = (state: State, entity: Entity, key: Key): unknown => {
-    const index = locate(state.entities, entity);
-    if (index < 0) return undefined;
-    const id = state.ids.get(key);
-    const storage = id === undefined ? undefined : state.archetypes[state.entities.archetype[index]].storageById[id];
-    return storage === undefined ? undefined : readCell(storage, state.entities.row[index]);
+/**
+ * Reads one component of live entities, or `undefined` for one that's dead or lacks it. Reads usually repeat a
+ * component, so the last one's id is kept rather than looked up again.
+ */
+export const createComponentReader = (state: State) => {
+    let lastKey: Key | null = null;
+    let lastId: number | undefined;
+    return (entity: Entity, key: Key): unknown => {
+        const { entities } = state;
+        const index = locate(entities, entity);
+        if (index < 0) return undefined;
+        if (key !== lastKey) {
+            lastId = state.ids.get(key);
+            // A key without an id yet may get one later, so it isn't kept.
+            lastKey = lastId === undefined ? null : key;
+        }
+        const storage = lastId === undefined ? undefined : state.archetypes[entities.archetype[index]].storageById[lastId];
+        return storage === undefined ? undefined : readCell(storage, entities.row[index]);
+    };
 };
 
 /** The listed components of a live entity, or `null` if it's dead or lacks any. */

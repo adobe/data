@@ -159,6 +159,19 @@ describe("World.create", () => {
         expect(world.query.count([label])).toBe(66);
     });
 
+    it("reads a component the world had no id for at an earlier read, once it has one", async () => {
+        await using world = World.create();
+        const spawnPlain = System.create({ name: "createTest/spawnPlain" }, ({ commands }) => { commands.spawn({ [velocity]: 1 }); });
+        await world.run(spawnPlain);
+        const [entity] = world.query.select([velocity]);
+        expect(world.read.component(entity, frozen)).toBe(null);
+        const freeze = System.create({ name: "createTest/freeze", input: { type: "object", properties: { entity: Entity.schema } } }, ({ input, commands }) => {
+            commands.add(input.entity, { [frozen]: true });
+        });
+        await world.run(freeze, { entity });
+        expect(world.read.component(entity, frozen)).toBe(true);
+    });
+
     it("hides the resource entity from queries and commands", async () => {
         const edit = System.create({ name: "createTest/edit/hidden", components: {} }, (row, { commands }) => {
             commands.despawn(row.entity);

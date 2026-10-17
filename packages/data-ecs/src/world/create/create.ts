@@ -13,7 +13,7 @@ import { execute, type ExecuteContext } from './execute.js';
 import { sharedMemoryAvailable } from './memory.js';
 import { createPool, defaultWorkerCount, type Pool } from './pool.js';
 import { createPublisher } from './publish.js';
-import { count, readComponent, readEntity, select } from './reads.js';
+import { count, createComponentReader, readEntity, select } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
 import { ensureResources, findResource, initialOf, setResource } from './resources.js';
 import { ensureProgramResources, activate } from './activate.js';
@@ -144,6 +144,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
         await loadOnWorkers();
     };
 
+    const readComponent = createComponentReader(state);
     const world: World = {
         run: (system, ...args) => {
             const [value]: readonly unknown[] = args;
@@ -209,7 +210,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
             // Stored values match each component's registered schema, so they have its type.
             entity: <const C extends readonly Component.Name[]>(entity: Entity, components: C) => readEntity(state, entity, components) as ValuesOf<C> | null,
             component: <C extends Component.Name>(entity: Entity, component: C) => {
-                const value = readComponent(state, entity, component);
+                const value = readComponent(entity, component);
                 // Stored values match each component's registered schema, so they have its type.
                 return value === undefined ? null : value as ReadonlyValue<C>;
             },

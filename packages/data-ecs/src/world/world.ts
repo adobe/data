@@ -42,8 +42,8 @@ export type World = {
     };
     readonly observe: {
         /**
-         * A resource's value, soon after subscribing, once no run is in progress; then after each run that changed it,
-         * with the run's other notifications before it resolves.
+         * A resource's value: now, during the subscribing call, then after each run that changed it, with the run's other
+         * notifications before it resolves.
          */
         resource<R extends Resource.Name>(name: R): Observe<ReadonlyResourceValue<R>>;
     };

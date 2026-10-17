@@ -33,16 +33,11 @@ const touchOther = System.create({ name: "observersTest/touchOther", resources: 
 const spawn = System.create({ name: "observersTest/spawn" }, ({ commands }) => { commands.spawn({ [weight]: 2 }); });
 const sum = System.create({ name: "observersTest/sum", components: { read: [weight] }, reduce: { [total]: "+" } }, (row, { reduce }) => { reduce[total](row[weight]); });
 
-/** Lets queued work run: a world delivers a new observer's first value through its queue. */
-const settle = (): Promise<void> => new Promise(resolve => setTimeout(resolve, 0));
-
 describe("observing resources", () => {
-    it("gives the current value soon after subscribing, never during it, then the value after each run that changed it", async () => {
+    it("gives the current value when subscribing, then the value after each run that changed it", async () => {
         await using world = World.create();
         const seen: number[] = [];
         world.observe.resource(level)(value => seen.push(value));
-        expect(seen).toEqual([]);
-        await settle();
         expect(seen).toEqual([0]);
         await world.run(raise, { by: 1 });
         expect(seen).toEqual([0, 2]);
@@ -50,17 +45,6 @@ describe("observing resources", () => {
         expect(seen).toEqual([0, 2]);
         await world.run(raise, { by: 3 });
         expect(seen).toEqual([0, 2, 8]);
-    });
-
-    it("waits for a run in progress before giving the first value", async () => {
-        await using world = World.create();
-        const seen: number[] = [];
-        const running = world.run(raise, { by: 1 });
-        world.observe.resource(level)(value => seen.push(value));
-        await running;
-        expect(seen).toEqual([]);
-        await settle();
-        expect(seen).toEqual([2]);
     });
 
     it("notifies a reduced resource only when its fold differs", async () => {
@@ -73,17 +57,6 @@ describe("observing resources", () => {
         expect(seen).toEqual([0, 2]);
     });
 
-    it("gives nothing to an observer stopped before its first value", async () => {
-        await using world = World.create();
-        const seen: number[] = [];
-        const stop = world.observe.resource(level)(value => seen.push(value));
-        stop();
-        stop();
-        await settle();
-        await world.run(raise, { by: 1 });
-        expect(seen).toEqual([]);
-    });
-
     it("stops an observer that another stops while a run notifies", async () => {
         await using world = World.create();
         const seen: string[] = [];
@@ -93,36 +66,32 @@ describe("observing resources", () => {
             if (value > 0) stopSecond();
         });
         stopSecond = world.observe.resource(level)(value => seen.push(`second ${value}`));
-        await settle();
         await world.run(raise, { by: 1 });
         await world.run(raise, { by: 1 });
+        stopSecond();
         expect(seen).toEqual(["first 0", "second 0", "first 2", "first 4"]);
     });
 
-    it("gives an observer added while a run notifies the value after that run once", async () => {
+    it("gives an observer added while a run notifies only the value then", async () => {
         await using world = World.create();
         const seen: string[] = [];
-        let added = false;
         world.observe.resource(level)(value => {
-            if (value === 0 || added) return;
-            added = true;
-            world.observe.resource(level)(later => seen.push(`added ${later}`));
+            if (value === 2) world.observe.resource(level)(later => seen.push(`added ${later}`));
         });
-        await settle();
         await world.run(raise, { by: 1 });
-        await settle();
         expect(seen).toEqual(["added 2"]);
     });
 
-    it("reports an observer that throws, in its run's report or, for its first value, the next run's", async () => {
+    it("throws to the subscriber when a first value throws, and reports an observer that throws while a run notifies", async () => {
         await using world = World.create();
+        expect(() => world.observe.resource(level)(() => { throw new Error("first failed"); })).toThrow("first failed");
         const seen: number[] = [];
-        world.observe.resource(level)(() => { throw new Error("observer failed"); });
+        world.observe.resource(level)(value => {
+            if (value > 0) throw new Error("observer failed");
+        });
         world.observe.resource(level)(value => seen.push(value));
-        await settle();
-        const first = await world.run(touchOther);
-        const second = await world.run(raise, { by: 1 });
-        for (const { failures } of [first, second]) expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "observer", name: level, message: "observer failed" }]);
+        const { failures } = await world.run(raise, { by: 1 });
+        expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "observer", name: level, message: "observer failed" }]);
         expect(seen).toEqual([0, 2]);
     });
 });

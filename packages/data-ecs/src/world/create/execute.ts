@@ -10,6 +10,11 @@ import { combine, identityOf, writeReduction, type ReductionTarget } from './red
 import type { Failure, Report } from '../report.js';
 import { failureOf } from './failures.js';
 
+/** Shared by every report without failures or skipped systems: they're read-only, so none needs its own. */
+const none: readonly never[] = [];
+/** The report of a run with nothing to report. */
+const clean: Report = { failures: none, skipped: none, dropped: 0 };
+
 export type ExecuteContext = {
     readonly state: State;
     readonly runnerOf: (leaf: Leaf) => Runner;
@@ -27,14 +32,14 @@ export type ExecuteContext = {
  */
 export const execute = async (context: ExecuteContext, schedule: Schedule, args: unknown, name: string): Promise<Report> => {
     const { gpu } = context.state;
-    if (gpu === null) return executeTiers(context, schedule, args, []);
+    if (gpu === null) return executeTiers(context, schedule, args, null);
     const lost = gpu.lost();
     // Lost since the run started; the world sets gpuDevice to null before the next one.
     if (lost !== null) throw new Error(`The world's GPU device was lost during this run: ${lost}.`);
     // An earlier run's GPU work reports its errors to this run: waiting for them there would hold every run until the
     // GPU process catches up.
     const earlier = gpu.takeError();
-    const failures = earlier === null ? [] : [failureOf("gpu", earlier.name, earlier.message)];
+    const failures = earlier === null ? null : [failureOf("gpu", earlier.name, earlier.message)];
     gpu.device.pushErrorScope("out-of-memory");
     gpu.device.pushErrorScope("validation");
     try {
@@ -68,11 +73,13 @@ const contribute = (state: State, folds: ReadonlyMap<unknown, Fold>, runner: Run
     });
 };
 
-const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }: ExecuteContext, schedule: Schedule, args: unknown, failures: Failure[]): Promise<Report> => {
+const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }: ExecuteContext, schedule: Schedule, args: unknown, earlier: Failure[] | null): Promise<Report> => {
     const { gpu } = state;
     const folds = new Map<unknown, Fold>();
     for (const [key, contributors] of schedule.reductions) folds.set(key, { target: null, values: [], remaining: contributors, ran: false, failed: false });
-    const skipped: string[] = [];
+    // Allocated only when there's something to list.
+    let failures = earlier;
+    let skipped: string[] | null = null;
     let dropped = 0;
     try {
         for (let t = 0; t < schedule.tiers.length; t++) {
@@ -95,7 +102,7 @@ const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }
                     // Systems can't touch the resource entity; only registration adds resources.
                     if (commands.count > 0) state.queued.push({ buffer: commands, guarded: true });
                     // A system's first failure stands for it; its other chunks often fail the same way.
-                    if (error !== undefined && !failed) failures.push(failureOf("system", tier[i].name, error));
+                    if (error !== undefined && !failed) (failures ??= []).push(failureOf("system", tier[i].name, error));
                     if (error !== undefined) failed = true;
                 }
                 if (failed) tierFailed = true;
@@ -104,7 +111,7 @@ const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }
             }
             if (gpu !== null) markWrites(gpu, runners);
             if (tierFailed) {
-                for (const later of schedule.tiers.slice(t + 1)) for (const leaf of later) skipped.push(leaf.name);
+                for (const later of schedule.tiers.slice(t + 1)) for (const leaf of later) (skipped ??= []).push(leaf.name);
                 break;
             }
         }
@@ -129,7 +136,7 @@ const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }
                     finally {
                         // Applied even when the readback fails, which only a lost device makes it do: the CPU state stays whole.
                         dropped = state.plan.dropped;
-                        for (const { name, error } of applySync(state)) failures.push(failureOf("finalizer", name, error));
+                        for (const { name, error } of applySync(state)) (failures ??= []).push(failureOf("finalizer", name, error));
                     }
                 }
             }
@@ -145,7 +152,7 @@ const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }
             publish();
         }
     }
-    return { failures, skipped, dropped };
+    return failures === null && skipped === null && dropped === 0 ? clean : { failures: failures ?? none, skipped: skipped ?? none, dropped };
 };
 
 /**

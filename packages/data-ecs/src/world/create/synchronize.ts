@@ -398,17 +398,20 @@ export const prepareSync = (state: State, isolated = false): boolean => {
     }
 };
 
+/** What a sync point whose finalizers threw nothing returns: read-only, so one is shared. */
+const nothingThrown: readonly Thrown[] = [];
+
 /**
  * The second half: runs finalizers against the plan, then applies it. A finalizer that throws doesn't stop the sync
  * point; what each threw is returned once it has applied.
  */
 export const applySync = (state: State): readonly Thrown[] => {
     const syncing = state.syncing;
-    if (syncing === null) return [];
+    if (syncing === null) return nothingThrown;
     const { queued, reservations, tick, born, index, deriving, isolated } = syncing;
     const tableLength = syncing.reserved;
     const { plan } = state;
-    let errors: Thrown[] = [];
+    let errors = nothingThrown;
     try {
         if (state.finalizers.length > 0 && !isolated) {
             errors = runFinalizers(state, queued, born);

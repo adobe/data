@@ -217,6 +217,14 @@ describe("World.create", () => {
         expect(world.query.count([velocity])).toBe(1);
     });
 
+    it("shares one report among runs with nothing to report", async () => {
+        const quiet = System.create({ name: "createTest/quiet" }, () => {});
+        await using world = World.create();
+        const report = await world.run(quiet);
+        expect(report).toEqual({ failures: [], skipped: [], dropped: 0 });
+        expect(await world.run(quiet)).toBe(report);
+    });
+
     it("reports what isn't an Error as text, without a stack", async () => {
         const fail = System.create({ name: "createTest/failText" }, () => {
             // A value that isn't an Error, which user code may throw.

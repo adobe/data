@@ -1,4 +1,5 @@
 import { chunkShift, type Program } from './kernel.js';
+import type { Reduction } from '../../resource/reduction.js';
 import type { View } from '../../layout/layout.js';
 import { withoutIntrinsics } from './intrinsics.js';
 
@@ -142,6 +143,14 @@ const notVectorizable = Symbol("notVectorizable");
 
 const join = (a: Type, b: Type): Type => a === b ? a : "mixed";
 
+/** The operators whose folds rotate through lanes: each one's identity, -0 for sums so a sum of -0 stays -0, and its instruction. */
+const rotated = {
+    "+": { value: -0, combine: op.f64Add },
+    "*": { value: 1, combine: op.f64Mul },
+    "min": { value: Infinity, combine: op.f64Min },
+    "max": { value: -Infinity, combine: op.f64Max },
+} as const;
+
 /**
  * Generates a WASM module for a kernel program, with JS semantics: every value is an f64, and stores
  * convert as typed arrays do. Returns `null` when exact equivalence can't be guaranteed.
@@ -157,6 +166,8 @@ export const generateWasm = (
     lookups: readonly WasmLookup[] = [],
     /** For a program reading `up`: the columns of the parent's components it reads. */
     upColumns: readonly WasmColumn[] = [],
+    /** Each accumulator's operator, in `reductions` order. */
+    operators: readonly Reduction[] = [],
 ): WasmKernel | null => {
     const program = withoutIntrinsics(source);
     const scalars: WasmScalar[] = [];
@@ -1350,6 +1361,18 @@ export const generateWasm = (
             accumulators.forEach((accumulator, k) => {
                 code.push(op.localGet, ...unsigned(partialsParameter), op.f64Load, 3, ...unsigned(8 * k), op.localSet, ...unsigned(local(accumulator)));
             });
+            // Floating-point folds wait on the one before, so consecutive rows fold into one of four lanes in turn:
+            // the accumulator, rotated with three more starting at the identity, then combined in a fixed order.
+            const lanes = accumulators.map((_, k) => {
+                const operator = operators[k];
+                const identity = rotated[operator as keyof typeof rotated];
+                if (identity === undefined) return null;
+                return [0, 1, 2].map(() => {
+                    const lane = scratch(f64Type);
+                    code.push(op.f64Const, ...float64(identity.value), op.localSet, ...unsigned(lane));
+                    return lane;
+                });
+            });
             handleLocals.clear();
             if (lookupParameters > 0) convertLookupParameters();
             stampRangeChunks();
@@ -1383,9 +1406,26 @@ export const generateWasm = (
             else for (const current of program.body) statement(current);
             labels.pop();
             code.push(op.end);
+            accumulators.forEach((accumulator, k) => {
+                const extra = lanes[k];
+                if (extra === null) return;
+                const [first, second, third] = extra;
+                const own = unsigned(local(accumulator));
+                code.push(op.localGet, ...own, op.localGet, ...unsigned(first), op.localSet, ...own);
+                code.push(op.localGet, ...unsigned(second), op.localSet, ...unsigned(first), op.localGet, ...unsigned(third), op.localSet, ...unsigned(second));
+                code.push(op.localSet, ...unsigned(third));
+            });
             code.push(op.localGet, ...unsigned(slot), op.i32Const, 1, op.i32Add, op.localSet, ...unsigned(slot), op.br, 0);
             code.push(op.end, op.end);
             rowLocal = slot;
+            accumulators.forEach((accumulator, k) => {
+                const extra = lanes[k];
+                if (extra === null) return;
+                const combine = rotated[operators[k] as keyof typeof rotated].combine;
+                const [first, second, third] = extra;
+                const own = unsigned(local(accumulator));
+                code.push(op.localGet, ...own, op.localGet, ...unsigned(first), combine, op.localGet, ...unsigned(second), op.localGet, ...unsigned(third), combine, combine, op.localSet, ...own);
+            });
             accumulators.forEach((accumulator, k) => {
                 code.push(op.localGet, ...unsigned(partialsParameter), op.localGet, ...unsigned(local(accumulator)), op.f64Store, 3, ...unsigned(8 * k));
             });

@@ -3,6 +3,7 @@ import { Component } from "../../component/component.js";
 import { Entity } from "../../entity/entity.js";
 import { System } from "../../system/system.js";
 import type { World } from "../world.js";
+import { readEach, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 const local = "upBrowserTest/local";
@@ -100,7 +101,7 @@ const simulate = async (workers: number, wasm: boolean): Promise<{ readonly valu
     finally {
         Worker.prototype.postMessage = original;
     }
-    const values = ecs.query.select([world]).map(entity => ecs.read.component(entity, world)).sort((a, b) => (a ?? 0) - (b ?? 0));
+    const values = (await readEach(ecs, await select(ecs, { required: [world] }), world)).sort((a, b) => (a ?? 0) - (b ?? 0));
     return { values, windows };
 };
 
@@ -125,8 +126,7 @@ const placements = async (gpu: GPUDevice | null): Promise<readonly (number | nul
     await ecs.run(plant);
     await ecs.run(place);
     await ecs.run(place);
-    await ecs.synchronize([placed]);
-    return ecs.query.select([placed]).map(entity => ecs.read.component(entity, placed)).sort((a, b) => (a ?? 0) - (b ?? 0));
+    return (await readEach(ecs, await select(ecs, { required: [placed] }), placed)).sort((a, b) => (a ?? 0) - (b ?? 0));
 };
 
 describe("up on the GPU", () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import { Resource } from "../../resource/resource.js";
 import { System } from "../../system/system.js";
+import { readResource } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 const weight = "reductionsBrowserTest/weight";
@@ -52,9 +53,9 @@ describe("reductions across workers", () => {
             const sums: number[] = [];
             for (let run = 0; run < 4; run++) {
                 await world.run(reduce);
-                expect(world.read.resource(count)).toBe(rows);
-                expect(world.read.resource(largest)).toBe(Math.max(...Array.from({ length: rows }, (_, i) => weightAt(i))));
-                sums.push(world.read.resource(sum) ?? NaN);
+                expect(await readResource(world, count)).toBe(rows);
+                expect(await readResource(world, largest)).toBe(Math.max(...Array.from({ length: rows }, (_, i) => weightAt(i))));
+                sums.push(await readResource(world, sum));
             }
             // Each piece folds into its own partial, combined in piece order, so float sums repeat bit for bit.
             expect(new Set(sums).size).toBe(1);

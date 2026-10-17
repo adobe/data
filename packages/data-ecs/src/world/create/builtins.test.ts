@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import { Mat4x4, Quat, Vec3 } from "../../math/index.js";
 import { System } from "../../system/system.js";
+import { readEach, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 const position = "builtinsTest/position";
@@ -68,7 +69,7 @@ describe("math in kernels", () => {
             const world = createWorld({ workers: 0, wasm });
             await world.run(spawn);
             await world.run(transform);
-            const read = world.query.select([position]).map(entity => world.read.component(entity, position));
+            const read = await readEach(world, await select(world, { required: [position] }), position);
             const want = Array.from({ length: 64 }, (_, i) => expected([i, i % 5, -i], [1, 0.5 * (i % 3), 0.25]));
             // Stored as f32, so compared at f32 precision.
             expect(read.map(value => value?.map(Math.fround))).toEqual(want.map(value => value.map(Math.fround)));
@@ -80,10 +81,10 @@ describe("math in kernels", () => {
             const world = createWorld({ workers: 0, wasm });
             await world.run(spawnBits);
             await world.run(integers);
-            const entities = world.query.select([bits]);
+            const entities = await select(world, { required: [bits] });
             const want = Array.from({ length: 64 }, (_, i) => integerResults(bitsAt(i), sumsAt(i)));
-            expect(entities.map(entity => world.read.component(entity, counts))).toEqual(want.map(value => value.counts));
-            expect(entities.map(entity => world.read.component(entity, sums))).toEqual(want.map(value => value.sums));
+            expect(await readEach(world, entities, counts)).toEqual(want.map(value => value.counts));
+            expect(await readEach(world, entities, sums)).toEqual(want.map(value => value.sums));
             await world.dispose();
         });
     }

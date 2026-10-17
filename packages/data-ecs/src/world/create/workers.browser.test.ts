@@ -5,6 +5,7 @@ import { Resource } from "../../resource/resource.js";
 import type { Schema } from "../../schema/schema.js";
 import { System } from "../../system/system.js";
 import type { World } from "../world.js";
+import { read, readEach, readResource, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 type Vec2 = readonly [number, number];
@@ -146,13 +147,13 @@ afterEach(async () => {
 });
 
 /** Every entity's values, in a canonical order, since entity ids depend on reservation interleaving. */
-const snapshot = (world: World): unknown[] => {
-    const rows = world.query.select([position]).map(entity => [
-        world.read.component(entity, position),
-        world.read.component(entity, velocity),
-        world.read.component(entity, offset),
-        world.read.component(entity, spawned),
-    ]);
+const snapshot = async (world: World): Promise<unknown[]> => {
+    const rows = await Promise.all((await select(world, { required: [position] })).map(entity => Promise.all([
+        read(world, entity, position),
+        read(world, entity, velocity),
+        read(world, entity, offset),
+        read(world, entity, spawned),
+    ])));
     return rows.map(row => JSON.stringify(row)).sort();
 };
 
@@ -207,9 +208,9 @@ describe("workers", () => {
             disposals.push(world);
             await world.run(seed, { count: 2000 });
             for (let frame = 0; frame < 4; frame++) await world.run(main);
-            const [first] = world.query.select([position]);
+            const [first] = await select(world, { required: [position] });
             await world.run(stamp, { entity: first });
-            return [world.read.component(first, offset), world.query.select([position]).map(entity => world.read.component(entity, position))];
+            return [await read(world, first, offset), await readEach(world, await select(world, { required: [position] }), position)];
         };
         expect(await ordered(3)).toEqual(await ordered(0));
     });
@@ -220,7 +221,7 @@ describe("workers", () => {
         await world.run(seed, { count: 500 });
         await world.run(unlink);
         await world.run(integrate);
-        expect(world.read.resource(seconds)).toBe(0.25);
+        expect(await readResource(world, seconds)).toBe(0.25);
     });
 
     it("rejects kernel lookups of components outside linear memory", async () => {

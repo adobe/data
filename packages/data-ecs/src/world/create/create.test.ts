@@ -4,6 +4,7 @@ import { Entity } from "../../entity/entity.js";
 import { Resource } from "../../resource/resource.js";
 import { gpuDevice } from "../../resources/gpu-device.js";
 import { System } from "../../system/system.js";
+import { count, read, readEach, readEntity, readResource, select } from "../reads.test-helper.js";
 import { World } from "../world.js";
 import { attachKernel } from "./attach-kernel.js";
 
@@ -73,32 +74,32 @@ const missing = attachKernel(
 
 const main = System.composite({ name: "createTest/main", systems: [spawn, move, watch] });
 
-const positions = (world: World): Vec2[] =>
-    world.query.select([position], { order: { [position]: true } }).map(entity => world.read.component(entity, position) ?? [NaN, NaN]);
+const positions = async (world: World): Promise<Vec2[]> =>
+    (await readEach(world, await select(world, { required: [position], order: { [position]: true } }), position)).map(value => value ?? [NaN, NaN]);
 
 describe("World.create", () => {
     it("spawns once from a changed resource, then integrates", async () => {
         const world = World.create();
         await world.run(main);
-        expect(positions(world)).toEqual([[0, 0], [1, 0], [2, 0]]);
+        expect(await positions(world)).toEqual([[0, 0], [1, 0], [2, 0]]);
         await world.run(main);
-        expect(positions(world)).toEqual([[0, 1], [1, 1], [2, 1]]);
-        expect(world.read.resource(spawnCount)).toBe(3);
+        expect(await positions(world)).toEqual([[0, 1], [1, 1], [2, 1]]);
+        expect(await readResource(world, spawnCount)).toBe(3);
     });
 
     it("reports each change to a system exactly once", async () => {
         const world = World.create();
         await world.run(main);
         // Spawned at the sync point, after watch ran: seen on the next run.
-        expect(world.read.resource(seen)).toBe(0);
+        expect(await readResource(world, seen)).toBe(0);
         await world.run(main);
-        expect(world.read.resource(seen)).toBe(3);
+        expect(await readResource(world, seen)).toBe(3);
         // Moved before watch in the last run, so already reported.
         await world.run(watch);
-        expect(world.read.resource(seen)).toBe(3);
+        expect(await readResource(world, seen)).toBe(3);
         await world.run(move);
         await world.run(watch);
-        expect(world.read.resource(seen)).toBe(6);
+        expect(await readResource(world, seen)).toBe(6);
     });
 
     it("applies the net structural change of a sync point", async () => {
@@ -119,11 +120,11 @@ describe("World.create", () => {
         });
         const world = World.create();
         await world.run(edit, { action: "spawn" });
-        expect(world.query.count([velocity])).toBe(2);
+        expect(await count(world, { required: [velocity] })).toBe(2);
         await world.run(edit, { action: "toggle" });
-        expect(world.read.entity(first, [velocity])).toBeNull();
-        expect(world.read.entity(second, [velocity, label])).toEqual({ [velocity]: 5, [label]: "second" });
-        expect(world.query.select([velocity])).toEqual([second]);
+        expect(await readEntity(world, first, [velocity])).toBeNull();
+        expect(await readEntity(world, second, [velocity, label])).toEqual({ [velocity]: 5, [label]: "second" });
+        expect(await select(world, { required: [velocity] })).toEqual([second]);
     });
 
     it("reuses a despawned index only after a sync point, with a new generation", async () => {
@@ -139,8 +140,8 @@ describe("World.create", () => {
         const [old, reused] = spawned;
         expect(reused >>> 0).toBe(old >>> 0);
         expect(reused).not.toBe(old);
-        expect(world.read.component(old, velocity)).toBeNull();
-        expect(world.read.component(reused, velocity)).toBe(1);
+        expect(await read(world, old, velocity)).toBeNull();
+        expect(await read(world, reused, velocity)).toBe(1);
     });
 
     it("keeps rows consistent across swap-removes and archetype growth", async () => {
@@ -152,24 +153,24 @@ describe("World.create", () => {
         const world = World.create();
         await world.run(edit, { action: "spawn" });
         await world.run(edit, { action: "remove" });
-        spawned.forEach((entity, i) => {
-            expect(world.read.component(entity, velocity)).toBe(i);
-            expect(world.read.component(entity, label)).toBe(i % 3 === 0 ? null : `${i}`);
-        });
-        expect(world.query.count([label])).toBe(66);
+        for (const [i, entity] of spawned.entries()) {
+            expect(await read(world, entity, velocity)).toBe(i);
+            expect(await read(world, entity, label)).toBe(i % 3 === 0 ? null : `${i}`);
+        }
+        expect(await count(world, { required: [label] })).toBe(66);
     });
 
     it("reads a component the world had no id for at an earlier read, once it has one", async () => {
         await using world = World.create();
         const spawnPlain = System.create({ name: "createTest/spawnPlain" }, ({ commands }) => { commands.spawn({ [velocity]: 1 }); });
         await world.run(spawnPlain);
-        const [entity] = world.query.select([velocity]);
-        expect(world.read.component(entity, frozen)).toBe(null);
+        const [entity] = await select(world, { required: [velocity] });
+        expect(await read(world, entity, frozen)).toBe(null);
         const freeze = System.create({ name: "createTest/freeze", input: { type: "object", properties: { entity: Entity.schema } } }, ({ input, commands }) => {
             commands.add(input.entity, { [frozen]: true });
         });
         await world.run(freeze, { entity });
-        expect(world.read.component(entity, frozen)).toBe(true);
+        expect(await read(world, entity, frozen)).toBe(true);
     });
 
     it("hides the resource entity from queries and commands", async () => {
@@ -177,9 +178,9 @@ describe("World.create", () => {
             commands.despawn(row.entity);
         });
         const world = World.create();
-        expect(world.query.count([])).toBe(0);
+        expect(await count(world, { required: [] })).toBe(0);
         await world.run(edit);
-        expect(world.read.resource(seen)).toBe(0);
+        expect(await readResource(world, seen)).toBe(0);
     });
 
     it("throws at creating a composite with an unordered conflict, naming nothing", () => {
@@ -214,7 +215,7 @@ describe("World.create", () => {
         const [failure] = (await world.run(fail)).failures;
         expect([failure.kind, failure.name, failure.message]).toEqual(["system", "createTest/fail", "boom"]);
         expect(failure.stack).toContain("boom");
-        expect(world.query.count([velocity])).toBe(1);
+        expect(await count(world, { required: [velocity] })).toBe(1);
     });
 
     it("shares one report among runs with nothing to report", async () => {
@@ -261,9 +262,9 @@ describe("World.create", () => {
         const world = World.create();
         await world.run(spawn);
         await world.run(count);
-        expect(world.read.resource(seen)).toBe(3);
+        expect(await readResource(world, seen)).toBe(3);
         await world.run(count);
-        expect(world.read.resource(seen)).toBe(3);
+        expect(await readResource(world, seen)).toBe(3);
     });
 
     it("doesn't let a lookup match the resource entity", async () => {
@@ -315,14 +316,14 @@ describe("World.create", () => {
         });
         const world = World.create();
         await world.run(edit);
-        const velocities = (entities: readonly Entity[]): (number | null)[] => entities.map(entity => world.read.component(entity, velocity));
-        expect(velocities(world.query.select([velocity], { where: { [velocity]: { "<": 3 } } }))).toEqual([0, 1, 2]);
-        expect(velocities(world.query.select([velocity], { where: { [velocity]: { ">=": 2, "!=": 4, "<": 6 } } }))).toEqual([2, 3, 5]);
-        expect(velocities(world.query.select([position, velocity], { where: { [position]: [1, 4] } }))).toEqual([4]);
-        expect(velocities(world.query.select([velocity], { order: { [velocity]: false } }))).toEqual([9, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
-        expect(velocities(world.query.select([position, velocity], { where: { [velocity]: { ">": 1 } }, order: { [position]: true } })))
+        const velocities = async (entities: Promise<readonly Entity[]>): Promise<(number | null)[]> => readEach(world, await entities, velocity);
+        expect(await velocities(select(world, { required: [velocity], where: { [velocity]: { "<": 3 } } }))).toEqual([0, 1, 2]);
+        expect(await velocities(select(world, { required: [velocity], where: { [velocity]: { ">=": 2, "!=": 4, "<": 6 } } }))).toEqual([2, 3, 5]);
+        expect(await velocities(select(world, { required: [position, velocity], where: { [position]: [1, 4] } }))).toEqual([4]);
+        expect(await velocities(select(world, { required: [velocity], order: { [velocity]: false } }))).toEqual([9, 8, 7, 6, 5, 4, 3, 2, 1, 0]);
+        expect(await velocities(select(world, { required: [position, velocity], where: { [velocity]: { ">": 1 } }, order: { [position]: true } })))
             .toEqual([3, 6, 9, 4, 7, 2, 5, 8]);
-        expect(world.query.count([velocity], { where: { [velocity]: { "<": 3 } } })).toBe(3);
+        expect(await count(world, { required: [velocity], where: { [velocity]: { "<": 3 } } })).toBe(3);
     });
 
     it("spawns components named by symbols", async () => {
@@ -332,22 +333,22 @@ describe("World.create", () => {
         });
         const world = World.create();
         await world.run(edit);
-        expect(world.read.entity(spawned, [velocity, marker])).toEqual({ [velocity]: 2, [marker]: 7 });
+        expect(await readEntity(world, spawned, [velocity, marker])).toEqual({ [velocity]: 2, [marker]: 7 });
     });
 
     it("starts resources at values given at creation, in place of their defaults", async () => {
         const world = World.create({ [spawnCount]: 2 });
-        expect(world.read.resource(spawnCount)).toBe(2);
+        expect(await readResource(world, spawnCount)).toBe(2);
         await world.run(spawn);
-        expect(world.query.count([velocity])).toBe(2);
-        expect(World.create().read.resource(spawnCount)).toBe(3);
+        expect(await count(world, { required: [velocity] })).toBe(2);
+        expect(await readResource(World.create(), spawnCount)).toBe(3);
         // @ts-expect-error resources takes only resource names
         expect(() => World.create({ [velocity]: 1 })).toThrow(`"createTest/velocity" isn't a registered resource`);
     });
 
     it("has the gpuDevice resource, null without a device", async () => {
         await using world = World.create();
-        expect(world.read.resource(gpuDevice)).toBeNull();
+        expect(await readResource(world, gpuDevice)).toBeNull();
         let seen: unknown = undefined;
         await world.run(System.create({ name: "createTest/readDevice", resources: { read: [gpuDevice] } }, ({ resources }) => { seen = resources[gpuDevice]; }));
         expect(seen).toBeNull();
@@ -360,7 +361,7 @@ describe("World.create", () => {
         await using world = World.create();
         await world.run(first);
         await world.run(again);
-        expect(world.read.resource(seen)).toBe(2);
+        expect(await readResource(world, seen)).toBe(2);
     });
 
     it("refuses runs as soon as dispose is called", async () => {

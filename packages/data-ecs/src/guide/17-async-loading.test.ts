@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Entity, Finalizer, Resource, Rule, System, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 const meshSource = "guide/loading/meshSource";
 const hidden = "guide/loading/hidden";
@@ -86,13 +87,14 @@ it("loads resources asynchronously for derived slots, and releases them when the
     await using world = World.create();
     await world.run(spawn);
     await world.run(request);
-    const [ship, rock] = world.read.resource(requests);
+    const [ship, rock] = await toPromise(world.observe.resource(requests));
     // The rock is hidden before its load completes, so its result is stale when it arrives.
     await world.run(hide, { entity: rock.entity });
     for (const { entity, token, path } of [ship, rock]) await world.run(apply, { entity, token, handle: await load(path) });
-    expect(world.query.select([meshReady]).map(entity => loaded.get(world.read.component(entity, meshReady) ?? 0))).toEqual(["ship.glb"]);
+    const ready = await toPromise(world.observe.select({ required: [meshReady] }));
+    expect(await Promise.all(ready.map(async entity => loaded.get((await toPromise(world.observe.entity(entity, { required: [meshReady] })))?.[meshReady] ?? 0)))).toEqual(["ship.glb"]);
     expect([...loaded.values()]).toEqual(["ship.glb"]);
     await world.run(hide, { entity: ship.entity });
-    expect(world.query.count([meshReady])).toBe(0);
+    expect(await toPromise(world.observe.count({ required: [meshReady] }))).toBe(0);
     expect(loaded.size).toBe(0);
 });

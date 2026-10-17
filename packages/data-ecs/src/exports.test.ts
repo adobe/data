@@ -37,9 +37,12 @@ export const move = System.create({ name: "exportsTest/move", components: { writ
 export const all = System.composite({ name: "exportsTest/all", systems: [move] });
 export const draw = System.render({ name: "exportsTest/draw", shader: { accessors: {} } }, () => {});
 export const world = World.create();
-export const read = (entity: Parameters<World["read"]["entity"]>[0]) => world.read.entity(entity, [position]);
-export const device = world.read.resource(gpuDevice);
-export const query = world.query;
+export const observeEntity = (entity: Parameters<World["observe"]["entity"]>[0]) => world.observe.entity(entity, { required: [position] });
+export const device = world.observe.resource(gpuDevice);
+export const observe = world.observe;
+export const query: World.Query<[typeof position]> = { required: [position], where: { [position]: { ">": 0 } } };
+export const selected = world.observe.select(query);
+export const counted = world.observe.count({ required: [position] });
 `;
 
 describe("package exports", () => {

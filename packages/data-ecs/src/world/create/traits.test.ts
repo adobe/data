@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import { Entity } from "../../entity/entity.js";
 import { System } from "../../system/system.js";
+import { count, read } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 const score = "traitsTest/score";
@@ -44,7 +45,7 @@ describe("traits", () => {
         const world = createWorld({ workers: 0 });
         await world.run(derived);
         expect(errors).toEqual(Array.from({ length: 3 }, () => `"${slot}" is derived, so only rules add and remove it.`));
-        expect(world.query.count([score])).toBe(1);
+        expect(await count(world, { required: [score] })).toBe(1);
         await world.dispose();
     });
 
@@ -58,7 +59,7 @@ describe("traits", () => {
         await world.run(lookup);
         expect(first).not.toBe(Entity.none);
         expect(found).toBeNull();
-        expect(world.read.component(Entity.none, score)).toBeNull();
+        expect(await read(world, Entity.none, score)).toBeNull();
         await world.dispose();
     });
 });

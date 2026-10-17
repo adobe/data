@@ -4,6 +4,7 @@ import { Vec3 } from "../../math/index.js";
 import { Resource } from "../../resource/resource.js";
 import { System } from "../../system/system.js";
 import { createWorld } from "./create.js";
+import { readResource } from "../reads.test-helper.js";
 import { definitionOf } from "../../system/definition.js";
 import type { Name } from "../../system/name.js";
 import { createRegistrar } from "./register.js";
@@ -123,11 +124,11 @@ const expected = () => {
     };
 };
 
-const results = (world: ReturnType<typeof createWorld>) => ({
-    total: world.read.resource(total),
-    low: world.read.resource(low),
-    bits: world.read.resource(bits),
-    least: world.read.resource(least),
+const results = async (world: ReturnType<typeof createWorld>) => ({
+    total: await readResource(world, total),
+    low: await readResource(world, low),
+    bits: await readResource(world, bits),
+    least: await readResource(world, least),
 });
 
 describe("reductions", () => {
@@ -140,12 +141,12 @@ describe("reductions", () => {
             await world.run(spawn);
             await world.run(system);
             const want = expected();
-            const got = results(world);
+            const got = await results(world);
             // Positions are f32, so their least is too; sums of integers and halves are exact.
             expect({ ...got, low: got.low?.map(Math.fround) }).toEqual(want);
             // A second run starts again from the operators' identities rather than adding to the fold.
             await world.run(system);
-            expect(results(world).total).toBe(want.total);
+            expect((await results(world)).total).toBe(want.total);
             await world.dispose();
         });
     }
@@ -155,13 +156,13 @@ describe("reductions", () => {
         await world.run(spawn);
         // The reader is listed first, yet runs after both contributors.
         await world.run(frame);
-        expect(world.read.resource(total)).toBe(masses(() => true));
-        expect(world.read.resource(seen)).toBe(masses(() => true));
+        expect(await readResource(world, total)).toBe(masses(() => true));
+        expect(await readResource(world, seen)).toBe(masses(() => true));
         await world.run(frame);
-        expect(world.read.resource(total)).toBe(masses(() => true));
+        expect(await readResource(world, total)).toBe(masses(() => true));
         // A run with one contributor holds that contributor's fold alone.
         await world.run(heavyMass);
-        expect(world.read.resource(total)).toBe(masses(i => i % 3 === 0));
+        expect(await readResource(world, total)).toBe(masses(i => i % 3 === 0));
         await world.dispose();
     });
 
@@ -174,23 +175,23 @@ describe("reductions", () => {
         const world = createWorld({ workers: 0 });
         await world.run(spawn);
         await world.run(fails);
-        const before = world.read.resource(total);
+        const before = await readResource(world, total);
         fail = true;
         expect((await world.run(fails)).failures.map(failure => failure.message)).toEqual(["contributor failed"]);
-        expect(world.read.resource(total)).toBe(before);
+        expect(await readResource(world, total)).toBe(before);
         // A resource filter passes on its first run; after that `level` doesn't change, so its runs are skipped.
         await world.run(filtered);
         await world.run(lightMass);
         await world.run(filtered);
-        expect(world.read.resource(total)).toBe(masses(i => i % 3 !== 0));
+        expect(await readResource(world, total)).toBe(masses(i => i % 3 !== 0));
         await world.dispose();
     });
 
     it("fold to the identity over no rows, an empty min of integers as the type's extreme", async () => {
         const world = createWorld({ workers: 0 });
         await world.run(filtered);
-        expect(world.read.resource(total)).toBe(0);
-        expect(world.read.resource(least)).toBe(0xFFFFFFFF);
+        expect(await readResource(world, total)).toBe(0);
+        expect(await readResource(world, least)).toBe(0xFFFFFFFF);
         await world.dispose();
     });
 
@@ -198,13 +199,13 @@ describe("reductions", () => {
         const world = createWorld({ workers: 0 });
         await world.run(spawn);
         await world.run(kernelChanged);
-        expect(world.read.resource(total)).toBe(masses(() => true));
+        expect(await readResource(world, total)).toBe(masses(() => true));
         await world.run(weigh);
         await world.run(kernelChanged);
-        expect(world.read.resource(total)).toBe(rows / 3);
+        expect(await readResource(world, total)).toBe(rows / 3);
         // Nothing changed since: the filter passes no rows, so the fold is empty.
         await world.run(kernelChanged);
-        expect(world.read.resource(total)).toBe(0);
+        expect(await readResource(world, total)).toBe(0);
         await world.dispose();
     });
 
@@ -230,7 +231,7 @@ describe("reductions", () => {
         const world = createWorld({ workers: 0 });
         await world.run(spawn);
         await world.run(infinite);
-        expect(world.read.resource(wrapped)).toBe(0);
+        expect(await readResource(world, wrapped)).toBe(0);
         await world.dispose();
     });
 
@@ -238,7 +239,7 @@ describe("reductions", () => {
         const world = createWorld({ workers: 0 });
         await world.run(spawn);
         await world.run(flags);
-        expect(world.read.resource(any)).toBe(true);
+        expect(await readResource(world, any)).toBe(true);
         await world.dispose();
     });
 

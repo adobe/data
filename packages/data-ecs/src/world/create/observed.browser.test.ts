@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import { System } from "../../system/system.js";
+import { readEach, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 const value = "observedWorkersTest/value";
@@ -38,13 +39,13 @@ describe("tick stamps only where observed, on workers", () => {
             // New observers see everything once.
             await world.run(watch);
             await world.run(watch);
-            const seenAll = (): number[] => world.query.select([seen]).map(entity => world.read.component(entity, seen) ?? -1);
-            expect(new Set(seenAll())).toEqual(new Set([1]));
+            const seenAll = async (): Promise<number[]> => (await readEach(world, await select(world, { required: [seen] }), seen)).map(each => each ?? -1);
+            expect(new Set(await seenAll())).toEqual(new Set([1]));
             // Writes after registering are stamped, so the observer sees each exactly once.
             await world.run(bump);
             await world.run(watch);
             await world.run(watch);
-            expect(new Set(seenAll())).toEqual(new Set([2]));
+            expect(new Set(await seenAll())).toEqual(new Set([2]));
             await world.dispose();
         });
     }

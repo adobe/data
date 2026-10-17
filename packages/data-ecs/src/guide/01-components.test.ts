@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Resource, System, Vec3, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 // A component or resource is an exported key: `Components` or `Resources` give its type, `register` its schema.
 export const position = "guide/components/position";
@@ -28,8 +29,9 @@ export const spawn = System.create({ name: "guide/components/spawn" }, ({ comman
 it("stores components on entities and resources once per world", async () => {
     await using world = World.create();
     await world.run(spawn);
-    const [first] = world.query.select([position, enemy]);
-    expect(world.read.component(first, position)).toEqual([0, 10, 0]);
-    expect(world.query.count([position])).toBe(2);
-    expect(world.read.resource(gravity)).toBe(-9.8);
+    const [first] = await toPromise(world.observe.select({ required: [position, enemy] }));
+    const components = await toPromise(world.observe.entity(first, { required: [position] }));
+    expect(components?.[position]).toEqual([0, 10, 0]);
+    expect(await toPromise(world.observe.count({ required: [position] }))).toBe(2);
+    expect(await toPromise(world.observe.resource(gravity))).toBe(-9.8);
 });

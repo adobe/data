@@ -34,14 +34,14 @@ export type State = {
     tick: number;
     /** By component id: the tick of the last sync point that wrote a reference into it. */
     readonly referencesWritten: number[];
-    /** The entities sync points spawned, despawned, moved or wrote references of, for `up` systems. */
+    /** The entities sync points spawned, despawned, moved or wrote references of, for `up` systems and query observers. */
     readonly journal: Journal;
     /** Command buffers for the next sync point, in merge order. */
     readonly queued: Queued[];
     resourceEntity: number;
-    /** Components some registered system filters on with `changed`, or an entity observer watches; only their kernel stamps are kept. */
+    /** Components some registered system filters on with `changed`, or an entity or query observer watches; only their kernel stamps are kept. */
     readonly observed: Set<number>;
-    /** Components some registered system filters on with `added` or `changed`, or an entity observer watches; only they keep ticks. */
+    /** Components some registered system filters on with `added` or `changed`, or an entity or query observer watches; only they keep ticks. */
     readonly ticked: Set<number>;
     /** Main-thread spawns since the last sync point, by component set; `spawnShapes` caches key lists resolved to them. */
     readonly batches: SpawnBatch[];

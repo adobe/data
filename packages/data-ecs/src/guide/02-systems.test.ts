@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Resource, System, Vec3, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 const position = "guide/systems/position";
 const velocity = "guide/systems/velocity";
@@ -48,8 +49,10 @@ it("runs a body for each row its components match", async () => {
     await using world = World.create();
     await world.run(spawn);
     await world.run(move);
-    expect(world.query.select([position], { not: [frozen] }).map(entity => world.read.component(entity, position))).toEqual([[1, 0, 0]]);
-    expect(world.query.select([frozen]).map(entity => world.read.component(entity, position))).toEqual([[0, 0, 0]]);
+    const [moving] = await toPromise(world.observe.select({ required: [position], not: [frozen] }));
+    const [still] = await toPromise(world.observe.select({ required: [frozen] }));
+    expect((await toPromise(world.observe.entity(moving, { required: [position] })))?.[position]).toEqual([1, 0, 0]);
+    expect((await toPromise(world.observe.entity(still, { required: [position] })))?.[position]).toEqual([0, 0, 0]);
     await world.run(count);
-    expect(world.read.resource(frames)).toBe(1);
+    expect(await toPromise(world.observe.resource(frames))).toBe(1);
 });

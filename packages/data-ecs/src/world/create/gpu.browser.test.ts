@@ -6,6 +6,7 @@ import { Mat4x4, Quat, Vec3 } from "../../math/index.js";
 import type { Schema } from "../../schema/schema.js";
 import { gpuDevice } from "../../resources/gpu-device.js";
 import { System } from "../../system/system.js";
+import { read, readEach, readEntity, readResource, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
@@ -208,8 +209,8 @@ const device = async (): Promise<GPUDevice> => {
     return adapter.requestDevice();
 };
 
-const positions = (world: ReturnType<typeof createWorld>): Vec3[] =>
-    world.query.select([position]).map((entity: Entity) => world.read.component(entity, position) ?? [NaN, NaN, NaN]);
+const positions = async (world: ReturnType<typeof createWorld>): Promise<Vec3[]> =>
+    (await readEach(world, await select(world, { required: [position] }), position)).map(value => value ?? [NaN, NaN, NaN]);
 
 let nextDevice: GPUDevice | null = null;
 const setDevice = System.create({ name: "gpuTest/setDevice", resources: { write: [gpuDevice] } }, ({ resources }) => { resources[gpuDevice] = nextDevice; });
@@ -220,14 +221,12 @@ describe("the gpuDevice resource", () => {
         await world.run(spawn);
         await world.run(move);
         // On the CPU, reads see the write at once.
-        const moved = positions(world)[0];
+        const moved = (await positions(world))[0];
         nextDevice = await device();
         await world.run(setDevice);
         await world.run(move);
-        // On the GPU, reads see it only after synchronize.
-        expect(positions(world)[0]).toEqual(moved);
-        await world.synchronize([position]);
-        expect(positions(world)[0]).not.toEqual(moved);
+        // On the GPU, observers read back its write before giving values.
+        expect((await positions(world))[0]).not.toEqual(moved);
         await world.dispose();
     });
 
@@ -252,7 +251,7 @@ describe("the gpuDevice resource", () => {
         await world.run(move);
         await world.run(draw);
         expect(drawn).toBe(0);
-        expect(world.read.resource(gpuDevice)).toBeNull();
+        expect(await readResource(world, gpuDevice)).toBeNull();
         await world.run(watchDevice);
         expect(changes).toBe(2);
         nextDevice = await device();
@@ -261,8 +260,7 @@ describe("the gpuDevice resource", () => {
         await world.run(draw);
         expect(drawn).toBe(1);
         for (let i = 0; i < 2; i++) await cpuWorld.run(move);
-        await world.synchronize([position]);
-        expect(positions(world)).toEqual(positions(cpuWorld));
+        expect(await positions(world)).toEqual(await positions(cpuWorld));
         await world.dispose();
         await cpuWorld.dispose();
     });
@@ -276,8 +274,7 @@ describe("the gpuDevice resource", () => {
         await world.run(setDevice);
         await world.run(move);
         for (let i = 0; i < 2; i++) await cpuWorld.run(move);
-        await world.synchronize([position]);
-        expect(positions(world)).toEqual(positions(cpuWorld));
+        expect(await positions(world)).toEqual(await positions(cpuWorld));
         await world.dispose();
         await cpuWorld.dispose();
     });
@@ -295,7 +292,7 @@ describe("the gpuDevice resource", () => {
         await world.run(move);
         for (let i = 0; i < 2; i++) await cpuWorld.run(move);
         // On the CPU, reads see writes at once.
-        expect(positions(world)).toEqual(positions(cpuWorld));
+        expect(await positions(world)).toEqual(await positions(cpuWorld));
         await world.run(draw);
         expect(drawn).toBe(1);
         await world.dispose();
@@ -305,17 +302,16 @@ describe("the gpuDevice resource", () => {
 
 describe("GPU kernels", () => {
     // Each comparison runs the same GPU kernels in a world without a GPU, where they run on the CPU.
-    it("write values that reach the CPU after synchronize, as the CPU kernel's do", async () => {
+    it("write values that observers see, as the CPU kernel's do", async () => {
         const gpuWorld = createWorld({ resources: { gpuDevice: await device() } });
         const cpuWorld = createWorld({ workers: 0 });
         for (const world of [gpuWorld, cpuWorld]) {
             await world.run(spawn);
             for (let i = 0; i < 3; i++) await world.run(move);
         }
-        // Until synchronized, reads see the values before the GPU wrote them.
-        expect(positions(gpuWorld)[0]).toEqual([0, 0, -0]);
-        await gpuWorld.synchronize([position]);
-        expect(positions(gpuWorld)).toEqual(positions(cpuWorld));
+        // Observers read back what the GPU wrote before giving values.
+        expect((await positions(gpuWorld))[0]).not.toEqual([0, 0, -0]);
+        expect(await positions(gpuWorld)).toEqual(await positions(cpuWorld));
         await gpuWorld.dispose();
         await cpuWorld.dispose();
     });
@@ -328,8 +324,7 @@ describe("GPU kernels", () => {
             await world.run(frame);
             await world.run(frame);
         }
-        await gpuWorld.synchronize([position]);
-        expect(positions(gpuWorld)).toEqual(positions(cpuWorld));
+        expect(await positions(gpuWorld)).toEqual(await positions(cpuWorld));
         await gpuWorld.dispose();
         await cpuWorld.dispose();
     });
@@ -341,8 +336,7 @@ describe("GPU kernels", () => {
             await world.run(spawn);
             await world.run(turning);
         }
-        await gpuWorld.synchronize([position]);
-        expect(positions(gpuWorld)).toEqual(positions(cpuWorld));
+        expect(await positions(gpuWorld)).toEqual(await positions(cpuWorld));
         await gpuWorld.dispose();
         await cpuWorld.dispose();
     });
@@ -356,8 +350,7 @@ describe("GPU kernels", () => {
         await world.run(move);
         await world.run(spawnOne);
         await world.run(move);
-        await world.synchronize([position]);
-        const all = positions(world);
+        const all = await positions(world);
         expect(all.length).toBe(count + 1);
         expect(all.filter(([x]) => x === -1)).toEqual([[-1, -1, -1]]);
         // Moved twice: once before the spawn's sync point and once after.
@@ -380,8 +373,7 @@ describe("GPU kernels", () => {
         await world.run(spawnOwned);
         await world.run(move);
         await world.run(despawnOwner);
-        await world.synchronize([position]);
-        const xs = positions(world).map(([x]) => x).sort((a, b) => a - b);
+        const xs = (await positions(world)).map(([x]) => x).sort((a, b) => a - b);
         expect(xs).toEqual(Array.from({ length: 63 }, (_, i) => i + 2));
         await world.dispose();
     });
@@ -389,13 +381,13 @@ describe("GPU kernels", () => {
     it("keep JS semantics for u32 values, bitwise operators and infinities", async () => {
         const gpuWorld = createWorld({ resources: { gpuDevice: await device() } });
         const cpuWorld = createWorld({ workers: 0 });
-        const read = (world: ReturnType<typeof createWorld>): unknown[] => world.query.select([code]).map(entity => world.read.entity(entity, [code, amount]));
+        const values = async (world: ReturnType<typeof createWorld>): Promise<unknown[]> =>
+            Promise.all((await select(world, { required: [code] })).map(entity => readEntity(world, entity, [code, amount])));
         for (const world of [gpuWorld, cpuWorld]) {
             await world.run(spawnNumbers);
             await world.run(numbers);
         }
-        await gpuWorld.synchronize([code, amount]);
-        expect(read(gpuWorld)).toEqual(read(cpuWorld));
+        expect(await values(gpuWorld)).toEqual(await values(cpuWorld));
         await gpuWorld.dispose();
         await cpuWorld.dispose();
     });
@@ -405,8 +397,8 @@ describe("GPU kernels", () => {
         await world.run(spawnFollower);
         await world.run(following);
         await world.run(following);
-        const [follower] = world.query.select([followed]);
-        expect(world.read.component(follower, score)).toBe(20);
+        const [follower] = await select(world, { required: [followed] });
+        expect(await read(world, follower, score)).toBe(20);
         await world.dispose();
     });
 
@@ -419,8 +411,7 @@ describe("GPU kernels", () => {
             await expect(world.run(poison)).rejects.toThrow();
             await world.run(move);
         }
-        await gpuWorld.synchronize([position]);
-        expect(positions(gpuWorld)).toEqual(positions(cpuWorld));
+        expect(await positions(gpuWorld)).toEqual(await positions(cpuWorld));
         await gpuWorld.dispose();
         await cpuWorld.dispose();
     });
@@ -435,9 +426,8 @@ describe("GPU kernels", () => {
                 await world.run(move);
             }
         }
-        await gpuWorld.synchronize([position]);
-        expect(positions(gpuWorld).length).toBe(positions(cpuWorld).length);
-        expect(positions(gpuWorld)).toEqual(positions(cpuWorld));
+        expect((await positions(gpuWorld)).length).toBe((await positions(cpuWorld)).length);
+        expect(await positions(gpuWorld)).toEqual(await positions(cpuWorld));
         await gpuWorld.dispose();
         await cpuWorld.dispose();
     });
@@ -466,9 +456,8 @@ describe("GPU kernels", () => {
             await world.run(spawn);
             await world.run(transform);
         }
-        await gpuWorld.synchronize([position]);
-        const onGpu = positions(gpuWorld).flat();
-        const cpu = positions(cpuWorld).flat();
+        const onGpu = (await positions(gpuWorld)).flat();
+        const cpu = (await positions(cpuWorld)).flat();
         expect(onGpu.length).toBe(cpu.length);
         const worst = Math.max(...onGpu.map((value, i) => Math.abs(value - cpu[i]) / Math.max(1, Math.abs(cpu[i]))));
         expect(worst).toBeLessThan(1e-5);
@@ -483,9 +472,9 @@ describe("GPU kernels", () => {
             await world.run(spawnIntegers);
             await world.run(integers);
         }
-        await gpuWorld.synchronize([bits, sums]);
-        const read = (world: ReturnType<typeof createWorld>): unknown[] => world.query.select([bits]).map(entity => world.read.entity(entity, [bits, sums]));
-        expect(read(gpuWorld)).toEqual(read(cpuWorld));
+        const values = async (world: ReturnType<typeof createWorld>): Promise<unknown[]> =>
+            Promise.all((await select(world, { required: [bits] })).map(entity => readEntity(world, entity, [bits, sums])));
+        expect(await values(gpuWorld)).toEqual(await values(cpuWorld));
         await gpuWorld.dispose();
         await cpuWorld.dispose();
     });
@@ -497,9 +486,8 @@ describe("GPU kernels", () => {
             await world.run(spawn);
             await world.run(shading);
         }
-        await gpuWorld.synchronize([position]);
-        const onGpu = positions(gpuWorld).flat();
-        const cpu = positions(cpuWorld).flat();
+        const onGpu = (await positions(gpuWorld)).flat();
+        const cpu = (await positions(cpuWorld)).flat();
         expect(onGpu.length).toBe(cpu.length);
         const worst = Math.max(...onGpu.map((value, i) => Math.abs(value - cpu[i]) / Math.max(1, Math.abs(cpu[i]))));
         expect(worst).toBeLessThan(1e-4);
@@ -524,8 +512,7 @@ describe("render systems", () => {
         const world = createWorld({ resources: { gpuDevice: await device() } });
         await world.run(spawn);
         expect((await world.run(failing)).failures.map(failure => failure.message)).toEqual(["draw failed"]);
-        await world.synchronize([position]);
-        expect(positions(world)[0]).toEqual([1, 0, 0.5]);
+        expect((await positions(world))[0]).toEqual([1, 0, 0.5]);
         await world.dispose();
     });
 

@@ -5,13 +5,14 @@ import type { Resource } from '../resource/resource.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../resource/value.js';
 import type { Input } from '../system/input.js';
 import type { System } from '../system/system.js';
-import type { Options } from './query/options.js';
+import type { Query } from './query/query.js';
 import type { Report } from './report.js';
 import type { Observe } from '../observe/observe.js';
 
 /**
- * `query` and `read` are for use outside the schedule, on the main thread.
- * They are valid only between runs and return the state as of the last sync point.
+ * Observing is the way to read a world. An observer gets the current value during the subscribing call, or, while a GPU
+ * kernel's writes it needs are still on the GPU, through the world's queue once they're read back; then a new one after
+ * each run that changed it, never during a run, with GPU writes read back first.
  * Members are written out here, so declarations a consumer emits for their results name no internal module.
  */
 export type World = {
@@ -26,20 +27,6 @@ export type World = {
     /** Waits for pending runs, then terminates workers and releases memory. The world is unusable afterwards. */
     dispose(): Promise<void>;
     [Symbol.asyncDispose](): Promise<void>;
-    /** Values a GPU kernel wrote stay on the GPU; `query` and `read` see them only after `synchronize`. */
-    readonly query: {
-        /** Entities that have every component in `has` and none in `not`. */
-        select<const C extends readonly Component.Name[]>(has: C, options?: Options<C>): readonly Entity[];
-        /** Number of entities `select` would return, without building the array. */
-        count<const C extends readonly Component.Name[]>(has: C, options?: Options<C>): number;
-    };
-    readonly read: {
-        /** The listed components of an entity, or `null` if it's dead or lacks any of them. */
-        entity<const C extends readonly Component.Name[]>(entity: Entity, components: C): { readonly [K in C[number]]: ReadonlyValue<K> } | null;
-        /** One component of an entity, or `null` if it's dead or lacks it. */
-        component<C extends Component.Name>(entity: Entity, component: C): ReadonlyValue<C> | null;
-        resource<R extends Resource.Name>(name: R): ReadonlyResourceValue<R>;
-    };
     readonly observe: {
         /**
          * A resource's value: now, during the subscribing call, then after each run that changed it, with the run's other
@@ -61,9 +48,15 @@ export type World = {
             entity: Entity,
             options: { readonly required?: R; readonly optional?: O },
         ): Observe<({ readonly [K in R[number]]: ReadonlyValue<K> } & { readonly [K in O[number]]?: ReadonlyValue<K> }) | null>;
+        /**
+         * The entities a query matches, sorted by `order` if given: now, then after each run whose result differs, a
+         * different set of entities or, with `order`, a different order. Nothing when it's the same, even if matching
+         * entities were written.
+         */
+        select<const R extends readonly Component.Name[] = []>(query: Query<R>): Observe<readonly Entity[]>;
+        /** The number of entities a query matches: now, then after each run that changed it. */
+        count<const R extends readonly Component.Name[] = []>(query: Omit<Query<R>, "order">): Observe<number>;
     };
-    /** Brings the CPU copies of these components up to date with GPU writes, queued with runs. */
-    synchronize(components: readonly Component.Name[]): Promise<void>;
 };
 
 export * as World from './index.js';

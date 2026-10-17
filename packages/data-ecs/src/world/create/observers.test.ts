@@ -264,9 +264,208 @@ describe("observing entities", () => {
 describe("entity observers' structural changes", () => {
     it("are found by locating each observed entity, so entity observers never make sync points journal", () => {
         const state = createState();
-        const observers = createObservers(state, () => undefined);
+        const observers = createObservers(state, () => undefined, async task => task());
         observers.entity(Entity.none, undefined)(() => {});
         observers.entity(Entity.none, { required: [weight] })(() => {});
         expect(state.journal.readers).toBe(0);
+    });
+});
+
+const score = "observersTest/score";
+const benched = "observersTest/benched";
+const marker = "observersTest/marker";
+
+declare module "@adobe/data-ecs" {
+    interface Components {
+        [score]: { type: number };
+        [benched]: { type: true };
+        [marker]: { type: true };
+    }
+}
+
+Component.register(score, { type: { type: "number" } });
+Component.register(benched, { type: { const: true } });
+Component.register(marker, { type: { const: true } });
+
+/** Players the systems below act on, in spawn order, set by `players`. */
+let roster: Entity[] = [];
+const players = System.create({ name: "observersTest/players" }, ({ commands }) => {
+    roster = [commands.spawn({ [score]: 1 }), commands.spawn({ [score]: 2 }), commands.spawn({ [score]: 3, [benched]: true })];
+});
+const join = System.create({ name: "observersTest/join" }, ({ commands }) => { roster.push(commands.spawn({ [score]: 0 })); });
+const bench = System.create({ name: "observersTest/bench" }, ({ commands }) => { commands.add(roster[0], { [benched]: true }); });
+/** The first player leaves the bench as the last joins it, so as many match as before. */
+const swap = System.create({ name: "observersTest/swap" }, ({ commands }) => {
+    commands.add(roster[0], { [benched]: true });
+    commands.remove(roster[2], benched);
+});
+const mark = System.create({ name: "observersTest/mark" }, ({ commands }) => { commands.add(roster[0], { [marker]: true }); });
+const leave = System.create({ name: "observersTest/leave" }, ({ commands }) => { commands.despawn(roster[1]); });
+const score10 = System.create({ name: "observersTest/score10", components: { write: [score] } }, row => { row[score] += 10; });
+const nudge = System.create({ name: "observersTest/nudge", components: { write: [score] } }, row => { row[score] += 0; });
+const invert = System.create({ name: "observersTest/invert", components: { write: [score] } }, row => { row[score] = -row[score]; });
+const invertKernel = System.create({ name: "observersTest/invertKernel", kernel: "cpu", components: { write: [score] } }, row => { row[score] = 0 - row[score]; });
+/** Swaps the bench like `swap`, then despawns more entities than the journal holds, so it drops the swap's entries. */
+const swapAndCrowd = System.create({ name: "observersTest/swapAndCrowd" }, ({ commands }) => {
+    commands.add(roster[0], { [benched]: true });
+    commands.remove(roster[2], benched);
+    for (const spawned of crowded.splice(0)) commands.despawn(spawned);
+});
+const crowded: Entity[] = [];
+const crowdUp = System.create({ name: "observersTest/crowdUp" }, ({ commands }) => {
+    for (let i = 0; i < 5000; i++) crowded.push(commands.spawn({ [filler]: i }));
+});
+
+describe("observing queries", () => {
+    it("gives the selection when subscribing, then after each run that changed which entities match", async () => {
+        await using world = World.create();
+        await world.run(players);
+        const seen: (readonly Entity[])[] = [];
+        world.observe.select({ required: [score], not: [benched] })(entities => seen.push(entities));
+        expect(seen).toEqual([[roster[0], roster[1]]]);
+        await world.run(join);
+        expect(seen).toEqual([[roster[0], roster[1]], [roster[0], roster[1], roster[3]]]);
+        await world.run(bench);
+        expect(seen.map(entities => new Set(entities))).toEqual([new Set([roster[0], roster[1]]), new Set([roster[0], roster[1], roster[3]]), new Set([roster[1], roster[3]])]);
+    });
+
+    it("notifies nothing when matching entities are written, or move archetype, but the same ones match", async () => {
+        await using world = World.create();
+        await world.run(players);
+        let notified = 0;
+        world.observe.select({ required: [score], not: [benched] })(() => notified++);
+        await world.run(score10);
+        await world.run(mark);
+        await world.run(players);
+        expect(notified).toBe(2);
+    });
+
+    it("notifies when as many match as before but other entities", async () => {
+        await using world = World.create();
+        await world.run(players);
+        const seen: (readonly Entity[])[] = [];
+        world.observe.select({ required: [score], not: [benched] })(entities => seen.push(entities));
+        await world.run(swap);
+        expect(seen.map(entities => new Set(entities))).toEqual([new Set([roster[0], roster[1]]), new Set([roster[1], roster[2]])]);
+    });
+
+    it("notifies after a despawn of a matching entity", async () => {
+        await using world = World.create();
+        await world.run(players);
+        const seen: number[] = [];
+        world.observe.count({ required: [score] })(count => seen.push(count));
+        await world.run(leave);
+        await world.run(score10);
+        expect(seen).toEqual([3, 2]);
+    });
+
+    it("recomputes when the journal dropped entries", async () => {
+        await using world = World.create();
+        await world.run(players);
+        await world.run(crowdUp);
+        const seen: (readonly Entity[])[] = [];
+        world.observe.select({ required: [score], not: [benched] })(entities => seen.push(entities));
+        await world.run(swapAndCrowd);
+        expect(seen.map(entities => new Set(entities))).toEqual([new Set([roster[0], roster[1]]), new Set([roster[1], roster[2]])]);
+    });
+
+    it("filters by where and notifies when a write changes which entities pass, not when it keeps them", async () => {
+        await using world = World.create();
+        await world.run(players);
+        const seen: (readonly Entity[])[] = [];
+        world.observe.select({ required: [score], where: { [score]: { ">": 1 } } })(entities => seen.push(entities));
+        await world.run(nudge);
+        await world.run(invert);
+        await world.run(invert);
+        expect(seen.map(entities => new Set(entities))).toEqual([new Set([roster[1], roster[2]]), new Set(), new Set([roster[1], roster[2]])]);
+    });
+
+    it("notifies after a kernel writes a where component whose stamps it had dropped", async () => {
+        await using world = World.create();
+        await world.run(players);
+        await world.run(invertKernel);
+        const seen: number[] = [];
+        world.observe.count({ required: [score], where: { [score]: { ">": 0 } } })(count => seen.push(count));
+        await world.run(invertKernel);
+        await world.run(nudge);
+        await world.run(invertKernel);
+        expect(seen).toEqual([0, 3, 0]);
+    });
+
+    it("sorts by order and notifies when a write changes the order", async () => {
+        await using world = World.create();
+        await world.run(players);
+        const seen: (readonly Entity[])[] = [];
+        world.observe.select({ required: [score], order: { [score]: false } })(entities => seen.push(entities));
+        await world.run(score10);
+        await world.run(invert);
+        expect(seen).toEqual([[roster[2], roster[1], roster[0]], [roster[0], roster[1], roster[2]]]);
+    });
+
+    it("without required, matches every entity but the resource entity", async () => {
+        await using world = World.create({ [level]: 1 });
+        await world.run(raise, { by: 1 });
+        await world.run(players);
+        const seen: number[] = [];
+        world.observe.count({})(count => seen.push(count));
+        const selected: (readonly Entity[])[] = [];
+        world.observe.select({ not: [benched] })(entities => selected.push(entities));
+        expect(seen).toEqual([3]);
+        expect(selected).toEqual([[roster[0], roster[1]]]);
+    });
+
+    it("counts, notifying only when the number changes", async () => {
+        await using world = World.create();
+        await world.run(players);
+        const seen: number[] = [];
+        world.observe.count({ required: [score], not: [benched] })(count => seen.push(count));
+        await world.run(swap);
+        await world.run(join);
+        expect(seen).toEqual([2, 3]);
+    });
+
+    it("gives an observer subscribed during a run the writes later in that run", async () => {
+        await using world = World.create();
+        await world.run(players);
+        const seen: number[] = [];
+        const subscribe = System.create({ name: "observersTest/subscribe" }, () => {
+            world.observe.count({ required: [score], where: { [score]: { "<": 0 } } })(count => seen.push(count));
+        });
+        const later = System.create({ name: "observersTest/later", components: { write: [score] }, after: [subscribe] }, row => { row[score] = -row[score]; });
+        await world.run(System.composite({ name: "observersTest/subscribeThenWrite", systems: [subscribe, later] }));
+        expect(seen).toEqual([0, 3]);
+    });
+
+    it("throws to the subscriber when a first value throws, reports one that throws during a run by its required components, and stops", async () => {
+        await using world = World.create();
+        await world.run(players);
+        expect(() => world.observe.count({ required: [score] })(() => { throw new Error("first failed"); })).toThrow("first failed");
+        world.observe.count({ required: [score, benched] })(count => {
+            if (count > 1) throw new Error("observer failed");
+        });
+        const seen: number[] = [];
+        const stop = world.observe.count({ required: [score, benched] })(count => seen.push(count));
+        const { failures } = await world.run(bench);
+        expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "observer", name: `${score}, ${benched}`, message: "observer failed" }]);
+        stop();
+        await world.run(join);
+        await world.run(leave);
+        expect(seen).toEqual([1, 2]);
+    });
+});
+
+describe("query observers' journal reading", () => {
+    it("reads the journal while any query is observed, and stops once the last observer stopped", () => {
+        const state = createState();
+        const observers = createObservers(state, () => undefined, async task => task());
+        const stopFirst = observers.query({ required: [weight] }, false)(() => {});
+        const stopSecond = observers.query({}, true)(() => {});
+        expect(state.journal.readers).toBe(1);
+        stopFirst();
+        expect(state.journal.readers).toBe(1);
+        stopSecond();
+        expect(state.journal.readers).toBe(0);
+        observers.query({}, false)(() => {});
+        expect(state.journal.readers).toBe(1);
     });
 });

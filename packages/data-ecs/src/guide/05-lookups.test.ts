@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Entity, System, Vec3, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 const position = "guide/lookups/position";
 const velocity = "guide/lookups/velocity";
@@ -37,6 +38,7 @@ it("reads other entities through named lookups", async () => {
     await using world = World.create();
     await world.run(spawn);
     await world.run(follow);
-    const velocities = world.query.select([velocity], { order: { [velocity]: false } }).map(entity => world.read.component(entity, velocity));
+    const entities = await toPromise(world.observe.select({ required: [velocity], order: { [velocity]: false } }));
+    const velocities = await Promise.all(entities.map(async entity => (await toPromise(world.observe.entity(entity, { required: [velocity] })))?.[velocity]));
     expect(velocities).toEqual([[10, 0, 0], [0, 0, 0]]);
 });

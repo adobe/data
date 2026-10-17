@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Finalizer, Resource, System, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 const name = "guide/changes/name";
 const score = "guide/changes/score";
@@ -34,5 +35,5 @@ it("records each sync point's structural changes", async () => {
     await using world = World.create();
     await world.run(spawn);
     await world.run(retire);
-    expect(world.read.resource(journal)).toEqual(["ada: +2 -0 score null → 3", "ada: +0 -1 score 3 → null"]);
+    expect(await toPromise(world.observe.resource(journal))).toEqual(["ada: +2 -0 score null → 3", "ada: +0 -1 score 3 → null"]);
 });

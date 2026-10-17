@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Entity, System, Vec3, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 import { steer } from "./08-steer.js";
 
 const position = "guide/kernels/position";
@@ -53,7 +54,7 @@ it("runs systems compiled as kernels", async () => {
         await world.run(chase);
         await world.run(integrate);
     }
-    const [follower] = world.query.select([target]);
-    expect(world.read.component(follower, position)?.[0]).toBeGreaterThan(9);
-    expect(world.query.count([spark])).toBeGreaterThan(0);
+    const [follower] = await toPromise(world.observe.select({ required: [target] }));
+    expect((await toPromise(world.observe.entity(follower, { required: [position] })))?.[position][0]).toBeGreaterThan(9);
+    expect(await toPromise(world.observe.count({ required: [spark] }))).toBeGreaterThan(0);
 });

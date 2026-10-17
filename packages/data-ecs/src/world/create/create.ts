@@ -1,4 +1,3 @@
-import type { Component } from '../../component/component.js';
 import type { Entity } from '../../entity/entity.js';
 import type { Finalizer } from '../../finalizer/created.js';
 import type { Rule } from '../../rule/created.js';
@@ -16,14 +15,12 @@ import { execute, type ExecuteContext } from './execute.js';
 import { sharedMemoryAvailable } from './memory.js';
 import { createPool, defaultWorkerCount, type Pool } from './pool.js';
 import { createPublisher } from './publish.js';
-import { count, createComponentReader, readEntity, select, type EntityOptions } from './reads.js';
+import type { EntityOptions, QueryOptions } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
 import { ensureResources, findResource, initialOf, setResource } from './resources.js';
 import { ensureProgramResources, activate } from './activate.js';
 import { kindOf } from '../../registry/declare-name.js';
 import { createState, startTicking, type Key } from './state.js';
-import type { ReadonlyValue } from '../../component/value.js';
-import type { ValuesOf } from '../../component/values-of.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../../resource/value.js';
 
 type Queue = <T>(task: () => T | Promise<T>) => Promise<T>;
@@ -134,6 +131,9 @@ export const createWorld = (options: WorldOptions = {}): World => {
         return cell === undefined ? initialOf(state, key) : readCell(cell.storage, cell.row);
     };
 
+    // The resource's value matches its registered schema, `GPUDevice | null`.
+    const readDevice = (): ReadonlyResourceValue<typeof gpuDevice> => readResource(gpuDevice) as ReadonlyResourceValue<typeof gpuDevice>;
+
     /**
      * Before and after each run: the world's GPU storage follows its `gpuDevice` resource, which the world sets to null
      * once the device is lost. A new device gets the storage, after what's ahead on the old one is read back unless it
@@ -142,13 +142,13 @@ export const createWorld = (options: WorldOptions = {}): World => {
     /** Whether the `gpuDevice` resource names another device than the world runs on; a lost device is no device. */
     const deviceChanged = (): boolean => {
         // Systems that need a device are then skipped, and systems watching it see the change.
-        if (state.gpu !== null && state.gpu.lost() !== null && world.read.resource(gpuDevice) === state.gpu.device) setResource(state, gpuDevice, null);
-        return world.read.resource(gpuDevice) !== (state.gpu?.device ?? null);
+        if (state.gpu !== null && state.gpu.lost() !== null && readDevice() === state.gpu.device) setResource(state, gpuDevice, null);
+        return readDevice() !== (state.gpu?.device ?? null);
     };
 
     /** Moves the world onto the device `gpuDevice` names, or off the GPU. */
     const followDevice = async (): Promise<void> => {
-        const device = world.read.resource(gpuDevice);
+        const device = readDevice();
         const current = state.gpu;
         if (current !== null) {
             // A lost device's copies are gone, so its readback keeps the CPU's.
@@ -161,8 +161,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
         await loadOnWorkers();
     };
 
-    const readComponent = createComponentReader(state);
-    const observers = createObservers(state, readResource);
+    const observers = createObservers(state, readResource, enqueue);
     const world: World = {
         run: (system, ...args) => {
             const [value]: readonly unknown[] = args;
@@ -191,6 +190,9 @@ export const createWorld = (options: WorldOptions = {}): World => {
                 finally {
                     if (deviceChanged()) await followDevice();
                 }
+                // Observers get values a GPU kernel wrote, read back for them.
+                const reading = observers.readback();
+                if (reading !== null) await reading;
                 const failed = observers.deliver();
                 return failed === null ? report : { ...report, failures: [...report.failures, ...failed] };
             });
@@ -216,33 +218,15 @@ export const createWorld = (options: WorldOptions = {}): World => {
                 if (errors.length > 0) throw errors[0].error;
             });
         },
-        synchronize: components => {
-            checkLive();
-            const { gpu } = state;
-            if (gpu === null) return Promise.resolve();
-            const ids = new Set(components.map(key => state.ids.get(key)));
-            return enqueue(() => gpu.readback(state.archetypes.flatMap(archetype => archetype.storages.filter(storage => ids.has(storage.component)))));
-        },
         [Symbol.asyncDispose]: () => world.dispose(),
         observe: {
             // Stored values match each resource's registered schema, so they have its type.
             resource: <R extends Resource.Name>(key: R) => observers.resource(key) as Observe<ReadonlyResourceValue<R>>,
             // Stored values match each component's registered schema, so they have its type.
             entity: ((entity: Entity, options?: EntityOptions) => observers.entity(entity, options)) as World["observe"]["entity"],
-        },
-        query: {
-            select: (has, options) => select(state, has, options),
-            count: (has, options) => count(state, has, options),
-        },
-        read: {
-            // Stored values match each component's registered schema, so they have its type.
-            entity: <const C extends readonly Component.Name[]>(entity: Entity, components: C) => readEntity(state, entity, { required: components }) as ValuesOf<C> | null,
-            component: <C extends Component.Name>(entity: Entity, component: C) => {
-                const value = readComponent(entity, component);
-                // Stored values match each component's registered schema, so they have its type.
-                return value === undefined ? null : value as ReadonlyValue<C>;
-            },
-            resource: <R extends Resource.Name>(key: R) => readResource(key) as ReadonlyResourceValue<R>,
+            // Selections are entities of this world.
+            select: query => observers.query(query, false) as Observe<readonly Entity[]>,
+            count: query => observers.query(query, true) as Observe<number>,
         },
     };
     return world;

@@ -3,6 +3,7 @@ import { Component } from "../../component/component.js";
 import { Entity } from "../../entity/entity.js";
 import type { Schema } from "../../schema/schema.js";
 import { System } from "../../system/system.js";
+import { count, readEach, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 type Vec2 = readonly [number, number];
@@ -49,7 +50,7 @@ const run = async (wasm: boolean) => {
     const world = createWorld({ wasm, workers: 0 });
     await world.run(seed);
     await world.run(chase);
-    const result = world.query.select([score]).map(e => world.read.component(e, score));
+    const result = await readEach(world, await select(world, { required: [score] }), score);
     await world.dispose();
     return result;
 };
@@ -72,7 +73,7 @@ describe("semantics", () => {
         await a.run(spawn).catch(e => errors.push("a:" + String(e)));
         expect(errors).toEqual([]);
         // The value that can't be written throws when its spawn is issued, so only the spawn before it applies.
-        expect([a.query.count([score]), b.query.count([score])]).toEqual([3, 4]);
+        expect([await count(a, { required: [score] }), await count(b, { required: [score] })]).toEqual([3, 4]);
     });
     it("lookup of -1 / NaN entity agrees between JS and WASM", async () => {
         const js = await run(false);

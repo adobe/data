@@ -4,6 +4,7 @@ import { Entity } from "../../entity/entity.js";
 import { Rule } from "../../rule/rule.js";
 import { System } from "../../system/system.js";
 import { createWorld } from "./create.js";
+import { count, read } from "../reads.test-helper.js";
 
 const source = "rulesTest/source";
 const hidden = "rulesTest/hidden";
@@ -73,7 +74,10 @@ const at = (world: ReturnType<typeof createWorld>) => async (...run: ((commands:
 };
 
 const all: readonly Component.Name[] = [source, hidden, sprite, slot, visible, ready, glow, owned, follows, mark];
-const components = (world: ReturnType<typeof createWorld>, entity: Entity) => all.filter(key => world.read.component(entity, key) !== null);
+const components = async (world: ReturnType<typeof createWorld>, entity: Entity) => {
+    const values = await Promise.all(all.map(key => read(world, entity, key)));
+    return all.filter((_, i) => values[i] !== null);
+};
 
 describe("rules", () => {
     it("accept a rule declared again the same, as a module evaluated again declares it, and reject a different one", () => {
@@ -89,14 +93,14 @@ describe("rules", () => {
             b = commands.spawn({ [source]: 2, [hidden]: true });
             c = commands.spawn({ [sprite]: true });
         });
-        expect(components(world, a)).toEqual([source, slot, visible]);
-        expect(world.read.component(a, slot)).toBe(7);
-        expect(components(world, b)).toEqual([source, hidden]);
-        expect(components(world, c)).toEqual([sprite, visible]);
+        expect(await components(world, a)).toEqual([source, slot, visible]);
+        expect(await read(world, a, slot)).toBe(7);
+        expect(await components(world, b)).toEqual([source, hidden]);
+        expect(await components(world, c)).toEqual([sprite, visible]);
         await step(commands => { commands.add(a, { [hidden]: true }); commands.remove(b, hidden); commands.remove(c, sprite); });
-        expect(components(world, a)).toEqual([source, hidden]);
-        expect(components(world, b)).toEqual([source, slot, visible]);
-        expect(components(world, c)).toEqual([]);
+        expect(await components(world, a)).toEqual([source, hidden]);
+        expect(await components(world, b)).toEqual([source, slot, visible]);
+        expect(await components(world, c)).toEqual([]);
         await world.dispose();
     });
 
@@ -107,10 +111,10 @@ describe("rules", () => {
         let a = Entity.none;
         await step(commands => { a = commands.spawn({ [source]: 1 }); commands.spawn({ [source]: 2 }); });
         await world.run(write);
-        expect(world.read.component(a, slot)).toBe(99);
+        expect(await read(world, a, slot)).toBe(99);
         await step(commands => commands.add(a, { [hidden]: true }));
         await step(commands => commands.remove(a, hidden));
-        expect(world.read.component(a, slot)).toBe(7);
+        expect(await read(world, a, slot)).toBe(7);
         await world.dispose();
     });
 
@@ -118,9 +122,9 @@ describe("rules", () => {
         const spawn = System.create({ name: "rulesTest/tagged" }, ({ commands }) => { commands.spawn({ [tagged]: true }); });
         const world = createWorld({ workers: 0 });
         await world.run(edit, { step: -1 });
-        expect(world.query.count([tag])).toBe(0);
+        expect(await count(world, { required: [tag] })).toBe(0);
         await world.run(spawn);
-        expect(world.query.count([tagged, tag])).toBe(1);
+        expect(await count(world, { required: [tagged, tag] })).toBe(1);
         await world.dispose();
     });
 
@@ -131,10 +135,10 @@ describe("rules", () => {
         const world = createWorld({ workers: 0 });
         await world.run(spawn);
         await world.run(observe);
-        expect(world.query.count([late])).toBe(0);
+        expect(await count(world, { required: [late] })).toBe(0);
         Rule.create({ name: "rulesTest/late", components: { has: [mark] }, derive: [late] });
         await world.run(spawn);
-        expect(world.query.count([late])).toBe(6);
+        expect(await count(world, { required: [late] })).toBe(6);
         await world.run(observe);
         expect(added).toBe(6);
         await world.dispose();
@@ -167,16 +171,16 @@ describe("within", () => {
             b = commands.spawn({ [source]: 2, [ready]: 2 });
             c = commands.spawn({ [mark]: 3, [ready]: 3 });
         });
-        expect(components(world, a)).toEqual([source, slot, visible, ready, glow]);
+        expect(await components(world, a)).toEqual([source, slot, visible, ready, glow]);
         // Dropped: c has no slot, so its ready can't be.
-        expect(components(world, c)).toEqual([mark]);
+        expect(await components(world, c)).toEqual([mark]);
         await step(commands => commands.add(a, { [hidden]: true }));
-        expect(components(world, a)).toEqual([source, hidden]);
+        expect(await components(world, a)).toEqual([source, hidden]);
         // Removing a host and adding it back still ends its dependent, as each removal does; a derived host that a
         // rule keeps never leaves, so its dependent stays.
         await step(commands => { commands.add(b, { [glow]: true }); });
         await step(commands => { commands.remove(b, ready); commands.add(b, { [ready]: 5 }); commands.remove(b, source); commands.add(b, { [source]: 5 }); });
-        expect(components(world, b)).toEqual([source, slot, visible, ready]);
+        expect(await components(world, b)).toEqual([source, slot, visible, ready]);
         await world.dispose();
     });
 });
@@ -195,11 +199,11 @@ describe("references", () => {
             moved = commands.spawn({ [mark]: 5, [owned]: root });
         });
         await step(commands => { commands.add(moved, { [owned]: other }); commands.despawn(root); });
-        expect(world.read.component(child, mark)).toBeNull();
-        expect(world.read.component(grandchild, mark)).toBeNull();
-        expect(components(world, watcher)).toEqual([mark]);
+        expect(await read(world, child, mark)).toBeNull();
+        expect(await read(world, grandchild, mark)).toBeNull();
+        expect(await components(world, watcher)).toEqual([mark]);
         // Pointed elsewhere in the same sync point, so it stays.
-        expect(world.read.component(moved, owned)).toBe(other);
+        expect(await read(world, moved, owned)).toBe(other);
         await world.dispose();
     });
 
@@ -212,9 +216,9 @@ describe("references", () => {
             cleared = commands.spawn({ [mark]: 2, [follows]: holder });
         });
         await step(commands => commands.add(cleared, { [follows]: Entity.none }));
-        expect(world.read.component(holder, owned)).toBe(Entity.none);
-        expect(world.read.component(holder, follows)).toBe(Entity.none);
-        expect(world.read.component(cleared, follows)).toBe(Entity.none);
+        expect(await read(world, holder, owned)).toBe(Entity.none);
+        expect(await read(world, holder, follows)).toBe(Entity.none);
+        expect(await read(world, cleared, follows)).toBe(Entity.none);
         await world.dispose();
     });
 
@@ -230,9 +234,9 @@ describe("references", () => {
             orphan = commands.spawn({ [mark]: 3, [owned]: gone });
             weakly = commands.spawn({ [mark]: 4, [follows]: gone });
         });
-        expect(world.read.component(child, owned)).toBe(parent);
-        expect(world.read.component(orphan, mark)).toBeNull();
-        expect(components(world, weakly)).toEqual([mark]);
+        expect(await read(world, child, owned)).toBe(parent);
+        expect(await read(world, orphan, mark)).toBeNull();
+        expect(await components(world, weakly)).toEqual([mark]);
         await world.dispose();
     });
 });

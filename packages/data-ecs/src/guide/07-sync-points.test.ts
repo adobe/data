@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Resource, System, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 const unit = "guide/sync/unit";
 const shield = "guide/sync/shield";
@@ -34,11 +35,11 @@ it("applies structural changes at the end of a run, as their net effect", async 
     await using world = World.create();
     await world.run(frame);
     // The spawn wasn't visible to a later system in the same run.
-    expect(world.read.resource(counted)).toBe(0);
+    expect(await toPromise(world.observe.resource(counted))).toBe(0);
     await world.run(frame);
-    expect(world.read.resource(counted)).toBe(1);
+    expect(await toPromise(world.observe.resource(counted))).toBe(1);
     // Added and removed within one sync point: never there.
-    expect(world.query.count([shield])).toBe(0);
+    expect(await toPromise(world.observe.count({ required: [shield] }))).toBe(0);
 });
 
 it("still applies the commands of a run whose system throws, and reports the failure", async () => {
@@ -49,5 +50,5 @@ it("still applies the commands of a run whose system throws, and reports the fai
     await using world = World.create();
     const { failures } = await world.run(fail);
     expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "system", name: "guide/sync/fail", message: "lost connection" }]);
-    expect(world.query.count([unit])).toBe(1);
+    expect(await toPromise(world.observe.count({ required: [unit] }))).toBe(1);
 });

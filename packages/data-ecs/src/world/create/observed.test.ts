@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import { System } from "../../system/system.js";
+import { readEach, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 const value = "observedTest/value";
@@ -47,17 +48,17 @@ describe("tick stamps only where observed", () => {
     it("keep `added` from the moment an observer registers, across archetype moves", async () => {
         const world = createWorld();
         await world.run(seed);
-        const counts = (): number[] => world.query.select([seen]).map(entity => world.read.component(entity, seen) ?? -1);
+        const counts = async (): Promise<number[]> => (await readEach(world, await select(world, { required: [seen] }), seen)).map(value => value ?? -1);
         // Rows that existed before count as added once.
         await world.run(fresh);
         await world.run(fresh);
-        expect(new Set(counts())).toEqual(new Set([1]));
+        expect(new Set(await counts())).toEqual(new Set([1]));
         // Moving archetype keeps a row's `added` tick: old rows aren't added again, and a new row still is.
         await world.run(spawnOne);
         await world.run(flagAll);
         await world.run(fresh);
         await world.run(fresh);
-        expect(counts().filter(count => count === 1).length).toBe(3001);
+        expect((await counts()).filter(count => count === 1).length).toBe(3001);
         await world.dispose();
     });
 
@@ -69,13 +70,13 @@ describe("tick stamps only where observed", () => {
             // New observers see everything once.
             await world.run(watch);
             await world.run(watch);
-            const seenAll = (): number[] => world.query.select([seen]).map(entity => world.read.component(entity, seen) ?? -1);
-            expect(new Set(seenAll())).toEqual(new Set([1]));
+            const seenAll = async (): Promise<number[]> => (await readEach(world, await select(world, { required: [seen] }), seen)).map(value => value ?? -1);
+            expect(new Set(await seenAll())).toEqual(new Set([1]));
             // Writes after registering are stamped, so the observer sees each exactly once.
             await world.run(bump);
             await world.run(watch);
             await world.run(watch);
-            expect(new Set(seenAll())).toEqual(new Set([2]));
+            expect(new Set(await seenAll())).toEqual(new Set([2]));
             await world.dispose();
         });
     }

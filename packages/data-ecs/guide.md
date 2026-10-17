@@ -2,7 +2,7 @@
 
 How to use the ECS, from the basics up. Each section is a short explanation, an excerpt, and a link to the example
 test it comes from, under [`src/guide/`](src/guide/). The examples are complete: each file declares what it uses,
-creates its own world and asserts only through the world's public reads. [`design.md`](design.md) is the contract,
+creates its own world and asserts only through the world's observers. [`design.md`](design.md) is the contract,
 with the reasoning behind each rule.
 
 1. [Setup](#1-setup)
@@ -69,17 +69,23 @@ Component.register(enemy, { type: { const: true } });
 Resource.register(gravity, { type: { type: "number", default: -9.8 } });
 ```
 
-Entities are spawned by systems, and read between runs through `world.query` and `world.read`:
+Entities are spawned by systems. Observing is the way to read the world: `world.observe.resource`, `.entity`,
+`.select` and `.count` each give the current value now, or once GPU writes it needs are read back, then again after
+each run that changed it, never during a run. `toPromise`, as in `@adobe/data`, reads one value, as the examples do:
 
 ```ts
 await using world = World.create();
 await world.run(spawn);
-const [first] = world.query.select([position, enemy]);
-expect(world.read.component(first, position)).toEqual([0, 10, 0]);
+const [first] = await toPromise(world.observe.select({ required: [position, enemy] }));
+const components = await toPromise(world.observe.entity(first, { required: [position] }));
+expect(components?.[position]).toEqual([0, 10, 0]);
 ```
 
-Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L4-L35).
+Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L5-L37).
 
+- **Queries:** `select` and `count` take `required`, which matches every entity when left out, `not`, and `where`; `select` takes `order` too. `world.observe.entity(entity, { required, optional })` gives just those components, or `null` while the entity is dead or lacks a required one.
+- **Notifications:** `select` notifies when the set of entities differs or, with `order`, their order; `count` when the number does. Nothing notifies when the result is the same, even if matching entities were written.
+- **An observer that throws** during a run is an `"observer"` failure in the run's report; one that throws on its first value throws to the subscriber.
 - **Registration must match the declaration**, trait for trait, with `type` a schema for the declared type. Otherwise it doesn't compile.
 - **Values that aren't data,** such as a `Blob`, an `HTMLElement` or a `GPUDevice`, are declared by their type alone: registration leaves `type` out, as `Component.register(element, {})`, and a resource gives its `default` on the declaration unless its type allows `null`. The world stores them as they are, so only main-thread systems use them.
 - **`World.create()` returns the world,** and `await using` disposes it; the TypeScript `lib` needs `ESNext.Disposable`. `World.create({ [gravity]: -1.6 })` starts resources at other values than their defaults.
@@ -118,7 +124,7 @@ const count = System.create({ name: "guide/systems/count", resources: { write: [
 });
 ```
 
-Example: [`02-systems.test.ts`](src/guide/02-systems.test.ts#L33-L55).
+Example: [`02-systems.test.ts`](src/guide/02-systems.test.ts#L34-L58).
 
 - **Declarations list exactly what bodies use.** A key the body never uses is a build error, as is one it uses without listing it.
 - **Rejected:** reads of undeclared components or resources, and context keys the declaration doesn't declare (types); unused declared ones (build); a write to a component a system only reads, and a key in both `read` and `write` (types and registration).
@@ -136,7 +142,7 @@ const heal = System.create({ name: "guide/scheduling/heal", components: { write:
 const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal, hit] });
 ```
 
-Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L17-L38).
+Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L18-L39).
 
 Phases are systems that do nothing, ordered one after another. Systems during a phase are then ordered with every
 system in the phases before and after it, so systems in different phases never conflict:
@@ -153,7 +159,7 @@ const report = System.create({ name: "guide/scheduling/report", components: { re
 const phased = System.composite({ name: "guide/scheduling/phased", systems: [report, poison, update, render] });
 ```
 
-Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L40-L58).
+Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L41-L59).
 
 - **Constraints take systems:** `before`, `after` and `during` list the systems themselves, imported from their modules. When two modules import each other, one of them declares the order.
 - **During a composite:** a system runs after what the composite follows and before what follows it, not between its members.
@@ -175,7 +181,7 @@ const show = System.create({ name: "guide/filters/show", components: { read: [sc
 });
 ```
 
-Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L34-L58).
+Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L35-L59).
 
 - **`changed` is conservative:** it means "may have changed".
 
@@ -189,7 +195,7 @@ const step = System.create({ name: "guide/filters/step", resources: { is: [map],
 });
 ```
 
-Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L60-L76).
+Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L61-L77).
 
 - **Conditions are resources whose type allows `null` or `false`:** a number or string is never a condition, so `0` and `""` can't turn a system off.
 - **A skipped system keeps its `lastRun`,** so once it runs again it sees every change since it last ran.
@@ -212,7 +218,7 @@ const follow = System.create({
 });
 ```
 
-Example: [`05-lookups.test.ts`](src/guide/05-lookups.test.ts#L20-L42).
+Example: [`05-lookups.test.ts`](src/guide/05-lookups.test.ts#L21-L44).
 
 - **Rejected:** a lookup reading a component its own system writes, at registration.
 
@@ -232,7 +238,7 @@ const place = System.create({
 await world.run(place, { x: 3, count: 2 });
 ```
 
-Example: [`06-input.test.ts`](src/guide/06-input.test.ts#L14-L27).
+Example: [`06-input.test.ts`](src/guide/06-input.test.ts#L15-L29).
 
 A composite takes every field of its members' inputs, and each member reads the fields it declares:
 
@@ -249,7 +255,7 @@ const frame = System.composite({ name: "guide/input/frame", systems: [place, dri
 await world.run(frame, { x: 0, count: 1, dx: 1 });
 ```
 
-Example: [`06-input.test.ts`](src/guide/06-input.test.ts#L29-L47).
+Example: [`06-input.test.ts`](src/guide/06-input.test.ts#L31-L50).
 
 - **Shared fields:** a field several members declare is one value for all of them. Its type must be the same in each,
   or the composite is a type error at each member that differs, and `System.composite` throws naming both systems.
@@ -271,11 +277,11 @@ const spawn = System.create({ name: "guide/sync/spawn" }, ({ commands }) => {
 });
 ```
 
-Example: [`07-sync-points.test.ts`](src/guide/07-sync-points.test.ts#L22-L53).
+Example: [`07-sync-points.test.ts`](src/guide/07-sync-points.test.ts#L23-L54).
 
 - **`spawn` returns a real entity at once,** which can be stored, including in the spawner's own row.
 - **Commands against dead entities do nothing;** the run's report counts them as `dropped`.
-- **`run()` resolves to a report:** `failures` lists each system, finalizer or GPU work that failed, with its `kind`, `name`, `message` and `stack`, and `skipped` the systems of tiers after a failure. It rejects only when the run can't happen or finish: registration fails, the world is disposed, its GPU device is lost, or the sync point can't apply a command's value.
+- **`run()` resolves to a report:** `failures` lists each system, finalizer, GPU work or observer that failed, with its `kind`, `name`, `message` and `stack`, and `skipped` the systems of tiers after a failure. It rejects only when the run can't happen or finish: registration fails, the world is disposed, its GPU device is lost, or the sync point can't apply a command's value.
 
 ## 9. Kernels
 
@@ -300,7 +306,7 @@ const chase = System.create({
 });
 ```
 
-Example: [`08-kernels.test.ts`](src/guide/08-kernels.test.ts#L29-L59), with the inlined helper in
+Example: [`08-kernels.test.ts`](src/guide/08-kernels.test.ts#L30-L60), with the inlined helper in
 [`08-steer.ts`](src/guide/08-steer.ts).
 
 - **The subset** a kernel body may use is in [`src/compiler/subset.md`](src/compiler/subset.md). The build rejects anything else, with a message at the code.
@@ -330,7 +336,7 @@ const measure = System.create({
 });
 ```
 
-Example: [`09-reductions.test.ts`](src/guide/09-reductions.test.ts#L27-L75).
+Example: [`09-reductions.test.ts`](src/guide/09-reductions.test.ts#L28-L76).
 
 - **Each run starts again:** a run in which a contributor runs starts the resource at the operator's identity (0 for `"+"`, the largest value for `"min"`, and so on), and leaves it holding the fold of every contribution in that run. Before the first such run it holds its `default`.
 - **Several systems may contribute** to one resource in a run. They need no order between them, and any system that reads the resource runs after all of them, so it sees the finished fold.
@@ -344,7 +350,8 @@ Example: [`09-reductions.test.ts`](src/guide/09-reductions.test.ts#L27-L75).
 The built-in `gpuDevice` resource is the device the world's GPU storage lives on, for compute and render alike, or `null`
 without one. It's an ordinary resource: give it at creation, or have a main-thread system set it later. `kernel: "gpu"` runs a system as a compute shader in a world with a device, and as a `"cpu"` kernel in one
 without. Its values are 4-byte numbers and booleans, so numbers need `precision: 1`, as the math schemas have. Writes
-stay on the GPU until something on the CPU needs them, or `world.synchronize` asks.
+stay on the GPU until something on the CPU needs them, observers included: an observer's values are read back before
+it's notified.
 
 ```ts
 const move = System.create({ name: "guide/gpu/move", kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
@@ -353,7 +360,7 @@ const move = System.create({ name: "guide/gpu/move", kernel: "gpu", components: 
 const world = World.create({ gpuDevice: device });
 ```
 
-Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L22-L41).
+Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L23-L41).
 
 A render system, made by `System.render`, records GPU work over the GPU copy of the components its `shader.accessors`
 name. Its body is `(gpu, context)`: `gpu` has the device, the run's encoder and a table per archetype. `Gpu.wgsl(system)`
@@ -412,7 +419,7 @@ Rule.create({ name: "guide/rules/sprites", components: { has: [sprite], not: [hi
 Rule.create({ name: "guide/rules/layers", components: { has: [drawn] }, derive: [layer] });
 ```
 
-Example: [`12-rules.test.ts`](src/guide/12-rules.test.ts#L23-L51).
+Example: [`12-rules.test.ts`](src/guide/12-rules.test.ts#L24-L53).
 
 - **The result depends only on which components an entity has,** so it's computed once per archetype, and a change is still a single move.
 - **Rules apply in every world** from when they're created: a world starts using one once it has met every component in its `has`, before any entity can match it.
@@ -428,7 +435,7 @@ despawn or another `within`. One added without its host is dropped.
 Component.register(glow, { type: { type: "number" }, within: body });
 ```
 
-Example: [`13-within.test.ts`](src/guide/13-within.test.ts#L14-L33).
+Example: [`13-within.test.ts`](src/guide/13-within.test.ts#L15-L34).
 
 - **Removing a host and adding it back** in the same sync point still ends its dependents. A derived host that a rule keeps never leaves.
 - **Rejected:** components within each other in a cycle, at registration.
@@ -444,7 +451,7 @@ Component.register(parent, { type: Entity.schema, reference: "owner" });
 Component.register(watching, { type: Entity.schema, reference: "weak" });
 ```
 
-Example: [`14-references.test.ts`](src/guide/14-references.test.ts#L16-L37).
+Example: [`14-references.test.ts`](src/guide/14-references.test.ts#L17-L39).
 
 - **Only the value a holder ends up with counts:** a reference pointed elsewhere in the same sync point stays.
 - **References change only through commands**, which keeps the index from targets to holders exact. Systems can't list them in `components.write`.
@@ -466,7 +473,7 @@ const place = System.create({
 });
 ```
 
-Example: [`18-hierarchies.test.ts`](src/guide/18-hierarchies.test.ts#L20-L49).
+Example: [`18-hierarchies.test.ts`](src/guide/18-hierarchies.test.ts#L21-L50).
 
 - **`through` doesn't narrow the match:** rows without it are roots. Its value is a reference, so the tree changes only at sync points.
 - **`up.read` may name what the system writes:** unlike a lookup, which can't, since `up` reads a parent only after it ran.
@@ -491,7 +498,7 @@ Finalizer.create({ name: "guide/finalizers/release", components: { read: [positi
 });
 ```
 
-Example: [`15-finalizers.test.ts`](src/guide/15-finalizers.test.ts#L20-L58).
+Example: [`15-finalizers.test.ts`](src/guide/15-finalizers.test.ts#L21-L59).
 
 - **A stop:** a despawn, the loss of a required component by any cause, a required component removed and added again, or an excluded one added.
 - **Rows are read-only.** The body is `(row, context)`, whose context has `resources`, `lookup` and `commands`. Lookups see the state before the sync point applies, and resource writes take its tick.
@@ -513,7 +520,7 @@ Finalizer.changes({ name: "guide/changes/save", watch: [name, score], resources:
 });
 ```
 
-Example: [`16-changes.test.ts`](src/guide/16-changes.test.ts#L22-L38).
+Example: [`16-changes.test.ts`](src/guide/16-changes.test.ts#L23-L39).
 
 - **A group** has `from` and `to` (null for spawned and despawned entities), `added`, `removed`, `replaced` and `entities`.
 - **Rejected:** watching a derived component, at `Finalizer.changes` and in types.
@@ -538,7 +545,7 @@ const apply = System.create({
 });
 ```
 
-Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L49-L98).
+Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L50-L100).
 
 - **Shared assets:** many entities using one file are counted by the loader. The ECS gives each user exactly one acquire (`added`) and one release (a finalizer).
 

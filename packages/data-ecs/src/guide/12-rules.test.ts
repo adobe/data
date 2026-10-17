@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Rule, System, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 const mesh = "guide/rules/mesh";
 const sprite = "guide/rules/sprite";
@@ -43,9 +44,10 @@ const hide = System.create({ name: "guide/rules/hide", components: { has: [sprit
 it("derives components from the components an entity has", async () => {
     await using world = World.create();
     await world.run(spawn);
-    expect(world.query.count([drawn])).toBe(2);
-    expect(world.query.select([layer]).map(entity => world.read.component(entity, layer))).toEqual([1, 1]);
+    expect(await toPromise(world.observe.count({ required: [drawn] }))).toBe(2);
+    const layered = await toPromise(world.observe.select({ required: [layer] }));
+    expect(await Promise.all(layered.map(async entity => (await toPromise(world.observe.entity(entity, { required: [layer] })))?.[layer]))).toEqual([1, 1]);
     await world.run(hide);
-    expect(world.query.count([drawn])).toBe(1);
-    expect(world.query.count([layer])).toBe(1);
+    expect(await toPromise(world.observe.count({ required: [drawn] }))).toBe(1);
+    expect(await toPromise(world.observe.count({ required: [layer] }))).toBe(1);
 });

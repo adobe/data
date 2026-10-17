@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, System, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 const health = "guide/scheduling/health";
 const damage = "guide/scheduling/damage";
@@ -27,9 +28,9 @@ it("orders a composite's members by their constraints", async () => {
     await using world = World.create();
     await world.run(spawn);
     await world.run(frame);
-    const [entity] = world.query.select([health]);
+    const [entity] = await toPromise(world.observe.select({ required: [health] }));
     // hit first, 10 - 4 = 6, then heal, min(12, 10); the other way round would end at 6.
-    expect(world.read.component(entity, health)).toBe(10);
+    expect((await toPromise(world.observe.entity(entity, { required: [health] })))?.[health]).toBe(10);
 });
 
 it("rejects two systems that write the same component without an order between them", () => {

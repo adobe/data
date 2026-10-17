@@ -5,6 +5,7 @@ import { System } from "../../system/system.js";
 import { definitionOf } from "../../system/definition.js";
 import { kernelOf } from "./attach-kernel.js";
 import { createWorld } from "./create.js";
+import { read, readEach } from "../reads.test-helper.js";
 import { bindKernel } from "./kernels.js";
 import { createState } from "./state.js";
 
@@ -99,8 +100,8 @@ const close = System.create({ name: "upTest/close" }, ({ commands }) => { comman
 const open = System.create({ name: "upTest/open" }, ({ commands }) => { commands.add(entities.root, { [parent]: entities.other }); });
 const orphan = System.create({ name: "upTest/orphan" }, ({ commands }) => { commands.remove(entities.grandchild, parent); });
 
-const worlds = (read: (entity: Entity) => number | null): { [name: string]: number | null } =>
-    Object.fromEntries(Object.entries(entities).map(([name, entity]) => [name, read(entity)]));
+const worlds = async (value: (entity: Entity) => Promise<number | null>): Promise<{ [name: string]: number | null }> =>
+    Object.fromEntries(await Promise.all(Object.entries(entities).map(async ([name, entity]) => [name, await value(entity)])));
 
 const show = System.create({
     name: "upTest/show",
@@ -135,7 +136,7 @@ describe("up", () => {
             await ecs.run(spawn);
             await ecs.run(nest);
             await ecs.run(system);
-            expect(worlds(entity => ecs.read.component(entity, world))).toEqual({ root: 1, grandchild: 111, child: 11, other: 1000 });
+            expect(await worlds(entity => read(ecs, entity, world))).toEqual({ root: 1, grandchild: 111, child: 11, other: 1000 });
         });
     }
 
@@ -148,7 +149,7 @@ describe("up", () => {
         await ecs.run(bump, { entity: entities.root });
         await ecs.run(propagateChanged);
         expect(ran).toEqual(["root", "child", "grandchild"]);
-        expect(worlds(entity => ecs.read.component(entity, world))).toEqual({ root: 2, grandchild: 112, child: 12, other: 1000 });
+        expect(await worlds(entity => read(ecs, entity, world))).toEqual({ root: 2, grandchild: 112, child: 12, other: 1000 });
     });
 
     it("doesn't pass a row whose component an added filter names only changed", async () => {
@@ -169,7 +170,7 @@ describe("up", () => {
         await ecs.run(propagateChangedKernel);
         await ecs.run(bump, { entity: entities.root });
         await ecs.run(propagateChangedKernel);
-        expect(worlds(entity => ecs.read.component(entity, world))).toEqual({ root: 2, grandchild: 112, child: 12, other: 1000 });
+        expect(await worlds(entity => read(ecs, entity, world))).toEqual({ root: 2, grandchild: 112, child: 12, other: 1000 });
     });
 
     it("passes a row whose parent reference changed, with change filters", async () => {
@@ -180,7 +181,7 @@ describe("up", () => {
         await ecs.run(nest);
         await ecs.run(propagateChanged);
         expect(ran).toEqual(["grandchild"]);
-        expect(ecs.read.component(entities.grandchild, world)).toBe(111);
+        expect(await read(ecs, entities.grandchild, world)).toBe(111);
     });
 
     it("passes a row whose parent reference was removed, with change filters", async () => {
@@ -192,7 +193,7 @@ describe("up", () => {
         await ecs.run(orphan);
         await ecs.run(propagateChanged);
         expect(ran).toEqual(["grandchild"]);
-        expect(ecs.read.component(entities.grandchild, world)).toBe(100);
+        expect(await read(ecs, entities.grandchild, world)).toBe(100);
     });
 
     it("finds a cycle a reparent closes after the tree was built, and runs its rows again once it opens", async () => {
@@ -202,10 +203,10 @@ describe("up", () => {
         await ecs.run(propagateKernel);
         await ecs.run(close);
         await ecs.run(propagateKernel);
-        expect(worlds(entity => ecs.read.component(entity, world))).toEqual({ root: 1, grandchild: 111, child: 11, other: 1000 });
+        expect(await worlds(entity => read(ecs, entity, world))).toEqual({ root: 1, grandchild: 111, child: 11, other: 1000 });
         await ecs.run(open);
         await ecs.run(propagateKernel);
-        expect(worlds(entity => ecs.read.component(entity, world))).toEqual({ root: 1001, grandchild: 1111, child: 1011, other: 1000 });
+        expect(await worlds(entity => read(ecs, entity, world))).toEqual({ root: 1001, grandchild: 1111, child: 1011, other: 1000 });
     });
 
     it("doesn't run rows on or under a parent cycle", async () => {
@@ -222,7 +223,7 @@ describe("up", () => {
         await using ecs = createWorld({ workers: 0 });
         await ecs.run(spawnMixed);
         await ecs.run(propagateKernel);
-        const values = Object.fromEntries(Object.entries(mixed).map(([name, entity]) => [name, ecs.read.component(entity, world)]));
+        const values = Object.fromEntries(await Promise.all(Object.entries(mixed).map(async ([name, entity]) => [name, await read(ecs, entity, world)])));
         expect(values).toEqual({ root: 1, anchored: 2, unmatched: 50, bare: null, underRoot: 11, underUnmatched: 60, underAnchored: 12, underBare: 10 });
     });
 
@@ -233,7 +234,7 @@ describe("up", () => {
         await ecs.run(growParents);
         await ecs.run(shift);
         await ecs.run(propagateKernel);
-        expect(ecs.read.component(mixed.underAnchored, world)).toBe(13);
+        expect(await read(ecs, mixed.underAnchored, world)).toBe(13);
     });
 
     it("reads a parent the query doesn't match again after it moves to another archetype", async () => {
@@ -242,7 +243,7 @@ describe("up", () => {
         await ecs.run(propagateKernel);
         await ecs.run(System.create({ name: "upTest/moveUnmatched" }, ({ commands }) => { commands.add(mixed.unmatched, { [anchor]: true, [world]: 80 }); }));
         await ecs.run(propagateKernel);
-        expect(ecs.read.component(mixed.underUnmatched, world)).toBe(90);
+        expect(await read(ecs, mixed.underUnmatched, world)).toBe(90);
     });
 
     it("reads booleans through up", async () => {
@@ -255,7 +256,7 @@ describe("up", () => {
             tree.push(other, commands.spawn({ [visible]: true, [shown]: false, [parent]: other }));
         }));
         await ecs.run(show);
-        expect(tree.map(entity => ecs.read.component(entity, shown))).toEqual([false, false, true, true]);
+        expect(await readEach(ecs, tree, shown)).toEqual([false, false, true, true]);
     });
 
     it("runs as WASM, as JS does", async () => {
@@ -270,7 +271,7 @@ describe("up", () => {
             await ecs.run(growParents);
             await ecs.run(shift);
             await ecs.run(propagateKernel);
-            return Object.values(mixed).map(entity => ecs.read.component(entity, world));
+            return readEach(ecs, Object.values(mixed), world);
         }));
         expect(results[0]).toEqual(results[1]);
     });

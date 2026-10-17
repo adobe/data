@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import { System } from "../../system/system.js";
+import { readEach, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 const value = "kernelsCspTest/value";
@@ -30,7 +31,7 @@ describe("kernels where WASM can't be compiled", () => {
             const world = createWorld({ workers: 0 });
             await world.run(seed);
             await world.run(double);
-            expect(world.query.select([value]).map(entity => world.read.component(entity, value))).toEqual([0, 2, 4, 6, 8, 10, 12, 14, 16, 18]);
+            expect(await readEach(world, await select(world, { required: [value] }), value)).toEqual([0, 2, 4, 6, 8, 10, 12, 14, 16, 18]);
             await world.dispose();
         }
         finally {

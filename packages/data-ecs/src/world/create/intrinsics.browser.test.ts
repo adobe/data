@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import { F32, Mat4x4, Quat, U32, Vec2, Vec3, Vec4 } from "../../math/index.js";
 import { System } from "../../system/system.js";
+import { readEach, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 const f2a = "intrinsicsTest/f2a";
@@ -555,18 +556,15 @@ describe("declared WGSL builtins", () => {
         for (const world of [gpuWorld, cpuWorld]) {
             await world.run(spawn);
         }
-        const read = (world: ReturnType<typeof createWorld>, output: (typeof cases)[number]["output"]): number[] =>
-            world.query.select([output]).flatMap(entity => {
-                const value: unknown = world.read.component(entity, output);
-                return Array.isArray(value) ? value.map(Number) : [Number(value)];
-            });
+        const values = async (world: ReturnType<typeof createWorld>, output: (typeof cases)[number]["output"]): Promise<number[]> =>
+            (await readEach(world, await select(world, { required: [output] }), output)).flatMap((value: unknown) =>
+                Array.isArray(value) ? value.map(Number) : [Number(value)]);
         const mismatches: string[] = [];
         for (const { system, operations, output, exact } of cases) {
             for (let op = 0; op < operations.length; op++) {
                 for (const world of [gpuWorld, cpuWorld]) await world.run(system, { op });
-                await gpuWorld.synchronize([output]);
-                const gpu = read(gpuWorld, output);
-                const cpu = read(cpuWorld, output);
+                const gpu = await values(gpuWorld, output);
+                const cpu = await values(cpuWorld, output);
                 const worst = Math.max(...gpu.map((value, i) => exact ? (value === cpu[i] ? 0 : Infinity) : Math.abs(value - (cpu[i] ?? NaN)) / Math.max(1, Math.abs(cpu[i] ?? NaN))));
                 if (gpu.length !== cpu.length || !(worst <= 1e-4)) mismatches.push(`${operations[op]}: ${worst}`);
             }

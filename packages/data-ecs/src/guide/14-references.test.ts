@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Entity, System, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 const node = "guide/references/node";
 const parent = "guide/references/parent";
@@ -32,6 +33,7 @@ it("despawns owned entities with their owner, transitively, and drops weak refer
     await using world = World.create();
     await world.run(spawn);
     await world.run(prune);
-    expect(world.query.select([node]).map(entity => world.read.component(entity, node))).toEqual(["camera"]);
-    expect(world.query.count([watching])).toBe(0);
+    const nodes = await toPromise(world.observe.select({ required: [node] }));
+    expect(await Promise.all(nodes.map(async entity => (await toPromise(world.observe.entity(entity, { required: [node] })))?.[node]))).toEqual(["camera"]);
+    expect(await toPromise(world.observe.count({ required: [watching] }))).toBe(0);
 });

@@ -3,6 +3,7 @@ import { Component } from "../../component/component.js";
 import { Entity } from "../../entity/entity.js";
 import { System } from "../../system/system.js";
 import type { World } from "../world.js";
+import { readEach, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 const local = "upTreeTest/local";
@@ -78,12 +79,17 @@ const generator = (seed: number) => {
 };
 
 /** What each matched row outside a cycle should hold, from the world's current tree and the values it stores. */
-const expected = (ecs: World, key: typeof full | typeof filtered): Map<Entity, number> => {
-    const entities = ecs.query.select([local]);
+const expected = async (ecs: World, key: typeof full | typeof filtered): Promise<Map<Entity, number>> => {
+    const entities = await select(ecs, { required: [local] });
     const alive = new Set(entities);
-    const isHidden = new Set(ecs.query.select([hidden]));
+    const isHidden = new Set(await select(ecs, { required: [hidden] }));
+    // The walk reads only live entities, so one read of each component up front serves it.
+    const byEntity = <T>(values: readonly T[]): Map<Entity, T> => new Map(entities.map((entity, i) => [entity, values[i]]));
+    const parents = byEntity(await readEach(ecs, entities, parent));
+    const locals = byEntity(await readEach(ecs, entities, local));
+    const keys = byEntity(await readEach(ecs, entities, key));
     const parentOf = (entity: Entity): Entity | null => {
-        const value = ecs.read.component(entity, parent);
+        const value = parents.get(entity);
         return value !== undefined && value !== null && alive.has(value) ? value : null;
     };
     const matched = (entity: Entity): boolean => alive.has(entity) && !isHidden.has(entity);
@@ -97,11 +103,11 @@ const expected = (ecs: World, key: typeof full | typeof filtered): Map<Entity, n
     };
     const values = new Map<Entity, number>();
     const valueOf = (entity: Entity): number => {
-        if (!matched(entity) || isCyclic(entity)) return ecs.read.component(entity, key) ?? 0;
+        if (!matched(entity) || isCyclic(entity)) return keys.get(entity) ?? 0;
         const known = values.get(entity);
         if (known !== undefined) return known;
         const up = parentOf(entity);
-        const value = (up === null ? 0 : valueOf(up)) + (ecs.read.component(entity, local) ?? 0);
+        const value = (up === null ? 0 : valueOf(up)) + (locals.get(entity) ?? 0);
         values.set(entity, value);
         return value;
     };
@@ -110,8 +116,11 @@ const expected = (ecs: World, key: typeof full | typeof filtered): Map<Entity, n
     return result;
 };
 
-const actual = (ecs: World, key: typeof full | typeof filtered, rows: Iterable<Entity>): Map<Entity, number> =>
-    new Map([...rows].map(entity => [entity, ecs.read.component(entity, key) ?? 0]));
+const actual = async (ecs: World, key: typeof full | typeof filtered, rows: Iterable<Entity>): Promise<Map<Entity, number>> => {
+    const entities = [...rows];
+    const values = await readEach(ecs, entities, key);
+    return new Map(entities.map((entity, i) => [entity, values[i] ?? 0]));
+};
 
 it.each([true, false])("keeps its tree current across spawns, despawns, reparents, cycles and matching changes, with WASM %s", async wasm => {
     await using ecs = createWorld({ wasm });
@@ -119,7 +128,7 @@ it.each([true, false])("keeps its tree current across spawns, despawns, reparent
     for (let k = 0; k < 30; k++) operations.push({ kind: "spawn", local: random(10), parent: null });
     await ecs.run(apply);
     for (let frame = 0; frame < 300; frame++) {
-        const entities = ecs.query.select([local]);
+        const entities = await select(ecs, { required: [local] });
         const any = (): Entity => entities[random(entities.length)];
         for (let k = 0; k < 4; k++) {
             switch (random(8)) {
@@ -135,8 +144,8 @@ it.each([true, false])("keeps its tree current across spawns, despawns, reparent
         await ecs.run(propagateFull);
         await ecs.run(propagateFiltered);
         for (const key of [full, filtered] as const) {
-            const want = expected(ecs, key);
-            expect(actual(ecs, key, want.keys()), `${key}, frame ${frame}`).toEqual(want);
+            const want = await expected(ecs, key);
+            expect(await actual(ecs, key, want.keys()), `${key}, frame ${frame}`).toEqual(want);
         }
     }
 });

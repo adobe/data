@@ -2,7 +2,6 @@ import type { Entity } from '../entity/entity.js';
 import { persistent, shared } from '../components/index.js';
 import { System } from '../system/system.js';
 import { main, move } from '../system/system.type-test.js';
-import type { Options } from './query/options.js';
 import { World } from './world.js';
 import type { Observe } from '../index.js';
 
@@ -15,21 +14,31 @@ declare module '@adobe/data-ecs' {
         [point]: { type: { x: number } };
     }
 }
-const read = world.read.entity(entity, [point]);
-if (read !== null) {
-    // @ts-expect-error values read from the world are read-only
-    read[point].x = 1;
-}
-
-const options: Options<[typeof persistent]> = { not: [shared], where: { [persistent]: true }, order: { [persistent]: true } };
-const selected: readonly Entity[] = world.query.select([persistent], options);
-const counted: number = world.query.count([persistent]);
-const values: { readonly persistent: true } | null = world.read.entity(entity, [persistent, shared]);
-const value: true | null = world.read.component(entity, shared);
-// @ts-expect-error where may only filter components in has
-world.query.select([persistent], { where: { [shared]: true } });
-// @ts-expect-error read values are readonly
-if (values) values[persistent] = true;
+// Observing a query: `where` and `order` name only required components; `count` takes no `order`.
+const query: World.Query<[typeof persistent]> = { required: [persistent], not: [shared], where: { [persistent]: true }, order: { [persistent]: true } };
+const selected: Observe<readonly Entity[]> = world.observe.select(query);
+const selectedAll: Observe<readonly Entity[]> = world.observe.select({});
+const counted: Observe<number> = world.observe.count({ required: [persistent], where: { [persistent]: { "!=": true } } });
+world.observe.select({ required: [point], where: { [point]: { x: 1 } } })(entities => {
+    // @ts-expect-error selected entities are read-only
+    entities.push(entity);
+});
+// @ts-expect-error where may only filter required components
+world.observe.select({ required: [persistent], where: { [shared]: true } });
+// @ts-expect-error order may only sort by required components
+world.observe.select({ required: [persistent], order: { [shared]: true } });
+// @ts-expect-error a where value has its component's type
+world.observe.select({ required: [point], where: { [point]: { x: "one" } } });
+// @ts-expect-error count has no order
+world.observe.count({ required: [persistent], order: { [persistent]: true } });
+// @ts-expect-error queries list only components
+world.observe.select({ required: ["systemTest/time"] });
+// @ts-expect-error synchronous reads are gone: observing is the way to read
+void world.query;
+// @ts-expect-error synchronous reads are gone: observing is the way to read
+void world.read;
+// @ts-expect-error GPU writes are read back for observers, without synchronize
+void world.synchronize;
 
 // Observing an entity: required components are present, optional ones possibly; without options, every one possibly.
 const observedWhole: Observe<{ readonly [K in typeof point | typeof shared]?: unknown } | null> = world.observe.entity(entity);
@@ -118,4 +127,4 @@ const usingDispose = async () => {
     await using scoped = World.create();
     await scoped.run(main);
 };
-void [disposed, usingDispose, selected, counted, value, ran, moved, reported, observed, stop, created, withResources];
+void [disposed, usingDispose, selected, selectedAll, counted, query, ran, moved, reported, observed, stop, created, withResources];

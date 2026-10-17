@@ -7,6 +7,7 @@ import { System } from "../../system/system.js";
 import type { World } from "../world.js";
 import { definitionOf } from "../../system/definition.js";
 import { kernelOf } from "./attach-kernel.js";
+import { readEach, readEntity, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { bindKernel } from "./kernels.js";
 import { createState } from "./state.js";
@@ -164,7 +165,8 @@ const chase = System.create({
 
 const main = System.composite({ name: "wasmTest/main", systems: [integrate, bounce, tally, drift, react, chase] });
 
-const snapshot = (world: World): unknown[] => world.query.select([position]).map(entity => world.read.entity(entity, [position, velocity, bounces, flipped, score]));
+const snapshot = async (world: World): Promise<unknown[]> =>
+    Promise.all((await select(world, { required: [position] })).map(entity => readEntity(world, entity, [position, velocity, bounces, flipped, score])));
 
 
 const simulate = async (wasm: boolean, simd = false): Promise<unknown[]> => {
@@ -175,7 +177,7 @@ const simulate = async (wasm: boolean, simd = false): Promise<unknown[]> => {
         if (frame % 30 === 0) await world.run(scale, { factor: 1.5 });
         if (frame % 20 === 10) await world.run(cull, { frame });
     }
-    const result = snapshot(world);
+    const result = await snapshot(world);
     await world.dispose();
     return result;
 };
@@ -196,12 +198,12 @@ describe("WASM kernels", () => {
             await using ecs = createWorld({ workers: 0, wasm, simd });
             await ecs.run(seed, { count: 100 });
             await ecs.run(recount);
-            const entities = ecs.query.select([score]);
+            const entities = await select(ecs, { required: [score] });
             chosen.clear();
             for (const row of rows) chosen.add(entities[row]);
             await ecs.run(rescore);
             await ecs.run(recount);
-            const ran = entities.flatMap((entity, row) => ecs.read.component(entity, bounces) === 2 ? [row] : []);
+            const ran = (await readEach(ecs, entities, bounces)).flatMap((value, row) => value === 2 ? [row] : []);
             expect(ran, `wasm ${wasm}, simd ${simd}`).toEqual(rows);
         }
     });

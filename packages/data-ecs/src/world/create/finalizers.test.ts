@@ -6,6 +6,7 @@ import { Resource } from "../../resource/resource.js";
 import { Rule } from "../../rule/rule.js";
 import { System } from "../../system/system.js";
 import { createWorld } from "./create.js";
+import { count, read, readEach, readResource, select } from "../reads.test-helper.js";
 
 const handle = "finalizersTest/handle";
 const hidden = "finalizersTest/hidden";
@@ -93,8 +94,8 @@ describe("finalizers", () => {
             commands.despawn(commands.spawn({ [handle]: 1 }));
         });
         expect(seen).toEqual([[despawned, 0], [removed, 10], [excluded, 20], [replaced, 30]]);
-        expect(world.read.component(replaced, handle)).toBe(99);
-        expect(world.read.component(kept, handle)).toBe(40);
+        expect(await read(world, replaced, handle)).toBe(99);
+        expect(await read(world, kept, handle)).toBe(40);
         await world.dispose();
     });
 
@@ -111,7 +112,7 @@ describe("finalizers", () => {
         });
         await run(commands => commands.despawn(root));
         expect(seen.sort()).toEqual([1, 2]);
-        expect(world.read.component(child, source)).toBeNull();
+        expect(await read(world, child, source)).toBeNull();
         await world.dispose();
         expect(seen.sort()).toEqual([1, 2, 3]);
     });
@@ -134,10 +135,10 @@ describe("finalizers", () => {
         await run(commands => { a = commands.spawn({ [counted]: 5 }); });
         await run(commands => commands.despawn(a));
         expect(found).toEqual([5]);
-        expect(world.read.resource(released)).toBe(1);
-        expect(world.query.count([label])).toBe(0);
+        expect(await readResource(world, released)).toBe(1);
+        expect(await count(world, { required: [label] })).toBe(0);
         await run(() => {});
-        expect(world.query.count([label])).toBe(1);
+        expect(await count(world, { required: [label] })).toBe(1);
         await world.dispose();
     });
 
@@ -150,9 +151,9 @@ describe("finalizers", () => {
         let a = Entity.none;
         await run(commands => { a = commands.spawn({ [pendingHandle]: 1 }); other = commands.spawn({ [label]: "other" }); });
         await run(commands => commands.despawn(a));
-        expect(world.read.component(other, label)).toBe("other");
+        expect(await read(world, other, label)).toBe("other");
         await world.run(reads);
-        expect(world.read.component(other, label)).toBeNull();
+        expect(await read(world, other, label)).toBeNull();
         await world.dispose();
     });
 
@@ -166,9 +167,9 @@ describe("finalizers", () => {
         await run(commands => { for (let i = 0; i < 8; i++) first.push(commands.spawn({ [respawned]: i })); });
         await run(commands => { for (const entity of first) commands.despawn(entity); });
         await run(commands => { for (let i = 0; i < 8; i++) commands.spawn({ [respawned]: 1000 + i }); });
-        const live = world.query.select([respawned]);
+        const live = await select(world, { required: [respawned] });
         expect(new Set(live).size).toBe(16);
-        expect(live.map(entity => world.read.component(entity, respawned)).sort((x, y) => (x ?? 0) - (y ?? 0)))
+        expect((await readEach(world, live, respawned)).sort((x, y) => (x ?? 0) - (y ?? 0)))
             .toEqual([100, 101, 102, 103, 104, 105, 106, 107, 1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007]);
         await world.dispose();
     });
@@ -185,7 +186,7 @@ describe("finalizers", () => {
         const { failures } = await run(commands => commands.despawn(a));
         expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "finalizer", name: "finalizersTest/throws", message: "finalizer failed" }]);
         expect(order).toEqual(["first", "second"]);
-        expect(world.read.component(a, handle)).toBeNull();
+        expect(await read(world, a, handle)).toBeNull();
         const writer = (name: "finalizersTest/writerA" | "finalizersTest/writerB") =>
             Finalizer.create({ name, components: { read: [writing] }, resources: { write: [written] } }, (_, { resources }) => { resources[written] = 1; });
         writer("finalizersTest/writerA");

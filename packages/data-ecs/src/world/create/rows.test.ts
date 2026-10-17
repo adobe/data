@@ -3,6 +3,7 @@ import { Component } from "../../component/component.js";
 import type { Entity } from "../../entity/entity.js";
 import type { Schema } from "../../schema/schema.js";
 import { System } from "../../system/system.js";
+import { readEach, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 type Vec3 = readonly [number, number, number];
@@ -54,8 +55,9 @@ describe("accessor rows", () => {
         await world.run(first);
         await world.run(other);
         await world.run(second);
-        const entities = world.query.select([count]);
-        const byEntity = new Map(entities.map(entity => [entity, world.read.component(entity, count) ?? -1]));
+        const entities = await select(world, { required: [count] });
+        const values = await readEach(world, entities, count);
+        const byEntity = new Map(entities.map((entity, i) => [entity, values[i] ?? -1]));
         expect([...byEntity.values()].sort()).toEqual([11, 12, 13, 14]);
         expect(seen).toHaveLength(8);
         for (const { entity, position: value, count: initial, flag: even } of seen.slice(0, 4)) {

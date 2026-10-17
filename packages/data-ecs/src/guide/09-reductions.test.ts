@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Resource, System, Vec3, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 const position = "guide/reductions/position";
 const mass = "guide/reductions/mass";
@@ -61,8 +62,8 @@ it("folds rows into resources", async () => {
     await using world = World.create();
     await world.run(spawn);
     await world.run(measure);
-    expect(world.read.resource(total)).toBe(200);
-    expect(world.read.resource(lowest)).toEqual([0, -99, 0]);
+    expect(await toPromise(world.observe.resource(total))).toBe(200);
+    expect(await toPromise(world.observe.resource(lowest))).toEqual([0, -99, 0]);
 });
 
 it("folds every contributor in a run, starting again each run", async () => {
@@ -70,6 +71,6 @@ it("folds every contributor in a run, starting again each run", async () => {
     await world.run(spawn);
     await world.run(frame);
     await world.run(frame);
-    expect(world.read.resource(total)).toBe(250);
-    expect(world.read.resource(seen)).toBe(250);
+    expect(await toPromise(world.observe.resource(total))).toBe(250);
+    expect(await toPromise(world.observe.resource(seen))).toBe(250);
 });

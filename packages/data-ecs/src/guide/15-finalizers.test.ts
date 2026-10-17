@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Finalizer, System, Vec3, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 const position = "guide/finalizers/position";
 const handle = "guide/finalizers/handle";
@@ -44,9 +45,9 @@ it("releases what entities held when they stop matching", async () => {
     await world.run(spawn);
     await world.run(destroy);
     expect([...open]).toEqual([]);
-    expect(world.query.count([debris])).toBe(0);
+    expect(await toPromise(world.observe.count({ required: [debris] }))).toBe(0);
     await world.run(spawn);
-    expect(world.query.count([debris])).toBe(2);
+    expect(await toPromise(world.observe.count({ required: [debris] }))).toBe(2);
 });
 
 it("releases what every live entity holds when the world is disposed", async () => {

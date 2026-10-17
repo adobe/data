@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, System, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 const body = "guide/within/body";
 const glow = "guide/within/glow";
@@ -27,7 +28,7 @@ const strip = System.create({ name: "guide/within/strip", components: { has: [bo
 it("removes a component with its host", async () => {
     await using world = World.create();
     await world.run(spawn);
-    expect(world.query.count([glow])).toBe(1);
+    expect(await toPromise(world.observe.count({ required: [glow] }))).toBe(1);
     await world.run(strip);
-    expect(world.query.count([glow])).toBe(0);
+    expect(await toPromise(world.observe.count({ required: [glow] }))).toBe(0);
 });

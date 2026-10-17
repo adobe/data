@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import type { Schema } from "../../schema/schema.js";
 import { System } from "../../system/system.js";
+import { readEach, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 type Vec2 = readonly [number, number];
@@ -97,7 +98,7 @@ describe("worker dispatch", () => {
                 const r = await withTimeout((async () => { await world.run(grow); if (delay) await new Promise(r => setTimeout(r, 30)); await world.run(fastA); })(), 3000);
                 if (r === "timeout") return "timeout";
             }
-            return world.query.select([position]).map(e => JSON.stringify(world.read.component(e, position))).sort();
+            return (await readEach(world, await select(world, { required: [position] }), position)).map(each => JSON.stringify(each)).sort();
         };
         const alone = await go(0);
         const diff = (a: unknown, b: unknown) => a === "timeout" || b === "timeout" ? "timeout" : (a as string[]).filter((v, i) => v !== (b as string[])[i]).length;

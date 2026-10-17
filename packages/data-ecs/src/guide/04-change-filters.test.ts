@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Entity, Resource, System, World } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 const score = "guide/filters/score";
 const shown = "guide/filters/shown";
@@ -48,13 +49,13 @@ it("runs systems only for what changed since they last ran", async () => {
     await using world = World.create();
     await world.run(load);
     await world.run(load);
-    expect(world.query.count([enemy])).toBe(2);
+    expect(await toPromise(world.observe.count({ required: [enemy] }))).toBe(2);
     await world.run(show);
-    const [first, second] = world.query.select([score]);
+    const [first, second] = await toPromise(world.observe.select({ required: [score] }));
     await world.run(bump, { entity: first });
     await world.run(show);
-    expect(world.read.component(first, shown)).toBe(10);
-    expect(world.read.component(second, shown)).toBe(0);
+    expect((await toPromise(world.observe.entity(first, { required: [shown] })))?.[shown]).toBe(10);
+    expect((await toPromise(world.observe.entity(second, { required: [shown] })))?.[shown]).toBe(0);
 });
 
 // A system runs only while each resource in `is` is neither null nor false, and each in `not` is; otherwise it's
@@ -72,5 +73,5 @@ it("runs systems only while their conditions hold", async () => {
     await world.run(step);
     await world.run(pause);
     await world.run(step);
-    expect(world.read.resource(steps)).toBe(4);
+    expect(await toPromise(world.observe.resource(steps))).toBe(4);
 });

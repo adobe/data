@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Component } from "../../component/component.js";
 import { Resource } from "../../resource/resource.js";
 import { System } from "../../system/system.js";
+import { read, readResource, select } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 
 const paused = "conditionsTest/paused";
@@ -48,19 +49,19 @@ describe("resource conditions", () => {
         await world.run(frame);
         await world.run(pause);
         await world.run(frame);
-        expect(world.read.resource(ticks)).toBe(1);
-        expect(world.read.resource(after)).toBe(2);
+        expect(await readResource(world, ticks)).toBe(1);
+        expect(await readResource(world, after)).toBe(2);
     });
 
     it("read an `is` condition as holding", async () => {
         await using world = createWorld({ workers: 0 });
         const measure = System.create({ name: "conditionsTest/measure", resources: { is: [level], write: [sizes] } }, ({ resources }) => { resources[sizes] = resources[level].size; });
         await world.run(measure);
-        expect(world.read.resource(sizes)).toBe(0);
+        expect(await readResource(world, sizes)).toBe(0);
         const load = System.create({ name: "conditionsTest/load", resources: { write: [level] } }, ({ resources }) => { resources[level] = { size: 3 }; });
         await world.run(load);
         await world.run(measure);
-        expect(world.read.resource(sizes)).toBe(3);
+        expect(await readResource(world, sizes)).toBe(3);
     });
 
     it("keep a skipped system's lastRun, so it sees every change once it runs again", async () => {
@@ -81,10 +82,10 @@ describe("resource conditions", () => {
         let next = 5;
         const add = System.create({ name: "conditionsTest/add", reduce: { [total]: "+" }, resources: { not: [paused] } }, ({ reduce }) => { reduce[total](next++); });
         await world.run(add);
-        expect(world.read.resource(total)).toBe(5);
+        expect(await readResource(world, total)).toBe(5);
         await world.run(pause);
         await world.run(add);
-        expect(world.read.resource(total)).toBe(5);
+        expect(await readResource(world, total)).toBe(5);
     });
 
     it("reject conditions that are never null or false, or listed twice, for untyped declarations", async () => {
@@ -102,7 +103,7 @@ describe("resource conditions", () => {
         await world.run(grow);
         await world.run(pause);
         await world.run(grow);
-        const [entity] = world.query.select([value]);
-        expect(world.read.component(entity, value)).toBe(2);
+        const [entity] = await select(world, { required: [value] });
+        expect(await read(world, entity, value)).toBe(2);
     });
 });

@@ -3,6 +3,7 @@ import { Component } from "../../component/component.js";
 import type { Entity } from "../../entity/entity.js";
 import type { Schema } from "../../schema/schema.js";
 import { System } from "../../system/system.js";
+import { count, read, readEach, readEntity } from "../reads.test-helper.js";
 import { createWorld } from "./create.js";
 import type { Values } from '../../component/values.js';
 
@@ -44,7 +45,7 @@ describe("staged spawns", () => {
         await world.run(frame);
         await world.run(frame);
         expect(seen).toEqual({ early: 100, same: 100, late: 100 });
-        expect(spawned.map(entity => world.read.entity(entity, [position, score, name, tag]))).toEqual(
+        expect(await Promise.all(spawned.map(entity => readEntity(world, entity, [position, score, name, tag])))).toEqual(
             spawned.map((_, i) => ({ [position]: [i, i, i], [score]: i, [name]: `${i}`, [tag]: true })));
         await world.dispose();
     });
@@ -61,8 +62,8 @@ describe("staged spawns", () => {
         });
         const world = createWorld({ workers: 0 });
         await world.run(edit);
-        expect(spawned.map(entity => [world.read.component(entity, score), world.read.component(entity, name)])).toEqual([[10, "0"], [1, null], [2, "again"], [null, null]]);
-        expect(world.query.count([score])).toBe(3);
+        expect(await Promise.all(spawned.map(async entity => [await read(world, entity, score), await read(world, entity, name)]))).toEqual([[10, "0"], [1, null], [2, "again"], [null, null]]);
+        expect(await count(world, { required: [score] })).toBe(3);
         await world.dispose();
     });
 
@@ -76,11 +77,11 @@ describe("staged spawns", () => {
         });
         const world = createWorld({ workers: 0 });
         expect((await world.run(spawn)).failures).toHaveLength(1);
-        expect(spawned.map(entity => world.read.component(entity, score))).toEqual([0, 1, 2]);
+        expect(await readEach(world, spawned, score)).toEqual([0, 1, 2]);
         poison = false;
         await world.run(spawn);
-        expect(world.query.count([score])).toBe(6);
-        expect(spawned.map(entity => world.read.component(entity, score))).toEqual([0, 1, 2, 0, 1, 2]);
+        expect(await count(world, { required: [score] })).toBe(6);
+        expect(await readEach(world, spawned, score)).toEqual([0, 1, 2, 0, 1, 2]);
         await world.dispose();
     });
 
@@ -93,9 +94,9 @@ describe("staged spawns", () => {
         });
         const world = createWorld({ workers: 0 });
         await world.run(spawn);
-        expect(spawned.slice(0, 50).map(entity => world.read.entity(entity, [position, score, tag]))).toEqual(
+        expect(await Promise.all(spawned.slice(0, 50).map(entity => readEntity(world, entity, [position, score, tag])))).toEqual(
             spawned.slice(0, 50).map((_, i) => ({ [position]: [i, i, i], [score]: i, [tag]: true })));
-        expect([world.read.component(spawned[50], position), world.read.component(spawned[50], score)]).toEqual([[9, 9, 9], null]);
+        expect([await read(world, spawned[50], position), await read(world, spawned[50], score)]).toEqual([[9, 9, 9], null]);
         await world.dispose();
     });
 
@@ -109,7 +110,7 @@ describe("staged spawns", () => {
         });
         const world = createWorld({ workers: 0 });
         await world.run(spawn);
-        expect(spawned.map(entity => world.read.entity(entity, [position, score, name]))).toEqual(
+        expect(await Promise.all(spawned.map(entity => readEntity(world, entity, [position, score, name])))).toEqual(
             spawned.map((_, i) => ({ [position]: [i, 0, 1], [score]: i, [name]: `${i}` })));
         await world.dispose();
     });

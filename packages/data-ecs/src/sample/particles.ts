@@ -1,5 +1,6 @@
 import { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
+import { toPromise } from '../observe/to-promise.js';
 import { Resource } from '../resource/resource.js';
 import { Vec3 } from '../math/index.js';
 import { System } from '../system/system.js';
@@ -74,7 +75,9 @@ export const main = System.composite({ name: "particles/main", systems: [spawn, 
 export const frame = async (world: World, seconds: number): Promise<readonly Vec3[]> => {
     await world.run(setDelta, { seconds });
     await world.run(main);
-    return world.query.select([position]).map((entity: Entity) => world.read.component(entity, position) ?? [0, 0, 0]);
+    // Each read is an observer's first value.
+    const particles = await toPromise(world.observe.select({ required: [position] }));
+    return Promise.all(particles.map(async (entity: Entity) => (await toPromise(world.observe.entity(entity, { required: [position] })))?.[position] ?? [0, 0, 0]));
 };
 
 export const start = async (): Promise<World> => World.create();

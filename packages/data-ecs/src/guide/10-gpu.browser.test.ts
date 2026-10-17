@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, System, Vec3, World, gpuDevice } from "../index.js";
+import { toPromise } from "../observe/to-promise.js";
 
 const position = "guide/gpu/position";
 const velocity = "guide/gpu/velocity";
@@ -24,18 +25,17 @@ const move = System.create({ name: "guide/gpu/move", kernel: "gpu", components: 
     row[position] = Vec3.add(row[position], row[velocity]);
 });
 
-it("runs GPU kernels on the world's device, and reads their writes back on request", async () => {
+it("runs GPU kernels on the world's device, and reads their writes back for observers", async () => {
     const adapter = await navigator.gpu.requestAdapter();
     const device = await adapter?.requestDevice();
     if (device === undefined) throw new Error("No WebGPU device.");
     const world = World.create({ gpuDevice: device });
-    expect(world.read.resource(gpuDevice)).toBe(device);
+    expect(await toPromise(world.observe.resource(gpuDevice))).toBe(device);
     await world.run(spawn);
     await world.run(move);
     await world.run(move);
-    // Values a GPU kernel wrote stay on the GPU until something on the CPU needs them, or `synchronize` asks.
-    await world.synchronize([position]);
-    const [first] = world.query.select([position], { order: { [position]: true } });
-    expect(world.read.component(first, position)).toEqual([0, 2, 0]);
+    // Values a GPU kernel wrote stay on the GPU until something on the CPU needs them; an observer's are read back first.
+    const [first] = await toPromise(world.observe.select({ required: [position], order: { [position]: true } }));
+    expect((await toPromise(world.observe.entity(first, { required: [position] })))?.[position]).toEqual([0, 2, 0]);
     await world.dispose();
 });

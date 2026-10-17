@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readResource } from "../world/reads.test-helper.js";
 import { count, frame, start } from "./particles.js";
 
 /** The same simulation in plain f64 JS. */
@@ -19,7 +20,7 @@ describe("particles", () => {
         const frames = [0.5, 0.25, 1 / 60, 1 / 60];
         let positions: readonly (readonly number[])[] = [];
         for (const seconds of frames) positions = await frame(world, seconds);
-        expect(world.read.resource(count)).toBe(100);
+        expect(await readResource(world, count)).toBe(100);
         const expected = reference(frames);
         expect(positions).toHaveLength(expected.length);
         positions.forEach((position, i) => position.forEach((value, axis) => expect(value).toBeCloseTo(expected[i][axis], 3)));

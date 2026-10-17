@@ -1,6 +1,6 @@
 import { it } from "vitest";
-import { gpuDevice } from "../types/resources/gpu-device.js";
-import type { World } from "../types/world/world.js";
+import { gpuDevice } from "../interface/resources/gpu-device.js";
+import type { World } from "../interface/world/world.js";
 import { createWorld } from "../implementation/world/create.js";
 import { calibrationSizes, copyBandwidth, environmentLine, resultLine, type Benchmark, type Best, type Curve } from "./benchmark.js";
 import { forest, gpuForest, place, propagate } from "./hierarchy.js";

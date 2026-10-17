@@ -1,6 +1,6 @@
 import type { Expression, ObjectExpression, Property, SpreadElement, Pattern } from 'estree';
-import type { Reduction } from '../../types/resource/reduction.js';
-import { isReduction, reductionOperators } from '../../types/registry/reduction.js';
+import type { Reduction } from '../../interface/resource/reduction.js';
+import { isReduction, reductionOperators } from '../../interface/registry/reduction.js';
 import { fail } from './failure.js';
 import type { ModuleScope } from './module-scope.js';
 

@@ -1,6 +1,6 @@
-import type { Commands } from '../../types/system/commands.js';
+import type { Commands } from '../../interface/system/commands.js';
 import { addCommand, despawnCommand, pushCommand, pushComponent, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
-import { hasSymbolNames } from '../../types/registry/index.js';
+import { hasSymbolNames } from '../../interface/registry/index.js';
 import { stageSpawn } from './batches.js';
 import { reserve } from './entities.js';
 import { commandIdOf, type Key, type State } from './state.js';

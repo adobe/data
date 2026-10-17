@@ -1,7 +1,7 @@
-import type { Entity } from '../../types/entity/entity.js';
+import type { Entity } from '../../interface/entity/entity.js';
 import { locate, reserve, type Reservations } from './entities.js';
 import type { Kernel, KernelModule } from './kernel.js';
-import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../types/registry/layout.js';
+import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../interface/registry/layout.js';
 import { emptyViews } from './arrays.js';
 import { claimPiece } from './claims.js';
 import { controlWords, done, epoch, lineWords, posted, ringSize, signal, taskFields, taskWords, type ArchetypeLayout, type EntitiesLayout, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';

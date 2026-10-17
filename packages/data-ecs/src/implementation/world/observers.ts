@@ -1,6 +1,6 @@
-import type { Failure } from '../../types/world/report.js';
+import type { Failure } from '../../interface/world/report.js';
 import { failureOf } from './failures.js';
-import type { Entity } from '../../types/entity/entity.js';
+import type { Entity } from '../../interface/entity/entity.js';
 import type { Archetype, Storage } from './archetype.js';
 import { indexOf, locate } from './entities.js';
 import { journalEnd } from './journal.js';

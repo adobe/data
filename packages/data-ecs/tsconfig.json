@@ -23,11 +23,11 @@
     "src/**/*"
   ],
   "exclude": [
-    "src/types"
+    "src/interface"
   ],
   "references": [
     {
-      "path": "./src/types"
+      "path": "./src/interface"
     }
   ]
 }

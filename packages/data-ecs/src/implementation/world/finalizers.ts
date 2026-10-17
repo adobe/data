@@ -1,8 +1,8 @@
-import type { Component } from '../../types/component/component.js';
-import type { Entity } from '../../types/entity/entity.js';
-import type { Finalizer } from '../../types/finalizer/created.js';
-import type { ChangeSet } from '../../types/finalizer/body.js';
-import type { Commands } from '../../types/system/commands.js';
+import type { Component } from '../../interface/component/component.js';
+import type { Entity } from '../../interface/entity/entity.js';
+import type { Finalizer } from '../../interface/finalizer/created.js';
+import type { ChangeSet } from '../../interface/finalizer/body.js';
+import type { Commands } from '../../interface/system/commands.js';
 import type { Archetype } from './archetype.js';
 import { createBuffer, type CommandBuffer } from './buffer.js';
 import { readCell } from './cells.js';
@@ -11,8 +11,8 @@ import { asEntity, indexOf, locate } from './entities.js';
 import { createContext, rowBinder, type Context } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
 import type { Queued } from './synchronize.js';
-import type { Essential, ReadonlyValue } from '../../types/component/value.js';
-import type { Leaf } from '../../types/finalizer/created.js';
+import type { Essential, ReadonlyValue } from '../../interface/component/value.js';
+import type { Leaf } from '../../interface/finalizer/created.js';
 
 /** A registered finalizer, resolved for a world: what it matches or watches, its context, and the buffer its commands go to. */
 export type FinalizerRunner = {

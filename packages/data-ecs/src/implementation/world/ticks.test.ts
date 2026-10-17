@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Resource, System, always, cadence, clock, report, wake, workers } from "../../index.js";
-import { toPromise } from "../../types/observe/to-promise.js";
+import { toPromise } from "../../interface/observe/to-promise.js";
 import { createWorld, join } from "./create.js";
 
 const frames = "ticksTest/frames";

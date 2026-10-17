@@ -1,7 +1,7 @@
-import type { Cadence } from '../../types/resources/cadence.js';
-import type { Composite, Definition } from '../../types/registry/index.js';
-import { requireDefinition } from '../../types/registry/program.js';
-import { isLeaf, scheduleOf } from '../../types/registry/schedule.js';
+import type { Cadence } from '../../interface/resources/cadence.js';
+import type { Composite, Definition } from '../../interface/registry/index.js';
+import { requireDefinition } from '../../interface/registry/program.js';
+import { isLeaf, scheduleOf } from '../../interface/registry/schedule.js';
 
 /** What the loop reads of the world's resources before each beat. */
 export type LoopSettings = { readonly cadence: Cadence; readonly always: boolean; readonly wake: number };

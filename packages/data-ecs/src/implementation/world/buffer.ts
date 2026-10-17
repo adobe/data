@@ -1,4 +1,4 @@
-import type { Entity } from '../../types/entity/entity.js';
+import type { Entity } from '../../interface/entity/entity.js';
 import type { KernelCommands } from './kernel.js';
 
 export const spawnCommand = 0;

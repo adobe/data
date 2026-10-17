@@ -1,7 +1,7 @@
-import type { Leaf } from '../../types/system/leaf.js';
+import type { Leaf } from '../../interface/system/leaf.js';
 import type { Archetype } from './archetype.js';
 import type { Kernel, KernelDescription, KernelModule } from './kernel.js';
-import { layoutOf, samePath, type Layout, type TypedArray } from '../../types/registry/layout.js';
+import { layoutOf, samePath, type Layout, type TypedArray } from '../../interface/registry/layout.js';
 import type { LookupSetup, Source , KernelSetup } from './protocol.js';
 import { createArrayLookup } from './rows.js';
 import { commandIdOf, idOf, type Key, type State } from './state.js';

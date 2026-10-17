@@ -1,5 +1,5 @@
-import type { Schema } from '../../types/schema/schema.js';
-import { schemaOf } from '../../types/registry/index.js';
+import type { Schema } from '../../interface/schema/schema.js';
+import { schemaOf } from '../../interface/registry/index.js';
 import type { Archetype } from './archetype.js';
 import type { Pool } from './pool.js';
 import type { ArchetypeLayout, EntitiesLayout } from './protocol.js';

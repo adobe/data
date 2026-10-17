@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { Component } from "../../types/component/component.js";
-import { Entity } from "../../types/entity/entity.js";
-import { System } from "../../types/system/system.js";
-import { definitionOf } from "../../types/registry/index.js";
+import { Component } from "../../interface/component/component.js";
+import { Entity } from "../../interface/entity/entity.js";
+import { System } from "../../interface/system/system.js";
+import { definitionOf } from "../../interface/registry/index.js";
 import { kernelOf } from "./attach-kernel.js";
 import { createWorld } from "./create.js";
 import { read, readEach } from "./reads.test-helper.js";

@@ -4,7 +4,7 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
 
-const directory = fileURLToPath(new URL("../../types/math/", import.meta.url));
+const directory = fileURLToPath(new URL("../../interface/math/", import.meta.url));
 const filesIn = (path: string): string[] => readdirSync(path, { withFileTypes: true })
     .flatMap(entry => entry.isDirectory() ? filesIn(join(path, entry.name)) : entry.name.endsWith(".ts") && !entry.name.includes("test") ? [join(path, entry.name)] : []);
 

@@ -1,4 +1,4 @@
-import type { Entity } from '../../types/entity/entity.js';
+import type { Entity } from '../../interface/entity/entity.js';
 import { allocateArray, growArray } from './arrays.js';
 import type { Memory } from './memory.js';
 

@@ -1,13 +1,13 @@
-import type { Leaf } from '../../types/system/leaf.js';
+import type { Leaf } from '../../interface/system/leaf.js';
 import type { Chunk, ChunkResult, Runner, Workers } from './runner.js';
-import type { Schedule } from '../../types/registry/schedule.js';
+import type { Schedule } from '../../interface/registry/schedule.js';
 import type { Archetype, Storage } from './archetype.js';
 import { idOf, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
 import { applySync, prepareSync } from './synchronize.js';
 import { locate } from './entities.js';
 import { combine, identityOf, writeReduction, type ReductionTarget } from './reductions.js';
-import type { Failure, Report } from '../../types/world/report.js';
+import type { Failure, Report } from '../../interface/world/report.js';
 import { failureOf } from './failures.js';
 
 /** Shared by every report without failures or skipped systems: they're read-only, so none needs its own. */

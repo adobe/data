@@ -1,9 +1,9 @@
-import { Gpu } from '../../types/gpu/gpu.js';
-import { toPromise } from '../../types/observe/to-promise.js';
-import { System } from '../../types/system/system.js';
-import { World } from '../../types/world/world.js';
+import { Gpu } from '../../../interface/gpu/gpu.js';
+import { toPromise } from '../../../interface/observe/to-promise.js';
+import { System } from '../../../interface/system/system.js';
+import { World } from '../../../interface/world/world.js';
 import { createDraw, enabled, move, moveOnCpu, position, spawn, visible } from './particles.js';
-import { createWorld } from '../../implementation/index.js';
+import { createWorld } from '../../../implementation/index.js';
 
 /**
  * The particles sample. `?mode=gpu` moves particles on the GPU, `cpu` on workers (uploading positions for drawing

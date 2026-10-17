@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { Resource, System, always, cadence, clock, report, wake } from "../index.js";
-import { toPromise } from "../types/observe/to-promise.js";
+import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
 const elapsed = "guide/ticks/elapsed";

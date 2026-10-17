@@ -2,7 +2,7 @@
   "extends": "../../../data/tsconfig-base.json",
   "compilerOptions": {
     "rootDir": ".",
-    "outDir": "../../dist/types",
+    "outDir": "../../dist/interface",
     "composite": true,
     "types": [
       "@webgpu/types"

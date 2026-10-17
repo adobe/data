@@ -1,6 +1,6 @@
-import { Component } from "../types/component/component.js";
-import { Entity } from "../types/entity/entity.js";
-import { System } from "../types/system/system.js";
+import { Component } from "../interface/component/component.js";
+import { Entity } from "../interface/entity/entity.js";
+import { System } from "../interface/system/system.js";
 
 export const local = "hierarchy/local";
 export const world = "hierarchy/world";

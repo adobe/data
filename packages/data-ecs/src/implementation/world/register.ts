@@ -1,9 +1,9 @@
-import { conditional, declarationOf } from '../../types/registry/index.js';
-import { kindOf } from '../../types/registry/index.js';
-import type { Leaf } from '../../types/system/leaf.js';
-import { requireDefinition, type Definition } from '../../types/registry/index.js';
+import { conditional, declarationOf } from '../../interface/registry/index.js';
+import { kindOf } from '../../interface/registry/index.js';
+import type { Leaf } from '../../interface/system/leaf.js';
+import { requireDefinition, type Definition } from '../../interface/registry/index.js';
 import { createRunner, type Runner } from './runner.js';
-import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../types/registry/schedule.js';
+import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
 import { idOf, type Key, type State } from './state.js';
 
 /** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */

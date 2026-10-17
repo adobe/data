@@ -1,4 +1,4 @@
-import type { Up } from '../../types/system/access.js';
+import type { Up } from '../../interface/system/access.js';
 import type { Archetype, Storage } from './archetype.js';
 import { generationOf, indexOf } from './entities.js';
 import { journalEnd } from './journal.js';

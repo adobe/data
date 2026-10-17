@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { Resource } from "../../types/resource/resource.js";
-import { always } from "../../types/resources/always.js";
-import { clock } from "../../types/resources/clock.js";
-import { System } from "../../types/system/system.js";
+import { Resource } from "../../interface/resource/resource.js";
+import { always } from "../../interface/resources/always.js";
+import { clock } from "../../interface/resources/clock.js";
+import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { readResource } from "./reads.test-helper.js";
 

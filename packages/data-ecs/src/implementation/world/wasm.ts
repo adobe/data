@@ -1,6 +1,6 @@
 import { chunkShift, type Program } from './kernel.js';
-import type { Reduction } from '../../types/resource/reduction.js';
-import type { View } from '../../types/registry/layout.js';
+import type { Reduction } from '../../interface/resource/reduction.js';
+import type { View } from '../../interface/registry/layout.js';
 import { withoutIntrinsics } from './intrinsics.js';
 
 type Expression = Program.Expression;

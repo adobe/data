@@ -1,5 +1,5 @@
-import type { Finalizer } from '../../types/finalizer/created.js';
-import type { Rule } from '../../types/rule/created.js';
+import type { Finalizer } from '../../interface/finalizer/created.js';
+import type { Rule } from '../../interface/rule/created.js';
 import type { Key } from './state.js';
 
 /**

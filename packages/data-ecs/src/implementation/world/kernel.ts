@@ -1,6 +1,6 @@
-import type { WgslType } from '../../types/math/intrinsic.js';
-import type { Entity } from '../../types/entity/entity.js';
-import type { Reduction } from '../../types/resource/reduction.js';
+import type { WgslType } from '../../interface/math/intrinsic.js';
+import type { Entity } from '../../interface/entity/entity.js';
+import type { Reduction } from '../../interface/resource/reduction.js';
 
 type Key = string | symbol;
 

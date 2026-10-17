@@ -1,7 +1,7 @@
-import { Component } from '../../types/component/component.js';
-import { Gpu } from '../../types/gpu/gpu.js';
-import { Vec3 } from '../../types/math/index.js';
-import { System } from '../../types/system/system.js';
+import { Component } from '../../../interface/component/component.js';
+import { Gpu } from '../../../interface/gpu/gpu.js';
+import { Vec3 } from '../../../interface/math/index.js';
+import { System } from '../../../interface/system/system.js';
 
 // The perf particles (src/perftest/particles.ts) on screen: 1M particles over four archetypes by visible and
 // enabled, with screen-space positions and velocities in pixels per frame. `move` is the perf move kernel, on the GPU.

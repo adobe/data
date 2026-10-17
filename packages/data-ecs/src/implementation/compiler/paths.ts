@@ -13,7 +13,7 @@ export const attachKernelPath = posix(fileURLToPath(new URL(`../world/attach-ker
 /** The runtime hook for spawns whose values pass positionally. */
 export const prepareSpawnPath = posix(fileURLToPath(new URL(`../world/prepared-spawn${extension}`, import.meta.url)));
 
-const intrinsicModules: ReadonlySet<string> = new Set(["src/types/math/intrinsic.ts", "src/types/math/intrinsic.js", "dist/types/math/intrinsic.js"].map(path => `${packageRoot}/${path}`));
+const intrinsicModules: ReadonlySet<string> = new Set(["src/interface/math/intrinsic.ts", "src/interface/math/intrinsic.js", "dist/interface/math/intrinsic.js"].map(path => `${packageRoot}/${path}`));
 
 /** Whether a file is the module math functions declare their WGSL builtins with. */
 export const isIntrinsicModule = (file: string): boolean => intrinsicModules.has(posix(file));
@@ -22,8 +22,8 @@ export const isIntrinsicModule = (file: string): boolean => intrinsicModules.has
 export const packageIndex = posix(fileURLToPath(new URL(`../../index${extension}`, import.meta.url)));
 
 const systemModules: ReadonlySet<string> = new Set([
-    "src/types/system/system.ts", "src/types/system/system.js", "dist/types/system/system.js",
-    "src/types/index.ts", "src/types/index.js", "dist/types/index.js", "src/index.ts", "src/index.js", "dist/index.js",
+    "src/interface/system/system.ts", "src/interface/system/system.js", "dist/interface/system/system.js",
+    "src/interface/index.ts", "src/interface/index.js", "dist/interface/index.js", "src/index.ts", "src/index.js", "dist/index.js",
 ].map(path => `${packageRoot}/${path}`));
 
 /** Whether a resolved module id is this package's `System` namespace, directly or through the package root. */

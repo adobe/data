@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { Component } from "../../types/component/component.js";
-import { Vec3 } from "../../types/math/index.js";
-import { Resource } from "../../types/resource/resource.js";
-import { System } from "../../types/system/system.js";
+import { Component } from "../../interface/component/component.js";
+import { Vec3 } from "../../interface/math/index.js";
+import { Resource } from "../../interface/resource/resource.js";
+import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { readResource } from "./reads.test-helper.js";
-import { definitionOf } from "../../types/registry/index.js";
-import type { Name } from "../../types/system/name.js";
+import { definitionOf } from "../../interface/registry/index.js";
+import type { Name } from "../../interface/system/name.js";
 import { createRegistrar } from "./register.js";
 import { createState } from "./state.js";
 

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { Component } from "../../types/component/component.js";
-import { Entity } from "../../types/entity/entity.js";
-import { Finalizer } from "../../types/finalizer/finalizer.js";
-import { Resource } from "../../types/resource/resource.js";
-import { Rule } from "../../types/rule/rule.js";
-import { System } from "../../types/system/system.js";
+import { Component } from "../../interface/component/component.js";
+import { Entity } from "../../interface/entity/entity.js";
+import { Finalizer } from "../../interface/finalizer/finalizer.js";
+import { Resource } from "../../interface/resource/resource.js";
+import { Rule } from "../../interface/rule/rule.js";
+import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { count, read, readEach, readResource, select } from "./reads.test-helper.js";
 

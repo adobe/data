@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { strataOf, type RuleFacts } from "../../types/registry/strata.js";
+import { strataOf, type RuleFacts } from "../../interface/registry/strata.js";
 import { closedComponents } from "./closure.js";
 
 // Components 0 to 9: 0 mesh, 1 transform, 2 hidden, 3 slot (derived), 4 ready (within slot), 5 visible (derived), 6 resident (derived), 7 sprite.

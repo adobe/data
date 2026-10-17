@@ -1,6 +1,6 @@
 import type { Archetype } from './archetype.js';
 import type { Holders } from './holders.js';
-import { strataOf, type RuleFacts, type Strata } from '../../types/registry/strata.js';
+import { strataOf, type RuleFacts, type Strata } from '../../interface/registry/strata.js';
 import { closedComponents } from './closure.js';
 
 /**

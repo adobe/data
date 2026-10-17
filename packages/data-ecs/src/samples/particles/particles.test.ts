@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readResource } from "../implementation/world/reads.test-helper.js";
+import { readResource } from "../../implementation/world/reads.test-helper.js";
 import { count, frame, start } from "./particles.js";
 
 /** The same simulation in plain f64 JS. */

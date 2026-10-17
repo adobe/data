@@ -1,7 +1,7 @@
-import type { Reduction } from '../../types/resource/reduction.js';
-import type { Declaration } from '../../types/system/declaration.js';
-import { isReduction } from '../../types/registry/reduction.js';
-import type { Path, View } from '../../types/registry/layout.js';
+import type { Reduction } from '../../interface/resource/reduction.js';
+import type { Declaration } from '../../interface/system/declaration.js';
+import { isReduction } from '../../interface/registry/reduction.js';
+import type { Path, View } from '../../interface/registry/layout.js';
 import { stampChanged } from './archetype.js';
 import { readCell, writeCell } from './cells.js';
 import { resourceCell } from './resources.js';

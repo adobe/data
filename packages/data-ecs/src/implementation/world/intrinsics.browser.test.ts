@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Component } from "../../types/component/component.js";
-import { F32, Mat4x4, Quat, U32, Vec2, Vec3, Vec4 } from "../../types/math/index.js";
-import { System } from "../../types/system/system.js";
+import { Component } from "../../interface/component/component.js";
+import { F32, Mat4x4, Quat, U32, Vec2, Vec3, Vec4 } from "../../interface/math/index.js";
+import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 

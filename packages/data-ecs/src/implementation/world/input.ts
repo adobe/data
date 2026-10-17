@@ -1,4 +1,4 @@
-import type { Leaf } from '../../types/system/leaf.js';
+import type { Leaf } from '../../interface/system/leaf.js';
 
 /** The fields of a run's input that a leaf declares, so other members' fields aren't copied to its workers. */
 export const inputFor = (leaf: Leaf): (input: unknown) => unknown => {

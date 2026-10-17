@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Entity, Finalizer, Resource, Rule, System, World } from "../index.js";
-import { toPromise } from "../types/observe/to-promise.js";
+import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
 const meshSource = "guide/loading/meshSource";

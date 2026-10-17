@@ -1,5 +1,5 @@
-import type { Entity } from '../../types/entity/entity.js';
-import type { Schema } from '../../types/schema/schema.js';
+import type { Entity } from '../../interface/entity/entity.js';
+import type { Schema } from '../../interface/schema/schema.js';
 import type { CommandBuffer } from './buffer.js';
 import type { WasmScalar } from './wasm.js';
 

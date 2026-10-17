@@ -9,7 +9,7 @@ import { transformKernels } from './transform.js';
 import { createLinker, type LinkHost } from './link.js';
 import { packageIndex } from './paths.js';
 import { locateThroughMap } from './source-map.js';
-import { Mat4x4, Quat, Vec3 } from '../../types/math/index.js';
+import { Mat4x4, Quat, Vec3 } from '../../interface/math/index.js';
 import { generateWgsl } from '../world/wgsl.js';
 import { identityOf } from '../world/reductions.js';
 import type { WasmColumn } from '../world/wasm.js';

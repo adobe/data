@@ -12,9 +12,10 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
 
 ## Code layout
 
-- **`src/types`** is the interface: every public type, and the registration functions with their registry (components, resources, traits, systems, rules, finalizers), plus the runtime helpers declarations and bodies use, which depend on schemas alone: `Entity.schema`, the math types and functions with their schemas, and `Gpu.wgsl` and `Gpu.layout`. Registration's checks live there too, run when a declaration is made: schemas and GPU layouts, rule strata, finalizer order and composite schedules. It's a TypeScript project of its own, and nothing in it imports from outside it.
-- **`src/implementation`** is everything else: `createWorld`, which returns a `World`, the kernel compiler and its Vite plugin (`./compiler`), and the storage, scheduling and execution behind them. It imports types and the registry's read side from `src/types`, never the other way.
-- **Only one copy of each type exists,** the one in `src/types`. `src/index.ts` exports the interface; how `World.create` reaches consumers is decided later, so tests, samples and benchmarks take `createWorld` from `src/implementation`.
+- **`src/interface`** is the interface: every public type, and the registration functions with their registry (components, resources, traits, systems, rules, finalizers), plus the runtime helpers declarations and bodies use, which depend on schemas alone: `Entity.schema`, the math types and functions with their schemas, and `Gpu.wgsl` and `Gpu.layout`. Registration's checks live there too, run when a declaration is made: schemas and GPU layouts, rule strata, finalizer order and composite schedules. It's a TypeScript project of its own, and nothing in it imports from outside it.
+- **`src/implementation`** is everything else: `createWorld`, which returns a `World`, the kernel compiler and its Vite plugin (`./compiler`), and the storage, scheduling and execution behind them. It imports types and the registry's read side from `src/interface`, never the other way.
+- **`src/samples`** holds one folder per sample, with its code, tests and page: `src/samples/particles/`.
+- **Only one copy of each type exists,** the one in `src/interface`. `src/index.ts` exports the interface; how `World.create` reaches consumers is decided later, so tests, samples and benchmarks take `createWorld` from `src/implementation`.
 
 ## Model
 
@@ -74,7 +75,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
   - **Values that aren't data** (functions, and objects with methods, such as a `Blob`, an `HTMLElement` or a `GPUDevice`) are declared by their type alone: registration has no `type`, the types require one exactly when the declared type is data, and a resource gives its `default` on the declaration unless its type allows `null`. The world stores such values as they are, so only main-thread systems use them, and persistence and replication skip them.
   - **Import and use:** code that references a component or resource always imports its key. That one rule covers strings and symbols alike, and it guarantees the module is loaded, so the component is registered.
   - **Names are unique across components, resources and traits,** because a resource may be stored as a component on a single entity. A symbol's description is its stable name, used by persistence and replication, so it's required and must be unique. A name registered again throws, unless the declaration is the same, as when a hot reload evaluates its module again.
-- **Systems** (`src/types/system/`; its type tests pin the behavior):
+- **Systems** (`src/interface/system/`; its type tests pin the behavior):
   ```ts
   export const follow = System.create({
     name: "ai/follow",
@@ -138,7 +139,7 @@ Rule: anything that doesn't affect the API or correctness belongs in phase 2+.
     - **Filtered runs push changes down:** rows are marked from chunk ticks of their own filters and their parent reference, from the sync points' journal of entities whose parent, matching or archetype changed, and as children of parents whose read values changed; each row that runs marks its children, so a run costs a check of each chunk plus the subtrees that changed, and nothing when nothing did.
     - **`kernel: "gpu"` systems may declare `up`;** what `read` lists must be made of 4-byte scalars, as the rest of a GPU kernel's values are.
     - **In a main-thread body, `context.up` is one reused object,** valid only while its row runs, as `row` is.
-- **World** (`src/types/world/`):
+- **World** (`src/interface/world/`):
   - `World.create(resources?)` returns a world synchronously, on the creating thread, with resources starting at the given values in place of their defaults; a key that isn't a resource, or one only the world writes, throws. Built-in names are plain (`gpuDevice`), so they need no import there.
   - **Built-in resources:** `gpuDevice` (`GPUDevice | null`); `workers`, the kernel pool's size; `cadence`, `{ kind: "frame" }` by default, or `{ kind: "fixed", step, maxSteps }`; `always`, false by default; `wake`, reduced with `"min"`, Infinity for none; `clock`, `{ now, delta, tick }`; and `report`, the last tick's report. Only the world writes `clock` and `report`: declaring a write to either is a type error, and throws at creation for untyped callers.
   - **Cadence:** `frame` beats on `requestAnimationFrame` where it exists, and on a 60 per second timer otherwise. `fixed` beats every `step` milliseconds; a beat that's behind runs at most `maxSteps` ticks (4 by default) and drops the rest of the debt, and each tick's `clock.delta` is `step`. A quiet loop schedules nothing and builds no debt.

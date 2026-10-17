@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { Component } from "../../types/component/component.js";
-import { Entity } from "../../types/entity/entity.js";
-import { Resource } from "../../types/resource/resource.js";
-import { gpuDevice } from "../../types/resources/gpu-device.js";
-import { System } from "../../types/system/system.js";
+import { Component } from "../../interface/component/component.js";
+import { Entity } from "../../interface/entity/entity.js";
+import { Resource } from "../../interface/resource/resource.js";
+import { gpuDevice } from "../../interface/resources/gpu-device.js";
+import { System } from "../../interface/system/system.js";
 import { count, read, readEach, readEntity, readResource, select } from "./reads.test-helper.js";
-import { World } from "../../types/world/world.js";
+import { World } from "../../interface/world/world.js";
 import { attachKernel } from "./attach-kernel.js";
 import { createWorld } from "../index.js";
 

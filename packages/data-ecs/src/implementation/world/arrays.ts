@@ -1,4 +1,4 @@
-import { viewsOf, type Views } from '../../types/registry/layout.js';
+import { viewsOf, type Views } from '../../interface/registry/layout.js';
 import type { Memory } from './memory.js';
 
 export type ArrayConstructor<T> = {

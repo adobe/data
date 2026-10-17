@@ -5,7 +5,7 @@
  * fixed point, evaluated after every stratum it depends on, so the result is a pure function of the archetype.
  */
 
-import type { Strata } from '../../types/registry/strata.js';
+import type { Strata } from '../../interface/registry/strata.js';
 
 /**
  * The sorted components an entity with `components` has once derived: derived components only where a rule derives

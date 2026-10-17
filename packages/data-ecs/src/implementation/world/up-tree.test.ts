@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
-import { Component } from "../../types/component/component.js";
-import { Entity } from "../../types/entity/entity.js";
-import { System } from "../../types/system/system.js";
-import type { World } from "../../types/world/world.js";
+import { Component } from "../../interface/component/component.js";
+import { Entity } from "../../interface/entity/entity.js";
+import { System } from "../../interface/system/system.js";
+import type { World } from "../../interface/world/world.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 

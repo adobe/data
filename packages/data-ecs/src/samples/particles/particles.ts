@@ -1,11 +1,11 @@
-import { Component } from '../types/component/component.js';
-import type { Entity } from '../types/entity/entity.js';
-import { toPromise } from '../types/observe/to-promise.js';
-import { Resource } from '../types/resource/resource.js';
-import { Vec3 } from '../types/math/index.js';
-import { System } from '../types/system/system.js';
-import { World } from '../types/world/world.js';
-import { createWorld } from '../implementation/index.js';
+import { Component } from '../../interface/component/component.js';
+import type { Entity } from '../../interface/entity/entity.js';
+import { toPromise } from '../../interface/observe/to-promise.js';
+import { Resource } from '../../interface/resource/resource.js';
+import { Vec3 } from '../../interface/math/index.js';
+import { System } from '../../interface/system/system.js';
+import { World } from '../../interface/world/world.js';
+import { createWorld } from '../../implementation/index.js';
 
 export const position = 'particles/position';
 export const velocity = 'particles/velocity';

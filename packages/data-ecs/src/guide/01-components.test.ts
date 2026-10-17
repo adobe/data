@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Resource, System, Vec3, World } from "../index.js";
-import { toPromise } from "../types/observe/to-promise.js";
+import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
 // A component or resource is an exported key: `Components` or `Resources` give its type, `register` its schema.

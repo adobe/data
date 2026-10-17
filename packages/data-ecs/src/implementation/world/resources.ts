@@ -1,4 +1,4 @@
-import { declarationOf } from '../../types/registry/index.js';
+import { declarationOf } from '../../interface/registry/index.js';
 import type { Storage } from './archetype.js';
 import { indexOf, reserve } from './entities.js';
 import { idOf, type Key, type State } from './state.js';

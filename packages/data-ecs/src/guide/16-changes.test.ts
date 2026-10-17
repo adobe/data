@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { Component, Finalizer, Resource, System, World } from "../index.js";
-import { toPromise } from "../types/observe/to-promise.js";
+import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
 const name = "guide/changes/name";

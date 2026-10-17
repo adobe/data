@@ -1,6 +1,6 @@
-import type { Entity } from '../../types/entity/entity.js';
-import { viewsOf, type Layout, type Views } from '../../types/registry/layout.js';
-import { hasSymbolNames } from '../../types/registry/index.js';
+import type { Entity } from '../../interface/entity/entity.js';
+import { viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
+import { hasSymbolNames } from '../../interface/registry/index.js';
 import { ensureCapacity, type Archetype, writeF32, writeF32Lanes, writeF64, writeI32, writeOf, writeU32 } from './archetype.js';
 import { indexOf } from './entities.js';
 import { chunkShift } from './kernel.js';

@@ -1,5 +1,5 @@
-import type { Entity } from '../../types/entity/entity.js';
-import type { Layout, Views } from '../../types/registry/layout.js';
+import type { Entity } from '../../interface/entity/entity.js';
+import type { Layout, Views } from '../../interface/registry/layout.js';
 import { allocateArray, allocateViews, emptyViews, freeViews, growArray } from './arrays.js';
 import { chunkShift } from './kernel.js';
 import type { Memory } from './memory.js';

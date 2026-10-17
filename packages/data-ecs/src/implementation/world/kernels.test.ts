@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { Component } from "../../types/component/component.js";
-import { Resource } from "../../types/resource/resource.js";
-import { System } from "../../types/system/system.js";
-import { World } from "../../types/world/world.js";
-import { definitionOf } from "../../types/registry/index.js";
+import { Component } from "../../interface/component/component.js";
+import { Resource } from "../../interface/resource/resource.js";
+import { System } from "../../interface/system/system.js";
+import { World } from "../../interface/world/world.js";
+import { definitionOf } from "../../interface/registry/index.js";
 import { attachKernel } from "./attach-kernel.js";
 import { bindKernel } from "./kernels.js";
 import type { KernelDescription } from "./kernel.js";

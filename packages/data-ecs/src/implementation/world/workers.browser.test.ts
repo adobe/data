@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Component } from "../../types/component/component.js";
-import { Entity } from "../../types/entity/entity.js";
-import { Resource } from "../../types/resource/resource.js";
-import type { Schema } from "../../types/schema/schema.js";
-import { System } from "../../types/system/system.js";
-import type { World } from "../../types/world/world.js";
+import { Component } from "../../interface/component/component.js";
+import { Entity } from "../../interface/entity/entity.js";
+import { Resource } from "../../interface/resource/resource.js";
+import type { Schema } from "../../interface/schema/schema.js";
+import { System } from "../../interface/system/system.js";
+import type { World } from "../../interface/world/world.js";
 import { read, readEach, readResource, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 

@@ -1,6 +1,6 @@
-import { Component } from "../types/component/component.js";
-import type { Schema } from "../types/schema/schema.js";
-import { System } from "../types/system/system.js";
+import { Component } from "../interface/component/component.js";
+import type { Schema } from "../interface/schema/schema.js";
+import { System } from "../interface/system/system.js";
 
 // Mirrors adobe/data's ecs1/ecs2 perftests (packages/data/src/perftest): 1M particles split evenly across
 // 4 archetypes by visible/enabled; move adds velocity to position for the visible and enabled quarter.

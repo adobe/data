@@ -1,5 +1,5 @@
-import type { Name } from '../../types/system/name.js';
-import type { System } from '../../types/system/system.js';
+import type { Name } from '../../interface/system/name.js';
+import type { System } from '../../interface/system/system.js';
 import type { KernelDescription } from './kernel.js';
 
 /** By the system `System.create` returned, so a lookup doesn't depend on which copy of the package defined it. */

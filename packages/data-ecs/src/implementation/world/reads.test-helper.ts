@@ -1,11 +1,11 @@
-import type { Component } from '../../types/component/component.js';
-import type { ReadonlyValue } from '../../types/component/value.js';
-import type { Entity } from '../../types/entity/entity.js';
-import { toPromise } from '../../types/observe/to-promise.js';
-import type { Resource } from '../../types/resource/resource.js';
-import type { ReadonlyValue as ReadonlyResourceValue } from '../../types/resource/value.js';
-import type { Query } from '../../types/world/query.js';
-import type { World } from '../../types/world/world.js';
+import type { Component } from '../../interface/component/component.js';
+import type { ReadonlyValue } from '../../interface/component/value.js';
+import type { Entity } from '../../interface/entity/entity.js';
+import { toPromise } from '../../interface/observe/to-promise.js';
+import type { Resource } from '../../interface/resource/resource.js';
+import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/resource/value.js';
+import type { Query } from '../../interface/world/query.js';
+import type { World } from '../../interface/world/world.js';
 
 /** Tests' reads: each is an observer's first value. */
 

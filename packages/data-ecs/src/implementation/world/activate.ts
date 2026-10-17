@@ -1,8 +1,8 @@
-import type { Finalizer } from '../../types/finalizer/created.js';
-import type { Rule } from '../../types/rule/created.js';
-import type { RuleFacts } from '../../types/registry/strata.js';
+import type { Finalizer } from '../../interface/finalizer/created.js';
+import type { Rule } from '../../interface/rule/created.js';
+import type { RuleFacts } from '../../interface/registry/strata.js';
 import { createFinalizerRunner, type FinalizerRunner } from './finalizers.js';
-import { programFinalizers, programRules, programVersion } from '../../types/registry/program.js';
+import { programFinalizers, programRules, programVersion } from '../../interface/registry/program.js';
 import { triggersOf } from './program.js';
 import { ensureResources, findResource } from './resources.js';
 import { idOf, type Key, type State } from './state.js';

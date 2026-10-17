@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { Component } from "../../types/component/component.js";
-import type { Composite } from "../../types/system/composite.js";
-import type { Declaration } from "../../types/system/declaration.js";
-import type { Definition } from "../../types/registry/index.js";
-import type { Leaf } from "../../types/system/leaf.js";
-import { scheduleOf } from "../../types/registry/schedule.js";
+import { Component } from "../../interface/component/component.js";
+import type { Composite } from "../../interface/system/composite.js";
+import type { Declaration } from "../../interface/system/declaration.js";
+import type { Definition } from "../../interface/registry/index.js";
+import type { Leaf } from "../../interface/system/leaf.js";
+import { scheduleOf } from "../../interface/registry/schedule.js";
 
 const value = "scheduleTest/value";
 const other = "scheduleTest/other";

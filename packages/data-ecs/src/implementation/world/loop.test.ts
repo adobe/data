@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Component, System } from "../../index.js";
-import { requireDefinition, type Composite } from "../../types/registry/index.js";
-import type { Cadence } from "../../types/resources/cadence.js";
+import { requireDefinition, type Composite } from "../../interface/registry/index.js";
+import type { Cadence } from "../../interface/resources/cadence.js";
 import { createLoop, type Clock, type LoopSettings } from "./loop.js";
 
 const count = "loopTest/count";

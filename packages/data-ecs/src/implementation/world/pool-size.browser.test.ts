@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Component } from "../../types/component/component.js";
-import { workers } from "../../types/resources/workers.js";
-import { System } from "../../types/system/system.js";
+import { Component } from "../../interface/component/component.js";
+import { workers } from "../../interface/resources/workers.js";
+import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 

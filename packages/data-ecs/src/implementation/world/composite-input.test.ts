@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { System } from "../../types/system/system.js";
+import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 
 const seen: { readonly system: string; readonly input: unknown }[] = [];

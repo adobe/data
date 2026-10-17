@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { Component } from "../../types/component/component.js";
-import { Entity } from "../../types/entity/entity.js";
-import { System } from "../../types/system/system.js";
-import type { World } from "../../types/world/world.js";
+import { Component } from "../../interface/component/component.js";
+import { Entity } from "../../interface/entity/entity.js";
+import { System } from "../../interface/system/system.js";
+import type { World } from "../../interface/world/world.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 
@@ -30,7 +30,7 @@ Component.register(parent, { type: Entity.schema, reference: "owner" });
 Component.register(offset, { type: { type: "number", precision: 1 } });
 Component.register(placed, { type: { type: "number", precision: 1 } });
 Component.register(marked, { type: { const: true } });
-import { gpuDevice } from "../../types/resources/gpu-device.js";
+import { gpuDevice } from "../../interface/resources/gpu-device.js";
 
 const place = System.create({
     name: "upBrowserTest/place",

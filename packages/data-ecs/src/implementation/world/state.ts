@@ -1,6 +1,6 @@
-import type { Entity } from '../../types/entity/entity.js';
-import { declarationOf } from '../../types/registry/index.js';
-import { kindOf } from '../../types/registry/index.js';
+import type { Entity } from '../../interface/entity/entity.js';
+import { declarationOf } from '../../interface/registry/index.js';
+import { kindOf } from '../../interface/registry/index.js';
 import { createArchetype, startTicks, type Archetype, type Storage } from './archetype.js';
 import type { Shape, SpawnBatch } from './batches.js';
 import type { Directory } from './directories.js';
@@ -11,7 +11,7 @@ import { createEntities, type Entities, type Reserved } from './entities.js';
 import type { FinalizerRunner } from './finalizers.js';
 import { createPlan, type Plan } from './plan.js';
 import { createStructure, owner, restratify, weak, type Structure } from './structure.js';
-import { layoutOf, type Layout } from '../../types/registry/layout.js';
+import { layoutOf, type Layout } from '../../interface/registry/layout.js';
 import { createMemory, type Memory } from './memory.js';
 import { createJournal, type Journal } from './journal.js';
 import type { Row } from './rows.js';

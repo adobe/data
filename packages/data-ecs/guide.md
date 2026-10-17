@@ -37,7 +37,7 @@ import { kernelPlugin } from "@adobe/data-ecs/compiler";
 export default defineConfig({ plugins: [kernelPlugin()] });
 ```
 
-[`vite.sample.config.ts`](vite.sample.config.ts) serves the samples with the plugin and the isolation headers from
+`pnpm sample` serves [`src/samples/`](src/samples/), one folder per sample, through [`vite.sample.config.ts`](vite.sample.config.ts), with the plugin and the isolation headers from
 [`vitest.plugins.ts`](vitest.plugins.ts#L8-L19).
 
 Types are declared by augmenting interfaces of `@adobe/data-ecs`: `Components` and `Resources` by key, and
@@ -45,7 +45,7 @@ Types are declared by augmenting interfaces of `@adobe/data-ecs`: `Components` a
 module that defines an interface by its relative path splits the interface in two. The examples use the same path,
 which `tsconfig.json` maps to the package source.
 
-The interface is `src/types`, exported from `@adobe/data-ecs`. Worlds come from the implementation: until the
+The interface is `src/interface`, exported from `@adobe/data-ecs`. Worlds come from the implementation: until the
 package's root gives `World.create`, the examples call `createWorld` from `src/implementation`, which takes the
 same resources.
 
@@ -315,7 +315,7 @@ Example: [`08-kernels.test.ts`](src/guide/08-kernels.test.ts#L31-L61), with the 
 [`08-steer.ts`](src/guide/08-steer.ts).
 
 - **The subset** a kernel body may use is in [`src/implementation/compiler/subset.md`](src/implementation/compiler/subset.md). The build rejects anything else, with a message at the code.
-- **Math types:** `Vec2`, `Vec3`, `Vec4` (each F32, with `I32` and `U32`), `Quat`, `Mat4x4`, and the scalars, each with a `schema`, follow WGSL's semantics. See the [`math follows WGSL`](src/types/math/semantics.test.ts) tests.
+- **Math types:** `Vec2`, `Vec3`, `Vec4` (each F32, with `I32` and `U32`), `Quat`, `Mat4x4`, and the scalars, each with a `schema`, follow WGSL's semantics. See the [`math follows WGSL`](src/interface/math/semantics.test.ts) tests.
 - **What a kernel compiles to:** JS, WGSL and WASM output for one system, in [`generated-code.md`](src/implementation/world/generated-code.md).
 - **Rejected:** a kernel that wasn't compiled, at registration; a body outside the subset, at build.
 
@@ -370,8 +370,8 @@ Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L24-L42).
 A render system, made by `System.render`, records GPU work over the GPU copy of the components its `shader.accessors`
 name. Its body is `(gpu, context)`: `gpu` has the device, the run's encoder and a table per archetype. `Gpu.wgsl(system)`
 gives its shaders' declarations, a function per accessor, and pipelines take `Gpu.layout(device)`, the same object for a device every time. See the particle sample's
-[declaration](src/sample/gpu/particles.ts#L100-L105) and [draw](src/sample/gpu/particles.ts#L111-L139), wired up in
-[`main.ts`](src/sample/gpu/main.ts#L60-L64).
+[declaration](src/samples/particles/gpu/particles.ts#L100-L105) and [draw](src/samples/particles/gpu/particles.ts#L111-L139), wired up in
+[`main.ts`](src/samples/particles/gpu/main.ts#L60-L64).
 
 - **Render systems run only while there's a device,** as if their `is` listed `gpuDevice`; otherwise they're skipped.
 - **Setting it, at any time,** moves the world's GPU storage and `kernel: "gpu"` systems onto the new device, after reading back what's ahead on the old one. With `null`, GPU kernels run on the CPU again.
@@ -582,12 +582,12 @@ Example: [`19-ticks.test.ts`](src/guide/19-ticks.test.ts#L23-L55).
 
 ## 21. Reference
 
-- **Built-in components:** `component`, `persistent` and `shared` are tags, and `threadPort`, `threadClaims` and `threadStatus` are on each joined thread's entity, in [`src/types/components/`](src/types/components/).
-- **Built-in resources:** `gpuDevice`, the world's device; `workers`; the loop's `cadence`, `always`, `wake`, `clock` and `report`; in [`src/types/resources/`](src/types/resources/).
+- **Built-in components:** `component`, `persistent` and `shared` are tags, and `threadPort`, `threadClaims` and `threadStatus` are on each joined thread's entity, in [`src/interface/components/`](src/interface/components/).
+- **Built-in resources:** `gpuDevice`, the world's device; `workers`; the loop's `cadence`, `always`, `wake`, `clock` and `report`; in [`src/interface/resources/`](src/interface/resources/).
 - **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value` and `With`; `Resource.Name` and `Value`; `System` and `System.Commands`; `Finalizer`; and `World`. Everything else is inferred from the values the API returns.
 - **Emitted declarations:** a library that exports those values emits declarations naming the package's own modules, through `@adobe/data-ecs/internal/*`, which holds types only. Code imports from `@adobe/data-ecs`.
-- **Code layout:** the interface is [`src/types/`](src/types/), a project that imports nothing outside it; the implementation, `createWorld` and the compiler, is [`src/implementation/`](src/implementation/).
+- **Code layout:** the interface is [`src/interface/`](src/interface/), a project that imports nothing outside it; the implementation, `createWorld` and the compiler, is [`src/implementation/`](src/implementation/); samples are in [`src/samples/`](src/samples/).
 - **Constructors:** `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Finalizer.create` and `Finalizer.changes` return a finalizer, typed as its `name`. `Rule.create` returns nothing. Rules and finalizers apply in every world.
-- **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/types/system/system.type-test.ts), [`world.type-test.ts`](src/types/world/world.type-test.ts), [`loop.type-test.ts`](src/types/world/loop.type-test.ts), [`thread.type-test.ts`](src/types/thread/thread.type-test.ts), [`rule.type-test.ts`](src/types/rule/rule.type-test.ts), [`trait.type-test.ts`](src/types/trait/trait.type-test.ts).
+- **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/interface/system/system.type-test.ts), [`world.type-test.ts`](src/interface/world/world.type-test.ts), [`loop.type-test.ts`](src/interface/world/loop.type-test.ts), [`thread.type-test.ts`](src/interface/thread/thread.type-test.ts), [`rule.type-test.ts`](src/interface/rule/rule.type-test.ts), [`trait.type-test.ts`](src/interface/trait/trait.type-test.ts).
 - **The contract and its reasoning:** [`design.md`](design.md).
-- **A complete application:** the [particle sample](src/sample/particles.ts), run by [`particles.test.ts`](src/sample/particles.test.ts), and its [GPU version](src/sample/gpu/).
+- **A complete application:** the [particle sample](src/samples/particles/particles.ts), run by [`particles.test.ts`](src/samples/particles/particles.test.ts), and its [GPU version](src/samples/particles/gpu/).

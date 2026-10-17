@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { Component } from "../../types/component/component.js";
-import type { Entity } from "../../types/entity/entity.js";
-import type { Schema } from "../../types/schema/schema.js";
-import { System } from "../../types/system/system.js";
+import { Component } from "../../interface/component/component.js";
+import type { Entity } from "../../interface/entity/entity.js";
+import type { Schema } from "../../interface/schema/schema.js";
+import { System } from "../../interface/system/system.js";
 import { count, read, readEach, readEntity } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
-import type { Values } from '../../types/component/values.js';
+import type { Values } from '../../interface/component/values.js';
 
 type Vec3 = readonly [number, number, number];
 const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };

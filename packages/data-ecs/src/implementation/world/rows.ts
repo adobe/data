@@ -1,8 +1,8 @@
-import type { Entity } from '../../types/entity/entity.js';
-import type { Declaration } from '../../types/system/declaration.js';
-import type { Lookup } from '../../types/system/access.js';
-import type { Commands } from '../../types/system/commands.js';
-import type { Layout, TypedArray } from '../../types/registry/layout.js';
+import type { Entity } from '../../interface/entity/entity.js';
+import type { Declaration } from '../../interface/system/declaration.js';
+import type { Lookup } from '../../interface/system/access.js';
+import type { Commands } from '../../interface/system/commands.js';
+import type { Layout, TypedArray } from '../../interface/registry/layout.js';
 import { stampChanged, writeF32Lanes, writeGeneral, writeOf, type Archetype, type Storage } from './archetype.js';
 import { readCell, writeCell } from './cells.js';
 import { locate } from './entities.js';

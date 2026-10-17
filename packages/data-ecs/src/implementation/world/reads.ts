@@ -1,4 +1,4 @@
-import type { Entity } from '../../types/entity/entity.js';
+import type { Entity } from '../../interface/entity/entity.js';
 import type { Archetype, Storage } from './archetype.js';
 import { readCell } from './cells.js';
 import { asEntity, locate } from './entities.js';

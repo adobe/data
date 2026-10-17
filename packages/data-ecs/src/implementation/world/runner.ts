@@ -1,4 +1,4 @@
-import type { Leaf } from '../../types/system/leaf.js';
+import type { Leaf } from '../../interface/system/leaf.js';
 import type { Archetype } from './archetype.js';
 import { kernelOf } from './attach-kernel.js';
 import { readCell } from './cells.js';
@@ -13,12 +13,12 @@ import { resourceCell } from './resources.js';
 import { createContext, parentBinder, rowBinder } from './rows.js';
 import { scalarValue, scalarValues } from './wasm.js';
 import { idOf, type State } from './state.js';
-import { accessorsOf } from '../../types/gpu/accessors.js';
+import { accessorsOf } from '../../interface/gpu/accessors.js';
 import { recordWords } from './gpu.js';
 import { maximumWorkgroups, workgroupSize, type WgslKernel } from './wgsl.js';
 import { allocateArray, freeArray } from './arrays.js';
 import { combine, identityOf, reductionTargets, type ReductionTarget } from './reductions.js';
-import { samePath, type TypedArray } from '../../types/registry/layout.js';
+import { samePath, type TypedArray } from '../../interface/registry/layout.js';
 import { inputFor } from './input.js';
 import { createUp, type Run } from './up.js';
 

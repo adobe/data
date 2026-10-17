@@ -1,5 +1,5 @@
-import type { Commands } from '../../types/system/commands.js';
-import type { Entity } from '../../types/entity/entity.js';
+import type { Commands } from '../../interface/system/commands.js';
+import type { Entity } from '../../interface/entity/entity.js';
 import { claim, openRow, spawnShapeOf, type Shape, type SpawnBatch, type Writer } from './batches.js';
 import { spawnCommand } from './buffer.js';
 import { commandsTarget, pushValues, type CommandsTarget } from './commands.js';

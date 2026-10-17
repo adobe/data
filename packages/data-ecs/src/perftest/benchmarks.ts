@@ -1,6 +1,6 @@
-import type { Entity } from "../types/entity/entity.js";
-import { toPromise } from "../types/observe/to-promise.js";
-import { World } from "../types/world/world.js";
+import type { Entity } from "../interface/entity/entity.js";
+import { toPromise } from "../interface/observe/to-promise.js";
+import { World } from "../interface/world/world.js";
 import { enabled as flatEnabled, spawnFlat, spawnFlatDynamic, visible as flatVisible } from "./flat.js";
 import { enabled, fastest as particlesFastest, move, position as particlePosition, spawn, visible } from "./particles.js";
 import { forest, local as hierarchyLocal, nudge, parent as hierarchyParent, propagate, propagateChanged, reparent, sprout, turnover, under } from "./hierarchy.js";

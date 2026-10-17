@@ -1,6 +1,5 @@
 import type { Entity } from '../entity/entity.js';
-import { persistent, shared, type Observe, type Thread } from '../index.js';
-import type { Instance } from '../platform/platform.js';
+import type { Observe, Observers } from '../index.js';
 import { System } from '../system/system.js';
 import { main, move } from '../system/system.type-test.js';
 import type { World } from './world.js';
@@ -11,12 +10,18 @@ const check = <_T extends true>() => { };
 declare const world: World;
 declare const entity: Entity;
 declare const create: World.Create;
-declare const join: World.Join;
+
+// What `observe` holds is named from the package root, so a consumer's declarations can name it.
+check<Equal<World["observe"], Observers>>();
 
 const point = 'worldTypeTest/point';
+const persistent = 'worldTypeTest/persistent';
+const shared = 'worldTypeTest/shared';
 declare module '@adobe/data-ecs' {
     export interface Components {
         [point]: { type: { x: number } };
+        [persistent]: { type: true };
+        [shared]: { type: true };
     }
 }
 // Observing a query: `where` and `order` name only required components; `count` takes no `order` or `page`.
@@ -140,21 +145,5 @@ const usingDispose = async () => {
 };
 void [disposed, usingDispose, selected, paged, selectedAll, counted, query, ran, moved, reported, observed, stop, created, withResources];
 
-// A joined world is a World, filling the threads it names; the rest are filled by the world's thread.
-declare const port: MessagePort;
-const joined: World = join(port);
-const filling: World = join(port, { threads: ["main"] });
-const threads: readonly Thread[] = ["world", "main"];
-// @ts-expect-error a joined thread fills only declared threads
-join(port, { threads: ["audio"] });
-// @ts-expect-error a port is a MessagePort, or a worker's own scope
-join({});
-// In a worker, its own scope is a port; the DOM library declares none, so here only a MessagePort is.
-type WorkerScope = { readonly DedicatedWorkerGlobalScope: { readonly prototype: { readonly worker: true } } };
-check<Equal<Instance<"DedicatedWorkerGlobalScope", WorkerScope>, { readonly worker: true }>>();
-check<Equal<Instance<"DedicatedWorkerGlobalScope">, never>>();
-check<Equal<World.Port, MessagePort>>();
-// World.create and World.join are types here, with no runtime value.
+// World.create is a type here, with no runtime value.
 check<Equal<ReturnType<World.Create>, World>>();
-check<Equal<Parameters<World.Join>, [port: World.Port, options?: { readonly threads?: readonly Thread[] }]>>();
-void [joined, filling, threads];

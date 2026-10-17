@@ -1,5 +1,6 @@
 import type { Component } from "../component/component.js";
-import { createRegistry, type Registry } from "../registry/declarations.js";
+import { createRegistry } from "../registry/declarations.js";
+import type { Registry } from "../registry/registry.js";
 import type { Name as TraitName } from "../trait/name.js";
 import type { Declaration } from "./declaration.js";
 import type { Name } from "./name.js";

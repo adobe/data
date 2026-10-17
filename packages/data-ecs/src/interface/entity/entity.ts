@@ -1,8 +1,8 @@
 declare const entityBrand: unique symbol;
 
 /**
- * An entity id, live or not: `index + generation * 2^32`. Branded so entity-valued components and fields are visible
- * to types and schemas; it costs nothing at runtime. Index 0 is never an entity, so a zeroed value means none.
+ * An entity id, live or not: a branded number; 0 is none. The brand makes entity-valued components and fields visible
+ * to types and schemas, and costs nothing at runtime.
  */
 export type Entity = number & { readonly [entityBrand]: true };
 

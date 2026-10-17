@@ -1,7 +1,8 @@
 import {
-    Finalizer, System, always, cadence, clock, gpuDevice, report, threadClaims, threadPort, threadStatus, wake, workers,
-    type Cadence, type Component, type Resource, type Thread, type World,
+    Finalizer, System, always, cadence, clock, gpuDevice, report, wake, workers,
+    type Cadence, type Component, type Resource, type World,
 } from '../index.js';
+import type * as Ecs from '../index.js';
 import { main, move } from '../system/system.type-test.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
@@ -15,15 +16,20 @@ declare const port: MessagePort;
 const added: void = world.add(main);
 // @ts-expect-error a system with input can't be added, since ticks pass none
 world.add(move);
-// Another thread joins this world through a port.
-const shared: void = world.share(port);
-// @ts-expect-error share takes a MessagePort
-world.share({});
-void [added, shared];
+// Threads can't join a world yet, so it has no share, and World has no Join or Port.
+// @ts-expect-error a world has no share
+world.share(port);
+// @ts-expect-error World.Join isn't public
+export type Join = World.Join;
+// @ts-expect-error World.Port isn't public
+export type Port = World.Port;
+void added;
 
 // Built-in resources.
 check<Equal<Resource.Value<typeof gpuDevice>, GPUDevice | null>>();
-check<Equal<Resource.Value<typeof workers>, number>>();
+check<Equal<Resource.Value<typeof workers>, number | null>>();
+// null is the platform's choice of pool size.
+export const platformPool: World = create({ [workers]: null });
 check<Equal<Resource.Value<typeof cadence>, Cadence>>();
 check<Equal<Resource.Value<typeof always>, boolean>>();
 check<Equal<Resource.Value<typeof wake>, number>>();
@@ -31,10 +37,9 @@ check<Equal<Resource.Value<typeof clock>, { readonly now: number; readonly delta
 check<Equal<Resource.Value<typeof report>, World.Report>>();
 check<Equal<Cadence, { readonly kind: "frame" } | { readonly kind: "fixed"; readonly step: number; readonly maxSteps?: number }>>();
 
-// Built-in components, one entity per joined thread.
-check<Equal<Component.Value<typeof threadPort>, MessagePort>>();
-check<Equal<Component.Value<typeof threadClaims>, readonly Thread[]>>();
-check<Equal<Component.Value<typeof threadStatus>, "joining" | "joined" | "gone">>();
+// There are no built-in components: none exported, none registered.
+type Removed = "component" | "persistent" | "shared" | "threadPort" | "threadClaims" | "threadStatus";
+check<Equal<Extract<Removed, keyof typeof Ecs | Component.Name>, never>>();
 
 // Systems read the loop's state, ask for a wake time and change its cadence.
 System.create({ name: "loopTypeTest/read", resources: { read: [clock, report] } }, ({ resources }) => {

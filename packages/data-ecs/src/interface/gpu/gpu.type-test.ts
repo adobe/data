@@ -11,11 +11,15 @@ declare module '@adobe/data-ecs' {
     }
 }
 
-// Gpu.wgsl and Gpu.layout are the implementation's; their types are here.
-declare const wgsl: Gpu.Wgsl;
-declare const layout: Gpu.Layout;
+declare const wgsl: typeof Gpu.wgsl;
+declare const layout: typeof Gpu.layout;
+// @ts-expect-error the type of Gpu.wgsl is typeof Gpu.wgsl, not a name of its own
+export type Wgsl = Gpu.Wgsl;
+// @ts-expect-error the type of Gpu.layout is typeof Gpu.layout, not a name of its own
+export type Layout = Gpu.Layout;
+check<Equal<typeof Gpu.wgsl, (system: System<unknown>) => string>>();
 declare const device: GPUDevice;
 const draw = System.render({ name: "gpuTypeTest/draw", shader: { accessors: { tint } } }, () => {});
 const code: string = wgsl(draw);
-check<Equal<ReturnType<Gpu.Layout>, GPUBindGroupLayout>>();
+check<Equal<typeof Gpu.layout, (device: GPUDevice) => GPUBindGroupLayout>>();
 export const used = [code, layout(device)];

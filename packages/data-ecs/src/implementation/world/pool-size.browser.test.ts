@@ -4,6 +4,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { toPromise } from "../../interface/observe/to-promise.js";
 
 const value = "poolSizeTest/value";
 declare module "@adobe/data-ecs" {
@@ -17,7 +18,7 @@ const seed = System.create({ name: "poolSizeTest/seed" }, ({ commands }) => {
     for (let i = 0; i < 4096; i++) commands.spawn({ [value]: i });
 });
 const double = System.create({ name: "poolSizeTest/double", kernel: "cpu", components: { write: [value] } }, row => { row[value] = row[value] * 2; });
-const resize = System.create({ name: "poolSizeTest/resize", input: { type: "object", properties: { size: { type: "integer" } } }, resources: { write: [workers] } }, ({ input, resources }) => {
+const resize = System.create({ name: "poolSizeTest/resize", input: { type: "object", properties: { size: { anyOf: [{ type: "integer" }, { type: "null" }] } } }, resources: { write: [workers] } }, ({ input, resources }) => {
     resources[workers] = input.size;
 });
 
@@ -32,6 +33,24 @@ Reflect.set(globalThis, "Worker", counting);
 afterEach(() => { started = 0; });
 
 describe("the workers resource", () => {
+    it("is null by default, the platform's choice: a worker per hardware thread but the world's", async () => {
+        const world = createWorld({}, { minimumChunk: 64 });
+        expect(await toPromise(world.observe.resource(workers))).toBe(null);
+        await world.run(seed);
+        await world.run(double);
+        expect(started).toBe(Math.max(1, navigator.hardwareConcurrency - 1));
+        await world.dispose();
+    });
+    it("honors a number, and null again gives the platform's choice", async () => {
+        const world = createWorld({ [workers]: 1 }, { minimumChunk: 64 });
+        await world.run(seed);
+        await world.run(double);
+        expect(started).toBe(1);
+        await world.run(resize, { size: null });
+        await world.run(double);
+        expect(started).toBe(1 + Math.max(1, navigator.hardwareConcurrency - 1));
+        await world.dispose();
+    });
     it("sizes the kernel pool at the next sync point, with the same results", async () => {
         const world = createWorld({ workers: 2 }, { minimumChunk: 64 });
         await world.run(seed);

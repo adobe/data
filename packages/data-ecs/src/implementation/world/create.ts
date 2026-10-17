@@ -4,7 +4,7 @@ import type { Rule } from '../../interface/rule/created.js';
 import type { Resource } from '../../interface/resource/resource.js';
 import { requireDefinition, type Definition } from '../../interface/registry/index.js';
 import type { World } from '../../interface/world/world.js';
-import type { Create, InitialResources, Join } from '../../interface/world/create.js';
+import type { Create, InitialResources } from '../../interface/world/create.js';
 import { gpuDevice } from '../../interface/resources/gpu-device.js';
 import { workers } from '../../interface/resources/workers.js';
 import { createGpu } from './gpu.js';
@@ -15,7 +15,7 @@ import type { Observe } from '../../interface/observe/observe.js';
 import type { Report } from '../../interface/world/report.js';
 import { execute, type ExecuteContext } from './execute.js';
 import { sharedMemoryAvailable } from './memory.js';
-import { createPool, type Pool } from './pool.js';
+import { createPool, platformWorkerCount, type Pool } from './pool.js';
 import { createPublisher } from './publish.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
@@ -56,8 +56,9 @@ export type WorldOptions = {
 /** The loop's state, added to a world when its first tick runs. */
 const loopResources: readonly Key[] = [cadence, always, wake, clock, reportResource];
 
-/** A pool size from the `workers` resource: a whole number, at least 0. */
-const workersOf = (value: unknown): number => typeof value === "number" && value > 0 ? Math.floor(value) : 0;
+/** A pool size from the `workers` resource: the platform's for null, else a whole number, at least 0. */
+const workersOf = (value: unknown): number =>
+    value === null ? platformWorkerCount() : typeof value === "number" && value > 0 ? Math.floor(value) : 0;
 
 /** Rows below which a kernel's archetype runs on the main thread rather than paying for a round trip. */
 const defaultMinimumChunk = 16384;
@@ -296,9 +297,6 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             checkLive();
             loop.add(requireDefinition(system));
         },
-        share: () => {
-            throw new Error("Sharing a world with another thread is not yet supported.");
-        },
         dispose: () => {
             disposed = true;
             loop.stop();
@@ -340,8 +338,3 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
  * systems and `kernel: "gpu"` kernels run on that device.
  */
 export const create: Create = resources => createWorld(resources);
-
-/** Joins a world from another thread, which isn't supported yet. */
-export const join: Join = () => {
-    throw new Error("Joining a world from another thread is not yet supported.");
-};

@@ -1,4 +1,4 @@
-import { Component, Entity, Finalizer, Resource, Rule, System, gpuDevice, persistent, workers, type Gpu, type Thread, type World } from "@adobe/data-ecs";
+import { Component, Entity, Finalizer, Resource, Rule, System, gpuDevice, workers, type Gpu, type Thread, type World } from "@adobe/data-ecs";
 
 // A consumer emits declarations for the values it makes from the public interface, naming no internal module.
 export const position = "indexTypeTest/position";
@@ -26,11 +26,9 @@ export const draw = System.render({ name: "indexTypeTest/draw", shader: { access
 export const release = Finalizer.create({ name: "indexTypeTest/release", components: { read: [element] } }, row => { row[element].remove(); });
 Rule.create({ name: "indexTypeTest/slots", components: { has: [position] }, derive: [slot] });
 declare const create: World.Create;
-declare const join: World.Join;
-declare const wgsl: Gpu.Wgsl;
+declare const wgsl: typeof Gpu.wgsl;
 export const world = create({ [workers]: 4, [gpuDevice]: null });
-export const joined = join(new MessageChannel().port1, { threads: ["main"] });
-export const observeEntity = (entity: Entity) => world.observe.entity(entity, { required: [position], optional: [persistent] });
+export const observeEntity = (entity: Entity) => world.observe.entity(entity, { required: [position], optional: [slot] });
 export const device = world.observe.resource(gpuDevice);
 export const pool = world.observe.resource(workers);
 export const observe = world.observe;

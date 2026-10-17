@@ -52,19 +52,20 @@ declare module "@adobe/data-ecs" {
 Component.register(domNode, { thread: "main" });
 Component.register(textureSource, { thread: "loader", transfer: true });
 
-// On the thread that will hold the world.
+// Planned, not public yet. On the thread that will hold the world:
 const world = World.create(resources?);
-world.share(port);   // lets another thread join through the port
+const thread = world.share(port);   // lets another thread join through the port; returns that thread's Entity
 
 // On another thread, after importing the modules whose systems, observers and finalizers run there.
 const joined = World.join(port, { threads: ["main"] });   // a MessagePort, or a worker's own scope
 ```
 
 `World.join` returns the same `World` type. Its `run` and `observe` work as on the world's thread, and its `dispose`
-disconnects this thread; disposing on the world's thread disposes the world. Each joined thread is an entity of the
-world, whose `threadPort`, `threadClaims` and `threadStatus` (`"joining"`, `"joined"`, `"gone"`) show its progress.
+disconnects this thread; disposing on the world's thread disposes the world. `share` returns an Entity whose read-only
+status components, written only by the world, show the joined thread's progress (`"joining"`, `"joined"`, `"gone"`)
+and the threads it claims; the port stays internal.
 
-**Not yet supported:** `share` and `join` throw at the call until the joining phase below.
+**Planned, not public:** `share`, `World.join` and `World.Port` join the interface in the joining phase below.
 
 ## Placement rules
 
@@ -193,7 +194,7 @@ delivery.
 
 ### Without cross-origin isolation
 
-Memory isn't shared, so the world runs inline: `share` and `World.join` throw.
+Memory isn't shared, so the world runs inline, and `share` and `World.join` will throw.
 
 ## Cost
 
@@ -236,8 +237,7 @@ then green type tests, then runtime with red then green runtime tests. Each phas
   runtime.
 - The loop, inline: `add`, `cadence` with `maxSteps`, `always`, `wake`, `clock`, `report`, beats on animation frames or
   timers, and the `workers` resource sizing the pool at sync points.
-- `share` and `World.join` are typed, with `threadPort`, `threadClaims` and `threadStatus`, and throw as not yet
-  supported.
+- `share` and `World.join` aren't public yet; they come with joining.
 
 ### Phase 1: shared layout directory
 
@@ -273,9 +273,9 @@ Worker kernels write commands into their thread's ring, with merge tags; `FromWo
 `share`, `World.join`, the handshake through the thread's entity, remote `run` through command rings and completion
 words, struct observers through mailboxes, the structure epoch. Every logical thread is still filled by `world`.
 
-- Interface: none beyond what's typed.
-- Contract: the first notification on a joined thread always comes later; `observe.entity(entity)` on a joined thread gives struct components plus that thread's objects; `share` and `join` stop throwing.
-- Tests: node and browser, the world on a worker with main joined, and the reverse; observers of resources, entities, select and count; a joined thread that dies leaves its systems in `skipped` with a `"thread"` failure, and `threadStatus` `"gone"`; no cross-origin isolation throws at `share` and `join`.
+- Interface: `world.share(port)`, returning the joined thread's Entity with read-only status components written only by the world, the port kept internal; `World.join` and `World.Port`.
+- Contract: the first notification on a joined thread always comes later; `observe.entity(entity)` on a joined thread gives struct components plus that thread's objects; `share` and `join` are public.
+- Tests: node and browser, the world on a worker with main joined, and the reverse; observers of resources, entities, select and count; a joined thread that dies leaves its systems in `skipped` with a `"thread"` failure, and its status `"gone"`; no cross-origin isolation throws at `share` and `join`.
 - Must not regress: `run idle`, `select`, `sync point one spawn`.
 - New: `remote run` (an empty transaction from a joined thread, N = 1,000); `mailbox resource` (one observed resource changed per tick, N = 1,000 ticks); `mailbox select 10K` (a `select` over 10,000 entities whose order changes every tick).
 

@@ -1,4 +1,5 @@
-import { createRegistry, type Registry } from "../registry/declarations.js";
+import { createRegistry } from "../registry/declarations.js";
+import type { Registry } from "../registry/registry.js";
 import type { Resource } from "../resource/resource.js";
 import type { Name as TraitName } from "../trait/name.js";
 import type { Declaration } from "./declaration.js";

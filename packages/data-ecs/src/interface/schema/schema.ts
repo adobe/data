@@ -39,7 +39,7 @@ interface NumberSchema {
     readonly precision?: 1 | 2;
 }
 
-/** An entity reference: an f64 integer, typed `Entity`. Every entity-typed value uses it, so references can be found by schema. */
+/** An entity reference, typed `Entity`. Every entity-typed value uses it, so references can be found by schema. */
 interface EntitySchema {
     readonly type: 'integer';
     readonly format: 'entity';

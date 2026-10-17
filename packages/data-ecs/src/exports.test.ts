@@ -1,6 +1,6 @@
 import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { afterAll, describe, expect, it } from "vitest";
@@ -12,9 +12,10 @@ afterAll(() => rmSync(temporary, { recursive: true, force: true }));
 const messages = (diagnostics: readonly ts.Diagnostic[]): string[] =>
     diagnostics.map(diagnostic => ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
 
+const installed = join(temporary, "node_modules", "@adobe", "data-ecs");
+
 /** Emits the package's declarations into node_modules, as a consumer installs it. */
 const install = (): void => {
-    const installed = join(temporary, "node_modules", "@adobe", "data-ecs");
     mkdirSync(installed, { recursive: true });
     writeFileSync(join(installed, "package.json"), readFileSync(join(packageRoot, "package.json")));
     const config = ts.getParsedCommandLineOfConfigFile(join(packageRoot, "tsconfig.json"), { outDir: join(installed, "dist"), emitDeclarationOnly: true, composite: false, incremental: false, sourceMap: false }, { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => {} });
@@ -47,6 +48,26 @@ export const selected = world.observe.select(query);
 export const counted = world.observe.count({ required: [position] });
 `;
 
+/** Every declaration file reachable from `file` by relative imports, relative to `directory`. */
+const reachable = (directory: string, file: string): string[] => {
+    const seen = new Set<string>();
+    const pending = [join(directory, file)];
+    for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+        if (seen.has(next)) continue;
+        seen.add(next);
+        for (const [, specifier] of readFileSync(next, "utf8").matchAll(/(?:from|import)\s*\(?\s*["'](\.[^"']+)["']/g)) {
+            pending.push(join(dirname(next), specifier.replace(/\.js$/, ".d.ts")));
+        }
+    }
+    return [...seen].map(path => relative(directory, path)).sort();
+};
+
+/** Modules only the implementation reads: the registry's read side and the forms of systems it holds. */
+const internal = (path: string): boolean =>
+    (path.startsWith("interface/registry/") && path !== "interface/registry/registry.d.ts")
+    || path === "interface/system/composite.d.ts" || path === "interface/system/leaf.d.ts" || path === "interface/system/definition.d.ts"
+    || path.startsWith("interface/gpu/record");
+
 describe("package exports", () => {
     it("let a consumer emit declarations for the values it makes from the public API", () => {
         install();
@@ -65,5 +86,6 @@ describe("package exports", () => {
         });
         const result = program.emit();
         expect(messages([...ts.getPreEmitDiagnostics(program), ...result.diagnostics])).toEqual([]);
+        expect(reachable(join(installed, "dist"), "index.d.ts").filter(internal)).toEqual([]);
     }, 60_000);
 });

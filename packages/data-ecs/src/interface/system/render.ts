@@ -18,7 +18,7 @@ import type { OneThread, ThreadsOf } from './threads.js';
  */
 export type Shader = { readonly group?: number; readonly accessors: { readonly [name: string]: StructComponent } };
 
-/** One archetype the query matches, with rows `0` to `count`. `bind` sets the world's bind group for it on a pass. */
+/** One group of matching rows, `0` to `count`. `bind` sets the world's bind group for it on a pass. */
 export type RenderTable = {
     readonly count: number;
     readonly bind: (pass: GPURenderPassEncoder | GPUComputePassEncoder) => void;

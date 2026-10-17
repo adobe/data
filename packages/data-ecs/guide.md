@@ -290,8 +290,8 @@ Example: [`07-sync-points.test.ts`](src/guide/07-sync-points.test.ts#L24-L55).
 
 ## 9. Kernels
 
-`kernel: "cpu"` compiles a system at build time to efficient JS, and to WASM where its body allows, and runs it in
-chunks across workers. Kernels read and write linear values (numbers, booleans, entities, fixed-length tuples and
+`kernel: "cpu"` compiles a system at build time to efficient JS, and to WASM where its body allows, and runs it on
+the kernel pool. Kernels read and write linear values (numbers, booleans, entities, fixed-length tuples and
 structs of those), use lookups and commands, and call pure functions from any module the build resolves, which are
 inlined. Results match the body run as written.
 
@@ -368,7 +368,7 @@ const world = createWorld({ gpuDevice: device });
 Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L24-L42).
 
 A render system, made by `System.render`, records GPU work over the GPU copy of the components its `shader.accessors`
-name. Its body is `(gpu, context)`: `gpu` has the device, the run's encoder and a table per archetype. `Gpu.wgsl(system)`
+name. Its body is `(gpu, context)`: `gpu` has the device, the run's encoder and a table per group of matching rows. `Gpu.wgsl(system)`
 gives its shaders' declarations, a function per accessor, and pipelines take `Gpu.layout(device)`, the same object for a device every time. See the particle sample's
 [declaration](src/samples/particles/gpu/particles.ts#L100-L105) and [draw](src/samples/particles/gpu/particles.ts#L111-L139), wired up in
 [`main.ts`](src/samples/particles/gpu/main.ts#L60-L64).
@@ -558,7 +558,7 @@ Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L51-L10
 
 `world.add(system)` adds a system, often the application's main composite, to every tick. A tick runs the added
 systems as one composite on a beat of the `cadence` resource: each animation frame by default, or every `step`
-milliseconds with `{ kind: "fixed", step }`. A beat ticks only where `always` is set, a run arrived since the last
+milliseconds with `{ kind: "fixed", step, maxSteps }`. A beat ticks only where `always` is set, a run arrived since the last
 tick, or a time a system asked for through `wake` has come, so an idle application costs nothing. Before each tick
 the world writes `clock` (`now`, `delta` and `tick`), and after it the tick's report to `report`.
 
@@ -577,17 +577,18 @@ Example: [`19-ticks.test.ts`](src/guide/19-ticks.test.ts#L23-L55).
 - **Fixed steps:** each tick's `clock.delta` is `step`; a beat that's behind runs at most `maxSteps` ticks, 4 by default, and drops the rest. A loop that's quiet builds no debt.
 - **Runs** are transactions between ticks, sequential in call order, each its own sync point; each one makes the next beat tick.
 - **Failures of ticks** are in `report`; `clock` and `report` are written only by the world.
-- **Workers:** the `workers` resource is the kernel pool's size, the platform's default to start; the pool follows it at sync points.
-- **Not yet:** `world.share(port)` and `World.join(port, { threads })`, which run one world across threads, throw as not supported ([`threads.md`](threads.md)).
+- **Workers:** the `workers` resource is the kernel pool's size, `null` by default for the platform's choice; the pool follows it at sync points.
+- **Not yet:** running one world across threads is planned, not public ([`threads.md`](threads.md)).
 
 ## 21. Reference
 
-- **Built-in components:** `component`, `persistent` and `shared` are tags, and `threadPort`, `threadClaims` and `threadStatus` are on each joined thread's entity, in [`src/interface/components/`](src/interface/components/).
-- **Built-in resources:** `gpuDevice`, the world's device; `workers`; the loop's `cadence`, `always`, `wake`, `clock` and `report`; in [`src/interface/resources/`](src/interface/resources/).
-- **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value` and `With`; `Resource.Name` and `Value`; `System` and `System.Commands`; `Finalizer`; and `World`. Everything else is inferred from the values the API returns.
-- **Emitted declarations:** a library that exports those values emits declarations naming the package's own modules, through `@adobe/data-ecs/internal/*`, which holds types only. Code imports from `@adobe/data-ecs`.
+- **World:** `run(system, input?)` resolves to a report; `add(system)` puts a system in every tick; `observe` has `resource`, `entity`, `select` and `count`; `dispose()` and `[Symbol.asyncDispose]` wait for pending runs, then release the world.
+- **Built-in resources,** in [`src/interface/resources/`](src/interface/resources/): `gpuDevice`, the world's device or `null`, the default; `workers`, the kernel pool's size, `null` by default for the platform's choice; `cadence`, `{ kind: "frame" }` by default or `{ kind: "fixed", step, maxSteps }`; `always`, false by default; `wake`, reduced with `"min"`, Infinity for none; `clock`, `{ now, delta, tick }`; and `report`, the last tick's. Only the world writes `clock` and `report`.
+- **No built-in components,** and no way yet to join a world from another thread: `share` and `World.join` are planned ([`threads.md`](threads.md)).
+- **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value` and `With`; `Resource.Name` and `Value`; `System` and `System.Commands`; `Finalizer`; `Thread`; `Cadence`; `Observe` and `Observers`; and `World`, with `World.Create`, `World.Query` and `World.Report`. Everything else is inferred from the values the API returns.
+- **Emitted declarations:** every type those values carry is named from `@adobe/data-ecs`, such as `Observers` for `world.observe`, so a library that exports them emits declarations naming only the package root.
 - **Code layout:** the interface is [`src/interface/`](src/interface/), a project that imports nothing outside it; the implementation, `createWorld` and the compiler, is [`src/implementation/`](src/implementation/); samples are in [`src/samples/`](src/samples/).
 - **Constructors:** `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Finalizer.create` and `Finalizer.changes` return a finalizer, typed as its `name`. `Rule.create` returns nothing. Rules and finalizers apply in every world.
-- **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/interface/system/system.type-test.ts), [`world.type-test.ts`](src/interface/world/world.type-test.ts), [`loop.type-test.ts`](src/interface/world/loop.type-test.ts), [`thread.type-test.ts`](src/interface/thread/thread.type-test.ts), [`rule.type-test.ts`](src/interface/rule/rule.type-test.ts), [`trait.type-test.ts`](src/interface/trait/trait.type-test.ts).
+- **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/interface/system/system.type-test.ts), [`world.type-test.ts`](src/interface/world/world.type-test.ts), [`loop.type-test.ts`](src/interface/world/loop.type-test.ts), [`gpu.type-test.ts`](src/interface/gpu/gpu.type-test.ts), [`thread.type-test.ts`](src/interface/thread/thread.type-test.ts), [`rule.type-test.ts`](src/interface/rule/rule.type-test.ts), [`trait.type-test.ts`](src/interface/trait/trait.type-test.ts).
 - **The contract and its reasoning:** [`design.md`](design.md).
 - **A complete application:** the [particle sample](src/samples/particles/particles.ts), run by [`particles.test.ts`](src/samples/particles/particles.test.ts), and its [GPU version](src/samples/particles/gpu/).

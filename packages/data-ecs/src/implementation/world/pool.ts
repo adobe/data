@@ -49,9 +49,8 @@ export type Pool = {
 
 
 
-/** Leaves one hardware thread for the main thread. Workers need shared memory, so none without it. */
-export const defaultWorkerCount = (shared: boolean): number =>
-    shared && typeof Worker === "function" ? Math.max(1, (globalThis.navigator?.hardwareConcurrency ?? 2) - 1) : 0;
+/** The platform's pool size, where workers can share memory: one worker per hardware thread but the world's. */
+export const platformWorkerCount = (): number => Math.max(1, (globalThis.navigator?.hardwareConcurrency ?? 2) - 1);
 
 const errorOf = ({ name, message, stack }: WorkerError): Error => Object.assign(new Error(message), { name, stack });
 

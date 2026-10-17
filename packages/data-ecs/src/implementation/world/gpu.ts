@@ -1,4 +1,5 @@
-import { layout, recordBytes } from '../../interface/gpu/layout.js';
+import { layout } from '../../interface/gpu/layout.js';
+import { recordBytes } from '../../interface/gpu/record.js';
 import type { Archetype, Storage } from './archetype.js';
 
 export { recordBytes };

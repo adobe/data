@@ -1,17 +1,16 @@
 export { Component } from './component/component.js';
-export * from './components/index.js';
 export { Entity } from './entity/entity.js';
 export { Finalizer } from './finalizer/finalizer.js';
 export { Gpu } from './gpu/gpu.js';
 export * from './math/index.js';
 export * from './resources/index.js';
-export type { Cadence } from './resources/cadence.js';
 export { Resource } from './resource/resource.js';
 export { Rule } from './rule/rule.js';
 export type { Schema } from './schema/schema.js';
 export { System } from './system/system.js';
 export { Trait } from './trait/trait.js';
 export type { World } from './world/world.js';
+export type { Observers } from './world/observers.js';
 export type { Observe } from './observe/observe.js';
 export type { Components } from './component/types.js';
 export type { Resources } from './resource/types.js';

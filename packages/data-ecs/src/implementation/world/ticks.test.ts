@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Resource, System, always, cadence, clock, report, wake, workers } from "../../index.js";
 import { toPromise } from "../../interface/observe/to-promise.js";
-import { createWorld, join } from "./create.js";
+import { createWorld } from "./create.js";
 
 const frames = "ticksTest/frames";
 const seen = "ticksTest/seen";
@@ -118,21 +118,11 @@ describe("World.create", () => {
         expect(() => createWorld({ [report]: { failures: [], skipped: [], dropped: 0 } })).toThrow('"report" is written only by the world');
     });
 
-    it("starts the loop's resources at their defaults, workers at the platform's, which has no pool without Worker", async () => {
+    it("starts the loop's resources at their defaults, workers at null for the platform's choice", async () => {
         await using world = createWorld();
         expect(await toPromise(world.observe.resource(cadence))).toEqual({ kind: "frame" });
         expect(await toPromise(world.observe.resource(always))).toBe(false);
         expect(await toPromise(world.observe.resource(wake))).toBe(Infinity);
-        expect(await toPromise(world.observe.resource(workers))).toBe(typeof Worker === "function" ? Math.max(1, navigator.hardwareConcurrency - 1) : 0);
-    });
-});
-
-describe("threads", () => {
-    it("aren't supported yet: share and join throw at the call", async () => {
-        await using world = createWorld();
-        const { port1 } = new MessageChannel();
-        expect(() => world.share(port1)).toThrow("not yet supported");
-        expect(() => join(port1)).toThrow("not yet supported");
-        port1.close();
+        expect(await toPromise(world.observe.resource(workers))).toBe(null);
     });
 });

@@ -16,10 +16,10 @@ export type Declaration = {
     /**
      * Compiled to a kernel, which the build rejects if the body leaves the kernel subset. Values in `components` and
      * `lookup` must be structs and resources read-only. Without it, the system runs as written, on its thread.
-     * - `"cpu"`: runs in chunks across the kernel pool's workers, as WASM where the body allows, or on the world's thread.
+     * - `"cpu"`: runs on the kernel pool.
      * - `"gpu"`: also has no lookups, change filters, commands or loops, and only 4-byte scalar values, its `up` included. It runs as a
-     *   compute shader in a world with a GPU, and as a `"cpu"` kernel in one without. Its writes mark whole columns
-     *   changed.
+     *   compute shader in a world with a GPU, and as a `"cpu"` kernel in one without. Every matched row counts as
+     *   changed in what it writes.
      */
     readonly kernel?: "cpu" | "gpu";
     /** The entities it runs over, and what it reads and writes of theirs. Omitted for a system that runs once per run. */

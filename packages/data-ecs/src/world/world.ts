@@ -41,7 +41,10 @@ export type World = {
         resource<R extends Resource.Name>(name: R): ReadonlyResourceValue<R>;
     };
     readonly observe: {
-        /** A resource's value after each run that changed it, delivered with the run's other notifications before it resolves. */
+        /**
+         * A resource's value, soon after subscribing, once no run is in progress; then after each run that changed it,
+         * with the run's other notifications before it resolves.
+         */
         resource<R extends Resource.Name>(name: R): Observe<ReadonlyResourceValue<R>>;
     };
     /** Brings the CPU copies of these components up to date with GPU writes, queued with runs. */

@@ -153,7 +153,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
     };
 
     const readComponent = createComponentReader(state);
-    const observers = createObservers(state, readResource);
+    const observers = createObservers(state, readResource, enqueue);
     const world: World = {
         run: (system, ...args) => {
             const [value]: readonly unknown[] = args;

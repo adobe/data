@@ -3,7 +3,7 @@ import { World } from "../world/world.js";
 import { enabled as flatEnabled, spawnFlat, spawnFlatDynamic, visible as flatVisible } from "./flat.js";
 import { enabled, fastest as particlesFastest, move, position as particlePosition, spawn, visible } from "./particles.js";
 import { forest, local as hierarchyLocal, nudge, parent as hierarchyParent, propagate, propagateChanged, reparent, sprout, turnover, under } from "./hierarchy.js";
-import { chain, churn, emit, fastest, follow, highest, hits, index, indexSum, observe, poke, pokeCluster, position, reduce, retag, seeded, smalls, tag, totalOf } from "./suite.js";
+import { chain, churn, emit, fastest, follow, highest, hits, idle, idles, index, indexSum, observe, poke, pokeCluster, position, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
 
 import type { Benchmark } from "./benchmark.js";
 
@@ -49,8 +49,98 @@ const upRow = 28;
 /** Bytes per row for a filtered run to find what changed: one 8-byte tick per 1024-row chunk. */
 const chunkScan = 8 / 1024;
 
+/** A run's fixed cost at best: it reads one cache line of its system's state. */
+const runBest = { bytes: 64, basis: "A run reads at least one cache line of its system's state." };
+
 /** Benchmarks shared by vitest (`*.perf-test.ts`) and the bundled node runner (`run.ts`). */
 export const benchmarks: readonly Benchmark[] = [
+    {
+        name: "run idle",
+        operation: "Running one system no entity matches, in a world of 10K entities: the fixed cost of every system in every frame.",
+        per: "runs",
+        n: 1,
+        typical: [1, 1],
+        best: runBest,
+        run: async () => {
+            const world = await seeded(() => World.create(), 10_000);
+            const best = await fastest(() => world.run(idle));
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "run 50 idle",
+        operation: "Running fifty systems no entity matches, as one composite: the fixed cost per system of a frame of many systems.",
+        per: "systems",
+        n: 50,
+        typical: [10, 200],
+        best: runBest,
+        run: async () => {
+            const world = await seeded(() => World.create(), 10_000);
+            const best = await fastest(() => world.run(idles));
+            await world.dispose();
+            return best;
+        },
+    },
+    {
+        name: "sync point one spawn",
+        operation: "Running a system that spawns one entity, so its run ends with a sync point that applies one command: the fixed cost of a structural change.",
+        per: "runs",
+        n: 1,
+        typical: [1, 1],
+        best: { bytes: 128, basis: "The spawn writes its 28 bytes of values, its entity and its location, and the run reads its system's state." },
+        run: async () => {
+            const world = await seeded(() => World.create(), 10_000);
+            const best = await fastest(() => world.run(spawnOne));
+            await world.dispose();
+            return best;
+        },
+    },
+    ...[1_000, 10_000].map((rows): Benchmark => ({
+        name: `move ${rows / 1_000}K`,
+        operation: "A kernel adding a vec3 to another for the rows with two tags, at a size a typical system sees.",
+        per: "matched rows",
+        n: rows,
+        typical: [1_000, 100_000],
+        best: { bytes: 36, basis: "Each row reads 12 bytes of velocity and reads and writes 12 bytes of position." },
+        run: async () => {
+            const world = World.create();
+            await world.run(spawn, { count: 4 * rows });
+            const { minimum } = await particlesFastest(() => world.run(move));
+            await world.dispose();
+            return minimum;
+        },
+    })),
+    ...[1_000, 10_000].map((rows): Benchmark => ({
+        name: `main thread ${rows / 1_000}K`,
+        operation: "One main-thread system reading every row: app logic over a typical number of entities.",
+        per: "row reads",
+        n: rows,
+        typical: [1_000, 100_000],
+        best: { bytes: 12, basis: "Each row read loads its 12-byte position." },
+        run: async () => {
+            const world = await seeded(() => World.create(), rows);
+            const best = await fastest(() => world.run(small));
+            check(totalOf() > 0, "main thread: nothing read");
+            await world.dispose();
+            return best;
+        },
+    })),
+    {
+        name: "up depth 10 10K",
+        operation: "A kernel with `up` computing every row from its parent, over 1K chains of 10: a scene graph of typical size.",
+        per: "rows",
+        n: 10_000,
+        typical: [1_000, 100_000],
+        best: { bytes: upRow, basis: "Each row reads its 8-byte value, its parent's 8-byte result and 4-byte row, and writes its 8-byte result." },
+        run: async () => {
+            const world = World.create();
+            await world.run(forest, { roots: 1_000, depth: 10 });
+            const best = await fastest(() => world.run(propagate));
+            await world.dispose();
+            return best;
+        },
+    },
     {
         name: "create",
         operation: "Spawning entities of six components, two of them tags, over four archetypes, through a main-thread system and the sync point that applies them: loading a level, a burst of particles.",

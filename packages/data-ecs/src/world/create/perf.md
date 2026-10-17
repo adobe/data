@@ -139,6 +139,8 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **Faster value-object spawns** (`create flat dynamic`): `Object.keys` and the caller's own spreads dominate, on a path the plugin already avoids for literal keys. Worth revisiting only if spawns from data objects matter to real workloads.
 - **SIMD reductions:** lanes compute in f32 at storage precision, which would round sums into f64 partials. Four rotating scalar lanes took reduce 1M 0.93 → 0.50 ms instead. Worth revisiting with an f64x2 path in the across-rows mode.
 - **Faster WASM lookups** (`follow`): the generated find is already an entity-table check, a directory record and column loads, about 3.8 ns per row of dependent loads. Worth revisiting with a measured breakdown of where those cycles go, such as with lookups batched per archetype.
+- **Positional `commands.add` and `commands.remove` for literal keys,** as the plugin does for spawns: not built. Issuing them, with their key lookups, is about 8% of retag 1M; planning and applying the moves are the rest. Worth revisiting once the sync point's own cost per move is much lower.
+- **Fixed costs per run, measured rather than tried:** a run of a system no entity matches costs about 0.8 µs, fifty of them 0.39 µs each, and a run whose sync point applies one spawn 1.5 µs. Kernels at 1K and 10K rows stay within 2–5× of their best, as at 1M, so small systems hide no large cost.
 - **Checking eight rows' ticks at every row,** rather than at rows aligned to eight: clustered changes 0.023 → 0.108 ms, since each passing row checked a block again. Aligned checks cost clustered changes about 3 µs.
 
 ## Next

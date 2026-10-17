@@ -3,8 +3,8 @@
 //   pnpm perf [filter]           node benchmarks whose names match the regular expression filter, each in a process
 //                                of its own, compared with the last record
 //   pnpm perf:browser            chromium benchmarks: main thread, workers and GPU
-//   add --record                 append the results to perf/history and regenerate perf/README.md, keeping the
-//                                faster of two processes per node benchmark
+//   add --record                 append the results to perf/history and regenerate perf/README.md, keeping each
+//                                benchmark's faster of two runs
 //   pnpm perf:report             regenerate perf/README.md from perf/history
 //
 // Results are kept per machine, since times only compare on the same hardware.
@@ -137,7 +137,17 @@ const progress = (environment, result) => {
 const run = async () => {
     if (flags.has("--browser")) {
         execFileSync("pnpm", ["exec", "playwright", "install", "chromium"], { cwd: root, stdio: "ignore" });
-        return collect("pnpm", ["exec", "vitest", "--run", "--workspace", "vitest.perf.workspace.ts", "--project", "perf-browser"]);
+        const browserArgs = ["exec", "vitest", "--run", "--workspace", "vitest.perf.workspace.ts", "--project", "perf-browser"];
+        if (!flags.has("--record")) return collect("pnpm", browserArgs);
+        // A record keeps each benchmark's faster of two runs, as for node.
+        const first = await collect("pnpm", browserArgs, undefined, true);
+        const second = await collect("pnpm", browserArgs, undefined, true);
+        const results = first.results.map(result => {
+            const other = second.results.find(({ name }) => name === result.name);
+            return other !== undefined && other.milliseconds < result.milliseconds ? other : result;
+        });
+        for (const result of results) progress(first.environment, result);
+        return { environment: first.environment, results };
     }
     execFileSync("pnpm", ["exec", "vite", "build", "--config", "vite.perf.config.ts", "--logLevel", "warn"], { cwd: root, stdio: "inherit" });
     // Each benchmark runs in a fresh process, so none inherits another's heap or compiled code.

@@ -15,6 +15,7 @@ export const velocity = "suite/velocity";
 export const target = "suite/target";
 export const index = "suite/index";
 export const tag = "suite/tag";
+export const unused = "suite/unused";
 export const hits = "suite/hits";
 
 declare module "@adobe/data-ecs" {
@@ -24,6 +25,7 @@ declare module "@adobe/data-ecs" {
         [target]: { type: Entity };
         [index]: { type: number };
         [tag]: { type: true };
+        [unused]: { type: true };
         [hits]: { type: number };
     }
 }
@@ -44,6 +46,7 @@ Component.register(velocity, { type: vec3 });
 Component.register(target, { type: Entity.schema });
 Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFFFFFF } });
 Component.register(tag, { type: { const: true } });
+Component.register(unused, { type: { const: true } });
 Component.register(hits, { type: { type: "number", precision: 1 } });
 
 /** `count` entities, each targeting the one spawned before it. */
@@ -198,4 +201,23 @@ export const seeded = async (create: () => World, count: number): Promise<World>
 export const reduce = System.create({ name: "suite/reduce", kernel: "cpu", components: { read: [index] }, reduce: { [indexSum]: "+", [highest]: "max" } }, (row, { reduce }) => {
     reduce[indexSum](row[index]);
     reduce[highest](row[index]);
+});
+
+/** A system no entity matches: what a run costs with nothing to do. */
+export const idle = System.create({ name: "suite/idle", components: { has: [unused] } }, () => {});
+
+/** Fifty systems no entity matches, in one tier. */
+export const idles = System.composite({
+    name: "suite/idles",
+    systems: Array.from({ length: 50 }, (_, i) => System.create({ name: `suite/idle${i}`, components: { has: [unused] } }, () => {})),
+});
+
+/** Spawns one entity: a run with a sync point that applies one command. */
+export const spawnOne = System.create({ name: "suite/spawnOne" }, ({ commands }) => {
+    commands.spawn({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [index]: 0 });
+});
+
+/** One main-thread system reading every row. */
+export const small = System.create({ name: "suite/small", components: { read: [position] } }, row => {
+    total += row[position][0];
 });

@@ -9,6 +9,9 @@ import { gpuDevice } from '../../resources/gpu-device.js';
 import { createGpu } from './gpu.js';
 import { readCell } from './cells.js';
 import { finalizeAll, type Thrown } from './finalizers.js';
+import { createObservers } from './observers.js';
+import type { Observe } from '../../observe/observe.js';
+import type { Report } from '../report.js';
 import { execute, type ExecuteContext } from './execute.js';
 import { sharedMemoryAvailable } from './memory.js';
 import { createPool, defaultWorkerCount, type Pool } from './pool.js';
@@ -150,6 +153,7 @@ export const createWorld = (options: WorldOptions = {}): World => {
     };
 
     const readComponent = createComponentReader(state);
+    const observers = createObservers(state, readResource);
     const world: World = {
         run: (system, ...args) => {
             const [value]: readonly unknown[] = args;
@@ -170,12 +174,15 @@ export const createWorld = (options: WorldOptions = {}): World => {
                 if (deviceChanged()) await followDevice();
                 const schedule = registrar.registered(definition);
                 if (schedule === undefined) throw new Error(`System "${system.name}" didn't register.`);
+                let report: Report;
                 try {
-                    return await execute(context, schedule, value, system.name);
+                    report = await execute(context, schedule, value, system.name);
                 }
                 finally {
                     if (deviceChanged()) await followDevice();
                 }
+                const failed = observers.deliver();
+                return failed === null ? report : { ...report, failures: [...report.failures, ...failed] };
             });
         },
         dispose: () => {
@@ -207,6 +214,10 @@ export const createWorld = (options: WorldOptions = {}): World => {
             return enqueue(() => gpu.readback(state.archetypes.flatMap(archetype => archetype.storages.filter(storage => ids.has(storage.component)))));
         },
         [Symbol.asyncDispose]: () => world.dispose(),
+        observe: {
+            // Stored values match each resource's registered schema, so they have its type.
+            resource: <R extends Resource.Name>(key: R) => observers.resource(key) as Observe<ReadonlyResourceValue<R>>,
+        },
         query: {
             select: (has, options) => select(state, has, options),
             count: (has, options) => count(state, has, options),

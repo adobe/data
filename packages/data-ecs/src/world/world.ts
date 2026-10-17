@@ -7,6 +7,7 @@ import type { Input } from '../system/input.js';
 import type { System } from '../system/system.js';
 import type { Options } from './query/options.js';
 import type { Report } from './report.js';
+import type { Observe } from '../observe/observe.js';
 
 /**
  * `query` and `read` are for use outside the schedule, on the main thread.
@@ -38,6 +39,10 @@ export type World = {
         /** One component of an entity, or `null` if it's dead or lacks it. */
         component<C extends Component.Name>(entity: Entity, component: C): ReadonlyValue<C> | null;
         resource<R extends Resource.Name>(name: R): ReadonlyResourceValue<R>;
+    };
+    readonly observe: {
+        /** A resource's value after each run that changed it, delivered with the run's other notifications before it resolves. */
+        resource<R extends Resource.Name>(name: R): Observe<ReadonlyResourceValue<R>>;
     };
     /** Brings the CPU copies of these components up to date with GPU writes, queued with runs. */
     synchronize(components: readonly Component.Name[]): Promise<void>;

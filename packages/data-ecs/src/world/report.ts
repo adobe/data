@@ -9,8 +9,8 @@ export type Report = {
 };
 
 export type Failure = {
-    readonly kind: "system" | "finalizer" | "gpu";
-    /** The system or finalizer that failed; for GPU work, the system whose run submitted it. */
+    readonly kind: "system" | "finalizer" | "gpu" | "observer";
+    /** The system or finalizer that failed; for GPU work, the system whose run submitted it; for an observer, what it observes. */
     readonly name: string;
     /** An Error's message, or String() of anything else thrown. */
     readonly message: string;

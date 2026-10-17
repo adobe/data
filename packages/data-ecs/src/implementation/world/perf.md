@@ -46,6 +46,8 @@ At 1M entities, against commit `d6373560` (claimed splits in place):
 | chromium move 1M, main / workers | 0.20 / 0.030 ms | 0.095 / 0.015 ms |
 | chromium chain 6×1M, main / workers | 4.47 / 0.725 ms | 1.72 / 0.275 ms |
 
+Moving the code into `src/types` and `src/implementation`, with ticks added, measured within noise of the record before it (`f9e8d10a`) on every node and chromium benchmark: run idle 333 ns, run 50 idle 109 ns per system, sync point one spawn 1.04 µs, create 1M 91 ms, churn 19.5 ms, retag 35.7 ms, move 1M 0.090 ms, chain 1.54 ms, select 8.27 ms; in chromium, move on workers 0.015 ms and chain on workers 0.29 ms. A run checks the `workers` resource by its changed tick, allocating nothing, and makes the loop due only while systems are added.
+
 The adobe/data ECS runs move 1M in 0.09 ms, single threaded with WASM SIMD, and creates 100K in 5.8 ms by inserting directly, with no command buffer or sync point.
 
 ## Where the gains came from

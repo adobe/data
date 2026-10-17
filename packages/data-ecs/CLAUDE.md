@@ -14,3 +14,9 @@ aren't in its type, though the value still holds them: narrowing a type doesn't 
 
 Keeping the two apart leaves the implementation free to change how it stores, validates and runs things without
 changing the interface.
+
+## Real-time performance
+
+The ECS runs every frame, so performance is a requirement, not a polish step. Keep work per run, per system and per
+row as low as it can be, and allocate nothing on those paths: reuse arrays, buffers and objects, share read-only
+empties, and avoid closures, spreads and awaits there. Measure changes with `pnpm perf` against the recorded baseline.

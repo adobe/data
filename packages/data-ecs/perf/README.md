@@ -53,62 +53,62 @@ History, ns per N, oldest first:
 
 ### node 24.15.0
 
-Latest `cfcff49a`, 2026-10-17. Copy bandwidth in GB/s by working set:
-- One thread: 107 at 512 KB, 103 at 2 MB, 60.8 at 8 MB, 69.4 at 32 MB, 97.8 at 128 MB.
+Latest `c234c41a`, 2026-10-17. Copy bandwidth in GB/s by working set:
+- One thread: 119 at 512 KB, 110 at 2 MB, 74 at 8 MB, 79.6 at 32 MB, 81.2 at 128 MB.
 
 | Benchmark | Per | N | Typical N | ms | ns per N | Best ns per N | × best | Room, ms | Change |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| create | spawns | 1M | 100–100K | 87.4 | 87.4 | 0.45 | 194× | 87 | −3% |
-| create flat | spawns | 1M | 100–100K | 70.5 | 70.5 | 0.45 | 157× | 70 | +1% |
-| create flat dynamic | spawns | 1M | 100–100K | 226 | 226 | 0.45 | 502× | 226 | −0% |
-| move | matched rows | 250K | 1K–1M | 0.0914 | 0.365 | 0.338 | 1.08× | 0.00694 | −0% |
-| churn | rows visited | 1M | 1K–100K | 20 | 20 | 0.272 | 73.6× | 19.8 | −3% |
-| retag | rows visited | 1M | 1K–100K | 35.5 | 35.5 | 0.366 | 97× | 35.1 | −2% |
-| sparse changed | rows in the archetype | 1M | 10K–1M | 1.14 | 1.14 | 0.0773 | 14.7× | 1.06 | −0% |
-| sparse changed clustered | rows in the archetype | 1M | 10K–1M | 0.0226 | 0.0226 | 0.0031 | 7.29× | 0.0195 | +0% |
-| follow | rows | 1M | 1K–100K | 3.84 | 3.84 | 0.488 | 7.87× | 3.35 | −1% |
-| emit | rows | 1M | 1K–100K | 8.69 | 8.69 | 0.319 | 27.3× | 8.38 | −2% |
-| reduce | rows | 1M | 1K–1M | 0.505 | 0.505 | 0.0375 | 13.5× | 0.468 | −46% faster |
-| chain | row passes | 6M | 6K–6M | 1.57 | 0.262 | 0.0375 | 6.98× | 1.35 | −2% |
-| up depth 10 | rows | 1M | 1K–100K | 2.05 | 2.05 | 0.263 | 7.79× | 1.78 | −12% faster |
-| up depth 1000 | rows | 1M | 1K–100K | 2.37 | 2.37 | 0.263 | 9.02× | 2.11 | −2% |
-| up one root changed | rows | 1M | 1K–100K | 0.0233 | 0.0233 | 0.0000733 | 317× | 0.0232 | +27% slower |
-| up after a spawn | rows | 1M | 1K–100K | 2.1 | 2.1 | 0.263 | 7.98× | 1.83 | −17% faster |
-| up filtered after churn | rows | 1M | 1K–100K | 0.0468 | 0.0468 | 0.000128 | 364× | 0.0467 | +12% slower |
-| up filtered after tagged churn | rows | 1M | 1K–100K | 0.0402 | 0.0402 | 0.000128 | 313× | 0.04 | +10% |
-| up filtered after a reparent | rows | 1M | 1K–100K | 0.0217 | 0.0217 | 0.0000733 | 297× | 0.0217 | −1% |
-| up load | spawns | 1M | 1K–100K | 216 | 216 | 0.638 | 338× | 215 | 2.11× faster |
-| up small tree in a big world | tree rows | 1K | 100–10K | 0.0116 | 11.6 | 0.263 | 44.3× | 0.0114 | −22% faster |
-| main thread | row reads | 50K | 1K–100K | 0.476 | 9.52 | 0.113 | 84.6× | 0.47 | +0% |
-| select | rows | 1M | 100–100K | 24.3 | 24.3 | 0.169 | 144× | 24.1 | −8% |
+| create | spawns | 1M | 100–100K | 90.1 | 90.1 | 0.403 | 224× | 89.7 | +3% |
+| create flat | spawns | 1M | 100–100K | 70.9 | 70.9 | 0.403 | 176× | 70.5 | +1% |
+| create flat dynamic | spawns | 1M | 100–100K | 225 | 225 | 0.403 | 557× | 224 | −1% |
+| move | matched rows | 250K | 1K–1M | 0.0914 | 0.366 | 0.302 | 1.21× | 0.0159 | +0% |
+| churn | rows visited | 1M | 1K–100K | 19.8 | 19.8 | 0.243 | 81.2× | 19.5 | −1% |
+| retag | rows visited | 1M | 1K–100K | 35.5 | 35.5 | 0.327 | 109× | 35.2 | +0% |
+| sparse changed | rows in the archetype | 1M | 10K–1M | 0.348 | 0.348 | 0.0692 | 5.02× | 0.278 | 3.27× faster |
+| sparse changed clustered | rows in the archetype | 1M | 10K–1M | 0.0255 | 0.0255 | 0.00277 | 9.22× | 0.0228 | +13% slower |
+| follow | rows | 1M | 1K–100K | 3.89 | 3.89 | 0.437 | 8.91× | 3.45 | +1% |
+| emit | rows | 1M | 1K–100K | 8.81 | 8.81 | 0.285 | 30.9× | 8.53 | +1% |
+| reduce | rows | 1M | 1K–1M | 0.514 | 0.514 | 0.0336 | 15.3× | 0.481 | +2% |
+| chain | row passes | 6M | 6K–6M | 1.57 | 0.262 | 0.0336 | 7.81× | 1.37 | +0% |
+| up depth 10 | rows | 1M | 1K–100K | 2.07 | 2.07 | 0.235 | 8.82× | 1.84 | +1% |
+| up depth 1000 | rows | 1M | 1K–100K | 2.42 | 2.42 | 0.235 | 10.3× | 2.19 | +2% |
+| up one root changed | rows | 1M | 1K–100K | 0.0254 | 0.0254 | 0.0000656 | 388× | 0.0254 | +9% |
+| up after a spawn | rows | 1M | 1K–100K | 2.08 | 2.08 | 0.235 | 8.83× | 1.84 | −1% |
+| up filtered after churn | rows | 1M | 1K–100K | 0.047 | 0.047 | 0.000115 | 409× | 0.0468 | +0% |
+| up filtered after tagged churn | rows | 1M | 1K–100K | 0.0399 | 0.0399 | 0.000115 | 347× | 0.0398 | −1% |
+| up filtered after a reparent | rows | 1M | 1K–100K | 0.0221 | 0.0221 | 0.0000656 | 337× | 0.022 | +2% |
+| up load | spawns | 1M | 1K–100K | 217 | 217 | 0.571 | 380× | 217 | +1% |
+| up small tree in a big world | tree rows | 1K | 100–10K | 0.0117 | 11.7 | 0.235 | 49.8× | 0.0115 | +1% |
+| main thread | row reads | 50K | 1K–100K | 0.475 | 9.5 | 0.101 | 94.3× | 0.47 | −0% |
+| select | rows | 1M | 100–100K | 22.4 | 22.4 | 0.151 | 148× | 22.2 | −8% |
 
 History, ns per N, oldest first:
 
-| Benchmark | `c2c445f8` 10-16 | `c768c2e8` 10-16 | `f9722dff` 10-16 | `948d52e0` 10-16 | `43b7e59c` 10-17 | `cfcff49a` 10-17 |
-|---|---:|---:|---:|---:|---:|---:|
-| create | 93.8 | 85.9 | 85.5 | 93.9 | 90.2 | 87.4 |
-| create flat | 70.4 | 67.4 | 69.6 | 70.8 | 70.1 | 70.5 |
-| create flat dynamic | 224 | 225 | 223 | 229 | 226 | 226 |
-| move | 0.367 | 0.366 | 0.372 | 0.366 | 0.367 | 0.365 |
-| churn | 19 | 19.4 | 19.5 | 19.6 | 20.6 | 20 |
-| retag | 41.6 | 43.7 | 44.5 | 36.1 | 36 | 35.5 |
-| sparse changed | 1.25 | 1.12 | 1.12 | 1.17 | 1.14 | 1.14 |
-| sparse changed clustered | 0.021 | 0.0237 | 0.0239 | 0.0259 | 0.0225 | 0.0226 |
-| follow | 3.87 | 3.85 | 3.89 | 3.85 | 3.89 | 3.84 |
-| emit | 10.2 | 10.4 | 10.6 | 9.05 | 8.86 | 8.69 |
-| reduce | 0.934 | 0.934 | 0.951 | 0.935 | 0.934 | 0.505 |
-| chain | 0.267 | 0.266 | 0.268 | 0.267 | 0.267 | 0.262 |
-| up depth 10 | 2.05 | 2.06 | 2.06 | 2.1 | 2.32 | 2.05 |
-| up depth 1000 | 2.4 | 2.43 | 2.44 | 2.41 | 2.41 | 2.37 |
-| up one root changed | 0.0296 | 0.0304 | 0.0245 | 0.0213 | 0.0184 | 0.0233 |
-| up after a spawn | 36.7 | 25.3 | 19.4 | 17.4 | 2.52 | 2.1 |
-| up filtered after churn | 50.1 | 0.0581 | 0.0645 | 0.0409 | 0.0419 | 0.0468 |
-| up filtered after tagged churn | 49.4 | 0.0905 | 0.0921 | 0.0358 | 0.0367 | 0.0402 |
-| up filtered after a reparent | 34.5 | 0.022 | 0.0217 | 0.0177 | 0.022 | 0.0217 |
-| up load | 413 | 463 | 449 | 430 | 456 | 216 |
-| up small tree in a big world | 2,314 | 280 | 273 | 33.9 | 14.9 | 11.6 |
-| main thread | 9.88 | 10 | 10.1 | 9.49 | 9.51 | 9.52 |
-| select | 28 | 27.8 | 31.4 | 23.6 | 26.3 | 24.3 |
+| Benchmark | `c2c445f8` 10-16 | `c768c2e8` 10-16 | `f9722dff` 10-16 | `948d52e0` 10-16 | `43b7e59c` 10-17 | `cfcff49a` 10-17 | `c234c41a` 10-17 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| create | 93.8 | 85.9 | 85.5 | 93.9 | 90.2 | 87.4 | 90.1 |
+| create flat | 70.4 | 67.4 | 69.6 | 70.8 | 70.1 | 70.5 | 70.9 |
+| create flat dynamic | 224 | 225 | 223 | 229 | 226 | 226 | 225 |
+| move | 0.367 | 0.366 | 0.372 | 0.366 | 0.367 | 0.365 | 0.366 |
+| churn | 19 | 19.4 | 19.5 | 19.6 | 20.6 | 20 | 19.8 |
+| retag | 41.6 | 43.7 | 44.5 | 36.1 | 36 | 35.5 | 35.5 |
+| sparse changed | 1.25 | 1.12 | 1.12 | 1.17 | 1.14 | 1.14 | 0.348 |
+| sparse changed clustered | 0.021 | 0.0237 | 0.0239 | 0.0259 | 0.0225 | 0.0226 | 0.0255 |
+| follow | 3.87 | 3.85 | 3.89 | 3.85 | 3.89 | 3.84 | 3.89 |
+| emit | 10.2 | 10.4 | 10.6 | 9.05 | 8.86 | 8.69 | 8.81 |
+| reduce | 0.934 | 0.934 | 0.951 | 0.935 | 0.934 | 0.505 | 0.514 |
+| chain | 0.267 | 0.266 | 0.268 | 0.267 | 0.267 | 0.262 | 0.262 |
+| up depth 10 | 2.05 | 2.06 | 2.06 | 2.1 | 2.32 | 2.05 | 2.07 |
+| up depth 1000 | 2.4 | 2.43 | 2.44 | 2.41 | 2.41 | 2.37 | 2.42 |
+| up one root changed | 0.0296 | 0.0304 | 0.0245 | 0.0213 | 0.0184 | 0.0233 | 0.0254 |
+| up after a spawn | 36.7 | 25.3 | 19.4 | 17.4 | 2.52 | 2.1 | 2.08 |
+| up filtered after churn | 50.1 | 0.0581 | 0.0645 | 0.0409 | 0.0419 | 0.0468 | 0.047 |
+| up filtered after tagged churn | 49.4 | 0.0905 | 0.0921 | 0.0358 | 0.0367 | 0.0402 | 0.0399 |
+| up filtered after a reparent | 34.5 | 0.022 | 0.0217 | 0.0177 | 0.022 | 0.0217 | 0.0221 |
+| up load | 413 | 463 | 449 | 430 | 456 | 216 | 217 |
+| up small tree in a big world | 2,314 | 280 | 273 | 33.9 | 14.9 | 11.6 | 11.7 |
+| main thread | 9.88 | 10 | 10.1 | 9.49 | 9.51 | 9.52 | 9.5 |
+| select | 28 | 27.8 | 31.4 | 23.6 | 26.3 | 24.3 | 22.4 |
 
 ## Benchmarks
 

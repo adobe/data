@@ -1,5 +1,5 @@
 import { defineWorkspace } from "vitest/config";
-import { kernelPlugin } from "./src/compiler/index.ts";
+import { kernelPlugin } from "./src/implementation/compiler/index.ts";
 import { isolation, sources } from "./vitest.plugins.ts";
 
 // `*.perf-test.ts` runs in node; `*.perf-browser-test.ts` runs in chromium, with real workers.

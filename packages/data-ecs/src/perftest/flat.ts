@@ -1,6 +1,6 @@
-import { Component } from "../component/component.js";
-import { System } from "../system/system.js";
-import type { Values } from '../component/values.js';
+import { Component } from "../types/component/component.js";
+import { System } from "../types/system/system.js";
+import type { Values } from '../types/component/values.js';
 
 // Mirrors adobe/data's ecs2 `create` perftest (packages/data/src/perftest/ecs2-perf.ts): 1M particles of eight scalar
 // components, interleaved over four archetypes by visible/enabled, each with its own values.

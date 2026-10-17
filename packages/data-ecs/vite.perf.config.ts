@@ -1,5 +1,5 @@
 import { defineConfig } from "vite";
-import { kernelPlugin } from "./src/compiler/index.ts";
+import { kernelPlugin } from "./src/implementation/compiler/index.ts";
 
 /** Bundles the benchmarks for plain node, with kernels compiled into their own chunks as in a production build. */
 export default defineConfig({

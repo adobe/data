@@ -1,9 +1,9 @@
-import { Component } from "../component/component.js";
-import { Resource } from "../resource/resource.js";
-import { Entity } from "../entity/entity.js";
-import type { Schema } from "../schema/schema.js";
-import { System } from "../system/system.js";
-import type { World } from "../world/world.js";
+import { Component } from "../types/component/component.js";
+import { Resource } from "../types/resource/resource.js";
+import { Entity } from "../types/entity/entity.js";
+import type { Schema } from "../types/schema/schema.js";
+import { System } from "../types/system/system.js";
+import type { World } from "../types/world/world.js";
 
 // One fixture per optimization area: structural changes, change filters, lookups, commands, dispatch and main-thread paths.
 

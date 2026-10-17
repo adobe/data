@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { Component, Entity, Finalizer, Resource, Rule, System, World } from "../index.js";
-import { toPromise } from "../observe/to-promise.js";
+import { toPromise } from "../types/observe/to-promise.js";
+import { createWorld } from "../implementation/index.js";
 
 const meshSource = "guide/loading/meshSource";
 const hidden = "guide/loading/hidden";
@@ -84,7 +85,7 @@ const hide = System.create({ name: "guide/loading/hide", input: { type: "object"
 });
 
 it("loads resources asynchronously for derived slots, and releases them when the slot goes", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(spawn);
     await world.run(request);
     const [ship, rock] = await toPromise(world.observe.resource(requests));

@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { Component, Resource, System, Vec3, World } from "../index.js";
-import { toPromise } from "../observe/to-promise.js";
+import { toPromise } from "../types/observe/to-promise.js";
+import { createWorld } from "../implementation/index.js";
 
 const position = "guide/systems/position";
 const velocity = "guide/systems/velocity";
@@ -46,7 +47,7 @@ const count = System.create({ name: "guide/systems/count", resources: { write: [
 });
 
 it("runs a body for each row its components match", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(spawn);
     await world.run(move);
     const [moving] = await toPromise(world.observe.select({ required: [position], not: [frozen] }));

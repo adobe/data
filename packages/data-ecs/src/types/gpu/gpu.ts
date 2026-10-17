@@ -1,4 +1,4 @@
-/** `Gpu.wgsl` and `Gpu.layout` are the implementation's; here they are their types, `Gpu.Wgsl` and `Gpu.Layout`. */
+/** `Gpu.wgsl` and `Gpu.layout` give render systems' shaders and pipelines what they need from schemas alone. */
 export type Gpu = never;
 
-export type * as Gpu from './index.js';
+export * as Gpu from './index.js';

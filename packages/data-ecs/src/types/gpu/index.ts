@@ -1,5 +1,8 @@
 import type { System } from '../system/system.js';
 
+export { layout } from './layout.js';
+export { wgsl } from './wgsl.js';
+
 /**
  * The WGSL a render system's shaders include: its bind group at `shader.group` (the heap and its table record), and a
  * function per accessor returning that component of a row, such as `fn position(row: u32) -> vec3<f32>`, plus

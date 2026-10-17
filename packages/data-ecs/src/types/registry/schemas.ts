@@ -45,3 +45,8 @@ export const allowsNull = (schema: Schema): boolean =>
 
 /** Whether a schema is an entity's. */
 export const isEntity = (schema: Schema): boolean => "format" in schema && schema.format === "entity";
+
+/** Whether a schema accepts `null` or `false`, so a system can run on the condition of a value of it. */
+export const conditional = (schema: Schema): boolean =>
+    allowsNull(schema) || ("type" in schema && schema.type === "boolean") || ("const" in schema && schema.const === false)
+    || ("anyOf" in schema && schema.anyOf.some(conditional));

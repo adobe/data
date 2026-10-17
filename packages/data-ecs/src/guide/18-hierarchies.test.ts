@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { Component, Entity, System, World } from "../index.js";
-import { toPromise } from "../observe/to-promise.js";
+import { toPromise } from "../types/observe/to-promise.js";
+import { createWorld } from "../implementation/index.js";
 
 const offset = "guide/hierarchies/offset";
 const position = "guide/hierarchies/position";
@@ -39,7 +40,7 @@ const move = System.create({ name: "guide/hierarchies/move", input: { type: "obj
 });
 
 it("flows values down a hierarchy, parent first, and again only where something changed", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(build);
     await world.run(place);
     expect(await Promise.all(parts.map(async entity => (await toPromise(world.observe.entity(entity, { required: [position] })))?.[position]))).toEqual([1, 3, 6]);

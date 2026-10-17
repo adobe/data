@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { Component, Entity, Resource, System, World } from "../index.js";
-import { toPromise } from "../observe/to-promise.js";
+import { toPromise } from "../types/observe/to-promise.js";
+import { createWorld } from "../implementation/index.js";
 
 const score = "guide/filters/score";
 const shown = "guide/filters/shown";
@@ -46,7 +47,7 @@ const bump = System.create({ name: "guide/filters/bump", input: { type: "object"
 });
 
 it("runs systems only for what changed since they last ran", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(load);
     await world.run(load);
     expect(await toPromise(world.observe.count({ required: [enemy] }))).toBe(2);
@@ -67,7 +68,7 @@ const pause = System.create({ name: "guide/filters/pause", resources: { write: [
 const open = System.create({ name: "guide/filters/open", resources: { write: [map] } }, ({ resources }) => { resources[map] = { width: 4 }; });
 
 it("runs systems only while their conditions hold", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(step);
     await world.run(open);
     await world.run(step);

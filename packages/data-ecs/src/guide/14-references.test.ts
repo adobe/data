@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { Component, Entity, System, World } from "../index.js";
-import { toPromise } from "../observe/to-promise.js";
+import { toPromise } from "../types/observe/to-promise.js";
+import { createWorld } from "../implementation/index.js";
 
 const node = "guide/references/node";
 const parent = "guide/references/parent";
@@ -30,7 +31,7 @@ const prune = System.create({ name: "guide/references/prune", components: { read
 });
 
 it("despawns owned entities with their owner, transitively, and drops weak references", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(spawn);
     await world.run(prune);
     const nodes = await toPromise(world.observe.select({ required: [node] }));

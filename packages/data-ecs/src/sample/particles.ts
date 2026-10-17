@@ -1,10 +1,11 @@
-import { Component } from '../component/component.js';
-import type { Entity } from '../entity/entity.js';
-import { toPromise } from '../observe/to-promise.js';
-import { Resource } from '../resource/resource.js';
-import { Vec3 } from '../math/index.js';
-import { System } from '../system/system.js';
-import { World } from '../world/world.js';
+import { Component } from '../types/component/component.js';
+import type { Entity } from '../types/entity/entity.js';
+import { toPromise } from '../types/observe/to-promise.js';
+import { Resource } from '../types/resource/resource.js';
+import { Vec3 } from '../types/math/index.js';
+import { System } from '../types/system/system.js';
+import { World } from '../types/world/world.js';
+import { createWorld } from '../implementation/index.js';
 
 export const position = 'particles/position';
 export const velocity = 'particles/velocity';
@@ -80,4 +81,4 @@ export const frame = async (world: World, seconds: number): Promise<readonly Vec
     return Promise.all(particles.map(async (entity: Entity) => (await toPromise(world.observe.entity(entity, { required: [position] })))?.[position] ?? [0, 0, 0]));
 };
 
-export const start = async (): Promise<World> => World.create();
+export const start = async (): Promise<World> => createWorld();

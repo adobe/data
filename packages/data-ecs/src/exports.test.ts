@@ -36,7 +36,9 @@ Component.register(position, { type: { type: "number" } });
 export const move = System.create({ name: "exportsTest/move", components: { write: [position] } }, row => { row[position] += 1; });
 export const all = System.composite({ name: "exportsTest/all", systems: [move] });
 export const draw = System.render({ name: "exportsTest/draw", shader: { accessors: {} } }, () => {});
-export const world = World.create();
+// How a world is created is the implementation's; the interface gives its type.
+declare const create: World.Create;
+export const world = create();
 export const observeEntity = (entity: Parameters<World["observe"]["entity"]>[0]) => world.observe.entity(entity, { required: [position] });
 export const device = world.observe.resource(gpuDevice);
 export const observe = world.observe;

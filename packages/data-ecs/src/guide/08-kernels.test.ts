@@ -1,7 +1,8 @@
 import { expect, it } from "vitest";
 import { Component, Entity, System, Vec3, World } from "../index.js";
-import { toPromise } from "../observe/to-promise.js";
+import { toPromise } from "../types/observe/to-promise.js";
 import { steer } from "./08-steer.js";
+import { createWorld } from "../implementation/index.js";
 
 const position = "guide/kernels/position";
 const velocity = "guide/kernels/velocity";
@@ -48,7 +49,7 @@ const chase = System.create({
 });
 
 it("runs systems compiled as kernels", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(spawn);
     for (let step = 0; step < 6; step++) {
         await world.run(chase);

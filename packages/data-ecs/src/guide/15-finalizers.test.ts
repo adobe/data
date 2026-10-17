@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { Component, Finalizer, System, Vec3, World } from "../index.js";
-import { toPromise } from "../observe/to-promise.js";
+import { toPromise } from "../types/observe/to-promise.js";
+import { createWorld } from "../implementation/index.js";
 
 const position = "guide/finalizers/position";
 const handle = "guide/finalizers/handle";
@@ -41,7 +42,7 @@ const destroy = System.create({ name: "guide/finalizers/destroy", components: { 
 });
 
 it("releases what entities held when they stop matching", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(spawn);
     await world.run(destroy);
     expect([...open]).toEqual([]);
@@ -51,7 +52,7 @@ it("releases what entities held when they stop matching", async () => {
 });
 
 it("releases what every live entity holds when the world is disposed", async () => {
-    const world = World.create();
+    const world = createWorld();
     await world.run(spawn);
     expect(open.size).toBe(2);
     await world.dispose();

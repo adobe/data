@@ -43,12 +43,12 @@ describe("System.create", () => {
         expect(definitionOf({ name: "typesSystemTest/move" })).toBe(undefined);
     });
     it("accepts the same declaration again as a new system, as a module evaluated again makes it, and rejects a different one", () => {
-        const first = System.create({ name: "typesSystemTest/twice", components: { read: [position] } }, () => {});
-        const again = System.create({ name: "typesSystemTest/twice", components: { read: [position] } }, () => {});
+        const first = System.create({ name: "typesSystemTest/twice", components: { read: [position] } }, row => { void row[position]; });
+        const again = System.create({ name: "typesSystemTest/twice", components: { read: [position] } }, row => { void row[position]; });
         expect(again).not.toBe(first);
         expect(itemNamed("typesSystemTest/twice")).toBe(again);
         expect(definitionOf(first)).toBe(first);
-        expect(() => System.create({ name: "typesSystemTest/twice", components: { write: [position] } }, () => {})).toThrow('A different system, rule or finalizer named "typesSystemTest/twice" already exists');
+        expect(() => System.create({ name: "typesSystemTest/twice", components: { write: [position] } }, row => { row[position] = 0; })).toThrow('A different system, rule or finalizer named "typesSystemTest/twice" already exists');
         expect(itemNamed("typesSystemTest/twice")).toBe(again);
     });
     it("rejects writing what only the world writes, for untyped callers", () => {
@@ -63,9 +63,9 @@ describe("System.create", () => {
         expect(itemNamed("typesSystemTest/both")).toBe(undefined);
     });
     it("derives its thread from its object components and resources, and rejects two", () => {
-        const show = System.create({ name: "typesSystemTest/show", components: { read: [position], write: [node] }, resources: { read: [time, document] } }, () => {});
-        const count = System.create({ name: "typesSystemTest/count", components: { read: [label], has: [node] } }, () => {});
-        const tick = System.create({ name: "typesSystemTest/tick", components: { write: [position] } }, () => {});
+        const show = System.create({ name: "typesSystemTest/show", components: { read: [position, node] }, resources: { read: [time, document] } }, (row, { resources }) => { row[node].textContent = `${row[position]} ${resources[time]} ${resources[document]?.title}`; });
+        const count = System.create({ name: "typesSystemTest/count", components: { read: [label], has: [node] } }, row => { void row[label]; });
+        const tick = System.create({ name: "typesSystemTest/tick", components: { write: [position] } }, row => { row[position] += 1; });
         const leaves = [show, count, tick].map(system => definitionOf(system));
         expect(leaves.map(leaf => leaf === undefined || leaf.kind === "composite" ? undefined : threadOf(leaf.declaration, "System"))).toEqual(["main", "world", null]);
         expect(() => create({ name: "typesSystemTest/span", components: { read: [label], write: [node] } })).toThrow('System "typesSystemTest/span" uses values on threads "world" and "main"');
@@ -77,16 +77,16 @@ describe("System.create", () => {
 
 describe("System.composite", () => {
     it("records a composite whose members may live on different threads", () => {
-        const show = System.create({ name: "typesSystemTest/showMember", components: { write: [node] } }, () => {});
-        const name = System.create({ name: "typesSystemTest/nameMember", components: { write: [label] } }, () => {});
+        const show = System.create({ name: "typesSystemTest/showMember", components: { read: [node] } }, row => { row[node].hidden = true; });
+        const name = System.create({ name: "typesSystemTest/nameMember", components: { write: [label] } }, row => { row[label] = ""; });
         const frame = System.composite({ name: "typesSystemTest/frame", systems: [show, name] });
         expect(definitionOf(frame)?.kind).toBe("composite");
         expect(() => System.composite({ name: "typesSystemTest/frame", systems: [show] })).toThrow("already exists");
     });
     it("rejects members ordered in a cycle, and conflicting members with no order between them", () => {
-        const first = System.create({ name: "typesSystemTest/first", components: { write: [position] } }, () => {});
-        const second = System.create({ name: "typesSystemTest/second", components: { read: [position] }, after: [first] }, () => {});
-        const third = System.create({ name: "typesSystemTest/third", components: { read: [position] } }, () => {});
+        const first = System.create({ name: "typesSystemTest/first", components: { write: [position] } }, row => { row[position] += 1; });
+        const second = System.create({ name: "typesSystemTest/second", components: { read: [position] }, after: [first] }, row => { void row[position]; });
+        const third = System.create({ name: "typesSystemTest/third", components: { read: [position] } }, row => { void row[position]; });
         expect(scheduleOf(requireDefinition(System.composite({ name: "typesSystemTest/ordered", systems: [second, first] }))).tiers.map(tier => tier.map(leaf => leaf.name))).toEqual([["typesSystemTest/first"], ["typesSystemTest/second"]]);
         expect(() => System.composite({ name: "typesSystemTest/unordered", systems: [first, third] })).toThrow('Systems "typesSystemTest/first" and "typesSystemTest/third" both access "typesSystemTest/position" and one writes it');
         const looped = System.create({ name: "typesSystemTest/looped", before: [first], after: [second] }, () => {});

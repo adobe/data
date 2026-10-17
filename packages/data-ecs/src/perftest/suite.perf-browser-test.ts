@@ -1,7 +1,7 @@
 import { it } from "vitest";
-import { gpuDevice } from "../resources/gpu-device.js";
-import type { World } from "../world/world.js";
-import { createWorld } from "../world/create/create.js";
+import { gpuDevice } from "../types/resources/gpu-device.js";
+import type { World } from "../types/world/world.js";
+import { createWorld } from "../implementation/world/create.js";
 import { calibrationSizes, copyBandwidth, environmentLine, resultLine, type Benchmark, type Best, type Curve } from "./benchmark.js";
 import { forest, gpuForest, place, propagate } from "./hierarchy.js";
 import { fastest as particlesFastest, move, spawn } from "./particles.js";
@@ -193,7 +193,7 @@ const benchmarks = (device: GPUDevice): readonly Benchmark[] => [
         typical: [1_000, 100_000],
         best: { bytes: 16, basis: "Each row reads its 4-byte value, its parent's 4-byte result and 4-byte row, and writes its 4-byte result.", on: "gpu" },
         run: async () => {
-            const world = createWorld({ workers: 0, resources: { [gpuDevice]: device } });
+            const world = createWorld({ workers: 0, [gpuDevice]: device });
             try {
                 await world.run(gpuForest, { roots: Number(roots), depth: Number(depth) });
                 return await gpuFastest(device, () => world.run(place));

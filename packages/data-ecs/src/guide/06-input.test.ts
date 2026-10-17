@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { Component, System, Vec3, World } from "../index.js";
-import { toPromise } from "../observe/to-promise.js";
+import { toPromise } from "../types/observe/to-promise.js";
+import { createWorld } from "../implementation/index.js";
 
 const position = "guide/input/position";
 
@@ -21,7 +22,7 @@ const place = System.create({
 });
 
 it("passes an input to each run", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(place, { x: 3, count: 2 });
     const entities = await toPromise(world.observe.select({ required: [position], order: { [position]: true } }));
     const positions = await Promise.all(entities.map(async entity => (await toPromise(world.observe.entity(entity, { required: [position] })))?.[position]));
@@ -40,7 +41,7 @@ const drift = System.create({
 const frame = System.composite({ name: "guide/input/frame", systems: [place, drift] });
 
 it("passes a composite's input to its members", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(place, { x: 3, count: 2 });
     await world.run(frame, { x: 0, count: 1, dx: 1 });
     const entities = await toPromise(world.observe.select({ required: [position], order: { [position]: true } }));

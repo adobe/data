@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { Component, System, World } from "../index.js";
-import { toPromise } from "../observe/to-promise.js";
+import { toPromise } from "../types/observe/to-promise.js";
+import { createWorld } from "../implementation/index.js";
 
 const health = "guide/scheduling/health";
 const damage = "guide/scheduling/damage";
@@ -25,7 +26,7 @@ const heal = System.create({ name: "guide/scheduling/heal", components: { write:
 const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal, hit] });
 
 it("orders a composite's members by their constraints", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(spawn);
     await world.run(frame);
     const [entity] = await toPromise(world.observe.select({ required: [health] }));
@@ -51,7 +52,7 @@ const report = System.create({ name: "guide/scheduling/report", components: { re
 const phased = System.composite({ name: "guide/scheduling/phased", systems: [report, poison, update, render] });
 
 it("orders systems during phases by the order of the phases", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(spawn);
     await world.run(phased);
     // poison during update runs before render, so report during render sees 10 - 1.

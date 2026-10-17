@@ -1,12 +1,13 @@
-import type { Entity } from "../entity/entity.js";
-import { toPromise } from "../observe/to-promise.js";
-import { World } from "../world/world.js";
+import type { Entity } from "../types/entity/entity.js";
+import { toPromise } from "../types/observe/to-promise.js";
+import { World } from "../types/world/world.js";
 import { enabled as flatEnabled, spawnFlat, spawnFlatDynamic, visible as flatVisible } from "./flat.js";
 import { enabled, fastest as particlesFastest, move, position as particlePosition, spawn, visible } from "./particles.js";
 import { forest, local as hierarchyLocal, nudge, parent as hierarchyParent, propagate, propagateChanged, reparent, sprout, turnover, under } from "./hierarchy.js";
 import { chain, churn, emit, fastest, follow, highest, hits, idle, idles, index, indexSum, observe, poke, pokeCluster, position, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
 
 import type { Benchmark } from "./benchmark.js";
+import { createWorld } from "../implementation/index.js";
 
 const check = (condition: boolean, message: string): void => {
     if (!condition) throw new Error(message);
@@ -39,7 +40,7 @@ const after = async (before: () => Promise<unknown>, measured: () => Promise<unk
 
 /** A forest of 100K chains of 10, filtered propagation run once, and its roots. */
 const filteredForest = async (): Promise<{ readonly world: World; readonly roots: readonly Entity[] }> => {
-    const world = World.create();
+    const world = createWorld();
     await world.run(forest, { roots: 100_000, depth: 10 });
     await world.run(propagateChanged);
     return { world, roots: await toPromise(world.observe.select({ required: [hierarchyLocal], not: [hierarchyParent] })) };
@@ -63,7 +64,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1, 1],
         best: runBest,
         run: async () => {
-            const world = await seeded(() => World.create(), 10_000);
+            const world = await seeded(() => createWorld(), 10_000);
             const best = await fastest(() => world.run(idle));
             await world.dispose();
             return best;
@@ -77,7 +78,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [10, 200],
         best: runBest,
         run: async () => {
-            const world = await seeded(() => World.create(), 10_000);
+            const world = await seeded(() => createWorld(), 10_000);
             const best = await fastest(() => world.run(idles));
             await world.dispose();
             return best;
@@ -91,7 +92,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1, 1],
         best: { bytes: 128, basis: "The spawn writes its 28 bytes of values, its entity and its location, and the run reads its system's state." },
         run: async () => {
-            const world = await seeded(() => World.create(), 10_000);
+            const world = await seeded(() => createWorld(), 10_000);
             const best = await fastest(() => world.run(spawnOne));
             await world.dispose();
             return best;
@@ -105,7 +106,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1_000, 100_000],
         best: { bytes: 36, basis: "Each row reads 12 bytes of velocity and reads and writes 12 bytes of position." },
         run: async () => {
-            const world = World.create();
+            const world = createWorld();
             await world.run(spawn, { count: 4 * rows });
             const { minimum } = await particlesFastest(() => world.run(move));
             await world.dispose();
@@ -120,7 +121,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1_000, 100_000],
         best: { bytes: 12, basis: "Each row read loads its 12-byte position." },
         run: async () => {
-            const world = await seeded(() => World.create(), rows);
+            const world = await seeded(() => createWorld(), rows);
             const best = await fastest(() => world.run(small));
             check(totalOf() > 0, "main thread: nothing read");
             await world.dispose();
@@ -135,7 +136,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1_000, 100_000],
         best: { bytes: upRow, basis: "Each row reads its 8-byte value, its parent's 8-byte result and 4-byte row, and writes its 8-byte result." },
         run: async () => {
-            const world = World.create();
+            const world = createWorld();
             await world.run(forest, { roots: 1_000, depth: 10 });
             const best = await fastest(() => world.run(propagate));
             await world.dispose();
@@ -150,7 +151,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [100, 100_000],
         best: { bytes: 48, basis: "Each entity writes its 32 bytes of values, its 8-byte entity and its 8-byte location." },
         run: () => fastest(async () => {
-            const world = World.create();
+            const world = createWorld();
             await world.run(spawn, { count: 1_000_000 });
             await world.dispose();
         }, 5000, 2),
@@ -163,7 +164,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [100, 100_000],
         best: { bytes: 48, basis: "Each entity writes its 32 bytes of values, its 8-byte entity and its 8-byte location." },
         run: () => fastest(async () => {
-            const world = World.create();
+            const world = createWorld();
             await world.run(spawnFlat, { count: 1_000_000 });
             check(await toPromise(world.observe.count({ required: [flatVisible, flatEnabled] })) === 250_000, "create flat: wrong count");
             await world.dispose();
@@ -177,7 +178,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [100, 100_000],
         best: { bytes: 48, basis: "Each entity writes its 32 bytes of values, its 8-byte entity and its 8-byte location." },
         run: () => fastest(async () => {
-            const world = World.create();
+            const world = createWorld();
             await world.run(spawnFlatDynamic, { count: 1_000_000 });
             check(await toPromise(world.observe.count({ required: [flatVisible, flatEnabled] })) === 250_000, "create flat dynamic: wrong count");
             await world.dispose();
@@ -191,7 +192,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1_000, 1_000_000],
         best: { bytes: 36, basis: "Each row reads 12 bytes of velocity and reads and writes 12 bytes of position." },
         run: async () => {
-            const world = World.create();
+            const world = createWorld();
             await world.run(spawn, { count: 1_000_000 });
             check(await toPromise(world.observe.count({ required: [particlePosition, visible, enabled] })) === 250_000, "move: wrong count");
             const { minimum } = await particlesFastest(() => world.run(move));
@@ -207,7 +208,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1_000, 100_000],
         best: { bytes: 29, basis: "Each row reads 16 bytes; each tenth swaps the last row into its hole, 88 bytes, and spawns one of 44." },
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000);
+            const world = await seeded(() => createWorld(), 1_000_000);
             let frame = 0;
             const best = await fastest(() => world.run(churn, { group: frame++ % 10 }));
             check(await toPromise(world.observe.count({ required: [index] })) === 1_000_000, "churn: wrong count");
@@ -223,7 +224,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1_000, 100_000],
         best: { bytes: 39, basis: "Each row reads 4 bytes; each fifth moves, copying its 44 bytes and swapping the last row into its hole." },
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000);
+            const world = await seeded(() => createWorld(), 1_000_000);
             let frame = 0;
             const best = await fastest(() => world.run(retag, { group: frame++ % 10 }));
             check(await toPromise(world.observe.count({ required: [tag] })) > 0, "retag: no tags");
@@ -239,7 +240,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [10_000, 1_000_000],
         best: { bytes: 8.24, basis: "Every chunk has a change, so each row's 8-byte tick is read; the changed 1% read 12 bytes and write 12." },
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000);
+            const world = await seeded(() => createWorld(), 1_000_000);
             const best = await observed(world, poke);
             await world.dispose();
             return best;
@@ -253,7 +254,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [10_000, 1_000_000],
         best: { bytes: 0.33, basis: "Chunk ticks are scanned; the changed 1% read their 8-byte ticks and 24 bytes of values." },
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000);
+            const world = await seeded(() => createWorld(), 1_000_000);
             const best = await observed(world, pokeCluster);
             await world.dispose();
             return best;
@@ -267,7 +268,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1_000, 100_000],
         best: { bytes: 52, basis: "Each row reads 12 bytes of position and an 8-byte target, the target's 8-byte location and 12-byte position, and writes 12." },
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000);
+            const world = await seeded(() => createWorld(), 1_000_000);
             const best = await fastest(() => world.run(follow));
             await world.dispose();
             return best;
@@ -281,7 +282,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1_000, 100_000],
         best: { bytes: 34, basis: "Each row reads 16 bytes; each tenth moves to a new archetype, about 180 bytes." },
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000);
+            const world = await seeded(() => createWorld(), 1_000_000);
             const best = await fastest(() => world.run(emit));
             check(await toPromise(world.observe.count({ required: [hits] })) === 100_000, "emit: wrong count");
             await world.dispose();
@@ -296,7 +297,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1_000, 1_000_000],
         best: { bytes: 4, basis: "Each row reads its 4-byte value." },
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000);
+            const world = await seeded(() => createWorld(), 1_000_000);
             const best = await fastest(() => world.run(reduce));
             check(await toPromise(world.observe.resource(highest)) === 999_999 && await toPromise(world.observe.resource(indexSum)) === 999_999 * 500_000, "reduce: wrong fold");
             await world.dispose();
@@ -311,7 +312,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [6_000, 6_000_000],
         best: { bytes: 4, basis: "Fused into one pass, each row reads and writes its 12-byte velocity once for all six." },
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000);
+            const world = await seeded(() => createWorld(), 1_000_000);
             const best = await fastest(() => world.run(chain));
             await world.dispose();
             return best;
@@ -325,7 +326,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1_000, 100_000],
         best: { bytes: upRow, basis: "Each row reads its 8-byte value, its parent's 8-byte result and 4-byte row, and writes its 8-byte result." },
         run: async () => {
-            const world = World.create();
+            const world = createWorld();
             await world.run(forest, { roots, depth });
             const best = await fastest(() => world.run(propagate));
             await world.dispose();
@@ -354,7 +355,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1_000, 100_000],
         best: { bytes: upRow, basis: "The run itself, with the order kept current at O(1) for the spawn." },
         run: async () => {
-            const world = World.create();
+            const world = createWorld();
             await world.run(forest, { roots: 100_000, depth: 10 });
             const roots = await toPromise(world.observe.select({ required: [hierarchyLocal], not: [hierarchyParent] }));
             const best = await after(() => world.run(sprout, { entity: roots[0] }), () => world.run(propagate));
@@ -406,7 +407,7 @@ export const benchmarks: readonly Benchmark[] = [
         run: async () => {
             let best = Infinity;
             for (let i = 0; i < 5; i++) {
-                const world = World.create();
+                const world = createWorld();
                 const start = performance.now();
                 await world.run(forest, { roots: 100_000, depth: 10 });
                 await world.run(propagate);
@@ -424,7 +425,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [100, 10_000],
         best: { bytes: upRow, basis: "The run over the tree, with the order kept current at O(1) for the spawn." },
         run: async () => {
-            const world = World.create();
+            const world = createWorld();
             await world.run(spawn, { count: 1_000_000 });
             await world.run(forest, { roots: 100, depth: 10 });
             const roots = await toPromise(world.observe.select({ required: [hierarchyLocal], not: [hierarchyParent] }));
@@ -441,7 +442,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [1_000, 100_000],
         best: { bytes: 12, basis: "Each row read loads its 12-byte position." },
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000);
+            const world = await seeded(() => createWorld(), 1_000);
             const best = await fastest(() => world.run(smalls));
             check(totalOf() > 0, "main thread: nothing read");
             await world.dispose();
@@ -456,7 +457,7 @@ export const benchmarks: readonly Benchmark[] = [
         typical: [100, 100_000],
         best: { bytes: 8, basis: "Each row reads its 4-byte index; each selected half writes its 8-byte entity." },
         run: async () => {
-            const world = await seeded(() => World.create(), 1_000_000);
+            const world = await seeded(() => createWorld(), 1_000_000);
             const best = await fastest(async () => {
                 const selected = await toPromise(world.observe.select({ required: [position, index], where: { [index]: { "<": 500_000 } } }));
                 check(selected.length === 500_000, "select: wrong count");

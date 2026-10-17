@@ -35,8 +35,8 @@
       "types": "./dist/index.d.ts"
     },
     "./compiler": {
-      "import": "./dist/compiler/index.js",
-      "types": "./dist/compiler/index.d.ts"
+      "import": "./dist/implementation/compiler/index.js",
+      "types": "./dist/implementation/compiler/index.d.ts"
     },
     "./internal/*": {
       "types": "./dist/*"

@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { Component, Resource, System, Vec3, World } from "../index.js";
-import { toPromise } from "../observe/to-promise.js";
+import { toPromise } from "../types/observe/to-promise.js";
+import { createWorld } from "../implementation/index.js";
 
 const position = "guide/reductions/position";
 const mass = "guide/reductions/mass";
@@ -59,7 +60,7 @@ const report = System.create({ name: "guide/reductions/report", resources: { rea
 const frame = System.composite({ name: "guide/reductions/frame", systems: [report, measure, weigh] });
 
 it("folds rows into resources", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(spawn);
     await world.run(measure);
     expect(await toPromise(world.observe.resource(total))).toBe(200);
@@ -67,7 +68,7 @@ it("folds rows into resources", async () => {
 });
 
 it("folds every contributor in a run, starting again each run", async () => {
-    await using world = World.create();
+    await using world = createWorld();
     await world.run(spawn);
     await world.run(frame);
     await world.run(frame);

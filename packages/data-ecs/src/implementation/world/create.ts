@@ -4,25 +4,34 @@ import type { Rule } from '../../types/rule/created.js';
 import type { Resource } from '../../types/resource/resource.js';
 import { requireDefinition, type Definition } from '../../types/registry/index.js';
 import type { World } from '../../types/world/world.js';
-import type { Create, InitialResources } from '../../types/world/create.js';
+import type { Create, InitialResources, Join } from '../../types/world/create.js';
 import { gpuDevice } from '../../types/resources/gpu-device.js';
 import { workers } from '../../types/resources/workers.js';
 import { createGpu } from './gpu.js';
-import { readCell } from './cells.js';
+import { readCell, writeCell } from './cells.js';
 import { finalizeAll, type Thrown } from './finalizers.js';
 import { createObservers } from './observers.js';
 import type { Observe } from '../../types/observe/observe.js';
 import type { Report } from '../../types/world/report.js';
 import { execute, type ExecuteContext } from './execute.js';
 import { sharedMemoryAvailable } from './memory.js';
-import { createPool, defaultWorkerCount, type Pool } from './pool.js';
+import { createPool, type Pool } from './pool.js';
 import { createPublisher } from './publish.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
 import { ensureResources, findResource, initialOf, setResource } from './resources.js';
 import { ensureProgramResources, activate } from './activate.js';
-import { kindOf } from '../../types/registry/index.js';
-import { createState, startTicking, type Key } from './state.js';
+import { isWorldWritten, kindOf, type Composite } from '../../types/registry/index.js';
+import { always } from '../../types/resources/always.js';
+import { cadence, type Cadence } from '../../types/resources/cadence.js';
+import { clock } from '../../types/resources/clock.js';
+import { report as reportResource } from '../../types/resources/report.js';
+import { wake } from '../../types/resources/wake.js';
+import { stampChanged } from './archetype.js';
+import { failureOf } from './failures.js';
+import { createLoop, platformFrame, platformTimer, type Clock } from './loop.js';
+import { createState, idOf, startTicking, type Key } from './state.js';
+import { indexOf } from './entities.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../../types/resource/value.js';
 
 type Queue = <T>(task: () => T | Promise<T>) => Promise<T>;
@@ -44,6 +53,12 @@ export type WorldOptions = {
     readonly simd?: boolean;
 };
 
+/** The loop's state, added to a world when its first tick runs. */
+const loopResources: readonly Key[] = [cadence, always, wake, clock, reportResource];
+
+/** A pool size from the `workers` resource: a whole number, at least 0. */
+const workersOf = (value: unknown): number => typeof value === "number" && value > 0 ? Math.floor(value) : 0;
+
 /** Rows below which a kernel's archetype runs on the main thread rather than paying for a round trip. */
 const defaultMinimumChunk = 16384;
 
@@ -53,6 +68,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     const initial = new Map<Key, unknown>();
     for (const key of Reflect.ownKeys(resources)) {
         if (kindOf(key) !== "resource") throw new Error(`"${String(key)}" isn't a registered resource.`);
+        if (isWorldWritten(key)) throw new Error(`"${String(key)}" is written only by the world.`);
         initial.set(key, Reflect.get(resources, key));
     }
     const device = resources[gpuDevice] ?? null;
@@ -60,7 +76,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     if (device !== null) state.gpu = createGpu(device);
     const registrar = createRegistrar(state);
     const enqueue = createQueue();
-    const workerCount = shared ? resources[workers] ?? defaultWorkerCount(shared) : 0;
+    let workerCount = shared && typeof Worker === "function" ? workersOf(initialOf(state, workers)) : 0;
     state.workers = workerCount;
     /** Workers start with the first kernel, so worlds without kernels never spawn any. */
     let pool: Pool | null = null;
@@ -158,6 +174,101 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         await loadOnWorkers();
     };
 
+    /** The `workers` resource's changed tick when the pool last followed it. */
+    let workersSeen = -1;
+    const workersId = idOf(state, workers);
+
+    /** Whether the `workers` resource changed since the pool last followed it; allocates nothing. */
+    const workersChanged = (): boolean => {
+        if (state.resourceEntity < 0) return false;
+        const index = indexOf(state.resourceEntity);
+        const storage = state.archetypes[state.entities.archetype[index]]?.storageById[workersId];
+        if (storage === undefined) return false;
+        const changed = storage.changed[state.entities.row[index]];
+        if (changed === workersSeen) return false;
+        workersSeen = changed;
+        return true;
+    };
+
+    /** Sizes the kernel pool to the `workers` resource: a new size starts a new pool, with the next kernel. */
+    const followWorkers = async (): Promise<void> => {
+        const wanted = shared && typeof Worker === "function" ? workersOf(readResource(workers)) : 0;
+        if (wanted === workerCount) return;
+        workerCount = wanted;
+        state.workers = wanted;
+        const old = pool;
+        pool = null;
+        context.workers = null;
+        context.publish = () => {};
+        for (const runner of registrar.kernels()) runner.kernel?.unloadedOnWorkers();
+        old?.terminate();
+        await loadOnWorkers();
+    };
+
+    /** Runs a registered system or composite, ending in a sync point, then delivers to observers. */
+    const perform = async (definition: Definition, value: unknown): Promise<Report> => {
+        ensureProgramResources(state, ensured);
+        if (observers.start()) await reloadObserved();
+        if (workersChanged()) await followWorkers();
+        if (deviceChanged()) await followDevice();
+        const schedule = registrar.registered(definition);
+        if (schedule === undefined) throw new Error(`System "${definition.name}" didn't register.`);
+        let report: Report;
+        try {
+            report = await execute(context, schedule, value, definition.name);
+        }
+        finally {
+            if (deviceChanged()) await followDevice();
+        }
+        // Observers get values a GPU kernel wrote, read back for them.
+        const reading = observers.readback();
+        if (reading !== null) await reading;
+        const failed = observers.deliver();
+        return failed === null ? report : { ...report, failures: [...report.failures, ...failed] };
+    };
+
+    /** Writes a resource only the world writes, stamped with a tick of its own so systems and observers see it. */
+    const writeOwn = (key: Key, value: unknown): void => {
+        const cell = findResource(state, key);
+        if (cell === undefined) return;
+        writeCell(cell.storage, cell.row, value);
+        stampChanged(cell.storage, cell.row, ++state.tick);
+    };
+
+    /** One tick: the clock, the added systems as one composite, then the tick's report. */
+    const tick = (composite: Composite, clockValue: Clock): Promise<void> => enqueue(async () => {
+        if (disposed) return;
+        let report: Report;
+        try {
+            if (registrar.registered(composite) === undefined) {
+                ensureResources(state, loopResources);
+                await complete(registrar.register(composite));
+            }
+            writeOwn(clock, clockValue);
+            report = await perform(composite, undefined);
+        }
+        catch (error) {
+            report = { failures: [failureOf("system", composite.name, error)], skipped: [], dropped: 0 };
+        }
+        if (readResource(reportResource) === report) return;
+        writeOwn(reportResource, report);
+        // Observers of the report see it now; one that throws here is reported by the next tick's report.
+        const failed = observers.deliver();
+        if (failed !== null) observers.defer(failed);
+    });
+
+    const loop = createLoop({
+        settings: () => {
+            // Stored values match each resource's registered schema.
+            const cadenceValue = readResource(cadence) as Cadence;
+            return { cadence: cadenceValue, always: readResource(always) === true, wake: Number(readResource(wake)) };
+        },
+        tick,
+        now: () => performance.now(),
+        frame: platformFrame,
+        timer: platformTimer,
+    });
+
     const observers = createObservers(state, readResource, enqueue);
     const world: World = {
         run: (system, ...args) => {
@@ -173,29 +284,24 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             catch (error) {
                 return Promise.reject(error);
             }
-            return enqueue(async () => {
-                if (registration !== null) await complete(registration);
-                ensureProgramResources(state, ensured);
-                if (observers.start()) await reloadObserved();
-                if (deviceChanged()) await followDevice();
-                const schedule = registrar.registered(definition);
-                if (schedule === undefined) throw new Error(`System "${system.name}" didn't register.`);
-                let report: Report;
-                try {
-                    report = await execute(context, schedule, value, system.name);
-                }
-                finally {
-                    if (deviceChanged()) await followDevice();
-                }
-                // Observers get values a GPU kernel wrote, read back for them.
-                const reading = observers.readback();
-                if (reading !== null) await reading;
-                const failed = observers.deliver();
-                return failed === null ? report : { ...report, failures: [...report.failures, ...failed] };
+            const ran = definition;
+            const registering = registration;
+            loop.arrived();
+            return enqueue(registering === null ? () => perform(ran, value) : async () => {
+                await complete(registering);
+                return perform(ran, value);
             });
+        },
+        add: system => {
+            checkLive();
+            loop.add(requireDefinition(system));
+        },
+        share: () => {
+            throw new Error("Sharing a world with another thread is not yet supported.");
         },
         dispose: () => {
             disposed = true;
+            loop.stop();
             return enqueue(async () => {
                 // Per-query finalizers release what every live entity they match holds, reading the GPU's writes first.
                 let errors: Thrown[] = [];
@@ -215,8 +321,6 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 if (errors.length > 0) throw errors[0].error;
             });
         },
-        add: () => { throw new Error("World.add isn't implemented yet."); },
-        share: () => { throw new Error("Sharing a world with another thread is not yet supported."); },
         [Symbol.asyncDispose]: () => world.dispose(),
         observe: {
             // Stored values match each resource's registered schema, so they have its type.
@@ -236,3 +340,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
  * systems and `kernel: "gpu"` kernels run on that device.
  */
 export const create: Create = resources => createWorld(resources);
+
+/** Joins a world from another thread, which isn't supported yet. */
+export const join: Join = () => {
+    throw new Error("Joining a world from another thread is not yet supported.");
+};

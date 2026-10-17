@@ -38,6 +38,8 @@ export type BoundKernel = {
     /** Whether workers have an older load than the main thread; `loadedOnWorkers` records that they caught up. */
     readonly staleOnWorkers: () => boolean;
     readonly loadedOnWorkers: () => void;
+    /** Records that workers hold no load, as a new pool's don't. */
+    readonly unloadedOnWorkers: () => void;
     readonly kernel: () => Kernel;
     /** The WASM version, when the kernel has a program and the world shares its memory; replaced by each load. */
     wasm: WasmKernel | null;
@@ -221,6 +223,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         stale: () => loadedFor !== mutedNow().join(),
         staleOnWorkers: () => workersFor !== loadedFor,
         loadedOnWorkers: () => { workersFor = loadedFor; },
+        unloadedOnWorkers: () => { workersFor = null; },
         load: async () => {
             muted = mutedNow();
             bound.wasm = generate(muted);

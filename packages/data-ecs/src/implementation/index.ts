@@ -1,1 +1,1 @@
-export { create, createWorld, type WorldOptions } from './world/create.js';
+export { create, createWorld, join, type WorldOptions } from './world/create.js';

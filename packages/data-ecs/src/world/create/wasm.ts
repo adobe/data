@@ -706,7 +706,7 @@ export const generateWasm = (
     const vop = {
         load: 0, store: 11, const: 12, f32Splat: 19, f64Splat: 20,
         f32Eq: 65, f32Ne: 66, f32Lt: 67, f32Gt: 68, f32Le: 69, f32Ge: 70,
-        not: 77, and: 78, andNot: 79, bitselect: 82,
+        f64Gt: 74, not: 77, and: 78, andNot: 79, or: 80, bitselect: 82, anyTrue: 83,
         store32Lane: 90, store64Lane: 91, load32Zero: 92, load64Zero: 93,
         f32Ceil: 103, f32Floor: 104, f32Trunc: 105, i64ExtendLowS: 199, i64ExtendHighS: 200,
         f32Abs: 224, f32Neg: 225, f32Sqrt: 227, f32Add: 228, f32Sub: 229, f32Mul: 230, f32Div: 231, f32Min: 232, f32Max: 233,
@@ -1346,6 +1346,26 @@ export const generateWasm = (
             code.push(op.localGet, ...unsigned(next), op.localGet, 1, op.localGet, ...unsigned(next), op.localGet, 1, op.i32LtS, op.select, op.localSet, ...unsigned(rowLocal));
             code.push(op.br, 2, op.end, op.end);
         };
+        /** Rows a block skip checks at once: four f64x2 loads of each filter's row ticks. */
+        const blockRows = 8;
+        /**
+         * With SIMD, at a row that's a multiple of `blockRows`, skips that many rows when none passes a filter, testing
+         * two ticks per comparison. Only aligned rows check, so rows that do pass pay one check per block.
+         */
+        const skipBlocks = (): void => {
+            code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, blockRows - 1, op.i32And, op.i32Eqz);
+            code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, blockRows, op.i32Add, op.localGet, 1, op.i32LeS, op.i32And, op.if, 0x40);
+            for (let filter = 0; filter < filters; filter++) {
+                for (let pair = 0; pair < blockRows / 2; pair++) {
+                    code.push(op.localGet, ...unsigned(filterRowParameter(filter)), op.localGet, ...unsigned(rowLocal), op.i32Const, 3, op.i32Shl, op.i32Add);
+                    code.push(...simd(vop.load), 3, ...unsigned(16 * pair), op.localGet, 3, ...simd(vop.f64Splat), ...simd(vop.f64Gt));
+                    if (filter > 0 || pair > 0) code.push(...simd(vop.or));
+                }
+            }
+            code.push(...simd(vop.anyTrue), op.i32Eqz, op.if, 0x40);
+            code.push(op.localGet, ...unsigned(rowLocal), op.i32Const, blockRows, op.i32Add, op.localSet, ...unsigned(rowLocal));
+            code.push(op.br, 2, op.end, op.end);
+        };
         // Scalars are discovered while generating, so code is generated first with locals placed after a provisional scalar count.
         /** `rows`: four rows at a time where every column is dense; `lanes`: fuse statements within each row. */
         let fused = false;
@@ -1394,6 +1414,7 @@ export const generateWasm = (
                 code.push(op.localGet, ...unsigned(upParameter(1)), op.localGet, ...unsigned(slot), op.i32Const, 2, op.i32Shl, op.i32Add, op.i32Load, 2, 0, op.localSet, ...unsigned(parentLocal));
             }
             if (filters > 0) skipChunks();
+            if (filters > 0 && simdEnabled && !upMode) skipBlocks();
             code.push(op.block, 0x40);
             // A row that no filter passes goes to the next.
             if (filters > 0) {

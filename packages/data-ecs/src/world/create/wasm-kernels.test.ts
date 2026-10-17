@@ -180,7 +180,33 @@ const simulate = async (wasm: boolean, simd = false): Promise<unknown[]> => {
     return result;
 };
 
+/** Counts the runs of rows whose score changed. */
+const recount = System.create({ name: "wasmTest/recount", kernel: "cpu", components: { write: [bounces], changed: [score] } }, row => {
+    row[bounces] += 1;
+});
+const chosen = new Set<Entity>();
+const rescore = System.create({ name: "wasmTest/rescore", components: { write: [score] } }, row => {
+    if (chosen.has(row.entity)) row[score] += 1;
+});
+
 describe("WASM kernels", () => {
+    it("pass exactly the rows a change filter passes, across blocks of rows and their edges", async () => {
+        const rows = [0, 3, 7, 8, 15, 16, 40, 41, 42, 43, 44, 45, 46, 47, 63, 64, 98, 99];
+        for (const [wasm, simd] of [[true, true], [true, false], [false, false]] as const) {
+            await using ecs = createWorld({ workers: 0, wasm, simd });
+            await ecs.run(seed, { count: 100 });
+            await ecs.run(recount);
+            const entities = ecs.query.select([score]);
+            chosen.clear();
+            for (const row of rows) chosen.add(entities[row]);
+            await ecs.run(rescore);
+            await ecs.run(recount);
+            const ran = entities.flatMap((entity, row) => ecs.read.component(entity, bounces) === 2 ? [row] : []);
+            expect(ran, `wasm ${wasm}, simd ${simd}`).toEqual(rows);
+        }
+    });
+
+
     it("are generated for every kernel here, with SIMD only where lanes line up", () => {
         const wasmOf = (system: typeof integrate | typeof bounce | typeof tally | typeof scale | typeof drift | typeof chase) => {
             const definition = definitionOf(system);

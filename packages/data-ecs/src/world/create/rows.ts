@@ -291,7 +291,7 @@ export const createContext = (state: State, declaration: Pick<Declaration, "look
     if (commands !== undefined) Object.defineProperty(value, "commands", { value: commands, enumerable: true });
     const bind = (): void => {
         for (let i = 0; i < keys.length; i++) cells[i] = findResource(state, keys[i]);
-        targets.forEach((target, t) => reduced[t]?.fill(identityOf(target.operator)));
+        for (let t = 0; t < targets.length; t++) reduced[t]?.fill(identityOf(targets[t].operator));
     };
     return { value, bind, reduced };
 };

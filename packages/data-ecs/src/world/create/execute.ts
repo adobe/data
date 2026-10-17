@@ -1,5 +1,5 @@
 import type { Leaf } from '../../system/leaf.js';
-import type { Chunk, Runner, Workers } from './runner.js';
+import type { Chunk, ChunkResult, Runner, Workers } from './runner.js';
 import type { Schedule } from './schedule.js';
 import type { Archetype, Storage } from './archetype.js';
 import { idOf, type State } from './state.js';
@@ -12,6 +12,7 @@ import { failureOf } from './failures.js';
 
 /** Shared by every report without failures or skipped systems: they're read-only, so none needs its own. */
 const none: readonly never[] = [];
+const noChunks: readonly Chunk[] = [];
 /** The report of a run with nothing to report. */
 const clean: Report = { failures: none, skipped: none, dropped: 0 };
 
@@ -73,10 +74,41 @@ const contribute = (state: State, folds: ReadonlyMap<unknown, Fold>, runner: Run
     });
 };
 
-const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }: ExecuteContext, schedule: Schedule, args: unknown, earlier: Failure[] | null): Promise<Report> => {
+/**
+ * A schedule's runners by tier, and an array per tier for their chunks, made on its first run and reused. Runners are
+ * read again each run, since moving to or from a GPU device replaces them.
+ */
+type Prepared = { readonly runners: Runner[][]; readonly started: (readonly Chunk[])[][] };
+const preparedBy = new WeakMap<ExecuteContext, WeakMap<Schedule, Prepared>>();
+
+const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
+    let bySchedule = preparedBy.get(context);
+    if (bySchedule === undefined) preparedBy.set(context, bySchedule = new WeakMap());
+    let prepared = bySchedule.get(schedule);
+    if (prepared === undefined) {
+        prepared = { runners: schedule.tiers.map(tier => tier.map(context.runnerOf)), started: schedule.tiers.map(tier => new Array<readonly Chunk[]>(tier.length)) };
+        bySchedule.set(schedule, prepared);
+    }
+    return prepared;
+};
+
+/** Queues a settled chunk's commands, and returns its error, if it failed. */
+const queue = (state: State, { commands, error }: ChunkResult): unknown => {
+    // Systems can't touch the resource entity; only registration adds resources.
+    if (commands.count > 0) state.queued.push({ buffer: commands, guarded: true });
+    return error;
+};
+
+const firstOf = (first: unknown, next: unknown): unknown => first === undefined ? next : first;
+
+const isResults = (result: ChunkResult | readonly ChunkResult[]): result is readonly ChunkResult[] => Array.isArray(result);
+
+const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: unknown, earlier: Failure[] | null): Promise<Report> => {
+    const { state, kernelIndexOf, workers, publish } = context;
     const { gpu } = state;
-    const folds = new Map<unknown, Fold>();
-    for (const [key, contributors] of schedule.reductions) folds.set(key, { target: null, values: [], remaining: contributors, ran: false, failed: false });
+    const prepared = preparedFor(context, schedule);
+    let folds: Map<unknown, Fold> | null = null;
+    for (const [key, contributors] of schedule.reductions) (folds ??= new Map()).set(key, { target: null, values: [], remaining: contributors, ran: false, failed: false });
     // Allocated only when there's something to list.
     let failures = earlier;
     let skipped: string[] | null = null;
@@ -84,34 +116,36 @@ const executeTiers = async ({ state, runnerOf, kernelIndexOf, workers, publish }
     try {
         for (let t = 0; t < schedule.tiers.length; t++) {
             const tier = schedule.tiers[t];
-            const runners = tier.map(runnerOf);
+            const runners = prepared.runners[t];
+            for (let i = 0; i < tier.length; i++) runners[i] = context.runnerOf(tier[i]);
+            const started = prepared.started[t];
             if (gpu !== null) await readAhead(state, gpu, runners);
-            const started: (readonly Chunk[])[] = new Array(runners.length);
-            runners.forEach((runner, i) => {
-                if (runner.kernel !== null) started[i] = runner.start(args, workers, kernelIndexOf(runner));
-            });
-            runners.forEach((runner, i) => {
-                if (runner.kernel === null) started[i] = runner.start(args, null, -1);
-            });
-            // Every chunk settles, even a failed one, so no worker is still writing at the sync point.
-            const settled = await Promise.all(started.map(async chunks => (await Promise.all(chunks)).flat()));
+            for (let i = 0; i < runners.length; i++) if (runners[i].kernel !== null) started[i] = runners[i].start(args, workers, kernelIndexOf(runners[i]));
+            for (let i = 0; i < runners.length; i++) if (runners[i].kernel === null) started[i] = runners[i].start(args, null, -1);
+            // Every chunk settles, even a failed one, so no worker is still writing at the sync point. Chunks the main
+            // thread ran are settled already, so only those workers run are awaited.
             let tierFailed = false;
-            for (let i = 0; i < settled.length; i++) {
-                let failed = false;
-                for (const { commands, error } of settled[i] ?? []) {
-                    // Systems can't touch the resource entity; only registration adds resources.
-                    if (commands.count > 0) state.queued.push({ buffer: commands, guarded: true });
-                    // A system's first failure stands for it; its other chunks often fail the same way.
-                    if (error !== undefined && !failed) (failures ??= []).push(failureOf("system", tier[i].name, error));
-                    if (error !== undefined) failed = true;
+            for (let i = 0; i < runners.length; i++) {
+                let error: unknown = undefined;
+                // Indexed: an iterator kept across an await would be allocated for every system.
+                const chunks = started[i];
+                for (let c = 0; c < chunks.length; c++) {
+                    const chunk = chunks[c];
+                    const result = chunk instanceof Promise ? await chunk : chunk;
+                    // Every chunk's commands queue, a failed system's included; its first error stands for it.
+                    if (isResults(result)) for (const each of result) error = firstOf(error, queue(state, each));
+                    else error = firstOf(error, queue(state, result));
                 }
+                started[i] = noChunks;
+                const failed = error !== undefined;
+                if (failed) (failures ??= []).push(failureOf("system", tier[i].name, error));
                 if (failed) tierFailed = true;
                 const runner = runners[i];
-                if (runner !== undefined && runner.targets.length > 0) contribute(state, folds, runner, runner.finish(failed), failed);
+                if (folds !== null && runner.targets.length > 0) contribute(state, folds, runner, runner.finish(failed), failed);
             }
             if (gpu !== null) markWrites(gpu, runners);
             if (tierFailed) {
-                for (const later of schedule.tiers.slice(t + 1)) for (const leaf of later) (skipped ??= []).push(leaf.name);
+                for (let later = t + 1; later < schedule.tiers.length; later++) for (const leaf of schedule.tiers[later]) (skipped ??= []).push(leaf.name);
                 break;
             }
         }

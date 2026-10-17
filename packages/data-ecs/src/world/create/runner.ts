@@ -11,7 +11,7 @@ import { reserve } from './entities.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
 import { createContext, parentBinder, rowBinder } from './rows.js';
-import { scalarValues } from './wasm.js';
+import { scalarValue, scalarValues } from './wasm.js';
 import { idOf, type State } from './state.js';
 import { accessorsOf } from '../../gpu/accessors.js';
 import { recordWords } from './gpu.js';
@@ -137,6 +137,26 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const owned: CommandBuffer[] = [];
     let used = 0;
     const nextBuffer = (): CommandBuffer => owned[used++] ??= createBuffer();
+    /** Each owned buffer as a chunk, made once. */
+    const ownedChunks: ChunkResult[] = [];
+    /** Moves `holder` to the run's next buffer, returning it as a chunk. */
+    const nextChunk = (): ChunkResult => {
+        const index = used;
+        holder.buffer = nextBuffer();
+        return ownedChunks[index] ??= { commands: holder.buffer };
+    };
+    /** The chunks of the current run, reused by the next once its tier has taken them. */
+    const runChunks: Chunk[] = [];
+    const noChunks: readonly Chunk[] = [];
+    const noValues: readonly unknown[] = [];
+    /** Whether a resource a `changed` filter names changed since the system last ran. */
+    const resourcesChangedSince = (since: number): boolean => {
+        for (const key of resourceChanged) {
+            const { storage, row } = resourceCell(state, key);
+            if (storage.changed[row] > since) return true;
+        }
+        return false;
+    };
     const commands = createCommands(state, holder);
     const kernelCommands = createKernelCommands(holder, kernel?.setup.keys ?? [], () => reserve(state.entities));
     // A kernel's reductions fold in its partials, so only a body that runs as written gets reducer functions. Render
@@ -204,23 +224,47 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         return since;
     };
 
-    /** The archetype's change filters: `added` then `changed`, rows and chunks. */
-    const filtersOf = (archetype: Archetype): Filter[] => [
-        ...addedIds.flatMap(id => {
-            const storage = archetype.storageById[id];
-            return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded }];
-        }),
-        ...changedIds.flatMap(id => {
-            const storage = archetype.storageById[id];
-            return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged }];
-        }),
-    ];
+    /**
+     * By archetype: its change filters, `added` then `changed`, rows and chunks, and the WASM addresses of its columns
+     * and filters, kept until its arrays are replaced.
+     */
+    const filterCache = new Map<Archetype, { readonly version: number; readonly filters: readonly Filter[]; addresses: readonly number[] | null }>();
+    const noFilters: readonly Filter[] = [];
+
+    const filteredOf = (archetype: Archetype) => {
+        const cached = filterCache.get(archetype);
+        if (cached !== undefined && cached.version === archetype.version) return cached;
+        const filters = addedIds.length + changedIds.length === 0 ? noFilters : [
+            ...addedIds.flatMap(id => {
+                const storage = archetype.storageById[id];
+                return storage === undefined ? [] : [{ ticks: storage.added, chunks: storage.chunkAdded }];
+            }),
+            ...changedIds.flatMap(id => {
+                const storage = archetype.storageById[id];
+                return storage === undefined ? [] : [{ ticks: storage.changed, chunks: storage.chunkChanged }];
+            }),
+        ];
+        const entry: { readonly version: number; readonly filters: readonly Filter[]; addresses: readonly number[] | null } = { version: archetype.version, filters, addresses: null };
+        filterCache.set(archetype, entry);
+        return entry;
+    };
+
+    const filtersOf = (archetype: Archetype): readonly Filter[] => filteredOf(archetype).filters;
 
     const runBody = (archetype: Archetype, since: number): void => {
         const row = bindRow(archetype);
         const { value } = row;
         const values = context.value;
-        forEachPassingRange(filtersOf(archetype), since, 0, archetype.count, (start, end) => {
+        const filters = filtersOf(archetype);
+        // Every row passes, so nothing is filtered.
+        if (since < 0 || filters.length === 0) {
+            for (let index = 0, count = archetype.count; index < count; index++) {
+                row.index = index;
+                system.body(value, values);
+            }
+            return;
+        }
+        forEachPassingRange(filters, since, 0, archetype.count, (start, end) => {
             for (let index = start; index < end; index++) {
                 row.index = index;
                 system.body(value, values);
@@ -229,23 +273,40 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     };
 
     /** The kernel applies the change filters itself, chunk by chunk, so a range runs in one call. */
-    const runWasm = (bound: BoundKernel, archetype: Archetype, start: number, end: number, since: number, scalars: readonly number[], tick: number, partials: number): void => {
+    /** A WASM call's arguments, filled in place for each call, so a call allocates nothing. */
+    const wasmArguments: number[] = [];
+
+    const runWasm = (bound: BoundKernel, archetype: Archetype, start: number, end: number, since: number, values: readonly unknown[], args: unknown, tick: number, partials: number): void => {
         const compiled = bound.compiled();
-        if (compiled === null) return;
-        const filters = filtersOf(archetype);
-        compiled.run(start, end, tick, since,
+        if (compiled === null || bound.wasm === null) return;
+        const entry = filteredOf(archetype);
+        // Column and filter addresses: the columns are kept per archetype version too.
+        const addresses = entry.addresses ??= [
             ...bound.columnsOf(archetype).map(column => column.byteOffset),
-            ...filters.map(filter => filter.ticks.byteOffset),
-            ...filters.map(filter => filter.chunks.byteOffset),
-            ...scalars,
-            ...partials < 0 ? [] : [partials]);
+            ...entry.filters.map(filter => filter.ticks.byteOffset),
+            ...entry.filters.map(filter => filter.chunks.byteOffset),
+        ];
+        const lookups = bound.lookupParameters();
+        const { scalars } = bound.wasm;
+        const call = wasmArguments;
+        call.length = 4 + addresses.length + lookups.length + scalars.length + (partials < 0 ? 0 : 1);
+        call[0] = start;
+        call[1] = end;
+        call[2] = tick;
+        call[3] = since;
+        let at = 4;
+        for (let k = 0; k < addresses.length; k++) call[at++] = addresses[k];
+        for (let k = 0; k < lookups.length; k++) call[at++] = lookups[k];
+        for (let k = 0; k < scalars.length; k++) call[at++] = scalarValue(scalars[k], values, args);
+        if (partials >= 0) call[at] = partials;
+        Reflect.apply(compiled.run, undefined, call);
     };
 
     const runKernelLocally = (bound: BoundKernel, archetype: Archetype, since: number, values: readonly unknown[], args: unknown, tick: number): void => {
+        const slot = partialCount === 0 ? 0 : takeSlots(1);
+        if (bound.compiled() !== null && bound.wasm !== null) return runWasm(bound, archetype, 0, archetype.count, since, values, args, tick, partialAddress(slot));
         const columns = bound.columnsOf(archetype);
         const filters = filtersOf(archetype);
-        const slot = partialCount === 0 ? 0 : takeSlots(1);
-        if (bound.compiled() !== null && bound.wasm !== null) return runWasm(bound, archetype, 0, archetype.count, since, [...bound.lookupParameters(), ...scalarValues(bound.wasm.scalars, values, args)], tick, partialAddress(slot));
         const run = bound.kernel();
         forEachPassingRange(filters, since, 0, archetype.count, (start, end) =>
             run(columns, start, end, values, bound.lookups, bound.description.keys, args, kernelCommands, tick, slots, slot * partialCount));
@@ -586,18 +647,17 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
     const start = (input: unknown, workers: Workers | null, index: number): readonly Chunk[] => {
         ran = false;
         // A system whose conditions don't hold is skipped, successfully, and keeps its `lastRun`.
-        if (!holds()) return [];
+        if (!holds()) return noChunks;
         const tick = ++state.tick;
         const args = ownInput(input);
         slotsUsed = 0;
         used = 0;
-        holder.buffer = nextBuffer();
-        const chunks: Chunk[] = [{ commands: holder.buffer }];
+        const chunks = runChunks;
+        // Truncated to one rather than emptied: emptying an array drops its backing store, which the push would allocate again.
+        chunks.length = 1;
+        chunks[0] = nextChunk();
         try {
-            const resourcesChanged = resourceChanged.some(key => {
-                const { storage, row } = resourceCell(state, key);
-                return storage.changed[row] > lastRun;
-            });
+            const resourcesChanged = resourceChanged.length > 0 && resourcesChangedSince(lastRun);
             /** -1 passes every row. */
             const since = !filtered || resourcesChanged ? -1 : lastRun;
             context.bind();
@@ -616,10 +676,10 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             if (since >= 0 && addedIds.length + changedIds.length === 0 && up === null) return chunks;
             ran = true;
             refreshMatches();
-            const values = kernel?.description.resources.map(key => {
+            const values = kernel === null || kernel.description.resources.length === 0 ? noValues : kernel.description.resources.map(key => {
                 const { storage, row } = resourceCell(state, key);
                 return readCell(storage, row);
-            }) ?? [];
+            });
             if (placement === "gpu") {
                 if (up !== null) runUpOnGpu(values, args, tick);
                 else runOnGpu(values, args, tick);
@@ -636,8 +696,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
                 if (kernel === null) runBody(archetype, from);
                 else if (workers !== null && archetype.count >= minimumFor(workers)) {
                     chunks.push(...postChunks(workers, index, archetype, from, values, args, tick));
-                    holder.buffer = nextBuffer();
-                    chunks.push({ commands: holder.buffer });
+                    chunks.push(nextChunk());
                 }
                 else runKernelLocally(kernel, archetype, from, values, args, tick);
             }

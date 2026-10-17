@@ -9,6 +9,9 @@ import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKer
 import { createDirectory, lookupParameters } from './directories.js';
 import { generateWgsl, type WgslKernel } from './wgsl.js';
 
+/** A kernel without lookups passes no lookup parameters; read-only, so one is shared. */
+const noParameters: readonly number[] = [];
+
 export type BoundKernel = {
     readonly description: KernelDescription;
     readonly lookups: readonly ReturnType<typeof createArrayLookup>[];
@@ -41,7 +44,7 @@ export type BoundKernel = {
     /** The compiled module and the main thread's instance, once loaded. */
     readonly compiled: () => { readonly module: WebAssembly.Module; readonly run: WasmRun } | null;
     /** For a WASM kernel with lookups: the entity table and directories, passed ahead of the scalars. */
-    readonly lookupParameters: () => number[];
+    readonly lookupParameters: () => readonly number[];
     /** The kernel as a compute shader for the components observed at the last load, or why it can't run on the GPU. */
     readonly gpu: () => WgslKernel | string;
 };
@@ -237,7 +240,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
                 bound.wasm = null;
             }
         },
-        lookupParameters: () => directories.length === 0 ? [] : lookupParameters(state, directories),
+        lookupParameters: () => directories.length === 0 ? noParameters : lookupParameters(state, directories),
         gpu: () => description.program === null
             ? "it issues commands or uses values that aren't numbers"
             : description.lookups.length > 0 ? "it uses lookups"

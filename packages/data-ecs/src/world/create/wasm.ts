@@ -56,13 +56,16 @@ const operations: { readonly [name: string]: (a: number, b: number) => number } 
     power: (a, b) => a ** b,
 };
 
-/** Reads each scalar parameter's value from the resources and args of a run; booleans become 0 or 1. */
+/** Reads a scalar parameter's value from the resources and args of a run; booleans become 0 or 1. */
+export const scalarValue = (scalar: WasmScalar, resources: readonly unknown[], args: unknown): number => {
+    let value: unknown = scalar.source === "args" ? args : resources[scalar.index];
+    for (const key of scalar.path) value = typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
+    return Number(value);
+};
+
+/** Reads each scalar parameter's value from the resources and args of a run. */
 export const scalarValues = (scalars: readonly WasmScalar[], resources: readonly unknown[], args: unknown): number[] =>
-    scalars.map(scalar => {
-        let value: unknown = scalar.source === "args" ? args : resources[scalar.index];
-        for (const key of scalar.path) value = typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
-        return Number(value);
-    });
+    scalars.map(scalar => scalarValue(scalar, resources, args));
 
 /** The `run` export of an instantiated kernel module: `lastRun` below 0 passes every row. */
 export type WasmRun = (start: number, end: number, tick: number, lastRun: number, ...values: number[]) => void;

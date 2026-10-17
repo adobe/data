@@ -127,12 +127,17 @@ export const createWorld = (options: WorldOptions = {}): World => {
      * once the device is lost. A new device gets the storage, after what's ahead on the old one is read back unless it
      * was lost; `kernel: "gpu"` systems move with it, and run on the CPU again without a device.
      */
-    const followDevice = async (): Promise<void> => {
-        // A lost device is no device: systems that need one are skipped, and systems watching it see the change.
+    /** Whether the `gpuDevice` resource names another device than the world runs on; a lost device is no device. */
+    const deviceChanged = (): boolean => {
+        // Systems that need a device are then skipped, and systems watching it see the change.
         if (state.gpu !== null && state.gpu.lost() !== null && world.read.resource(gpuDevice) === state.gpu.device) setResource(state, gpuDevice, null);
+        return world.read.resource(gpuDevice) !== (state.gpu?.device ?? null);
+    };
+
+    /** Moves the world onto the device `gpuDevice` names, or off the GPU. */
+    const followDevice = async (): Promise<void> => {
         const device = world.read.resource(gpuDevice);
         const current = state.gpu;
-        if (device === (current?.device ?? null)) return;
         if (current !== null) {
             // A lost device's copies are gone, so its readback keeps the CPU's.
             await current.readback();
@@ -162,14 +167,14 @@ export const createWorld = (options: WorldOptions = {}): World => {
             return enqueue(async () => {
                 if (registration !== null) await complete(registration);
                 ensureProgramResources(state, ensured);
-                await followDevice();
+                if (deviceChanged()) await followDevice();
                 const schedule = registrar.registered(definition);
                 if (schedule === undefined) throw new Error(`System "${system.name}" didn't register.`);
                 try {
                     return await execute(context, schedule, value, system.name);
                 }
                 finally {
-                    await followDevice();
+                    if (deviceChanged()) await followDevice();
                 }
             });
         },

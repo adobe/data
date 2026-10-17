@@ -1,4 +1,5 @@
 import type { Archetype } from './archetype.js';
+import type { Holders } from './holders.js';
 import { closedComponents, strataOf, type RuleFacts, type Strata } from './closure.js';
 
 /**
@@ -17,8 +18,8 @@ export type Structure = {
     readonly references: number[];
     /** Components holding references. */
     readonly referenceIds: number[];
-    /** By target entity, generation included: its holders, as entity and component pairs. */
-    readonly holders: Map<number, number[]>;
+    /** By reference component id: the holders of each target. */
+    readonly holders: (Holders | undefined)[];
     /** By archetype id: the archetype id of its closure, or -1 until computed. */
     closures: number[];
     /** By `from + 1` and `to` archetype ids: the derived components an entity gains moving between them. */
@@ -31,7 +32,7 @@ export const owner = 1;
 export const weak = 2;
 
 export const createStructure = (): Structure => ({
-    rules: [], strata: [], hosts: [], dependents: [], references: [], referenceIds: [], holders: new Map(), closures: [], gains: new Map(), rederive: false,
+    rules: [], strata: [], hosts: [], dependents: [], references: [], referenceIds: [], holders: [], closures: [], gains: new Map(), rederive: false,
 });
 
 /** Whether the closure can differ from the archetype: some rule or `within` declaration exists. */

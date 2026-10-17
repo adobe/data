@@ -2,6 +2,7 @@ import type { Archetype } from './archetype.js';
 import { readCell } from './cells.js';
 import { indexOf, locate } from './entities.js';
 import { commandValue, isMissing } from './finalizers.js';
+import { createHolders, fitHolders, forEachHolder, linkHolder, unlinkHolder } from './holders.js';
 import { closureOf, owner } from './structure.js';
 import { archetypeOf, withoutComponent, type State } from './state.js';
 import type { Queued } from './synchronize.js';
@@ -63,10 +64,12 @@ export const cascadeReferences = (state: State, queued: readonly Queued[], writt
     for (let next = 0; next < despawned.length || checked < written.length;) {
         for (; next < despawned.length; next++) {
             const target = despawned[next];
-            const holders = structure.holders.get(target);
-            if (holders === undefined) continue;
-            for (let h = 0; h < holders.length; h += 2) {
-                if (finalValue(state, queued, holders[h], holders[h + 1]) === target) act(holders[h], holders[h + 1]);
+            for (const component of structure.referenceIds) {
+                const lists = structure.holders[component];
+                if (lists === undefined) continue;
+                forEachHolder(lists, target, holder => {
+                    if (finalValue(state, queued, holder, component) === target) act(holder, component);
+                });
             }
         }
         // A reference written here to an entity that won't be alive is as dangling as one whose target despawns.
@@ -80,35 +83,18 @@ export const cascadeReferences = (state: State, queued: readonly Queued[], writt
     }
 };
 
-const unlink = (holders: Map<number, number[]>, target: number, holder: number, component: number): void => {
-    const list = holders.get(target);
-    if (list === undefined) return;
-    for (let h = 0; h < list.length; h += 2) {
-        if (list[h] !== holder || list[h + 1] !== component) continue;
-        list.splice(h, 2);
-        break;
-    }
-    if (list.length === 0) holders.delete(target);
-};
-
-const link = (holders: Map<number, number[]>, target: number, holder: number, component: number): void => {
-    let list = holders.get(target);
-    if (list === undefined) holders.set(target, list = []);
-    list.push(holder, component);
-};
-
 /**
  * The changes the plan makes to the holder index, read before it applies, while old and new values are both readable:
- * `remove` and `add` as target, holder, component triples, and the despawned entities whose holder lists end.
+ * `remove` and `add` as target, holder, component triples. A despawned target's holders each have a removal of their
+ * own, since every reference component despawns its holders or drops the reference.
  */
-export type IndexChanges = { readonly remove: number[]; readonly add: number[]; readonly ended: number[] };
+export type IndexChanges = { readonly remove: number[]; readonly add: number[] };
 
 export const indexChangesOf = (state: State, queued: readonly Queued[], fromOf: (entry: number) => Archetype | null, bornRows: readonly (readonly [Archetype, number])[]): IndexChanges => {
     const { plan, structure, entities } = state;
-    const changes: IndexChanges = { remove: [], add: [], ended: [] };
+    const changes: IndexChanges = { remove: [], add: [] };
     for (let entry = 0; entry < plan.count; entry++) {
         const holder = plan.entity[entry];
-        if (plan.despawned[entry] === 1) changes.ended.push(holder);
         const from = fromOf(entry);
         for (const component of structure.referenceIds) {
             const storage = from?.storageById[component];
@@ -119,16 +105,21 @@ export const indexChangesOf = (state: State, queued: readonly Queued[], fromOf: 
             if (typeof after === "number" && after !== 0) changes.add.push(after, holder, component);
         }
     }
-    // Batch spawns no command touched still hold the references they were spawned with.
+    // Batch spawns no command touched still hold the references they were spawned with. An entity is one f64.
+    const { slots } = plan;
     for (const [archetype, first] of bornRows) {
         for (const component of structure.referenceIds) {
             const storage = archetype.storageById[component];
             if (storage === undefined) continue;
+            const { unitStride, unitOffset } = storage;
+            const values = storage.views.f64;
+            const rows = archetype.entities;
             for (let row = first; row < archetype.count; row++) {
-                const holder = archetype.entities[row];
-                if ((plan.slots[indexOf(holder)] ?? -1) >= 0) continue;
-                const value = readCell(storage, row);
-                if (typeof value === "number" && value !== 0) changes.add.push(value, holder, component);
+                const holder = rows[row];
+                const index = indexOf(holder);
+                if (index < slots.length && slots[index] >= 0) continue;
+                const value = values[row * unitStride + unitOffset];
+                if (value !== 0) changes.add.push(value, holder, component);
             }
         }
     }
@@ -138,7 +129,16 @@ export const indexChangesOf = (state: State, queued: readonly Queued[], fromOf: 
 /** Applies index changes after the plan applies. */
 export const applyIndexChanges = (state: State, changes: IndexChanges): void => {
     const { holders } = state.structure;
-    for (let c = 0; c < changes.remove.length; c += 3) unlink(holders, changes.remove[c], changes.remove[c + 1], changes.remove[c + 2]);
-    for (const target of changes.ended) holders.delete(target);
-    for (let c = 0; c < changes.add.length; c += 3) link(holders, changes.add[c], changes.add[c + 1], changes.add[c + 2]);
+    const { remove, add } = changes;
+    for (let c = 0; c < remove.length; c += 3) {
+        const lists = holders[remove[c + 2]];
+        if (lists !== undefined) unlinkHolder(lists, remove[c], remove[c + 1]);
+    }
+    const length = state.entities.length;
+    for (let c = 0; c < add.length; c += 3) {
+        const component = add[c + 2];
+        const lists = holders[component] ??= createHolders();
+        fitHolders(lists, length);
+        linkHolder(lists, add[c], add[c + 1]);
+    }
 };

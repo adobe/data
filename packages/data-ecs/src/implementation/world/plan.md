@@ -4,7 +4,7 @@ All of the runtime lives here. The only export is `create`, which moves here fro
 
 - No dependency on `@adobe/data`. Its code can be read for reference: `typed-buffer/`, `cache/memory-allocator.ts`, `ecs/store/core/`, and `ecs/database/calculate-system-order.ts`.
 - Performance comes first, then code size.
-- Kernels are compiled from the start. The compiler and Vite plugin run at build time, so they live outside this folder under `src/compiler/`, with their own package entry. Generated code reaches the runtime through one internal hook, `attachKernel(system, url)`.
+- Kernels are compiled from the start. The compiler and Vite plugin run at build time, so they live beside this folder under `src/implementation/compiler/`, with their own package entry. Generated code reaches the runtime through one internal hook, `attachKernel(system, url)`.
 - Every module gets unit tests. The particle sample becomes a real end-to-end test.
 
 ## 1.1 Main thread
@@ -38,7 +38,7 @@ All of the runtime lives here. The only export is `create`, which moves here fro
    - `query.select` and `count`, with `not`, `where` and `order`.
    - `read.entity`, `read.component` and `read.resource`.
    - Resources are stored as components on a single entity, with their initial values taken from the schema `default`.
-7. **Compiler** (`src/compiler/`):
+7. **Compiler** (`src/implementation/compiler/`):
    - The bundler's parser (`this.parse`), plus a validator for the kernel subset.
    - Maps each component, resource and lookup access to its slot by binding.
    - Emits a JS kernel `(columns, start, end, resources, lookups, keys, args, commands, tick)` that records the shapes it assumed (`world/create/kernel.ts`). The runtime applies change filters and passes only passing row ranges. Kernel code references no module bindings, so it can move to a worker chunk.

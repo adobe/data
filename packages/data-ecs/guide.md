@@ -24,7 +24,8 @@ with the reasoning behind each rule.
 17. [Finalizers](#17-finalizers)
 18. [Changes finalizers](#18-changes-finalizers)
 19. [Loading resources asynchronously](#19-loading-resources-asynchronously)
-20. [Reference](#20-reference)
+20. [Ticks](#20-ticks)
+21. [Reference](#21-reference)
 
 ## 1. Setup
 
@@ -43,6 +44,10 @@ Types are declared by augmenting interfaces of `@adobe/data-ecs`: `Components` a
 `Traits<N>`. Systems, rules and finalizers need no declaration beyond their constructor. Every declaration goes through `@adobe/data-ecs`; augmenting the
 module that defines an interface by its relative path splits the interface in two. The examples use the same path,
 which `tsconfig.json` maps to the package source.
+
+The interface is `src/types`, exported from `@adobe/data-ecs`. Worlds come from the implementation: until the
+package's root gives `World.create`, the examples call `createWorld` from `src/implementation`, which takes the
+same resources.
 
 ## 2. Components and resources
 
@@ -70,26 +75,26 @@ Resource.register(gravity, { type: { type: "number", default: -9.8 } });
 ```
 
 Entities are spawned by systems. Observing is the way to read the world: `world.observe.resource`, `.entity`,
-`.select` and `.count` each give the current value now, or once GPU writes it needs are read back, then again after
-each run that changed it, never during a run. `toPromise`, as in `@adobe/data`, reads one value, as the examples do:
+`.select` and `.count` each give the current value now or later, then again after each run or tick that changed it,
+never during a run, and with no promise of coming before `run` resolves. `toPromise`, as in `@adobe/data`, reads one value, as the examples do:
 
 ```ts
-await using world = World.create();
+await using world = createWorld();
 await world.run(spawn);
 const [first] = await toPromise(world.observe.select({ required: [position, enemy] }));
 const components = await toPromise(world.observe.entity(first, { required: [position] }));
 expect(components?.[position]).toEqual([0, 10, 0]);
 ```
 
-Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L5-L37).
+Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L6-L38).
 
 - **Queries:** `select` and `count` take `required`, which matches every entity when left out, `not`, and `where`; `select` takes `order` and `page: { offset, limit }` too, a slice of the ordered result for a scrolled list, whose total `count` gives. Without `order` a page follows storage order, so stable pages need an `order`. `world.observe.entity(entity, { required, optional })` gives just those components, or `null` while the entity is dead or lacks a required one.
 - **Notifications:** `select` notifies when the set of entities differs or, with `order`, their order, and with a `page`, only when the page does; `count` when the number does. Nothing notifies when the result is the same, even if matching entities were written.
 - **An observer that throws** during a run is an `"observer"` failure in the run's report; one that throws on its first value throws to the subscriber.
 - **Registration must match the declaration**, trait for trait, with `type` a schema for the declared type. Otherwise it doesn't compile.
 - **Values that aren't data,** such as a `Blob`, an `HTMLElement` or a `GPUDevice`, are declared by their type alone: registration leaves `type` out, as `Component.register(element, {})`, and a resource gives its `default` on the declaration unless its type allows `null`. The world stores them as they are, so only main-thread systems use them.
-- **`World.create()` returns the world,** and `await using` disposes it; the TypeScript `lib` needs `ESNext.Disposable`. `World.create({ [gravity]: -1.6 })` starts resources at other values than their defaults.
-- **Systems register in a world on their first run there,** which validates them and loads their kernels; the run rejects if that fails. Rules and finalizers apply in every world (sections 13 and 16).
+- **`World.create()` returns the world,** and `await using` disposes it; the TypeScript `lib` needs `ESNext.Disposable`. `World.create({ [gravity]: -1.6 })` starts resources at other values than their defaults, any but `clock` and `report`, which only the world writes.
+- **Systems are checked when they're created,** against the components and resources they name, which their modules must register first; a world then registers them on their first run there, loading their kernels, and the run rejects if that fails. Rules and finalizers apply in every world (sections 13 and 16).
 - **A system is its name:** what `System.create` returns is typed as its `name` and the input `run` takes with it, nothing more.
 - **Names are program-wide:** a second system, rule or finalizer with a name throws when it's created, unless its declaration is the same, as when a hot reload evaluates its module again. A system declared again is a new system; a finalizer keeps its place in every world, with the new body.
 - **`Entity` is a branded number.** `Entity.none` names no entity: it's what zeroed memory and entity defaults hold, and a lookup of it returns null.
@@ -124,14 +129,14 @@ const count = System.create({ name: "guide/systems/count", resources: { write: [
 });
 ```
 
-Example: [`02-systems.test.ts`](src/guide/02-systems.test.ts#L34-L58).
+Example: [`02-systems.test.ts`](src/guide/02-systems.test.ts#L35-L59).
 
 - **Declarations list exactly what bodies use.** A key the body never uses is a build error, as is one it uses without listing it.
 - **Rejected:** reads of undeclared components or resources, and context keys the declaration doesn't declare (types); unused declared ones (build); a write to a component a system only reads, and a key in both `read` and `write` (types and registration).
 
 ## 4. Scheduling and composites
 
-There's no built-in schedule: the application runs a composite each frame. Order comes from `before`, `after` and
+A composite runs its members in one schedule, either as a run or in every tick (section 20). Order comes from `before`, `after` and
 `during`. A system during another runs alongside it: after what that system follows and before what follows it. Systems
 with no ordering path between them may run in parallel.
 
@@ -142,7 +147,7 @@ const heal = System.create({ name: "guide/scheduling/heal", components: { write:
 const frame = System.composite({ name: "guide/scheduling/frame", systems: [heal, hit] });
 ```
 
-Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L18-L39).
+Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L19-L40).
 
 Phases are systems that do nothing, ordered one after another. Systems during a phase are then ordered with every
 system in the phases before and after it, so systems in different phases never conflict:
@@ -159,7 +164,7 @@ const report = System.create({ name: "guide/scheduling/report", components: { re
 const phased = System.composite({ name: "guide/scheduling/phased", systems: [report, poison, update, render] });
 ```
 
-Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L41-L59).
+Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L42-L60).
 
 - **Constraints take systems:** `before`, `after` and `during` list the systems themselves, imported from their modules. When two modules import each other, one of them declares the order.
 - **During a composite:** a system runs after what the composite follows and before what follows it, not between its members.
@@ -181,7 +186,7 @@ const show = System.create({ name: "guide/filters/show", components: { read: [sc
 });
 ```
 
-Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L35-L59).
+Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L36-L60).
 
 - **`changed` is conservative:** it means "may have changed".
 
@@ -195,7 +200,7 @@ const step = System.create({ name: "guide/filters/step", resources: { is: [map],
 });
 ```
 
-Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L61-L77).
+Example: [`04-change-filters.test.ts`](src/guide/04-change-filters.test.ts#L62-L78).
 
 - **Conditions are resources whose type allows `null` or `false`:** a number or string is never a condition, so `0` and `""` can't turn a system off.
 - **A skipped system keeps its `lastRun`,** so once it runs again it sees every change since it last ran.
@@ -218,7 +223,7 @@ const follow = System.create({
 });
 ```
 
-Example: [`05-lookups.test.ts`](src/guide/05-lookups.test.ts#L21-L44).
+Example: [`05-lookups.test.ts`](src/guide/05-lookups.test.ts#L22-L45).
 
 - **Rejected:** a lookup reading a component its own system writes, at registration.
 
@@ -238,7 +243,7 @@ const place = System.create({
 await world.run(place, { x: 3, count: 2 });
 ```
 
-Example: [`06-input.test.ts`](src/guide/06-input.test.ts#L15-L29).
+Example: [`06-input.test.ts`](src/guide/06-input.test.ts#L16-L30).
 
 A composite takes every field of its members' inputs, and each member reads the fields it declares:
 
@@ -255,7 +260,7 @@ const frame = System.composite({ name: "guide/input/frame", systems: [place, dri
 await world.run(frame, { x: 0, count: 1, dx: 1 });
 ```
 
-Example: [`06-input.test.ts`](src/guide/06-input.test.ts#L31-L50).
+Example: [`06-input.test.ts`](src/guide/06-input.test.ts#L32-L51).
 
 - **Shared fields:** a field several members declare is one value for all of them. Its type must be the same in each,
   or the composite is a type error at each member that differs, and `System.composite` throws naming both systems.
@@ -277,11 +282,11 @@ const spawn = System.create({ name: "guide/sync/spawn" }, ({ commands }) => {
 });
 ```
 
-Example: [`07-sync-points.test.ts`](src/guide/07-sync-points.test.ts#L23-L54).
+Example: [`07-sync-points.test.ts`](src/guide/07-sync-points.test.ts#L24-L55).
 
 - **`spawn` returns a real entity at once,** which can be stored, including in the spawner's own row.
 - **Commands against dead entities do nothing;** the run's report counts them as `dropped`.
-- **`run()` resolves to a report:** `failures` lists each system, finalizer, GPU work or observer that failed, with its `kind`, `name`, `message` and `stack`, and `skipped` the systems of tiers after a failure. It rejects only when the run can't happen or finish: registration fails, the world is disposed, its GPU device is lost, or the sync point can't apply a command's value.
+- **`run()` resolves to a report:** `failures` lists each system, finalizer, GPU work, observer or thread that failed, with its `kind`, `name`, `message` and `stack`, and `skipped` the systems of tiers after a failure. It rejects only when the run can't happen or finish: registration fails, the world is disposed, its GPU device is lost, or the sync point can't apply a command's value.
 
 ## 9. Kernels
 
@@ -306,12 +311,12 @@ const chase = System.create({
 });
 ```
 
-Example: [`08-kernels.test.ts`](src/guide/08-kernels.test.ts#L30-L60), with the inlined helper in
+Example: [`08-kernels.test.ts`](src/guide/08-kernels.test.ts#L31-L61), with the inlined helper in
 [`08-steer.ts`](src/guide/08-steer.ts).
 
-- **The subset** a kernel body may use is in [`src/compiler/subset.md`](src/compiler/subset.md). The build rejects anything else, with a message at the code.
-- **Math types:** `Vec2`, `Vec3`, `Vec4` (each F32, with `I32` and `U32`), `Quat`, `Mat4x4`, and the scalars, each with a `schema`, follow WGSL's semantics. See the [`math follows WGSL`](src/math/semantics.test.ts) tests.
-- **What a kernel compiles to:** JS, WGSL and WASM output for one system, in [`generated-code.md`](src/world/create/generated-code.md).
+- **The subset** a kernel body may use is in [`src/implementation/compiler/subset.md`](src/implementation/compiler/subset.md). The build rejects anything else, with a message at the code.
+- **Math types:** `Vec2`, `Vec3`, `Vec4` (each F32, with `I32` and `U32`), `Quat`, `Mat4x4`, and the scalars, each with a `schema`, follow WGSL's semantics. See the [`math follows WGSL`](src/types/math/semantics.test.ts) tests.
+- **What a kernel compiles to:** JS, WGSL and WASM output for one system, in [`generated-code.md`](src/implementation/world/generated-code.md).
 - **Rejected:** a kernel that wasn't compiled, at registration; a body outside the subset, at build.
 
 ## 10. Reductions
@@ -336,7 +341,7 @@ const measure = System.create({
 });
 ```
 
-Example: [`09-reductions.test.ts`](src/guide/09-reductions.test.ts#L28-L76).
+Example: [`09-reductions.test.ts`](src/guide/09-reductions.test.ts#L29-L77).
 
 - **Each run starts again:** a run in which a contributor runs starts the resource at the operator's identity (0 for `"+"`, the largest value for `"min"`, and so on), and leaves it holding the fold of every contribution in that run. Before the first such run it holds its `default`.
 - **Several systems may contribute** to one resource in a run. They need no order between them, and any system that reads the resource runs after all of them, so it sees the finished fold.
@@ -357,16 +362,16 @@ it's notified.
 const move = System.create({ name: "guide/gpu/move", kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
-const world = World.create({ gpuDevice: device });
+const world = createWorld({ gpuDevice: device });
 ```
 
-Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L23-L41).
+Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L24-L42).
 
 A render system, made by `System.render`, records GPU work over the GPU copy of the components its `shader.accessors`
 name. Its body is `(gpu, context)`: `gpu` has the device, the run's encoder and a table per archetype. `Gpu.wgsl(system)`
 gives its shaders' declarations, a function per accessor, and pipelines take `Gpu.layout(device)`, the same object for a device every time. See the particle sample's
 [declaration](src/sample/gpu/particles.ts#L100-L105) and [draw](src/sample/gpu/particles.ts#L111-L139), wired up in
-[`main.ts`](src/sample/gpu/main.ts#L59-L63).
+[`main.ts`](src/sample/gpu/main.ts#L60-L64).
 
 - **Render systems run only while there's a device,** as if their `is` listed `gpuDevice`; otherwise they're skipped.
 - **Setting it, at any time,** moves the world's GPU storage and `kernel: "gpu"` systems onto the new device, after reading back what's ahead on the old one. With `null`, GPU kernels run on the CPU again.
@@ -419,7 +424,7 @@ Rule.create({ name: "guide/rules/sprites", components: { has: [sprite], not: [hi
 Rule.create({ name: "guide/rules/layers", components: { has: [drawn] }, derive: [layer] });
 ```
 
-Example: [`12-rules.test.ts`](src/guide/12-rules.test.ts#L24-L53).
+Example: [`12-rules.test.ts`](src/guide/12-rules.test.ts#L25-L54).
 
 - **The result depends only on which components an entity has,** so it's computed once per archetype, and a change is still a single move.
 - **Rules apply in every world** from when they're created: a world starts using one once it has met every component in its `has`, before any entity can match it.
@@ -435,7 +440,7 @@ despawn or another `within`. One added without its host is dropped.
 Component.register(glow, { type: { type: "number" }, within: body });
 ```
 
-Example: [`13-within.test.ts`](src/guide/13-within.test.ts#L15-L34).
+Example: [`13-within.test.ts`](src/guide/13-within.test.ts#L16-L35).
 
 - **Removing a host and adding it back** in the same sync point still ends its dependents. A derived host that a rule keeps never leaves.
 - **Rejected:** components within each other in a cycle, at registration.
@@ -451,7 +456,7 @@ Component.register(parent, { type: Entity.schema, reference: "owner" });
 Component.register(watching, { type: Entity.schema, reference: "weak" });
 ```
 
-Example: [`14-references.test.ts`](src/guide/14-references.test.ts#L17-L39).
+Example: [`14-references.test.ts`](src/guide/14-references.test.ts#L18-L40).
 
 - **Only the value a holder ends up with counts:** a reference pointed elsewhere in the same sync point stays.
 - **References change only through commands**, which keeps the index from targets to holders exact. Systems can't list them in `components.write`.
@@ -473,7 +478,7 @@ const place = System.create({
 });
 ```
 
-Example: [`18-hierarchies.test.ts`](src/guide/18-hierarchies.test.ts#L21-L50).
+Example: [`18-hierarchies.test.ts`](src/guide/18-hierarchies.test.ts#L22-L51).
 
 - **`through` doesn't narrow the match:** rows without it are roots. Its value is a reference, so the tree changes only at sync points.
 - **`up.read` may name what the system writes:** unlike a lookup, which can't, since `up` reads a parent only after it ran.
@@ -498,7 +503,7 @@ Finalizer.create({ name: "guide/finalizers/release", components: { read: [positi
 });
 ```
 
-Example: [`15-finalizers.test.ts`](src/guide/15-finalizers.test.ts#L21-L59).
+Example: [`15-finalizers.test.ts`](src/guide/15-finalizers.test.ts#L22-L60).
 
 - **A stop:** a despawn, the loss of a required component by any cause, a required component removed and added again, or an excluded one added.
 - **Rows are read-only.** The body is `(row, context)`, whose context has `resources`, `lookup` and `commands`. Lookups see the state before the sync point applies, and resource writes take its tick.
@@ -520,7 +525,7 @@ Finalizer.changes({ name: "guide/changes/save", watch: [name, score], resources:
 });
 ```
 
-Example: [`16-changes.test.ts`](src/guide/16-changes.test.ts#L23-L39).
+Example: [`16-changes.test.ts`](src/guide/16-changes.test.ts#L24-L40).
 
 - **A group** has `from` and `to` (null for spawned and despawned entities), `added`, `removed`, `replaced` and `entities`.
 - **Rejected:** watching a derived component, at `Finalizer.changes` and in types.
@@ -545,17 +550,44 @@ const apply = System.create({
 });
 ```
 
-Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L50-L100).
+Example: [`17-async-loading.test.ts`](src/guide/17-async-loading.test.ts#L51-L101).
 
 - **Shared assets:** many entities using one file are counted by the loader. The ECS gives each user exactly one acquire (`added`) and one release (a finalizer).
 
-## 20. Reference
+## 20. Ticks
 
-- **Built-in components:** `component`, `persistent` and `shared` are tags in [`src/components/`](src/components/).
-- **Built-in resources:** `gpuDevice`, the world's device, in [`src/resources/`](src/resources/).
+`world.add(system)` adds a system, often the application's main composite, to every tick. A tick runs the added
+systems as one composite on a beat of the `cadence` resource: each animation frame by default, or every `step`
+milliseconds with `{ kind: "fixed", step }`. A beat ticks only where `always` is set, a run arrived since the last
+tick, or a time a system asked for through `wake` has come, so an idle application costs nothing. Before each tick
+the world writes `clock` (`now`, `delta` and `tick`), and after it the tick's report to `report`.
+
+```ts
+const remind = System.create({ name: "guide/ticks/remind", resources: { read: [clock], write: [alarm] }, reduce: { [wake]: "min" } }, ({ resources, reduce }) => {
+    if (resources[clock].tick === 0) reduce[wake](resources[clock].now + 10);
+    else resources[alarm] += 1;
+});
+world.add(remind);
+await world.run(start);
+```
+
+Example: [`19-ticks.test.ts`](src/guide/19-ticks.test.ts#L23-L55).
+
+- **Order:** added systems are ordered by their constraints, as a composite's members are. One with no order to an added system it conflicts with throws at `add`, as does one with input.
+- **Fixed steps:** each tick's `clock.delta` is `step`; a beat that's behind runs at most `maxSteps` ticks, 4 by default, and drops the rest. A loop that's quiet builds no debt.
+- **Runs** are transactions between ticks, sequential in call order, each its own sync point; each one makes the next beat tick.
+- **Failures of ticks** are in `report`; `clock` and `report` are written only by the world.
+- **Workers:** the `workers` resource is the kernel pool's size, the platform's default to start; the pool follows it at sync points.
+- **Not yet:** `world.share(port)` and `World.join(port, { threads })`, which run one world across threads, throw as not supported ([`threads.md`](threads.md)).
+
+## 21. Reference
+
+- **Built-in components:** `component`, `persistent` and `shared` are tags, and `threadPort`, `threadClaims` and `threadStatus` are on each joined thread's entity, in [`src/types/components/`](src/types/components/).
+- **Built-in resources:** `gpuDevice`, the world's device; `workers`; the loop's `cadence`, `always`, `wake`, `clock` and `report`; in [`src/types/resources/`](src/types/resources/).
 - **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value` and `With`; `Resource.Name` and `Value`; `System` and `System.Commands`; `Finalizer`; and `World`. Everything else is inferred from the values the API returns.
 - **Emitted declarations:** a library that exports those values emits declarations naming the package's own modules, through `@adobe/data-ecs/internal/*`, which holds types only. Code imports from `@adobe/data-ecs`.
+- **Code layout:** the interface is [`src/types/`](src/types/), a project that imports nothing outside it; the implementation, `createWorld` and the compiler, is [`src/implementation/`](src/implementation/).
 - **Constructors:** `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Finalizer.create` and `Finalizer.changes` return a finalizer, typed as its `name`. `Rule.create` returns nothing. Rules and finalizers apply in every world.
-- **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/system/system.type-test.ts), [`world.type-test.ts`](src/world/world.type-test.ts), [`rule.type-test.ts`](src/rule/rule.type-test.ts), [`trait.type-test.ts`](src/trait/trait.type-test.ts).
+- **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/types/system/system.type-test.ts), [`world.type-test.ts`](src/types/world/world.type-test.ts), [`loop.type-test.ts`](src/types/world/loop.type-test.ts), [`thread.type-test.ts`](src/types/thread/thread.type-test.ts), [`rule.type-test.ts`](src/types/rule/rule.type-test.ts), [`trait.type-test.ts`](src/types/trait/trait.type-test.ts).
 - **The contract and its reasoning:** [`design.md`](design.md).
 - **A complete application:** the [particle sample](src/sample/particles.ts), run by [`particles.test.ts`](src/sample/particles.test.ts), and its [GPU version](src/sample/gpu/).

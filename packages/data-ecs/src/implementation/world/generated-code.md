@@ -19,11 +19,11 @@ import { parseAst } from 'vite';
 import { existsSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { transformKernels } from '../compiler/transform.js';
-import { createLinker } from '../compiler/link.js';
-import { packageIndex } from '../compiler/paths.js';
-import { generateWgsl } from '../world/create/wgsl.js';
-import { generateWasm, type WasmColumn } from '../world/create/wasm.js';
+import { transformKernels } from '../implementation/compiler/transform.js';
+import { createLinker } from '../implementation/compiler/link.js';
+import { packageIndex } from '../implementation/compiler/paths.js';
+import { generateWgsl } from '../implementation/world/wgsl.js';
+import { generateWasm, type WasmColumn } from '../implementation/world/wasm.js';
 
 test("show", async () => {
     const source = `import { System, Vec3 } from "@adobe/data-ecs";

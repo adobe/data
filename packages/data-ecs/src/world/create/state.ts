@@ -34,7 +34,7 @@ export type State = {
     tick: number;
     /** By component id: the tick of the last sync point that wrote a reference into it. */
     readonly referencesWritten: number[];
-    /** The entities sync points spawned, despawned, moved or wrote references of, for `up` systems and entity observers. */
+    /** The entities sync points spawned, despawned, moved or wrote references of, for `up` systems. */
     readonly journal: Journal;
     /** Command buffers for the next sync point, in merge order. */
     readonly queued: Queued[];

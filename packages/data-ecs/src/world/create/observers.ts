@@ -3,7 +3,6 @@ import { failureOf } from './failures.js';
 import type { Entity } from '../../entity/entity.js';
 import type { Archetype } from './archetype.js';
 import { indexOf, locate } from './entities.js';
-import { journalEnd } from './journal.js';
 import { readEntity, type EntityOptions } from './reads.js';
 import { idOf, startTicking, type Key, type State } from './state.js';
 
@@ -61,8 +60,8 @@ const changedFor = (observer: EntityObserver, previous: Archetype | null, curren
  * The world's observers. A new observer is given the current value during the call that subscribes; one that throws
  * then throws to the caller. `deliver` runs after each run's sync point: each observed resource whose changed tick moved
  * since it was last checked notifies its observers once, with its value then; so does each observed entity whose watched
- * components' presence or changed ticks moved, or that died. Only entities the journal lists are looked up again, and
- * nothing is allocated when nothing observed changed.
+ * components' presence or changed ticks moved, or that died: each is located again, so a different archetype or
+ * generation shows a structural change, and nothing is allocated when nothing observed changed.
  */
 export const createObservers = (state: State, read: (key: Key) => unknown) => {
     const watched: Watched[] = [];
@@ -107,11 +106,6 @@ export const createObservers = (state: State, read: (key: Key) => unknown) => {
 
     const entities: WatchedEntity[] = [];
     const byEntity = new Map<Entity, WatchedEntity>();
-    /** The journal's position read up to, while any entity is observed. */
-    let position = 0;
-    /** By entity index: the delivery whose journal entries listed it. */
-    let marks = new Int32Array(0);
-    let pass = 0;
     /** Components entity observers watch, which keep ticks and kernels' stamps; `pending` ones don't yet. */
     const requested = new Set<number>();
     const pending: number[] = [];
@@ -135,18 +129,8 @@ export const createObservers = (state: State, read: (key: Key) => unknown) => {
         if (entry === undefined) {
             const index = locate(state.entities, entity);
             entry = { entity, archetype: index < 0 ? -1 : state.entities.archetype[index], row: index < 0 ? 0 : state.entities.row[index], seen: state.tick, observers: [], stopped: 0 };
-            if (entities.length === 0) {
-                state.journal.readers++;
-                position = journalEnd(state.journal);
-            }
             byEntity.set(entity, entry);
             entities.push(entry);
-            const at = indexOf(entity);
-            if (at >= marks.length) {
-                const grown = new Int32Array(Math.max(at + 1, 2 * marks.length));
-                grown.set(marks);
-                marks = grown;
-            }
         }
         const observed = entry;
         const observer: EntityObserver = { notify, options, ids, required: required.length };
@@ -191,29 +175,14 @@ export const createObservers = (state: State, read: (key: Key) => unknown) => {
 
     /** Notifies the observers of each entity whose watched components the run changed. */
     const deliverEntities = (failures: Failure[] | null): Failure[] | null => {
-        if (entities.length === 0) return failures;
-        const { journal } = state;
-        const end = journalEnd(journal);
-        // Entries dropped: every observed entity may have moved.
-        const all = position < journal.first;
-        const mark = ++pass;
-        if (!all) {
-            for (let at = position; at < end; at++) {
-                const index = journal.indexes[at - journal.first];
-                if (index < marks.length) marks[index] = mark;
-            }
-        }
-        position = end;
         const tick = state.tick;
         for (let w = 0, count = entities.length; w < count; w++) {
             const entry = entities[w];
             const before = entry.archetype;
-            // Only an entity the journal lists can have spawned, despawned, or moved archetype or row.
-            if (all || marks[indexOf(entry.entity)] === mark) {
-                const index = locate(state.entities, entry.entity);
-                entry.archetype = index < 0 ? -1 : state.entities.archetype[index];
-                entry.row = index < 0 ? 0 : state.entities.row[index];
-            }
+            // Located again, which checks its generation: it may have despawned, or moved archetype or row.
+            const index = locate(state.entities, entry.entity);
+            entry.archetype = index < 0 ? -1 : state.entities.archetype[index];
+            entry.row = index < 0 ? 0 : state.entities.row[index];
             const seen = entry.seen;
             entry.seen = tick;
             const after = entry.archetype;
@@ -257,7 +226,6 @@ export const createObservers = (state: State, read: (key: Key) => unknown) => {
             watched.splice(w, 1);
             byKey.delete(entry.key);
         }
-        if (entities.length === 0) return;
         for (let w = entities.length - 1; w >= 0; w--) {
             const entry = entities[w];
             if (entry.stopped === 0) continue;
@@ -269,7 +237,6 @@ export const createObservers = (state: State, read: (key: Key) => unknown) => {
             entities.splice(w, 1);
             byEntity.delete(entry.entity);
         }
-        if (entities.length === 0) state.journal.readers--;
     };
 
     /** Notifies the observers of each resource the run changed; returns their failures, or null. */

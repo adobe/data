@@ -132,16 +132,6 @@ const addTag = System.create({ name: "observersTest/addTag" }, ({ commands }) =>
 const removeTag = System.create({ name: "observersTest/removeTag" }, ({ commands }) => { commands.remove(target, tag); });
 const removeWeight = System.create({ name: "observersTest/removeWeight" }, ({ commands }) => { commands.remove(target, weight); });
 const addFlag = System.create({ name: "observersTest/addFlag" }, ({ commands }) => { commands.add(target, { [flag]: true }); });
-const fillers: Entity[] = [];
-const crowd = System.create({ name: "observersTest/crowd" }, ({ commands }) => {
-    for (let i = 0; i < 5000; i++) fillers.push(commands.spawn({ [filler]: i }));
-});
-/** Journals the target first, then more entities than the table holds, so the journal drops the target's entry. */
-const scatter = System.create({ name: "observersTest/scatter" }, ({ commands }) => {
-    commands.add(target, { [tag]: true });
-    for (const spawned of fillers.splice(0)) commands.despawn(spawned);
-});
-
 describe("observing entities", () => {
     it("gives what read.entity returns when subscribing, then the value after each run that wrote a listed component, once", async () => {
         await using world = World.create();
@@ -229,17 +219,6 @@ describe("observing entities", () => {
         expect(seen).toEqual([{ [heat]: 1 }, { [heat]: 3 }, { [heat]: 7 }]);
     });
 
-    it("compares every observed entity when the journal dropped entries", async () => {
-        await using world = World.create();
-        await world.run(create);
-        const seen: unknown[] = [];
-        world.observe.entity(target, { optional: [tag] })(value => seen.push(value));
-        await world.run(crowd);
-        await world.run(scatter);
-        await world.run(weigh);
-        expect(seen).toEqual([{}, { [tag]: true }]);
-    });
-
     it("shares an entity's entry between observers, stopping one that another stops while a run notifies", async () => {
         await using world = World.create();
         await world.run(create);
@@ -282,20 +261,12 @@ describe("observing entities", () => {
     });
 });
 
-describe("entity observers' journal reading", () => {
-    it("reads the journal while any entity is observed, and stops once the last observer stopped", () => {
+describe("entity observers' structural changes", () => {
+    it("are found by locating each observed entity, so entity observers never make sync points journal", () => {
         const state = createState();
         const observers = createObservers(state, () => undefined);
-        const stopFirst = observers.entity(Entity.none, undefined)(() => {});
-        const stopSecond = observers.entity(Entity.none, { required: [weight] })(() => {});
-        expect(state.journal.readers).toBe(1);
-        stopFirst();
-        observers.deliver();
-        expect(state.journal.readers).toBe(1);
-        stopSecond();
-        observers.deliver();
-        expect(state.journal.readers).toBe(0);
         observers.entity(Entity.none, undefined)(() => {});
-        expect(state.journal.readers).toBe(1);
+        observers.entity(Entity.none, { required: [weight] })(() => {});
+        expect(state.journal.readers).toBe(0);
     });
 });

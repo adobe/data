@@ -879,5 +879,18 @@
             "basis": "Each archetype that grows writes at least its layout record, a cache line.",
             "on": "threads"
         }
+    },
+    "wake": {
+        "operation": "A task posted to a pool worker waiting in its window, which wakes, marks it done and wakes the world's thread: the fixed cost of every tier on workers.",
+        "per": "round trips",
+        "n": 10000,
+        "typical": [
+            1,
+            100
+        ],
+        "best": {
+            "bytes": 128,
+            "basis": "A round trip moves at least the two cache lines of the ring's posted and done words between cores."
+        }
     }
 }

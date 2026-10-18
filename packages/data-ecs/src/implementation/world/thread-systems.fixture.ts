@@ -163,20 +163,20 @@ export const ticksThere = async (ticks: number) => {
 };
 
 /**
- * Ticks of a system on the joined worker, back to back, while tasks it queued one after another wait for it to return
+ * Ticks of a system on the joined worker, back to back, while timers it queued one after another wait for it to return
  * to its event loop: the latest any ran, in milliseconds, and the most runs there once one was due before it ran; null
  * when they didn't all run within 20 s, as when it never returns.
  */
-export const tasksWhileTicking = async () => {
+export const timerWhileTicking = async () => {
     const driver = backToBack();
     const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
     const { worker } = await joined(world);
-    await worker.ask({ kind: "tasks" });
+    await worker.ask({ kind: "timers" });
     const fired = worker.next();
     world.add(counted);
     const reply = await within(fired, 20000, null);
     await worker.terminate();
     await world.dispose();
     driver.close();
-    return { late: reply?.kind === "tasks ran" ? reply.late : null, runs: reply?.kind === "tasks ran" ? reply.runs : null };
+    return { late: reply?.kind === "timers fired" ? reply.late : null, runs: reply?.kind === "timers fired" ? reply.runs : null };
 };

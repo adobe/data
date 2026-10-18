@@ -27,8 +27,8 @@ export const threadSystemsCases = (load: () => Promise<typeof Fixture>) => descr
     }, 30000);
     it("let the joined worker return to its event loop while the world ticks back to back", async () => {
         const fixture = await load();
-        const { runs } = await fixture.tasksWhileTicking();
-        // It returns once a tick, each tick a task here, so a task due waits a few at most, as the event loop's task
+        const { runs } = await fixture.timerWhileTicking();
+        // It returns once a tick, each tick a task here, so a timer due waits a few at most, as the event loop's task
         // queues take turns; without returning, hundreds.
         expect(runs).not.toBeNull();
         expect(runs).toBeLessThanOrEqual(10);

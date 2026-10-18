@@ -269,8 +269,22 @@ export const stall = System.create({ name: "threadSystemsTest/stall", resources:
 export const count = System.create({ name: "threadSystemsTest/count", resources: { write: [changes] } }, ({ resources }) => {
     resources[changes] += 1;
 });
-/** Runs of `counted` on this thread, and how many had run once `due`, a time in `performance.now()`, passed. */
-export const ranHere = { runs: 0, due: Infinity, atDue: -1 };
+/**
+ * Runs of `counted` on this thread, and how many had run once `due`, a time in `performance.now()`, passed; and a
+ * timer's callback for its next run to set, while it runs a task, as a thread's systems do.
+ */
+export const ranHere: { runs: number; due: number; atDue: number; queued: (() => void) | null } = { runs: 0, due: Infinity, atDue: -1, queued: null };
+
+/**
+ * Sets the queued timer, which runs only once this thread returns to its event loop, and when it's due: in node 2 ms
+ * after a timer of 1 ms, as the loop's clock steps in milliseconds; in a browser at once, for a timer of 0 ms.
+ */
+const setQueued = (task: () => void): void => {
+    const node = globalThis.process?.versions?.node !== undefined;
+    setTimeout(task, node ? 1 : 0);
+    ranHere.due = performance.now() + (node ? 2 : 0);
+    ranHere.atDue = -1;
+};
 /** On the thread: counts its runs, so the world's ticks post it a task each. */
 export const countThere = System.create({ name: "threadSystemsTest/countThere", resources: { read: [paint], write: [changes] } }, ({ resources }) => {
     if (resources[paint] !== "never") resources[changes] += 1;
@@ -281,5 +295,9 @@ export const counted = System.create({ name: "threadSystemsTest/counted", resour
     void resources[paint];
     void commands;
     ranHere.runs++;
+    if (ranHere.queued !== null) {
+        setQueued(ranHere.queued);
+        ranHere.queued = null;
+    }
     if (ranHere.atDue < 0 && performance.now() >= ranHere.due) ranHere.atDue = ranHere.runs;
 });

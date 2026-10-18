@@ -1075,5 +1075,18 @@
             "bytes": 760000,
             "basis": "The tail reads each row's 12-byte vec3 and 64-byte mat4, beyond the work each side does."
         }
+    },
+    "transfer": {
+        "operation": "Runs from a loader on a joined worker, each moving a 1 MB ArrayBuffer and a 1024 by 1024 ImageBitmap to the joined worker whose system takes them, which acknowledges each to the world: decoded textures or audio reaching the thread that uses them.",
+        "per": "transfers",
+        "n": 100,
+        "typical": [
+            1,
+            100
+        ],
+        "best": {
+            "bytes": 256,
+            "basis": "A transfer moves its values' handles in one message, the bytes staying where they are, and the run's slot and completion lines between cores."
+        }
     }
 }

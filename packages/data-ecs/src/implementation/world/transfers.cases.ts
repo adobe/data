@@ -11,9 +11,9 @@ export const transfersCases = (load: () => Promise<typeof Fixture>) => describe(
     }, 30000);
     it("hold a run whose input hasn't been received yet, and that thread's later runs, while the world's own runs go on", async () => {
         const fixture = await load();
-        const seen = await fixture.late(800);
+        const seen = await fixture.late(400);
         expect(seen.posted).toEqual({ kind: "posted", detached: true });
-        expect(seen.worldRun).toBeLessThan(400);
+        expect(seen.worldRun).toBeLessThan(200);
         expect(seen.orderWhileBlocked).toBe(0);
         expect(seen.settled).toEqual({ kind: "settled", failures: 0 });
         expect({ stores: seen.stores, marks: seen.marks }).toEqual({ stores: [0], marks: [[1, 1], [2, 2], [3, 3]] });

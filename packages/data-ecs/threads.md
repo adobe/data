@@ -123,7 +123,7 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   thread only its start or `null`, as tags the owning thread resolves. Any other value fails the command: a spawn's when
   it's issued, an add's when its system's commands are queued on the world's thread, or when it's issued on a joined
   one, where it drops and its system fails, so the issuing paths check nothing while no joined thread fills objects.
-  `transfer` components are the exception (see Transfers).
+  A `transfer` value reaches its own thread through a run's input instead (see Transfers).
 - **`up` runs only on `world`:** a system declaring it can't be placed on a joined thread, which refuses the claim, or
   fails the system's registration once the thread is joined.
 
@@ -506,9 +506,29 @@ its tails before it resolves, with their failures in its report.
 ### Transfers
 
 A `transfer: true` value goes from a joined thread to its component's thread through `run(system, input)`: the value
-is in the input, posted with its transfer list on a channel the world sets up between joined threads, and the run's
-slot is held until that thread acknowledges receipt. Runs from that thread land in call order, so later ones
-wait behind it; the world's thread never waits on delivery. A value whose command drops is released on its thread.
+is in the input, and the system, which writes the component, runs on that thread (`transfers.ts`, `join.ts`,
+`sharing.ts`).
+
+- **What moves:** every Transferable value among the input's fields and the elements of fields that are arrays, found
+  as the run is written; an input with none is posted as before. Moved values are detached on the issuing thread.
+- **Where to:** the joined thread filling the leaf system's thread, from the claims the world announced; else, for a
+  system on `world`, a composite, or a thread the issuing thread doesn't know is claimed yet, the world's thread, in
+  the input's message with its transfer list. A joined thread running a system it fills keeps the input where it is.
+- **Channels:** once a thread joins, the world gives it and each other joined thread, one of the two filling objects
+  with its claims made, the two ends of a `MessageChannel`, with the other's number and claims. A thread that's gone
+  is announced to those it was paired with, whose channel to it closes.
+- **Acknowledgement:** the run's slot names the thread its input moved to. That thread keeps the input by the issuing
+  thread and the run's sequence and tells the world it has it; the world holds the slot, and that thread's later
+  runs, until then, as it holds one for an input's message, so runs land in call order and the world's thread never
+  waits on delivery. The run's task names the input instead of carrying it, and the task takes it there.
+- **Failures:** a run whose input moved to a thread that's gone, before or after the world started it, rejects. Once
+  the run finishes, an input no task took is released where it is, as when the system fails to register.
+- **Release:** a value whose command drops is released on its thread: an add of the world's thread's at the sync
+  point, and a staged slot of a joined thread's once it replays that sync point, which the world wakes it for.
+  Releasing closes an `ImageBitmap`, `VideoFrame`, `AudioData`, `MessagePort` or `RTCDataChannel`, cancels or aborts
+  a stream, and leaves an `ArrayBuffer`'s or an `OffscreenCanvas`'s memory to the collector.
+- **Types:** an input schema can't name a Transferable type yet; a field declared `{ allOf: [] }` takes any value,
+  typed `unknown`, which the body narrows.
 
 ### Without cross-origin isolation
 
@@ -535,7 +555,7 @@ Memory isn't shared, so the world runs inline, and `share` and `join` throw.
 | A thread rebuilding after its log dropped entries | a pass over its archetypes' rows, `log rebuild 100K` 3.2 ns a row in node |
 | An observer of a joined thread's own objects, per value | its mailbox value, then a location read under the epoch and a column read |
 | Despawning entities with remote finalizers | stop-list copy of declared reads, a column at a time; the world's thread doesn't wait: `despawn objects 10K` 83 ns a despawn in node |
-| A transferred asset | one message, loader to its thread; one run |
+| A transferred asset | one message, loader to its thread, and one acknowledgement to the world; one run: `transfer` 134 µs a 1 MB ArrayBuffer and a 1024 by 1024 ImageBitmap, in chromium |
 
 ## Memory
 
@@ -546,7 +566,8 @@ Memory isn't shared, so the world runs inline, and `share` and `join` throw.
 - **Move log:** a 64-byte header and 16 bytes per entry, max(4096, the thread's rows) rounded up to a power of two; on
   the world's thread, 4 bytes of tag per row of each remote storage, beside its ticks; on the joined thread, its columns
   and ticks, and 8 bytes per row of the archetypes it holds objects of, for its entity column.
-- **Joined threads:** per thread, its control words and 64 run slots, 16 KiB.
+- **Joined threads:** per thread, its control words and 64 run slots, 16 KiB; per pair of joined threads one of which
+  fills objects, a `MessageChannel`.
 - **Mailboxes:** per subscription, its control words and three slots, each sized to the largest result delivered.
 - **Tail buffers:** only once a fallback snapshot was taken: passing rows times their declared struct reads, kept for the next.
 - **Stop lists:** per sync point with stops, a 16-byte header, and per finalizer 16 bytes and per stop 16 bytes, 4 per
@@ -783,17 +804,31 @@ in two steps.
   tick's 2.5 ms tail of 10,000 rows reads, then working 2 ms, with snapshots and with the writer waiting for the tail),
   2.53 and 4.70 ms a tick in node.
 
-### Phase 7: transfers
+### Built: phase 7, transfers
 
-Transfer values through runs, their channels and acknowledgements. A sample runs the world on a worker with an
-OffscreenCanvas and the DOM on main, and a loader worker transferring decoded textures.
+Transferable values in runs' input move to the threads their systems run on (`transfers.ts`): straight to the joined
+thread filling it, through channels the world gives pairs of joined threads, the run held until that thread says it has
+the input; to the world's thread in the input's message; or kept where they are. A run whose input moved to a thread
+that's gone rejects; an input no task took is released once its run finishes; a value whose add drops is released on
+its thread. The sample (`src/samples/transfers`) runs the world on a worker drawing into the OffscreenCanvas main moved
+to it, main showing its state in the DOM, and a loader worker moving each texture it decoded to the world's thread.
 
-- Interface: type tests for `transfer` values in a run's input from another thread.
-- Contract: a run carrying a transfer lands once its value has arrived, in call order with that thread's other runs.
-- Tests: browser only; a transfer whose acknowledgement arrives late holds its run and that thread's later runs; a
-  value whose command drops is released.
+- Interface: none. An input schema can't name a Transferable type, so a run's input can't be typed with one; proposed
+  for review, and meanwhile a field `{ allOf: [] }` takes one as `unknown`.
+- Contract: a run's Transferable input moves, never copied, to the thread its system runs on, and the run lands once
+  it arrived, in call order with that thread's other runs; a run whose input moved to a thread that's gone rejects; a
+  value whose command drops is released on its thread.
+- Tests: on one thread through `MessageChannel`s, buffers moved to a joined thread's system in call order with that
+  thread's other runs, a `MessagePort`, which can't be copied, working there (red without the direct path), to the
+  world's thread, and kept by the thread running its own system; a run whose input moved to a thread that left
+  rejecting, later ones going to the world's thread; dropped values released there and here (red without each
+  release), and what moved for a run that never ran (red without the release). In node and chromium against joined
+  workers, ten 1 MB buffers and a port moved in order; a run held while its filler's event loop is blocked, the world's
+  own run going on (red without the hold: the world's run waited out the block); dropped ports, and in chromium bitmaps,
+  released there and here.
 - Must not regress: `up depth 10 gpu`, `up depth 1000 gpu`.
-- New: `transfer` (a 1 MB ArrayBuffer and a 1024 by 1024 ImageBitmap, loader to its thread, N = 100).
+- New, in chromium: `transfer` (a 1 MB ArrayBuffer and a 1024 by 1024 ImageBitmap, loader to its thread, N = 100),
+  134 µs a transfer.
 
 ## Not built
 

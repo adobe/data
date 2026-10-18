@@ -22,8 +22,11 @@ import { dirname, resolve } from 'node:path';
 import { transformKernels } from '../implementation/compiler/transform.js';
 import { createLinker } from '../implementation/compiler/link.js';
 import { packageIndex } from '../implementation/compiler/paths.js';
+import { estreeOf } from '../implementation/compiler/estree.js';
 import { generateWgsl } from '../implementation/world/wgsl.js';
 import { generateWasm, type WasmColumn } from '../implementation/world/wasm.js';
+
+const parse = (code: string) => estreeOf(parseAst(code));
 
 test("show", async () => {
     const source = `import { System, Vec3 } from "@adobe/data-ecs";
@@ -39,10 +42,10 @@ const move = System.create({ name: "move", kernel: "gpu", components: { read: [v
         },
         load: async file => {
             const code = await readFile(file, "utf8");
-            return { code: file.endsWith(".ts") ? (await (await import("vite")).transformWithEsbuild(code, file, { loader: "ts" })).code : code };
+            return { code: file.endsWith(".ts") ? (await (await import("vite")).transformWithOxc(code, file, { lang: "ts" })).code : code };
         },
-    }, parseAst);
-    const result = await transformKernels(source, "/move.js", parseAst, async s => s === "@adobe/data-ecs", i => JSON.stringify(`kernel:${i}`), linker);
+    }, parse);
+    const result = await transformKernels(source, "/move.js", parse, async s => s === "@adobe/data-ecs", i => JSON.stringify(`kernel:${i}`), linker);
     if (result === null || "failure" in result) throw new Error(JSON.stringify(result));
     console.log(result.code);
     console.log(result.kernels[0]);

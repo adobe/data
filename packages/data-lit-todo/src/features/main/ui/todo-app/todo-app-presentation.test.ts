@@ -1,9 +1,18 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 // @vitest-environment jsdom
 // jsdom only so the lazy child-element wrappers can load; assertions never touch the DOM.
-import { describe, it, expect } from "vitest";
+import { afterAll, describe, it, expect } from "vitest";
 import { Template } from "@adobe/data-lit";
 import { render } from "./todo-app-presentation.js";
+
+// The wrappers start loading their elements; let that finish before the environment is torn down.
+afterAll(async () => {
+  await Promise.all([
+    import("../todo-toolbar/todo-toolbar-element.js"),
+    import("../todo-list/todo-list-element.js"),
+    import("../../../assign/ui/users-tab/users-tab-element.js"),
+  ]);
+});
 
 const props = (over: Partial<Parameters<typeof render>[0]> = {}) => ({
   tab: "todos" as const,

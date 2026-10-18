@@ -56,6 +56,17 @@ writeFileSync(application, `import { kernelOf } from ${source("../world/attach-k
 import { kernel } from "kernel-library";
 export const description = kernelOf(kernel);
 `);
+/** Two kernels in one module, writing different functions of the entity. */
+const pair = join(directory, "pair.js");
+writeFileSync(pair, `import { System } from ${source("../../interface/system/system.ts")};
+import { Component } from ${source("../../interface/component/component.ts")};
+import { kernelOf } from ${source("../world/attach-kernel.ts")};
+const score = Symbol("score");
+Component.register(score, { type: { type: "number" } });
+const doubled = System.create({ name: "doubled", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
+const tripled = System.create({ name: "tripled", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 3; });
+export const descriptions = [kernelOf(doubled), kernelOf(tripled)];
+`);
 afterAll(() => rmSync(directory, { recursive: true, force: true }));
 
 /** Runs a one-column kernel writing a function of the entity, for entities 3 and 4. */
@@ -75,8 +86,8 @@ test("a build emits each kernel as its own chunk, referenced by the description'
     });
     const chunks = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
         .filter((item): item is Rollup.OutputChunk => item.type === "chunk");
-    const kernel = chunks.find(chunk => chunk.name === "kernel");
-    const main = chunks.find(chunk => chunk.isEntry);
+    const kernel = chunks.find(chunk => chunk.name.startsWith("kernel-"));
+    const main = chunks.find(chunk => chunk.facadeModuleId === fixture);
     expect(kernel).toBeDefined();
     expect(main?.code).not.toContain("columns, start, end");
     const { description }: { description: KernelDescription } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
@@ -96,6 +107,20 @@ const serve = async <T>(use: (server: ViteDevServer) => Promise<T>): Promise<T> 
         await server.close();
     }
 };
+
+test("a build gives each kernel the url of its own chunk", async () => {
+    const outDir = join(directory, "dist-pair");
+    const output = await build({
+        configFile: false, logLevel: "silent", root: directory, plugins: [kernelPlugin()],
+        build: { outDir, minify: false, lib: { entry: pair, formats: ["es"], fileName: "main" } },
+    });
+    const main = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
+        .find((item): item is Rollup.OutputChunk => item.type === "chunk" && item.facadeModuleId === pair);
+    const { descriptions }: { descriptions: readonly KernelDescription[] } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
+    expect(new Set(descriptions.map(description => description.url)).size).toBe(2);
+    const results = await Promise.all(descriptions.map(async description => runs(await import(/* @vite-ignore */ description.url), description)));
+    expect(results).toEqual([[6, 8], [9, 12]]);
+});
 
 test("serve loads a kernel module by url, also before its parent was transformed", async () => {
     // Modules are untyped here; their shapes are what the plugin emits.
@@ -123,7 +148,7 @@ test("a build inlines functions from TypeScript modules and packages", async () 
     });
     const chunks = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
         .filter((item): item is Rollup.OutputChunk => item.type === "chunk");
-    const main = chunks.find(chunk => chunk.isEntry);
+    const main = chunks.find(chunk => chunk.facadeModuleId === linked);
     const { description }: { description: KernelDescription } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
     const module: KernelModule = await import(/* @vite-ignore */ description.url);
     expect(runs(module, description)).toEqual([7, 9]);
@@ -152,7 +177,7 @@ test("an application's build compiles the kernels a library ships uncompiled", a
         build: { outDir, minify: false, lib: { entry: application, formats: ["es"], fileName: "main" } },
     });
     const main = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : [])
-        .find((item): item is Rollup.OutputChunk => item.type === "chunk" && item.isEntry);
+        .find((item): item is Rollup.OutputChunk => item.type === "chunk" && item.facadeModuleId === application);
     const { description }: { description: KernelDescription | undefined } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
     expect(description).toBeDefined();
     const module: KernelModule = await import(/* @vite-ignore */ description?.url ?? "");

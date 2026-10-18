@@ -5,17 +5,11 @@ import type { Plugin } from "vite";
 
 const root = dirname(fileURLToPath(import.meta.url));
 
-/** Shared memory needs cross-origin isolation, on every response the browser test server sends. */
+/** Shared memory needs cross-origin isolation, on every response the browser test server sends, its own pages included. */
 export const isolation: Plugin = {
     name: "cross-origin-isolation",
     enforce: "pre",
-    configureServer: server => {
-        server.middlewares.use((_, response, next) => {
-            response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
-            response.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
-            next();
-        });
-    },
+    config: () => ({ server: { headers: { "Cross-Origin-Opener-Policy": "same-origin", "Cross-Origin-Embedder-Policy": "require-corp" } } }),
 };
 
 /** Sources import siblings as `.js`; serve the `.ts` when only it exists, as `tsc` output would provide the `.js`. */

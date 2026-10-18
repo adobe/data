@@ -137,7 +137,7 @@ const progress = (environment, result) => {
 const run = async () => {
     if (flags.has("--browser")) {
         execFileSync("pnpm", ["exec", "playwright", "install", "chromium"], { cwd: root, stdio: "ignore" });
-        const browserArgs = ["exec", "vitest", "--run", "--workspace", "vitest.perf.workspace.ts", "--project", "perf-browser"];
+        const browserArgs = ["exec", "vitest", "--run", "--config", "vitest.perf.config.ts", "--project", "perf-browser"];
         if (!flags.has("--record")) return collect("pnpm", browserArgs);
         // A record keeps each benchmark's faster of two runs, as for node.
         const first = await collect("pnpm", browserArgs, undefined, true);

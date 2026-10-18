@@ -1,4 +1,5 @@
-import type { Node, Pattern } from 'estree';
+import type { Node, Pattern, Program } from 'estree';
+import type { parseAst } from 'vite';
 
 declare module 'estree' {
     interface BaseNode {
@@ -7,6 +8,11 @@ declare module 'estree' {
         end: number;
     }
 }
+
+/** A program from the bundler's parser, as the ESTree program the compiler reads. */
+export const estreeOf = (program: ReturnType<typeof parseAst>): Program =>
+    // The bundler's parser emits ESTree for JavaScript; its own AST types model some nodes differently, such as a directive's literal.
+    program as Program;
 
 export const isNode = (value: unknown): value is Node =>
     typeof value === "object" && value !== null && "type" in value && typeof value.type === "string";

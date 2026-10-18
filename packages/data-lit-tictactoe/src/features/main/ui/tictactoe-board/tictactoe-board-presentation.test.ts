@@ -2,9 +2,14 @@
 // @vitest-environment jsdom
 // jsdom only so the lazy cell wrapper (`void import(...)`) can load; the
 // assertions never touch the DOM.
-import { describe, it, expect } from "vitest";
+import { afterAll, describe, it, expect } from "vitest";
 import { Template } from "@adobe/data-lit";
 import { render } from "./tictactoe-board-presentation.js";
+
+// The wrappers start loading their elements; let that finish before the environment is torn down.
+afterAll(async () => {
+  await import("../tictactoe-cell/tictactoe-cell-element.js");
+});
 
 describe("tictactoe-board-presentation", () => {
   it("renders a 3x3 board of nine cells", () => {

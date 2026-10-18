@@ -20,7 +20,7 @@
   "devDependencies": {
     "@webgpu/types": "^0.1.61",
     "typescript": "^5.8.3",
-    "vite": "^5.1.1",
-    "vite-plugin-checker": "^0.12.0"
+    "vite": "^8.3.4",
+    "vite-plugin-checker": "^0.14.5"
   }
 }

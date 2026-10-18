@@ -1,10 +1,18 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 // @vitest-environment jsdom
 // jsdom only so the lazy assign wrappers can load; assertions never touch the DOM.
-import { describe, it, expect } from "vitest";
+import { afterAll, describe, it, expect } from "vitest";
 import { nothing } from "lit";
 import { Template } from "@adobe/data-lit";
 import { render } from "./todo-row-presentation.js";
+
+// The wrappers start loading their elements; let that finish before the environment is torn down.
+afterAll(async () => {
+  await Promise.all([
+    import("../../../assign/ui/assignee-chips/assignee-chips-element.js"),
+    import("../../../assign/ui/assignee-dropdown/assignee-dropdown-element.js"),
+  ]);
+});
 
 const props = (over: Partial<Parameters<typeof render>[0]> = {}) => ({
   ready: true,

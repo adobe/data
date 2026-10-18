@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import type { Plugin, Rollup, ViteDevServer } from 'vite';
+import { estreeOf } from './estree.js';
 import { describeFailure } from './failure.js';
 import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
@@ -21,9 +22,9 @@ const loadFile = async (file: string): Promise<{ readonly code: string; readonly
     const code = await readFile(file, "utf8");
     const loader = loaders[file.slice(file.lastIndexOf(".") + 1)];
     if (loader === undefined) return { code };
-    const { transformWithEsbuild } = await import("vite");
-    const result = await transformWithEsbuild(code, file, { loader, sourcemap: true });
-    return { code: result.code, locate: locateThroughMap(result.code, result.map.mappings) };
+    const { transformWithOxc } = await import("vite");
+    const result = await transformWithOxc(code, file, { lang: loader, sourcemap: true });
+    return { code: result.code, locate: result.map === undefined ? undefined : locateThroughMap(result.code, result.map.mappings) };
 };
 
 /** Resolves imports through the build, from whichever transform runs. */
@@ -66,7 +67,7 @@ export const kernelPlugin = (): Plugin => {
         contexts.set(ssr, context);
         const existing = linkers.get(ssr);
         if (existing !== undefined) return existing;
-        const linker = createLinker(buildHost(() => contexts.get(ssr) ?? context), input => (contexts.get(ssr) ?? context).parse(input));
+        const linker = createLinker(buildHost(() => contexts.get(ssr) ?? context), input => estreeOf((contexts.get(ssr) ?? context).parse(input)));
         linkers.set(ssr, linker);
         return linker;
     };
@@ -84,6 +85,14 @@ export const kernelPlugin = (): Plugin => {
     };
     /** Kernel modules by parent module id, kept current as parents are transformed. */
     const kernels = new Map<string, readonly CachedKernel[]>();
+    /** Reference ids of the kernel chunks a build emitted. */
+    const chunks = new Set<string>();
+    /** The bundler gives chunks emitted under one name one reference, so each kernel's name carries its hash. */
+    const emitChunk = (context: Rollup.PluginContext, id: string, hash: string): string => {
+        const referenceId = context.emitFile({ type: "chunk", id, name: `kernel-${hash}` });
+        chunks.add(referenceId);
+        return referenceId;
+    };
     return {
         name: `${packageName}/kernel`,
         enforce: "post",
@@ -94,6 +103,12 @@ export const kernelPlugin = (): Plugin => {
         },
         configureServer: devServer => {
             server = devServer;
+        },
+        // A kernel chunk's url is relative to the chunk that references it, as Rollup resolves it, rather than to `base`
+        // as Vite resolves other files, so a build's kernels load wherever it's served from or run.
+        resolveFileUrl: {
+            order: "pre",
+            handler: ({ referenceId, relativePath }) => chunks.has(referenceId) ? `new URL(${JSON.stringify(relativePath)}, import.meta.url).href` : null,
         },
         resolveId: id => parseKernelId(id) === undefined ? null : id,
         async load(id) {
@@ -125,7 +140,7 @@ export const kernelPlugin = (): Plugin => {
             if (!scripts.test(id.split("?")[0] ?? id)) return null;
             const linker = linkerFor(options?.ssr === true, this);
             const hashes: string[] = [];
-            const result = await transformKernels(code, id, input => this.parse(input), async source => {
+            const result = await transformKernels(code, id, input => estreeOf(this.parse(input)), async source => {
                 const resolved = await this.resolve(source, id);
                 return resolved !== null && isSystemModule(resolved.id);
             }, (index, identity) => {
@@ -133,7 +148,7 @@ export const kernelPlugin = (): Plugin => {
                 hashes[index] = hash;
                 return serve
                     ? JSON.stringify(serveUrl(id, index, hash))
-                    : `import.meta.ROLLUP_FILE_URL_${this.emitFile({ type: "chunk", id: buildId(id, index), name: "kernel" })}`;
+                    : `import.meta.ROLLUP_FILE_URL_${emitChunk(this, buildId(id, index), hash)}`;
             }, linker);
             const parent = id.split("?")[0] ?? id;
             if (result === null) {

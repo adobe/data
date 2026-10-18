@@ -9,10 +9,13 @@ import { transformKernels } from './transform.js';
 import { createLinker, type LinkHost } from './link.js';
 import { packageIndex } from './paths.js';
 import { locateThroughMap } from './source-map.js';
+import { estreeOf } from './estree.js';
 import { Mat4x4, Quat, Vec3 } from '../../interface/math/index.js';
 import { generateWgsl } from '../world/wgsl.js';
 import { identityOf } from '../world/reductions.js';
 import type { WasmColumn } from '../world/wasm.js';
+
+const parse = (code: string) => estreeOf(parseAst(code));
 
 const header = `import { System } from "ecs";
 const position = "position";
@@ -36,14 +39,14 @@ const host = (files: { readonly [file: string]: string }): LinkHost => ({
     load: async file => {
         const code = files[file] ?? await readFile(file, "utf8");
         if (!file.endsWith(".ts")) return { code };
-        const { transformWithEsbuild } = await import("vite");
-        const result = await transformWithEsbuild(code, file, { loader: "ts", sourcemap: true });
-        return { code: result.code, locate: locateThroughMap(result.code, result.map.mappings) };
+        const { transformWithOxc } = await import("vite");
+        const result = await transformWithOxc(code, file, { lang: "ts", sourcemap: true });
+        return { code: result.code, locate: result.map === undefined ? undefined : locateThroughMap(result.code, result.map.mappings) };
     },
 });
 
-const transform = (source: string, files: { readonly [file: string]: string } = {}) => transformKernels(`${header}${source}`, "/test.js", parseAst,
-    async specifier => specifier === "ecs", index => JSON.stringify(`kernel:${index}`), createLinker(host(files), parseAst));
+const transform = (source: string, files: { readonly [file: string]: string } = {}) => transformKernels(`${header}${source}`, "/test.js", parse,
+    async specifier => specifier === "ecs", index => JSON.stringify(`kernel:${index}`), createLinker(host(files), parse));
 
 type Compiled = KernelDescription & KernelModule;
 
@@ -764,7 +767,7 @@ describe("subset", () => {
 
     test("non-kernel systems and other modules are left untouched", async () => {
         expect(await transform(`const s = System.create({ name: "a", components: { read: [mass] } }, (row) => { const f = () => row; });`)).toBeNull();
-        expect(await transformKernels(`import { System } from "other";\nSystem.create({ name: "a", kernel: "cpu" }, () => {});`, "/x.js", parseAst, async () => false, () => "")).toBeNull();
+        expect(await transformKernels(`import { System } from "other";\nSystem.create({ name: "a", kernel: "cpu" }, () => {});`, "/x.js", parse, async () => false, () => "")).toBeNull();
     });
 });
 
@@ -1092,7 +1095,7 @@ describe("declared access", () => {
     });
 
     test("finalizers are checked as main-thread bodies, in files that import only Finalizer", async () => {
-        const finalizing = (source: string) => transformKernels(source, "/finalizer.js", parseAst, async specifier => specifier === "ecs", index => JSON.stringify(`kernel:${index}`));
+        const finalizing = (source: string) => transformKernels(source, "/finalizer.js", parse, async specifier => specifier === "ecs", index => JSON.stringify(`kernel:${index}`));
         const failed = async (source: string) => {
             const result = await finalizing(source);
             return result !== null && "failure" in result ? result.failure.message : "compiled";

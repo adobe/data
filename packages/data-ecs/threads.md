@@ -113,9 +113,10 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   system is a blocking tier, and the tick's report lists it under `warnings`.
 - **Observers:** one that names objects of a thread other than its own throws at subscribe. A struct-only observer is
   evaluated on `world`. One that names its own thread's objects is evaluated on its thread.
-- **Finalizers** that read remote objects run on their thread. Their context has no `commands` and no resource writes,
-  in types and at creation; they can't declare `lookup`, and `Finalizer.changes` can't be remote, both rejected at
-  creation; `before`/`after` across threads is an error at creation.
+- **Finalizers** run on the thread of the objects they read, after the sync point where a joined thread fills it. So
+  one on another thread than the world's, which a joined thread may fill, has no `commands` in its context, writes no
+  resources and declares no `lookup`, and `Finalizer.changes` watches and reads only the world's thread's values, in
+  types and at creation; `before`/`after` across threads is an error at creation.
 - **Values for another thread's objects:** a command issued on one thread may give an object component of another
   thread only its start or `null`, as tags the owning thread resolves. Any other value fails the command: a spawn's when
   it's issued, an add's when its system's commands are queued on the world's thread, or when it's issued on a joined
@@ -272,19 +273,19 @@ thread as its only writer, drained by the world's thread at the sync point. Comm
 
 - **The handshake** (`sharing.ts`, `join.ts`, `joining.ts`): a joined thread's first message names the threads it
   claims, whether it can wait with `Atomics.waitAsync`, and a Web Lock it holds while it lives, where the platform has
-  Web Locks, and with claims the ids of the systems it imported; it posts nothing else until the lock is held. The world
-  refuses a thread claiming `world`, one thread twice, one another joined thread claims, one a finalizer of the program
-  runs on, until phase 5c, or one a registered system runs on that the thread can't run: one without an id, naming a key
+  Web Locks, and with claims the ids of the systems and finalizers it imported; it posts nothing else until the lock is
+  held. The world refuses a thread claiming `world`, one thread twice, one another joined thread claims, or one a
+  registered system or a finalizer of the program runs on that the thread can't run: one without an id, naming a key
   without one, declaring `up`, or one it didn't import, checked again between runs as its claims are made; it's refused
   with its status `"gone"` and its runs rejecting. Else the world places the thread's control words and slots in the
   memory, and writes `"joined"` and the claims. With claims, between runs, the claimed threads' object components and
   object resources become the thread's (see Object columns on other threads), each announced by message with its id; it
   places the thread's task block; it posts the memory, the offsets of its control words, its move log and its task
-  block, and its number; then the systems on the claimed threads are placed there, each posted to the thread with its
-  index there, its id and the world's numbers for the keys it names. Claims are released when the thread is gone,
-  between runs, its objects coming back as each row's tag names them, `null` or the start, since a value the thread
-  staged or wrote was its own, and its systems placed on the world's thread again, each keeping its `lastRun`. Until 5c,
-  a finalizer on a claimed thread doesn't activate, reported once in a sync point's failures.
+  block, and its number; then the systems and finalizers on the claimed threads are placed there, each posted to the
+  thread with its index there, its id and the world's numbers for the keys it names. Claims are released when the
+  thread is gone, between runs, its objects coming back as each row's tag names them, `null` or the start, since a value
+  the thread staged or wrote was its own, and its systems and finalizers placed on the world's thread again, each system
+  keeping its `lastRun`.
 - **A thread's end** is a `leave` from its `dispose`, its `MessagePort`'s `close`, a node worker's `exit`, or the world's
   request for its Web Lock being granted, which happens however the thread ends, so a browser worker ended from outside
   its port is heard of too, with nothing polled. Its status becomes `"gone"` and its observers stop; a thread that left
@@ -376,15 +377,38 @@ consecutive tiers all on that thread are one task, which stops after a tier with
 
 ### Finalizers on other threads
 
-Before apply, the world's thread writes a stop list per thread: each stopped entity, its pre-apply archetype and row,
-and a copy of the struct components the finalizer declares in `read`. Stop-list buffers grow, and none is reused
-before its thread acknowledges it. The thread runs its finalizers when it next processes that sync, in declared order
-within the thread, then stores "finalized through sync N". The guarantee: each such finalizer runs exactly once per
-stop, on its thread, before that thread's next task or observer evaluation after the sync point and before the
-entity's index is reused, seeing its declared struct reads and its thread's objects as of before apply. Indexes whose
-entities had such finalizers are held, apart from `released`, so the leak scan neither counts nor releases them
-again, and return to the free list once their threads acknowledge. A thread that dies has its held indexes returned,
-and its finalizers that didn't run are reported as `"thread"` failures.
+A finalizer whose thread a joined thread claims is placed there, as systems are, each posted to the thread with its
+index there, its id and the world's numbers for its keys (`finalizers.ts`, `activate.ts`); one created after the claim
+is placed when it activates, and one the thread can't name, without an id or naming a key without one, doesn't activate
+and is reported once in a sync point's failures. Once the thread is gone, they run on the world's thread again.
+
+- **Stop lists** (`stop-lists.ts`): before apply, the world's thread writes one block per sync point with stops for that
+  thread: per finalizer, in the world's finalizer order, a group of its stops as columns: each entity, its pre-apply
+  archetype and row, the tag of each object it reads, and a copy of each linear struct it reads, in that component's
+  layout. The world copies a column at a time, finding each column's storage once per run of an archetype. Blocks are
+  linked in sync order, the first from the log header's stops word, each block's next offset stored once that block is
+  whole, so a thread reads only whole blocks of published syncs. A block is freed once the thread acknowledged a later
+  one, since the thread reads the next offset from the newest block it ran. The world wakes the thread after each sync
+  point that published stops for it, so a thread with no task or observer still finalizes.
+- **Running them** (`thread-finalizers.ts`): the thread runs a sync's stop list as it replays that sync, at its sync
+  entry, before the sync's entries apply, or at replay's end for a sync with no entries for it; its finalizers read the
+  linear structs from the block, constants as they are, and its objects by each stop's tag: the start or `null` as
+  tagged, any other at the stop's row in its mirror. After its log lapped, it runs them before it rebuilds, reading a
+  value it wrote or a settled slot's by entity in its old rows, and a live slot's from its staging array. Resources are
+  read where they are. Then it stores "finalized through sync N" in the log header. A stop list naming a finalizer
+  whose setup hasn't arrived holds replay before its sync, as a component without a key does; one this thread never
+  imported fails each of its groups. What its finalizers throw is posted, and a later run's report lists it as a
+  `"finalizer"` failure.
+- **The guarantee:** each such finalizer runs exactly once per stop, on its thread, before that thread's next task or
+  observer evaluation after the sync point and before the entity's index is reused, seeing its declared struct reads
+  and its thread's objects as of before apply.
+- **Held indexes:** the index of an entity despawned with such stops is held, counted by index for each thread that
+  hasn't acknowledged it, apart from `released`, so the leak scan never sees it and the free list never has it; the
+  sync point after a thread acknowledges releases it once no thread holds it. A thread that's gone has its held indexes
+  returned, and each finalizer with stops it never acknowledged is a `"thread"` failure in the next sync point's
+  report. A thread finalizes what was published before it leaves.
+- **Dispose:** once the world is disposed, a joined thread runs the stop lists published, then its finalizers for every
+  row they match, as the world's thread runs its own.
 
 ### Struct observers and mailboxes
 
@@ -471,7 +495,7 @@ Memory isn't shared, so the world runs inline, and `share` and `World.join` will
 | Structural change touching archetypes with remote objects | one log entry per row moved, replayed once on that thread, `log replay` 21 ns a move in node |
 | A thread rebuilding after its log dropped entries | a pass over its archetypes' rows, `log rebuild 100K` 3.2 ns a row in node |
 | An observer of a joined thread's own objects, per value | its mailbox value, then a location read under the epoch and a column read |
-| Despawning entities with remote finalizers | stop-list copy of declared reads; the world's thread doesn't wait |
+| Despawning entities with remote finalizers | stop-list copy of declared reads, a column at a time; the world's thread doesn't wait: `despawn objects 10K` 83 ns a despawn in node |
 | A transferred asset | one message, loader to its thread; one run |
 
 ## Memory
@@ -486,7 +510,9 @@ Memory isn't shared, so the world runs inline, and `share` and `World.join` will
 - **Joined threads:** per thread, its control words and 64 run slots, 16 KiB.
 - **Mailboxes:** per subscription, its control words and three slots, each sized to the largest result delivered.
 - **Tail buffers:** only once a fallback snapshot was taken: passing rows times their declared struct reads, kept for the next.
-- **Stop lists:** per stop, the entity, its row and its declared struct reads, kept until acknowledged.
+- **Stop lists:** per sync point with stops, a 16-byte header, and per finalizer 16 bytes and per stop 16 bytes, 4 per
+  object read and its linear reads' bytes, each column on 8 bytes, kept until a later block is acknowledged; and on the
+  world's thread, 4 bytes per entity index up to the highest held.
 
 ## Phases
 
@@ -660,17 +686,37 @@ joined thread reads again rather than wait while its unread word is set, which l
 - New: `handoff` (10 tiers alternating `world` and a joined worker, empty systems, N = 1,000 ticks), 11.5 µs a tick in
   node and 13.2 in chromium; `fused tiers` (10 consecutive tiers on a joined worker), 7.5 and 9.4 µs.
 
-### Phase 5c: remote finalizers
+### Built: phase 5c, remote finalizers
 
-Stop lists, finalizers run at replay, held indexes returned on acknowledgement or on the thread's death.
+Finalizers on claimed threads run there (`stop-lists.ts`, `thread-finalizers.ts`): placed as systems are, with their
+setups posted, one created after a claim placed when it activates; stop lists written before apply, a column at a
+time, one block per sync point linked in sync order, and the thread woken; finalizers run as the thread replays each
+sync, before its entries apply, or before it rebuilds once its log lapped, against its objects by tag and entity;
+replay held before a sync whose finalizer's setup hasn't arrived; "finalized through" acknowledged in the log header;
+indexes of despawned entities held, counted by index, until every thread finalizing them acknowledged; held indexes
+returned and unacknowledged stops reported once the thread is gone; what was published finalized before a thread
+leaves, and every match once the world is disposed. Claims check by id that the joined thread imported the finalizers
+placed on it.
 
-- Interface: finalizers that read remote objects lose `commands` and resource writes, type-tested; remote finalizers
-  with `lookup`, and remote `Finalizer.changes`, rejected at creation.
-- Contract: such finalizers run after the sync point, under the guarantee above.
-- Tests: finalizers run once per stop, before index reuse; held indexes survive the leak scan and return once; a
-  thread that dies returns them and reports its finalizers.
+- Interface: a finalizer on another thread than the world's has no `commands` in its context, and writes no resources
+  and looks up nothing, in types and at creation; a changes finalizer watching or reading another thread's values is
+  rejected in types and at creation; finalizers hold any body, as systems do, their parameters checked where created.
+- Contract: such finalizers run after the sync point, under the guarantee above, their failures in a later run's
+  report; a finalizer ordered with one on another thread is rejected at creation; a claim is refused for a finalizer
+  there the joined thread can't run, without an id, naming a key without one, or not imported; one created after the
+  claim that the thread can't name doesn't activate, reported once; stops of a thread that's gone are `"thread"`
+  failures; once the world is disposed, a joined thread finalizes every row its finalizers match.
+- Tests: types and creation rejecting what can't run on another thread; on one thread through a `MessageChannel`, an
+  inline world's stops, with structs as before the sync point applies, the thread's objects at their starts, `null`,
+  written or staged, and its object resource, after its log lapped too; a finalizer placed by its object resource alone;
+  an index reused only once its stop was finalized (red without holds); failures there in a later report; finalizers
+  created after the claim, one without an id reported once; every match finalized there once the world is disposed;
+  stops published finalized when the thread leaves, then finalizers on the world's thread. In node and chromium, the
+  same stops against a joined worker; a worker that never yields holding indexes, which are reused and its stops
+  reported once it's ended.
 - Must not regress: every benchmark, inline.
-- New: `despawn objects 10K`.
+- New: `despawn objects 10K` (a sync point despawning 10K entities whose objects a joined worker fills, a finalizer
+  there reading the object and a vec3), 83 ns a despawn in node, against 77 with the finalizer run inline.
 
 ### Phase 6: tails
 

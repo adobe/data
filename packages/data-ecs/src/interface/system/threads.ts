@@ -25,3 +25,9 @@ type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : 
 
 /** Requires a property no declaration has when `T` holds more than one thread, so the declaration fails to compile. */
 export type OneThread<T> = true extends IsUnion<T> ? { readonly "error: its object components and resources live on different threads": T } : {};
+
+/**
+ * Whether `T`, the thread a declaration's objects live on, is another than the world's, which a joined thread may fill;
+ * false for the threads of every declaration, which hold the world's.
+ */
+export type Elsewhere<T> = [T] extends [never] ? false : "world" extends T ? false : true;

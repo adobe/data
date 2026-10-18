@@ -65,6 +65,37 @@ const play = System.create({ name: "threadsTypeTest/playMember", components: { w
 export const frame = System.create({ name: "threadsTypeTest/frame", systems: [render, play] });
 
 // Finalizers too run on one thread.
-Finalizer.create({ name: "threadsTypeTest/release", components: { read: [node] }, resources: { write: [document] } }, () => {});
+Finalizer.create({ name: "threadsTypeTest/release", components: { read: [node] }, resources: { read: [document] } }, () => {});
 // @ts-expect-error a finalizer's object components and resources live on one thread
 Finalizer.create({ name: "threadsTypeTest/releaseBoth", components: { read: [node, audio] } }, () => {});
+
+// A finalizer on another thread than the world's, which a joined thread may fill, runs there after the sync point: it
+// issues no commands, writes no resources and looks up nothing.
+Finalizer.create({ name: "threadsTypeTest/detach", components: { read: [node, position] }, resources: { read: [document, time] } }, (row, context) => {
+    row[node].remove();
+    void [row[position], context.resources[document], context.resources[time]];
+    // @ts-expect-error a finalizer on another thread issues no commands
+    void context.commands;
+});
+Finalizer.create({ name: "threadsTypeTest/silence", components: { read: [audio] } }, (row, context) => {
+    void row[audio];
+    // @ts-expect-error a finalizer on another thread issues no commands
+    void context.commands;
+});
+// @ts-expect-error a finalizer on another thread writes no resources
+Finalizer.create({ name: "threadsTypeTest/detachWriting", components: { read: [node] }, resources: { write: [time] } }, () => {});
+// @ts-expect-error a finalizer writing another thread's resource is on that thread
+Finalizer.create({ name: "threadsTypeTest/documentWriting", components: { read: [position] }, resources: { write: [document] } }, () => {});
+// @ts-expect-error a finalizer on another thread looks up nothing
+Finalizer.create({ name: "threadsTypeTest/detachLooking", components: { read: [node] }, lookup: { places: { read: [position] } } }, () => {});
+// On the world's thread, structs and its objects alike, it does.
+Finalizer.create({ name: "threadsTypeTest/forget", components: { read: [label, position] }, resources: { write: [time] }, lookup: { labels: { read: [label] } } }, (row, { commands, resources, lookup }) => {
+    resources[time] = lookup.labels(row.entity)?.[label].length ?? 0;
+    commands.despawn(row.entity);
+});
+// A changes finalizer runs on the world's thread: watching another thread's objects, or reading its resources, doesn't compile.
+Finalizer.changes({ name: "threadsTypeTest/save", watch: [label, position], resources: { read: [time] } }, (_, { commands }) => { void commands; });
+// @ts-expect-error a changes finalizer watches no other thread's objects
+Finalizer.changes({ name: "threadsTypeTest/saveNodes", watch: [node] }, () => {});
+// @ts-expect-error a changes finalizer reads no other thread's resources
+Finalizer.changes({ name: "threadsTypeTest/saveDocument", resources: { read: [document] } }, () => {});

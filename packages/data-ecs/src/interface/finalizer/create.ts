@@ -6,7 +6,9 @@ import { requireRegistered, threadOf } from '../registry/threads.js';
 import { checkWorldWritten } from '../registry/written.js';
 import type { Resource } from '../resource/resource.js';
 import type { Listed, Property } from '../system/property.js';
-import type { OneThread, ThreadsOf } from '../system/threads.js';
+import type { ThreadOfComponent } from '../component/value.js';
+import type { Component } from '../component/component.js';
+import type { Elsewhere, OneThread, ThreadsOf } from '../system/threads.js';
 import type { ChangeSet, Context, Row, Watched } from './body.js';
 import type { Changes, Leaf } from './created.js';
 import type { ChangesDeclaration, Declaration } from './declaration.js';
@@ -15,6 +17,20 @@ import type { Finalizer } from './finalizer.js';
 /** A resource in `write` is readable too, so it isn't also in `read`. */
 type Validate<D extends Declaration | ChangesDeclaration> =
     { readonly resources?: { readonly read?: readonly Exclude<Resource.Key, Listed<Property<D, "resources">, "write">>[] } };
+
+/**
+ * A finalizer on another thread than the world's runs there after the sync point, which doesn't wait for it: it writes
+ * no resources and looks up nothing.
+ */
+type Remote<D> = true extends Elsewhere<ThreadsOf<D>>
+    ? ([Listed<Property<D, "resources">, "write">] extends [never] ? {} : { readonly "error: a finalizer on another thread than the world's writes no resources": true })
+    & ([keyof Property<D, "lookup">] extends [never] ? {} : { readonly "error: a finalizer on another thread than the world's looks up nothing": true })
+    : {};
+
+/** A changes finalizer runs on the world's thread, in the sync point: it watches and reads no other thread's objects. */
+type OnWorld<D> = true extends Elsewhere<ThreadsOf<D> | ThreadOfComponent<Listed<D, "watch"> & Component.Key>>
+    ? { readonly "error: a changes finalizer watches and reads only the world's thread's objects": true }
+    : {};
 
 type Key = symbol;
 
@@ -36,7 +52,7 @@ const checkResources = (name: string, resources: { readonly read?: readonly Key[
  * of different threads, or is ordered in a cycle or with a resource conflict.
  */
 export const create = <const D extends Declaration>(
-    declaration: D & Validate<D> & OneThread<ThreadsOf<D>>,
+    declaration: D & Validate<D> & OneThread<ThreadsOf<D>> & Remote<D>,
     body: (row: Row<D>, context: Context<D>) => void,
 ): Finalizer => {
     const id = takeIdOfDeclaration(declaration);
@@ -58,7 +74,7 @@ export const create = <const D extends Declaration>(
  * as `create` does, and for a watched component that isn't registered or is derived.
  */
 export const changes = <const D extends ChangesDeclaration>(
-    declaration: D & Validate<D>,
+    declaration: D & Validate<D> & OnWorld<D>,
     body: (changes: ChangeSet<Watched<D>>, context: Context<D>) => void,
 ): Finalizer => {
     const id = takeIdOfDeclaration(declaration);

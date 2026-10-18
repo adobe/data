@@ -79,20 +79,19 @@ declare module "@adobe/data-ecs" {
 
 // On the thread that holds the world:
 const world = World.create(resources?);
-const thread = world.share(port);   // lets another thread join through the port; returns that thread's Entity
+world.share(port);   // lets another thread join through the port: a MessagePort, a Worker, or a worker's own scope
 
 // On another thread, after importing the modules whose systems, observers and finalizers run there.
-const joined = World.join(port, { threads: ["main"] });   // a MessagePort, a Worker, or a worker's own scope
+const joined = join(port, { threads: ["main"] });
 ```
 
-`World.join` returns the same `World` type. Its `run` and `observe` work as on the world's thread, `add` and `share`
-throw there, and its `dispose` disconnects this thread; disposing on the world's thread disposes the world, and joined
-threads' runs reject from then on. `share` reserves the thread's entity and stages its spawn for the next sync point,
-which it makes due; the entity's read-only status components, `threadStatus` and `threadClaims`, show the joined
-thread's progress (`"joining"`, `"joined"`, `"gone"`) and the threads it claims. Only the world writes them: a system
-that writes them fails at registration, and a command naming them when it's issued. The port stays internal: a
-`World.Port` is a `MessagePort`, a `Worker` or a worker's scope, of the browser or node, and a joined thread's
-`dispose` closes only a `MessagePort`, never a worker or its scope.
+`join`, the implementation's, returns the same `World` type; the interface names neither it nor its port or options,
+which it infers from `share`. Its `run` and `observe` work as on the world's thread, `add` and `share` throw there, and
+its `dispose` disconnects this thread; disposing on the world's thread disposes the world, and joined threads' runs
+reject from then on. `share` returns nothing: a joined thread's progress (`"joining"`, `"joined"` once the threads it
+claims are its own, `"gone"` once they're released) and its claims are the implementation's own storage, which
+`createWorld`'s `threads` observes for tests and benchmarks. A port is a `MessagePort`, a `Worker` or a worker's scope,
+of the browser or node, and a joined thread's `dispose` closes only a `MessagePort`, never a worker or its scope.
 
 ## Placement rules
 
@@ -493,7 +492,7 @@ wait behind it; the world's thread never waits on delivery. A value whose comman
 
 ### Without cross-origin isolation
 
-Memory isn't shared, so the world runs inline, and `share` and `World.join` will throw.
+Memory isn't shared, so the world runs inline, and `share` and `join` throw.
 
 ## Cost
 
@@ -618,14 +617,13 @@ for windows, since rings are in the control state.
 
 ### Built: phase 4, joining
 
-`share`, `World.join`, the handshake through the thread's entity with its claims and Web Lock, local numbering of keys and
+`share`, `join`, the handshake with its claims and Web Lock, local numbering of keys and
 items, remote `run` through run slots, sequence numbers and completion words, struct observers through mailboxes, the
 resource archetype in the directory, and the structure epoch's word, which readers take up in phase 5a. Every logical
 thread is still filled by `world`; a claim is recorded and checked against claims already made.
 
-- Interface: `world.share(port)`, returning the joined thread's Entity, whose built-in `threadStatus` and
-  `threadClaims` components only the world writes, in types and at registration and issue; `World.Join`,
-  `World.JoinOptions` and `World.Port`.
+- Interface: `world.share(port)`, returning nothing, its port an inline type; `join` and its options are the
+  implementation's, inferred from it.
 - Contract: the first notification on a joined thread always comes later, and a slow one gets the newest value;
   `observe.entity(entity)` on a joined thread gives its struct components; an observer there that reads objects throws
   at subscribe; a joined thread's `run` of a system without an id, or of one the world never imported, rejects; a

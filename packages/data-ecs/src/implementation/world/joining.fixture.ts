@@ -1,5 +1,4 @@
 /// <reference types="node" />
-import { threadClaims, threadStatus } from "../../interface/components/index.js";
 import { Observe } from "../../interface/observe/observe.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
@@ -20,7 +19,7 @@ type Worker = {
     readonly ask: (message: ToJoiningWorker, transfer?: readonly unknown[]) => Promise<FromJoiningWorker>;
     readonly terminate: () => Promise<void>;
     /** The worker itself, as a port to join a world it shares through its scope. */
-    readonly port: World.Port;
+    readonly port: Parameters<World["share"]>[0];
 };
 
 /** Whether a reply is the fixture's, not the world's, where it shares the worker's scope. */
@@ -65,16 +64,16 @@ const within = <T>(promise: Promise<T>, milliseconds: number, otherwise: T): Pro
 export const worldHere = async () => {
     const world = createWorld({ [workers]: 0 });
     const { port1, port2 } = new MessageChannel();
-    const thread = world.share(port1);
-    const joined = until(world.observe.entity(thread, { required: [threadStatus, threadClaims] }), value => value?.[threadStatus] === "joined");
+    world.share(port1);
+    const joined = until(world.threads, threads => threads[0]?.status === "joined");
     const worker = start();
     const reply = await worker.ask({ kind: "join", port: port2, threads: ["main"] }, [port2]);
-    const claims = (await joined)?.[threadClaims] ?? null;
-    const gone = await until(world.observe.entity(thread, { required: [threadStatus] }), value => value?.[threadStatus] === "gone");
+    const claims = (await joined)[0]?.claims ?? null;
+    const gone = (await until(world.threads, threads => threads[0]?.status === "gone"))[0];
     const result = {
         driven: reply.kind === "driven" ? reply.driven : null,
         claims,
-        status: gone?.[threadStatus] ?? null,
+        status: gone?.status ?? null,
         total: await Observe.toPromise(world.observe.resource(total)),
         names: await Observe.toPromise(world.observe.resource(names)),
     };
@@ -100,13 +99,13 @@ export const worldThere = async () => {
 export const dies = async () => {
     const world = createWorld({ [workers]: 0 });
     const { port1, port2 } = new MessageChannel();
-    const thread = world.share(port1);
+    world.share(port1);
     const worker = start();
     const reply = await worker.ask({ kind: "idle", port: port2, threads: [] }, [port2]);
     await worker.terminate();
-    const gone = await within(until(world.observe.entity(thread, { required: [threadStatus] }), value => value?.[threadStatus] === "gone"), 5000, null);
+    const gone = await within(until(world.threads, threads => threads[0]?.status === "gone"), 5000, null);
     await world.dispose();
-    return { ran: reply.kind === "joined" ? reply.ran : null, status: gone?.[threadStatus] ?? null };
+    return { ran: reply.kind === "joined" ? reply.ran : null, status: gone?.[0]?.status ?? null };
 };
 
 /** Two workers claiming `main`: the second's run, and its status. */
@@ -115,14 +114,14 @@ export const claimedTwice = async () => {
     const first = new MessageChannel();
     const second = new MessageChannel();
     world.share(first.port1);
-    const thread = world.share(second.port1);
+    world.share(second.port1);
     const pair = [start(), start()];
     const one = await pair[0].ask({ kind: "idle", port: first.port2, threads: ["main"] }, [first.port2]);
     const two = await pair[1].ask({ kind: "idle", port: second.port2, threads: ["main"] }, [second.port2]);
-    const gone = await until(world.observe.entity(thread, { required: [threadStatus] }), value => value?.[threadStatus] === "gone");
+    const gone = (await until(world.threads, threads => threads[1]?.status === "gone"))[1];
     for (const worker of pair) await worker.terminate();
     await world.dispose();
-    return { first: one.kind === "joined" ? one.ran : null, second: two.kind === "joined" ? two.ran : null, status: gone?.[threadStatus] ?? null };
+    return { first: one.kind === "joined" ? one.ran : null, second: two.kind === "joined" ? two.ran : null, status: gone?.status ?? null };
 };
 
 /** A world on a worker shared through its own scope, this thread joined through the worker: runs, an observer, leaving. */

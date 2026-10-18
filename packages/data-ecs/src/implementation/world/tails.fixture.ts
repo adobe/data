@@ -1,12 +1,10 @@
 /// <reference types="node" />
-import { threadStatus } from "../../interface/components/index.js";
-import type { Entity } from "../../interface/entity/entity.js";
 import type { Observe } from "../../interface/observe/observe.js";
 import { always } from "../../interface/resources/always.js";
 import { cadence } from "../../interface/resources/cadence.js";
 import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
-import { createWorld } from "./create.js";
+import { createWorld, type CreatedWorld } from "./create.js";
 import { backToBack } from "./loop.js";
 import type { FromTailsWorker, ToTailsWorker } from "./tails-worker.fixture.js";
 import { counter, noStall, seed, setSpawning, setStall, stallAtChunk, stallBefore, tallied, ticked } from "./tails.test-helper.js";
@@ -58,13 +56,13 @@ const until = <T>(observe: Observe<T>, accept: (value: T) => boolean): Promise<T
     });
 });
 
-const joined = async (world: World): Promise<{ readonly worker: Worker; readonly thread: Entity }> => {
+const joined = async (world: CreatedWorld): Promise<{ readonly worker: Worker }> => {
     const { port1, port2 } = new MessageChannel();
-    const thread = world.share(port1);
+    world.share(port1);
     const worker = start();
     await worker.ask({ kind: "join", port: port2 }, [port2]);
-    await until(world.observe.entity(thread, { required: [threadStatus] }), value => value?.[threadStatus] === "joined");
-    return { worker, thread };
+    await until(world.threads, threads => threads.at(-1)?.status === "joined");
+    return { worker };
 };
 
 /** Ticks on until the counter passed `ticks` more. */

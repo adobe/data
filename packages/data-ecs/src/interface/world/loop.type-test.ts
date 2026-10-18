@@ -33,10 +33,9 @@ check<Equal<[typeof gpuDevice, typeof workers, typeof cadence, typeof always, ty
 // @ts-expect-error a resource key is its imported symbol, never its description
 create({ workers: 2 });
 
-// The built-in components are a joined thread's status and claims, on its entity.
-type Removed = "component" | "persistent" | "shared" | "threadPort";
+// There are no built-in components: a joined thread's progress is the implementation's.
+type Removed = "component" | "persistent" | "shared" | "threadPort" | "threadStatus" | "threadClaims";
 check<Equal<Extract<Removed, keyof typeof Ecs | Component.Key>, never>>();
-check<Equal<Extract<"threadStatus" | "threadClaims", keyof typeof Ecs>, "threadStatus" | "threadClaims">>();
 
 // Systems read the loop's state, ask for a wake time and change its cadence.
 System.create({ name: "loopTypeTest/read", resources: { read: [clock, report] } }, ({ resources }) => {

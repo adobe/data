@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
-import { threadStatus } from "../../interface/components/index.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { Observe } from "../../interface/observe/observe.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
-import { createWorld, join } from "./create.js";
+import { createWorld, join, type CreatedWorld } from "./create.js";
 
 // Objects a joined thread fills, with the world and the thread on this one, joined through a MessageChannel.
 
@@ -75,12 +74,12 @@ const after = System.create({ name: "remoteTest/after" }, () => {});
 Finalizer.create({ name: "remoteTest/releaseGuarded", components: { read: [guarded] } }, () => {});
 
 /** A world shared with a thread on this one, which claims `threads`. */
-const joined = (threads: readonly ("remoteTest" | "remoteTestFinalized")[] = ["remoteTest"]): { readonly world: World; readonly thread: Entity; readonly remote: World } => {
+const joined = (threads: readonly ("remoteTest" | "remoteTestFinalized")[] = ["remoteTest"]): { readonly world: CreatedWorld; readonly remote: World } => {
     const world = createWorld({ [workers]: 0 });
     const channel = new MessageChannel();
-    const thread = world.share(channel.port1);
+    world.share(channel.port1);
     const remote = join(channel.port2, { threads });
-    return { world, thread, remote };
+    return { world, remote };
 };
 
 /** The first value an observer gives that `accept` takes. */
@@ -94,8 +93,9 @@ const until = <T>(observe: Observe<T>, accept: (value: T) => boolean): Promise<T
     });
 });
 
-const statusOf = (world: World, thread: Entity, status: "joined" | "gone") =>
-    until(world.observe.entity(thread, { required: [threadStatus] }), value => value?.[threadStatus] === status);
+/** Once the thread shared last has status `status`. */
+const statusOf = (world: CreatedWorld, status: "joined" | "gone") =>
+    until(world.threads, threads => threads.at(-1)?.status === status);
 
 /** The entity a run of `spawn` spawned. */
 const spawnOne = async (world: World, x: number): Promise<Entity> => {
@@ -106,8 +106,8 @@ const spawnOne = async (world: World, x: number): Promise<Entity> => {
 
 describe("objects a joined thread fills", () => {
     it("are the thread's own, at their starts or null as the world's commands give them, which its observers read", async () => {
-        const { world, thread, remote } = joined();
-        await statusOf(world, thread, "joined");
+        const { world, remote } = joined();
+        await statusOf(world, "joined");
         const entity = await spawnOne(world, 1);
         const listed = remote.observe.entity(entity, { required: [point, caption], optional: [widget] });
         expect(await until(listed, value => value !== null)).toEqual({ [point]: 1, [caption]: "none", [widget]: null });
@@ -124,8 +124,8 @@ describe("objects a joined thread fills", () => {
         await world.dispose();
     });
     it("take from the world's thread only their start or null, in commands and spawns", async () => {
-        const { world, thread, remote } = joined();
-        await statusOf(world, thread, "joined");
+        const { world, remote } = joined();
+        await statusOf(world, "joined");
         await spawnOne(world, 2);
         const message = '"remoteTest/caption" lives on thread "remoteTest", which a joined thread fills, so a command here gives it only its start or null.';
         expect((await world.run(giveCaption)).failures.map(failure => failure.message)).toEqual([message]);
@@ -135,8 +135,8 @@ describe("objects a joined thread fills", () => {
         await world.dispose();
     });
     it("take from a kernel only their start or null, its command giving another dropping and its system failing", async () => {
-        const { world, thread, remote } = joined();
-        await statusOf(world, thread, "joined");
+        const { world, remote } = joined();
+        await statusOf(world, "joined");
         const entity = await spawnOne(world, 6);
         const listed = remote.observe.entity(entity, { required: [caption, widget] });
         expect(await until(listed, value => value !== null)).toEqual({ [caption]: "none", [widget]: null });
@@ -149,8 +149,8 @@ describe("objects a joined thread fills", () => {
         await world.dispose();
     });
     it("can't be read by observers on the world's thread; systems reading them run on the thread, their tiers warned of", async () => {
-        const { world, thread, remote } = joined();
-        await statusOf(world, thread, "joined");
+        const { world, remote } = joined();
+        await statusOf(world, "joined");
         const entity = await spawnOne(world, 3);
         expect(() => world.observe.entity(entity, { required: [caption] })(() => {})).toThrow('An observer reads "remoteTest/caption", an object a joined thread fills, which only an observer there reads.');
         expect(() => world.observe.select({ required: [point, caption], where: { [caption]: "none" } })(() => {})).toThrow('An observer reads "remoteTest/caption"');
@@ -164,13 +164,13 @@ describe("objects a joined thread fills", () => {
         await world.dispose();
     });
     it("come back to the world's thread when the thread that filled them is gone, as the start or null each held", async () => {
-        const { world, thread, remote } = joined();
-        await statusOf(world, thread, "joined");
+        const { world, remote } = joined();
+        await statusOf(world, "joined");
         const first = await spawnOne(world, 4);
         await world.run(nullCaptions);
         const second = await spawnOne(world, 5);
         await remote.dispose();
-        await statusOf(world, thread, "gone");
+        await statusOf(world, "gone");
         await world.run(after);
         expect(await Observe.toPromise(world.observe.entity(first, { required: [caption, widget] }))).toEqual({ [caption]: null, [widget]: null });
         expect(await Observe.toPromise(world.observe.entity(second, { required: [caption] }))).toEqual({ [caption]: "none" });
@@ -181,7 +181,7 @@ describe("objects a joined thread fills", () => {
         const world = createWorld({ [workers]: 0 });
         await world.run(readCaptions);
         const taken = joined();
-        await statusOf(taken.world, taken.thread, "joined");
+        await statusOf(taken.world, "joined");
         expect((await taken.world.run(readCaptions)).warnings.map(warning => warning.name)).toEqual(["remoteTest/readCaptions"]);
         await taken.remote.dispose();
         await taken.world.dispose();
@@ -189,10 +189,10 @@ describe("objects a joined thread fills", () => {
         const unnamed = System.create({ name: "remoteTest/unnamed", components: { read: [caption] } }, row => { void row[caption]; });
         await world.run(unnamed);
         const channel = new MessageChannel();
-        const thread = world.share(channel.port1);
+        world.share(channel.port1);
         const remote = join(channel.port2, { threads: ["remoteTest"] });
         await expect(remote.run(idle)).rejects.toThrow('System "remoteTest/unnamed" runs on thread "remoteTest" and has no id, so a joined thread can\'t run it');
-        await statusOf(world, thread, "gone");
+        await statusOf(world, "gone");
         await remote.dispose();
         const other = joined(["remoteTestFinalized"]);
         // Declared without a binding, so the build gives it no id.

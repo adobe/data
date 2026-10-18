@@ -556,9 +556,11 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     }
 };
 
-/** Whether a sync point would apply anything: commands queued, entities reserved or carried, or rules to derive again. */
+/** Whether a sync point would apply anything: commands queued, entities reserved or carried, rules to derive again, or failures to report. */
 export const syncPending = (state: State, queued: readonly Queued[] = state.queued): boolean =>
-    !queued.every(({ buffer }) => buffer.count === 0) || reserved(state.entities) || state.carried !== null || state.structure.rederive;
+    !queued.every(({ buffer }) => buffer.count === 0) || reserved(state.entities) || state.carried !== null || state.structure.rederive
+    // Failures for its report, as a gone thread's stops it never finalized are.
+    || state.unplaced.length > 0;
 
 /**
  * The first half of a sync point: commits batch spawns, plans every command, cascades references and closes the plan

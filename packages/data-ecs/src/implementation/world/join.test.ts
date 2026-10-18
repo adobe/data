@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
-import { threadClaims, threadStatus } from "../../interface/components/index.js";
 import { Entity } from "../../interface/entity/entity.js";
 import { labelOfItem } from "../../interface/registry/index.js";
 import { Observe } from "../../interface/observe/observe.js";
@@ -8,7 +7,7 @@ import { Resource } from "../../interface/resource/resource.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
-import { createWorld, join } from "./create.js";
+import { createWorld, join, type CreatedWorld } from "./create.js";
 
 // A world and a thread joining it through a MessageChannel, both on this thread: the protocol without workers.
 
@@ -47,13 +46,13 @@ const spawn = System.create({ name: "joinTest/spawn", input: { type: "object", p
 const fail = System.create({ name: "joinTest/fail" }, () => { throw new Error("joinTest failure"); });
 const idle = System.create({ name: "joinTest/idle" }, () => {});
 
-/** A world shared with a thread joined through a channel, its entity, and the joined world. */
-const joined = (threads: readonly ("main")[] = []): { readonly world: World; readonly thread: Entity; readonly remote: World; readonly channel: MessageChannel } => {
+/** A world shared with a thread joined through a channel, and the joined world. */
+const joined = (threads: readonly ("main")[] = []): { readonly world: CreatedWorld; readonly remote: World; readonly channel: MessageChannel } => {
     const world = createWorld({ [workers]: 0 });
     const channel = new MessageChannel();
-    const thread = world.share(channel.port1);
+    world.share(channel.port1);
     const remote = join(channel.port2, { threads });
-    return { world, thread, remote, channel };
+    return { world, remote, channel };
 };
 
 /** The next value an observer gives that `accept` takes. */
@@ -69,16 +68,16 @@ const until = <T>(observe: Observe<T>, accept: (value: T) => boolean): Promise<T
     if (done) stop();
 });
 
-const statusOf = (world: World, thread: Entity, status: "joining" | "joined" | "gone") =>
-    until(world.observe.entity(thread, { required: [threadStatus], optional: [threadClaims] }), value => value?.[threadStatus] === status);
+/** The progress of a thread, by the order it was shared in, once its status is `status`. */
+const statusOf = (world: CreatedWorld, shared: number, status: "joining" | "joined" | "gone") =>
+    until(world.threads, threads => threads[shared]?.status === status).then(threads => threads[shared]);
 
 describe("joining", () => {
-    it("shows a joined thread's progress and claims on its entity", async () => {
-        const { world, thread, remote } = joined(["main"]);
-        const value = await statusOf(world, thread, "joined");
-        expect(value?.[threadClaims]).toEqual(["main"]);
+    it("keeps a joined thread's progress and claims", async () => {
+        const { world, remote } = joined(["main"]);
+        expect(await statusOf(world, 0, "joined")).toEqual({ status: "joined", claims: ["main"] });
         await remote.dispose();
-        expect((await statusOf(world, thread, "gone"))?.[threadStatus]).toBe("gone");
+        expect(await statusOf(world, 0, "gone")).toEqual({ status: "gone", claims: ["main"] });
         await world.dispose();
     });
     it("lands runs from a joined thread in call order, with struct and object input, each its own sync point", async () => {
@@ -123,11 +122,11 @@ describe("joining", () => {
         const first = new MessageChannel();
         const second = new MessageChannel();
         world.share(first.port1);
-        const refused = world.share(second.port1);
+        world.share(second.port1);
         const one = join(first.port2, { threads: ["main"] });
         const two = join(second.port2, { threads: ["main"] });
         await expect(two.run(idle)).rejects.toThrow('Thread "main" is claimed twice.');
-        expect((await statusOf(world, refused, "gone"))?.[threadStatus]).toBe("gone");
+        expect(await statusOf(world, 1, "gone")).toEqual({ status: "gone", claims: [] });
         expect(await one.run(idle)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         await one.dispose();
         await two.dispose();

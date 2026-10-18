@@ -1,5 +1,4 @@
 import type { MessagePort as NodeMessagePort } from "node:worker_threads";
-import { threadStatus } from "../../interface/components/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import { Observe } from "../../interface/observe/observe.js";
@@ -27,14 +26,15 @@ export type FromJoiningWorker =
     | { readonly kind: "state"; readonly total: number; readonly names: readonly string[]; readonly status: string | null };
 
 const channel = scopeChannel<FromJoiningWorker, ToJoiningWorker>();
-let hosted: { readonly world: ReturnType<typeof createWorld>; readonly thread: ReturnType<ReturnType<typeof createWorld>["share"]> } | null = null;
+let hosted: ReturnType<typeof createWorld> | null = null;
 channel.onMessage(async message => {
     // The world's own messages, where it shares the scope.
     if ("protocol" in message) return;
     if (message.kind === "host scope") {
         const world = createWorld({ [workers]: 0 });
         const scope = globalThis.process?.getBuiltinModule?.("node:worker_threads")?.parentPort ?? self;
-        hosted = { world, thread: world.share(scope) };
+        world.share(scope);
+        hosted = world;
         channel.post({ kind: "shared" });
     }
     else if (message.kind === "join") {
@@ -50,17 +50,18 @@ channel.onMessage(async message => {
     }
     else if (message.kind === "host") {
         const world = createWorld({ [workers]: 0 });
-        hosted = { world, thread: world.share(message.port) };
+        world.share(message.port);
+        hosted = world;
         channel.post({ kind: "shared" });
     }
     else if (hosted !== null) {
         // Once the thread that joined has left.
-        const value = await until(hosted.world.observe.entity(hosted.thread, { required: [threadStatus] }), status => status?.[threadStatus] === "gone");
+        const threads = await until(hosted.threads, shown => shown[0]?.status === "gone");
         channel.post({
             kind: "state",
-            total: await Observe.toPromise(hosted.world.observe.resource(total)),
-            names: await Observe.toPromise(hosted.world.observe.resource(names)),
-            status: value === null ? null : value[threadStatus],
+            total: await Observe.toPromise(hosted.observe.resource(total)),
+            names: await Observe.toPromise(hosted.observe.resource(names)),
+            status: threads[0]?.status ?? null,
         });
     }
 });

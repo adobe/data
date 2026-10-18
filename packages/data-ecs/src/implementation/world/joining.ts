@@ -1,4 +1,4 @@
-import type { Port } from '../../interface/world/join.js';
+import type { World } from '../../interface/world/world.js';
 import type { Report } from '../../interface/world/report.js';
 import type { WorkerError } from './protocol.js';
 import type { Schema } from '../../interface/schema/schema.js';
@@ -106,7 +106,7 @@ export type ThreadChannel<Send, Receive> = {
 };
 
 /** Whether a port is a `MessagePort` this thread may close: not a worker, nor its scope, whose `close` ends the worker. */
-const isMessagePort = (port: Port): boolean =>
+const isMessagePort = (port: Parameters<World["share"]>[0]): boolean =>
     typeof globalThis.MessagePort === "function" && port instanceof globalThis.MessagePort
     && port !== globalThis.process?.getBuiltinModule?.("node:worker_threads")?.parentPort;
 
@@ -116,7 +116,7 @@ const isOurs = (data: unknown): boolean => typeof data === "object" && data !== 
  * A port as a channel: a browser `MessagePort`, `Worker` or worker scope through `addEventListener`, and a node
  * `MessagePort`, `Worker` or `parentPort` through `on`.
  */
-export const threadChannel = <Send, Receive>(port: Port): ThreadChannel<Send, Receive> => {
+export const threadChannel = <Send, Receive>(port: Parameters<World["share"]>[0]): ThreadChannel<Send, Receive> => {
     const on: unknown = Reflect.get(port, "on");
     const listen: unknown = Reflect.get(port, "addEventListener");
     const close: unknown = Reflect.get(port, "close");

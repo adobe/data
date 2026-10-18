@@ -1,10 +1,8 @@
 /// <reference types="node" />
-import { threadStatus } from "../../interface/components/index.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Observe } from "../../interface/observe/observe.js";
 import { workers } from "../../interface/resources/workers.js";
-import type { World } from "../../interface/world/world.js";
-import { createWorld } from "./create.js";
+import { createWorld, type CreatedWorld } from "./create.js";
 import { indexOf } from "./entities.js";
 import type { FromRemoteFinalizersWorker, ToRemoteFinalizersWorker } from "./remote-finalizers-worker.fixture.js";
 import { despawn, released, scenario, serial, sorted, spawn, type Released } from "./remote-finalizers.test-helper.js";
@@ -57,13 +55,13 @@ const until = <T>(observe: Observe<T>, accept: (value: T) => boolean): Promise<T
 });
 
 /** A world shared with a worker that joins it claiming "remoteFinalizersTest", once it joined. */
-const joined = async (world: World): Promise<{ readonly worker: Worker; readonly thread: Entity }> => {
+const joined = async (world: CreatedWorld): Promise<{ readonly worker: Worker }> => {
     const { port1, port2 } = new MessageChannel();
-    const thread = world.share(port1);
+    world.share(port1);
     const worker = start();
     await worker.ask({ kind: "join", port: port2 }, [port2]);
-    await until(world.observe.entity(thread, { required: [threadStatus] }), value => value?.[threadStatus] === "joined");
-    return { worker, thread };
+    await until(world.threads, threads => threads.at(-1)?.status === "joined");
+    return { worker };
 };
 
 /** What the worker's finalizer saw. */
@@ -94,7 +92,7 @@ export const sameStops = async () => {
  */
 export const diesHolding = async () => {
     const world = createWorld({ [workers]: 0 });
-    const { worker, thread } = await joined(world);
+    const { worker } = await joined(world);
     await world.run(spawn, { from: 0, count: 4 });
     const stopped: Entity[] = [];
     for (const value of [0, 1, 2]) stopped.push(...await Observe.toPromise(world.observe.select({ required: [serial], where: { [serial]: value } })));
@@ -107,7 +105,7 @@ export const diesHolding = async () => {
     await world.run(spawn, { from: 10, count: 6 });
     const whileHeld = await reused();
     await worker.terminate();
-    await until(world.observe.entity(thread, { required: [threadStatus] }), value => value?.[threadStatus] === "gone");
+    await until(world.threads, threads => threads.at(-1)?.status === "gone");
     const report = await world.run(spawn, { from: 20, count: 0 });
     await world.run(spawn, { from: 30, count: 6 });
     const after = await reused();

@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { threadStatus } from "../../interface/components/index.js";
-import type { Entity } from "../../interface/entity/entity.js";
 import { Observe } from "../../interface/observe/observe.js";
 import { always } from "../../interface/resources/always.js";
 import { report } from "../../interface/resources/report.js";
 import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
-import { createWorld, join } from "./create.js";
+import { createWorld, join, type CreatedWorld } from "./create.js";
 import { backToBack } from "./loop.js";
 import { blocking, seed, seen, setFailAt, ticked } from "./tails.test-helper.js";
 
@@ -22,15 +20,16 @@ const until = <T>(observe: Observe<T>, accept: (value: T) => boolean): Promise<T
     });
 });
 
-const statusOf = (world: World, thread: Entity, status: "joined" | "gone") =>
-    until(world.observe.entity(thread, { required: [threadStatus] }), value => value?.[threadStatus] === status);
+/** Once the thread shared last has status `status`. */
+const statusOf = (world: CreatedWorld, status: "joined" | "gone") =>
+    until(world.threads, threads => threads.at(-1)?.status === status);
 
-const joined = async (options: Parameters<typeof createWorld>[1] = {}, resources: Parameters<typeof createWorld>[0] = {}): Promise<{ readonly world: World; readonly remote: World }> => {
+const joined = async (options: Parameters<typeof createWorld>[1] = {}, resources: Parameters<typeof createWorld>[0] = {}): Promise<{ readonly world: CreatedWorld; readonly remote: World }> => {
     const world = createWorld({ [workers]: 0, ...resources }, options);
     const channel = new MessageChannel();
-    const thread = world.share(channel.port1);
+    world.share(channel.port1);
     const remote = join(channel.port2, { threads: ["tailsTest"] });
-    await statusOf(world, thread, "joined");
+    await statusOf(world, "joined");
     return { world, remote };
 };
 

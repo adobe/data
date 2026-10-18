@@ -5,12 +5,9 @@ import type { Resource } from '../../interface/resource/resource.js';
 import { requireDefinition, type Definition } from '../../interface/registry/index.js';
 import type { World } from '../../interface/world/world.js';
 import type { Create, InitialResources } from '../../interface/world/create.js';
-import type { Join } from '../../interface/world/join.js';
 import type { Failure } from '../../interface/world/report.js';
-import type { Schedule } from '../../interface/registry/schedule.js';
-import type { CommandBuffer } from './buffer.js';
 import { joinWorld } from './join.js';
-import { createSharing } from './sharing.js';
+import { createSharing, type ThreadProgress } from './sharing.js';
 import { markDelivered } from './move-log.js';
 import { gpuDevice } from '../../interface/resources/gpu-device.js';
 import { workers } from '../../interface/resources/workers.js';
@@ -70,6 +67,12 @@ export type WorldOptions = {
     readonly pool?: WorkerPlatform | null;
 };
 
+/**
+ * A world as the implementation gives it, for tests and benchmarks: also `threads`, each shared thread's progress in
+ * the order they were shared, which the interface leaves out.
+ */
+export type CreatedWorld = World & { readonly threads: Observe<readonly ThreadProgress[]> };
+
 /** The loop's state, added to a world when its first tick runs. */
 const loopResources: readonly Key[] = [cadence, always, wake, clock, reportResource];
 
@@ -86,10 +89,6 @@ const loadAll = async (runners: readonly Runner[]): Promise<void> => {
 const workersOf = (platform: WorkerPlatform, value: unknown): number =>
     value === null ? platform.count : typeof value === "number" && value > 0 ? Math.floor(value) : 0;
 
-/** A sync point of the world's own, for changes to joined threads' entities: no systems, so it applies what's queued. */
-const noSystems: Schedule = { tiers: [], reductions: new Map() };
-const ownSyncPoint = { name: "world" };
-
 /** Rows below which a kernel's archetype runs on the main thread rather than paying for a round trip. */
 const defaultMinimumChunk = 16384;
 
@@ -99,7 +98,7 @@ const withTails = (report: Report, { failures, skipped }: TailOutcome): Report =
 };
 
 /** Creates a world on this thread, as `World.create` does, with options for tests and benchmarks. */
-export const createWorld = (resources: InitialResources = {}, options: WorldOptions = {}): World => {
+export const createWorld = (resources: InitialResources = {}, options: WorldOptions = {}): CreatedWorld => {
     const shared = sharedMemoryAvailable();
     const initial = new Map<Key, unknown>();
     // String keys are never a resource's, so they're ignored, as commands ignore them.
@@ -433,27 +432,10 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         });
     };
 
-    /** Whether a sync point of the world's own is queued, for changes to joined threads' entities. */
-    let syncDue = false;
-    const syncOwn = async (): Promise<void> => {
-        syncDue = false;
-        if (disposed || state.queued.length === 0) return;
-        const report = await execute(context, noSystems, undefined, ownSyncPoint);
-        const failed = deliver();
-        // Its failures, as finalizers', go in the next run's report.
-        for (const failure of [...report.failures, ...failed ?? []]) observers.defer(failure);
-    };
     const sharing = createSharing({
         state,
         run: runWith,
         observers,
-        change: (buffer: CommandBuffer) => {
-            state.queued.push({ buffer, guarded: true });
-            loop.arrived();
-            if (syncDue) return;
-            syncDue = true;
-            void enqueue(syncOwn);
-        },
         defer: (failure: Failure) => observers.defer(failure),
         crossing: (threads, imported) => registrar.crossing(threads, imported) ?? finalizerCrossing(threads, imported),
         placed: () => {
@@ -467,7 +449,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         }),
     });
 
-    const world: World = {
+    const world: CreatedWorld = {
         run: (system, ...args) => {
             const [value]: readonly unknown[] = args;
             return runWith(system, value);
@@ -506,6 +488,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             });
         },
         [Symbol.asyncDispose]: () => world.dispose(),
+        threads: sharing.progress,
         observe: {
             // Stored values match each resource's registered schema, so they have its type.
             resource: <R extends Resource.Key>(key: R) => observers.resource(key) as Observe<ReadonlyResourceValue<R>>,
@@ -525,5 +508,5 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
  */
 export const create: Create = resources => createWorld(resources);
 
-/** Joins a world another thread shared, through the other end of its port. */
-export const join: Join = (port, options) => joinWorld(port, options);
+/** Joins a world another thread shared, through the other end of its port, as `joinWorld` does. */
+export const join: typeof joinWorld = (port, options) => joinWorld(port, options);

@@ -2,7 +2,7 @@ import type { Entity } from '../../interface/entity/entity.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Lookup } from '../../interface/system/access.js';
-import { declarationOf, definitionOf, firstKeyOf, isLeaf, isWorldWritten, itemOfId, keyOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration } from '../../interface/registry/index.js';
+import { declarationOf, definitionOf, firstKeyOf, isLeaf, itemOfId, keyOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration } from '../../interface/registry/index.js';
 import { layoutOf, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { stampChanged, writeOf } from './archetype.js';
 import { emptyViews } from './arrays.js';
@@ -270,7 +270,6 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         const declaration = declarationOf(key);
         if (declaration === undefined || kindOf(key) !== "component") throw new Error(kindOf(key) === "resource" ? `"${labelOf(key)}" is a resource, not a component.` : `"${labelOf(key)}" has no registered schema; import the module that registers it.`);
         if (declaration.derived === true) throw new Error(`"${labelOf(key)}" is derived, so only rules add and remove it.`);
-        if (isWorldWritten(key)) throw new Error(`"${labelOf(key)}" is written only by the world.`);
         const layout = layoutOf(declaration.type);
         const own = ownObject(key);
         const thread = threadOfDeclaration(declaration);

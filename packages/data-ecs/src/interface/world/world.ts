@@ -1,7 +1,5 @@
-import type { Entity } from '../entity/entity.js';
 import type { Input } from '../system/input.js';
 import type { System } from '../system/system.js';
-import type { Port } from './join.js';
 import type { Observers } from './observers.js';
 import type { Report } from './report.js';
 
@@ -29,12 +27,15 @@ export type World = {
     add(system: System<void>): void;
     readonly observe: Observers;
     /**
-     * Lets another thread join this world through `port`, where it calls `World.join` with the other end. Returns that
-     * thread's entity, spawned at the next sync point, whose `threadStatus` and `threadClaims` show its progress and the
-     * logical threads it claims; a thread claimed twice can't join. Throws on a joined thread, and where memory can't be
-     * shared, as without cross-origin isolation.
+     * Lets another thread join this world through `port`, one end of a channel to it, of the browser or node: a
+     * `MessagePort`, a `Worker`, or a worker's own scope, `self` or node's `parentPort`. That thread joins through the
+     * other end, claiming the logical threads it fills; a thread claimed twice can't join. Throws on a joined thread,
+     * and where memory can't be shared, as without cross-origin isolation.
      */
-    share(port: Port): Entity;
+    share(port: { readonly postMessage: (message: never, transfer: never) => void } & (
+        | { readonly addEventListener: (type: "message", listener: (event: unknown) => void) => void }
+        | { readonly on: (event: "message", listener: (value: unknown) => void) => unknown }
+    )): void;
     /**
      * Waits for pending runs, then stops ticking and releases memory, and joined threads' runs reject; the world is
      * unusable afterwards. On a joined thread, it disconnects this thread.

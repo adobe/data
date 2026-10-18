@@ -1,12 +1,9 @@
 /// <reference types="node" />
-import { threadStatus } from "../interface/components/index.js";
 import { Component } from "../interface/component/component.js";
-import type { Entity } from "../interface/entity/entity.js";
 import { Finalizer } from "../interface/finalizer/finalizer.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
-import type { World } from "../interface/world/world.js";
-import { createWorld } from "../implementation/index.js";
+import { createWorld, type CreatedWorld } from "../implementation/index.js";
 import type { Benchmark } from "./benchmark.js";
 
 // Despawning entities whose objects a joined thread fills, with a finalizer on that thread: the world's thread writes
@@ -48,13 +45,12 @@ const despawn = System.create({ name: "finalized/despawn", components: { has: [h
 const joinedFile = "./joined.js";
 
 /** Starts `joined.ts` on a worker, joined to `world` and claiming the benchmark's thread, once it joined. */
-const startClaiming = async (world: World): Promise<{ readonly terminate: () => Promise<void> }> => {
+const startClaiming = async (world: CreatedWorld): Promise<{ readonly terminate: () => Promise<void> }> => {
     const message = (port: unknown) => ({ kind: "port", port, threads: ["finalizedBenchmark"] });
-    let thread: Entity;
     let terminate: () => Promise<void>;
     if (typeof globalThis.Worker === "function") {
         const { port1, port2 } = new MessageChannel();
-        thread = world.share(port1);
+        world.share(port1);
         const worker = new globalThis.Worker(new URL("./joined.js", import.meta.url), { type: "module" });
         await new Promise(resolve => {
             worker.onmessage = resolve;
@@ -65,7 +61,7 @@ const startClaiming = async (world: World): Promise<{ readonly terminate: () => 
     else {
         const threads = globalThis.process.getBuiltinModule("node:worker_threads");
         const { port1, port2 } = new threads.MessageChannel();
-        thread = world.share(port1);
+        world.share(port1);
         const worker = new threads.Worker(new URL(joinedFile, import.meta.url));
         await new Promise(resolve => {
             worker.once("message", resolve);
@@ -75,8 +71,8 @@ const startClaiming = async (world: World): Promise<{ readonly terminate: () => 
     }
     await new Promise<void>(resolve => {
         let done = false;
-        const stop = world.observe.entity(thread, { required: [threadStatus] })(value => {
-            if (done || value?.[threadStatus] !== "joined") return;
+        const stop = world.threads(threads => {
+            if (done || threads.at(-1)?.status !== "joined") return;
             done = true;
             queueMicrotask(() => stop());
             resolve();

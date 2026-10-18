@@ -1,13 +1,10 @@
 import type { Entity } from '../../interface/entity/entity.js';
-import type { Port } from '../../interface/world/join.js';
+import type { Observe } from '../../interface/observe/observe.js';
+import type { World } from '../../interface/world/world.js';
 import type { Failure, Report } from '../../interface/world/report.js';
-import { threadClaims } from '../../interface/components/thread-claims.js';
-import { threadStatus } from '../../interface/components/thread-status.js';
 import { definitionOf, firstKeyOf, idOfKey, itemOfId, keyOfId, labelOf, labelOfItem, type Definition } from '../../interface/registry/index.js';
 import type { Layout, Views } from '../../interface/registry/layout.js';
-import { addCommand, createBuffer, spawnCommand, type CommandBuffer } from './buffer.js';
-import { pushValues } from './commands.js';
-import { asEntity, reserve } from './entities.js';
+import { asEntity } from './entities.js';
 import { failureOf } from './failures.js';
 import {
     clean, completedWord, controlBytes, inputByMessage, inputLayoutOf, platformLocks, postedWord, protocolName, rejected, reported, runSlots,
@@ -37,8 +34,6 @@ export type SharingHost = {
         readonly entity: (entity: Entity, options: EntityOptions | undefined, owner: MoveLog | null) => Subscribe;
         readonly query: (options: QueryOptions, counting: boolean) => Subscribe;
     };
-    /** Queues the world's own changes to a thread's entity for the next sync point, and makes it due. */
-    readonly change: (buffer: CommandBuffer) => void;
     /** A failure for the next run's report, as an observer's first value given through the queue is. */
     readonly defer: (failure: Failure) => void;
     /**
@@ -58,9 +53,14 @@ type Named = { readonly id: string; readonly value: Key | Definition | null };
 /** A joined thread's observer: what stops the world's observer, and its mailbox. */
 type Watching = { readonly stop: () => void; readonly mailbox: MailboxWriter };
 
+/**
+ * A thread's progress as the world shows it: `"joining"` until it has joined, `"joined"` once the threads it claims
+ * are its own, then `"gone"` once it disconnected, died or couldn't join, and its claims are released.
+ */
+export type ThreadProgress = { readonly status: "joining" | "joined" | "gone"; readonly claims: readonly string[] };
+
 /** A thread that joined, or is joining, through a port this world shared. */
 type Joined = {
-    readonly entity: Entity;
     readonly channel: ThreadChannel<ToJoined, ToWorld>;
     status: "joining" | "joined" | "gone";
     claims: readonly string[];
@@ -97,8 +97,8 @@ const isClean = (report: Report): boolean => report.failures.length === 0 && rep
 const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 /**
- * The world's side of joined threads: `share` reserves a thread's entity and stages its spawn, then its handshake
- * records its claims, which a thread claimed twice can't join. Runs come through its slots in shared memory, in
+ * The world's side of joined threads: `share` records a thread joining, then its handshake records its claims, which
+ * a thread claimed twice can't join; `progress` shows each one's, in the order they were shared. Runs come through its slots in shared memory, in
  * sequence, naming systems by its numbers, and complete through its completed word, with a report posted only when
  * it isn't clean. Its observers are the world's own, writing each value into a mailbox, with one notify per thread
  * per batch of deliveries.
@@ -118,10 +118,19 @@ export const createSharing = (host: SharingHost) => {
 
     const post = (thread: Joined, message: ToJoined): void => thread.channel.post(message);
 
-    const change = (thread: Joined, kind: number, values: object): void => {
-        const buffer = createBuffer();
-        pushValues(state, buffer, kind, thread.entity, values);
-        host.change(buffer);
+    /** Every shared thread's progress, by its number, and those observing it. */
+    let progress: readonly ThreadProgress[] = [];
+    const watchers = new Set<(value: readonly ThreadProgress[]) => void>();
+    const show = (thread: Joined, status: ThreadProgress["status"]): void => {
+        const next = [...progress];
+        next[thread.number - 1] = { status, claims: thread.claims };
+        progress = next;
+        for (const notify of [...watchers]) notify(progress);
+    };
+    const observeProgress: Observe<readonly ThreadProgress[]> = notify => {
+        watchers.add(notify);
+        notify(progress);
+        return () => { watchers.delete(notify); };
     };
 
     const wake = (thread: Joined): void => {
@@ -402,7 +411,10 @@ export const createSharing = (host: SharingHost) => {
             protocol: protocolName, kind: "joined", memory: memory.memory, control: start, waits: hasWaitAsync(), log: thread.log?.block ?? null,
             tasks: thread.tasks?.block ?? null, thread: thread.number,
         });
-        if (threads.length === 0) joined();
+        if (threads.length === 0) {
+            joined();
+            show(thread, "joined");
+        }
         else host.between(() => {
             if (thread.status !== "joined") return;
             // Systems registered since it asked to join are checked too.
@@ -420,8 +432,8 @@ export const createSharing = (host: SharingHost) => {
             state.channels.push(tasks);
             joined();
             host.placed();
+            show(thread, "joined");
         });
-        change(thread, addCommand, { [threadStatus]: "joined", [threadClaims]: threads });
         if (hasWaitAsync()) void listen(thread);
     };
     /** Returns a thread's control words to the memory, once it left: a thread that died may still be writing them. */
@@ -456,11 +468,12 @@ export const createSharing = (host: SharingHost) => {
                 if (left) tasks.free();
             }
             if (left) freeMoveLog(log);
+            show(thread, "gone");
         });
+        else if (!closed) show(thread, "gone");
         for (const observer of [...thread.watching.keys()]) unobserve(thread, observer);
         if (control !== null) Atomics.notify(control, postedWord);
         thread.abort.abort();
-        if (!closed) change(thread, addCommand, { [threadStatus]: "gone" });
     };
 
     const receive = (thread: Joined, message: ToWorld): void => {
@@ -496,22 +509,17 @@ export const createSharing = (host: SharingHost) => {
         }
     };
 
-    /**
-     * Lets a thread join through `port`: reserves its entity and stages its spawn, `"joining"` with no claims, for the
-     * next sync point, which it makes due.
-     */
-    const share = (port: Port): Entity => {
-        const entity = reserve(state.entities);
+    /** Lets a thread join through `port`: `"joining"`, with no claims. */
+    const share = (port: Parameters<World["share"]>[0]): void => {
         const thread: Joined = {
-            entity, channel: threadChannel<ToJoined, ToWorld>(port), status: "joining", claims: [], control: null, views: [], waits: true,
+            channel: threadChannel<ToJoined, ToWorld>(port), status: "joining", claims: [], control: null, views: [], waits: true,
             names: new Map(), next: 1, completed: 0, finished: new Set(), inputs: new Map(), watching: new Map(), woken: false,
             abort: new AbortController(), log: null, number: ++numbered, imported: new Set(), tasks: null,
         };
         threads.add(thread);
-        change(thread, spawnCommand, { [threadStatus]: "joining", [threadClaims]: [] });
+        show(thread, "joining");
         thread.channel.onMessage(message => { if (thread.status !== "gone" || message.kind === "leave") receive(thread, message); });
         thread.channel.onClose(() => gone(thread));
-        return entity;
     };
 
     /** At the world's dispose: joined threads hear of it, and their observers stop. */
@@ -524,5 +532,5 @@ export const createSharing = (host: SharingHost) => {
         }
     };
 
-    return { share, close };
+    return { share, close, progress: observeProgress };
 };

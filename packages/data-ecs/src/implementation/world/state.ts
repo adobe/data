@@ -1,6 +1,6 @@
 import { createHolds, type Holds } from './stop-lists.js';
 import type { Entity } from '../../interface/entity/entity.js';
-import { declarationOf, firstKeyOf, isWorldWritten, kindOf, labelOf } from '../../interface/registry/index.js';
+import { declarationOf, firstKeyOf, kindOf, labelOf } from '../../interface/registry/index.js';
 import { createArchetype, startTicks, type Archetype, type Storage } from './archetype.js';
 import type { SpawnBatch } from './staging.js';
 import type { CommandBuffer } from './buffer.js';
@@ -290,7 +290,6 @@ export const commandIdOf = (state: State, key: unknown): number => {
     if (kindOf(key) === "resource") throw new Error(`"${labelOf(key)}" is a resource, not a component.`);
     const id = idOf(state, key);
     if (state.derived[id]) throw new Error(`"${labelOf(key)}" is derived, so only rules add and remove it.`);
-    if (isWorldWritten(key)) throw new Error(`"${labelOf(key)}" is written only by the world.`);
     state.commandable[id] = true;
     return id;
 };

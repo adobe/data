@@ -2,7 +2,7 @@ import type { Entity } from '../../interface/entity/entity.js';
 import type { Observe } from '../../interface/observe/observe.js';
 import type { Resource } from '../../interface/resource/resource.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/resource/value.js';
-import type { JoinOptions, Port } from '../../interface/world/join.js';
+import type { Thread } from '../../interface/thread/thread.js';
 import type { Report } from '../../interface/world/report.js';
 import type { World } from '../../interface/world/world.js';
 import { declarationOf, firstKeyOf, identifiedItems, idOfItem, idOfKey, identifiedKeys, keyOfId, kindOf, labelOf, labelOfItem, requireDefinition, threadOfDeclaration, type Definition } from '../../interface/registry/index.js';
@@ -82,11 +82,18 @@ const symbolOf = (key: unknown): symbol => {
 const rethrow = (error: unknown): void => queueMicrotask(() => { throw error; });
 
 /**
- * Joins the world shared through the other end of `port`, as `World.join` does: runs go through this thread's slots
- * in shared memory and complete through its completed word, and observers read their mailboxes, waiting on its signal
- * word without blocking while any run or observer is active.
+ * Joins, through `port`, the world another thread shared through the other end, once this thread has imported the
+ * modules of the systems it runs and the keys it observes, claiming `threads`, the logical threads it fills, the
+ * world's own aside; none by default. Runs and observers work as on the world's thread, by the ids the build gives
+ * top-level systems and keys: a run of a system without one, or one the world never imported, rejects. An observer's
+ * first value always comes later, and one that falls behind gets the newest value; observers read structs only, and an
+ * entity's whole value is its struct components. `dispose` disconnects this thread. Throws where memory can't be
+ * shared, as without cross-origin isolation.
+ *
+ * Runs go through this thread's slots in shared memory and complete through its completed word, and observers read
+ * their mailboxes, waiting on its signal word without blocking while any run or observer is active.
  */
-export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
+export const joinWorld = (port: Parameters<World["share"]>[0], options: { readonly threads?: readonly Exclude<Thread, "world">[] } = {}): World => {
     if (!sharedMemoryAvailable()) throw new Error("Without cross-origin isolation memory can't be shared, so no thread can join.");
     const channel = threadChannel<ToWorld, ToJoined>(port);
     /** Messages posted before the join message is, which waits for this thread's lock. */

@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { threadStatus } from "../../interface/components/index.js";
 import type { Entity } from "../../interface/entity/entity.js";
 import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { Observe } from "../../interface/observe/observe.js";
@@ -7,7 +6,7 @@ import { identify } from "../../interface/registry/ids.test-helper.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
-import { createWorld, join } from "./create.js";
+import { createWorld, join, type CreatedWorld } from "./create.js";
 import { indexOf } from "./entities.js";
 import { attach, despawn, eventually, finalized, marked, place, released, retone, scenario, serial, sorted, spawn, throwing, tone, widget } from "./remote-finalizers.test-helper.js";
 
@@ -24,17 +23,18 @@ const until = <T>(observe: Observe<T>, accept: (value: T) => boolean): Promise<T
     });
 });
 
-const statusOf = (world: World, thread: Entity, status: "joined" | "gone") =>
-    until(world.observe.entity(thread, { required: [threadStatus] }), value => value?.[threadStatus] === status);
+/** Once the thread shared last has status `status`. */
+const statusOf = (world: CreatedWorld, status: "joined" | "gone") =>
+    until(world.threads, threads => threads.at(-1)?.status === status);
 
 /** A world shared with a thread on this one, which claims the finalizers' thread. */
-const joined = async (): Promise<{ readonly world: World; readonly thread: Entity; readonly remote: World }> => {
+const joined = async (): Promise<{ readonly world: CreatedWorld; readonly remote: World }> => {
     const world = createWorld({ [workers]: 0 });
     const channel = new MessageChannel();
-    const thread = world.share(channel.port1);
+    world.share(channel.port1);
     const remote = join(channel.port2, { threads: ["remoteFinalizersTest"] });
-    await statusOf(world, thread, "joined");
-    return { world, thread, remote };
+    await statusOf(world, "joined");
+    return { world, remote };
 };
 
 const reset = (): void => {
@@ -125,12 +125,12 @@ describe("finalizers on a joined thread", () => {
     });
     it("finalize what was published when their thread leaves, and run on the world's thread once it's gone", async () => {
         reset();
-        const { world, thread, remote } = await joined();
+        const { world, remote } = await joined();
         await world.run(spawn, { from: 0, count: 3 });
         await world.run(attach);
         await world.run(despawn, { serials: [0] });
         await remote.dispose();
-        await statusOf(world, thread, "gone");
+        await statusOf(world, "gone");
         expect(released.map(stop => [stop.serial, stop.widget])).toEqual([[0, "w0"]]);
         // Its objects came back as their starts, with the thread's values its own.
         const report = await world.run(despawn, { serials: [1] });

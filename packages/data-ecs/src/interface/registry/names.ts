@@ -108,6 +108,10 @@ export const sameDeclaration = (a: unknown, b: unknown): boolean => {
     if (typeof a === "symbol" || typeof b === "symbol") return sameKey(a, b);
     if (typeof a !== "object" || typeof b !== "object" || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false;
     if ("declaration" in a && "declaration" in b) return sameItem(a, b);
+    // A set or map, such as a default, compares by its entries in order, as a module evaluated again makes them.
+    if (a instanceof Set) return b instanceof Set && sameDeclaration(Array.from(a), Array.from(b));
+    if (a instanceof Map) return b instanceof Map && sameDeclaration(Array.from(a), Array.from(b));
+    if (b instanceof Set || b instanceof Map) return false;
     const keys = Reflect.ownKeys(a);
     const others = Reflect.ownKeys(b);
     return keys.length === others.length && keys.every(key => {

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Schema } from "../schema/schema.js";
+import { threadOfDeclaration } from "./declarations.js";
 import { layoutOf } from "./layout.js";
+import { allowsNull, conditional, hasBoolean, isStruct } from "./schemas.js";
 
 const f32: Schema = { type: "number", precision: 1 };
 const vec = (length: number, layout?: "storage" | "vertex"): Schema => ({ type: "array", items: f32, minItems: length, maxItems: length, ...layout === undefined ? {} : { layout } });
@@ -30,6 +32,16 @@ describe("layoutOf", () => {
     it("packs CPU layouts tightly with natural alignment", () => {
         expect(placement(vec(3))).toEqual({ stride: 12, offsets: [0, 4, 8] });
         expect(placement({ type: "object", properties: { flag: { type: "boolean" }, weight: { type: "number" }, mass: f32 } })).toEqual({ stride: 24, offsets: [0, 8, 16] });
+    });
+
+    it("stores sets and maps as objects, even of numbers, and nothing in them as a struct", () => {
+        const set: Schema = { type: "set", items: { type: "number" } };
+        const map: Schema = { type: "map", keys: { type: "integer", minimum: 0, maximum: 9 }, values: { type: "boolean" } };
+        expect([layoutOf(set).kind, layoutOf(map).kind]).toEqual(["object", "object"]);
+        expect(layoutOf({ type: "object", properties: { at: f32, marks: set } }).kind).toBe("object");
+        expect([isStruct(set), isStruct(map), hasBoolean(map), allowsNull(set), conditional(map)]).toEqual([false, false, false, false, false]);
+        expect(threadOfDeclaration({ type: map })).toBe("world");
+        expect(() => layoutOf({ type: "array", layout: "storage", items: set, minItems: 2, maxItems: 2 })).toThrow("storage layout needs");
     });
 
     it("rejects GPU layouts the GPU can't share, naming the leaf", () => {

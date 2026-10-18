@@ -1,3 +1,5 @@
+import type { IsData } from "./is-data.js";
+import type { IsStruct } from "./is-struct.js";
 import type { Schema } from "./schema.js";
 
 // Local copies of the standard compile-time assertion helpers.
@@ -115,3 +117,29 @@ void [okTrue, okFalse, okBoolean, badTrue, badFalse, badFalseRedundant, badBoole
 check<Equal<Schema.ToType<{ type: 'array'; items: { type: 'number' }; minItems: 3; maxItems: 3 }>, readonly [number, number, number]>>();
 check<Equal<Schema.ToType<{ type: 'array'; items: { type: 'number' }; minItems: 2; maxItems: 3 }>, readonly number[]>>();
 check<Equal<Schema.ToType<{ type: 'array'; items: { type: 'number' }; minItems: number; maxItems: number }>, readonly number[]>>();
+
+// sets and maps, forms JSON lacks, are read-only
+check<Equal<Schema.ToType<{ type: 'set'; items: { type: 'string' } }>, ReadonlySet<string>>>();
+check<Equal<Schema.ToType<{ type: 'map'; keys: { type: 'string' }; values: { type: 'array'; items: { type: 'number' } } }>, ReadonlyMap<string, readonly number[]>>>();
+check<Equal<Schema.ToType<{ type: 'object'; properties: { tags: { type: 'set'; items: { const: 'a' } } } }>, { readonly tags: ReadonlySet<'a'> }>>();
+const okSet: Schema.ForType<ReadonlySet<number>> = { type: 'set', items: { type: 'integer' } };
+const okMap: Schema.ForType<ReadonlyMap<string, boolean>> = { type: 'map', keys: { type: 'string' }, values: { type: 'boolean' } };
+// @ts-expect-error a set's items must match
+const badSet: Schema.ForType<ReadonlySet<number>> = { type: 'set', items: { type: 'string' } };
+// @ts-expect-error a map's values must match
+const badMap: Schema.ForType<ReadonlyMap<string, boolean>> = { type: 'map', keys: { type: 'string' }, values: { type: 'number' } };
+// @ts-expect-error a set has items, not keys and values
+const badSetForm: Schema = { type: 'set', keys: { type: 'string' }, values: { type: 'string' } };
+// @ts-expect-error a map has keys and values
+const badMapForm: Schema = { type: 'map', items: { type: 'string' } };
+void [okSet, okMap, badSet, badMap, badSetForm, badMapForm];
+
+// A ReadonlySet or ReadonlyMap of data is data; a Set or Map, which changes in place, isn't, nor one holding functions.
+check<Equal<IsData<ReadonlySet<string>>, true>>();
+check<Equal<IsData<ReadonlyMap<string, { readonly x: number }>>, true>>();
+check<Equal<IsData<ReadonlySet<() => void>>, false>>();
+check<Equal<IsData<Set<string>>, false>>();
+check<Equal<IsData<Map<string, number>>, false>>();
+// Neither is a struct: neither lives in shared memory.
+check<Equal<IsStruct<ReadonlySet<number>>, false>>();
+check<Equal<IsStruct<ReadonlyMap<number, number>>, false>>();

@@ -68,6 +68,13 @@ Archetypes and commands that name their components first (record `bd0dabcc`, aga
 - **Archetypes are found by their index:** with only the eight-entry cache, sixteen archetypes from one site resolved their list on every spawn, 523–561 ns; the per-world table by archetype index, and a site's plans by index, take it to 57.6 ns.
 - **Moves are grouped by pair of archetypes,** copying shared columns for a block of rows, and rows left are removed last entry first, so an archetype that moves out whole drops its rows without copies; list adds and removes resolve their target once per source archetype.
 
+Sync point fixes for spawns (record `ebde4c9b`, against `bd0dabcc`): `spawn bulk kernel` 131 → 121 ns, back to the baseline's 120, and `spawn singles` 500 → 292 ns, below the baseline's 458; every other node and chromium benchmark within noise (`run idle` reads 333 or 375 ns from one record to the next, as timer steps; `bd0dabcc` measures 375 ns beside this one). Kernels reading lists from other modules changed only what the compiler emits. Each step, measured on its own:
+
+- **A pair whose entries are consecutive needs no ordering pass,** as a system's spawns or moves from one archetype are, and rows are removed only when some entry leaves one: `spawn bulk kernel` 130 → 127 ns. Reading entries through a branch per row instead of an identity order cost `retag` +3%, so the order is still written, in one sequential pass.
+- **The plan grows once per buffer,** since each command adds at most one entry, rather than checking capacity at every entry: `spawn bulk kernel` 127 → 120 ns; `retag` 34.5 → 33.5 ms.
+- **A spawn batch keeps its archetype,** rather than finding it by its joined ids at every sync point: `spawn singles` 489 → 396 ns.
+- **A batch of at most eight rows commits element by element,** since a subarray to copy from costs more than the rows: `spawn singles` 396 → 292 ns.
+
 The adobe/data ECS runs move 1M in 0.09 ms, single threaded with WASM SIMD, and creates 100K in 5.8 ms by inserting directly, with no command buffer or sync point.
 
 ## Where the gains came from
@@ -151,6 +158,7 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **A loop spawner as the only spawner:** about twice the generated one (numbers above). Kept only where code can't be generated. Worth revisiting if engines specialize a shared loop's keyed reads per shape.
 - **Prepared spawn sites calling the shape's column writers:** one site spawning into four archetypes made each writer call see four closures, `create` 103 ns and `create flat` 76 ns, against 58 and 66 ns through a positional spawner generated per site key order and shape.
 - **Removing the prepared sites,** as the plan for curried spawns proposed once they no longer won: they still win by the values object's cost (above).
+- **A spawn site remembering the last archetype and world it spawned into,** checked before the plans by index: `spawn singles` 390 → 380 ns, within noise, but `create` 58 → 61.5 ns and `create flat` 64 → 70.5 ns. Worth revisiting if a site's plan lookup shows up in a profile again.
 - **Removing rows last first without grouping moves by pair:** `add tag` 114 ns and `retag` +10%; grouping the arrivals by pair took them to 100 ns and −5%.
 
 - **Listing symbol keys with `Reflect.ownKeys`, or with `Object.keys` first:** 1–5% slower than `Object.getOwnPropertySymbols` for 1 to 6 keys (table above), and `Object.keys` finds nothing, since keys are symbols. Worth revisiting if engines give symbol keys an enumeration cache.

@@ -18,7 +18,7 @@ import { firstKeyOf, labelOfItem } from '../../interface/registry/index.js';
 const none: readonly never[] = [];
 const noChunks: readonly Chunk[] = [];
 /** The report of a run with nothing to report. */
-const clean: Report = { failures: none, skipped: none, dropped: 0 };
+const clean: Report = { failures: none, skipped: none, dropped: 0, warnings: none };
 
 export type ExecuteContext = {
     readonly state: State;
@@ -219,7 +219,7 @@ const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: u
             publish();
         }
     }
-    return failures === null && skipped === null && dropped === 0 ? clean : { failures: failures ?? none, skipped: skipped ?? none, dropped };
+    return failures === null && skipped === null && dropped === 0 ? clean : { failures: failures ?? none, skipped: skipped ?? none, dropped, warnings: none };
 };
 
 /**

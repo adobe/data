@@ -21,7 +21,7 @@ const reportTraits = Resource.register(report, {
                 items: {
                     type: "object",
                     properties: {
-                        kind: { anyOf: [{ const: "system" }, { const: "finalizer" }, { const: "gpu" }, { const: "observer" }] },
+                        kind: { anyOf: [{ const: "system" }, { const: "finalizer" }, { const: "gpu" }, { const: "observer" }, { const: "thread" }] },
                         name: text,
                         message: text,
                         stack: { anyOf: [text, { type: "null" }] },
@@ -30,7 +30,11 @@ const reportTraits = Resource.register(report, {
             },
             skipped: { type: "array", items: text },
             dropped: { type: "integer", minimum: 0 },
+            warnings: {
+                type: "array",
+                items: { type: "object", properties: { kind: { const: "blocking" }, name: text, message: text } },
+            },
         },
-        default: { failures: [], skipped: [], dropped: 0 },
+        default: { failures: [], skipped: [], dropped: 0, warnings: [] },
     },
 });

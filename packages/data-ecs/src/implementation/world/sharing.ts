@@ -81,7 +81,7 @@ type Joined = {
 
 const hasWaitAsync = (): boolean => typeof Atomics.waitAsync === "function";
 
-const isClean = (report: Report): boolean => report.failures.length === 0 && report.skipped.length === 0 && report.dropped === 0;
+const isClean = (report: Report): boolean => report.failures.length === 0 && report.skipped.length === 0 && report.dropped === 0 && report.warnings.length === 0;
 
 const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error);
 

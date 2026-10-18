@@ -71,7 +71,7 @@ describe("Resource.register", () => {
             const type = declarationOf(name)?.type;
             return type !== undefined && "default" in type ? type.default : undefined;
         });
-        expect(defaults).toEqual([{ kind: "frame" }, false, Infinity, { now: 0, delta: 0, tick: 0 }, { failures: [], skipped: [], dropped: 0 }]);
+        expect(defaults).toEqual([{ kind: "frame" }, false, Infinity, { now: 0, delta: 0, tick: 0 }, { failures: [], skipped: [], dropped: 0, warnings: [] }]);
         expect(declarationOf(wake)?.reduce).toBe("min");
         expect([cadence, always, wake, clock, report].map(name => threadOfDeclaration(declarationOf(name) ?? {}))).toEqual(["world", null, null, null, "world"]);
     });

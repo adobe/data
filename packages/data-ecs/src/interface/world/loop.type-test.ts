@@ -65,5 +65,5 @@ const paced: World = create({ [cadence]: { kind: "fixed", step: 10 }, [always]: 
 // @ts-expect-error clock is written only by the world
 create({ [clock]: { now: 0, delta: 0, tick: 0 } });
 // @ts-expect-error report is written only by the world
-create({ [report]: { failures: [], skipped: [], dropped: 0 } });
+create({ [report]: { failures: [], skipped: [], dropped: 0, warnings: [] } });
 void paced;

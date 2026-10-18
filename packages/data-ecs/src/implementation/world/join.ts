@@ -22,7 +22,7 @@ type Notify = (value: unknown) => void;
 
 /** Shared by every clean report: read-only, so none needs its own. */
 const none: readonly never[] = [];
-const cleanReport: Report = { failures: none, skipped: none, dropped: 0 };
+const cleanReport: Report = { failures: none, skipped: none, dropped: 0, warnings: none };
 
 /** A run not yet settled: how to settle it, and its report or rejection once posted. */
 type Run = { readonly resolve: (report: Report) => void; readonly reject: (error: unknown) => void; message: ToJoined | null; error: unknown };

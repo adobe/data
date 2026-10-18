@@ -304,7 +304,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             report = await perform(composite, undefined, false);
         }
         catch (error) {
-            report = { failures: [failureOf("system", labelOfItem(composite), error)], skipped: [], dropped: 0 };
+            report = { failures: [failureOf("system", labelOfItem(composite), error)], skipped: [], dropped: 0, warnings: [] };
         }
         if (readResource(reportResource) !== report) writeOwn(reportResource, report);
         const observed = delivered(report);

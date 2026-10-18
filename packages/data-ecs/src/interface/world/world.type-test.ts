@@ -105,15 +105,21 @@ void [observedWhole, observedBoth, stopEntity];
 const ran: Promise<World.Report> = world.run(main);
 const moved: Promise<World.Report> = world.run(move, { distance: 1 });
 const reported = async () => {
-    const { failures, skipped, dropped } = await world.run(main);
+    const { failures, skipped, dropped, warnings } = await world.run(main);
     for (const failure of failures) {
-        check<Equal<typeof failure.kind, "system" | "finalizer" | "gpu" | "observer">>();
+        check<Equal<typeof failure.kind, "system" | "finalizer" | "gpu" | "observer" | "thread">>();
         const text: string = `${failure.name}: ${failure.message}`;
         const stack: string | null = failure.stack;
         void [text, stack];
     }
     const names: readonly string[] = skipped;
     const count: number = dropped;
+    for (const warning of warnings) {
+        check<Equal<typeof warning, World.Warning>>();
+        check<Equal<World.Warning, { readonly kind: "blocking"; readonly name: string; readonly message: string }>>();
+    }
+    // @ts-expect-error a report is read-only
+    warnings.push({ kind: "blocking", name: "", message: "" });
     // @ts-expect-error a report is read-only
     failures.push({ kind: "system", name: "", message: "", stack: null });
     void [names, count];

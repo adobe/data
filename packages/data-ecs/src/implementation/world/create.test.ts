@@ -224,7 +224,7 @@ describe("World.create", () => {
         const quiet = System.create({ name: "createTest/quiet" }, () => {});
         await using world = createWorld();
         const report = await world.run(quiet);
-        expect(report).toEqual({ failures: [], skipped: [], dropped: 0 });
+        expect(report).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         expect(await world.run(quiet)).toBe(report);
     });
 
@@ -247,7 +247,7 @@ describe("World.create", () => {
         const fails = System.create({ name: "createTest/failsFirst" }, () => { throw new Error("first"); });
         const later = System.create({ name: "createTest/later", after: [fails] }, () => {});
         await using world = createWorld();
-        expect(await world.run(doomed)).toEqual({ failures: [], skipped: [], dropped: 2 });
+        expect(await world.run(doomed)).toEqual({ failures: [], skipped: [], dropped: 2, warnings: [] });
         const report = await world.run(System.create({ name: "createTest/failedTier", systems: [fails, later] }));
         expect(report.skipped).toEqual(["createTest/later"]);
         expect(report.failures.map(failure => failure.name)).toEqual(["createTest/failsFirst"]);

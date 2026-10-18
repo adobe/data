@@ -85,7 +85,7 @@ describe("joining", () => {
         const { world, remote } = joined();
         const runs = [remote.run(add, { amount: 1 }), remote.run(append, { name: "a" }), remote.run(add, { amount: 2 }), remote.run(append, { name: "b" }), remote.run(add, { amount: 3 })];
         const reports = await Promise.all(runs);
-        expect(reports).toEqual(runs.map(() => ({ failures: [], skipped: [], dropped: 0 })));
+        expect(reports).toEqual(runs.map(() => ({ failures: [], skipped: [], dropped: 0, warnings: [] })));
         expect(await Observe.toPromise(world.observe.resource(total))).toBe(123);
         expect(await Observe.toPromise(world.observe.resource(names))).toEqual(["a", "b"]);
         await remote.run(spawn, { x: 4 });
@@ -114,7 +114,7 @@ describe("joining", () => {
         expect(report.failures.map(failure => failure.message)).toEqual(["joinTest failure"]);
         const local = System.create(() => {});
         await expect(remote.run(local)).rejects.toThrow(`System "${labelOfItem(local)}" has no id, so it can't run from another thread`);
-        expect(await remote.run(idle)).toEqual({ failures: [], skipped: [], dropped: 0 });
+        expect(await remote.run(idle)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         await remote.dispose();
         await world.dispose();
     });
@@ -128,7 +128,7 @@ describe("joining", () => {
         const two = join(second.port2, { threads: ["main"] });
         await expect(two.run(idle)).rejects.toThrow('Thread "main" is claimed twice.');
         expect((await statusOf(world, refused, "gone"))?.[threadStatus]).toBe("gone");
-        expect(await one.run(idle)).toEqual({ failures: [], skipped: [], dropped: 0 });
+        expect(await one.run(idle)).toEqual({ failures: [], skipped: [], dropped: 0, warnings: [] });
         await one.dispose();
         await two.dispose();
         await world.dispose();

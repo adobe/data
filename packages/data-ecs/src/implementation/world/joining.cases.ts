@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type * as Fixture from "./joining.fixture.js";
 
-const clean = { failures: [], skipped: [], dropped: 0 };
+const clean = { failures: [], skipped: [], dropped: 0, warnings: [] };
 
 /** Threads joining worlds on others: the cases, over the fixture built for node or from source. */
 export const joiningCases = (load: () => Promise<typeof Fixture>) => describe("joining", () => {

@@ -839,5 +839,45 @@
             "basis": "Each row reads its 4-byte index; each spawn writes its 8 bytes of values, its entity and its location.",
             "on": "threads"
         }
+    },
+    "loop tick idle": {
+        "operation": "A world's loop ticking with nothing changed, driven back to back with `always` set, counted through an observer of its clock: the fixed cost of every tick.",
+        "per": "ticks",
+        "n": 10000,
+        "typical": [
+            1,
+            1
+        ],
+        "best": {
+            "bytes": 64,
+            "basis": "A run reads at least one cache line of its system's state."
+        }
+    },
+    "sync point grow 100 archetypes main": {
+        "operation": "A sync point where each of 100 archetypes grows, by one spawn into each: levels and bursts filling many kinds of entities at once.",
+        "per": "archetypes grown",
+        "n": 100,
+        "typical": [
+            1,
+            100
+        ],
+        "best": {
+            "bytes": 64,
+            "basis": "Each archetype that grows writes at least its layout record, a cache line."
+        }
+    },
+    "sync point grow 100 archetypes workers": {
+        "operation": "A sync point where each of 100 archetypes grows, by one spawn into each, then a kernel over them, so workers take up the new layout.",
+        "per": "archetypes grown",
+        "n": 100,
+        "typical": [
+            1,
+            100
+        ],
+        "best": {
+            "bytes": 64,
+            "basis": "Each archetype that grows writes at least its layout record, a cache line.",
+            "on": "threads"
+        }
     }
 }

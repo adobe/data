@@ -52,7 +52,7 @@ Resource.register(floor, { type: { type: "number", precision: 1, default: -2.5 }
 const seed = System.create({ name: "wasmTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
     let previous = Entity.none;
     for (let i = 0; i < input.count; i++) {
-        previous = commands.spawn({ [position]: [i * 0.37, (i % 13) * 0.71], [velocity]: [Math.sin(i) * 3, Math.cos(i) * 5], [bounces]: 0, [flipped]: false, [score]: 0, [target]: previous });
+        previous = commands.spawn([position, velocity, bounces, flipped, score, target])({ [position]: [i * 0.37, (i % 13) * 0.71], [velocity]: [Math.sin(i) * 3, Math.cos(i) * 5], [bounces]: 0, [flipped]: false, [score]: 0, [target]: previous });
     }
 });
 
@@ -60,7 +60,7 @@ const seed = System.create({ name: "wasmTest/seed", input: { type: "object", pro
 const cull = System.create({ name: "wasmTest/cull", input: { type: "object", properties: { frame: { type: "integer" } } }, components: { read: [position], has: [bounces] } }, (row, { input, commands }) => {
     if ((row.entity >>> 0) % 7 !== input.frame % 7) return;
     commands.despawn(row.entity);
-    commands.spawn({ [position]: row[position], [velocity]: [1, 1], [bounces]: 0, [flipped]: true, [score]: 0, [target]: row.entity });
+    commands.spawn([position, velocity, bounces, flipped, score, target])({ [position]: row[position], [velocity]: [1, 1], [bounces]: 0, [flipped]: true, [score]: 0, [target]: row.entity });
 });
 
 const halve = (value: number) => value * 0.5;

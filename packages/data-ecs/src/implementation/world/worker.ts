@@ -131,7 +131,7 @@ const run = (message: RunMessage, buffer: CommandBuffer): void => {
     if (loaded === undefined) throw new Error(`Worker has no kernel ${message.kernel}.`);
     const archetype = archetypes.get(message.archetype);
     if (archetype === undefined) throw new Error(`Worker has no layout for archetype ${message.archetype}.`);
-    const commands = createKernelCommands({ buffer }, loaded.setup.keys, () => reserve(required(entities, "layout")));
+    const commands = createKernelCommands({ buffer }, loaded.setup.keys, loaded.setup.starts, () => reserve(required(entities, "layout")));
     const kernelColumns = columnsOf(loaded, message.archetype);
     const filters = filtersOf(loaded, archetype);
     const { wasm } = loaded;

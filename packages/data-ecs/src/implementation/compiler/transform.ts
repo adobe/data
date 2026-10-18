@@ -62,37 +62,34 @@ const positionsOf = (created: Created, declaration: ObjectExpression): { readonl
 };
 
 /**
- * A spawn site's function: one parameter per value, so values pass without an array, then each written straight
- * into the batch row by the site's own writers (`PreparedSpawn` in `world/create/prepared-spawn.ts`).
+ * A spawn site's function: the components, then one parameter per value, so values pass without an object to a
+ * spawner generated for the site's key order and the list's shape (`PreparedSpawn` in `world/prepared-spawn.ts`).
  */
 const spawnFunction = (name: string, prepare: string, keys: readonly string[]): string => {
-    const values = keys.map((_, k) => `v${k}`);
-    const writes = values.map((value, k) => `w[${k}](r, ${value})`);
+    const values = keys.map((_, k) => `v${k}`).join(", ");
     return [
         `const ${name} = (() => {`,
         `const p = ${prepare}(() => [${keys.join(", ")}]);`,
-        `return (c, ${values.join(", ")}) => {`,
-        "const r = p.begin(c);",
-        "const w = p.writers;",
-        `return ${["r >= 0", ...writes].join(" && ")} ? p.end() : p.fallback(c, [${values.join(", ")}]);`,
+        `return (c, l${keys.length > 0 ? `, ${values}` : ""}) => {`,
+        "const s = p.begin(c, l);",
+        `return s === null ? p.fallback(c, l, [${values}]) : s(${values});`,
         "};",
         "})();",
     ].join("\n");
 };
 
 /**
- * An add site's function: the entity and one parameter per value, each appended straight to the commands' buffer
- * (`PreparedAdd` in `world/prepared-spawn.ts`).
+ * An add site's function: the entity, the components, then one parameter per value, each appended straight to the
+ * commands' buffer (`PreparedAdd` in `world/prepared-spawn.ts`).
  */
 const addFunction = (name: string, prepare: string, keys: readonly string[]): string => {
     const values = keys.map((_, k) => `v${k}`);
-    const writes = values.map((value, k) => `p.value(${k}, ${value})`);
     return [
         `const ${name} = (() => {`,
         `const p = ${prepare}(() => [${keys.join(", ")}]);`,
-        `return (c, e${values.map(value => `, ${value}`).join("")}) => {`,
-        `if (p.begin(c, e)) { ${writes.map(write => `${write}; `).join("")}}`,
-        `else p.fallback(c, e, [${values.join(", ")}]);`,
+        `return (c, e, l${values.map(value => `, ${value}`).join("")}) => {`,
+        `if (p.begin(c, e, l)) { ${values.map((value, k) => `p.value(${k}, ${value}); `).join("")}p.end(); }`,
+        `else p.fallback(c, e, l, [${values.join(", ")}]);`,
         "};",
         "})();",
     ].join("\n");
@@ -176,7 +173,7 @@ export const transformKernels = async (
                     prepared.push(site.kind === "spawn" ? spawnFunction(name, prepare, site.keys) : addFunction(name, prepareAddName, site.keys));
                     if (site.kind === "add") adding = true;
                     else spawning = true;
-                    const values = [...site.entity === null ? [] : [site.entity], ...site.values].map(value => code.slice(value.start, value.end));
+                    const values = [...site.entity === null ? [] : [site.entity], site.components, ...site.values].map(value => code.slice(value.start, value.end));
                     edits.push({ start: site.start, end: site.end, text: `${name}(${[spawns.commands, ...values].join(", ")})` });
                 }
                 return;

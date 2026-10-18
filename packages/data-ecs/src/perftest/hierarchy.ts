@@ -1,3 +1,4 @@
+import { Archetype } from "../interface/archetype/archetype.js";
 import { Component } from "../interface/component/component.js";
 import { Entity } from "../interface/entity/entity.js";
 import { System } from "../interface/system/system.js";
@@ -20,6 +21,10 @@ Component.register(local, { type: { type: "number" } });
 Component.register(world, { type: { type: "number" } });
 Component.register(parent, { type: Entity.schema, reference: "owner" });
 Component.register(leaf, { type: { const: true } });
+
+const root = Archetype.create([local, world]);
+const child = Archetype.create([local, world, parent]);
+const taggedChild = Archetype.create([local, world, parent, leaf]);
 
 /** Each row's world value is its parent's plus its own. */
 export const propagate = System.create({
@@ -47,8 +52,8 @@ export const forest = System.create({
     input: { type: "object", properties: { roots: { type: "integer" }, depth: { type: "integer" } } },
 }, ({ input, commands }) => {
     for (let r = 0; r < input.roots; r++) {
-        let previous = commands.spawn({ [local]: 1, [world]: 0 });
-        for (let d = 1; d < input.depth; d++) previous = commands.spawn({ [local]: 1, [world]: 0, [parent]: previous });
+        let previous = commands.spawn(root)({ [local]: 1, [world]: 0 });
+        for (let d = 1; d < input.depth; d++) previous = commands.spawn(child)({ [local]: 1, [world]: 0, [parent]: previous });
     }
 });
 
@@ -61,7 +66,7 @@ export const nudge = System.create({ name: "hierarchy/nudge", input: target, com
 
 /** Adds one leaf under a row. */
 export const sprout = System.create({ name: "hierarchy/sprout", input: target }, ({ input, commands }) => {
-    commands.spawn({ [local]: 1, [world]: 0, [parent]: input.entity });
+    commands.spawn(child)({ [local]: 1, [world]: 0, [parent]: input.entity });
 });
 
 /** The rows `turnover` spawns leaves under, set by the benchmark. */
@@ -76,8 +81,8 @@ export const turnover = System.create({
     for (const entity of leaves.splice(0)) commands.despawn(entity);
     for (let i = 0; i < input.count; i++) {
         leaves.push(input.tagged
-            ? commands.spawn({ [local]: 1, [world]: 0, [parent]: under[i], [leaf]: true })
-            : commands.spawn({ [local]: 1, [world]: 0, [parent]: under[i] }));
+            ? commands.spawn(taggedChild)({ [local]: 1, [world]: 0, [parent]: under[i] })
+            : commands.spawn(child)({ [local]: 1, [world]: 0, [parent]: under[i] }));
     }
 });
 
@@ -86,7 +91,7 @@ export const reparent = System.create({
     name: "hierarchy/reparent",
     input: { type: "object", properties: { entity: Entity.schema, to: Entity.schema } },
 }, ({ input, commands }) => {
-    commands.add(input.entity, { [parent]: input.to });
+    commands.add(input.entity, parent, input.to);
 });
 
 export const offset = Symbol("hierarchy/offset");
@@ -101,6 +106,9 @@ declare module "@adobe/data-ecs" {
 
 Component.register(offset, { type: { type: "number", precision: 1 } });
 Component.register(placed, { type: { type: "number", precision: 1 } });
+
+const gpuRoot = Archetype.create([offset, placed]);
+const gpuChild = Archetype.create([offset, placed, parent]);
 
 /** `propagate` in 4-byte values, on the GPU. */
 export const place = System.create({
@@ -118,7 +126,7 @@ export const gpuForest = System.create({
     input: { type: "object", properties: { roots: { type: "integer" }, depth: { type: "integer" } } },
 }, ({ input, commands }) => {
     for (let r = 0; r < input.roots; r++) {
-        let previous = commands.spawn({ [offset]: 1, [placed]: 0 });
-        for (let d = 1; d < input.depth; d++) previous = commands.spawn({ [offset]: 1, [placed]: 0, [parent]: previous });
+        let previous = commands.spawn(gpuRoot)({ [offset]: 1, [placed]: 0 });
+        for (let d = 1; d < input.depth; d++) previous = commands.spawn(gpuChild)({ [offset]: 1, [placed]: 0, [parent]: previous });
     }
 });

@@ -1,5 +1,6 @@
 import type { Expression, ObjectExpression, Pattern } from 'estree';
 import { fail } from './failure.js';
+import { listIdentifiers, listLiteral } from './lists.js';
 import type { ModuleScope } from './module-scope.js';
 
 type Access = { readonly read: ReadonlySet<string>; readonly write: ReadonlySet<string> };
@@ -20,14 +21,14 @@ const fields = (node: Expression | Pattern | undefined): ReadonlyMap<string, Exp
         property.type === "Property" && !property.computed && property.key.type === "Identifier" ? [[property.key.name, property.value]] : []));
 
 /**
- * Requires `list` to name only keys in `used`. A list that isn't an array literal of module-scope identifiers isn't
- * checked, since its keys can't be matched to the body's.
+ * Requires a list to name only keys in `used`. A list that isn't an array literal of module-scope identifiers, or a
+ * module-scope `const` holding one, isn't checked, since its keys can't be matched to the body's.
  */
-const requireUsed = (list: Expression | Pattern | undefined, used: ReadonlySet<string>, module: ModuleScope, message: (name: string) => string): void => {
-    if (list?.type !== "ArrayExpression") return;
-    const names = list.elements.map(element => element?.type === "Identifier" && module.has(element.name) ? element : null);
-    for (const element of names) if (element === null) return;
-    for (const element of names) if (element !== null && !used.has(element.name)) fail(element, message(element.name));
+const requireUsed = (node: Expression | Pattern | undefined, used: ReadonlySet<string>, module: ModuleScope, message: (name: string) => string): void => {
+    const list = node === undefined ? null : listLiteral(node, module);
+    const names = list === null ? null : listIdentifiers(list, module);
+    // A list declared elsewhere is reported where the system names it.
+    if (names !== null) for (const element of names) if (!used.has(element.name)) fail(node !== undefined && node.type === "Identifier" ? node : element, message(element.name));
 };
 
 /** Requires `reduce` to name only resources in `contributed`, when it names each by a computed module-scope key. */

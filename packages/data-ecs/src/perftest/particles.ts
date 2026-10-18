@@ -1,3 +1,4 @@
+import { Archetype } from "../interface/archetype/archetype.js";
 import { Component } from "../interface/component/component.js";
 import type { Schema } from "../interface/schema/schema.js";
 import { System } from "../interface/system/system.js";
@@ -34,16 +35,18 @@ Component.register(visible, { type: { const: true } });
 Component.register(enabled, { type: { const: true } });
 
 /** Interleaved like ecs2's seedSingle: entity i goes to archetype i % 4. */
+const archetypes = [
+    Archetype.create([color, mass, position, velocity, visible, enabled]),
+    Archetype.create([color, mass, position, velocity, visible]),
+    Archetype.create([color, mass, position, velocity, enabled]),
+    Archetype.create([color, mass, position, velocity]),
+] as const;
+
 export const spawn = System.create({ name: "perf/spawn", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
     for (let i = 0; i < input.count; i++) {
         const p = [i + 1, i + 1, i + 1] as const;
         const v = [-i, -i, -i] as const;
-        switch (i % 4) {
-            case 0: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [position]: p, [velocity]: v, [visible]: true, [enabled]: true }); break;
-            case 1: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [position]: p, [velocity]: v, [visible]: true }); break;
-            case 2: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [position]: p, [velocity]: v, [enabled]: true }); break;
-            default: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [position]: p, [velocity]: v });
-        }
+        commands.spawn(archetypes[i % 4])({ [color]: 0xff00ff, [mass]: 10, [position]: p, [velocity]: v });
     }
 });
 

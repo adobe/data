@@ -64,18 +64,18 @@ for (const tag of tags) Component.register(tag, { type: { const: true } });
 /** 64 entities in each of the 512 archetypes the tags combine into. */
 const scatter = System.create({ name: "workersTest/scatter" }, ({ commands }) => {
     for (let i = 0; i < 512 * 64; i++) {
-        const values: { [key: symbol]: unknown } = { [position]: [i, 0], [velocity]: [1, i % 5] };
-        tags.forEach((tag, bit) => { if (((i >> 6) & (1 << bit)) !== 0) values[tag] = true; });
-        commands.spawn(values);
+        const components: (typeof position | typeof velocity | (typeof tags)[number])[] = [position, velocity];
+        tags.forEach((tag, bit) => { if (((i >> 6) & (1 << bit)) !== 0) components.push(tag); });
+        commands.spawn(components)({ [position]: [i, 0], [velocity]: [1, i % 5] });
     }
 });
 Resource.register(seconds, { type: { type: "number", default: 0.25 } });
 
 /** Spawns `count` moving entities, each following the one before it. */
 const seed = System.create({ name: "workersTest/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
-    let previous = commands.spawn({ [position]: [0, 0], [velocity]: [1, 0] });
+    let previous = commands.spawn([position, velocity])({ [position]: [0, 0], [velocity]: [1, 0] });
     for (let i = 1; i < input.count; i++) {
-        previous = commands.spawn({ [position]: [i, 0], [velocity]: [1, i % 7], [target]: previous });
+        previous = commands.spawn([position, velocity, target])({ [position]: [i, 0], [velocity]: [1, i % 7], [target]: previous });
     }
 });
 
@@ -99,7 +99,7 @@ const split = System.create({
 }, (row, { commands }) => {
     const [x, y] = row[position];
     if (y > 3) {
-        commands.spawn({ [position]: [x, -y], [spawned]: true });
+        commands.spawn([position, spawned])({ [position]: [x, -y], [spawned]: true });
         commands.remove(row.entity, velocity);
     }
 });
@@ -127,7 +127,7 @@ const stamp = System.create({
     components: { read: [position] },
 }, (row, { input, commands }) => {
     const [x, y] = row[position];
-    commands.add(input.entity, { [offset]: x * 1000 + y });
+    commands.add(input.entity, offset, x * 1000 + y);
 });
 
 /** Despawns entity 1, the resource entity, since index 0 is never an entity and registration reserves the next first. */

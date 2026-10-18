@@ -1,4 +1,4 @@
-import type { Node, Property, SpreadElement } from 'estree';
+import type { Expression, Node, Property, SpreadElement } from 'estree';
 import { children, declaredIn } from './estree.js';
 import { fail } from './failure.js';
 import type { ModuleScope } from './module-scope.js';
@@ -6,12 +6,14 @@ import type { ModuleScope } from './module-scope.js';
 type Range = { readonly start: number; readonly end: number };
 
 /**
- * A `commands.spawn({ ... })` or `commands.add(entity, { ... })` call with literal keys: key expressions as module-scope
- * source, and source ranges of the entity, for an add, and of the values in order.
+ * A `commands.spawn(components)({ ... })` or `commands.add(entity, components, { ... })` call with literal keys: key
+ * expressions as module-scope source, and source ranges of the entity, for an add, of the components and of the values
+ * in order.
  */
 export type SpawnSite = Range & {
     readonly kind: "spawn" | "add";
     readonly entity: Range | null;
+    readonly components: Range;
     readonly keys: readonly string[];
     readonly values: readonly Range[];
 };
@@ -41,9 +43,9 @@ const commandsOf = (parameter: Node | undefined): { readonly name: string; reado
 };
 
 /**
- * The spawn and add sites in a main-thread system body whose values can pass positionally: calls of `spawn` or `add`
- * on the commands of the body's own context parameter, at index `context`, with an object literal of computed keys,
- * each a module-scope constant. A body that redeclares the context or its commands anywhere is left alone, and so is a
+ * The spawn and add sites in a main-thread system body whose values can pass positionally: `spawn(components)(values)`
+ * and `add(entity, components, values)` on the commands of the body's own context parameter, at index `context`, with
+ * an object literal of computed keys, each a module-scope constant. A body that redeclares the context or its commands anywhere is left alone, and so is a
  * key it shadows.
  */
 export const spawnSites = (body: Node, module: ModuleScope, context: number): { readonly commands: string; readonly sites: readonly SpawnSite[] } | null => {
@@ -58,21 +60,30 @@ export const spawnSites = (body: Node, module: ModuleScope, context: number): { 
             && node.property.type === "Identifier" && node.property.name === "commands"
         : node.type === "Identifier" && node.name === reached.name;
     const sites: SpawnSite[] = [];
+    /** The method a call makes on the commands, and its arguments, or null. */
+    const method = (node: Node): { readonly name: string; readonly arguments: readonly (Expression | SpreadElement)[] } | null =>
+        node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && !node.optional
+            && isCommands(node.callee.object) && node.callee.property.type === "Identifier"
+            ? { name: node.callee.property.name, arguments: node.arguments }
+            : null;
     const visit = (node: Node): void => {
-        if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && !node.optional
-            && isCommands(node.callee.object) && node.callee.property.type === "Identifier") {
-            const method = node.callee.property.name;
-            const [first, second] = node.arguments;
-            const kind = method === "spawn" && node.arguments.length === 1 ? "spawn" : method === "add" && node.arguments.length === 2 && first.type !== "SpreadElement" ? "add" : null;
-            const values = kind === "spawn" ? first : kind === "add" ? second : undefined;
-            if (kind !== null && values?.type === "ObjectExpression") {
+        if (node.type === "CallExpression" && !node.optional) {
+            const spawned = method(node.callee);
+            const called = method(node);
+            const spawn = spawned?.name === "spawn" && spawned.arguments.length === 1 && node.arguments.length === 1 ? spawned.arguments[0] : null;
+            const add = called?.name === "add" && called.arguments.length === 3 ? called.arguments : null;
+            const components = spawn ?? add?.[1] ?? null;
+            const values = spawn !== null ? node.arguments[0] : add?.[2];
+            const entity = add?.[0] ?? null;
+            if (components !== null && components.type !== "SpreadElement" && entity?.type !== "SpreadElement" && values?.type === "ObjectExpression") {
                 const keys = values.properties.map(property => keyOf(property, module, declared));
                 if (keys.every((key): key is string => key !== null)) {
                     sites.push({
-                        kind,
+                        kind: spawn !== null ? "spawn" : "add",
                         start: node.start,
                         end: node.end,
-                        entity: kind === "add" ? { start: first.start, end: first.end } : null,
+                        entity: entity === null ? null : { start: entity.start, end: entity.end },
+                        components: { start: components.start, end: components.end },
                         keys,
                         values: values.properties.flatMap(property => property.type === "Property" ? [{ start: property.value.start, end: property.value.end }] : []),
                     });

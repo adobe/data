@@ -29,7 +29,7 @@ Component.register(counts, { type: Vec3.U32.schema });
 Component.register(sums, { type: Vec3.I32.schema });
 
 const spawn = System.create({ name: "builtinsTest/spawn" }, ({ commands }) => {
-    for (let i = 0; i < 64; i++) commands.spawn({ [position]: [i, i % 5, -i], [velocity]: [1, 0.5 * (i % 3), 0.25] });
+    for (let i = 0; i < 64; i++) commands.spawn([position, velocity])({ [position]: [i, i % 5, -i], [velocity]: [1, 0.5 * (i % 3), 0.25] });
 });
 
 const rotation = Quat.fromAxisAngle([0, 1, 0], 0.5);
@@ -48,7 +48,7 @@ const bitsAt = (i: number): Vec3.U32 => [Math.imul(i + 1, 0x9E3779B9) >>> 0, (0x
 const sumsAt = (i: number): Vec3.I32 => [2 ** 31 - 1 - i, -(2 ** 31) + i, Math.imul(i, 65536)];
 
 const spawnBits = System.create({ name: "builtinsTest/spawnBits" }, ({ commands }) => {
-    for (let i = 0; i < 64; i++) commands.spawn({ [bits]: bitsAt(i), [counts]: [0, 0, 0], [sums]: sumsAt(i) });
+    for (let i = 0; i < 64; i++) commands.spawn([bits, counts, sums])({ [bits]: bitsAt(i), [counts]: [0, 0, 0], [sums]: sumsAt(i) });
 });
 
 /** Integer functions that wrap, and bit functions without loops. */

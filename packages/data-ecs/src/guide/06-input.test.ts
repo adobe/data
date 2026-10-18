@@ -18,7 +18,7 @@ const place = System.create({
     name: "guide/input/place",
     input: { type: "object", properties: { x: { type: "number" }, count: { type: "integer" } } },
 }, ({ input, commands }) => {
-    for (let i = 0; i < input.count; i++) commands.spawn({ [position]: [input.x, i, 0] });
+    for (let i = 0; i < input.count; i++) commands.spawn([position])({ [position]: [input.x, i, 0] });
 });
 
 it("passes an input to each run", async () => {

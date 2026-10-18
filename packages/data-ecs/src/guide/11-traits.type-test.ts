@@ -48,5 +48,5 @@ check<Equal<Extract<Component.With<"reference", "owner">, Guide>, typeof parent>
 
 export const spawn = (commands: System.Commands): void => {
     // @ts-expect-error only rules add and remove derived components
-    commands.spawn({ [meshSlot]: 1 });
+    commands.spawn([meshSlot])({ [meshSlot]: 1 });
 };

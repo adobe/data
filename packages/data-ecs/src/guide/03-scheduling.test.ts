@@ -16,7 +16,7 @@ declare module "@adobe/data-ecs" {
 Component.register(health, { type: { type: "number" } });
 Component.register(damage, { type: { type: "number" } });
 
-const spawn = System.create({ name: "guide/scheduling/spawn" }, ({ commands }) => { commands.spawn({ [health]: 10, [damage]: 4 }); });
+const spawn = System.create({ name: "guide/scheduling/spawn" }, ({ commands }) => { commands.spawn([health, damage])({ [health]: 10, [damage]: 4 }); });
 const hit = System.create({ name: "guide/scheduling/hit", components: { read: [damage], write: [health] } }, row => {
     row[health] -= row[damage];
 });

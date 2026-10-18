@@ -23,7 +23,7 @@ Component.register(rate, { type: { type: "number", precision: 1 } });
 let spawned: Entity[] = [];
 const spawn = System.create({ name: "observersGpuTest/spawn" }, ({ commands }) => {
     spawned = [];
-    for (let i = 0; i < 100; i++) spawned.push(commands.spawn({ [heat]: i, [rate]: 1 }));
+    for (let i = 0; i < 100; i++) spawned.push(commands.spawn([heat, rate])({ [heat]: i, [rate]: 1 }));
 });
 const warm = System.create({ name: "observersGpuTest/warm", kernel: "gpu", components: { read: [rate], write: [heat] } }, row => {
     row[heat] = row[heat] + row[rate] * 100;

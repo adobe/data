@@ -1,7 +1,7 @@
+import { Archetype } from "../interface/archetype/archetype.js";
 import { Component } from "../interface/component/component.js";
 import type { Entity } from "../interface/entity/entity.js";
 import { System } from "../interface/system/system.js";
-import type { Values } from "../interface/component/values.js";
 
 // Structural changes one kind at a time: spawns, despawns, adds and removes, through main-thread systems and kernels,
 // each applied by the sync point that ends its run.
@@ -40,6 +40,18 @@ Component.register(index, { type: { type: "integer", minimum: 0, maximum: 0xFFFF
 for (const key of [value, amount, extra] as const) Component.register(key, { type: { type: "number", precision: 1 } });
 for (const key of [flag, spawned, source1, source2, t0, t1, t2, t3] as const) Component.register(key, { type: { const: true } });
 
+const seeded = [
+    Archetype.create([index, value]),
+    Archetype.create([index, value, source1]),
+    Archetype.create([index, value, source2]),
+    Archetype.create([index, value, source1, source2]),
+] as const;
+const made = Archetype.create([index, value, spawned]);
+/** Every set of the four tags `t0` to `t3`, by its bits. */
+const tags = [t0, t1, t2, t3] as const;
+const sixteen = Array.from({ length: 16 }, (_, bits) => Archetype.create([index, value, spawned, ...tags.filter((_, bit) => (bits & (1 << bit)) !== 0)]));
+const several = Archetype.create([flag, amount, extra]);
+
 const counted = { type: "object", properties: { count: { type: "integer" } } } as const;
 
 /** `count` entities of one archetype, or with `sources: 4`, interleaved over four by two source tags. */
@@ -48,57 +60,33 @@ export const seed = System.create({
     input: { type: "object", properties: { count: { type: "integer" }, sources: { type: "integer" } } },
 }, ({ input, commands }) => {
     for (let i = 0; i < input.count; i++) {
-        switch (input.sources === 1 ? 0 : i % 4) {
-            case 0: commands.spawn({ [index]: i, [value]: i }); break;
-            case 1: commands.spawn({ [index]: i, [value]: i, [source1]: true }); break;
-            case 2: commands.spawn({ [index]: i, [value]: i, [source2]: true }); break;
-            default: commands.spawn({ [index]: i, [value]: i, [source1]: true, [source2]: true });
-        }
+        commands.spawn(seeded[input.sources === 1 ? 0 : i % 4])({ [index]: i, [value]: i });
     }
 });
 
 /** `count` spawns of one archetype. */
 export const spawnBulk = System.create({ name: "structural/spawnBulk", input: counted }, ({ input, commands }) => {
-    for (let i = 0; i < input.count; i++) commands.spawn({ [index]: i, [value]: i, [spawned]: true });
+    for (let i = 0; i < input.count; i++) commands.spawn(made)({ [index]: i, [value]: i });
 });
 
 /** One spawn of each of four archetypes: a run's fixed cost per spawn. */
 export const spawnSingles = System.create({ name: "structural/spawnSingles" }, ({ commands }) => {
-    commands.spawn({ [index]: 0, [value]: 0, [spawned]: true });
-    commands.spawn({ [index]: 1, [value]: 1, [spawned]: true, [source1]: true });
-    commands.spawn({ [index]: 2, [value]: 2, [spawned]: true, [source2]: true });
-    commands.spawn({ [index]: 3, [value]: 3, [spawned]: true, [source1]: true, [source2]: true });
+    commands.spawn(made)({ [index]: 0, [value]: 0 });
+    commands.spawn(sixteen[1])({ [index]: 1, [value]: 1 });
+    commands.spawn(sixteen[2])({ [index]: 2, [value]: 2 });
+    commands.spawn(sixteen[3])({ [index]: 3, [value]: 3 });
 });
 
 /** `count` spawns over sixteen archetypes, entity i into archetype i % 16: more component sets than spawns cache. */
 export const spawnSixteen = System.create({ name: "structural/spawnSixteen", input: counted }, ({ input, commands }) => {
     for (let i = 0; i < input.count; i++) {
-        let values: Values;
-        switch (i % 16) {
-            case 0: values = { [index]: i, [value]: i, [spawned]: true }; break;
-            case 1: values = { [index]: i, [value]: i, [spawned]: true, [t0]: true }; break;
-            case 2: values = { [index]: i, [value]: i, [spawned]: true, [t1]: true }; break;
-            case 3: values = { [index]: i, [value]: i, [spawned]: true, [t0]: true, [t1]: true }; break;
-            case 4: values = { [index]: i, [value]: i, [spawned]: true, [t2]: true }; break;
-            case 5: values = { [index]: i, [value]: i, [spawned]: true, [t0]: true, [t2]: true }; break;
-            case 6: values = { [index]: i, [value]: i, [spawned]: true, [t1]: true, [t2]: true }; break;
-            case 7: values = { [index]: i, [value]: i, [spawned]: true, [t0]: true, [t1]: true, [t2]: true }; break;
-            case 8: values = { [index]: i, [value]: i, [spawned]: true, [t3]: true }; break;
-            case 9: values = { [index]: i, [value]: i, [spawned]: true, [t0]: true, [t3]: true }; break;
-            case 10: values = { [index]: i, [value]: i, [spawned]: true, [t1]: true, [t3]: true }; break;
-            case 11: values = { [index]: i, [value]: i, [spawned]: true, [t0]: true, [t1]: true, [t3]: true }; break;
-            case 12: values = { [index]: i, [value]: i, [spawned]: true, [t2]: true, [t3]: true }; break;
-            case 13: values = { [index]: i, [value]: i, [spawned]: true, [t0]: true, [t2]: true, [t3]: true }; break;
-            case 14: values = { [index]: i, [value]: i, [spawned]: true, [t1]: true, [t2]: true, [t3]: true }; break;
-            default: values = { [index]: i, [value]: i, [spawned]: true, [t0]: true, [t1]: true, [t2]: true, [t3]: true };
-        }
-        commands.spawn(values);
+        commands.spawn(sixteen[i % 16])({ [index]: i, [value]: i });
     }
 });
 
 /** A spawn per row, from a kernel. */
 export const spawnKernel = System.create({ name: "structural/spawnKernel", kernel: "cpu", components: { read: [index], not: [spawned] } }, (row, { commands }) => {
-    commands.spawn({ [index]: row[index], [value]: 0, [spawned]: true });
+    commands.spawn(made)({ [index]: row[index], [value]: 0 });
 });
 
 /** Despawns every entity a spawn benchmark made. */
@@ -120,7 +108,7 @@ export const despawnKernel = System.create({ name: "structural/despawnKernel", k
 const pending: Entity[] = [];
 
 export const spawnOne = System.create({ name: "structural/spawnOne" }, ({ commands }) => {
-    pending.push(commands.spawn({ [index]: 0, [value]: 0, [spawned]: true }));
+    pending.push(commands.spawn(made)({ [index]: 0, [value]: 0 }));
 });
 
 /** Despawns one entity: a run's fixed cost per despawn. */
@@ -130,7 +118,7 @@ export const despawnOne = System.create({ name: "structural/despawnOne" }, ({ co
 });
 
 export const addFlag = System.create({ name: "structural/addFlag", components: { has: [index], not: [flag, spawned] } }, (row, { commands }) => {
-    commands.add(row.entity, { [flag]: true });
+    commands.add(row.entity, flag);
 });
 
 export const removeFlag = System.create({ name: "structural/removeFlag", components: { has: [flag] } }, (row, { commands }) => {
@@ -138,7 +126,7 @@ export const removeFlag = System.create({ name: "structural/removeFlag", compone
 });
 
 export const addFlagKernel = System.create({ name: "structural/addFlagKernel", kernel: "cpu", components: { has: [index], not: [flag, spawned] } }, (row, { commands }) => {
-    commands.add(row.entity, { [flag]: true });
+    commands.add(row.entity, flag);
 });
 
 export const removeFlagKernel = System.create({ name: "structural/removeFlagKernel", kernel: "cpu", components: { has: [flag] } }, (row, { commands }) => {
@@ -146,7 +134,7 @@ export const removeFlagKernel = System.create({ name: "structural/removeFlagKern
 });
 
 export const addAmount = System.create({ name: "structural/addAmount", components: { read: [index], not: [amount, spawned] } }, (row, { commands }) => {
-    commands.add(row.entity, { [amount]: row[index] });
+    commands.add(row.entity, amount, row[index]);
 });
 
 export const removeAmount = System.create({ name: "structural/removeAmount", components: { has: [amount] } }, (row, { commands }) => {
@@ -155,13 +143,13 @@ export const removeAmount = System.create({ name: "structural/removeAmount", com
 
 /** Adds a value every row already has: no archetype moves, only values replaced and marked changed. */
 export const replaceAmount = System.create({ name: "structural/replaceAmount", components: { read: [amount] } }, (row, { commands }) => {
-    commands.add(row.entity, { [amount]: row[amount] + 1 });
+    commands.add(row.entity, amount, row[amount] + 1);
 });
 
 export const addSeveral = System.create({ name: "structural/addSeveral", components: { read: [index], not: [flag, spawned] } }, (row, { commands }) => {
-    commands.add(row.entity, { [flag]: true, [amount]: row[index], [extra]: 1 });
+    commands.add(row.entity, several, { [amount]: row[index], [extra]: 1 });
 });
 
 export const removeSeveral = System.create({ name: "structural/removeSeveral", components: { has: [flag, amount, extra] } }, (row, { commands }) => {
-    commands.remove(row.entity, flag, amount, extra);
+    commands.remove(row.entity, several);
 });

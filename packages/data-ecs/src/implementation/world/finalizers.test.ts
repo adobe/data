@@ -82,17 +82,17 @@ describe("finalizers", () => {
         const world = createWorld({ [workers]: 0 });
         const run = step(world);
         const spawned: Entity[] = [];
-        await run(commands => { for (let i = 0; i < 6; i++) spawned.push(commands.spawn({ [handle]: i * 10 })); });
+        await run(commands => { for (let i = 0; i < 6; i++) spawned.push(commands.spawn([handle])({ [handle]: i * 10 })); });
         const [despawned, removed, excluded, replaced, kept, rewritten] = spawned;
         await run(commands => {
             commands.despawn(despawned);
             commands.remove(removed, handle);
-            commands.add(excluded, { [hidden]: true });
+            commands.add(excluded, hidden, true);
             commands.remove(replaced, handle);
-            commands.add(replaced, { [handle]: 99 });
-            commands.add(rewritten, { [handle]: 55 });
+            commands.add(replaced, handle, 99);
+            commands.add(rewritten, handle, 55);
             // Spawned and despawned at once: it never matched.
-            commands.despawn(commands.spawn({ [handle]: 1 }));
+            commands.despawn(commands.spawn([handle])({ [handle]: 1 }));
         });
         expect(seen).toEqual([[despawned, 0], [removed, 10], [excluded, 20], [replaced, 30]]);
         expect(await read(world, replaced, handle)).toBe(99);
@@ -107,9 +107,9 @@ describe("finalizers", () => {
         const run = step(world);
         let root = Entity.none, child = Entity.none;
         await run(commands => {
-            root = commands.spawn({ [source]: 1 });
-            child = commands.spawn({ [source]: 2, [parent]: root });
-            commands.spawn({ [source]: 3 });
+            root = commands.spawn([source])({ [source]: 1 });
+            child = commands.spawn([source, parent])({ [source]: 2, [parent]: root });
+            commands.spawn([source])({ [source]: 3 });
         });
         await run(commands => commands.despawn(root));
         expect(seen.sort()).toEqual([1, 2]);
@@ -128,12 +128,12 @@ describe("finalizers", () => {
         }, (row, { resources, lookup, commands }) => {
             resources[released] += 1;
             found.push(lookup.handles(row.entity)?.[counted] ?? null);
-            commands.spawn({ [label]: `after ${row[counted]}` });
+            commands.spawn([label])({ [label]: `after ${row[counted]}` });
         });
         const world = createWorld({ [workers]: 0 });
         const run = step(world);
         let a = Entity.none;
-        await run(commands => { a = commands.spawn({ [counted]: 5 }); });
+        await run(commands => { a = commands.spawn([counted])({ [counted]: 5 }); });
         await run(commands => commands.despawn(a));
         expect(found).toEqual([5]);
         expect(await readResource(world, released)).toBe(1);
@@ -150,7 +150,7 @@ describe("finalizers", () => {
         const world = createWorld({ [workers]: 0 });
         const run = step(world);
         let a = Entity.none;
-        await run(commands => { a = commands.spawn({ [pendingHandle]: 1 }); other = commands.spawn({ [label]: "other" }); });
+        await run(commands => { a = commands.spawn([pendingHandle])({ [pendingHandle]: 1 }); other = commands.spawn([label])({ [label]: "other" }); });
         await run(commands => commands.despawn(a));
         expect(await read(world, other, label)).toBe("other");
         await world.run(reads);
@@ -160,14 +160,14 @@ describe("finalizers", () => {
 
     it("keep reservations they make apart from the indexes their sync point frees", async () => {
         Finalizer.create({ name: "finalizersTest/respawn", components: { read: [respawned] } }, (row, { commands }) => {
-            commands.spawn({ [respawned]: row[respawned] + 100 });
+            commands.spawn([respawned])({ [respawned]: row[respawned] + 100 });
         });
         const world = createWorld({ [workers]: 0 });
         const run = step(world);
         const first: Entity[] = [];
-        await run(commands => { for (let i = 0; i < 8; i++) first.push(commands.spawn({ [respawned]: i })); });
+        await run(commands => { for (let i = 0; i < 8; i++) first.push(commands.spawn([respawned])({ [respawned]: i })); });
         await run(commands => { for (const entity of first) commands.despawn(entity); });
-        await run(commands => { for (let i = 0; i < 8; i++) commands.spawn({ [respawned]: 1000 + i }); });
+        await run(commands => { for (let i = 0; i < 8; i++) commands.spawn([respawned])({ [respawned]: 1000 + i }); });
         const live = await select(world, { required: [respawned] });
         expect(new Set(live).size).toBe(16);
         expect((await readEach(world, live, respawned)).sort((x, y) => (x ?? 0) - (y ?? 0)))
@@ -183,7 +183,7 @@ describe("finalizers", () => {
         const world = createWorld({ [workers]: 0 });
         const run = step(world);
         let a = Entity.none;
-        await run(commands => { a = commands.spawn({ [ordered]: 1 }); });
+        await run(commands => { a = commands.spawn([ordered])({ [ordered]: 1 }); });
         const { failures } = await run(commands => commands.despawn(a));
         expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "finalizer", name: "finalizersTest/throws", message: "finalizer failed" }]);
         expect(order).toEqual(["first", "second"]);
@@ -202,7 +202,7 @@ describe("a finalizer declared again the same, as a module evaluated again decla
         const first = Finalizer.create({ name: "finalizersTest/reloaded", components: { read: [reloaded] } }, () => { seen.push("first"); });
         const world = createWorld({ [workers]: 0 });
         let entity = Entity.none;
-        await step(world)(commands => { entity = commands.spawn({ [reloaded]: 1 }); });
+        await step(world)(commands => { entity = commands.spawn([reloaded])({ [reloaded]: 1 }); });
         const again = Finalizer.create({ name: "finalizersTest/reloaded", components: { read: [reloaded] } }, () => { seen.push("again"); });
         expect(again).toBe(first);
         await step(world)(commands => { commands.despawn(entity); });
@@ -215,7 +215,7 @@ describe("a finalizer declared again the same, as a module evaluated again decla
 describe("a finalizer created after a world has entities it matches", () => {
     it("releases them at disposal", async () => {
         const world = createWorld({ [workers]: 0 });
-        await step(world)(commands => { commands.spawn({ [disposing]: 4 }); });
+        await step(world)(commands => { commands.spawn([disposing])({ [disposing]: 4 }); });
         const seen: number[] = [];
         Finalizer.create({ name: "finalizersTest/late", components: { read: [disposing] }, resources: { read: [level] } }, row => { seen.push(row[disposing]); });
         await world.dispose();
@@ -231,7 +231,7 @@ describe("changes finalizers", () => {
             for (const group of changes.groups) seen.push(group.to);
         });
         const world = createWorld({ [workers]: 0 });
-        await step(world)(commands => { commands.spawn({ [late]: 1 }); });
+        await step(world)(commands => { commands.spawn([late])({ [late]: 1 }); });
         expect(seen).toEqual([[late]]);
         await world.dispose();
     });
@@ -248,14 +248,14 @@ describe("changes finalizers", () => {
         const world = createWorld({ [workers]: 0 });
         const run = step(world);
         let a = Entity.none, b = Entity.none;
-        await run(commands => { a = commands.spawn({ [handle]: 1 }); b = commands.spawn({ [handle]: 2, [label]: "b" }); commands.spawn({ [hidden]: true }); });
+        await run(commands => { a = commands.spawn([handle])({ [handle]: 1 }); b = commands.spawn([handle, label])({ [handle]: 2, [label]: "b" }); commands.spawn([hidden])({ [hidden]: true }); });
         expect(groups).toEqual([
             { from: null, to: [handle], added: [handle], removed: [], replaced: [], entities: 1 },
             { from: null, to: [handle, label], added: [handle, label], removed: [], replaced: [], entities: 1 },
         ]);
         expect(values).toEqual([[null, 1], [null, 2]]);
         groups.length = values.length = 0;
-        await run(commands => { commands.add(a, { [label]: "a", [handle]: 3 }); commands.despawn(b); commands.add(a, { [hidden]: true }); });
+        await run(commands => { commands.add(a, [label, handle], { [label]: "a", [handle]: 3 }); commands.despawn(b); commands.add(a, hidden, true); });
         expect(groups).toEqual([
             { from: [handle], to: [handle, label], added: [label], removed: [], replaced: [], entities: 1 },
             { from: [handle, label], to: null, added: [], removed: [handle, label], replaced: [], entities: 1 },

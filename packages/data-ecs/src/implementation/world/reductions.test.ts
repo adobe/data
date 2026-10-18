@@ -62,8 +62,8 @@ const massAt = (i: number): number => (i * 2654435761) >>> 20;
 /** Rows in two archetypes, so a run folds more than one call's partials. */
 const spawn = System.create({ name: "reductionsTest/spawn" }, ({ commands }) => {
     for (let i = 0; i < rows; i++) {
-        if (i % 3 === 0) commands.spawn({ [position]: positionAt(i), [mass]: massAt(i), [heavy]: true });
-        else commands.spawn({ [position]: positionAt(i), [mass]: massAt(i) });
+        if (i % 3 === 0) commands.spawn([position, mass, heavy])({ [position]: positionAt(i), [mass]: massAt(i), [heavy]: true });
+        else commands.spawn([position, mass])({ [position]: positionAt(i), [mass]: massAt(i) });
     }
 });
 

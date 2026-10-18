@@ -21,7 +21,7 @@ Component.register(seen, { type: { type: "number", precision: 1 } });
 Component.register(flag, { type: { const: true } });
 
 const seed = System.create({ name: "observedTest/seed" }, ({ commands }) => {
-    for (let i = 0; i < 3000; i++) commands.spawn({ [value]: i, [seen]: 0 });
+    for (let i = 0; i < 3000; i++) commands.spawn([value, seen])({ [value]: i, [seen]: 0 });
 });
 
 /** Writes every value: until something observes `value`, its stamps are muted. */
@@ -38,10 +38,10 @@ const fresh = System.create({ name: "observedTest/fresh", components: { write: [
     row[seen] = row[seen] + 1;
 });
 const flagAll = System.create({ name: "observedTest/flagAll", components: { has: [value] } }, (row, { commands }) => {
-    commands.add(row.entity, { [flag]: true });
+    commands.add(row.entity, flag, true);
 });
 const spawnOne = System.create({ name: "observedTest/spawnOne" }, ({ commands }) => {
-    commands.spawn({ [value]: -1, [seen]: 0 });
+    commands.spawn([value, seen])({ [value]: -1, [seen]: 0 });
 });
 
 describe("tick stamps only where observed", () => {

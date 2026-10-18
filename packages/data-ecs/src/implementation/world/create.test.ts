@@ -45,7 +45,7 @@ const spawn = System.create({
     name: "createTest/spawn",
     resources: { read: [spawnCount], changed: [spawnCount] },
 }, ({ resources, commands }) => {
-    for (let i = 0; i < resources[spawnCount]; i++) commands.spawn({ [position]: [i, 0], [velocity]: 1, [label]: `e${i}` });
+    for (let i = 0; i < resources[spawnCount]; i++) commands.spawn([position, velocity, label])({ [position]: [i, 0], [velocity]: 1, [label]: `e${i}` });
 });
 
 const move = System.create({
@@ -108,15 +108,15 @@ describe("World.create", () => {
         let second = Entity.none;
         const edit = System.create({ name: "createTest/edit/net", input: { type: "object", properties: { action: { type: "string" } } } }, ({ input, commands }) => {
             if (input.action === "spawn") {
-                first = commands.spawn({ [velocity]: 1 });
-                second = commands.spawn({ [velocity]: 2 });
+                first = commands.spawn([velocity])({ [velocity]: 1 });
+                second = commands.spawn([velocity])({ [velocity]: 2 });
             }
             if (input.action === "toggle") {
-                commands.add(first, { [frozen]: true });
+                commands.add(first, frozen, true);
                 commands.remove(first, frozen);
-                commands.add(second, { [velocity]: 5, [label]: "second" });
+                commands.add(second, [velocity, label], { [velocity]: 5, [label]: "second" });
                 commands.despawn(first);
-                commands.add(first, { [label]: "dead" });
+                commands.add(first, label, "dead");
             }
         });
         const world = createWorld();
@@ -131,7 +131,7 @@ describe("World.create", () => {
     it("reuses a despawned index only after a sync point, with a new generation", async () => {
         const spawned: Entity[] = [];
         const edit = System.create({ name: "createTest/edit/reuse", input: { type: "object", properties: { action: { type: "string" } } } }, ({ input, commands }) => {
-            if (input.action === "spawn") spawned.push(commands.spawn({ [velocity]: spawned.length }));
+            if (input.action === "spawn") spawned.push(commands.spawn([velocity])({ [velocity]: spawned.length }));
             else for (const entity of spawned) commands.despawn(entity);
         });
         const world = createWorld();
@@ -148,7 +148,7 @@ describe("World.create", () => {
     it("keeps rows consistent across swap-removes and archetype growth", async () => {
         const spawned: Entity[] = [];
         const edit = System.create({ name: "createTest/edit/rows", input: { type: "object", properties: { action: { type: "string" } } } }, ({ input, commands }) => {
-            if (input.action === "spawn") for (let i = 0; i < 100; i++) spawned.push(commands.spawn({ [velocity]: i, [label]: `${i}` }));
+            if (input.action === "spawn") for (let i = 0; i < 100; i++) spawned.push(commands.spawn([velocity, label])({ [velocity]: i, [label]: `${i}` }));
             else for (let i = 0; i < 100; i += 3) commands.remove(spawned[i], label);
         });
         const world = createWorld();
@@ -163,12 +163,12 @@ describe("World.create", () => {
 
     it("reads a component the world had no id for at an earlier read, once it has one", async () => {
         await using world = createWorld();
-        const spawnPlain = System.create({ name: "createTest/spawnPlain" }, ({ commands }) => { commands.spawn({ [velocity]: 1 }); });
+        const spawnPlain = System.create({ name: "createTest/spawnPlain" }, ({ commands }) => { commands.spawn([velocity])({ [velocity]: 1 }); });
         await world.run(spawnPlain);
         const [entity] = await select(world, { required: [velocity] });
         expect(await read(world, entity, frozen)).toBe(null);
         const freeze = System.create({ name: "createTest/freeze", input: { type: "object", properties: { entity: Entity.schema } } }, ({ input, commands }) => {
-            commands.add(input.entity, { [frozen]: true });
+            commands.add(input.entity, frozen, true);
         });
         await world.run(freeze, { entity });
         expect(await read(world, entity, frozen)).toBe(true);
@@ -209,7 +209,7 @@ describe("World.create", () => {
 
     it("reports a system that throws, still applying its commands", async () => {
         const fail = System.create({ name: "createTest/fail" }, ({ commands }) => {
-            commands.spawn({ [velocity]: 1 });
+            commands.spawn([velocity])({ [velocity]: 1 });
             throw new Error("boom");
         });
         const world = createWorld();
@@ -238,9 +238,9 @@ describe("World.create", () => {
 
     it("reports the systems a failed tier skips, and the commands that did nothing", async () => {
         const doomed = System.create({ name: "createTest/doomed" }, ({ commands }) => {
-            const entity = commands.spawn({ [velocity]: 1 });
+            const entity = commands.spawn([velocity])({ [velocity]: 1 });
             commands.despawn(entity);
-            commands.add(entity, { [frozen]: true });
+            commands.add(entity, frozen, true);
             commands.despawn(entity);
         });
         const fails = System.create({ name: "createTest/failsFirst" }, () => { throw new Error("first"); });
@@ -290,7 +290,7 @@ describe("World.create", () => {
     it("sees a change moved into an older chunk by a swap-remove", async () => {
         const spawned: Entity[] = [];
         const edit = System.create({ name: "createTest/edit/swap", input: { type: "object", properties: { action: { type: "string" } } } }, ({ input, commands }) => {
-            if (input.action === "spawn") for (let i = 0; i < 2100; i++) spawned.push(commands.spawn({ [velocity]: i }));
+            if (input.action === "spawn") for (let i = 0; i < 2100; i++) spawned.push(commands.spawn([velocity])({ [velocity]: i }));
             else commands.despawn(spawned[5]);
         });
         const writer = System.create({ name: "createTest/writer", components: { write: [velocity] } }, row => {
@@ -313,7 +313,7 @@ describe("World.create", () => {
 
     it("selects with where and order", async () => {
         const edit = System.create({ name: "createTest/edit/select" }, ({ commands }) => {
-            for (let i = 0; i < 10; i++) commands.spawn({ [position]: [i % 3, i], [velocity]: i });
+            for (let i = 0; i < 10; i++) commands.spawn([position, velocity])({ [position]: [i % 3, i], [velocity]: i });
         });
         const world = createWorld();
         await world.run(edit);
@@ -330,7 +330,7 @@ describe("World.create", () => {
     it("spawns components named by symbols", async () => {
         let spawned = Entity.none;
         const edit = System.create({ name: "createTest/edit/symbols" }, ({ commands }) => {
-            spawned = commands.spawn({ [velocity]: 2, [marker]: 7 });
+            spawned = commands.spawn([velocity, marker])({ [velocity]: 2, [marker]: 7 });
         });
         const world = createWorld();
         await world.run(edit);

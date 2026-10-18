@@ -1,6 +1,6 @@
 import { Component } from "../interface/component/component.js";
 import { System } from "../interface/system/system.js";
-import type { Values } from '../interface/component/values.js';
+import { Archetype } from '../interface/archetype/archetype.js';
 
 // Mirrors adobe/data's ecs2 `create` perftest (packages/data/src/perftest/ecs2-perf.ts): 1M particles of eight scalar
 // components, interleaved over four archetypes by visible/enabled, each with its own values.
@@ -36,27 +36,26 @@ for (const key of [mass, positionX, positionY, positionZ, velocityX, velocityY, 
 Component.register(visible, { type: { const: true } });
 Component.register(enabled, { type: { const: true } });
 
+const scalars = [color, mass, positionX, positionY, positionZ, velocityX, velocityY, velocityZ] as const;
 /** Entity i goes to archetype i % 4, like ecs2's seedSingle. */
+const archetypes = [
+    Archetype.create([...scalars, visible, enabled]),
+    Archetype.create([...scalars, visible]),
+    Archetype.create([...scalars, enabled]),
+    Archetype.create(scalars),
+] as const;
+
+/** Spawns with values passed inline. */
 export const spawnFlat = System.create({ name: "flat/spawn", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
     for (let i = 0; i < input.count; i++) {
-        switch (i % 4) {
-            case 0: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i, [visible]: true, [enabled]: true }); break;
-            case 1: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i, [visible]: true }); break;
-            case 2: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i, [enabled]: true }); break;
-            default: commands.spawn({ [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i });
-        }
+        commands.spawn(archetypes[i % 4])({ [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i });
     }
 });
 
-/** The same spawns with each value object built first, so the compiler can't pass values positionally. */
+/** The same spawns with each value object built first, as values from data or from another system's results are. */
 export const spawnFlatDynamic = System.create({ name: "flat/dynamic", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
     for (let i = 0; i < input.count; i++) {
-        const values: Values = { [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i };
-        switch (i % 4) {
-            case 0: commands.spawn({ ...values, [visible]: true, [enabled]: true }); break;
-            case 1: commands.spawn({ ...values, [visible]: true }); break;
-            case 2: commands.spawn({ ...values, [enabled]: true }); break;
-            default: commands.spawn(values);
-        }
+        const values = { [color]: 0xff00ff, [mass]: 10, [positionX]: i + 1, [positionY]: i + 1, [positionZ]: i + 1, [velocityX]: -i, [velocityY]: -i, [velocityZ]: -i };
+        commands.spawn(archetypes[i % 4])(values);
     }
 });

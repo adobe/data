@@ -83,22 +83,22 @@ const propagateKernel = System.create({
 /** Spawns a root with two trees under it, the grandchild stored before its parent so storage order isn't depth order. */
 const entities: { [name: string]: Entity } = {};
 const spawn = System.create({ name: "upTest/spawn" }, ({ commands }) => {
-    entities.root = commands.spawn({ [label]: "root", [local]: 1, [world]: 0 });
-    entities.grandchild = commands.spawn({ [label]: "grandchild", [local]: 100, [world]: 0, [parent]: entities.root });
-    entities.child = commands.spawn({ [label]: "child", [local]: 10, [world]: 0, [parent]: entities.root });
-    entities.other = commands.spawn({ [label]: "other", [local]: 1000, [world]: 0 });
+    entities.root = commands.spawn([label, local, world])({ [label]: "root", [local]: 1, [world]: 0 });
+    entities.grandchild = commands.spawn([label, local, world, parent])({ [label]: "grandchild", [local]: 100, [world]: 0, [parent]: entities.root });
+    entities.child = commands.spawn([label, local, world, parent])({ [label]: "child", [local]: 10, [world]: 0, [parent]: entities.root });
+    entities.other = commands.spawn([label, local, world])({ [label]: "other", [local]: 1000, [world]: 0 });
 });
-const nest = System.create({ name: "upTest/nest" }, ({ commands }) => { commands.add(entities.grandchild, { [parent]: entities.child }); });
+const nest = System.create({ name: "upTest/nest" }, ({ commands }) => { commands.add(entities.grandchild, parent, entities.child); });
 const bump = System.create({ name: "upTest/bump", input: { type: "object", properties: { entity: Entity.schema } } }, ({ input, commands }) => {
-    commands.add(input.entity, { [local]: 2 });
+    commands.add(input.entity, local, 2);
 });
 const loop = System.create({ name: "upTest/loop" }, ({ commands }) => {
-    commands.add(entities.root, { [parent]: entities.grandchild });
-    commands.spawn({ [label]: "under", [local]: 5, [world]: 0, [parent]: entities.child });
+    commands.add(entities.root, parent, entities.grandchild);
+    commands.spawn([label, local, world, parent])({ [label]: "under", [local]: 5, [world]: 0, [parent]: entities.child });
 });
 /** Puts the root under the grandchild, two levels below it, then under `other`. */
-const close = System.create({ name: "upTest/close" }, ({ commands }) => { commands.add(entities.root, { [parent]: entities.grandchild }); });
-const open = System.create({ name: "upTest/open" }, ({ commands }) => { commands.add(entities.root, { [parent]: entities.other }); });
+const close = System.create({ name: "upTest/close" }, ({ commands }) => { commands.add(entities.root, parent, entities.grandchild); });
+const open = System.create({ name: "upTest/open" }, ({ commands }) => { commands.add(entities.root, parent, entities.other); });
 const orphan = System.create({ name: "upTest/orphan" }, ({ commands }) => { commands.remove(entities.grandchild, parent); });
 
 const worlds = async (value: (entity: Entity) => Promise<number | null>): Promise<{ [name: string]: number | null }> =>
@@ -116,17 +116,17 @@ const show = System.create({
 /** Children of one archetype whose parents are in three: a matched one, one the query doesn't match, and one without `world`. */
 const mixed: { [name: string]: Entity } = {};
 const spawnMixed = System.create({ name: "upTest/spawnMixed" }, ({ commands }) => {
-    mixed.root = commands.spawn({ [local]: 1, [world]: 0 });
-    mixed.anchored = commands.spawn({ [local]: 2, [world]: 0, [anchor]: true });
-    mixed.unmatched = commands.spawn({ [world]: 50 });
-    mixed.bare = commands.spawn({ [label]: "bare" });
-    mixed.underRoot = commands.spawn({ [local]: 10, [world]: 0, [parent]: mixed.root });
-    mixed.underUnmatched = commands.spawn({ [local]: 10, [world]: 0, [parent]: mixed.unmatched });
-    mixed.underAnchored = commands.spawn({ [local]: 10, [world]: 0, [parent]: mixed.anchored });
-    mixed.underBare = commands.spawn({ [local]: 10, [world]: 0, [parent]: mixed.bare });
+    mixed.root = commands.spawn([local, world])({ [local]: 1, [world]: 0 });
+    mixed.anchored = commands.spawn([local, world, anchor])({ [local]: 2, [world]: 0, [anchor]: true });
+    mixed.unmatched = commands.spawn([world])({ [world]: 50 });
+    mixed.bare = commands.spawn([label])({ [label]: "bare" });
+    mixed.underRoot = commands.spawn([local, world, parent])({ [local]: 10, [world]: 0, [parent]: mixed.root });
+    mixed.underUnmatched = commands.spawn([local, world, parent])({ [local]: 10, [world]: 0, [parent]: mixed.unmatched });
+    mixed.underAnchored = commands.spawn([local, world, parent])({ [local]: 10, [world]: 0, [parent]: mixed.anchored });
+    mixed.underBare = commands.spawn([local, world, parent])({ [local]: 10, [world]: 0, [parent]: mixed.bare });
 });
 const growParents = System.create({ name: "upTest/growParents" }, ({ commands }) => {
-    for (let i = 0; i < 100; i++) commands.spawn({ [local]: 0, [world]: 0, [anchor]: true });
+    for (let i = 0; i < 100; i++) commands.spawn([local, world, anchor])({ [local]: 0, [world]: 0, [anchor]: true });
 });
 const shift = System.create({ name: "upTest/shift", components: { write: [local], has: [anchor] } }, row => { row[local] += 1; });
 
@@ -242,7 +242,7 @@ describe("up", () => {
         await using ecs = createWorld({ [workers]: 0 });
         await ecs.run(spawnMixed);
         await ecs.run(propagateKernel);
-        await ecs.run(System.create({ name: "upTest/moveUnmatched" }, ({ commands }) => { commands.add(mixed.unmatched, { [anchor]: true, [world]: 80 }); }));
+        await ecs.run(System.create({ name: "upTest/moveUnmatched" }, ({ commands }) => { commands.add(mixed.unmatched, [anchor, world], { [anchor]: true, [world]: 80 }); }));
         await ecs.run(propagateKernel);
         expect(await read(ecs, mixed.underUnmatched, world)).toBe(90);
     });
@@ -251,10 +251,10 @@ describe("up", () => {
         await using ecs = createWorld({ [workers]: 0 });
         const tree: Entity[] = [];
         await ecs.run(System.create({ name: "upTest/spawnShown" }, ({ commands }) => {
-            const top = commands.spawn({ [visible]: false, [shown]: true });
-            tree.push(top, commands.spawn({ [visible]: true, [shown]: true, [parent]: top }));
-            const other = commands.spawn({ [visible]: true, [shown]: false });
-            tree.push(other, commands.spawn({ [visible]: true, [shown]: false, [parent]: other }));
+            const top = commands.spawn([visible, shown])({ [visible]: false, [shown]: true });
+            tree.push(top, commands.spawn([visible, shown, parent])({ [visible]: true, [shown]: true, [parent]: top }));
+            const other = commands.spawn([visible, shown])({ [visible]: true, [shown]: false });
+            tree.push(other, commands.spawn([visible, shown, parent])({ [visible]: true, [shown]: false, [parent]: other }));
         }));
         await ecs.run(show);
         expect(await readEach(ecs, tree, shown)).toEqual([false, false, true, true]);

@@ -24,6 +24,7 @@ export type BoundKernel = {
         readonly offsets: readonly number[];
         readonly lookups: readonly LookupSetup[];
         readonly keys: readonly number[];
+        readonly starts: readonly unknown[];
         /** Tick columns whose stamps nothing observes. */
         readonly muted: readonly boolean[];
         readonly up: KernelSetup["up"];
@@ -123,13 +124,15 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     // The runner passes `up`'s lookup after these, since it records each row's parent as it orders the rows.
     const lookups = declaredLookups.map(declared => createArrayLookup(state, declared));
     const ids = (keys: readonly Key[] | undefined): number[] => (keys ?? []).map(key => idOf(state, key));
+    const keys = description.keys.map(key => commandIdOf(state, key));
     const setup = {
         sources,
         booleans,
         strides,
         offsets,
         lookups: declaredLookups.map(declared => ({ read: ids(declared.read), has: ids(declared.has), not: ids(declared.not) })),
-        keys: description.keys.map(key => commandIdOf(state, key)),
+        keys,
+        starts: keys.map(id => state.starts[id]),
     };
     const cache = new Map<Archetype, { version: number; columns: readonly TypedArray[] }>();
     const columnsOf = (archetype: Archetype): readonly TypedArray[] => {

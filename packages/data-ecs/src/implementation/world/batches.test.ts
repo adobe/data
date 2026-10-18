@@ -5,7 +5,6 @@ import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
 import { count, read, readEach, readEntity } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
-import type { Values } from '../../interface/component/values.js';
 import { workers } from "../../interface/resources/workers.js";
 import { toPromise } from "../../interface/observe/to-promise.js";
 import { createBuffer } from "./buffer.js";
@@ -38,7 +37,7 @@ describe("staged spawns", () => {
         const early = System.create({ name: "batchesTest/early", components: { added: [score] } }, () => { seen.early++; });
         const spawn = System.create({ name: "batchesTest/spawn", after: [early] }, ({ commands }) => {
             if (spawned.length > 0) return;
-            for (let i = 0; i < 100; i++) spawned.push(commands.spawn({ [position]: [i, i, i], [score]: i, [name]: `${i}`, [tag]: true }));
+            for (let i = 0; i < 100; i++) spawned.push(commands.spawn([position, score, name, tag])({ [position]: [i, i, i], [score]: i, [name]: `${i}`, [tag]: true }));
         });
         const same = System.create({ name: "batchesTest/same", components: { added: [score] }, after: [early] }, () => { seen.same++; });
         const late = System.create({ name: "batchesTest/late", components: { added: [score] }, after: [spawn, same] }, () => { seen.late++; });
@@ -58,11 +57,11 @@ describe("staged spawns", () => {
     it("can be changed, removed, re-added or despawned in the run that spawns them", async () => {
         const spawned: Entity[] = [];
         const edit = System.create({ name: "batchesTest/edit/2" }, ({ commands }) => {
-            for (let i = 0; i < 4; i++) spawned.push(commands.spawn({ [score]: i, [name]: `${i}` }));
-            commands.add(spawned[0], { [score]: 10 });
+            for (let i = 0; i < 4; i++) spawned.push(commands.spawn([score, name])({ [score]: i, [name]: `${i}` }));
+            commands.add(spawned[0], score, 10);
             commands.remove(spawned[1], name);
             commands.remove(spawned[2], name);
-            commands.add(spawned[2], { [name]: "again" });
+            commands.add(spawned[2], name, "again");
             commands.despawn(spawned[3]);
         });
         const world = createWorld({ [workers]: 0 });
@@ -76,9 +75,9 @@ describe("staged spawns", () => {
         const spawned: Entity[] = [];
         let poison = true;
         const spawn = System.create({ name: "batchesTest/spawn/2" }, ({ commands }) => {
-            for (let i = 0; i < 3; i++) spawned.push(commands.spawn({ [position]: [i, 0, 0], [score]: i }));
+            for (let i = 0; i < 3; i++) spawned.push(commands.spawn([position, score])({ [position]: [i, 0, 0], [score]: i }));
             // A symbol can't convert to a number, so writing it throws.
-            if (poison) commands.spawn({ [position]: [0, 0, 0], [score]: Symbol("x") as unknown as number });
+            if (poison) commands.spawn([position, score])({ [position]: [0, 0, 0], [score]: Symbol("x") as unknown as number });
         });
         const world = createWorld({ [workers]: 0 });
         expect((await world.run(spawn)).failures).toHaveLength(1);
@@ -90,27 +89,12 @@ describe("staged spawns", () => {
         await world.dispose();
     });
 
-    it("take literal values positionally, and go through commands when a value is missing", async () => {
-        const spawned: Entity[] = [];
-        const spawn = System.create({ name: "batchesTest/spawn/3" }, ({ commands }) => {
-            for (let i = 0; i < 50; i++) spawned.push(commands.spawn({ [position]: [i, i, i], [score]: i, [tag]: true }));
-            // Leaving a component out goes through commands, so the entity has only what it names.
-            spawned.push(commands.spawn({ [position]: [9, 9, 9], [score]: undefined, [tag]: true }));
-        });
-        const world = createWorld({ [workers]: 0 });
-        await world.run(spawn);
-        expect(await Promise.all(spawned.slice(0, 50).map(entity => readEntity(world, entity, [position, score, tag])))).toEqual(
-            spawned.slice(0, 50).map((_, i) => ({ [position]: [i, i, i], [score]: i, [tag]: true })));
-        expect([await read(world, spawned[50], position), await read(world, spawned[50], score)]).toEqual([[9, 9, 9], null]);
-        await world.dispose();
-    });
-
     it("take value objects built before the spawn", async () => {
         const spawned: Entity[] = [];
         const spawn = System.create({ name: "batchesTest/spawn/4" }, ({ commands }) => {
             for (let i = 0; i < 20; i++) {
-                const values: Values = i % 2 === 0 ? { [position]: [i, 0, 1], [score]: i, [name]: `${i}` } : { [score]: i, [position]: [i, 0, 1], [name]: `${i}` };
-                spawned.push(commands.spawn(values));
+                const values = i % 2 === 0 ? { [position]: [i, 0, 1] as const, [score]: i, [name]: `${i}` } : { [score]: i, [position]: [i, 0, 1] as const, [name]: `${i}` };
+                spawned.push(commands.spawn([position, score, name])(values));
             }
         });
         const world = createWorld({ [workers]: 0 });
@@ -126,20 +110,16 @@ describe("spawns keyed by symbols", () => {
         const state = createState();
         const buffer = createBuffer();
         const commands = createCommands(state, { buffer });
-        // A values object built at runtime, so no prepared site stages it.
-        const values: { [key: symbol]: unknown } = {};
-        values[score] = 1;
-        values[tag] = true;
-        commands.spawn(values);
+        commands.spawn([score, tag])({ [score]: 1 });
         expect(buffer.count).toBe(0);
         expect(state.batches.map(batch => batch.count)).toEqual([1]);
     });
-    it("ignore string keys, as add does", async () => {
+    it("read only their components' values, as adds do", async () => {
         let spawned = Entity.none;
         const edit = System.create({ name: "batchesTest/stringKeys" }, ({ commands }) => {
-            const values: { [key: string | symbol]: unknown } = { [score]: 1, "batchesTest/score": 2 };
-            spawned = commands.spawn(values);
-            commands.add(spawned, values);
+            const values = { [score]: 1, "batchesTest/score": 2, [name]: "a" };
+            spawned = commands.spawn([score])(values);
+            commands.add(spawned, [score], values);
         });
         await using world = createWorld({ [workers]: 0 });
         await world.run(edit);

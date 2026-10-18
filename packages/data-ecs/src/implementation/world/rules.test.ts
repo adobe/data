@@ -90,15 +90,15 @@ describe("rules", () => {
         const step = at(world);
         let a = Entity.none, b = Entity.none, c = Entity.none;
         await step(commands => {
-            a = commands.spawn({ [source]: 1 });
-            b = commands.spawn({ [source]: 2, [hidden]: true });
-            c = commands.spawn({ [sprite]: true });
+            a = commands.spawn([source])({ [source]: 1 });
+            b = commands.spawn([source, hidden])({ [source]: 2, [hidden]: true });
+            c = commands.spawn([sprite])({ [sprite]: true });
         });
         expect(await components(world, a)).toEqual([source, slot, visible]);
         expect(await read(world, a, slot)).toBe(7);
         expect(await components(world, b)).toEqual([source, hidden]);
         expect(await components(world, c)).toEqual([sprite, visible]);
-        await step(commands => { commands.add(a, { [hidden]: true }); commands.remove(b, hidden); commands.remove(c, sprite); });
+        await step(commands => { commands.add(a, hidden, true); commands.remove(b, hidden); commands.remove(c, sprite); });
         expect(await components(world, a)).toEqual([source, hidden]);
         expect(await components(world, b)).toEqual([source, slot, visible]);
         expect(await components(world, c)).toEqual([]);
@@ -110,17 +110,17 @@ describe("rules", () => {
         const world = createWorld({ [workers]: 0 });
         const step = at(world);
         let a = Entity.none;
-        await step(commands => { a = commands.spawn({ [source]: 1 }); commands.spawn({ [source]: 2 }); });
+        await step(commands => { a = commands.spawn([source])({ [source]: 1 }); commands.spawn([source])({ [source]: 2 }); });
         await world.run(write);
         expect(await read(world, a, slot)).toBe(99);
-        await step(commands => commands.add(a, { [hidden]: true }));
+        await step(commands => commands.add(a, hidden, true));
         await step(commands => commands.remove(a, hidden));
         expect(await read(world, a, slot)).toBe(7);
         await world.dispose();
     });
 
     it("apply in a world from the first sync point after it meets their components, deriving on the first spawn", async () => {
-        const spawn = System.create({ name: "rulesTest/tagged" }, ({ commands }) => { commands.spawn({ [tagged]: true }); });
+        const spawn = System.create({ name: "rulesTest/tagged" }, ({ commands }) => { commands.spawn([tagged])({ [tagged]: true }); });
         const world = createWorld({ [workers]: 0 });
         await world.run(edit, { step: -1 });
         expect(await count(world, { required: [tag] })).toBe(0);
@@ -132,7 +132,7 @@ describe("rules", () => {
     it("created after a world has entities they match, derive for them at the next run, and for batch spawns", async () => {
         let added = 0;
         const observe = System.create({ name: "rulesTest/added", components: { added: [late] } }, () => { added++; });
-        const spawn = System.create({ name: "rulesTest/spawn" }, ({ commands }) => { for (let i = 0; i < 3; i++) commands.spawn({ [mark]: i }); });
+        const spawn = System.create({ name: "rulesTest/spawn" }, ({ commands }) => { for (let i = 0; i < 3; i++) commands.spawn([mark])({ [mark]: i }); });
         const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         await world.run(observe);
@@ -168,19 +168,19 @@ describe("within", () => {
         const step = at(world);
         let a = Entity.none, b = Entity.none, c = Entity.none;
         await step(commands => {
-            a = commands.spawn({ [source]: 1, [ready]: 1, [glow]: true });
-            b = commands.spawn({ [source]: 2, [ready]: 2 });
-            c = commands.spawn({ [mark]: 3, [ready]: 3 });
+            a = commands.spawn([source, ready, glow])({ [source]: 1, [ready]: 1, [glow]: true });
+            b = commands.spawn([source, ready])({ [source]: 2, [ready]: 2 });
+            c = commands.spawn([mark, ready])({ [mark]: 3, [ready]: 3 });
         });
         expect(await components(world, a)).toEqual([source, slot, visible, ready, glow]);
         // Dropped: c has no slot, so its ready can't be.
         expect(await components(world, c)).toEqual([mark]);
-        await step(commands => commands.add(a, { [hidden]: true }));
+        await step(commands => commands.add(a, hidden, true));
         expect(await components(world, a)).toEqual([source, hidden]);
         // Removing a host and adding it back still ends its dependent, as each removal does; a derived host that a
         // rule keeps never leaves, so its dependent stays.
-        await step(commands => { commands.add(b, { [glow]: true }); });
-        await step(commands => { commands.remove(b, ready); commands.add(b, { [ready]: 5 }); commands.remove(b, source); commands.add(b, { [source]: 5 }); });
+        await step(commands => { commands.add(b, glow, true); });
+        await step(commands => { commands.remove(b, ready); commands.add(b, ready, 5); commands.remove(b, source); commands.add(b, source, 5); });
         expect(await components(world, b)).toEqual([source, slot, visible, ready]);
         await world.dispose();
     });
@@ -192,14 +192,14 @@ describe("references", () => {
         const step = at(world);
         let root = Entity.none, child = Entity.none, grandchild = Entity.none, watcher = Entity.none, other = Entity.none, moved = Entity.none;
         await step(commands => {
-            root = commands.spawn({ [mark]: 0 });
-            child = commands.spawn({ [mark]: 1, [owned]: root });
-            grandchild = commands.spawn({ [mark]: 2, [owned]: child });
-            watcher = commands.spawn({ [mark]: 3, [follows]: grandchild });
-            other = commands.spawn({ [mark]: 4 });
-            moved = commands.spawn({ [mark]: 5, [owned]: root });
+            root = commands.spawn([mark])({ [mark]: 0 });
+            child = commands.spawn([mark, owned])({ [mark]: 1, [owned]: root });
+            grandchild = commands.spawn([mark, owned])({ [mark]: 2, [owned]: child });
+            watcher = commands.spawn([mark, follows])({ [mark]: 3, [follows]: grandchild });
+            other = commands.spawn([mark])({ [mark]: 4 });
+            moved = commands.spawn([mark, owned])({ [mark]: 5, [owned]: root });
         });
-        await step(commands => { commands.add(moved, { [owned]: other }); commands.despawn(root); });
+        await step(commands => { commands.add(moved, owned, other); commands.despawn(root); });
         expect(await read(world, child, mark)).toBeNull();
         expect(await read(world, grandchild, mark)).toBeNull();
         expect(await components(world, watcher)).toEqual([mark]);
@@ -213,10 +213,10 @@ describe("references", () => {
         const step = at(world);
         let holder = Entity.none, cleared = Entity.none;
         await step(commands => {
-            holder = commands.spawn({ [mark]: 1, [owned]: Entity.none, [follows]: Entity.none });
-            cleared = commands.spawn({ [mark]: 2, [follows]: holder });
+            holder = commands.spawn([mark, owned, follows])({ [mark]: 1, [owned]: Entity.none, [follows]: Entity.none });
+            cleared = commands.spawn([mark, follows])({ [mark]: 2, [follows]: holder });
         });
-        await step(commands => commands.add(cleared, { [follows]: Entity.none }));
+        await step(commands => commands.add(cleared, follows, Entity.none));
         expect(await read(world, holder, owned)).toBe(Entity.none);
         expect(await read(world, holder, follows)).toBe(Entity.none);
         expect(await read(world, cleared, follows)).toBe(Entity.none);
@@ -227,13 +227,13 @@ describe("references", () => {
         const world = createWorld({ [workers]: 0 });
         const step = at(world);
         let gone = Entity.none, parent = Entity.none, child = Entity.none, orphan = Entity.none, weakly = Entity.none;
-        await step(commands => { gone = commands.spawn({ [mark]: 0 }); });
+        await step(commands => { gone = commands.spawn([mark])({ [mark]: 0 }); });
         await step(commands => {
             commands.despawn(gone);
-            parent = commands.spawn({ [mark]: 1 });
-            child = commands.spawn({ [mark]: 2, [owned]: parent });
-            orphan = commands.spawn({ [mark]: 3, [owned]: gone });
-            weakly = commands.spawn({ [mark]: 4, [follows]: gone });
+            parent = commands.spawn([mark])({ [mark]: 1 });
+            child = commands.spawn([mark, owned])({ [mark]: 2, [owned]: parent });
+            orphan = commands.spawn([mark, owned])({ [mark]: 3, [owned]: gone });
+            weakly = commands.spawn([mark, follows])({ [mark]: 4, [follows]: gone });
         });
         expect(await read(world, child, owned)).toBe(parent);
         expect(await read(world, orphan, mark)).toBeNull();

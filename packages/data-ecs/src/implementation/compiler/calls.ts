@@ -13,6 +13,7 @@ import { frameIn } from './module-value.js';
 import { scalar } from './scalar.js';
 import { childScope, findLocal, rootScope, type Scope } from './scope.js';
 import { fresh, keyIndex } from './unit.js';
+import { isList, listLiteral } from './lists.js';
 import { scalarValue, type Value } from './value.js';
 
 const argument = (node: SourceExpression | SpreadElement): SourceExpression =>
@@ -23,12 +24,6 @@ const scalarArgument = (node: SourceExpression | SpreadElement, scope: Scope, ou
     return scalar(scope.unit.expression(expression, scope, out), expression, scope);
 };
 
-/** A module-scope key named in a command, such as a component in `remove` or a computed key in `spawn` values. */
-const commandKey = (node: Node, scope: Scope): number =>
-    node.type === "Identifier" && findLocal(scope, node.name) === undefined && scope.module.bindings.has(node.name)
-        ? keyIndex(scope.unit, node.name)
-        : fail(node, "commands name components by identifiers bound at module scope");
-
 /** A value as a temporary, so command arguments are evaluated in source order before the command starts. */
 const temporary = (scope: Scope, out: Out, hint: string, value: Expression): Expression => {
     if (value.kind === "local" || value.kind === "number" || value.kind === "boolean") return value;
@@ -37,42 +32,83 @@ const temporary = (scope: Scope, out: Out, hint: string, value: Expression): Exp
     return local(name);
 };
 
-/** Command values as `(key index, value)` pairs, each evaluated into a temporary. */
-const commandValues = (node: SourceExpression | SpreadElement | undefined, call: Node, scope: Scope, out: Out): readonly Statement[] => {
-    if (node?.type !== "ObjectExpression") return fail(node ?? call, "command values must be an object literal like { [position]: value }");
-    return node.properties.map((property): Statement => {
-        if (property.type === "SpreadElement" || !property.computed) return fail(property, "command value keys must be computed component identifiers like [position]");
-        const key = commandKey(property.key, scope);
-        const value = scope.unit.expression(property.value, scope, out);
-        return { kind: "value", key, value: temporary(scope, out, "value", observe(scope.unit, materialize(toData(value, property.value, scope)))) };
-    });
+/** The key names a command's list of components gives: an array literal, or a module-scope `const` holding one or `Archetype.create` of one. */
+const commandList = (node: Node, scope: Scope): readonly string[] => {
+    const list = node.type === "ArrayExpression" || node.type === "Identifier" ? listLiteral(node, scope.module.bindings) : null;
+    if (list === null) return fail(node, "commands name their components in an array literal, or a const of this module holding one or Archetype.create of one");
+    const names = list.elements.map(element => element !== null && element.type !== "SpreadElement" ? commandName(element, scope) : fail(list, "commands list components by identifiers bound at module scope"));
+    const twice = names.find((name, k) => names.indexOf(name) < k);
+    return twice === undefined ? names : fail(node, `${twice} is listed twice`);
 };
 
+/** A module-scope identifier naming a component in a command. */
+const commandName = (node: Node, scope: Scope): string =>
+    node.type === "Identifier" && findLocal(scope, node.name) === undefined && scope.module.bindings.has(node.name)
+        ? node.name
+        : fail(node, "commands name components by identifiers bound at module scope");
+
 const none = scalarValue({ kind: "nullish", value: "undefined" });
+const undefinedValue: Expression = { kind: "nullish", value: "undefined" };
+
+/**
+ * A list's values as `(key index, value)` pairs, each given one evaluated into a temporary in source order, and every
+ * other component of the list `undefined`, which is its start.
+ */
+const commandValues = (list: readonly string[], node: SourceExpression | SpreadElement | undefined, call: Node, scope: Scope, out: Out): readonly Statement[] => {
+    if (node?.type !== "ObjectExpression") return fail(node ?? call, "command values must be an object literal like { [position]: value }");
+    const given = new Map<string, Expression>();
+    for (const property of node.properties) {
+        if (property.type === "SpreadElement" || !property.computed) return fail(property, "command value keys must be computed component identifiers like [position]");
+        const name = commandName(property.key, scope);
+        if (!list.includes(name)) return fail(property.key, `${name} isn't one of the command's components`);
+        const value = scope.unit.expression(property.value, scope, out);
+        given.set(name, temporary(scope, out, "value", observe(scope.unit, materialize(toData(value, property.value, scope)))));
+    }
+    return list.map((name): Statement => ({ kind: "value", key: keyIndex(scope.unit, name), value: given.get(name) ?? undefinedValue }));
+};
+
+/** Whether a command's second argument is a list of components rather than one. */
+const listed = (node: Node, scope: Scope): boolean => node.type === "ArrayExpression" || (node.type === "Identifier" && findLocal(scope, node.name) === undefined && isList(node, scope.module.bindings));
+
+/** `commands.spawn(components)(values)`: reserves an entity and gives each of the components its value or its start. */
+const spawn = (inner: SimpleCallExpression, node: SimpleCallExpression, scope: Scope, out: Out): Value => {
+    const [components, ...extra] = inner.arguments;
+    if (components === undefined || extra.length > 0 || node.arguments.length !== 1) return fail(node, "a spawn is commands.spawn(components)(values)");
+    const values = commandValues(commandList(components, scope), node.arguments[0], node, scope, out);
+    const result = fresh(scope.unit, "spawned");
+    out.push({ kind: "spawn", local: result }, ...values);
+    return scalarValue(local(result));
+};
 
 const command = (name: string, node: SimpleCallExpression, scope: Scope, out: Out): Value => {
-    const [entity, ...rest] = node.arguments;
+    const [entity, second, third, ...rest] = node.arguments;
     if (entity === undefined) return fail(node, `commands.${name} needs arguments`);
     switch (name) {
-        case "spawn": {
-            const values = commandValues(entity, node, scope, out);
-            const result = fresh(scope.unit, "spawned");
-            out.push({ kind: "spawn", local: result }, ...values);
-            return scalarValue(local(result));
-        }
+        case "spawn":
+            return fail(node, "a kernel calls the spawner where it gets it, as commands.spawn(components)(values)");
         case "despawn":
             out.push({ kind: "begin", command: 1, entity: temporary(scope, out, "entity", scalarArgument(entity, scope, out)) });
             return none;
         case "add": {
+            if (second === undefined || rest.length > 0) return fail(node, "an add is commands.add(entity, component, value) or commands.add(entity, components, values)");
             const target = temporary(scope, out, "entity", scalarArgument(entity, scope, out));
-            const values = commandValues(rest[0], node, scope, out);
-            out.push({ kind: "begin", command: 2, entity: target }, ...values);
+            const component = argument(second);
+            if (listed(component, scope)) {
+                const values = commandValues(commandList(component, scope), third, node, scope, out);
+                out.push({ kind: "begin", command: 2, entity: target }, ...values);
+                return none;
+            }
+            const key = keyIndex(scope.unit, commandName(component, scope));
+            const value = third === undefined ? undefinedValue : temporary(scope, out, "value", observe(scope.unit, materialize(toData(scope.unit.expression(argument(third), scope, out), third, scope))));
+            out.push({ kind: "begin", command: 2, entity: target }, { kind: "value", key, value });
             return none;
         }
         default: {
+            if (second === undefined || third !== undefined) return fail(node, "a remove is commands.remove(entity, component) or commands.remove(entity, components)");
             const target = temporary(scope, out, "entity", scalarArgument(entity, scope, out));
-            const keys = rest.map(key => commandKey(argument(key), scope));
-            out.push({ kind: "begin", command: 3, entity: target }, ...keys.map((key): Statement => ({ kind: "component", key })));
+            const component = argument(second);
+            const names = listed(component, scope) ? commandList(component, scope) : [commandName(component, scope)];
+            out.push({ kind: "begin", command: 3, entity: target }, ...names.map((key): Statement => ({ kind: "component", key: keyIndex(scope.unit, key) })));
             return none;
         }
     }
@@ -229,6 +265,10 @@ const contribute = (reduced: number, node: SimpleCallExpression, scope: Scope, o
 export const call = (node: SimpleCallExpression, scope: Scope, out: Out): Value => {
     if (node.optional) return fail(node, "optional calls are not in the kernel subset");
     if (node.callee.type === "Super") return fail(node, "super is not in the kernel subset");
+    if (node.callee.type === "CallExpression" && !node.callee.optional && node.callee.callee.type !== "Super") {
+        const maker = scope.unit.expression(node.callee.callee, scope, out);
+        if (maker.kind === "method" && maker.owner === "commands" && maker.name === "spawn") return spawn(node.callee, node, scope, out);
+    }
     const callee = scope.unit.expression(node.callee, scope, out);
     switch (callee.kind) {
         case "method":

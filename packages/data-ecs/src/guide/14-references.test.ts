@@ -21,10 +21,10 @@ Component.register(parent, { type: Entity.schema, reference: "owner" });
 Component.register(watching, { type: Entity.schema, reference: "weak" });
 
 const spawn = System.create({ name: "guide/references/spawn" }, ({ commands }) => {
-    const root = commands.spawn({ [node]: "root" });
-    const child = commands.spawn({ [node]: "child", [parent]: root });
-    commands.spawn({ [node]: "grandchild", [parent]: child });
-    commands.spawn({ [node]: "camera", [watching]: child });
+    const root = commands.spawn([node])({ [node]: "root" });
+    const child = commands.spawn([node, parent])({ [node]: "child", [parent]: root });
+    commands.spawn([node, parent])({ [node]: "grandchild", [parent]: child });
+    commands.spawn([node, watching])({ [node]: "camera", [watching]: child });
 });
 const prune = System.create({ name: "guide/references/prune", components: { read: [node] } }, (row, { commands }) => {
     if (row[node] === "root") commands.despawn(row.entity);

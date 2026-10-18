@@ -18,7 +18,7 @@ Component.register(position, { type: Vec3.schema });
 Component.register(velocity, { type: Vec3.schema });
 
 const spawn = System.create({ name: "guide/gpu/spawn" }, ({ commands }) => {
-    for (let i = 0; i < 1000; i++) commands.spawn({ [position]: [i, 0, 0], [velocity]: [0, 1, 0] });
+    for (let i = 0; i < 1000; i++) commands.spawn([position, velocity])({ [position]: [i, 0, 0], [velocity]: [0, 1, 0] });
 });
 
 // `kernel: "gpu"` runs as a compute shader in a world with a device, and as a "cpu" kernel in one without.

@@ -53,8 +53,8 @@ const count = 5000;
 
 const spawn = System.create({ name: "gpuTest/spawn" }, ({ commands }) => {
     for (let i = 0; i < count; i++) {
-        if (i % 2 === 0) commands.spawn({ [position]: [i, 0, -i], [velocity]: [1, i % 7, 0.5] });
-        else commands.spawn({ [position]: [i, 0, -i], [velocity]: [1, i % 7, 0.5], [tag]: true });
+        if (i % 2 === 0) commands.spawn([position, velocity])({ [position]: [i, 0, -i], [velocity]: [1, i % 7, 0.5] });
+        else commands.spawn([position, velocity, tag])({ [position]: [i, 0, -i], [velocity]: [1, i % 7, 0.5], [tag]: true });
     }
 });
 
@@ -93,7 +93,7 @@ const moveLater = System.create({ name: "gpuTest/moveLater", kernel: "gpu", comp
 const turning = System.composite({ name: "gpuTest/turning", systems: [move, turn, moveLater] });
 
 const spawnNumbers = System.create({ name: "gpuTest/spawnNumbers" }, ({ commands }) => {
-    for (const [c, a] of [[0, 0], [3, -2.5], [0xff00ff00, 2.5], [0xffffff00, 7], [0x80000000, -0.25]]) commands.spawn({ [code]: c, [amount]: a });
+    for (const [c, a] of [[0, 0], [3, -2.5], [0xff00ff00, 2.5], [0xffffff00, 7], [0x80000000, -0.25]]) commands.spawn([code, amount])({ [code]: c, [amount]: a });
 });
 
 /**
@@ -114,8 +114,8 @@ const flagScore = System.create({ name: "gpuTest/flagScore", kernel: "gpu", comp
 });
 
 const spawnFollower = System.create({ name: "gpuTest/spawnFollower" }, ({ commands }) => {
-    const leader = commands.spawn({ [position]: [10, 0, 0], [velocity]: [5, 0, 0] });
-    commands.spawn({ [followed]: leader, [score]: 0 });
+    const leader = commands.spawn([position, velocity])({ [position]: [10, 0, 0], [velocity]: [5, 0, 0] });
+    commands.spawn([followed, score])({ [followed]: leader, [score]: 0 });
 });
 
 /** On the CPU, reads through a lookup what a GPU kernel wrote. */
@@ -133,7 +133,7 @@ const following = System.composite({ name: "gpuTest/following", systems: [move, 
 /** Despawns the first entity, moving the last into its row, then makes the sync point throw. */
 const poison = System.create({ name: "gpuTest/poison", components: { read: [position] } }, (row, { commands }) => {
     if (row[position][0] === 2) commands.despawn(row.entity);
-    if (row[position][0] === 4) commands.add(row.entity, { [score]: Symbol("poison") as unknown as number });
+    if (row[position][0] === 4) commands.add(row.entity, score, Symbol("poison") as unknown as number);
 });
 
 let frameNumber = 0;
@@ -141,7 +141,7 @@ const spawnedNow: Entity[] = [];
 
 /** Spawns a few particles each frame, through growth of their archetypes; nothing on the CPU reads their positions. */
 const spawnFew = System.create({ name: "gpuTest/churn" }, ({ commands }) => {
-    for (let i = 0; i < 37; i++) spawnedNow.push(commands.spawn({ [position]: [frameNumber, i, 0], [velocity]: [1, i % 3, 0.25] }));
+    for (let i = 0; i < 37; i++) spawnedNow.push(commands.spawn([position, velocity])({ [position]: [frameNumber, i, 0], [velocity]: [1, i % 3, 0.25] }));
     // Every fifth frame, a despawn moves another particle into a row the GPU wrote.
     if (frameNumber % 5 === 4) commands.despawn(spawnedNow[frameNumber * 3]);
 });
@@ -166,7 +166,7 @@ Component.register(sums, { type: Vec3.I32.schema });
 
 const spawnIntegers = System.create({ name: "gpuTest/spawnIntegers" }, ({ commands }) => {
     for (let i = 0; i < 100; i++) {
-        commands.spawn({ [bits]: [Math.imul(i + 1, 0x9E3779B9) >>> 0, (0xFFFFFFFF - i) >>> 0, (i << 26) >>> 0], [sums]: [2 ** 31 - 1 - i, -(2 ** 31) + i, Math.imul(i, 65536)] });
+        commands.spawn([bits, sums])({ [bits]: [Math.imul(i + 1, 0x9E3779B9) >>> 0, (0xFFFFFFFF - i) >>> 0, (i << 26) >>> 0], [sums]: [2 ** 31 - 1 - i, -(2 ** 31) + i, Math.imul(i, 65536)] });
     }
 });
 
@@ -344,7 +344,7 @@ describe("GPU kernels", () => {
 
     it("keep their writes when the sync point moves rows of their archetypes", async () => {
         const spawnOne = System.create({ name: "gpuTest/spawnOne" }, ({ commands }) => {
-            commands.spawn({ [position]: [-1, -1, -1], [velocity]: [0, 0, 0] });
+            commands.spawn([position, velocity])({ [position]: [-1, -1, -1], [velocity]: [0, 0, 0] });
         });
         const world = createWorld({ [gpuDevice]: await device() });
         await world.run(spawn);
@@ -362,8 +362,8 @@ describe("GPU kernels", () => {
     it("keep their writes when a cascade moves rows of their archetypes", async () => {
         const owners: Entity[] = [];
         const spawnOwned = System.create({ name: "gpuTest/spawnOwned" }, ({ commands }) => {
-            owners.push(commands.spawn({ [score]: 0 }), commands.spawn({ [score]: 1 }));
-            for (let i = 0; i < 64; i++) commands.spawn({ [position]: [i, 0, 0], [velocity]: [1, 0, 0], [ownedBy]: owners[i === 0 ? 0 : 1] });
+            owners.push(commands.spawn([score])({ [score]: 0 }), commands.spawn([score])({ [score]: 1 }));
+            for (let i = 0; i < 64; i++) commands.spawn([position, velocity, ownedBy])({ [position]: [i, 0, 0], [velocity]: [1, 0, 0], [ownedBy]: owners[i === 0 ? 0 : 1] });
         });
         // No command touches the owned rows: despawning their owner removes them.
         const despawnOwner = System.create({ name: "gpuTest/despawnOwner" }, ({ commands }) => {

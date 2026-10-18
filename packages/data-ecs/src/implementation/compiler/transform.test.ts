@@ -55,8 +55,8 @@ const compile = async (source: string, files: { readonly [file: string]: string 
     const result = await transform(source, files);
     if (result === null || "failure" in result) throw new Error(result === null ? "no kernel" : result.failure.message);
     const module = result.code.split("\n").filter(line => !line.startsWith("import ")).join("\n");
-    const evaluate = new Function("System", "attachKernel$", `${module}\nreturn kernel;`);
-    const description: KernelDescription = evaluate({ create: (declaration: unknown, body: unknown) => ({ declaration, body }) }, (_: unknown, attached: unknown) => attached);
+    const evaluate = new Function("System", "attachKernel$", "Archetype", `${module}\nreturn kernel;`);
+    const description: KernelDescription = evaluate({ create: (declaration: unknown, body: unknown) => ({ declaration, body }) }, (_: unknown, attached: unknown) => attached, { create: (list: unknown) => list });
     const index = Number(description.url.slice("kernel:".length));
     const kernelModule: KernelModule = new Function(`${result.kernels[index]?.replace("export const create =", "const create =")}\nreturn { create };`)();
     expect(kernelModule.create.toString()).not.toMatch(/\b(position|velocity|mass|alive|score|delta|target)\b/);
@@ -596,7 +596,7 @@ describe("context", () => {
             const flag = row[alive];
             const copy = flag;
             row[score] = (copy === true ? 10 : 20) + row[mass] * 2 + (flag ? 1 : 0);
-            commands.spawn({ [alive]: flag, [mass]: row[mass] });
+            commands.spawn([alive, mass])({ [alive]: flag, [mass]: row[mass] });
         });`);
         const result = run(kernel, 2, { alive: { "[]": [1, 0] }, mass: { "[]": [3, 4] } }, { booleans: ["alive"], program: false });
         expect(result.field("score")).toEqual([17, 28]);
@@ -612,14 +612,14 @@ describe("context", () => {
 
     test("a spawn nested in an add's value is issued before the add begins", async () => {
         const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass] } }, (row, { commands }) => {
-            commands.add(row.entity, { [target]: commands.spawn({ [mass]: row[mass] }), [score]: 1 });
+            commands.add(row.entity, [target, score], { [target]: commands.spawn([mass])({ [mass]: row[mass] }), [score]: 1 });
             commands.despawn(row.entity);
         });`);
-        expect(kernel.keys).toEqual(["target", "mass", "score"]);
+        expect(kernel.keys).toEqual(["mass", "target", "score"]);
         expect(String(kernel.create)).not.toMatch(/\bkeys\[/);
         expect(run(kernel, 1, { mass: { "[]": [5] } }, { program: false }).calls).toEqual([
-            ["spawn", 999], ["spawn", 999, 1, 5],
-            [2, 100], [2, 100, 0, 999], [2, 100, 2, 1],
+            ["spawn", 999], ["spawn", 999, 0, 5],
+            [2, 100], [2, 100, 1, 999], [2, 100, 2, 1],
             [1, 100],
         ]);
     });
@@ -627,16 +627,59 @@ describe("context", () => {
     test("commands name components through keys", async () => {
         const kernel = await compile(`const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [position] } }, (row, context) => {
             const { commands } = context;
-            const spawned = commands.spawn({ [position]: [row[position][0], 1], [alive]: true });
-            commands.add(spawned, { [score]: row.entity });
-            commands.remove(row.entity, alive, score);
+            const spawned = commands.spawn([position, alive])({ [position]: [row[position][0], 1] });
+            commands.add(spawned, score, row.entity);
+            commands.add(spawned, alive);
+            commands.remove(row.entity, [alive, score]);
+            commands.remove(row.entity, mass);
         });`);
-        expect(kernel.keys).toEqual(["position", "alive", "score"]);
+        expect(kernel.keys).toEqual(["position", "alive", "score", "mass"]);
+        // A component given no value is given undefined, which the runtime writes as the component's start.
         expect(run(kernel, 1, { position: { "[0]": [5] } }, { program: false }).calls).toEqual([
-            ["spawn", 999], ["spawn", 999, 0, [5, 1]], ["spawn", 999, 1, true],
+            ["spawn", 999], ["spawn", 999, 0, [5, 1]], ["spawn", 999, 1, undefined],
             [2, 999], [2, 999, 2, 100],
+            [2, 999], [2, 999, 1, undefined],
             [3, 100], [3, 100, 1], [3, 100, 2],
+            [3, 100], [3, 100, 3],
         ]);
+    });
+
+    test("commands name lists through module constants: array literals and Archetype.create", async () => {
+        const kernel = await compile(`import { Archetype } from "ecs";
+        const unit = Archetype.create([position, alive, score]);
+        const pair = [mass, score];
+        const kernel = System.create({ name: "a", kernel: "cpu", components: { read: [position] } }, (row, { commands }) => {
+            const spawned = commands.spawn(unit)({ [score]: 2, [position]: [row[position][0], 1] });
+            commands.add(spawned, pair, { [mass]: 3 });
+            commands.remove(row.entity, unit);
+        });`);
+        expect(kernel.keys).toEqual(["position", "alive", "score", "mass"]);
+        expect(run(kernel, 1, { position: { "[0]": [5] } }, { program: false }).calls).toEqual([
+            ["spawn", 999], ["spawn", 999, 0, [5, 1]], ["spawn", 999, 1, undefined], ["spawn", 999, 2, 2],
+            [2, 999], [2, 999, 3, 3], [2, 999, 2, undefined],
+            [3, 100], [3, 100, 0], [3, 100, 1], [3, 100, 2],
+        ]);
+    });
+
+    test("kernel declarations list components through module constants", async () => {
+        const kernel = await compile(`import { Archetype } from "ecs";
+        const moving = Archetype.create([position, velocity]);
+        const kernel = System.create({ name: "a", kernel: "cpu", components: { read: moving, write: [score] } }, row => {
+            row[score] = row[position] + row[velocity];
+        });`);
+        expect(run(kernel, 2, { position: { "[]": [1, 2] }, velocity: { "[]": [10, 20] } }).field("score")).toEqual([11, 22]);
+    });
+
+    test.each([
+        ["a value for a component the list doesn't name", "commands.spawn([mass])({ [mass]: 1, [score]: 2 });", "score isn't one of the command's components"],
+        ["a spawner kept rather than called", "const spawn = commands.spawn([mass]); spawn({ [mass]: 1 });", "a kernel calls the spawner where it gets it, as commands.spawn(components)(values)"],
+        ["a list holding a spread", "commands.spawn([...pair])({});", "commands list components by identifiers bound at module scope"],
+        ["a list that isn't a module constant", "const list = 1; commands.add(row.entity, list, {});", "commands name components by identifiers bound at module scope"],
+        ["a component listed twice", "commands.remove(row.entity, [mass, mass]);", "mass is listed twice"],
+        ["an add with too many arguments", "commands.add(row.entity, mass, 1, 2);", "an add is commands.add(entity, component, value) or commands.add(entity, components, values)"],
+        ["a remove with rest components", "commands.remove(row.entity, mass, score);", "a remove is commands.remove(entity, component) or commands.remove(entity, components)"],
+    ])("fail the build for %s", async (_, body, message) => {
+        expect(await failure(`const pair = [mass, score];\nconst kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass] } }, (row, { commands }) => { const m = row[mass]; ${body} });`)).toBe(message);
     });
 });
 
@@ -779,40 +822,37 @@ describe("commands in main-thread systems", () => {
         if (result !== null && "failure" in result) return { code: result.failure.message, calls: [] };
         const module = (result?.code ?? `${header}${source}`).split("\n").filter(line => !line.startsWith("import ")).join("\n");
         const calls: unknown[] = [];
-        const prepare = (keys: () => readonly unknown[]) => {
-            let values: unknown[] = [];
-            return {
-                begin: () => { values = []; return 0; },
-                writers: Array.from({ length: 8 }, (_, k) => (__: number, value: unknown) => { values[k] = value; return true; }),
-                end: () => { calls.push(["prepared", keys(), values]); return 0; },
-                fallback: () => 0,
-            };
-        };
+        const prepare = (keys: () => readonly unknown[]) => ({
+            begin: (_: unknown, components: unknown) => (...values: unknown[]) => { calls.push(["prepared", components, keys(), values]); return 0; },
+            fallback: () => 0,
+        });
         const prepareAdd = (keys: () => readonly unknown[]) => {
             let entity: unknown = undefined;
+            let list: unknown = undefined;
             let values: unknown[] = [];
             return {
-                begin: (_: unknown, target: unknown) => { entity = target; values = []; return true; },
-                value: (k: number, value: unknown) => { values[k] = value; calls.push(["prepared add", keys(), entity, values]); },
+                begin: (_: unknown, target: unknown, components: unknown) => { entity = target; list = components; values = []; return true; },
+                value: (k: number, value: unknown) => { values[k] = value; },
+                end: () => { calls.push(["prepared add", list, keys(), entity, values]); },
                 fallback: () => {},
             };
         };
         const system = new Function("System", "prepareSpawn$", "prepareAdd$", `${module}\nreturn system;`)({ create: (declaration: unknown, run: unknown) => ({ declaration, run }) }, prepare, prepareAdd);
-        const context = { commands: { spawn: (values: unknown) => { calls.push(["spawn", values]); }, add: (entity: unknown, values: unknown) => { calls.push(["add", entity, values]); } } };
+        const context = { commands: { spawn: (list: unknown) => (values: unknown) => { calls.push(["spawn", list, values]); }, add: (entity: unknown, list: unknown, values: unknown) => { calls.push(["add", entity, list, values]); } } };
         if (parameters.startsWith("(row")) system.run({}, context);
         else system.run(context);
         return { code: result?.code ?? source, calls };
     };
 
     test("pass literal values positionally, in source order", async () => {
-        const { calls } = await spawned(`let i = 0; commands.spawn({ [position]: [++i, 0, 0], [score]: ++i, [mass]: 3 }); commands.spawn({});`);
-        expect(calls).toEqual([["prepared", ["position", "score", "mass"], [[1, 0, 0], 2, 3]], ["prepared", [], []]]);
+        const { calls } = await spawned(`let i = 0; commands.spawn([++i, score, mass])({ [position]: [++i, 0, 0], [score]: ++i, [mass]: 3 }); commands.spawn([])({});`);
+        expect(calls).toEqual([["prepared", [1, "score", "mass"], ["position", "score", "mass"], [[2, 0, 0], 3, 3]], ["prepared", [], [], []]]);
     });
 
     test.each([
-        ["a string literal key", `commands.spawn({ [score]: 1, "mass": 3 });`],
-        ["a plain key", "commands.spawn({ [score]: 1, mass: 3 });"],
-        ["a number key", "commands.spawn({ 1: 3 });"],
+        ["a string literal key", `commands.spawn([score, mass])({ [score]: 1, "mass": 3 });`],
+        ["a plain key", "commands.spawn([score, mass])({ [score]: 1, mass: 3 });"],
+        ["a number key", "commands.spawn([score])({ 1: 3 });"],
     ])("fail the build for %s, since component keys are symbols", async (_, body) => {
         const { code, calls } = await spawned(body);
         expect(code).toBe("a command's keys are its components' symbols, as [key]; a plain or string key is never a component's");
@@ -820,21 +860,22 @@ describe("commands in main-thread systems", () => {
     });
 
     test.each([
-        ["the context's commands", "context.commands.spawn({ [score]: 1 });", "(context)", `{ name: "a" }`],
-        ["renamed commands", "issue.spawn({ [score]: 1 });", "({ commands: issue })", `{ name: "a" }`],
-        ["a system with components", "commands.spawn({ [score]: 1 });", "(row, { commands })", `{ name: "a", components: { has: [mass] } }`],
-        ["the context of a system with components", "context.commands.spawn({ [score]: 1 });", "(row, context)", `{ name: "a", components: { has: [mass] } }`],
+        ["the context's commands", "context.commands.spawn([score])({ [score]: 1 });", "(context)", `{ name: "a" }`],
+        ["renamed commands", "issue.spawn([score])({ [score]: 1 });", "({ commands: issue })", `{ name: "a" }`],
+        ["a system with components", "commands.spawn([score])({ [score]: 1 });", "(row, { commands })", `{ name: "a", components: { has: [mass] } }`],
+        ["the context of a system with components", "context.commands.spawn([score])({ [score]: 1 });", "(row, context)", `{ name: "a", components: { has: [mass] } }`],
     ])("pass values positionally through %s", async (_, body, parameters, declaration) => {
         const { calls } = await spawned(body, parameters, declaration);
-        expect(calls).toEqual([["prepared", ["score"], [1]]]);
+        expect(calls).toEqual([["prepared", ["score"], ["score"], [1]]]);
     });
 
     test.each([
-        ["a value object built first", "const values = { [score]: 1 }; commands.spawn(values);"],
-        ["a spread", "const values = { [score]: 1 }; commands.spawn({ ...values, [mass]: 2 });"],
-        ["a key that isn't a module constant", "const key = score; commands.spawn({ [key]: 1 });"],
-        ["a shadowed key", "const score = \"other\"; commands.spawn({ [score]: 1 });"],
-        ["redeclared commands", "{ const commands = { spawn: () => {} }; } commands.spawn({ [score]: 1 });"],
+        ["a value object built first", "const values = { [score]: 1 }; commands.spawn([score])(values);"],
+        ["a spread", "const values = { [score]: 1 }; commands.spawn([score, mass])({ ...values, [mass]: 2 });"],
+        ["a key that isn't a module constant", "const key = score; commands.spawn([score])({ [key]: 1 });"],
+        ["a shadowed key", "const score = \"other\"; commands.spawn([score])({ [score]: 1 });"],
+        ["redeclared commands", "{ const commands = { spawn: () => {} }; } commands.spawn([score])({ [score]: 1 });"],
+        ["a spawner kept", "const spawn = commands.spawn([score]); spawn({ [score]: 1 });"],
     ])("leave %s as written", async (_, body) => {
         const { calls } = await spawned(body);
         expect(calls.every(call => Array.isArray(call) && call[0] === "spawn")).toBe(true);
@@ -842,21 +883,21 @@ describe("commands in main-thread systems", () => {
     });
     describe("adds", () => {
         test("pass literal values positionally, after the entity, in source order", async () => {
-            const { code, calls } = await spawned("let i = 0; commands.add(++i, { [score]: ++i, [mass]: ++i });");
+            const { code, calls } = await spawned("let i = 0; commands.add(++i, [score, mass, ++i], { [score]: ++i, [mass]: ++i });");
             expect(code).toContain("prepareAdd$");
-            // The mock records the values so far at each one.
-            expect(calls.at(-1)).toEqual(["prepared add", ["score", "mass"], 1, [2, 3]]);
+            expect(calls).toEqual([["prepared add", ["score", "mass", 2], ["score", "mass"], 1, [3, 4]]]);
         });
         test.each([
-            ["a value object built first", "const values = { [score]: 1 }; commands.add(1, values);"],
-            ["a spread", "const values = { [score]: 1 }; commands.add(1, { ...values, [mass]: 2 });"],
-            ["a key that isn't a module constant", "const key = score; commands.add(1, { [key]: 1 });"],
+            ["a value object built first", "const values = { [score]: 1 }; commands.add(1, [score], values);"],
+            ["a spread", "const values = { [score]: 1 }; commands.add(1, [score, mass], { ...values, [mass]: 2 });"],
+            ["a key that isn't a module constant", "const key = score; commands.add(1, [score], { [key]: 1 });"],
+            ["one component", "commands.add(1, score, 1);"],
         ])("leave %s as written", async (_, body) => {
             const { calls } = await spawned(body);
-            expect(calls).toEqual([["add", 1, expect.anything()]]);
+            expect(calls).toEqual([["add", 1, expect.anything(), expect.anything()]]);
         });
         test("fail the build for a plain or string key", async () => {
-            expect((await spawned(`commands.add(1, { [score]: 1, "mass": 3 });`)).code).toBe("a command's keys are its components' symbols, as [key]; a plain or string key is never a component's");
+            expect((await spawned(`commands.add(1, [score, mass], { [score]: 1, "mass": 3 });`)).code).toBe("a command's keys are its components' symbols, as [key]; a plain or string key is never a component's");
         });
     });
 });

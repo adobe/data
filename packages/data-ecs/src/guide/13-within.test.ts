@@ -18,9 +18,9 @@ Component.register(body, { type: { type: "number" } });
 Component.register(glow, { type: { type: "number" }, within: body });
 
 const spawn = System.create({ name: "guide/within/spawn" }, ({ commands }) => {
-    commands.spawn({ [body]: 1, [glow]: 0.5 });
+    commands.spawn([body, glow])({ [body]: 1, [glow]: 0.5 });
     // Added without its host: dropped.
-    commands.spawn({ [glow]: 0.5 });
+    commands.spawn([glow])({ [glow]: 0.5 });
 });
 const strip = System.create({ name: "guide/within/strip", components: { has: [body] } }, (row, { commands }) => {
     commands.remove(row.entity, body);

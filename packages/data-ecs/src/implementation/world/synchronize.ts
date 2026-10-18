@@ -1,4 +1,4 @@
-import { copyCell, ensureCapacity, insertRow, swapRemove, writeF32, writeF32Lanes, writeF64, writeI32, writeU32, type Archetype, type Storage } from './archetype.js';
+import { copyValue, ensureCapacity, swapRemove, writeF32, writeF32Lanes, writeF64, writeI32, writeU32, type Archetype, type Storage } from './archetype.js';
 import { chunkShift } from './kernel.js';
 import { clearBuffer, despawnCommand, endOf, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { readCell, writeCell } from './cells.js';
@@ -9,9 +9,9 @@ import { record } from './journal.js';
 import { indexOf, locate, materialize, recycle, release, reserved, type Reserved } from './entities.js';
 import { activate } from './activate.js';
 import { runFinalizers, type Thrown } from './finalizers.js';
-import { defaultOf } from './resources.js';
 import { closureOf, derives, gainsOf } from './structure.js';
-import { archetypeOf, movesOf, withComponent, withoutComponent, type State } from './state.js';
+import type { Plan } from './plan.js';
+import { archetypeOf, defaultOf, movesOf, withComponent, withoutComponent, type State } from './state.js';
 
 /** Buffers queued for the next sync point, in merge order. Commands in guarded buffers can't touch the resource entity. */
 export type Queued = { readonly buffer: CommandBuffer; readonly guarded: boolean };
@@ -34,6 +34,8 @@ const ensurePlanCapacity = (state: State): void => {
     plan.despawned = despawned;
     plan.from = grownInt32(plan.from, length);
     plan.to = grownInt32(plan.to, length);
+    plan.row = grownInt32(plan.row, length);
+    plan.pair = grownInt32(plan.pair, length);
     plan.buffer = grownInt32(plan.buffer, length);
     plan.start = grownInt32(plan.start, length);
     plan.end = grownInt32(plan.end, length);
@@ -163,38 +165,43 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
             const start = starts[command];
             const end = endOf(buffer, command);
             let to = archetypes[plan.to[entry]];
+            // A list's command resolves its target from each source archetype once.
+            const shape = buffer.shapes[command] < 0 ? null : state.shapes[buffer.shapes[command]];
             if (kind === removeCommand) {
+                const known = shape === null ? undefined : shape.removing[to.id];
+                if (known !== undefined) {
+                    plan.to[entry] = known;
+                    continue;
+                }
+                const source = to.id;
                 for (let k = start; k < end; k++) {
                     to = withoutComponent(state, to, ids[k]);
                     if (within) to = withoutDependents(state, to, ids[k]);
                 }
+                if (shape !== null) shape.removing[source] = to.id;
                 plan.to[entry] = to.id;
                 continue;
             }
             const from = plan.from[entry] < 0 ? null : archetypes[plan.from[entry]];
+            const known = shape === null ? undefined : shape.adding[to.id];
+            const source = to.id;
             for (let k = start; k < end; k++) {
                 const id = ids[k];
                 // Removed earlier in this sync point and added again: a new start, so a new `added` tick.
-                if (from !== null && to.storageById[id] === undefined && from.storageById[id] !== undefined) {
+                if (from !== null && from !== to && to.storageById[id] === undefined && from.storageById[id] !== undefined) {
                     let fresh = plan.fresh.get(entry);
                     if (fresh === undefined) plan.fresh.set(entry, fresh = []);
                     fresh.push(id);
                 }
-                to = withComponent(state, to, id);
+                if (known === undefined) to = withComponent(state, to, id);
                 if (references && structure.references[id] !== 0) written.push(entity, id, Number(values[k]));
             }
+            if (known !== undefined) to = archetypes[known];
+            else if (shape !== null) shape.adding[source] = to.id;
             plan.to[entry] = to.id;
             if (end > start) addRange(state, entry, b, start, end);
         }
     }
-};
-
-const remove = (state: State, archetype: Archetype, row: number): void => {
-    const moved = swapRemove(archetype, row);
-    if (moved === -1) return;
-    state.entities.row[indexOf(moved)] = row;
-    // Its row changed, so what `up` keeps of it does.
-    record(state.journal, indexOf(moved), state.entities.length);
 };
 
 const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Archetype, toRow: number, from: Archetype | null, fresh: readonly number[] | undefined, tick: number): void => {
@@ -240,47 +247,169 @@ export const writeDefault = (state: State, storage: Storage, row: number, tick: 
     storage.chunkAdded[row >> chunkShift] = storage.chunkChanged[row >> chunkShift] = tick;
 };
 
-const applyEntry = (state: State, queued: readonly Queued[], entry: number, tick: number, deriving: boolean): void => {
+/** Writes the values an entry's commands give into its row, in issue order. */
+const writeValues = (state: State, queued: readonly Queued[], entry: number, to: Archetype, toRow: number, from: Archetype | null, tick: number): void => {
+    const { plan } = state;
+    if (plan.start[entry] < 0) return;
+    const fresh = plan.fresh.size === 0 ? undefined : plan.fresh.get(entry);
+    writeRange(queued[plan.buffer[entry]].buffer, plan.start[entry], plan.end[entry], to, toRow, from, fresh, tick);
+    const more = plan.more.size === 0 ? undefined : plan.more.get(entry);
+    if (more !== undefined) for (let r = 0; r < more.length; r += 3) writeRange(queued[more[r]].buffer, more[r + 1], more[r + 2], to, toRow, from, fresh, tick);
+};
+
+/**
+ * The first pass of applying: a despawned entity is released, keeping in `plan.row` the row it leaves, and one staying
+ * in its archetype gets its values written. Each moving entry, spawns included, joins the pair of archetypes it moves
+ * between, keeping the row it leaves.
+ */
+const sort = (state: State, queued: readonly Queued[], tick: number): void => {
     const { entities, archetypes, plan } = state;
-    const entity = plan.entity[entry];
-    const index = indexOf(entity);
-    const from = plan.from[entry] < 0 ? null : archetypes[plan.from[entry]];
-    if (plan.despawned[entry] === 1 || plan.to[entry] !== plan.from[entry]) record(state.journal, index, entities.length);
-    if (plan.despawned[entry] === 1) {
+    const { pairs } = plan;
+    const width = archetypes.length + 1;
+    let lastKey = -1;
+    let lastPair = -1;
+    for (let entry = 0; entry < plan.count; entry++) {
+        const index = indexOf(plan.entity[entry]);
+        const fromId = plan.from[entry];
+        const fromRow = fromId < 0 ? -1 : entities.row[index];
+        plan.pair[entry] = -1;
+        if (plan.despawned[entry] === 1) {
+            record(state.journal, index, entities.length);
+            plan.row[entry] = fromRow;
+            if (fromId >= 0) state.touched?.add(archetypes[fromId]);
+            release(entities, index);
+            continue;
+        }
+        const toId = plan.to[entry];
+        if (toId === fromId) {
+            plan.row[entry] = -1;
+            const archetype = archetypes[toId];
+            writeValues(state, queued, entry, archetype, fromRow, archetype, tick);
+            state.touched?.add(archetype);
+            continue;
+        }
+        record(state.journal, index, entities.length);
+        plan.row[entry] = fromRow;
+        const key = (fromId + 1) * width + toId;
+        // Entries of one pair usually come together, as a system's commands over one archetype do.
+        let pair = key === lastKey ? lastPair : pairs.byKey.get(key);
+        if (pair === undefined) {
+            pair = pairs.from.length;
+            pairs.byKey.set(key, pair);
+            pairs.from.push(fromId);
+            pairs.to.push(toId);
+            pairs.count.push(0);
+        }
+        lastKey = key;
+        lastPair = pair;
+        plan.pair[entry] = pair;
+        pairs.count[pair]++;
+    }
+    let start = 0;
+    for (let pair = 0; pair < pairs.count.length; pair++) {
+        pairs.start.push(start);
+        start += pairs.count[pair];
+        pairs.count[pair] = 0;
+    }
+    if (pairs.order.length < start) pairs.order = new Int32Array(Math.max(start, pairs.order.length * 2));
+    for (let entry = 0; entry < plan.count; entry++) {
+        const pair = plan.pair[entry];
+        if (pair >= 0) pairs.order[pairs.start[pair] + pairs.count[pair]++] = entry;
+    }
+};
+
+/** Copies one column's cells for a block of moving rows, `fromRows[k]` to `toStart + k`, values and ticks. */
+const copyColumn = (from: Storage, to: Storage, plan: Plan, order: Int32Array, first: number, count: number, toStart: number): void => {
+    const { words } = from;
+    if (words > 0) {
+        const source = from.views.u32;
+        const target = to.views.u32;
+        for (let k = 0; k < count; k++) {
+            const s = plan.row[order[first + k]] * words;
+            const t = (toStart + k) * words;
+            for (let i = 0; i < words; i++) target[t + i] = source[s + i];
+        }
+    }
+    else if (from.layout.kind === "linear" || from.layout.kind === "object") {
+        for (let k = 0; k < count; k++) copyValue(from, plan.row[order[first + k]], to, toStart + k);
+    }
+    if (!to.ticked) return;
+    for (let k = 0; k < count; k++) {
+        const fromRow = plan.row[order[first + k]];
+        const toRow = toStart + k;
+        const added = from.added[fromRow];
+        const changed = from.changed[fromRow];
+        to.added[toRow] = added;
+        to.changed[toRow] = changed;
+        // A chunk's tick is the newest of its rows, so a row moving in can raise it.
+        const chunk = toRow >> chunkShift;
+        if (added > to.chunkAdded[chunk]) to.chunkAdded[chunk] = added;
+        if (changed > to.chunkChanged[chunk]) to.chunkChanged[chunk] = changed;
+    }
+};
+
+/**
+ * The second pass: each pair's entries arrive as one block of rows at the end of their target, which presizing made
+ * room for. The pair resolves once the cells its archetypes share and the derived components the target adds, and
+ * copies them column by column; then each entry's values are written and its entity placed.
+ */
+const arrive = (state: State, queued: readonly Queued[], tick: number, deriving: boolean): void => {
+    const { entities, archetypes, plan } = state;
+    const { pairs } = plan;
+    const { order } = pairs;
+    for (let pair = 0; pair < pairs.from.length; pair++) {
+        const from = pairs.from[pair] < 0 ? null : archetypes[pairs.from[pair]];
+        const to = archetypes[pairs.to[pair]];
+        const first = pairs.start[pair];
+        const count = pairs.count[pair];
+        const toStart = to.count;
+        for (let k = 0; k < count; k++) to.entities[toStart + k] = plan.entity[order[first + k]];
+        to.count += count;
         if (from !== null) {
-            remove(state, from, entities.row[index]);
-            state.touched?.add(from);
+            const moves = movesOf(from, to);
+            for (let m = 0; m < moves.length; m += 2) copyColumn(moves[m], moves[m + 1], plan, order, first, count, toStart);
         }
-        release(entities, index);
-        return;
-    }
-    const to = archetypes[plan.to[entry]];
-    const fromRow = from === null ? -1 : entities.row[index];
-    const toRow = to === from ? fromRow : insertRow(state.memory, to, entity);
-    if (from !== null && to !== from) {
-        const moves = movesOf(from, to);
-        for (let m = 0; m < moves.length; m += 2) copyCell(moves[m], fromRow, moves[m + 1], toRow);
-    }
-    // Rows are reused after swap-removes, so a derived component starting here gets its default written.
-    if (deriving && to !== from) {
-        for (const id of gainsOf(state.structure, state.derived, from, to)) {
-            const storage = to.storageById[id];
-            if (storage !== undefined) writeDefault(state, storage, toRow, tick);
+        // Rows are reused after swap-removes, so a derived component starting here gets its default written.
+        if (deriving) {
+            for (const id of gainsOf(state.structure, state.derived, from, to)) {
+                const storage = to.storageById[id];
+                if (storage !== undefined) for (let k = 0; k < count; k++) writeDefault(state, storage, toStart + k, tick);
+            }
+        }
+        for (let k = 0; k < count; k++) {
+            const entry = order[first + k];
+            const index = indexOf(plan.entity[entry]);
+            writeValues(state, queued, entry, to, toStart + k, from, tick);
+            entities.archetype[index] = to.id;
+            entities.row[index] = toStart + k;
+        }
+        if (state.touched !== null) {
+            state.touched.add(to);
+            if (from !== null) state.touched.add(from);
         }
     }
-    if (plan.start[entry] >= 0) {
-        const fresh = plan.fresh.size === 0 ? undefined : plan.fresh.get(entry);
-        writeRange(queued[plan.buffer[entry]].buffer, plan.start[entry], plan.end[entry], to, toRow, from, fresh, tick);
-        const more = plan.more.size === 0 ? undefined : plan.more.get(entry);
-        if (more !== undefined) for (let r = 0; r < more.length; r += 3) writeRange(queued[more[r]].buffer, more[r + 1], more[r + 2], to, toRow, from, fresh, tick);
+};
+
+/**
+ * Removes the row an entry left, by moving its archetype's last row into it. Entries are removed last first, so
+ * rows they left at the end of an archetype, as a whole archetype moving out leaves them, are dropped without a copy.
+ * A row moved into the hole that another entry still leaves takes that entry's place; any other's entity is updated.
+ */
+const leave = (state: State, entry: number): void => {
+    const { plan } = state;
+    const row = plan.row[entry];
+    if (row < 0) return;
+    const from = state.archetypes[plan.from[entry]];
+    const moved = swapRemove(from, row);
+    if (moved === -1) return;
+    const index = indexOf(moved);
+    const other = plan.slots[index];
+    if (other >= 0 && plan.entity[other] === moved && plan.row[other] >= 0 && plan.from[other] === from.id) plan.row[other] = row;
+    else {
+        state.entities.row[index] = row;
+        // Its row changed, so what `up` keeps of it does.
+        record(state.journal, index, state.entities.length);
     }
-    if (from !== null && to !== from) remove(state, from, fromRow);
-    if (state.touched !== null) {
-        state.touched.add(to);
-        if (from !== null) state.touched.add(from);
-    }
-    entities.archetype[index] = to.id;
-    entities.row[index] = toRow;
 };
 
 /** Grows each archetype once to fit the entities moving or spawning into it. */
@@ -322,6 +451,9 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     plan.dropped = 0;
     plan.more.clear();
     plan.fresh.clear();
+    const { pairs } = plan;
+    pairs.byKey.clear();
+    pairs.from.length = pairs.to.length = pairs.count.length = pairs.start.length = 0;
     // Systems reuse their buffers next run.
     for (const { buffer } of queued) clearBuffer(buffer);
     refreshDirectories(state);
@@ -418,7 +550,9 @@ export const applySync = (state: State): readonly Thrown[] => {
             // Finalizers reserve entities for their spawns; the next sync point accounts for them.
             if (reserved(state.entities)) state.carried = materialize(state.memory, state.entities);
         }
-        for (let entry = 0; entry < plan.count; entry++) applyEntry(state, queued, entry, tick, deriving);
+        sort(state, queued, tick);
+        arrive(state, queued, tick, deriving);
+        for (let entry = plan.count - 1; entry >= 0; entry--) leave(state, entry);
         if (index !== null) applyIndexChanges(state, index);
         // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its index.
         // Every spawn consumes one reservation, so only a shortfall needs the scan.

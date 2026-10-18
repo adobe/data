@@ -96,6 +96,8 @@ export type Archetype = {
     capacity: number;
     /** Holds the resource entity, so queries and systems never see it. */
     readonly resource: boolean;
+    /** Whether a storage holds values as objects, which a removed row must release. */
+    readonly objects: boolean;
     /** Incremented whenever arrays are replaced, so cached views can be refreshed. */
     version: number;
 };
@@ -163,6 +165,7 @@ export const createArchetype = (memory: Memory, id: number, components: readonly
         count: 0,
         capacity: initialCapacity,
         resource,
+        objects: storages.some(storage => storage.layout.kind === "object"),
         version: 0,
     };
 };
@@ -226,8 +229,8 @@ const copyElement = (from: Views, fromRow: number, to: Views, toRow: number, str
     for (let i = 0; i < stride; i++) to.u8[target + i] = from.u8[source + i];
 };
 
-/** Copies one component's value and ticks between rows of storages with the same layout. */
-export const copyCell = (from: Storage, fromRow: number, to: Storage, toRow: number): void => {
+/** Copies one component's value, not its ticks, between rows of storages with the same layout. */
+export const copyValue = (from: Storage, fromRow: number, to: Storage, toRow: number): void => {
     const { layout, words } = from;
     if (words > 0) {
         const source = from.views.u32;
@@ -238,6 +241,11 @@ export const copyCell = (from: Storage, fromRow: number, to: Storage, toRow: num
     }
     else if (layout.kind === "linear") copyElement(from.views, fromRow, to.views, toRow, layout.stride);
     else if (layout.kind === "object") to.values[toRow] = from.values[fromRow];
+};
+
+/** Copies one component's value and ticks between rows of storages with the same layout. */
+export const copyCell = (from: Storage, fromRow: number, to: Storage, toRow: number): void => {
+    copyValue(from, fromRow, to, toRow);
     // A component keeps ticks in every archetype or in none.
     if (!to.ticked) return;
     const added = from.added[fromRow];
@@ -253,6 +261,7 @@ export const copyCell = (from: Storage, fromRow: number, to: Storage, toRow: num
 /** Removes a row by moving the last row into it. Returns the moved entity, or -1 if the removed row was last. */
 export const swapRemove = (archetype: Archetype, row: number): number => {
     const last = --archetype.count;
+    if (row === last && !archetype.objects) return -1;
     const moved = row === last ? -1 : archetype.entities[last];
     for (const storage of archetype.storages) {
         if (moved !== -1) copyCell(storage, last, storage, row);

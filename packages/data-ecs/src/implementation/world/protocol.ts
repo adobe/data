@@ -50,6 +50,8 @@ export type KernelSetup = {
     readonly lookups: readonly LookupSetup[];
     /** Component ids, used as `keys` so command values name components by id. */
     readonly keys: readonly number[];
+    /** By key index: what each component starts at when a command's value for it is `undefined`. */
+    readonly starts: readonly unknown[];
     readonly added: readonly number[];
     readonly changed: readonly number[];
     /** For a kernel reading `up`: each parent column's boolean flag, stride and offset, the same in every archetype. */

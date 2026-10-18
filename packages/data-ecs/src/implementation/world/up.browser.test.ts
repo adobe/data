@@ -44,12 +44,12 @@ const place = System.create({
 /** Trees whose children are in two archetypes, so a depth's rows have parents in several. */
 const plant = System.create({ name: "upBrowserTest/plant" }, ({ commands }) => {
     for (let tree = 0; tree < 50; tree++) {
-        let level = [commands.spawn({ [offset]: tree, [placed]: 0 })];
+        let level = [commands.spawn([offset, placed])({ [offset]: tree, [placed]: 0 })];
         for (let depth = 1; depth < 12; depth++) {
             const next = [];
             for (const at of level.slice(0, 2)) {
-                next.push(commands.spawn({ [offset]: depth, [placed]: 0, [parent]: at }));
-                next.push(commands.spawn({ [offset]: -1, [placed]: 0, [parent]: at, [marked]: true }));
+                next.push(commands.spawn([offset, placed, parent])({ [offset]: depth, [placed]: 0, [parent]: at }));
+                next.push(commands.spawn([offset, placed, parent, marked])({ [offset]: -1, [placed]: 0, [parent]: at, [marked]: true }));
             }
             level = next;
         }
@@ -67,10 +67,10 @@ const propagate = System.create({
 /** 100 trees, each a root with 40 levels of two children, ordered so storage order isn't depth order. */
 const grow = System.create({ name: "upBrowserTest/grow" }, ({ commands }) => {
     for (let tree = 0; tree < 100; tree++) {
-        let level = [commands.spawn({ [local]: tree, [world]: 0 })];
+        let level = [commands.spawn([local, world])({ [local]: tree, [world]: 0 })];
         for (let depth = 1; depth < 40; depth++) {
             const at = level[depth % level.length];
-            level = [commands.spawn({ [local]: depth, [world]: 0, [parent]: at }), commands.spawn({ [local]: -depth, [world]: 0, [parent]: at })];
+            level = [commands.spawn([local, world, parent])({ [local]: depth, [world]: 0, [parent]: at }), commands.spawn([local, world, parent])({ [local]: -depth, [world]: 0, [parent]: at })];
         }
     }
 });

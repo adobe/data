@@ -32,7 +32,7 @@ const system = System.create({ name: "kernelsTest/read", kernel: "cpu", componen
     if (row[value] > row[other]) return;
 });
 
-const spawn = System.create({ name: "kernelsTest/spawn" }, ({ commands }) => { commands.spawn({ [value]: 3, [other]: 0 }); });
+const spawn = System.create({ name: "kernelsTest/spawn" }, ({ commands }) => { commands.spawn([value, other])({ [value]: 3, [other]: 0 }); });
 const double = System.create({ name: "kernelsTest/double", kernel: "cpu", components: { write: [value] } }, row => {
     row[value] = row[value] * 2;
 });

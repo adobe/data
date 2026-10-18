@@ -1,3 +1,4 @@
+import { Archetype } from "../interface/archetype/archetype.js";
 import { Component } from "../interface/component/component.js";
 import { Resource } from "../interface/resource/resource.js";
 import { Entity } from "../interface/entity/entity.js";
@@ -49,11 +50,14 @@ Component.register(tag, { type: { const: true } });
 Component.register(unused, { type: { const: true } });
 Component.register(hits, { type: { type: "number", precision: 1 } });
 
+const moving = Archetype.create([position, velocity, index]);
+const following = Archetype.create([position, velocity, index, target]);
+
 /** `count` entities, each targeting the one spawned before it. */
 export const seed = System.create({ name: "suite/seed", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
-    let previous = commands.spawn({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [index]: 0 });
+    let previous = commands.spawn(moving)({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [index]: 0 });
     for (let i = 1; i < input.count; i++) {
-        previous = commands.spawn({ [position]: [i, i * 0.5, -i], [velocity]: [1, 0, 0], [index]: i, [target]: previous });
+        previous = commands.spawn(following)({ [position]: [i, i * 0.5, -i], [velocity]: [1, 0, 0], [index]: i, [target]: previous });
     }
 });
 
@@ -61,13 +65,13 @@ export const seed = System.create({ name: "suite/seed", input: { type: "object",
 export const churn = System.create({ name: "suite/churn", input: { type: "object", properties: { group: { type: "integer" } } }, components: { read: [index, position] } }, (row, { input, commands }) => {
     if (row[index] % 10 !== input.group) return;
     commands.despawn(row.entity);
-    commands.spawn({ [position]: row[position], [velocity]: [0, 0, 0], [index]: row[index] });
+    commands.spawn(moving)({ [position]: row[position], [velocity]: [0, 0, 0], [index]: row[index] });
 });
 
 /** Adds the tag to one tenth and removes it from another: a fifth of the entities move archetype. */
 export const retag = System.create({ name: "suite/retag", input: { type: "object", properties: { group: { type: "integer" } } }, components: { read: [index] } }, (row, { input, commands }) => {
     const group = row[index] % 10;
-    if (group === input.group) commands.add(row.entity, { [tag]: true });
+    if (group === input.group) commands.add(row.entity, tag);
     else if (group === (input.group + 5) % 10) commands.remove(row.entity, tag);
 });
 
@@ -131,7 +135,7 @@ export const emit = System.create({
 }, (row, { commands }) => {
     if (row[index] % 10 === 0) {
         const [x] = row[position];
-        commands.add(row.entity, { [hits]: x });
+        commands.add(row.entity, hits, x);
     }
 });
 
@@ -214,7 +218,7 @@ export const idles = System.composite({
 
 /** Spawns one entity: a run with a sync point that applies one command. */
 export const spawnOne = System.create({ name: "suite/spawnOne" }, ({ commands }) => {
-    commands.spawn({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [index]: 0 });
+    commands.spawn(moving)({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [index]: 0 });
 });
 
 /** One main-thread system reading every row. */

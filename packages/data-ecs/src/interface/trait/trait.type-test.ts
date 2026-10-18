@@ -132,12 +132,12 @@ check<Equal<Resource.Value<typeof time>, number>>();
 
 // Commands add and remove only essential components.
 export const issue = (commands: Commands, entity: Entity): void => {
-    commands.add(entity, { [score]: 1, [parent]: entity });
+    commands.add(entity, [score, parent], { [score]: 1, [parent]: entity });
     commands.remove(entity, score);
     // @ts-expect-error derived components are added only by rules
-    commands.spawn({ [slot]: 1 });
+    commands.spawn([slot])({ [slot]: 1 });
     // @ts-expect-error derived components are added only by rules
-    commands.add(entity, { [slot]: 1 });
+    commands.add(entity, slot, 1);
     // @ts-expect-error derived components are removed only by rules
     commands.remove(entity, slot);
 };

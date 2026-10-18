@@ -144,7 +144,7 @@ const rows = 64;
 
 const spawn = System.create({ name: "intrinsicsTest/spawn" }, ({ commands }) => {
     for (let i = 0; i < rows; i++) {
-        commands.spawn({
+        commands.spawn([f2a, f2b, f2p, f2o, i2a, i2b, i2o, u2a, u2b, u2o, f3a, f3b, f3p, f3o, i3a, i3b, i3o, u3a, u3b, u3o, f4a, f4b, f4p, f4o, i4a, i4b, i4o, u4a, u4b, u4o, fo, ma, mb, mo, qa, qb, qo, ua, uo])({
             [f2a]: two(i, float(0)),
             [f2b]: two(i, float(100)),
             [f2p]: two(i, positive),

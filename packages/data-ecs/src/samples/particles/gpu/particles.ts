@@ -1,3 +1,4 @@
+import { Archetype } from '../../../interface/archetype/archetype.js';
 import { Component } from '../../../interface/component/component.js';
 import { Gpu } from '../../../interface/gpu/gpu.js';
 import { Vec3 } from '../../../interface/math/index.js';
@@ -31,6 +32,14 @@ Component.register(mass, { type: { type: "number", precision: 1 } });
 Component.register(visible, { type: { const: true } });
 Component.register(enabled, { type: { const: true } });
 
+/** Entity i goes to archetype i % 4. */
+const archetypes = [
+    Archetype.create([color, mass, position, velocity, visible, enabled]),
+    Archetype.create([color, mass, position, velocity, visible]),
+    Archetype.create([color, mass, position, velocity, enabled]),
+    Archetype.create([color, mass, position, velocity]),
+] as const;
+
 /** A deterministic sequence in [0, 1), so every mode starts from the same particles. */
 const random = (seed: number): (() => number) => {
     let state = seed >>> 0;
@@ -53,13 +62,7 @@ export const spawn = System.create({
         const v = [Math.cos(angle) * speed, Math.sin(angle) * speed, 0] as const;
         // Opaque, in the colors' upper half so they show on black: RGBA bytes, red lowest.
         const rgb = 0x808080 | Math.floor(next() * 0x1000000);
-        const values = { [color]: (0xff000000 | rgb) >>> 0, [mass]: 1, [position]: p, [velocity]: v };
-        switch (i % 4) {
-            case 0: commands.spawn({ ...values, [visible]: true, [enabled]: true }); break;
-            case 1: commands.spawn({ ...values, [visible]: true }); break;
-            case 2: commands.spawn({ ...values, [enabled]: true }); break;
-            default: commands.spawn(values);
-        }
+        commands.spawn(archetypes[i % 4])({ [color]: (0xff000000 | rgb) >>> 0, [mass]: 1, [position]: p, [velocity]: v });
     }
 });
 

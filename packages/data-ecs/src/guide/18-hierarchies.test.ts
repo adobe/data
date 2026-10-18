@@ -31,12 +31,12 @@ const place = System.create({
 
 const parts: Entity[] = [];
 const build = System.create({ name: "guide/hierarchies/build" }, ({ commands }) => {
-    const body = commands.spawn({ [offset]: 1, [position]: 0 });
-    const arm = commands.spawn({ [offset]: 2, [position]: 0, [parent]: body });
-    parts.push(body, arm, commands.spawn({ [offset]: 3, [position]: 0, [parent]: arm }));
+    const body = commands.spawn([offset, position])({ [offset]: 1, [position]: 0 });
+    const arm = commands.spawn([offset, position, parent])({ [offset]: 2, [position]: 0, [parent]: body });
+    parts.push(body, arm, commands.spawn([offset, position, parent])({ [offset]: 3, [position]: 0, [parent]: arm }));
 });
 const move = System.create({ name: "guide/hierarchies/move", input: { type: "object", properties: { entity: Entity.schema } } }, ({ input, commands }) => {
-    commands.add(input.entity, { [offset]: 10 });
+    commands.add(input.entity, offset, 10);
 });
 
 it("flows values down a hierarchy, parent first, and again only where something changed", async () => {

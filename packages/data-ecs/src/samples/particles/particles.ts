@@ -34,7 +34,7 @@ export const spawn = System.create({
     resources: { read: [count], changed: [count] },
 }, ({ resources, commands }) => {
     for (let i = 0; i < resources[count]; i++) {
-        commands.spawn({ [position]: [0, 0, 0], [velocity]: [1, i, 0] });
+        commands.spawn([position, velocity])({ [position]: [0, 0, 0], [velocity]: [1, i, 0] });
     }
 });
 

@@ -24,8 +24,8 @@ Component.register(target, { type: Entity.schema });
 Component.register(spark, { type: { const: true } });
 
 const spawn = System.create({ name: "guide/kernels/spawn" }, ({ commands }) => {
-    const leader = commands.spawn({ [position]: [10, 0, 0], [velocity]: [0, 0, 0] });
-    commands.spawn({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [target]: leader });
+    const leader = commands.spawn([position, velocity])({ [position]: [10, 0, 0], [velocity]: [0, 0, 0] });
+    commands.spawn([position, velocity, target])({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [target]: leader });
 });
 
 // `kernel: "cpu"` compiles the body at build time, to run in chunks across workers as WASM where it can.
@@ -45,7 +45,7 @@ const chase = System.create({
     row[velocity] = steer(row[velocity], Vec3.subtract(other[position], row[position]), 2);
     // A kernel builds tuple values from their leaves.
     const [x, y, z] = row[position];
-    if (Vec3.distance(other[position], row[position]) < 1) commands.spawn({ [position]: [x, y, z], [spark]: true });
+    if (Vec3.distance(other[position], row[position]) < 1) commands.spawn([position, spark])({ [position]: [x, y, z], [spark]: true });
 });
 
 it("runs systems compiled as kernels", async () => {

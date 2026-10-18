@@ -159,7 +159,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         return false;
     };
     const commands = createCommands(state, holder);
-    const kernelCommands = createKernelCommands(holder, kernel?.setup.keys ?? [], () => reserve(state.entities));
+    const kernelCommands = createKernelCommands(holder, kernel?.setup.keys ?? [], kernel?.setup.starts ?? [], () => reserve(state.entities));
     // A kernel's reductions fold in its partials, so only a body that runs as written gets reducer functions. Render
     // bodies and GPU kernels issue no commands.
     const ownInput = inputFor(leaf);

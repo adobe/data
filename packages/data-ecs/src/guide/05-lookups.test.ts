@@ -20,9 +20,9 @@ Component.register(velocity, { type: Vec3.schema });
 Component.register(target, { type: Entity.schema });
 
 const spawn = System.create({ name: "guide/lookups/spawn" }, ({ commands }) => {
-    const leader = commands.spawn({ [position]: [10, 0, 0] });
-    commands.spawn({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [target]: leader });
-    commands.spawn({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [target]: Entity.none });
+    const leader = commands.spawn([position])({ [position]: [10, 0, 0] });
+    commands.spawn([position, velocity, target])({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [target]: leader });
+    commands.spawn([position, velocity, target])({ [position]: [0, 0, 0], [velocity]: [0, 0, 0], [target]: Entity.none });
 });
 
 // A lookup reads another entity's components by id; it returns null for one that's missing or doesn't match.

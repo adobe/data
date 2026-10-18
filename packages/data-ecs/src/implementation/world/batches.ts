@@ -3,12 +3,12 @@ import { viewsOf, type Layout, type Views } from '../../interface/registry/layou
 import { ensureCapacity, type Archetype, writeF32, writeF32Lanes, writeF64, writeI32, writeOf, writeU32 } from './archetype.js';
 import { indexOf } from './entities.js';
 import { chunkShift } from './kernel.js';
-import { archetypeOf, commandIdOf, type Key, type State } from './state.js';
+import { archetypeOf, type State } from './state.js';
 import { gainsOf } from './structure.js';
 import { writeDefault } from './synchronize.js';
 
 /** One component of a spawn batch: its values in the target storage's layout, so committing is a block copy. */
-type Column = {
+export type Column = {
     readonly id: number;
     readonly layout: Layout;
     readonly write: number;
@@ -33,14 +33,8 @@ export type SpawnBatch = {
     capacity: number;
 };
 
-/**
- * Writes one value into row `row` of a column, specialized to the column's layout when the shape is resolved; false,
- * having written nothing, at an `undefined` value, which leaves the component out.
- */
-export type Writer = (row: number, value: unknown) => boolean;
-
-/** A spawn's own key order, resolved to a writer per key into its batch; `batch` is null when spawns of these keys use commands. */
-export type Shape = { readonly keys: readonly Key[]; readonly batch: SpawnBatch | null; readonly writers: readonly Writer[] };
+/** Writes one value into row `row` of a column, specialized to the column's layout when the spawner is made. */
+export type Writer = (row: number, value: unknown) => void;
 
 const initialCapacity = 64;
 
@@ -50,7 +44,8 @@ const columnOf = (state: State, id: number, capacity: number): Column => {
     return { id, layout, ...writeOf(layout), stride, views: viewsOf(new ArrayBuffer(capacity * stride), 0, capacity * stride), values: [] };
 };
 
-const batchOf = (state: State, ids: readonly number[]): SpawnBatch => {
+/** The batch of spawns of exactly these components, made on first use. */
+export const batchOf = (state: State, ids: readonly number[]): SpawnBatch => {
     const sorted = [...ids].sort((a, b) => a - b);
     const key = sorted.join(",");
     let batch = state.batchByKey.get(key);
@@ -60,33 +55,6 @@ const batchOf = (state: State, ids: readonly number[]): SpawnBatch => {
         state.batches.push(batch);
     }
     return batch;
-};
-
-/** Resolves a key list to a shape. Throws for an unregistered key, as a command would. */
-const shapeOf = (state: State, keys: readonly Key[]): Shape => {
-    const ids = keys.map(key => commandIdOf(state, key));
-    // The resource entity's components never take part in spawns.
-    if (ids.some(id => state.resources.has(id))) return { keys, batch: null, writers: [] };
-    const batch = batchOf(state, ids);
-    return { keys, batch, writers: ids.map(id => writerOf(batch.columns[batch.ids.indexOf(id)])) };
-};
-
-/** The last eight key lists spawned, replaced round-robin: spawn sites name the same keys in the same order. */
-const shapeFor = (state: State, keys: readonly Key[]): Shape => {
-    const { spawnShapes } = state;
-    const last = keys.length - 1;
-    for (let s = 0; s < spawnShapes.length; s++) {
-        const cached = spawnShapes[s].keys;
-        // Shapes of one spawn site often differ only in a trailing tag, so the last key rules most out at once.
-        if (cached.length !== keys.length || cached[last] !== keys[last]) continue;
-        let same = true;
-        for (let k = 0; k < last && same; k++) same = cached[k] === keys[k];
-        if (same) return spawnShapes[s];
-    }
-    const shape = shapeOf(state, keys);
-    if (spawnShapes.length < 8) spawnShapes.push(shape);
-    else spawnShapes[state.nextShape = (state.nextShape + 1) % 8] = shape;
-    return shape;
 };
 
 const grow = (batch: SpawnBatch): void => {
@@ -102,31 +70,27 @@ const grow = (batch: SpawnBatch): void => {
     batch.capacity = capacity;
 };
 
-/** A column's writer: numbers and f32 tuples straight into its view, the rest through `writeColumn`. */
-const writerOf = (column: Column): Writer => {
+/**
+ * A column's writer: numbers and f32 tuples straight into its view, the rest through `writeColumn`; `undefined` writes
+ * `start`, the component's start.
+ */
+export const writerOf = (column: Column, start: unknown): Writer => {
     const { unitStride, unitOffset, lanes } = column;
-    const general: Writer = (row, value) => {
-        if (value === undefined) return false;
-        writeColumn(column, row, value);
-        return true;
-    };
+    const general: Writer = (row, value) => writeColumn(column, row, value === undefined ? start : value);
     switch (column.write) {
         case writeF32: return (row, value) => {
             if (typeof value !== "number") return general(row, value);
             column.views.f32[row * unitStride + unitOffset] = value;
-            return true;
         };
         case writeU32: return (row, value) => {
             if (typeof value !== "number") return general(row, value);
             column.views.u32[row * unitStride + unitOffset] = value;
-            return true;
         };
         case writeF32Lanes: return (row, value) => {
             if (!Array.isArray(value)) return general(row, value);
             const { f32 } = column.views;
             const index = row * unitStride + unitOffset;
             for (let lane = 0; lane < lanes; lane++) f32[index + lane] = Number(value[lane]);
-            return true;
         };
         default: return general;
     }
@@ -152,18 +116,6 @@ const writeColumn = (column: Column, row: number, value: unknown): void => {
     else if (layout.kind === "object") column.values[row] = value;
 };
 
-/**
- * Adds a spawn to its batch, by its own symbol keys; string keys are ignored, as commands ignore them. Returns false,
- * having claimed nothing, when it must go through commands instead: a resource component, or an `undefined` value,
- * which leaves the component out. A row is claimed only once every value is written, so a value that throws leaves
- * nothing behind.
- */
-export const stageSpawn = (state: State, entity: number, values: object): boolean =>
-    stageShape(shapeFor(state, Object.getOwnPropertySymbols(values)), entity, values);
-
-/** The shape of spawns of exactly `keys`, resolved now. */
-export const spawnShapeOf = (state: State, keys: readonly Key[]): Shape => shapeFor(state, keys);
-
 /** The row the batch's next spawn writes, growing it first if it's full. */
 export const openRow = (batch: SpawnBatch): number => {
     if (batch.count === batch.capacity) grow(batch);
@@ -174,16 +126,6 @@ export const openRow = (batch: SpawnBatch): number => {
 export const claim = (batch: SpawnBatch, entity: number): void => {
     batch.entities[batch.count] = entity;
     batch.count++;
-};
-
-/** Adds a spawn of a resolved shape to its batch, reading values by key; false, having claimed nothing, when it must use commands. */
-export const stageShape = (shape: Shape, entity: number, values: object): boolean => {
-    const { batch, keys, writers } = shape;
-    if (batch === null) return false;
-    const row = openRow(batch);
-    for (let k = 0; k < keys.length; k++) if (!writers[k](row, Reflect.get(values, keys[k]))) return false;
-    claim(batch, entity);
-    return true;
 };
 
 /**

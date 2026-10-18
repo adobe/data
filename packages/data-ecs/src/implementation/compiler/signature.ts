@@ -2,6 +2,7 @@ import type { Expression, ObjectExpression, Property, SpreadElement, Pattern } f
 import type { Reduction } from '../../interface/resource/reduction.js';
 import { isReduction, reductionOperators } from '../../interface/registry/reduction.js';
 import { fail } from './failure.js';
+import { listLiteral } from './lists.js';
 import type { ModuleScope } from './module-scope.js';
 
 export type Lookup = { readonly name: string; readonly read: readonly string[] };
@@ -40,9 +41,11 @@ const properties = (node: Expression | Pattern, what: string): readonly (readonl
         : entry(propertyName(property), property));
 };
 
+/** Keys a kernel declaration lists: in an array literal, or a module-scope `const` holding one or `Archetype.create` of one. */
 const identifiers = (node: Expression | Pattern, module: ModuleScope): readonly string[] => {
-    if (node.type !== "ArrayExpression") return fail(node, "kernel declarations list keys in an array literal");
-    return node.elements.map(element => element?.type === "Identifier" && module.has(element.name)
+    const list = listLiteral(node, module);
+    if (list === null) return fail(node, "kernel declarations list keys in an array literal, or a const of this module holding one or Archetype.create of one");
+    return list.elements.map(element => element?.type === "Identifier" && module.has(element.name)
         ? element.name
         : fail(element ?? node, "kernel declarations list keys as identifiers bound at module scope"));
 };

@@ -16,7 +16,7 @@ declare module "@adobe/data-ecs" {
 Component.register(value, { type: { type: "number", precision: 1 } });
 
 const seed = System.create({ name: "kernelsCspTest/seed" }, ({ commands }) => {
-    for (let i = 0; i < 10; i++) commands.spawn({ [value]: i });
+    for (let i = 0; i < 10; i++) commands.spawn([value])({ [value]: i });
 });
 
 const double = System.create({ name: "kernelsCspTest/double", kernel: "cpu", components: { write: [value] } }, row => {

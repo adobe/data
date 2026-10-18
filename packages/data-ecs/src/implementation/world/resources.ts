@@ -1,7 +1,6 @@
-import { declarationOf } from '../../interface/registry/index.js';
 import type { Storage } from './archetype.js';
 import { indexOf, reserve } from './entities.js';
-import { idOf, type Key, type State } from './state.js';
+import { defaultOf, idOf, type Key, type State } from './state.js';
 import { synchronizeAlone } from './synchronize.js';
 import { addCommand, createBuffer, spawnCommand } from './buffer.js';
 import { pushValues } from './commands.js';
@@ -9,13 +8,6 @@ import { labelOf } from '../../interface/registry/index.js';
 
 /** Resources are components on one entity, so they share storage, ticks and sync with every other component. */
 export type ResourceCell = { readonly storage: Storage; readonly row: number };
-
-/** What a resource or derived component starts at: its default, or `null` when its type allows leaving it out. */
-export const defaultOf = (key: Key): unknown => {
-    const declaration = declarationOf(key);
-    const source = declaration?.type ?? declaration;
-    return source !== undefined && "default" in source ? source.default : null;
-};
 
 /** A resource's value before anything writes it: the one given at the world's creation, or its default. */
 export const initialOf = (state: State, key: Key): unknown => state.initial.has(key) ? state.initial.get(key) : defaultOf(key);

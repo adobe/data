@@ -35,13 +35,13 @@ for (const tag of tags) Component.register(tag, { type: { const: true } });
 
 const scatter = System.create({ name: "dispatchTest/scatter" }, ({ commands }) => {
     for (let i = 0; i < 128 * 64; i++) {
-        const values: { [key: symbol]: unknown } = { [position]: [i, 0], [velocity]: [1, i % 5], [offset]: 0 };
-        tags.forEach((tag, bit) => { if (((i >> 6) & (1 << bit)) !== 0) values[tag] = true; });
-        commands.spawn(values);
+        const components: (typeof position | typeof velocity | typeof offset | (typeof tags)[number])[] = [position, velocity, offset];
+        tags.forEach((tag, bit) => { if (((i >> 6) & (1 << bit)) !== 0) components.push(tag); });
+        commands.spawn(components)({ [position]: [i, 0], [velocity]: [1, i % 5], [offset]: 0 });
     }
 });
 const seed = System.create({ name: "dispatchTest/seed" }, ({ commands }) => {
-    for (let i = 0; i < 4096; i++) commands.spawn({ [position]: [i, 0], [velocity]: [1, i % 5], [offset]: 0 });
+    for (let i = 0; i < 4096; i++) commands.spawn([position, velocity, offset])({ [position]: [i, 0], [velocity]: [1, i % 5], [offset]: 0 });
 });
 const fastA = System.create({ name: "dispatchTest/fastA", kernel: "cpu", components: { read: [velocity], write: [position] } }, row => {
     const [x, y] = row[position];
@@ -62,7 +62,7 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | "timeout">
     Promise.race([promise, new Promise<"timeout">(resolve => setTimeout(() => resolve("timeout"), ms))]);
 
 const grow = System.create({ name: "dispatchTest/seed/2" }, ({ commands }) => {
-    for (let i = 0; i < 3000; i++) commands.spawn({ [position]: [i, 1], [velocity]: [2, i % 3], [offset]: 0 });
+    for (let i = 0; i < 3000; i++) commands.spawn([position, velocity, offset])({ [position]: [i, 1], [velocity]: [2, i % 3], [offset]: 0 });
 });
 let observedRows = 0;
 const bump = System.create({ name: "dispatchTest/fastA/2", kernel: "cpu", components: { write: [offset] } }, row => {

@@ -34,12 +34,12 @@ Rule.create({ name: "guide/rules/sprites", components: { has: [sprite], not: [hi
 Rule.create({ name: "guide/rules/layers", components: { has: [drawn] }, derive: [layer] });
 
 const spawn = System.create({ name: "guide/rules/spawn" }, ({ commands }) => {
-    commands.spawn({ [mesh]: 1 });
-    commands.spawn({ [sprite]: 2 });
-    commands.spawn({ [mesh]: 3, [hidden]: true });
+    commands.spawn([mesh])({ [mesh]: 1 });
+    commands.spawn([sprite])({ [sprite]: 2 });
+    commands.spawn([mesh, hidden])({ [mesh]: 3, [hidden]: true });
 });
 const hide = System.create({ name: "guide/rules/hide", components: { has: [sprite] } }, (row, { commands }) => {
-    commands.add(row.entity, { [hidden]: true });
+    commands.add(row.entity, hidden, true);
 });
 
 it("derives components from the components an entity has", async () => {

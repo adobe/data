@@ -91,9 +91,9 @@ export const tally = System.create({
     resources[score] += resources[time];
     // @ts-expect-error read resources are read-only
     resources[time] = 0;
-    const spawned: Entity = commands.spawn({ [position]: 0, [player]: true });
+    const spawned: Entity = commands.spawn([position, player])({ [position]: 0, [player]: true });
     // @ts-expect-error spawn values must match the component type
-    commands.spawn({ [position]: "zero" });
+    commands.spawn([position])({ [position]: "zero" });
     commands.remove(spawned, velocity);
 });
 

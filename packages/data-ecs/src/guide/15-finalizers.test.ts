@@ -27,13 +27,13 @@ const open = new Set<number>();
 Finalizer.create({ name: "guide/finalizers/release", components: { read: [position, handle] } }, (row, { commands }) => {
     open.delete(row[handle]);
     const [x, y, z] = row[position];
-    commands.spawn({ [position]: [x, y, z], [debris]: true });
+    commands.spawn([position, debris])({ [position]: [x, y, z], [debris]: true });
 });
 
 const spawn = System.create({ name: "guide/finalizers/spawn" }, ({ commands }) => {
     for (const id of [7, 8]) {
         open.add(id);
-        commands.spawn({ [position]: [id, 0, 0], [handle]: id });
+        commands.spawn([position, handle])({ [position]: [id, 0, 0], [handle]: id });
     }
 });
 const destroy = System.create({ name: "guide/finalizers/destroy", components: { read: [handle] } }, (row, { commands }) => {

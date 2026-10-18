@@ -48,7 +48,7 @@ const evaluateAgain = (): void => {
     });
 };
 
-const spawn = System.create({ name: "worldIdsTest/spawn" }, ({ commands }) => { spawned.push(commands.spawn({ [score]: 1 })); });
+const spawn = System.create({ name: "worldIdsTest/spawn" }, ({ commands }) => { spawned.push(commands.spawn([score])({ [score]: 1 })); });
 const spawned: Entity[] = [];
 
 describe("a world given keys with ids", () => {
@@ -56,7 +56,7 @@ describe("a world given keys with ids", () => {
         const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         evaluateAgain();
-        const spawnAgain = System.create({ name: "worldIdsTest/spawnAgain" }, ({ commands }) => { spawned.push(commands.spawn({ [scoreAgain]: 2 })); });
+        const spawnAgain = System.create({ name: "worldIdsTest/spawnAgain" }, ({ commands }) => { spawned.push(commands.spawn([scoreAgain])({ [scoreAgain]: 2 })); });
         const add = System.create({ name: "worldIdsTest/add", components: { write: [scoreAgain] } }, row => { row[scoreAgain] += 10; });
         await world.run(spawnAgain);
         await world.run(add);

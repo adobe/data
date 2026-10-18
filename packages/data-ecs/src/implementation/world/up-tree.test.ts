@@ -55,15 +55,15 @@ const apply = System.create({ name: "upTreeTest/apply" }, ({ commands }) => {
     for (const operation of operations.splice(0)) {
         switch (operation.kind) {
             case "spawn":
-                if (operation.parent === null) commands.spawn({ [local]: operation.local, [full]: 0, [filtered]: 0 });
-                else commands.spawn({ [local]: operation.local, [full]: 0, [filtered]: 0, [parent]: operation.parent });
+                if (operation.parent === null) commands.spawn([local, full, filtered])({ [local]: operation.local, [full]: 0, [filtered]: 0 });
+                else commands.spawn([local, full, filtered, parent])({ [local]: operation.local, [full]: 0, [filtered]: 0, [parent]: operation.parent });
                 break;
             case "despawn": commands.despawn(operation.entity); break;
-            case "hide": commands.add(operation.entity, { [hidden]: true }); break;
+            case "hide": commands.add(operation.entity, hidden, true); break;
             case "show": commands.remove(operation.entity, hidden); break;
             case "orphan": commands.remove(operation.entity, parent); break;
-            case "reparent": commands.add(operation.entity, { [parent]: operation.to }); break;
-            case "set": commands.add(operation.entity, { [local]: operation.local }); break;
+            case "reparent": commands.add(operation.entity, parent, operation.to); break;
+            case "set": commands.add(operation.entity, local, operation.local); break;
         }
     }
 });

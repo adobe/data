@@ -15,7 +15,7 @@ declare module "@adobe/data-ecs" {
 Component.register(value, { type: { type: "number", precision: 1 } });
 
 const seed = System.create({ name: "poolSizeTest/seed" }, ({ commands }) => {
-    for (let i = 0; i < 4096; i++) commands.spawn({ [value]: i });
+    for (let i = 0; i < 4096; i++) commands.spawn([value])({ [value]: i });
 });
 const double = System.create({ name: "poolSizeTest/double", kernel: "cpu", components: { write: [value] } }, row => { row[value] = row[value] * 2; });
 const resize = System.create({ name: "poolSizeTest/resize", input: { type: "object", properties: { size: { anyOf: [{ type: "integer" }, { type: "null" }] } } }, resources: { write: [workers] } }, ({ input, resources }) => {

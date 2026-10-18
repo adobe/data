@@ -69,7 +69,7 @@ export type KernelCommands = {
     /** Reserves an entity and starts its spawn command. */
     readonly spawn: () => number;
     readonly begin: (kind: number, entity: number) => void;
-    /** A component and its value for the current spawn or add; `undefined` values are skipped. */
+    /** A component and its value for the current spawn or add; `undefined` is the component's start. */
     readonly value: (key: number, value: unknown) => void;
     /** A component for the current remove. */
     readonly component: (key: number) => void;

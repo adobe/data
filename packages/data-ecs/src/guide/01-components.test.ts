@@ -23,8 +23,8 @@ Component.register(enemy, { type: { const: true } });
 Resource.register(gravity, { type: { type: "number", default: -9.8 } });
 
 export const spawn = System.create({ name: "guide/components/spawn" }, ({ commands }) => {
-    commands.spawn({ [position]: [0, 10, 0], [enemy]: true });
-    commands.spawn({ [position]: [5, 0, 0] });
+    commands.spawn([position, enemy])({ [position]: [0, 10, 0], [enemy]: true });
+    commands.spawn([position])({ [position]: [5, 0, 0] });
 });
 
 it("stores components on entities and resources once per world", async () => {

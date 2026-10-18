@@ -34,7 +34,7 @@ const raise = System.create({ name: "observersTest/raise", input: { type: "objec
     resources[level] += input.by;
 });
 const touchOther = System.create({ name: "observersTest/touchOther", resources: { write: [other] } }, ({ resources }) => { resources[other] += 1; });
-const spawn = System.create({ name: "observersTest/spawn" }, ({ commands }) => { commands.spawn({ [weight]: 2 }); });
+const spawn = System.create({ name: "observersTest/spawn" }, ({ commands }) => { commands.spawn([weight])({ [weight]: 2 }); });
 const sum = System.create({ name: "observersTest/sum", components: { read: [weight] }, reduce: { [total]: "+" } }, (row, { reduce }) => { reduce[total](row[weight]); });
 
 describe("observing resources", () => {
@@ -121,7 +121,7 @@ Component.register(filler, { type: { type: "number" } });
 
 /** The entity the systems below act on, set by `create`. */
 let target = Entity.none;
-const create = System.create({ name: "observersTest/create" }, ({ commands }) => { target = commands.spawn({ [weight]: 1, [heat]: 0 }); });
+const create = System.create({ name: "observersTest/create" }, ({ commands }) => { target = commands.spawn([weight, heat])({ [weight]: 1, [heat]: 0 }); });
 const despawn = System.create({ name: "observersTest/despawn" }, ({ commands }) => { commands.despawn(target); });
 const weigh = System.create({ name: "observersTest/weigh", components: { write: [weight], not: [filler] } }, row => {
     row[weight] += 1;
@@ -129,10 +129,10 @@ const weigh = System.create({ name: "observersTest/weigh", components: { write: 
 });
 const warm = System.create({ name: "observersTest/warm", components: { write: [heat] } }, row => { row[heat] += 1; });
 const double = System.create({ name: "observersTest/double", kernel: "cpu", components: { write: [heat] } }, row => { row[heat] = row[heat] * 2 + 1; });
-const addTag = System.create({ name: "observersTest/addTag" }, ({ commands }) => { commands.add(target, { [tag]: true }); });
+const addTag = System.create({ name: "observersTest/addTag" }, ({ commands }) => { commands.add(target, tag, true); });
 const removeTag = System.create({ name: "observersTest/removeTag" }, ({ commands }) => { commands.remove(target, tag); });
 const removeWeight = System.create({ name: "observersTest/removeWeight" }, ({ commands }) => { commands.remove(target, weight); });
-const addFlag = System.create({ name: "observersTest/addFlag" }, ({ commands }) => { commands.add(target, { [flag]: true }); });
+const addFlag = System.create({ name: "observersTest/addFlag" }, ({ commands }) => { commands.add(target, flag, true); });
 describe("observing entities", () => {
     it("gives what read.entity returns when subscribing, then the value after each run that wrote a listed component, once", async () => {
         await using world = createWorld();
@@ -303,16 +303,16 @@ Component.register(marker, { type: { const: true } });
 /** Players the systems below act on, in spawn order, set by `players`. */
 let roster: Entity[] = [];
 const players = System.create({ name: "observersTest/players" }, ({ commands }) => {
-    roster = [commands.spawn({ [score]: 1 }), commands.spawn({ [score]: 2 }), commands.spawn({ [score]: 3, [benched]: true })];
+    roster = [commands.spawn([score])({ [score]: 1 }), commands.spawn([score])({ [score]: 2 }), commands.spawn([score, benched])({ [score]: 3, [benched]: true })];
 });
-const join = System.create({ name: "observersTest/join" }, ({ commands }) => { roster.push(commands.spawn({ [score]: 0 })); });
-const bench = System.create({ name: "observersTest/bench" }, ({ commands }) => { commands.add(roster[0], { [benched]: true }); });
+const join = System.create({ name: "observersTest/join" }, ({ commands }) => { roster.push(commands.spawn([score])({ [score]: 0 })); });
+const bench = System.create({ name: "observersTest/bench" }, ({ commands }) => { commands.add(roster[0], benched, true); });
 /** The first player leaves the bench as the last joins it, so as many match as before. */
 const swap = System.create({ name: "observersTest/swap" }, ({ commands }) => {
-    commands.add(roster[0], { [benched]: true });
+    commands.add(roster[0], benched, true);
     commands.remove(roster[2], benched);
 });
-const mark = System.create({ name: "observersTest/mark" }, ({ commands }) => { commands.add(roster[0], { [marker]: true }); });
+const mark = System.create({ name: "observersTest/mark" }, ({ commands }) => { commands.add(roster[0], marker, true); });
 const leave = System.create({ name: "observersTest/leave" }, ({ commands }) => { commands.despawn(roster[1]); });
 const score10 = System.create({ name: "observersTest/score10", components: { write: [score] } }, row => { row[score] += 10; });
 const nudge = System.create({ name: "observersTest/nudge", components: { write: [score] } }, row => { row[score] += 0; });
@@ -320,13 +320,13 @@ const invert = System.create({ name: "observersTest/invert", components: { write
 const invertKernel = System.create({ name: "observersTest/invertKernel", kernel: "cpu", components: { write: [score] } }, row => { row[score] = 0 - row[score]; });
 /** Swaps the bench like `swap`, then despawns more entities than the journal holds, so it drops the swap's entries. */
 const swapAndCrowd = System.create({ name: "observersTest/swapAndCrowd" }, ({ commands }) => {
-    commands.add(roster[0], { [benched]: true });
+    commands.add(roster[0], benched, true);
     commands.remove(roster[2], benched);
     for (const spawned of crowded.splice(0)) commands.despawn(spawned);
 });
 const crowded: Entity[] = [];
 const crowdUp = System.create({ name: "observersTest/crowdUp" }, ({ commands }) => {
-    for (let i = 0; i < 5000; i++) crowded.push(commands.spawn({ [filler]: i }));
+    for (let i = 0; i < 5000; i++) crowded.push(commands.spawn([filler])({ [filler]: i }));
 });
 
 describe("observing queries", () => {
@@ -485,12 +485,12 @@ let ranks: readonly (readonly [number, number, boolean])[] = [];
 /** The entities `rankAll` spawned, in order. */
 let ranked: Entity[] = [];
 const rankAll = System.create({ name: "observersTest/rankAll" }, ({ commands }) => {
-    ranked = ranks.map(([value, key, marked]) => commands.spawn(marked ? { [rank]: value, [second]: key, [marker]: true } : { [rank]: value, [second]: key }));
+    ranked = ranks.map(([value, key, marked]) => commands.spawn(marked ? [rank, second, marker] : [rank, second])({ [rank]: value, [second]: key }));
 });
 /** What `rerank` sets: an index into `ranked` and its new rank. */
 let reranks: readonly (readonly [number, number])[] = [];
 const rerank = System.create({ name: "observersTest/rerank" }, ({ commands }) => {
-    for (const [index, value] of reranks) commands.add(ranked[index], { [rank]: value });
+    for (const [index, value] of reranks) commands.add(ranked[index], rank, value);
 });
 
 /** A deterministic generator of numbers in [0, 1). */

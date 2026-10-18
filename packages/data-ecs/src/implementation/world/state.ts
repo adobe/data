@@ -1,7 +1,8 @@
 import type { Entity } from '../../interface/entity/entity.js';
 import { declarationOf, firstKeyOf, kindOf, labelOf } from '../../interface/registry/index.js';
 import { createArchetype, startTicks, type Archetype, type Storage } from './archetype.js';
-import type { Shape, SpawnBatch } from './batches.js';
+import type { SpawnBatch } from './batches.js';
+import type { ListShape, Recent } from './lists.js';
 import type { Directory } from './directories.js';
 import type { GpuEngine } from './gpu.js';
 import type { Queued } from './synchronize.js';
@@ -42,11 +43,23 @@ export type State = {
     readonly observed: Set<number>;
     /** Components some registered system filters on with `added` or `changed`, or an entity or query observer watches; only they keep ticks. */
     readonly ticked: Set<number>;
-    /** Main-thread spawns since the last sync point, by component set; `spawnShapes` caches key lists resolved to them. */
+    /** Main-thread spawns since the last sync point, by component set. */
     readonly batches: SpawnBatch[];
     readonly batchByKey: Map<string, SpawnBatch>;
-    readonly spawnShapes: Shape[];
-    nextShape: number;
+    /**
+     * Lists of components commands named, by their sorted ids; archetypes by their program-wide index, and the last
+     * eight plain lists, which find them first.
+     */
+    readonly lists: Map<string, readonly ListShape[]>;
+    readonly byIndex: ListShape[];
+    /** Every list shape, by its index. */
+    readonly shapes: ListShape[];
+    readonly recent: Recent[];
+    nextRecent: number;
+    /** By component id: whether commands may name it, once a command has. */
+    readonly commandable: boolean[];
+    /** By component id: what it starts at when a spawn or add leaves it out. */
+    readonly starts: unknown[];
     /** Lookup directories for WASM kernels, kept up to date at sync points. */
     readonly directories: Set<Directory>;
     /** Workers the world may run kernels on; with none, kernels run on the main thread. */
@@ -115,8 +128,13 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         ticked: new Set(),
         batches: [],
         batchByKey: new Map(),
-        spawnShapes: [],
-        nextShape: 0,
+        lists: new Map(),
+        byIndex: [],
+        shapes: [],
+        recent: [],
+        nextRecent: 0,
+        commandable: [],
+        starts: [],
         directories: new Set(), workers: 0, afterSync: new Set(),
         rows: new Map(),
         wasm,
@@ -176,7 +194,10 @@ export const idOf = (state: State, key: Key): number => {
     }
     state.ids.set(key, id);
     state.keys.push(key);
-    state.layouts.push(layoutOf(declaration.type));
+    const layout = layoutOf(declaration.type);
+    state.layouts.push(layout);
+    state.starts.push(layout.kind === "constant" ? layout.value : defaultOf(key));
+    state.commandable.push(false);
     state.derived.push(declaration.derived === true);
     structure.hosts[id] = host;
     structure.dependents[id] = [];
@@ -188,10 +209,26 @@ export const idOf = (state: State, key: Key): number => {
     return id;
 };
 
-/** The id of a component a command names. Throws for a derived one, which only rules add and remove. */
-export const commandIdOf = (state: State, key: Key): number => {
+/** What a resource or derived component starts at: its default, or `null` when its type allows leaving it out. */
+export const defaultOf = (key: Key): unknown => {
+    const declaration = declarationOf(key);
+    const source = declaration?.type ?? declaration;
+    return source !== undefined && "default" in source ? source.default : null;
+};
+
+/**
+ * The id of a component a command names. Throws for a key that isn't a symbol, isn't registered, or is a resource,
+ * and for a derived component, which only rules add and remove.
+ */
+export const commandIdOf = (state: State, key: unknown): number => {
+    const known = typeof key === "symbol" ? state.ids.get(key) : undefined;
+    if (known !== undefined && state.commandable[known]) return known;
+    if (Array.isArray(key)) throw new Error("A command names a list of components where one component's symbol goes.");
+    if (typeof key !== "symbol") throw new Error(`"${labelOf(key)}" isn't a component: a component's key is a symbol.`);
+    if (kindOf(key) === "resource") throw new Error(`"${labelOf(key)}" is a resource, not a component.`);
     const id = idOf(state, key);
     if (state.derived[id]) throw new Error(`"${labelOf(key)}" is derived, so only rules add and remove it.`);
+    state.commandable[id] = true;
     return id;
 };
 

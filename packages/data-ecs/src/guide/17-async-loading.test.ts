@@ -69,7 +69,7 @@ const apply = System.create({
     input: { type: "object", properties: { entity: Entity.schema, token: { type: "integer" }, handle: { type: "integer" } } },
     lookup: { slots: { read: [meshSlot] } },
 }, ({ input, lookup, commands }) => {
-    if (lookup.slots(input.entity)?.[meshSlot] === input.token) commands.add(input.entity, { [meshReady]: input.handle });
+    if (lookup.slots(input.entity)?.[meshSlot] === input.token) commands.add(input.entity, meshReady, input.handle);
     else loaded.delete(input.handle);
 });
 
@@ -77,11 +77,11 @@ const apply = System.create({
 Finalizer.create({ name: "guide/loading/release", components: { read: [meshReady] } }, row => { loaded.delete(row[meshReady]); });
 
 const spawn = System.create({ name: "guide/loading/spawn" }, ({ commands }) => {
-    commands.spawn({ [meshSource]: "ship.glb" });
-    commands.spawn({ [meshSource]: "rock.glb" });
+    commands.spawn([meshSource])({ [meshSource]: "ship.glb" });
+    commands.spawn([meshSource])({ [meshSource]: "rock.glb" });
 });
 const hide = System.create({ name: "guide/loading/hide", input: { type: "object", properties: { entity: Entity.schema } } }, ({ input, commands }) => {
-    commands.add(input.entity, { [hidden]: true });
+    commands.add(input.entity, hidden, true);
 });
 
 it("loads resources asynchronously for derived slots, and releases them when the slot goes", async () => {

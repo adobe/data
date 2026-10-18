@@ -32,8 +32,8 @@ Resource.register(lowest, { type: { ...Vec3.schema, default: [0, 0, 0] }, reduce
 Resource.register(seen, { type: { type: "number", default: 0 } });
 
 const spawn = System.create({ name: "guide/reductions/spawn" }, ({ commands }) => {
-    for (let i = 0; i < 100; i++) commands.spawn({ [position]: [i, -i, i % 7], [mass]: 2 });
-    for (let i = 0; i < 10; i++) commands.spawn({ [cargo]: 5 });
+    for (let i = 0; i < 100; i++) commands.spawn([position, mass])({ [position]: [i, -i, i % 7], [mass]: 2 });
+    for (let i = 0; i < 10; i++) commands.spawn([cargo])({ [cargo]: 5 });
 });
 
 // A contributor repeats the operator, and each row contributes values that fold into the resource, across workers.

@@ -14,6 +14,12 @@ export type Plan = {
     from: Int32Array<ArrayBuffer>;
     to: Int32Array<ArrayBuffer>;
     despawned: Uint8Array<ArrayBuffer>;
+    /** While applying: the row an entity leaves in `from`, kept current as rows swap into holes; -1 for none. */
+    row: Int32Array<ArrayBuffer>;
+    /** While applying: the pair of archetypes a moving entry is in, by index into the pairs; -1 for one staying. */
+    pair: Int32Array<ArrayBuffer>;
+    /** While applying: the pairs of source and target archetype entries move between, by key, with their entries in order. */
+    readonly pairs: Pairs;
     /** The first command range: queued buffer, start and end. Most entities have one. */
     buffer: Int32Array<ArrayBuffer>;
     start: Int32Array<ArrayBuffer>;
@@ -31,6 +37,19 @@ export type Plan = {
     readonly shapes: { ids: Int32Array; start: number; end: number; target: number }[];
 };
 
+/**
+ * Source and target archetype pairs, reused across sync points: `from[p]` (-1 for spawns) and `to[p]`, the number of
+ * entries moving between them, and where they start in `order`, which lists every moving entry by pair, in entry order.
+ */
+export type Pairs = {
+    readonly byKey: Map<number, number>;
+    readonly from: number[];
+    readonly to: number[];
+    readonly count: number[];
+    readonly start: number[];
+    order: Int32Array<ArrayBuffer>;
+};
+
 const initialEntries = 64;
 
 export const createPlan = (): Plan => ({
@@ -41,6 +60,9 @@ export const createPlan = (): Plan => ({
     from: new Int32Array(initialEntries),
     to: new Int32Array(initialEntries),
     despawned: new Uint8Array(initialEntries),
+    row: new Int32Array(initialEntries),
+    pair: new Int32Array(initialEntries),
+    pairs: { byKey: new Map(), from: [], to: [], count: [], start: [], order: new Int32Array(initialEntries) },
     buffer: new Int32Array(initialEntries),
     start: new Int32Array(initialEntries),
     end: new Int32Array(initialEntries),

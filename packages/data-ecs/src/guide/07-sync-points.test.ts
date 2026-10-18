@@ -23,8 +23,8 @@ Resource.register(counted, { type: { type: "number", default: 0 } });
 
 // Commands are structural changes: they apply together at the sync point that ends each run.
 const spawn = System.create({ name: "guide/sync/spawn" }, ({ commands }) => {
-    const entity = commands.spawn({ [unit]: 1 });
-    commands.add(entity, { [shield]: true });
+    const entity = commands.spawn([unit])({ [unit]: 1 });
+    commands.add(entity, shield, true);
     commands.remove(entity, shield);
 });
 const count = System.create({ name: "guide/sync/count", components: { has: [unit] }, resources: { write: [counted] }, after: [spawn] }, (_, { resources }) => {
@@ -45,7 +45,7 @@ it("applies structural changes at the end of a run, as their net effect", async 
 
 it("still applies the commands of a run whose system throws, and reports the failure", async () => {
     const fail = System.create({ name: "guide/sync/fail" }, ({ commands }) => {
-        commands.spawn({ [unit]: 2 });
+        commands.spawn([unit])({ [unit]: 2 });
         throw new Error("lost connection");
     });
     await using world = createWorld();

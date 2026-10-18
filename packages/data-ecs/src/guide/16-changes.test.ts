@@ -29,7 +29,7 @@ Finalizer.changes({ name: "guide/changes/save", watch: [name, score], resources:
     resources[journal] = [...resources[journal], ...lines];
 });
 
-const spawn = System.create({ name: "guide/changes/spawn" }, ({ commands }) => { commands.spawn({ [name]: "ada", [score]: 3 }); });
+const spawn = System.create({ name: "guide/changes/spawn" }, ({ commands }) => { commands.spawn([name, score])({ [name]: "ada", [score]: 3 }); });
 const retire = System.create({ name: "guide/changes/retire", components: { has: [score] } }, (row, { commands }) => { commands.remove(row.entity, score); });
 
 it("records each sync point's structural changes", async () => {

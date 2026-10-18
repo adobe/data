@@ -29,7 +29,7 @@ Component.register(flag, { type: { type: "boolean" } });
 Component.register(tag, { type: { const: true } });
 
 const seed = System.create({ name: "rowsTest/seed" }, ({ commands }) => {
-    for (let i = 0; i < 4; i++) commands.spawn({ [position]: [i, i + 0.5, -i], [count]: i, [flag]: i % 2 === 0, ...(i < 2 ? { [tag]: true } : {}) });
+    for (let i = 0; i < 4; i++) commands.spawn(i < 2 ? [position, count, flag, tag] : [position, count, flag])({ [position]: [i, i + 0.5, -i], [count]: i, [flag]: i % 2 === 0 });
 });
 
 describe("accessor rows", () => {

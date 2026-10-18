@@ -69,7 +69,7 @@ describe("resource conditions", () => {
         await using world = createWorld({ [workers]: 0 });
         const seen: number[] = [];
         const watch = System.create({ name: "conditionsTest/watch", components: { read: [value], changed: [value] }, resources: { is: [level] } }, row => { seen.push(row[value]); });
-        const spawn = System.create({ name: "conditionsTest/spawn" }, ({ commands }) => { commands.spawn({ [value]: 7 }); });
+        const spawn = System.create({ name: "conditionsTest/spawn" }, ({ commands }) => { commands.spawn([value])({ [value]: 7 }); });
         await world.run(spawn);
         await world.run(watch);
         expect(seen).toEqual([]);
@@ -100,7 +100,7 @@ describe("resource conditions", () => {
     });
     it("skip a kernel the same way", async () => {
         await using world = createWorld({ [workers]: 0 });
-        await world.run(System.create({ name: "conditionsTest/seed" }, ({ commands }) => { commands.spawn({ [value]: 1 }); }));
+        await world.run(System.create({ name: "conditionsTest/seed" }, ({ commands }) => { commands.spawn([value])({ [value]: 1 }); }));
         await world.run(grow);
         await world.run(pause);
         await world.run(grow);

@@ -35,8 +35,8 @@ const weightAt = (i: number): number => Math.fround(Math.sin(i * 0.37) * 1000);
 
 const spawn = System.create({ name: "reductionsBrowserTest/spawn" }, ({ commands }) => {
     for (let i = 0; i < rows; i++) {
-        if (i % 4 === 0) commands.spawn({ [weight]: weightAt(i), [sized]: true });
-        else commands.spawn({ [weight]: weightAt(i) });
+        if (i % 4 === 0) commands.spawn([weight, sized])({ [weight]: weightAt(i), [sized]: true });
+        else commands.spawn([weight])({ [weight]: weightAt(i) });
     }
 });
 

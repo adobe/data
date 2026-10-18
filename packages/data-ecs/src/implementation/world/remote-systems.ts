@@ -18,7 +18,7 @@ import {
     completionCapacityWord, completionMessage, completionOffsetWord, completionSystems, completionWords, executedFlag, failedFlag,
     payloadCapacityWord, payloadCount, payloadInput, payloadOffsetWord, payloadSequence, payloadSync, payloadSystems, payloadWords, ranFlag,
     resultEnd, resultFields, resultFlags, resultStart, ringBaseWord, ringCapacityWord, ringCursorWord, ringNeededWord, spilledFlag, systemFields,
-    systemFolds, systemIndex, systemLastRun, systemTail, systemTick, systemTier, taskBlockWords, taskDoneWord, taskPostedWord,
+    systemFolds, systemIndex, systemLastRun, systemTail, systemTick, systemTier, taskBlockWords, taskDoneWord, taskFailedWord, taskPostedWord,
 } from './thread-tasks.js';
 
 // The world's side of systems on joined threads (threads.md, "Systems on other threads"): a runner standing for each
@@ -193,6 +193,17 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         }
     };
 
+    /** Fails every system of a task the thread failed whole, running none of it, with the error its message gives. */
+    const failWhole = (systems: readonly RemoteSystem[]): void => {
+        const failure = message?.errors[0]?.[1];
+        for (const system of systems) {
+            const { result } = system;
+            result.flags = failedFlag;
+            result.segment = undefined;
+            result.error = failure === undefined ? new Error(`System "${system.label}" failed on thread "${label}".`) : errorOf(failure);
+        }
+    };
+
     /** Settles a wait for the task in flight once the thread stored it done. */
     const doneNow = (): void => {
         const resolve = settle;
@@ -218,7 +229,8 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         for (let current = Atomics.load(control, taskDoneWord); current < expected; current = Atomics.load(control, taskDoneWord)) {
             if (ended || !await changed(current)) return false;
         }
-        if (completionView[completionMessage] !== 0 && (message === null || message.sequence !== expected)) {
+        const follows = completionView[completionMessage] !== 0 || Atomics.load(control, taskFailedWord) === expected;
+        if (follows && (message === null || message.sequence !== expected)) {
             const arrived = new Promise<boolean>(resolve => { settle = resolve; });
             if (!await arrived) return false;
         }
@@ -283,7 +295,8 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         wake();
         const done = await whenDone(next);
         if (tails) Atomics.store(log.header, logBoundedWord, 0);
-        if (done) collect(flight);
+        if (done && Atomics.load(control, taskFailedWord) === next) failWhole(flight);
+        else if (done) collect(flight);
         flying = null;
         return done;
     };

@@ -9,13 +9,15 @@ import { lineWords } from './protocol.js';
 
 /**
  * The task block's words, each group on a line of its own by the thread writing it: the task the world posted last,
- * then the task the thread finished last; then the command ring's base and capacity in bytes and the payload's and
+ * then the task the thread finished last and the last it failed whole, running none of it, as when it couldn't view
+ * the memory, whose message says why; then the command ring's base and capacity in bytes and the payload's and
  * completion's offsets and capacities, which the world sets while no task runs; then the ring's write cursor past its
  * base, which the thread stores at each segment's end and the world resets at sync points, and the bytes its segments
  * needed since, spills included, which the next sync point grows the ring to.
  */
 export const taskPostedWord = 0;
 export const taskDoneWord = lineWords;
+export const taskFailedWord = lineWords + 1;
 export const ringBaseWord = 2 * lineWords;
 export const ringCapacityWord = 2 * lineWords + 1;
 export const payloadOffsetWord = 2 * lineWords + 2;

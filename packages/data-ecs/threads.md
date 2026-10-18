@@ -155,8 +155,12 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
 - **Length:** `memory.ts` stores it in pages, since 4 GiB in bytes doesn't fit a `Uint32`, with `Atomics.store` right
   after each `memory.grow`. A thread loads it at the start of each task, rebuilds its whole-buffer view of words over
   `memory.buffer`, which serves the header and records, when it moved, and checks `memory.buffer.byteLength` covers
-  it. If it doesn't, the thread marks itself broken, as a failed layout does, and fails every later task, since typed
-  arrays read out of bounds as `undefined` and drop such writes silently.
+  it. Another thread's growth reaches this thread's `memory.buffer` only once it handles the interrupt that growth
+  sends, and never when its memory object arrived in a message as the memory grew (V8), so a buffer short of the
+  stored length is first refreshed by `memory.grow(0)` (`coveringBuffer`), as are the views a joined thread makes at
+  offsets the world posts it. If it's still short, a pool worker marks itself broken, as a failed layout does, and
+  fails every later task, since typed arrays read out of bounds as `undefined` and drop such writes silently; a joined
+  thread fails the task whole: a word of its task block says so and its message why, writing nothing its views reach.
 - **Archetype records:** the table holds, by the world's archetype number, the offset of that archetype's record. Each
   record is allocated once, since an archetype's storages are fixed, and never moves; only the table grows. A record
   holds `capacity`, the `entities` offset, a version, its flags and its count, and per storage its component number, its

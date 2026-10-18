@@ -21,7 +21,7 @@ import {
     rowField, storageAdded, storageChanged, storageChunkAdded, storageChunkChanged, storageChunks, storageColumn, storageComponent, storageFlags,
     storageWords, tableLengthWord, tableOffsetWord, threadShift, tickedFlag,
 } from './layout-directory.js';
-import { pageBytes, pagesWord } from './memory.js';
+import { coveringBuffer, pageBytes, pagesWord } from './memory.js';
 import { ownTag } from './move-log.js';
 import { applying, rebuild, replay, stage, waitStructure, type Mirror, type Mirrored } from './mirror.js';
 import type { WorkerError } from './protocol.js';
@@ -40,7 +40,7 @@ import {
     completionCapacityWord, completionMessage, completionOffsetWord, completionSystems, executedFlag, failedFlag, payloadCapacityWord, payloadCount,
     payloadInput, payloadOffsetWord, payloadSequence, payloadSystems, ranFlag, resultEnd, resultFields, resultFlags, resultStart, ringBaseWord, ringCapacityWord,
     payloadSync, ringCursorWord, ringNeededWord, spilledFlag, systemFields, systemFolds, systemIndex, systemLastRun, systemTail, systemTick, systemTier,
-    taskDoneWord, taskPostedWord,
+    taskDoneWord, taskFailedWord, taskPostedWord,
 } from './thread-tasks.js';
 
 // A joined thread's systems (threads.md, "Systems on other threads"): runners over the world's archetypes as the layout
@@ -141,7 +141,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         if (words.length === 0) words = new Uint32Array(memory.buffer);
         const current = Atomics.load(words, pagesWord);
         if (current === pages) return;
-        const latest = memory.buffer;
+        const latest = coveringBuffer(memory, current * pageBytes);
         if (latest.byteLength < current * pageBytes) throw new Error(`This thread's memory is ${latest.byteLength} bytes, short of the ${current * pageBytes} the world stored.`);
         buffer = latest;
         words = new Uint32Array(latest);
@@ -499,21 +499,13 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
 
     /**
      * Fails every system of the posted task, when this thread can't run it: its memory is short of the world's, or its
-     * views of it failed.
+     * views of it failed. It writes nothing the views would reach, as they may be stale: the failed word says the task
+     * failed whole, and the message, of the sequence the world posted, why.
      */
     const failTask = (posted: number, error: unknown): void => {
         pending = -1;
-        const count = payload.length > payloadCount ? payload[payloadCount] : 0;
-        const failure = errorOf(error);
-        const errors: [number, WorkerError][] = [];
-        for (let k = 0; k < count && completion.length >= completionSystems + (k + 1) * resultFields; k++) {
-            const result = completionSystems + k * resultFields;
-            completion[result + resultFlags] = failedFlag;
-            completion[result + resultStart] = completion[result + resultEnd] = 0;
-            errors.push([k, failure]);
-        }
-        if (completion.length > completionMessage) completion[completionMessage] = 1;
-        host.post({ protocol: protocolName, kind: "completed", sequence: payload.length > payloadSequence ? payload[payloadSequence] : posted, errors, spills: [] });
+        host.post({ protocol: protocolName, kind: "completed", sequence: posted, errors: [[0, errorOf(error)]], spills: [] });
+        Atomics.store(control, taskFailedWord, posted);
         Atomics.store(control, taskDoneWord, posted);
         Atomics.notify(control, taskDoneWord);
     };

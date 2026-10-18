@@ -13,7 +13,7 @@ import {
     slotInput, slotNumber, slotPayload, slotSequence, slotStatus, slotViews, slotWords, slotsWord, threadChannel, type Subscription, type ThreadChannel, type ToJoined, type ToPeer, type ToWorld,
 } from './joining.js';
 import { entityPlanOf, hasFresh, mailboxReader, readSlot, readValue, type MailboxReader } from './mailbox.js';
-import { sharedMemoryAvailable } from './memory.js';
+import { currentBuffer, sharedMemoryAvailable } from './memory.js';
 import { logRunWord } from './move-log.js';
 import { componentsAt, createMirror, locate, nameComponent, objectAt, waitDelivered, waitStructure, type Location, type Mirror } from './mirror.js';
 import { defaultOf } from './state.js';
@@ -495,8 +495,9 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             case "joined": {
                 memory = message.memory;
                 own = message.thread;
-                control = new Int32Array(memory.buffer, message.control, (slotsWord + runSlots * slotWords));
-                views = slotViews(memory.buffer, message.control);
+                const buffer = currentBuffer(memory);
+                control = new Int32Array(buffer, message.control, (slotsWord + runSlots * slotWords));
+                views = slotViews(buffer, message.control);
                 worldWaits = message.waits;
                 if (message.log !== null) {
                     mirror = createMirror(memory, message.log, message.thread);
@@ -505,7 +506,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 }
                 if (message.tasks !== null && mirror !== null) {
                     systems = createThreadSystems({
-                        memory, mirror, control: new Int32Array(memory.buffer, message.tasks, taskBlockWords), claims, worldWaits: message.waits,
+                        memory, mirror, control: new Int32Array(buffer, message.tasks, taskBlockWords), claims, worldWaits: message.waits,
                         post: (sent, transfer) => channel.post(sent, transfer), keyNumber, numbered: () => numbers.size,
                     });
                     systems.setup(setups);
@@ -531,7 +532,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             case "mailbox": {
                 const observer = observers.get(message.observer);
                 if (observer === undefined || memory === null) return;
-                observer.reader = mailboxReader(memory.buffer, message.offset);
+                observer.reader = mailboxReader(currentBuffer(memory), message.offset);
                 processObservers();
                 void listen();
                 return;

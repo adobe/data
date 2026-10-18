@@ -9,7 +9,7 @@ import { controlWords, done, epoch, idleKernel, lineWords, posted, ringBase, rin
 import { beginCommand, createRingWriter, encoderOf, endSegment, noExtent, objectStart, putComponent, putStart, putValue, startSegment, type Encoder, type Extent } from './command-ring.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
-import { pageBytes, pagesWord } from './memory.js';
+import { coveringBuffer, pageBytes, pagesWord } from './memory.js';
 import { endpointChannel, scopeChannel } from './port.js';
 import {
     archetypeField, capacityField, cursorField, entitiesVersionField, entitiesWord, freeCapacityField, freeField, generationField, linearFlag,
@@ -102,7 +102,7 @@ const refreshMemory = (): void => {
     const shared = required(memory, "memory");
     const current = Atomics.load(words, header + pagesWord);
     if (current === pages) return;
-    const latest = shared.buffer;
+    const latest = coveringBuffer(shared, current * pageBytes);
     if (latest.byteLength < current * pageBytes) {
         broken = { name: "Error", message: `The worker's memory is ${latest.byteLength} bytes, short of the ${current * pageBytes} the world stored.` };
         throw new Error(broken.message);

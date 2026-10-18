@@ -8,6 +8,7 @@ import {
     appendEntry, archetypeShift, entryWords, kindMask, logCapacityWord, logDeliveredWord, logHeaderBytes, logLimitWord, logOffsetWord,
     logPublishedWord, logSyncWord, logVersionWord, logBoundWord, logBoundedWord, moveEntry, nullTag, ownTag, rangeEntry, setEntry, slotTags, startTag, swapEntry, syncEntry,
 } from './move-log.js';
+import { coveringBuffer, currentBuffer, pageBytes, pagesWord } from './memory.js';
 import { releaseValue } from './transfers.js';
 
 // A joined thread's object columns: by row, as the world's are, following the world's rows through the move log
@@ -103,7 +104,8 @@ export const createMirror = (memory: WebAssembly.Memory, block: number, thread: 
 
 /** Views of the memory again, once it grew; the ring's, once it moved. */
 const refresh = (mirror: Mirror): void => {
-    const buffer = mirror.memory.buffer;
+    // The length in pages the world stored, which this thread's buffer catches up to.
+    const buffer = mirror.words.length === 0 ? currentBuffer(mirror.memory) : coveringBuffer(mirror.memory, Atomics.load(mirror.words, pagesWord) * pageBytes);
     if (buffer.byteLength !== mirror.words.byteLength || buffer !== mirror.buffer) {
         mirror.buffer = buffer;
         mirror.words = new Uint32Array(buffer);

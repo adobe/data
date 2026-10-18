@@ -13,6 +13,24 @@ export const headerBytes = minimumBlockBytes;
 export const pagesWord = 0;
 
 /**
+ * This thread's `memory.buffer` of shared memory, at least `bytes` long once the memory is. Another thread's growth
+ * reaches this thread's buffer only when this thread handles the interrupt growth sends it, and never when this
+ * thread's memory object arrived in a message while the memory grew, so a buffer shorter than the length the world
+ * stored is refreshed by growing the memory by nothing, which brings it to the memory's length.
+ */
+export const coveringBuffer = <T extends ArrayBufferLike>(memory: { readonly buffer: T; readonly grow: (delta: number) => number }, bytes: number): T => {
+    const buffer = memory.buffer;
+    // Growing unshared memory, even by nothing, would detach every view of it.
+    if (buffer.byteLength >= bytes || !(buffer instanceof SharedArrayBuffer)) return buffer;
+    memory.grow(0);
+    return memory.buffer;
+};
+
+/** This thread's `memory.buffer` of shared memory, covering the length in pages its header holds. */
+export const currentBuffer = (memory: WebAssembly.Memory): ArrayBuffer =>
+    coveringBuffer(memory, Atomics.load(new Uint32Array(memory.buffer, 0, 1), pagesWord) * pageBytes);
+
+/**
  * A shared `WebAssembly.Memory` arena with power-of-two size classes.
  * Grows only when called from a sync point; views over a shared buffer stay valid as it grows.
  * Without shared memory (a page that isn't cross-origin isolated), each array gets its own `ArrayBuffer`

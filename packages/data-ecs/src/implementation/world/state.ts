@@ -87,7 +87,11 @@ export type State = {
         readonly deriving: boolean;
         /** Applies only its queued buffers, for registration's own changes. */
         readonly isolated: boolean;
+        /** Reservations returned unused, which no spawn consumes. */
+        readonly unreserved: number;
     } | null;
+    /** Reservation positions blocks left unused since the last sync point, as start and end pairs. */
+    readonly unused: number[];
     /** Reservations made during the last sync point's finalizers, which the next one accounts for. */
     carried: Reserved | null;
     /** While finalizers run: by batch target archetype id, the first row its batches added this sync point, which lookups don't see. */
@@ -128,6 +132,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         ticked: new Set(),
         batches: [],
         batchByKey: new Map(),
+        unused: [],
         lists: new Map(),
         byIndex: [],
         shapes: [],

@@ -8,6 +8,7 @@ import type { Pool, TaskResult } from './pool.js';
 import { maximumScalars, type KernelSetup, type PostedSpawns } from './protocol.js';
 import { createBuffer, createKernelCommands, emptyBuffer, stage, type CommandBuffer } from './buffer.js';
 import { createBatch, positionalSpawner, type SpawnBatch } from './staging.js';
+import { createBlock, endBlock, reserveFrom } from './entities.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { resourceCell } from './resources.js';
 import { createContext, parentBinder, rowBinder } from './rows.js';
@@ -27,7 +28,7 @@ import { labelOf, labelOfItem } from '../../interface/registry/index.js';
  * One unit of a system's work for a run: the commands it issued, the spawns a worker staged for it, plus its error if
  * it failed partway.
  */
-export type ChunkResult = { readonly commands: CommandBuffer; readonly spawns?: readonly PostedSpawns[]; readonly error?: unknown };
+export type ChunkResult = { readonly commands: CommandBuffer; readonly spawns?: readonly PostedSpawns[]; readonly unused?: readonly number[]; readonly error?: unknown };
 /** An `up` system on workers settles as one chunk, once each depth's pieces have, in turn. */
 export type Chunk = ChunkResult | Promise<ChunkResult> | Promise<readonly ChunkResult[]>;
 
@@ -140,6 +141,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
      */
     const spawnBatches: SpawnBatch[] = [];
     const unstaged: number[] = [];
+    /** The spawners' entities, reserved in blocks, ended by each run. */
+    const block = createBlock(state.entities);
     const spawners = (kernel?.setup.spawns ?? []).map(ids => {
         const key = [...ids].sort((a, b) => a - b).join(",");
         let batch = spawnBatches.find(candidate => candidate.ids.join(",") === key);
@@ -148,7 +151,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             spawnBatches.push(batch);
             unstaged.push(0);
         }
-        return positionalSpawner(state.entities, batch, ids, ids.map(id => state.starts[id]));
+        return positionalSpawner(block, reserveFrom, batch, ids, ids.map(id => state.starts[id]));
     });
     /** Stages in the current buffer the rows spawned since it took over, so they commit in its place in merge order. */
     const stageSpawns = (): void => {
@@ -732,6 +735,7 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         }
         finally {
             stageSpawns();
+            endBlock(block, state.unused);
             lastRun = tick;
         }
     };

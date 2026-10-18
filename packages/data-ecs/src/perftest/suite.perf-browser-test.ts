@@ -6,6 +6,7 @@ import { calibrationSizes, copyBandwidth, environmentLine, resultLine, type Benc
 import { forest, gpuForest, place, propagate } from "./hierarchy.js";
 import { fastest as particlesFastest, move, spawn } from "./particles.js";
 import { chain, fastest, follow, observe, poke, seeded } from "./suite.js";
+import * as structural from "./structural.js";
 import { workers } from "../interface/resources/workers.js";
 
 const threads = navigator.hardwareConcurrency - 1;
@@ -169,6 +170,25 @@ const benchmarks = (device: GPUDevice): readonly Benchmark[] => [
                     const start = performance.now();
                     await world.run(observe);
                     if (i >= 20) best = Math.min(best, performance.now() - start);
+                }
+                return best;
+            }),
+        },
+        {
+            name: `spawn bulk kernel ${placement.label}`,
+            operation: "A kernel spawning an entity per row over 100K rows: spawns found by a parallel pass, such as debris or hits.",
+            per: "spawns",
+            n: 100_000,
+            typical: [100, 100_000],
+            best: { bytes: 28, basis: "Each row reads its 4-byte index; each spawn writes its 8 bytes of values, its entity and its location.", on: placement.on },
+            run: () => measured(placement, async world => {
+                await world.run(structural.seed, { count: 100_000, sources: 1 });
+                let best = Infinity;
+                for (let i = 0; i < 40; i++) {
+                    await world.run(structural.despawnSpawned);
+                    const start = performance.now();
+                    await world.run(structural.spawnKernel);
+                    if (i >= 8) best = Math.min(best, performance.now() - start);
                 }
                 return best;
             }),

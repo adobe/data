@@ -101,10 +101,13 @@ export type PostedSpawns = {
     readonly values: readonly unknown[][];
 };
 
-/** A failed task still returns the commands it issued and the spawns it staged before failing, as the main thread would apply them. */
+/**
+ * A task's commands, its staged spawns, and the reservation positions its block left unused, as start and end pairs.
+ * A failed task still returns what it issued before failing, as the main thread would apply it.
+ */
 export type FromWorker =
-    | { readonly kind: "done"; readonly task: number; readonly commands: CommandBuffer; readonly spawns: readonly PostedSpawns[] }
-    | { readonly kind: "failed"; readonly task: number; readonly commands: CommandBuffer; readonly spawns: readonly PostedSpawns[]; readonly error: WorkerError };
+    | { readonly kind: "done"; readonly task: number; readonly commands: CommandBuffer; readonly spawns: readonly PostedSpawns[]; readonly unused: readonly number[] }
+    | { readonly kind: "failed"; readonly task: number; readonly commands: CommandBuffer; readonly spawns: readonly PostedSpawns[]; readonly unused: readonly number[]; readonly error: WorkerError };
 
 /**
  * Tasks a worker's ring holds, and f64 words per task: twelve fields, then scalars. The fields are kernel, archetype,

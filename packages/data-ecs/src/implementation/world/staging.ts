@@ -1,7 +1,7 @@
 import type { Entity } from '../../interface/entity/entity.js';
 import { viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { writeF32, writeF32Lanes, writeF64, writeI32, writeOf, writeU32, type Archetype } from './archetype.js';
-import { reserve, type Reservations } from './entities.js';
+import type { Reservations } from './entities.js';
 import type { PostedSpawns } from './protocol.js';
 
 // Spawn staging that needs no world: batches, their writers and generated spawners, shared by the main thread and workers.
@@ -177,20 +177,20 @@ const store = (column: Column, k: number, value: string): string => {
 /**
  * A function generated to spawn into `batch`, taking `parameters`: one straight-line store per column, of the value
  * expression `values[k]` gives, which may name key `k${k}` of `keys`, so each store sees one layout and each read one
- * object shape. Only numbers are written into the code: keys, columns and writers are its arguments. Null where code
- * can't be generated.
+ * object shape, then reserves its entity with `take(entities)`. Only numbers are written into the code: keys, columns
+ * and writers are its arguments. Null where code can't be generated.
  */
-export const generated = <F>(entities: Reservations, batch: SpawnBatch, parameters: readonly string[], keys: readonly unknown[], columns: readonly Column[], writers: readonly Writer[], values: (k: number) => string): F | null => {
+export const generated = <F, E = Reservations>(entities: E, take: (entities: E) => Entity, batch: SpawnBatch, parameters: readonly string[], keys: readonly unknown[], columns: readonly Column[], writers: readonly Writer[], values: (k: number) => string): F | null => {
     if (!generating) return null;
     const body = [
         `return (${parameters.join(", ")}) => {`, "const row = openRow(batch);", "let v;",
         ...columns.map((column, k) => store(column, k, values(k))),
-        "const entity = reserve(entities);", "claim(batch, entity);", "return entity;", "};",
+        "const entity = take(entities);", "claim(batch, entity);", "return entity;", "};",
     ].join("\n");
     try {
-        const factory = new Function("batch", "entities", "openRow", "claim", "reserve", ...columns.flatMap((_, k) => [`k${k}`, `c${k}`, `w${k}`]), body);
+        const factory = new Function("batch", "entities", "openRow", "claim", "take", ...columns.flatMap((_, k) => [`k${k}`, `c${k}`, `w${k}`]), body);
         // The factory returns the function its body above makes.
-        const made: F = factory(batch, entities, openRow, claim, reserve, ...columns.flatMap((_, k) => [keys[k], columns[k], writers[k]]));
+        const made: F = factory(batch, entities, openRow, claim, take, ...columns.flatMap((_, k) => [keys[k], columns[k], writers[k]]));
         return made;
     }
     catch {
@@ -201,19 +201,19 @@ export const generated = <F>(entities: Reservations, batch: SpawnBatch, paramete
 
 /**
  * Spawns into `batch` taking one value per component of `order`, a list of the batch's component ids, each
- * `undefined` its `starts` entry at the same position: generated, else a loop over the writers. A constant's column
- * holds nothing, so nothing is written for it.
+ * `undefined` its `starts` entry at the same position, reserving each entity through `take`: generated, else a loop
+ * over the writers. A constant's column holds nothing, so nothing is written for it.
  */
-export const positionalSpawner = (entities: Reservations, batch: SpawnBatch, order: readonly number[], starts: readonly unknown[]): Positional => {
+export const positionalSpawner = <E>(entities: E, take: (entities: E) => Entity, batch: SpawnBatch, order: readonly number[], starts: readonly unknown[]): Positional => {
     const columns = batch.columns.filter(column => column.layout.kind !== "constant");
     const at = columns.map(column => order.indexOf(column.id));
     const writers = columns.map((column, k) => writerOf(column, starts[at[k]]));
-    const made = generated<Positional>(entities, batch, order.map((_, k) => `v${k}`), [], columns, writers, k => `v${at[k]}`);
+    const made = generated<Positional, E>(entities, take, batch, order.map((_, k) => `v${k}`), [], columns, writers, k => `v${at[k]}`);
     if (made !== null) return made;
     return (...values) => {
         const row = openRow(batch);
         for (let k = 0; k < writers.length; k++) writers[k](row, values[at[k]]);
-        const entity = reserve(entities);
+        const entity = take(entities);
         claim(batch, entity);
         return entity;
     };

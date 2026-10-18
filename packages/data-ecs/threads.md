@@ -133,7 +133,8 @@ One ring per thread in shared memory, with that thread as its only writer, drain
 point. Each block carries a merge tag (tier, system index, chunk index), so the merge order never depends on which
 thread ran a chunk. Structs are written through each component's layout writer. An object of the issuing thread's own
 logical thread stays there in a staging array; the ring carries its slot number. Worker kernels write their commands
-here instead of posting `CommandBuffer`s back. `run(system, input)` from another thread writes an entry, encoding
+here instead of posting `CommandBuffer`s back, and their staged spawns as blocks of rows already in the target
+archetype's layout, as they post them back now. `run(system, input)` from another thread writes an entry, encoding
 struct input through its schema; other input is structured-cloned, as a command is. `run` resolves through a
 completion word, and the report is posted only when it isn't clean.
 

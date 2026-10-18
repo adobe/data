@@ -5,6 +5,7 @@ import { System } from "../../interface/system/system.js";
 import { workers } from "../../interface/resources/workers.js";
 import { count, read, readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { indexOf } from "./entities.js";
 
 const index = Symbol("kernelSpawnsTest/index");
 const value = Symbol("kernelSpawnsTest/value");
@@ -62,6 +63,8 @@ const withObjects = System.create({ name: "kernelSpawnsTest/withObjects", kernel
     commands.spawn([value, position, name, made])({ [value]: row[index], [position]: [row[index], -row[index]] });
 });
 
+const despawnMade = System.create({ name: "kernelSpawnsTest/despawnMade", components: { has: [made] } }, (row, { commands }) => { commands.despawn(row.entity); });
+
 const added = { seen: 0 };
 const countAdded = System.create({ name: "kernelSpawnsTest/countAdded", components: { added: [value], has: [made] } }, () => { added.seen++; });
 
@@ -115,6 +118,22 @@ describe("kernel spawns", () => {
         expect(await readEach(world, entities, name)).toEqual([null, null]);
         expect(await readEach(world, entities, value)).toEqual([0, 1]);
         expect(await read(world, entities[0], index)).toBeNull();
+        await world.dispose();
+    });
+
+    it("reuse the indexes their blocks of reservations leave unused, so a few spawns a run don't grow the entity table", async () => {
+        const world = createWorld({ [workers]: 0 });
+        await world.run(seed, { count: 3 });
+        const seen = new Set<number>();
+        for (let run = 0; run < 50; run++) {
+            await world.run(fromKernel);
+            const entities = await select(world, { required: [made] });
+            expect(entities).toHaveLength(3);
+            for (const entity of entities) seen.add(indexOf(entity));
+            await world.run(despawnMade);
+        }
+        // Each run reserves a block; what it leaves unused goes back to the free list, and is taken again.
+        expect(Math.max(...seen)).toBeLessThan(32);
         await world.dispose();
     });
 

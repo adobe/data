@@ -121,7 +121,7 @@ export type { Positional };
 export const positionalOf = (state: State, shape: ListShape, order: readonly unknown[]): Positional => {
     const { batch, keys, columns, writers } = writtenOf(state, shape);
     const at = keys.map(key => order.indexOf(key));
-    const made = generated<Positional>(state.entities, batch, order.map((_, k) => `v${k}`), keys, columns, writers, k => at[k] < 0 ? "undefined" : `v${at[k]}`);
+    const made = generated<Positional>(state.entities, reserve, batch, order.map((_, k) => `v${k}`), keys, columns, writers, k => at[k] < 0 ? "undefined" : `v${at[k]}`);
     if (made !== null) return made;
     const { entities } = state;
     return (...values) => {
@@ -141,6 +141,6 @@ export const spawnerOf = (state: State, shape: ListShape): Spawner => {
     if (shape.spawner !== null) return shape.spawner;
     const written = writtenOf(state, shape);
     const { batch, keys, columns, writers } = written;
-    shape.spawner = generated<Spawner>(state.entities, batch, ["values"], keys, columns, writers, k => `values[k${k}]`) ?? loopSpawner(state, written);
+    shape.spawner = generated<Spawner>(state.entities, reserve, batch, ["values"], keys, columns, writers, k => `values[k${k}]`) ?? loopSpawner(state, written);
     return shape.spawner;
 };

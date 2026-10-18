@@ -95,10 +95,11 @@ const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
     return prepared;
 };
 
-/** Queues a settled chunk's commands, and returns its error, if it failed. */
-const queue = (state: State, { commands, spawns, error }: ChunkResult): unknown => {
+/** Queues a settled chunk's commands and spawns, keeps the reservations it left unused, and returns its error, if it failed. */
+const queue = (state: State, { commands, spawns, unused, error }: ChunkResult): unknown => {
     // A worker's spawns commit in its chunk's place.
     if (spawns !== undefined) for (const posted of spawns) stage(commands, receivedBatch(state.layouts, posted), 0, posted.count);
+    if (unused !== undefined) for (let k = 0; k < unused.length; k++) state.unused.push(unused[k]);
     // Systems can't touch the resource entity; only registration adds resources.
     if (commands.count > 0 || commands.stagedCount > 0) state.queued.push({ buffer: commands, guarded: true });
     return error;

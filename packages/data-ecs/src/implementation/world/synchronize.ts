@@ -6,7 +6,7 @@ import { commitBatches, commitStaged } from './batches.js';
 import { applyIndexChanges, cascadeReferences, indexChangesOf, type IndexChanges, type Written } from './cascade.js';
 import { refreshDirectories } from './directories.js';
 import { record } from './journal.js';
-import { indexOf, locate, materialize, recycle, release, reserved, type Reserved } from './entities.js';
+import { indexOf, locate, materialize, recycle, release, reserved, unreserve, type Reserved } from './entities.js';
 import { activate } from './activate.js';
 import { runFinalizers, type Thrown } from './finalizers.js';
 import { closureOf, derives, gainsOf } from './structure.js';
@@ -488,7 +488,13 @@ export const prepareSync = (state: State, isolated = false): boolean => {
     plan.dropped = 0;
     let reservations: Reserved | null = null;
     try {
-        reservations = merged(state.carried, materialize(state.memory, state.entities));
+        const made = materialize(state.memory, state.entities);
+        // Positions blocks left unused name reservations of this sync point's own.
+        const { unused } = state;
+        let unreserved = 0;
+        for (let k = 0; k < unused.length; k += 2) unreserved += unreserve(state.entities, made, unused[k], unused[k + 1]);
+        unused.length = 0;
+        reservations = merged(state.carried, made);
         state.carried = null;
         const tick = ++state.tick;
         const deriving = derives(structure);
@@ -530,7 +536,7 @@ export const prepareSync = (state: State, isolated = false): boolean => {
             }
         }
         presize(state);
-        state.syncing = { queued, reservations, reserved: state.entities.length, tick, born, index, deriving, isolated };
+        state.syncing = { queued, reservations, reserved: state.entities.length, tick, born, index, deriving, isolated, unreserved };
         return true;
     }
     catch (error) {
@@ -551,7 +557,7 @@ const nothingThrown: readonly Thrown[] = [];
 export const applySync = (state: State): readonly Thrown[] => {
     const syncing = state.syncing;
     if (syncing === null) return nothingThrown;
-    const { queued, reservations, tick, born, index, deriving, isolated } = syncing;
+    const { queued, reservations, tick, born, index, deriving, isolated, unreserved } = syncing;
     const tableLength = syncing.reserved;
     const { plan } = state;
     let errors = nothingThrown;
@@ -566,10 +572,11 @@ export const applySync = (state: State): readonly Thrown[] => {
         if (plan.pairs.leaving > 0) for (let entry = plan.count - 1; entry >= 0; entry--) leave(state, entry);
         if (index !== null) applyIndexChanges(state, index);
         // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its index.
-        // Every spawn consumes one reservation, so only a shortfall needs the scan.
-        // Finalizers' reservations came after, so they're left for the next sync point.
-        if (plan.spawned < reservations.reused.length + tableLength - reservations.firstNew) {
-            const leaked = (index: number): boolean => (index >= plan.slots.length || plan.slots[index] < 0) && state.entities.archetype[index] < 0;
+        // Every spawn consumes one reservation and the rest were unreserved, so only a shortfall needs the scan, which
+        // skips what's released already. Finalizers' reservations came after, so they're left for the next sync point.
+        if (plan.spawned + unreserved < reservations.reused.length + tableLength - reservations.firstNew) {
+            const released = new Set(state.entities.released);
+            const leaked = (index: number): boolean => (index >= plan.slots.length || plan.slots[index] < 0) && state.entities.archetype[index] < 0 && !released.has(index);
             for (const index of reservations.reused) if (leaked(index)) release(state.entities, index);
             for (let index = reservations.firstNew; index < tableLength; index++) if (leaked(index)) release(state.entities, index);
         }

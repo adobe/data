@@ -1,5 +1,5 @@
 import type { Entity } from '../../interface/entity/entity.js';
-import { locate } from './entities.js';
+import { createBlock, endBlock, locate, reserveFrom, type Block } from './entities.js';
 import { createBatch, positionalSpawner, postBatch, type Positional, type SpawnBatch } from './staging.js';
 import type { Kernel, KernelModule } from './kernel.js';
 import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../interface/registry/layout.js';
@@ -129,23 +129,27 @@ const filtersOf = (loaded: LoadedKernel, archetype: ArchetypeViews): Filter[] =>
 
 const noPartials = new Float64Array(0);
 
+/** This worker's reservations for kernel spawns, in blocks, so workers spawning together don't contend; ended by each task. */
+let block: Block | null = null;
+
 /** A kernel's staging, made once its components' layouts are known. */
 const stagingOf = (loaded: LoadedKernel): NonNullable<LoadedKernel["staging"]> => {
     if (loaded.staging !== null) return loaded.staging;
-    const table = required(entities, "layout");
+    const reserving = block ??= createBlock(required(entities, "layout"));
     const batches: SpawnBatch[] = [];
     const spawners = loaded.setup.spawns.map(ids => {
         const key = [...ids].sort((a, b) => a - b).join(",");
         let batch = batches.find(candidate => candidate.ids.join(",") === key);
         if (batch === undefined) batches.push(batch = createBatch(layouts, ids));
-        return positionalSpawner(table, batch, ids, ids.map(id => loaded.setup.starts[loaded.setup.keys.indexOf(id)]));
+        return positionalSpawner(reserving, reserveFrom, batch, ids, ids.map(id => loaded.setup.starts[loaded.setup.keys.indexOf(id)]));
     });
     return loaded.staging = { batches, spawners };
 };
 
-/** Takes the spawns a task staged, in batch order, emptying the batches. */
-const takeSpawns = (message: ToWorker, transfer: ArrayBuffer[]): readonly PostedSpawns[] => {
+/** Takes the spawns a task staged, in batch order, emptying the batches, and ends its block of reservations. */
+const takeSpawns = (message: ToWorker, transfer: ArrayBuffer[], unused: number[]): readonly PostedSpawns[] => {
     if (message.kind !== "run") return noSpawns;
+    if (block !== null) endBlock(block, unused);
     const staging = kernels.get(message.kernel)?.staging ?? null;
     if (staging === null) return noSpawns;
     const spawns: PostedSpawns[] = [];
@@ -306,14 +310,15 @@ const handle = async (message: ToWorker): Promise<void> => {
     }
     const buffer = createBuffer();
     const transfer: ArrayBuffer[] = [];
+    const unused: number[] = [];
     try {
         if (broken !== null) throw new Error(`Worker can't run tasks after a layout failed: ${broken.message}`);
         if (message.kind === "kernels") await load(message.kernels);
         else run(message, buffer);
-        self.postMessage({ kind: "done", task: message.task, commands: buffer, spawns: takeSpawns(message, transfer) } satisfies FromWorker, { transfer });
+        self.postMessage({ kind: "done", task: message.task, commands: buffer, spawns: takeSpawns(message, transfer, unused), unused } satisfies FromWorker, { transfer });
     }
     catch (error) {
-        self.postMessage({ kind: "failed", task: message.task, commands: buffer, spawns: takeSpawns(message, transfer), error: errorOf(error) } satisfies FromWorker, { transfer });
+        self.postMessage({ kind: "failed", task: message.task, commands: buffer, spawns: takeSpawns(message, transfer, unused), unused, error: errorOf(error) } satisfies FromWorker, { transfer });
     }
 };
 

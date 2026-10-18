@@ -61,6 +61,13 @@ Components, resources and traits are keyed by symbols, and the benchmarks moved 
 
 So literal spawns and adds in main-thread systems are prepared sites, which list no keys and build no object; only values objects built at runtime pay for listing.
 
+Archetypes and commands that name their components first (record `bd0dabcc`, against the baseline `4e63c933`, which added a benchmark per kind of structural change): every benchmark is within noise or faster but `spawn bulk kernel` (120 → 131 ns, +9%, every component a kernel's list names now gets a value, its tag's start included) and `spawn singles` (458 → 490 ns, +7%). Faster: `create` 90.6 → 58.1 ns per spawn, `create flat dynamic` 434 → 93.7 ns (beating string keys' 224 ns), `spawn sixteen archetypes` 757 → 57.6 ns, `spawn bulk` 49.8 → 40.7 ns, `despawn bulk` 65.2 → 44.2 ns, `remove tag` 107 → 72.4 ns, `remove several` 152 → 79.2 ns, `add tag kernel` 104 → 85 ns, `add value` 109 → 96 ns; `create flat` 69.8 → 66.8 ns, `add tag` 107 → 100 ns, `add several` 140 → 142 ns, `retag` 35.6 → 33.9 ms. Chromium is unchanged.
+
+- **Spawners are generated per shape:** one read by key and one store per value, so each read sees one object shape. Against a loop over the shape's columns, which is what runs where `'unsafe-eval'` is forbidden: `create` 58 against 126 ns, `create flat` 66 against 127 ns, `create flat dynamic` 94 against 172 ns, `spawn bulk` 41 against 59 ns.
+- **Literal spawns and adds stay prepared:** without the plugin's per-site functions, the values object costs about 25 ns for eight keys, so `create flat` measured 86 ns against 66 ns, and `add several` 169 against 142 ns.
+- **Archetypes are found by their index:** with only the eight-entry cache, sixteen archetypes from one site resolved their list on every spawn, 523–561 ns; the per-world table by archetype index, and a site's plans by index, take it to 57.6 ns.
+- **Moves are grouped by pair of archetypes,** copying shared columns for a block of rows, and rows left are removed last entry first, so an archetype that moves out whole drops its rows without copies; list adds and removes resolve their target once per source archetype.
+
 The adobe/data ECS runs move 1M in 0.09 ms, single threaded with WASM SIMD, and creates 100K in 5.8 ms by inserting directly, with no command buffer or sync point.
 
 ## Where the gains came from
@@ -140,6 +147,11 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **Single-threaded move matches the adobe/data ECS** (0.095 ms against 0.09 ms): four tight vec3 rows are three full vectors, as its separate x, y and z arrays are.
 
 ## Tried and not kept
+
+- **A loop spawner as the only spawner:** about twice the generated one (numbers above). Kept only where code can't be generated. Worth revisiting if engines specialize a shared loop's keyed reads per shape.
+- **Prepared spawn sites calling the shape's column writers:** one site spawning into four archetypes made each writer call see four closures, `create` 103 ns and `create flat` 76 ns, against 58 and 66 ns through a positional spawner generated per site key order and shape.
+- **Removing the prepared sites,** as the plan for curried spawns proposed once they no longer won: they still win by the values object's cost (above).
+- **Removing rows last first without grouping moves by pair:** `add tag` 114 ns and `retag` +10%; grouping the arrivals by pair took them to 100 ns and −5%.
 
 - **Listing symbol keys with `Reflect.ownKeys`, or with `Object.keys` first:** 1–5% slower than `Object.getOwnPropertySymbols` for 1 to 6 keys (table above), and `Object.keys` finds nothing, since keys are symbols. Worth revisiting if engines give symbol keys an enumeration cache.
 - **U32 ticks:** no measurable gain on the non-sparse 1M benchmarks, 10% on uniformly sparse filters, and change filters go wrong past 2³² ticks unless a clamp pass is added. With ticks kept only where observed, it would help only observed components.

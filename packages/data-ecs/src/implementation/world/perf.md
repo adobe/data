@@ -82,6 +82,8 @@ Kernel spawns staged as main-thread spawns are (record `2b07c576`, against `ebde
 - **Kernel spawners reserve entities in blocks,** so workers spawning together don't contend for one atomic cursor, and the sync point returns the positions a block left unused to the free list: on workers 54 → 7.5 ns, on the main thread 18 → 10.5 ns.
 - **Runners stage only when their kernel spawns:** without the check, `run 50 idle` measured 120 against 110–112 ns per system.
 
+The shared layout directory (threads.md, phase 1), against `1a18c6a7`: workers find archetypes and the entity table through records in shared memory, so a sync point that grows archetypes posts no message and leaves workers' windows open. In chromium, `sync point grow 100 archetypes workers` (one spawn into each of 100 full archetypes, then a kernel over them) 1.43 → 0.62–0.68 ms and `spawn bulk kernel workers` 7.7–7.95 → 7.15–7.5 ns; `sync point grow 100 archetypes main`, `loop tick idle` and every node benchmark are within noise.
+
 The adobe/data ECS runs move 1M in 0.09 ms, single threaded with WASM SIMD, and creates 100K in 5.8 ms by inserting directly, with no command buffer or sync point.
 
 ## Where the gains came from

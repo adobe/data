@@ -129,7 +129,7 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   arrived since the last tick. A quiet loop schedules nothing, and a fixed loop builds no debt while quiet. The
   clock's own writes never wake it.
 - **The loop host** (`frame`, `timer`, `now`) can be given in `WorldOptions`, for tests and benchmarks. A back-to-back
-  driver gives a `frame` that calls back through a `MessageChannel` post: a task, so worker messages and `waitAsync`
+  driver, `backToBack()`, gives a `frame` that calls back through a `MessageChannel` post: a task, so worker messages and `waitAsync`
   settle between ticks, which a microtask would starve, and unclamped, as `setTimeout(0)` isn't.
 - **`run(system, input)`** is a transaction: runs are sequential in call order, each its own sync point, and each one
   makes the next beat tick.
@@ -140,14 +140,14 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
 
 ### Shared layout directory
 
-- **Header:** one block allocated at world creation that never moves. It holds the memory's byte length, the base
-  offset and length of the archetype table, and the entity table's record. Its offset travels in the `memory`
-  message, to every pool a world starts.
-- **Byte length:** `memory.ts` stores it with `Atomics.store` right after each `memory.grow`. A thread loads it at the
-  start of each task, rebuilds its whole-buffer views (`u8`, `u32`, `i32`, `f32`, `f64` over `memory.buffer`) when it
-  moved, and checks `memory.buffer.byteLength` covers it. If it doesn't, the thread marks itself broken, as a failed
-  layout does now, and fails every later task, since typed arrays read out of bounds as `undefined` and drop such
-  writes silently.
+- **Header:** the arena's first block, at offset 0, allocated with the memory, which never moves. It holds the
+  memory's length in pages, the base offset and length of the archetype table, and the entity table's record. Its
+  offset travels in the `memory` message, to every pool a world starts.
+- **Length:** `memory.ts` stores it in pages, since 4 GiB in bytes doesn't fit a `Uint32`, with `Atomics.store` right
+  after each `memory.grow`. A thread loads it at the start of each task, rebuilds its whole-buffer view of words over
+  `memory.buffer`, which serves the header and records, when it moved, and checks `memory.buffer.byteLength` covers
+  it. If it doesn't, the thread marks itself broken, as a failed layout does, and fails every later task, since typed
+  arrays read out of bounds as `undefined` and drop such writes silently.
 - **Archetype records:** the table holds, by the world's archetype number, the offset of that archetype's record. Each
   record is allocated once, since an archetype's storages are fixed, and never moves; only the table grows. A record
   holds `capacity`, the `entities` offset and a version, and per storage its component number, its flags (`ticked`,
@@ -161,12 +161,12 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   `recycle` marks the entity table. The list is flushed into records at the end of each sync point, isolated ones
   included, and wherever registration publishes now. Each record's version is stored last, with `Atomics.store`.
 - **Reads:** a thread checks a record's version, one load, before using what it cached for that archetype, and keeps
-  per-archetype column views and kernel columns, rebuilt only when that version moves. Whole-buffer views serve the
+  per-archetype column views and kernel columns, rebuilt only when that version moves. The whole-buffer view serves the
   header and records; columns stay views of their own, as kernels and layouts take them. On an entity-table version
   change, a worker updates the `entities` object its spawners hold in place.
-- **Messages:** only new components (schemas, none for a value that isn't data) and new archetypes (sorted component
-  numbers) are posted. This replaces `publish.ts`'s layout broadcast, which posts every created or grown archetype's
-  layout and the entity table's.
+- **Messages:** only new components' schemas are posted, none for a value that isn't data, since a message closes the
+  pool's windows. A new archetype is found in the table, its record naming its component numbers, the first time a
+  task names it.
 - **Counts:** pool tasks carry their rows, so records have no `count` until phase 5, when joined threads iterate.
   Archetypes whose count changed are then appended to a dirty list where it changes, and flushed with the rest.
 - **Lookups:** WASM lookups keep their per-lookup directories (`directories.ts`), a match flag and each read column's
@@ -379,11 +379,11 @@ then green type tests, then runtime with red then green runtime tests. Each phas
   to leave their windows before releasing the pool's control state to the arena.
 - `share` and `World.join` aren't public yet; they come with joining.
 
-### Phase 1: shared layout directory
+### Built: phase 1, shared layout directory
 
-The directory as above, without counts or the resource archetype: workers read archetype and entity-table layout from
-it, and `publish.ts` posts only new components and archetypes. WASM lookups keep their directories. `WorldOptions`
-gains the loop host.
+The directory as above, without counts or the resource archetype (`layout-directory.ts`): workers read archetype and
+entity-table layout from it, and `publish.ts` posts only new components. WASM lookups keep their directories.
+`WorldOptions` gains the loop host as `loop`, and `backToBack()` is the `MessageChannel` driver.
 
 - Interface: none. Contract: none.
 - Tests: the existing worker browser tests; a test that grows 100 archetypes across sync points and checks workers'

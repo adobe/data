@@ -4,13 +4,13 @@ import { nameOf } from '../registry/items.js';
 import { addRule } from '../registry/program.js';
 import type { Rule as Created } from './created.js';
 import type { Declaration } from './declaration.js';
-import type { Rule } from './rule.js';
 
 /**
- * Declares a rule, which applies in every world, and returns it. Throws if it matches on a key that isn't a registered
- * component, derives a component that isn't derived, or derives in a cycle through a negation.
+ * Declares a rule, which applies in every world, and returns it: identified by that value, labeled by its name. Throws
+ * if it matches on a key that isn't a registered component, derives a component that isn't derived, or derives in a
+ * cycle through a negation.
  */
-export const create = <const D extends Declaration>(declaration: D): Rule => {
+export const create = <const D extends Declaration>(declaration: D): { readonly name: string } => {
     const id = takeIdOfDeclaration(declaration);
     const name = nameOf(declaration.name, id, "rule");
     const { components, derive } = declaration;

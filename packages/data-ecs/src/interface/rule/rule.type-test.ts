@@ -3,6 +3,7 @@ import { Component } from '../component/component.js';
 import { Entity } from '../entity/entity.js';
 import { Finalizer } from '../finalizer/finalizer.js';
 import { System } from '../system/system.js';
+import type { Create } from '../world/create.js';
 import type { World } from '../world/world.js';
 import { Rule } from './rule.js';
 import type { Writable } from '../component/value.js';
@@ -99,18 +100,18 @@ System.create({ name: "ruleTypeTest/move", components: { write: [parent] } }, ()
 check<Equal<Extract<Writable, typeof parent | typeof source>, typeof source>>();
 
 // A rule and a finalizer are the values their constructors return, labeled by their names, which needn't be unique.
-check<Equal<typeof slots, Rule>>();
-check<Equal<Rule, { readonly name: string }>>();
+check<Equal<typeof slots, ReturnType<typeof Rule.create>>>();
+check<Equal<typeof slots, { readonly name: string }>>();
 check<Equal<typeof other, Finalizer>>();
 const sameName: Finalizer = Finalizer.create({ name: "ruleTypeTest/other", components: { read: [source] } }, () => {});
 void sameName;
 
 // Rules and finalizers apply in every world.
-declare const create: World.Create;
+declare const create: Create;
 export const created: World = create();
 
 // Names are optional for rules and finalizers too.
-const unnamedRule: Rule = Rule.create({ components: { has: [source] }, derive: [slot] });
+const unnamedRule = Rule.create({ components: { has: [source] }, derive: [slot] });
 const unnamedFinalizer: Finalizer = Finalizer.create({ components: { read: [source] } }, row => { void row[source]; });
 const unnamedChanges: Finalizer = Finalizer.changes({ watch: [source] }, changes => { void changes.groups; });
 void [unnamedRule, unnamedFinalizer, unnamedChanges];

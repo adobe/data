@@ -28,19 +28,23 @@ const install = (): void => {
 };
 
 const consumer = `
-import { Component, System, World, gpuDevice } from "@adobe/data-ecs";
+import { Archetype, Component, Rule, System, World, gpuDevice } from "@adobe/data-ecs";
 export const position = Symbol("exportsTest/position");
 export const element = Symbol("exportsTest/element");
+export const shown = Symbol("exportsTest/shown");
 const positionTraits = Component.register(position, { type: { type: "number" } });
 const elementTraits = Component.register(element, { type: Component.object<HTMLElement>(), thread: "main" });
+const shownTraits = Component.register(shown, { type: { const: true }, derived: true });
 declare module "@adobe/data-ecs" {
-    interface Components { [position]: typeof positionTraits; [element]: typeof elementTraits }
+    interface Components { [position]: typeof positionTraits; [element]: typeof elementTraits; [shown]: typeof shownTraits }
 }
+export const Placed = Archetype.create([position, element]);
+export const showing = Rule.create({ components: { has: [element] }, derive: [shown] });
 export const move = System.create({ name: "exportsTest/move", components: { write: [position] } }, row => { row[position] += 1; });
 export const all = System.create({ name: "exportsTest/all", systems: [move] });
 export const draw = System.render({ name: "exportsTest/draw", shader: { accessors: {} } }, () => {});
 // How a world is created is the implementation's; the interface gives its type.
-declare const create: World.Create;
+declare const create: () => World;
 export const world = create();
 export const observeEntity = (entity: Parameters<World["observe"]["entity"]>[0]) => world.observe.entity(entity, { required: [position] });
 export const device = world.observe.resource(gpuDevice);

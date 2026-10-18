@@ -3,6 +3,7 @@ import type { Entity } from '../entity/entity.js';
 import type { Observe, Observers } from '../index.js';
 import { System } from '../system/system.js';
 import { main, move, position, time, total } from '../system/system.type-test.js';
+import type { Create } from './create.js';
 import type { World } from './world.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
@@ -10,7 +11,7 @@ const check = <_T extends true>() => { };
 
 declare const world: World;
 declare const entity: Entity;
-declare const create: World.Create;
+declare const create: Create;
 
 // What `observe` holds is named from the package root, so a consumer's declarations can name it.
 check<Equal<World["observe"], Observers>>();
@@ -156,8 +157,14 @@ const usingDispose = async () => {
 };
 void [disposed, usingDispose, selected, paged, selectedAll, counted, query, ran, moved, reported, observed, stop, created, withResources];
 
-// World.create is a type here, with no runtime value.
-check<Equal<ReturnType<World.Create>, World>>();
+// How a world is created is the implementation's: World names no Create or InitialResources.
+check<Equal<ReturnType<Create>, World>>();
+// @ts-expect-error no World.Create
+export type Created = World.Create;
+// @ts-expect-error no World.InitialResources: Parameters<typeof createWorld>[0]
+export type Initial = World.InitialResources;
+// @ts-expect-error no World.Failure: World.Report["failures"][number]
+export type Failed = World.Failure;
 // A warning's type is inferred from the report's: World.Report["warnings"][number].
 // @ts-expect-error no World.Warning
 export type Warned = World.Warning;

@@ -1,7 +1,8 @@
 import {
     Finalizer, System, always, cadence, clock, gpuDevice, report, wake, workers,
-    type Cadence, type Component, type Resource, type World,
+    type Component, type Resource, type World,
 } from '../index.js';
+import type { Create } from './create.js';
 import type * as Ecs from '../index.js';
 import { main, move } from '../system/system.type-test.js';
 
@@ -9,7 +10,7 @@ type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y 
 const check = <_T extends true>() => { };
 
 declare const world: World;
-declare const create: World.Create;
+declare const create: Create;
 
 // Systems added to every tick take no input.
 const added: void = world.add(main);
@@ -22,12 +23,11 @@ check<Equal<Resource.Value<typeof gpuDevice>, GPUDevice | null>>();
 check<Equal<Resource.Value<typeof workers>, number | null>>();
 // null is the platform's choice of pool size.
 export const platformPool: World = create({ [workers]: null });
-check<Equal<Resource.Value<typeof cadence>, Cadence>>();
 check<Equal<Resource.Value<typeof always>, boolean>>();
 check<Equal<Resource.Value<typeof wake>, number>>();
 check<Equal<Resource.Value<typeof clock>, { readonly now: number; readonly delta: number; readonly tick: number }>>();
 check<Equal<Resource.Value<typeof report>, World.Report>>();
-check<Equal<Cadence, { readonly kind: "frame" } | { readonly kind: "fixed"; readonly step: number; readonly maxSteps?: number }>>();
+check<Equal<Resource.Value<typeof cadence>, { readonly kind: "frame" } | { readonly kind: "fixed"; readonly step: number; readonly maxSteps?: number }>>();
 // Built-in resources are symbols, so worlds start them at other values through their imported keys.
 check<Equal<[typeof gpuDevice, typeof workers, typeof cadence, typeof always, typeof wake, typeof clock, typeof report] extends readonly symbol[] ? true : false, true>>();
 // @ts-expect-error a resource key is its imported symbol, never its description

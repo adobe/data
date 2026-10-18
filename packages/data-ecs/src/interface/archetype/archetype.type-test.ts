@@ -24,9 +24,10 @@ const expectType = <T extends true>(): T | undefined => undefined;
 // `create` returns its argument, typed as the tuple it was given.
 export const particle = Archetype.create([position, velocity]);
 expectType<Equal<typeof particle, readonly [typeof position, typeof velocity]>>();
-export const one: Archetype = particle;
+export const one: readonly Component.Key[] = particle;
 // A plain readonly list of components is an archetype too.
-export const plain: Archetype = [position];
+export const plain = [position] as const;
+export const moveOver = System.create({ name: "archetypeTypeTest/moveOver", components: { write: plain } }, row => { row[position] += 1; });
 // @ts-expect-error a resource is never in an archetype
 Archetype.create([position, scale]);
 // @ts-expect-error nor is a string

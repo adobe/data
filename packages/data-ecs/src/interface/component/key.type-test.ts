@@ -1,4 +1,5 @@
-import { Component, Resource, Trait } from "@adobe/data-ecs";
+import { Component, Resource } from "@adobe/data-ecs";
+import type { Key as TraitKey } from "../trait/key.js";
 
 const position = Symbol("keyTypeTest/position");
 const scale = Symbol("keyTypeTest/scale");
@@ -20,11 +21,11 @@ const scaleTraits = Resource.register(scale, { type: { type: "number", default: 
 // Components, resources and traits are named by keys; systems, rules and finalizers by names.
 export const component: Component.Key = position;
 export const resource: Resource.Key = scale;
-export const trait: Trait.Key = mark;
-export const builtIn: Trait.Key = "derived";
+export const trait: TraitKey = mark;
+export const builtIn: TraitKey = "derived";
 // @ts-expect-error a resource isn't a component
 export const resourceAsComponent: Component.Key = scale;
 // @ts-expect-error a component isn't a resource
 export const componentAsResource: Resource.Key = position;
 // @ts-expect-error only the core's traits are named by strings
-export const unknownTrait: Trait.Key = "unknown";
+export const unknownTrait: TraitKey = "unknown";

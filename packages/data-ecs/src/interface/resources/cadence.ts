@@ -1,12 +1,13 @@
 import { Resource } from '../resource/resource.js';
 
-/**
- * When the world ticks: once per animation frame, or every `step` milliseconds. Under `fixed`, a beat that's behind
- * runs at most `maxSteps` ticks, 4 by default, and drops the rest of the debt; each tick's `clock.delta` is `step`.
- */
+/** The cadence's value, for the implementation: `Resource.Value<typeof cadence>`. */
 export type Cadence = { readonly kind: "frame" } | { readonly kind: "fixed"; readonly step: number; readonly maxSteps?: number };
 
-/** The world's cadence: `{ kind: "frame" }` by default. */
+/**
+ * When the world ticks: once per animation frame, `{ kind: "frame" }`, the default, or every `step` milliseconds,
+ * `{ kind: "fixed", step }`. Under `fixed`, a beat that's behind runs at most `maxSteps` ticks, 4 by default, and drops
+ * the rest of the debt; each tick's `clock.delta` is `step`.
+ */
 export const cadence = Symbol("cadence");
 
 declare module '@adobe/data-ecs' {

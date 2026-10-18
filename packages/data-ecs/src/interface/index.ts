@@ -16,4 +16,4 @@ export { Observe } from './observe/observe.js';
 export type { Components } from './component/types.js';
 export type { Resources } from './resource/types.js';
 export type { Traits } from './trait/types.js';
-export type { Thread, Threads } from './thread/thread.js';
+export type { Threads } from './thread/thread.js';

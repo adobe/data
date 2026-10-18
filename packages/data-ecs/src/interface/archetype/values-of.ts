@@ -1,5 +1,4 @@
 import type { Component } from '../component/component.js';
-import type { Archetype } from './archetype.js';
 
 /** Components a spawn or add may leave out: a tag, whose value is `true`, and one whose type allows `null`, its start. */
 type Omissible<K extends Component.Key> = Component.Value<K> extends true ? K : null extends Component.Value<K> ? K : never;
@@ -10,7 +9,7 @@ type Omissible<K extends Component.Key> = Component.Value<K> extends true ? K : 
  * Leaving one out, or giving `undefined`, never leaves the component out. A list that isn't a tuple takes any of its
  * components' values.
  */
-export type ValuesOf<C extends Archetype> = number extends C["length"]
+export type ValuesOf<C extends readonly Component.Key[]> = number extends C["length"]
     // A list whose components aren't known until it runs, so any of them may be given.
     ? { readonly [K in C[number]]?: Component.Value<K> }
     : { readonly [K in C[number] as K extends Omissible<K> ? never : K]: Component.Value<K> }

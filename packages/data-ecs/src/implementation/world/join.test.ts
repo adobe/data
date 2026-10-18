@@ -93,6 +93,21 @@ describe("joining", () => {
         await remote.dispose();
         await world.dispose();
     });
+    it("keeps runs in call order past the slots it holds room for, and rejects one whose input can't be posted", async () => {
+        const { world, remote } = joined();
+        const runs = Array.from({ length: 200 }, (_, k) => k % 3 === 0 ? remote.run(append, { name: String(k) }) : remote.run(add, { amount: k % 10 }));
+        // Behind the runs filling its slots, so it's posted once they complete.
+        const unposted: { name: unknown } = { name: () => "a function" };
+        const failed = Reflect.apply(remote.run, remote, [append, unposted]);
+        const after = remote.run(append, { name: "after" });
+        await Promise.all(runs);
+        await expect(failed).rejects.toThrow();
+        await after;
+        const expected = Array.from({ length: 200 }, (_, k) => k).filter(k => k % 3 === 0).map(String);
+        expect(await Observe.toPromise(world.observe.resource(names))).toEqual([...expected, "after"]);
+        await remote.dispose();
+        await world.dispose();
+    });
     it("resolves a run that failed with its report, and rejects a run of a system without an id", async () => {
         const { world, remote } = joined();
         const report = await remote.run(fail);
@@ -137,6 +152,18 @@ describe("joining", () => {
         const whole = await until(remote.observe.entity(selected[1]), value => value !== null);
         // Its struct components; its label is an object, on the world's thread.
         expect(whole).toEqual({ [point]: [1, -1], [marked]: true });
+        await remote.dispose();
+        await world.dispose();
+    });
+    it("stops notifying an observer once stopped", async () => {
+        const { world, remote } = joined();
+        const seen: number[] = [];
+        const stop = remote.observe.resource(total)(value => seen.push(value));
+        await until(remote.observe.resource(total), value => value === 0);
+        stop();
+        await world.run(add, { amount: 1 });
+        await until(remote.observe.resource(total), value => value === 1);
+        expect(seen).toEqual([0]);
         await remote.dispose();
         await world.dispose();
     });

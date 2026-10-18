@@ -9,7 +9,7 @@ import { declarationOf, idOfItem, idOfKey, identifiedKeys, kindOf, labelOf, labe
 import { layoutOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { asEntity } from './entities.js';
 import {
-    clean, completedWord, fitsInline, inputByMessage, inputLayoutOf, noInput, pending, platformLocks, postedWord, protocolName, runSlots, signalWord,
+    clean, completedWord, fitsInline, inputByMessage, inputLayoutOf, noInput, pending, platformLocks, postedWord, protocolName, runSlots, signalWord, unposted, unreadWord,
     slotInput, slotNumber, slotSequence, slotStatus, slotViews, slotWords, slotsWord, threadChannel, type Subscription, type ToJoined, type ToWorld,
 } from './joining.js';
 import { entityPlanOf, mailboxReader, readSlot, readValue, type MailboxReader } from './mailbox.js';
@@ -23,7 +23,7 @@ const none: readonly never[] = [];
 const cleanReport: Report = { failures: none, skipped: none, dropped: 0 };
 
 /** A run not yet settled: how to settle it, and its report or rejection once posted. */
-type Run = { readonly resolve: (report: Report) => void; readonly reject: (error: Error) => void; message: ToJoined | null };
+type Run = { readonly resolve: (report: Report) => void; readonly reject: (error: unknown) => void; message: ToJoined | null; error: unknown };
 
 /** A run waiting for a free slot, or for the thread to have joined. */
 type Waiting = { readonly sequence: number; readonly number: number; readonly definition: Definition; readonly input: unknown };
@@ -117,8 +117,17 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
         }
         else if (input === undefined) control[base + slotInput] = noInput;
         else {
-            post({ protocol: protocolName, kind: "input", sequence, input });
-            control[base + slotInput] = inputByMessage;
+            try {
+                post({ protocol: protocolName, kind: "input", sequence, input });
+                control[base + slotInput] = inputByMessage;
+            }
+            catch (error) {
+                // An input that can't be posted, as one holding a function: the world completes the run without running it.
+                const run = runs.get(sequence);
+                if (run !== undefined) run.error = error;
+                control[base + slotNumber] = unposted;
+                control[base + slotInput] = noInput;
+            }
         }
         Atomics.store(control, postedWord, sequence);
         Atomics.notify(control, postedWord);
@@ -143,7 +152,8 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
             runs.delete(next);
             if (run === undefined) continue;
             const { message } = run;
-            if (message === null) run.resolve(cleanReport);
+            if (run.error !== undefined) run.reject(run.error);
+            else if (message === null) run.resolve(cleanReport);
             else if (message.kind === "report") run.resolve(message.report);
             else if (message.kind === "rejected") run.reject(new Error(message.message));
         }
@@ -167,6 +177,7 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
 
     const process = (): void => {
         if (control === null) return;
+        Atomics.store(control, unreadWord, 0);
         completed = Atomics.load(control, completedWord);
         settle();
         writeWaiting();
@@ -181,6 +192,8 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
         listening = true;
         try {
             while (active() && control !== null) {
+                // Read before what's new, so a wake after it isn't missed.
+                Atomics.store(control, unreadWord, 0);
                 const seen = Atomics.load(control, signalWord);
                 process();
                 if (!active()) break;
@@ -339,17 +352,9 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
             const number = numberOf(id, true, null);
             const ran = new Promise<Report>((resolve, reject) => {
                 const next = ++sequence;
-                runs.set(next, { resolve, reject, message: null });
+                runs.set(next, { resolve, reject, message: null, error: undefined });
                 waiting.push({ sequence: next, number, definition, input });
-                try {
-                    writeWaiting();
-                }
-                catch (error) {
-                    // An input that can't be posted, as one holding a function.
-                    runs.delete(next);
-                    waiting.splice(waiting.findIndex(run => run.sequence === next), 1);
-                    reject(error);
-                }
+                writeWaiting();
             });
             last = ran.catch(() => undefined);
             void listen();

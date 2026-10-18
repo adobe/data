@@ -116,9 +116,12 @@ export const threadChannel = <Send, Receive>(port: Port): ThreadChannel<Send, Re
 
 /**
  * A joined thread's control words, each on a line of its own: the signal it waits on, which the world bumps when runs
- * complete or observers have values; the last run it posted; and the last run the world completed. Then its run slots.
+ * complete or observers have values, beside whether a wake is unread, which the thread clears before it reads what's
+ * new, so the world notifies only a thread that has read every earlier wake; the last run it posted; and the last run
+ * the world completed. Then its run slots.
  */
 export const signalWord = 0;
+export const unreadWord = 1;
 export const postedWord = lineWords;
 export const completedWord = 2 * lineWords;
 export const slotsWord = 3 * lineWords;
@@ -140,6 +143,8 @@ export const inlineInputBytes = (slotWords - slotPayload) * 4;
 /** A slot's input length for none, and for an input posted as a message. */
 export const noInput = -1;
 export const inputByMessage = -2;
+/** A slot's system number for a run whose input couldn't be posted, which the world completes without running. */
+export const unposted = -1;
 /** Slot statuses: in flight; done with a clean report; done with a report or a rejection, posted. */
 export const pending = 0;
 export const clean = 1;

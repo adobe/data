@@ -11,7 +11,7 @@ import { asEntity, reserve } from './entities.js';
 import { failureOf } from './failures.js';
 import {
     clean, completedWord, controlBytes, inputByMessage, inputLayoutOf, platformLocks, postedWord, protocolName, rejected, reported, runSlots,
-    signalWord, slotInput, slotNumber, slotStatus, slotViews, slotWords, slotsWord, threadChannel,
+    signalWord, unreadWord, slotInput, slotNumber, slotStatus, slotViews, slotWords, slotsWord, threadChannel, unposted,
     type Subscription, type ThreadChannel, type ToJoined, type ToWorld,
 } from './joining.js';
 import { alignFor, createMailbox, entityPlanOf, freeMailbox, publishSlot, writeSlot, writeValue, type MailboxWriter } from './mailbox.js';
@@ -105,6 +105,8 @@ export const createSharing = (host: SharingHost) => {
         const { control } = thread;
         if (control === null) return;
         Atomics.add(control, signalWord, 1);
+        // A thread that hasn't read the last wake yet reads this one with it.
+        if (Atomics.exchange(control, unreadWord, 1) !== 0) return;
         Atomics.notify(control, signalWord);
         if (!thread.waits) post(thread, { protocol: protocolName, kind: "wake" });
     };
@@ -154,7 +156,13 @@ export const createSharing = (host: SharingHost) => {
             const sequence = thread.next;
             const slot = (sequence - 1) % runSlots;
             const base = slotsWord + slot * slotWords;
-            const named = thread.names.get(control[base + slotNumber]);
+            const number = control[base + slotNumber];
+            if (number === unposted) {
+                thread.next++;
+                reject(thread, sequence, "The run's input couldn't be posted.");
+                continue;
+            }
+            const named = thread.names.get(number);
             if (named === undefined) return;
             const bytes = control[base + slotInput];
             if (bytes === inputByMessage && !thread.inputs.has(sequence)) return;

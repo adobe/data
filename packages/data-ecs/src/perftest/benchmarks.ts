@@ -12,6 +12,7 @@ import type { Benchmark } from "./benchmark.js";
 import { loopTickIdle, loopTicks } from "./loop.js";
 import { main, placed, pooled } from "./placed.js";
 import { wake } from "./wake.js";
+import { remoteBenchmarks } from "./remote.js";
 import { createWorld } from "../implementation/index.js";
 import { workers } from "../interface/resources/workers.js";
 
@@ -627,4 +628,5 @@ export const benchmarks: readonly Benchmark[] = [
     ...placed([main]).filter(benchmark => benchmark.name === "emit main"),
     ...placed([pooled]).filter(benchmark => pooledInNode.has(benchmark.name)),
     wake,
+    ...remoteBenchmarks,
 ];

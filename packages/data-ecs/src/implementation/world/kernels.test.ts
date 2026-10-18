@@ -48,7 +48,7 @@ const bind = (overrides: Partial<KernelDescription>): void => {
 
 describe("bindKernel", () => {
     it("rejects a kernel reading a resource the system doesn't declare", () => {
-        expect(() => bind({ resources: [scale] })).toThrow('reads resource "src/implementation/world/kernels.test.ts#scale"');
+        expect(() => bind({ resources: [scale] })).toThrow('reads resource "kernelsTest/scale"');
     });
     it("rejects a changed column for a component the system only reads", () => {
         expect(() => bind({ columns: [{ kind: "changed", component: value }] })).toThrow("isn't in its components' write");

@@ -46,7 +46,7 @@ describe("Resource.register", () => {
     });
     it("accepts the same declaration again, and rejects a different one or one also declared as a component", () => {
         expect(() => Resource.register(time, { type: { type: "number", default: 0 } })).not.toThrow();
-        expect(() => Resource.register(time, { type: { type: "number", default: 1 } })).toThrow(`Cannot register resource "src/interface/resource/register.test.ts#time": already registered as a resource, with another declaration.`);
+        expect(() => Resource.register(time, { type: { type: "number", default: 1 } })).toThrow(`Cannot register resource "typesResourceTest/time": already registered as a resource, with another declaration.`);
         // @ts-expect-error a key declared as both a component and a resource can't be registered as either
         Component.register(shared, { type: { const: true } });
         // @ts-expect-error a key declared as both a component and a resource can't be registered as either

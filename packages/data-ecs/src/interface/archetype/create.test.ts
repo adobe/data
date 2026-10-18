@@ -32,6 +32,6 @@ describe("Archetype.create", () => {
         expect(archetypeIndexOf([position])).toBe(-1);
     });
     it("throws for a component listed twice", () => {
-        expect(() => Archetype.create([position, velocity, position])).toThrow(`An archetype lists "src/interface/archetype/create.test.ts#position" twice.`);
+        expect(() => Archetype.create([position, velocity, position])).toThrow(`An archetype lists "archetypeCreateTest/position" twice.`);
     });
 });

@@ -54,9 +54,9 @@ describe("Finalizer.create and Finalizer.changes", () => {
         const late = Finalizer.create({ name: "typesFinalizerTest/late", components: { read: [label] }, resources: { read: [time] } }, () => {});
         const early = Finalizer.create({ name: "typesFinalizerTest/early", components: { read: [label] }, resources: { write: [time] }, before: [late] }, () => {});
         expect(programFinalizers().map(finalizer => finalizer.name).filter(name => name === early.name || name === late.name)).toEqual([early.name, late.name]);
-        expect(() => Finalizer.create({ name: "typesFinalizerTest/conflict", components: { read: [label] }, resources: { read: [time] } }, () => {})).toThrow('both access "src/interface/finalizer/create.test.ts#time", one writing it');
+        expect(() => Finalizer.create({ name: "typesFinalizerTest/conflict", components: { read: [label] }, resources: { read: [time] } }, () => {})).toThrow('both access "typesFinalizerTest/time", one writing it');
         expect(() => Finalizer.create({ name: "typesFinalizerTest/cycle", components: { read: [label] }, before: [early], after: [late] }, () => {})).toThrow("ordered in a cycle");
-        expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/clock", components: {}, resources: { write: [clock] } })).toThrow(`writes "src/interface/resources/clock.ts#clock", which only the world writes`);
+        expect(() => untyped(Finalizer.create, { name: "typesFinalizerTest/clock", components: {}, resources: { write: [clock] } })).toThrow(`writes "clock", which only the world writes`);
         expect(programFinalizers()).toHaveLength(4);
     });
     it("reject what types reject, for untyped callers", () => {

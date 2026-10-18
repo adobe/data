@@ -147,7 +147,7 @@ describe("rules", () => {
 
     it("are rejected when they can't hold", async () => {
         // @ts-expect-error a rule derives only derived components
-        expect(() => Rule.create({ name: "rulesTest/bad", components: { has: [source] }, derive: [mark] })).toThrow(`derives "src/implementation/world/rules.test.ts#mark", which isn't declared derived`);
+        expect(() => Rule.create({ name: "rulesTest/bad", components: { has: [source] }, derive: [mark] })).toThrow(`derives "rulesTest/mark", which isn't declared derived`);
         expect(() => Rule.create({ name: "rulesTest/bad", components: { has: [source], not: [visible] }, derive: [slot] })).toThrow("cycle through a negation, which could oscillate");
         // A rejected rule records nothing, so its name is still free; a taken one isn't.
         expect(() => Rule.create({ name: "rulesTest/bad", components: { has: [tagged] }, derive: [late] })).not.toThrow();
@@ -157,7 +157,7 @@ describe("rules", () => {
         const writes = System.create({ name: "rulesTest/writeReference", components: { write: [owned] } }, row => { row[owned] = Entity.none; });
         await expect(world.run(writes)).rejects.toThrow("a reference, which changes only through commands");
         const cycle = System.create({ name: "rulesTest/cycle", components: { has: [left] } }, () => {});
-        await expect(world.run(cycle)).rejects.toThrow("within each other in a cycle: src/implementation/world/rules.test.ts#left, src/implementation/world/rules.test.ts#right");
+        await expect(world.run(cycle)).rejects.toThrow("within each other in a cycle: rulesTest/left, rulesTest/right");
         await world.dispose();
     });
 });

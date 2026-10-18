@@ -52,13 +52,13 @@ describe("System.create", () => {
         expect(itemNamed("typesSystemTest/twice")).toBe(again);
     });
     it("rejects writing what only the world writes, for untyped callers", () => {
-        expect(() => create({ name: "typesSystemTest/clock", resources: { write: [clock] } })).toThrow(`writes "src/interface/resources/clock.ts#clock", which only the world writes`);
-        expect(() => create({ name: "typesSystemTest/report", resources: { write: [report] } })).toThrow(`writes "src/interface/resources/report.ts#report", which only the world writes`);
+        expect(() => create({ name: "typesSystemTest/clock", resources: { write: [clock] } })).toThrow(`writes "clock", which only the world writes`);
+        expect(() => create({ name: "typesSystemTest/report", resources: { write: [report] } })).toThrow(`writes "report", which only the world writes`);
     });
     it("rejects what types reject, for untyped callers", () => {
         expect(() => create({ name: "typesSystemTest/both", components: { read: [position], write: [position] } })).toThrow("in both components read and write");
         expect(() => create({ name: "typesSystemTest/bothResources", resources: { read: [time], write: [time] } })).toThrow("in both resources read and write");
-        expect(() => create({ name: "typesSystemTest/lookup", components: { write: [position] }, lookup: { others: { read: [position] } } })).toThrow('lookup "others" reads "src/interface/system/create.test.ts#position", which the system writes');
+        expect(() => create({ name: "typesSystemTest/lookup", components: { write: [position] }, lookup: { others: { read: [position] } } })).toThrow('lookup "others" reads "typesSystemTest/position", which the system writes');
         expect(() => create({ name: "typesSystemTest/input", input: { type: "number" } })).toThrow("input is an object schema of named fields");
         expect(itemNamed("typesSystemTest/both")).toBe(undefined);
     });
@@ -70,8 +70,8 @@ describe("System.create", () => {
         expect(leaves.map(leaf => leaf === undefined || leaf.kind === "composite" ? undefined : threadOf(leaf.declaration, "System"))).toEqual(["main", "world", null]);
         expect(() => create({ name: "typesSystemTest/span", components: { read: [label], write: [node] } })).toThrow('System "typesSystemTest/span" uses values on threads "world" and "main"');
         expect(() => create({ name: "typesSystemTest/spanResource", components: { read: [label] }, resources: { is: [document] } })).toThrow('uses values on threads "world" and "main"');
-        expect(() => create({ name: "typesSystemTest/unregistered", components: { read: [unregistered] } })).toThrow(`uses component "src/interface/system/create.test.ts#unregistered", which isn't a registered component`);
-        expect(() => create({ name: "typesSystemTest/wrongKind", components: { read: [time] } })).toThrow(`uses component "src/interface/system/create.test.ts#time", which isn't a registered component`);
+        expect(() => create({ name: "typesSystemTest/unregistered", components: { read: [unregistered] } })).toThrow(`uses component "typesSystemTest/unregistered", which isn't a registered component`);
+        expect(() => create({ name: "typesSystemTest/wrongKind", components: { read: [time] } })).toThrow(`uses component "typesSystemTest/time", which isn't a registered component`);
     });
 });
 
@@ -88,7 +88,7 @@ describe("System.composite", () => {
         const second = System.create({ name: "typesSystemTest/second", components: { read: [position] }, after: [first] }, row => { void row[position]; });
         const third = System.create({ name: "typesSystemTest/third", components: { read: [position] } }, row => { void row[position]; });
         expect(scheduleOf(requireDefinition(System.composite({ name: "typesSystemTest/ordered", systems: [second, first] }))).tiers.map(tier => tier.map(leaf => leaf.name))).toEqual([["typesSystemTest/first"], ["typesSystemTest/second"]]);
-        expect(() => System.composite({ name: "typesSystemTest/unordered", systems: [first, third] })).toThrow('Systems "typesSystemTest/first" and "typesSystemTest/third" both access "src/interface/system/create.test.ts#position" and one writes it');
+        expect(() => System.composite({ name: "typesSystemTest/unordered", systems: [first, third] })).toThrow('Systems "typesSystemTest/first" and "typesSystemTest/third" both access "typesSystemTest/position" and one writes it');
         const looped = System.create({ name: "typesSystemTest/looped", before: [first], after: [second] }, () => {});
         expect(() => System.composite({ name: "typesSystemTest/cycle", systems: [first, second, looped] })).toThrow("Ordering cycle");
         expect(itemNamed("typesSystemTest/unordered")).toBe(undefined);

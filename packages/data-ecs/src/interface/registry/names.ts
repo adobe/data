@@ -5,10 +5,19 @@ import { idOfKey } from './ids.js';
 export type Kind = "component" | "resource" | "trait";
 
 /**
- * A registered key: its kind, its declaration (none for a trait) and its label, shared by every symbol registered under
+ * A registered key: its kind, its declaration (none for a trait), its description, its id if the plugin gave one, and
+ * the label it has without one, numbered when another key had its description; shared by every symbol registered under
  * its id. `first` is the symbol registered first, `newest` the one registered last.
  */
-type Entry = { readonly kind: Kind; readonly declaration: AnyDeclaration | undefined; readonly label: string; readonly first: symbol; newest: symbol };
+type Entry = {
+    readonly kind: Kind;
+    readonly declaration: AnyDeclaration | undefined;
+    readonly description: string;
+    readonly id: string | undefined;
+    readonly numbered: string;
+    readonly first: symbol;
+    newest: symbol;
+};
 
 /** Every component, resource and user trait, by symbol identity: symbols of one id share an entry. */
 const entries = new Map<symbol, Entry>();
@@ -16,8 +25,14 @@ const entries = new Map<symbol, Entry>();
 /** Entries by the ids the plugin gave their keys. */
 const identified = new Map<string, Entry>();
 
-/** Labels given, so each key's is unique. */
+/** Numbered labels given, so each key's is unique. */
 const labels = new Set<string>();
+
+/** How many registered keys have each description. */
+const described = new Map<string, number>();
+
+/** A symbol's description, `Symbol()` without one. */
+const descriptionOf = (key: symbol): string => key.description === undefined || key.description === "" ? "Symbol()" : key.description;
 
 /** `Symbol.iterator` and the rest, which the platform shares, so they can't be keys. */
 const wellKnown: ReadonlyMap<symbol, string> = new Map(Reflect.ownKeys(Symbol).flatMap((name): [symbol, string][] => {
@@ -46,20 +61,24 @@ export const firstKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? e
 export const newestKeyOf = <K>(key: K): K | symbol => typeof key === "symbol" ? entries.get(key)?.newest ?? key : key;
 
 /**
- * How errors and reports name a key: its id when the plugin gave it one; else a registered key's label, unique among
- * them and kept once given, its description, numbered by registration order when another key's label has it. An
- * unregistered key is named by its description, `Symbol()` without one, and any other value as text.
+ * How errors and reports name a key: its description, `Symbol()` without one, while no other registered key has it;
+ * else its id when the plugin gave it one, and without one, for a registered key, its description numbered by
+ * registration order. Any other value is named as text.
  */
 export const labelOf = (key: unknown): string => {
     if (typeof key !== "symbol") return String(key);
-    return entries.get(key)?.label ?? idOfKey(key) ?? wellKnown.get(key) ?? (key.description === undefined || key.description === "" ? "Symbol()" : key.description);
+    const known = wellKnown.get(key);
+    if (known !== undefined) return known;
+    const entry = entries.get(key);
+    const description = entry?.description ?? descriptionOf(key);
+    if ((described.get(description) ?? 0) <= (entry === undefined ? 0 : 1)) return description;
+    return entry === undefined ? idOfKey(key) ?? description : entry.id ?? entry.numbered;
 };
 
-/** A unique label for a key registered now. */
-const labelFor = (key: symbol): string => {
-    const base = labelOf(key);
-    let label = base;
-    for (let n = 2; labels.has(label); n++) label = `${base}#${n}`;
+/** A label for a key registered now without an id, its description numbered when another key's has it. */
+const numberedFor = (description: string): string => {
+    let label = description;
+    for (let n = 2; labels.has(label); n++) label = `${description}#${n}`;
     labels.add(label);
     return label;
 };
@@ -119,10 +138,9 @@ export const claimKey = (key: unknown, kind: Kind, declaration?: AnyDeclaration)
         entries.set(symbol, named);
         return;
     }
-    const entry: Entry = { kind, declaration, label: id ?? labelFor(symbol), first: symbol, newest: symbol };
-    if (id !== undefined) {
-        labels.add(id);
-        identified.set(id, entry);
-    }
+    const description = descriptionOf(symbol);
+    const entry: Entry = { kind, declaration, description, id, numbered: numberedFor(description), first: symbol, newest: symbol };
+    described.set(description, (described.get(description) ?? 0) + 1);
+    if (id !== undefined) identified.set(id, entry);
     entries.set(symbol, entry);
 };

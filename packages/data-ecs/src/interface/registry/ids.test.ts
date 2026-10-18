@@ -67,8 +67,10 @@ Component.register(crossed, { type: { type: "number" } });
 Trait.register(tagged);
 
 describe("keys with ids", () => {
-    it("labels a key by its id", () => {
-        expect(labelOf(score)).toBe("idsTest/keys.ts#score");
+    it("labels a key by its description, and by its id once another registered key has its description", () => {
+        expect(labelOf(score)).toBe("score");
+        Component.register(unnamed, { type: { type: "number" } });
+        expect([labelOf(score), labelOf(unnamed)]).toEqual(["idsTest/keys.ts#score", "idsTest/other.ts#score"]);
         expect(labelOf(Symbol("score"))).toBe("score");
     });
     it("accepts another symbol under a registered key's id with the same declaration, as the same key", () => {

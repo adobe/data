@@ -169,10 +169,10 @@ describe("spawn", () => {
     it("throws at first use for a key that isn't a registered component a command may add, or one listed twice", async () => {
         const { world, run } = withCommands();
         const tried = (list: readonly unknown[]) => run(commands => { Reflect.apply(commands.spawn, commands, [list]); });
-        await expect(tried([score, unregistered])).rejects.toThrow(`"src/implementation/world/commands.test.ts#unregistered" has no registered schema`);
+        await expect(tried([score, unregistered])).rejects.toThrow(`"commandsTest/unregistered" has no registered schema`);
         await expect(tried([score, slot])).rejects.toThrow("is derived, so only rules add and remove it");
-        await expect(tried([level])).rejects.toThrow(`"src/implementation/world/commands.test.ts#level" is a resource, not a component`);
-        await expect(tried([score, score])).rejects.toThrow(`lists "src/implementation/world/commands.test.ts#score" twice`);
+        await expect(tried([level])).rejects.toThrow(`"commandsTest/level" is a resource, not a component`);
+        await expect(tried([score, score])).rejects.toThrow(`lists "commandsTest/score" twice`);
         await expect(tried(["commandsTest/score"])).rejects.toThrow("a component's key is a symbol");
         expect(await count(world, {})).toBe(0);
         await world.dispose();

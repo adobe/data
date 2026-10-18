@@ -104,7 +104,7 @@ describe("ticks", () => {
         const withInput = System.create({ name: "ticksTest/withInput", input: { type: "object", properties: { by: { type: "number" } } } }, () => {});
         await using world = createWorld({ [workers]: 0 });
         world.add(count);
-        expect(() => world.add(other)).toThrow('both access "src/implementation/world/ticks.test.ts#frames"');
+        expect(() => world.add(other)).toThrow('both access "ticksTest/frames"');
         // @ts-expect-error a system with input can't be added
         expect(() => world.add(withInput)).toThrow("takes input");
     });
@@ -113,9 +113,9 @@ describe("ticks", () => {
 describe("World.create", () => {
     it("rejects starting a resource only the world writes", () => {
         // @ts-expect-error clock is written only by the world
-        expect(() => createWorld({ [clock]: { now: 0, delta: 0, tick: 0 } })).toThrow('"src/interface/resources/clock.ts#clock" is written only by the world');
+        expect(() => createWorld({ [clock]: { now: 0, delta: 0, tick: 0 } })).toThrow('"clock" is written only by the world');
         // @ts-expect-error report is written only by the world
-        expect(() => createWorld({ [report]: { failures: [], skipped: [], dropped: 0 } })).toThrow('"src/interface/resources/report.ts#report" is written only by the world');
+        expect(() => createWorld({ [report]: { failures: [], skipped: [], dropped: 0 } })).toThrow('"report" is written only by the world');
     });
 
     it("starts the loop's resources at their defaults, workers at null for the platform's choice", async () => {

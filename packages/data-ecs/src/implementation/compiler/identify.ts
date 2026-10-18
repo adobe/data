@@ -14,12 +14,21 @@ export type Identified = { readonly code: string; readonly map: SourceMap };
 /** A dependency's path inside the last `node_modules`: its package name and subpath. */
 const dependency = /\/node_modules\/(?!.*\/node_modules\/)(.+)$/;
 
+/** The name a directory's package.json gives: undefined without one, null for one without a name. */
+export type PackageNameOf = (directory: string) => string | null | undefined;
+
 /**
- * A module's id: its path from `root` without a query, or for a dependency its package name and subpath, with forward
- * slashes, so it's the same on every machine and names no absolute path.
+ * A module's id: the name of the nearest package.json above it that has one and its path in that package, else for a
+ * dependency its package name and subpath, else its path from `root`. Without a query and with forward slashes, so it's
+ * the same on every machine and names no directory outside its package.
  */
-export const moduleIdOf = (file: string, root: string): string => {
+export const moduleIdOf = (file: string, root: string, packageNameOf: PackageNameOf): string => {
     const path = (file.split("?")[0] ?? file).replace(/\\/g, "/");
+    for (let directory = posix.dirname(path); ; directory = posix.dirname(directory)) {
+        const name = packageNameOf(directory);
+        if (typeof name === "string") return `${name}/${posix.relative(directory, path)}`;
+        if (posix.dirname(directory) === directory) break;
+    }
     const found = dependency.exec(path)?.[1];
     if (found !== undefined) return found;
     const relative = posix.relative(root.replace(/\\/g, "/"), path);

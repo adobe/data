@@ -10,6 +10,8 @@ import { kernelPlugin } from './plugin.js';
 
 const source = (path: string) => JSON.stringify(fileURLToPath(new URL(path, import.meta.url)));
 const directory = realpathSync(mkdtempSync(join(tmpdir(), "data-ecs-kernel-")));
+// The application's package, which names its modules' ids.
+writeFileSync(join(directory, "package.json"), JSON.stringify({ name: "fixture-app", type: "module" }));
 const fixture = join(directory, "fixture.js");
 writeFileSync(fixture, `import { System } from ${source("../../interface/system/system.ts")};
 import { Component } from ${source("../../interface/component/component.ts")};
@@ -93,10 +95,14 @@ writeFileSync(join(directory, "node_modules/key-library/package.json"), JSON.str
 writeFileSync(join(directory, "node_modules/key-library/dist/index.js"), `export const marker = Symbol("marker");\n`);
 writeFileSync(join(directory, "worker-keys.js"), `export const message = Symbol("message");\nself.postMessage(String(message.description));\n`);
 writeFileSync(identified, `import { labelOf } from ${source("../../interface/registry/names.ts")};
+import { Component } from ${source("../../interface/component/component.ts")};
 import { marker } from "key-library";
 export const score = Symbol("score");
+const twin = Symbol("score");
 export default Symbol();
-export const labels = [labelOf(score), labelOf(marker)];
+Component.register(score, { type: { type: "number" } });
+Component.register(twin, { type: { type: "number" } });
+export const labels = [labelOf(score), labelOf(twin), labelOf(marker)];
 export const worker = () => new Worker(new URL("./worker-keys.js", import.meta.url), { type: "module" });
 `);
 afterAll(() => rmSync(directory, { recursive: true, force: true }));
@@ -222,7 +228,7 @@ test("serve accepts a module of keys evaluated again, which makes the same keys"
         const again = await server.ssrLoadModule(`${evaluated}?evaluated=again`);
         expect(again.score).not.toBe(first.score);
         expect(again.system).not.toBe(first.system);
-        expect([first.label, again.label]).toEqual(["evaluated.js#score", "evaluated.js#score"]);
+        expect([first.label, again.label]).toEqual(["score", "score"]);
     });
 });
 
@@ -230,7 +236,7 @@ test("serve reports a key evaluated again with another declaration", async () =>
     await serve(async server => {
         await server.ssrLoadModule(changed);
         writeFileSync(changed, keys(`{ type: { type: "string" } }`));
-        await expect(server.ssrLoadModule(`${changed}?evaluated=changed`)).rejects.toThrow(`Cannot register component "changed.js#score": its id is another key's, with another declaration`);
+        await expect(server.ssrLoadModule(`${changed}?evaluated=changed`)).rejects.toThrow(`Cannot register component "fixture-app/changed.js#score": its id is another key's, with another declaration`);
     });
 });
 
@@ -245,13 +251,14 @@ test("a build gives top-level symbols ids naming no absolute path, also in worke
     });
     const items = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : []);
     const main = items.find((item): item is Rollup.OutputChunk => item.type === "chunk" && item.facadeModuleId === identified);
-    expect(new Set(idsIn(main?.code ?? ""))).toEqual(new Set(["identified.js#score", "identified.js#default", "key-library/dist/index.js#marker"]));
+    expect(new Set(idsIn(main?.code ?? "").filter(id => !id.startsWith("@adobe/data-ecs/")))).toEqual(new Set(["fixture-app/identified.js#score", "fixture-app/identified.js#twin", "fixture-app/identified.js#default", "key-library/dist/index.js#marker"]));
     const worker = items.find(item => item.fileName.includes("worker-keys"));
-    expect(idsIn(worker === undefined ? "" : worker.type === "chunk" ? worker.code : String(worker.source))).toEqual(["worker-keys.js#message"]);
+    expect(idsIn(worker === undefined ? "" : worker.type === "chunk" ? worker.code : String(worker.source))).toEqual(["fixture-app/worker-keys.js#message"]);
     const ids = items.flatMap(item => idsIn(item.type === "chunk" ? item.code : String(item.source)));
     expect(ids.filter(id => id.startsWith("/") || id.includes(directory) || id.includes(tmpdir()))).toEqual([]);
     const { labels }: { labels: readonly string[] } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
-    expect(labels).toEqual(["identified.js#score", "key-library/dist/index.js#marker"]);
+    // Keys sharing a description are labeled by their ids; a key whose description is its own, by its description.
+    expect(labels).toEqual(["fixture-app/identified.js#score", "fixture-app/identified.js#twin", "marker"]);
 });
 
 test("a second instance of the plugin in one bundle does nothing, as when an application also lists it for workers", async () => {
@@ -264,7 +271,7 @@ test("a second instance of the plugin in one bundle does nothing, as when an app
         .filter((item): item is Rollup.OutputChunk => item.type === "chunk");
     expect(chunks.filter(chunk => chunk.name.startsWith("kernel-"))).toHaveLength(1);
     const main = chunks.find(chunk => chunk.facadeModuleId === fixture);
-    expect(idsIn(main?.code ?? "").filter(id => !id.startsWith("../"))).toEqual(["fixture.js#score"]);
+    expect(idsIn(main?.code ?? "").filter(id => id.startsWith("fixture-app/"))).toEqual(["fixture-app/fixture.js#score"]);
     const { description }: { description: KernelDescription } = await import(/* @vite-ignore */ pathToFileURL(join(outDir, main?.fileName ?? "")).href);
     expect(runs(await import(/* @vite-ignore */ description.url), description)).toEqual([6, 8]);
 });

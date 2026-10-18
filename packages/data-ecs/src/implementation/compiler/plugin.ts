@@ -1,10 +1,11 @@
 /// <reference types="node" />
+import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
 import type { Plugin, Rollup, ViteDevServer } from 'vite';
 import { estreeOf } from './estree.js';
 import { describeFailure } from './failure.js';
-import { identifySymbols, moduleIdOf } from './identify.js';
+import { identifySymbols, moduleIdOf, type PackageNameOf } from './identify.js';
 import { buildId, kernelHash, parseKernelId, serveUrl } from './kernel-id.js';
 import { createLinker, type LinkHost, type Linker } from './link.js';
 import { isSystemModule, packageIndex } from './paths.js';
@@ -26,6 +27,26 @@ const loadFile = async (file: string): Promise<{ readonly code: string; readonly
     const { transformWithOxc } = await import("vite");
     const result = await transformWithOxc(code, file, { lang: loader, sourcemap: true });
     return { code: result.code, locate: result.map === undefined ? undefined : locateThroughMap(result.code, result.map.mappings) };
+};
+
+/** The name each directory's package.json gives, read once per directory. */
+const packageNames = (): PackageNameOf => {
+    const names = new Map<string, string | null | undefined>();
+    return directory => {
+        if (names.has(directory)) return names.get(directory);
+        let name: string | null | undefined;
+        try {
+            const json: unknown = JSON.parse(readFileSync(`${directory}/package.json`, "utf8"));
+            const named: unknown = typeof json === "object" && json !== null ? Reflect.get(json, "name") : undefined;
+            name = typeof named === "string" && named !== "" ? named : null;
+        }
+        catch {
+            // No package.json here, or none that parses.
+            name = undefined;
+        }
+        names.set(directory, name);
+        return name;
+    };
 };
 
 /** Resolves imports through the build, from whichever transform runs. */
@@ -50,8 +71,8 @@ const buildHost = (resolver: () => Rollup.PluginContext): LinkHost => ({
  * Functions and constants kernels import are read from their files, with types stripped, and inlined (`link.ts`).
  * The application's build compiles every kernel, its dependencies' too: a library ships its kernels uncompiled.
  *
- * Also gives each top-level `Symbol(...)` declaration an id, its module path from the root and its binding, by which
- * the registry knows the symbol a module evaluated again makes as the same key (`identify.ts`).
+ * Also gives each top-level `Symbol(...)` declaration an id, its package's name, its module's path in the package and
+ * its binding, by which the registry knows the symbol a module evaluated again makes as the same key (`identify.ts`).
  *
  * Dev dep pre-bundling bypasses plugins and breaks the runtime's worker url, so `@adobe/data-ecs` is excluded from it.
  * Consumers must also add to `optimizeDeps.exclude` any dependency that defines kernels or keys, imports
@@ -66,6 +87,7 @@ export const kernelPlugin = (): Plugin => {
     /** Whether an earlier instance of the plugin is in the same bundle. */
     let repeated = false;
     let server: ViteDevServer | undefined;
+    const packageNameOf = packageNames();
     /**
      * A linker per environment, since client and SSR builds resolve imports under different conditions. Each resolves
      * through its environment's latest transform.
@@ -151,7 +173,7 @@ export const kernelPlugin = (): Plugin => {
         async transform(code, id, options) {
             if (repeated || id.includes("\0") || !scripts.test(id.split("?")[0] ?? id)) return null;
             const parse = (input: string) => estreeOf(this.parse(input));
-            const identify = (input: string) => identifySymbols(input, moduleIdOf(id, root), parse);
+            const identify = (input: string) => identifySymbols(input, moduleIdOf(id, root, packageNameOf), parse);
             const linker = linkerFor(options?.ssr === true, this);
             const hashes: string[] = [];
             const result = await transformKernels(code, id, parse, async source => {

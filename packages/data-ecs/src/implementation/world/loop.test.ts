@@ -139,7 +139,7 @@ describe("the loop", () => {
         const { host } = createHost({ cadence: { kind: "frame" }, always: false, wake: Infinity });
         const loop = createLoop(host);
         loop.add(increment);
-        expect(() => loop.add(reader)).toThrow('Systems "loopTest/increment" and "loopTest/reader" both access "src/implementation/world/loop.test.ts#count" and one writes it');
+        expect(() => loop.add(reader)).toThrow('Systems "loopTest/increment" and "loopTest/reader" both access "loopTest/count" and one writes it');
         expect(() => loop.add(takesInput)).toThrow("takes input, which ticks don't pass");
         loop.add(increment);
         expect(() => loop.add(ordered)).toThrow("both access");

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AnyDeclaration } from "./declarations.js";
+import { identify } from "./ids.test-helper.js";
 import { claimKey, declarationOf, kindOf, labelOf } from "./names.js";
 
 /** Declarations as registration records them; claiming a key doesn't check them. */
@@ -40,7 +41,21 @@ describe("claimKey", () => {
 });
 
 describe("labelOf", () => {
-    it("labels a key by its description, numbered by registration when another key has it, and never changes a label", () => {
+    it("labels a key by its description while no other registered key has it, else by its id", () => {
+        const first = Symbol("labelOf/shared");
+        const second = Symbol("labelOf/shared");
+        const lone = Symbol("labelOf/lone");
+        identify(first, "a.ts#first");
+        identify(second, "b.ts#second");
+        identify(lone, "c.ts#lone");
+        expect([labelOf(first), labelOf(lone)]).toEqual(["labelOf/shared", "labelOf/lone"]);
+        claimKey(first, "component", number);
+        claimKey(lone, "component", number);
+        expect([labelOf(first), labelOf(second), labelOf(lone)]).toEqual(["labelOf/shared", "b.ts#second", "labelOf/lone"]);
+        claimKey(second, "resource", number);
+        expect([labelOf(first), labelOf(second), labelOf(lone)]).toEqual(["a.ts#first", "b.ts#second", "labelOf/lone"]);
+    });
+    it("labels a key without an id by its description, numbered by registration when another key has it", () => {
         const first = Symbol("labelOf/twin");
         const second = Symbol("labelOf/twin");
         const third = Symbol("labelOf/twin");

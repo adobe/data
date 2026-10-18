@@ -281,6 +281,6 @@ describe("up", () => {
         await using ecs = createWorld({ [workers]: 0 });
         // @ts-expect-error through is a reference component
         const untyped = System.create({ name: "upTest/untyped", components: { write: [world] }, up: { through: local, read: [world] } }, row => { row[world] = 0; });
-        await expect(ecs.run(untyped)).rejects.toThrow('System "upTest/untyped": up.through "src/implementation/world/up.test.ts#local" isn\'t a reference component.');
+        await expect(ecs.run(untyped)).rejects.toThrow('System "upTest/untyped": up.through "upTest/local" isn\'t a reference component.');
     });
 });

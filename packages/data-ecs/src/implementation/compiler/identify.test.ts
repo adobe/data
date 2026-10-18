@@ -71,16 +71,30 @@ describe("identifySymbols", () => {
 });
 
 describe("moduleIdOf", () => {
-    test("is the path from the root, without a query", () => {
-        expect(moduleIdOf("/app/src/keys.ts?t=1712", "/app")).toBe("src/keys.ts");
-        expect(moduleIdOf("/app/src/worker.ts?worker_file&type=module", "/app/")).toBe("src/worker.ts");
-        expect(moduleIdOf("/libraries/shared/keys.ts?import", "/app")).toBe("../libraries/shared/keys.ts");
+    /** Packages by directory, as their package.json files name them. */
+    const packages = (named: { readonly [directory: string]: string | null }) => (directory: string) => {
+        const name = named[directory];
+        return name === undefined ? undefined : name;
+    };
+    const none = packages({});
+    test("is the nearest package's name and the path in it, without a query", () => {
+        const app = packages({ "/app": "app", "/repo/packages/shared": "@scope/shared", "/repo/packages/shared/src/nested": null });
+        expect(moduleIdOf("/app/src/keys.ts?t=1712", "/app", app)).toBe("app/src/keys.ts");
+        expect(moduleIdOf("/app/src/worker.ts?worker_file&type=module", "/app/", app)).toBe("app/src/worker.ts");
+        // A workspace package linked from outside the root is named by its package, not its directories.
+        expect(moduleIdOf("/repo/packages/shared/src/nested/keys.ts", "/repo/apps/web", app)).toBe("@scope/shared/src/nested/keys.ts");
     });
     test("is a dependency's package name and subpath", () => {
-        expect(moduleIdOf("/app/node_modules/.pnpm/@scope+keys@1.2.0/node_modules/@scope/keys/dist/keys.js?v=3f2a", "/app")).toBe("@scope/keys/dist/keys.js");
-        expect(moduleIdOf("/elsewhere/node_modules/keys/index.js", "/app")).toBe("keys/index.js");
+        const scoped = packages({ "/app/node_modules/.pnpm/@scope+keys@1.2.0/node_modules/@scope/keys": "@scope/keys" });
+        expect(moduleIdOf("/app/node_modules/.pnpm/@scope+keys@1.2.0/node_modules/@scope/keys/dist/keys.js?v=3f2a", "/app", scoped)).toBe("@scope/keys/dist/keys.js");
+        expect(moduleIdOf("/elsewhere/node_modules/keys/index.js", "/app", none)).toBe("keys/index.js");
+    });
+    test("is the path from the root without a named package", () => {
+        expect(moduleIdOf("/app/src/keys.ts?t=1712", "/app", none)).toBe("src/keys.ts");
+        expect(moduleIdOf("/libraries/shared/keys.ts?import", "/app", none)).toBe("../libraries/shared/keys.ts");
     });
     test("uses forward slashes", () => {
-        expect(moduleIdOf("C:\\app\\src\\keys.ts", "C:\\app")).toBe("src/keys.ts");
+        expect(moduleIdOf("C:\\app\\src\\keys.ts", "C:\\app", none)).toBe("src/keys.ts");
+        expect(moduleIdOf("C:\\app\\src\\keys.ts", "C:\\app", packages({ "C:/app": "app" }))).toBe("app/src/keys.ts");
     });
 });

@@ -1023,5 +1023,31 @@
             "bytes": 56,
             "basis": "Each despawn frees its 8-byte location and entity, and writes its stop: its entity, archetype, row and tag, 20 bytes, and its 12-byte vec3, read and written."
         }
+    },
+    "tail prompt": {
+        "operation": "Ticks of a world system and a terminal system on a joined worker over 1,000 rows, which runs after the sync point and finishes before the next tick needs it: a DOM-writing system on main that keeps up.",
+        "per": "ticks",
+        "n": 1000,
+        "typical": [
+            1,
+            1
+        ],
+        "best": {
+            "bytes": 12256,
+            "basis": "One task moves its posted, done, payload and completion lines between cores, and the tail reads each row's 12-byte vec3."
+        }
+    },
+    "tail late snapshot 10K": {
+        "operation": "A run writing what a late tail on a joined worker reads, 10,000 passing rows of a vec3 and a mat4: the copy of the tail's reads it makes first, as when main is busy when the next tick writes positions.",
+        "per": "rows copied",
+        "n": 10000,
+        "typical": [
+            100,
+            10000
+        ],
+        "best": {
+            "bytes": 172,
+            "basis": "Each row's 12-byte vec3 and 64-byte mat4 are read and written, and its position, archetype, row and entity, 20 bytes, written."
+        }
     }
 }

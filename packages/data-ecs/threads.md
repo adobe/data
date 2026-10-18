@@ -117,8 +117,9 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   in types and at creation; they can't declare `lookup`, and `Finalizer.changes` can't be remote, both rejected at
   creation; `before`/`after` across threads is an error at creation.
 - **Values for another thread's objects:** a command issued on one thread may give an object component of another
-  thread only its start or `null`, as tags the owning thread resolves. Any other value fails the command when it's
-  issued. `transfer` components are the exception (see Transfers).
+  thread only its start or `null`, as tags the owning thread resolves. Any other value fails the command: a spawn's when
+  it's issued, an add's when its system's commands are queued, where it drops and its system fails, so the issuing paths
+  check nothing while no joined thread fills objects. `transfer` components are the exception (see Transfers).
 
 ## Mechanisms
 
@@ -151,16 +152,18 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   arrays read out of bounds as `undefined` and drop such writes silently.
 - **Archetype records:** the table holds, by the world's archetype number, the offset of that archetype's record. Each
   record is allocated once, since an archetype's storages are fixed, and never moves; only the table grows. A record
-  holds `capacity`, the `entities` offset and a version, and per storage its component number, its flags (`ticked`,
-  linear), its column, tick and chunk-tick offsets and its chunk count. Offsets are `Uint32`, since memory reaches
-  4 GiB. The resource archetype has a record too, flagged, and the header holds the resource entity's index.
+  holds `capacity`, the `entities` offset, a version, its flags and its count, and per storage its component number, its
+  flags (`ticked`, linear, remote with the joined thread's number), its column, tick and chunk-tick offsets and its
+  chunk count; a remote storage's column is its tags. Offsets are `Uint32`, since memory reaches 4 GiB. The resource
+  archetype has a record too, flagged, and the header holds the resource entity's index.
 - **Entity-table record:** the `cursor` offset, which never moves, the free list's offset and capacity, the
   `archetype`, `row` and `generation` offsets and capacity, and a version. The table's length is `cursor[2]`. Its
   arrays move whenever they grow, even without memory growing, since a grown array's old block is reused.
 - **Writes:** the world's thread keeps its JS fields as the source of truth on its hot paths. Growth and `startTicks`
   bump an archetype's version and append it to a list of bumped archetypes; table growth in `materialize` and
   `recycle` marks the entity table. The list is flushed into records at the end of each sync point, isolated ones
-  included, and wherever registration publishes now. Each record's version is stored last, with `Atomics.store`.
+  included, and wherever registration publishes now, those between sync points under the structure epoch while a joined
+  thread holds claims. Each record's version is stored last, with `Atomics.store`.
 - **Reads:** a thread checks a record's version, one load, before using what it cached for that archetype, and keeps
   per-archetype column views and kernel columns, rebuilt only when that version moves. The whole-buffer view serves the
   header and records; columns stay views of their own, as kernels and layouts take them. On an entity-table version
@@ -168,8 +171,9 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
 - **Messages:** only new components' schemas are posted, none for a value that isn't data, since a message closes the
   pool's windows. A new archetype is found in the table, its record naming its component numbers, the first time a
   task names it.
-- **Counts:** pool tasks carry their rows, so records have no `count` until phase 5, when joined threads iterate.
-  Archetypes whose count changed are then appended to a dirty list where it changes, and flushed with the rest.
+- **Counts:** pool tasks carry their rows; joined threads read counts. While a joined thread holds claims, archetypes
+  whose count changed are appended to a dirty list, by pair and by batch where the sync point changes them, and their
+  counts flushed with the rest; a new record carries its count.
 - **Lookups:** WASM lookups keep their per-lookup directories (`directories.ts`), a match flag and each read column's
   address per archetype, so a lookup searches nothing. JS kernels' lookups on workers read archetype records.
 
@@ -258,9 +262,14 @@ thread as its only writer, drained by the world's thread at the sync point. Comm
 - **The handshake** (`sharing.ts`, `join.ts`, `joining.ts`): a joined thread's first message names the threads it
   claims, whether it can wait with `Atomics.waitAsync`, and a Web Lock it holds while it lives, where the platform has
   Web Locks; it posts nothing else until the lock is held. The world refuses a thread claiming `world`, one thread
-  twice, or one another joined thread claims, with its status `"gone"` and its runs rejecting; else it places the
-  thread's control words and slots in the memory, posts the memory and their offset, and writes `"joined"` and the
-  claims. Claims are released when the thread is gone.
+  twice, one another joined thread claims, or one a system registered here or a finalizer of the program runs on, until
+  phases 5b and 5c, with its status `"gone"` and its runs rejecting; else it places the thread's control words and
+  slots in the memory, and writes `"joined"` and the claims. With claims, between runs, the claimed threads' object
+  components become the thread's (see Object columns on other threads), each announced by message with its id, then
+  it posts the memory, the offsets of its control words and its move log, and its number. Claims are released when the
+  thread is gone, between runs, its objects coming back as each row's tag names them: `null`, or the start, since a
+  staged value was the thread's. Until 5b and 5c, a system on a claimed thread fails at registration, and a finalizer on
+  one doesn't activate, reported once in a sync point's failures.
 - **A thread's end** is a `leave` from its `dispose`, its `MessagePort`'s `close`, a node worker's `exit`, or the world's
   request for its Web Lock being granted, which happens however the thread ends, so a browser worker ended from outside
   its port is heard of too, with nothing polled. Its status becomes `"gone"` and its observers stop; a thread that left
@@ -287,27 +296,39 @@ it has both.
 
 By row on their thread, exactly as `storage.values[row]` is today, so iteration costs nothing more. Their `added` and
 `changed` ticks live beside them on that thread, by row, so writes and stamps there touch nothing shared. The world's
-storage for a remote object component holds no values, and its row copies skip it. Each joined thread keeps a mirror
-of the state its systems need: archetypes by the world's numbers with views from the directory, its own object columns
-and ticks, keys, layouts and starts, and commands that write to its ring; the plan and structure stay on `world`.
+storage for a remote object component holds no values: it holds each row's tag (`move-log.ts`), the component's start,
+`null`, or a staged slot's id, in its column in shared memory, which row copies copy, and it keeps ticks, stamped where
+the sync point stamps any, so the world's observers see changes and a rebuild reads them. Each joined thread keeps a
+mirror of the state its systems need (`mirror.ts`): archetypes by the world's numbers with views from the directory, its
+own object columns and ticks, keys, layouts and starts, and commands that write to its ring; the plan and structure
+stay on `world`.
 
-**The move log.** For archetypes containing a remote object component, apply appends, in apply order:
-`move(fromArchetype, fromRow, toArchetype, toRow)`, `swap(archetype, lastRow, row)` (with `lastRow` equal to `row` when
-the removed row was last), `append(archetype, row, slot)`, `set(archetype, row, component, slot)`, and range forms for
-bulk operations, 16 bytes each, under a header per sync naming its tick, which is the sync number; an entry whose
-component starts in its row carries an added flag, so the thread stamps `added` as the world would, re-adds within one
-sync point included. Every path that moves or fills a row appends: `commitBatches` and `commitStaged`, `writeValues`
-for entries that stay, `arrive`, `leave` and its `swapRemove`, `rederive`, isolated sync points, and `finalizeAll` at
-dispose. The world stores "published through sync N" after each sync point's entries.
+**The move log.** For archetypes containing a remote object component, apply appends to the log of each joined thread
+whose objects they hold, in apply order, 16-byte entries in a ring in shared memory: `move(fromArchetype, fromRow,
+toArchetype, toRow)` between archetypes both holding its objects, `append(archetype, row, entity)`, `range(archetype,
+row, count)` followed by its entities, two to an entry, `swap(archetype, lastRow, row)` (with `lastRow` equal to `row`
+when the removed row was last), and `set(archetype, row, component, tag)`, each sync's first under a sync entry naming
+its tick, which is the sync number. A row a move or an append fills starts each of the thread's objects it gains at its
+start, `added` and `changed` at the tick; a set stamps `changed`, and `added` with its added flag, where the component
+starts in its row, re-adds within one sync point included. Every path that moves or fills a row appends: `commitBatches`
+and `commitStaged`, `writeValues` for entries that stay, `arrive`, `leave` and its `swapRemove`, `rederive`, and
+isolated sync points; `finalizeAll` at dispose moves none. The world publishes "through position P, sync N" in the
+log's header after each sync point's entries, before the structure epoch turns even, and "observers delivered through
+sync N" after each delivery.
 
 **Replay.** A thread replays lazily, only syncs published: before a task whose payload names sync S, or an observer
 evaluation, it processes each pending sync in order: its finalizers first, against values still at their pre-apply
-rows, then its log. After copying entries it checks the writer hasn't lapped it. A staged slot that no entry of sync S
-names was dropped, and is cleared without a finalizer. The log holds max(4096, the rows of the archetypes holding the
-thread's objects) entries; past that it drops them, and a thread behind rebuilds, at a task's head or under the
-structure epoch: it keeps an entity column per archetype it holds objects of (8 bytes a row, updated by replay), maps
-entity to value from its old rows, refills from the shared `entities`, and applies each staged slot whose entity is
-alive with its component, the last in issue order.
+rows, then its log. It copies the entries out, then checks the writer hasn't lapped it: the writer stores a limit 64
+entries ahead of where it writes before writing past it, and the copy holds if the limit is within the ring's size of
+where it started. A staged slot that no entry of a sync it was for names was dropped, and is cleared without a finalizer.
+An entry naming an archetype holding a component whose key the world hasn't named yet holds replay before its sync until
+the message arrives. The ring holds max(4096, the rows of the archetypes holding the thread's objects) entries, rounded
+up to a power of two and replaced at a sync point's start when the rows outgrow it; past that it drops them, and a
+thread behind, or whose ring was replaced, rebuilds, at a task's head or under the structure epoch: rows from each
+archetype's record, its `entities` and count, ticks from the world's, and values by each row's tag, a slot's from the
+staging array while it's there, else the thread's own, kept from its old rows by entity. Tags make it exact: a start or
+`null` given after a slot wins, as it did. A thread keeps an entity column per archetype it holds objects of (8 bytes a
+row, updated by replay).
 
 ### Systems on other threads
 
@@ -339,21 +360,30 @@ the one it's writing, freeing the old block, so the slot a reader holds never mo
 the world's observer subscribed. Results carry resource values, listed entity components each with a presence flag, or
 the entity list of `select`, in the layouts of their schemas; never objects. One `Atomics.notify` per thread per batch of
 deliveries, and none for a thread that hasn't read the last. An observer on a joined thread that reads objects, as a
-resource, a listed component or `where` and `order` read values, throws at subscribe; `required` and `not` read only
-presence, which is shared. A whole-entity observer (`observe.entity(entity)` without options) on a joined thread gives
-its struct components, those the thread had registered with ids when it subscribed, and from phase 5a its own thread's
-objects. A subscription the world can't make, such as one naming a key it never imported, is an `"observer"` failure in
-its next run's report.
+resource, a listed component of a thread it doesn't fill, or `where` and `order` read values, throws at subscribe;
+`required` and `not` read only presence, which is shared. A whole-entity observer (`observe.entity(entity)` without
+options) on a joined thread gives its struct components and its own threads' objects, those the thread had registered
+with ids when it subscribed. An entity observer, listed or whole, gives its thread's own objects so: the world's value says which are
+present, and the thread reads them from its columns, at the entity's location read under the structure epoch, once its
+mirror is through the sync point the world last delivered observers through, and keeps the value only while no newer
+one waits, so its structs and objects are of one sync point; meanwhile, it holds the value and evaluates it again when
+the epoch turns even or the next delivery is recorded. An observer of objects on the world's thread reads none of a
+joined thread's: listing one, or reading one in `where` or `order`, throws at subscribe, and an entity's whole value
+leaves them out. A subscription the world can't make, such as one naming a key it never imported, is an `"observer"`
+failure in its next run's report.
 
 ### Structure epoch
 
-One shared word, the layout directory header's fourth, odd from the start of each sync point that applies anything,
-before `materialize`, until its directory writes at the end, a window that includes commits of staged spawns and any
-GPU readback. Threads that read entity locations outside a task, observers of their own objects and rebuilds, read
-while it's even and check it again after, retrying on a change; a reader that finds it odd waits on the word, which the
-world notifies when it turns even, rather than spinning. The guarded words (`archetype`, `row`, `generation`) are read
-with `Atomics.load`, since on ARM64 a plain load may be satisfied after the closing check. Values are never guarded by
-it: scheduled reads are ordered by tiers, and observers read published results.
+One shared word, the layout directory header's fourth, kept while a joined thread holds claims: odd from the start of
+each sync point that applies anything, before `materialize`, until its directory writes and logs' publishing at the
+end, a window that includes commits of staged spawns and any GPU readback, and around flushes between sync points.
+It turns odd by an atomic add, so later writes can't be seen before it, and even by a store, since only the world writes
+it. Threads that read entity locations outside a task, observers of their own objects and rebuilds, read while it's
+even and check it again after, retrying on a change; the closing check is an atomic add of 0, so every read before it
+completes first. A reader that finds it odd counts itself in the header's waiters word and waits on the epoch, which
+the world notifies when it turns even only while a reader waits, rather than spinning. The guarded words (`archetype`,
+`row`, `generation`) are read with `Atomics.load`. Values are never guarded by it: scheduled reads are ordered by
+tiers, and observers read published results.
 
 ### Tails
 
@@ -400,17 +430,20 @@ Memory isn't shared, so the world runs inline, and `share` and `World.join` will
 | Commands and staged spawns from a worker kernel or joined thread | ring writes; the private spill and its message only past the ring's size |
 | `run` from a joined thread | one slot and notify; resolves through a word |
 | Struct observers on a joined thread, per tick | candidate check on the world's thread, a mailbox write of changed results, at most one notify |
-| Structural change touching archetypes with remote objects | one log entry per row moved, replayed once on that thread |
+| Structural change touching archetypes with remote objects | one log entry per row moved, replayed once on that thread, `log replay` 24 ns a move in node |
+| A thread rebuilding after its log dropped entries | a pass over its archetypes' rows, `log rebuild 100K` 4.1–4.8 ns a row in node |
+| An observer of a joined thread's own objects, per value | its mailbox value, then a location read under the epoch and a column read |
 | Despawning entities with remote finalizers | stop-list copy of declared reads; the world's thread doesn't wait |
 | A transferred asset | one message, loader to its thread; one run |
 
 ## Memory
 
-- **Directory:** a header; a table of record offsets; a record per archetype, 16 bytes plus 32 bytes per storage.
+- **Directory:** a header; a table of record offsets; a record per archetype, 24 bytes plus 32 bytes per storage.
 - **Rings:** per thread, a task ring as the pool's, and a command ring sized to the largest tick's commands and staged
   spawn rows, grown at sync points to the high-water word.
-- **Move log:** 16 bytes per entry, up to max(4096, the thread's rows); 8 bytes per row of the archetypes it holds
-  objects of, for its entity column.
+- **Move log:** a 64-byte header and 16 bytes per entry, max(4096, the thread's rows) rounded up to a power of two; on
+  the world's thread, 4 bytes of tag per row of each remote storage, beside its ticks; on the joined thread, its columns
+  and ticks, and 8 bytes per row of the archetypes it holds objects of, for its entity column.
 - **Joined threads:** per thread, its control words and 64 run slots, 16 KiB.
 - **Mailboxes:** per subscription, its control words and three slots, each sized to the largest result delivered.
 - **Tail buffers:** only once a fallback snapshot was taken: passing rows times their declared struct reads, kept for the next.
@@ -527,19 +560,32 @@ thread is still filled by `world`; a claim is recorded and checked against claim
   changed per tick, N = 1,000 ticks); `mailbox select 10K` (a `select` over 10,000 entities whose order reverses every
   tick).
 
-### Phase 5a: remote object columns and the move log
+### Built: phase 5a, remote object columns and the move log
 
-Claimed threads fill their object components: object columns by row on their thread, staged slots with their entity
-and component, the move log over every apply path with its added flags, published-through word, replay with its lap
-check, and rebuild; observers of objects on their thread, reading under the structure epoch; directory counts. A claim whose systems
-or finalizers exist is rejected until 5b and 5c.
+Claimed threads fill their object components: object columns by row on their thread (`mirror.ts`), staged slots with
+their entity, component and sync, the world's storages holding each row's tag and ticks in their place (`remote.ts`),
+the move log over every apply path with its added flags (`move-log.ts`), its published-through and delivered-through
+words, replay with its lap check, and rebuild from the directory's counts and the tags; entity observers of objects on
+their thread, reading locations under the structure epoch as of the sync observers were delivered through; directory
+counts. The structure epoch and counts are kept only while a joined thread holds claims, and the epoch notifies only
+waiting readers. A claim whose systems or finalizers exist is refused until 5b and 5c, which the joined thread's
+commands and runners come with; until then a slot is staged only through the mirror's `stage`, and the world names it in
+a command buffer as a thread's ring will.
 
-- Interface: none. Contract: commands may give another thread's object components only their start or `null`.
-- Tests: a property test of random spawns, despawns, adds and removes, single and list forms, issued by world-thread
-  systems, on archetypes holding objects on another thread, whose values that thread stages through its staging array,
-  comparing its values and ticks with an inline world's after every tick by a stable id component, with no pool
-  workers, with the log forced to drop; an observer of its own objects reads through the epoch while the world applies;
-  a command giving a remote object a value other than start or `null` fails.
+- Interface: none. Contract: commands may give another thread's object components only their start or `null`: a
+  spawn's other value throws when issued, an add's drops at its system's end, which fails; observers and systems on the
+  world's thread can't read them; when the thread is gone, they come back to the world's thread, `null` or the start.
+- Tests: a property test of random spawns, despawns, adds and removes, single and list forms, through the commands
+  world-thread systems get, on archetypes holding objects on another thread, with values that thread stages through
+  its staging array, removed again in the same sync point now and then, before and after world commands in merge
+  order, comparing its values and ticks with an inline world's after every sync point by a stable id component, with no
+  pool workers, replaying the log and with the log forced to drop; a dropped slot settled without a value; locations
+  read only while no sync point applies and once observers were delivered through; counts in the directory; in node and
+  chromium, a worker watching an entity whose objects change and move archetype every tick while the world ticks back
+  to back, every value's objects agreeing with its structs; on one thread through a `MessageChannel`, observers of the
+  thread's objects at their starts and `null`, listed and whole, commands and kernels giving them other values failing,
+  observers and systems here unable to read them, a claim refused for a thread whose systems or finalizers exist, and
+  the objects coming back once the thread is gone.
 - Must not regress: every benchmark, inline.
 - New: `log replay` (10,000 swap-removes and moves per sync point, time per move); `log rebuild 100K` (a forced
   rebuild over 100,000 rows).

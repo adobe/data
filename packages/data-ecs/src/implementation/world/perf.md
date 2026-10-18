@@ -123,6 +123,10 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 
 **Joined threads.** A wake notifies only a joined thread that has read every earlier one, by a word the thread clears before it reads what's new, so back-to-back ticks don't notify a thread still busy with the last: `mailbox resource` 5.4 → 3.54 µs per tick in node, against 3.13 µs for the same observer on the world's thread and 2.94 µs for none; chromium 7.47 µs.
 
+**Structure epoch.** Kept only while a joined thread holds claims, turned even by a store and notifying only a reader that waits: `sync point one spawn` 916 → 833–875 ns in node, measured alternating with `c4ecbd8d`, from before phase 4, at 833–875 ns. Two atomic adds and a notify cost about 35 ns a sync point, an add and a store about 24 ns.
+
+**Joined threads' objects.** A rebuild fills each column with its start first and indexes the old rows by entity only for a value the thread gave and kept: `log rebuild 100K` 9.7 → 4.1–4.8 ns a row in node.
+
 **Archetype moves.** Each storage knows its element size in 32-bit words, so a cell copy doesn't dispatch on the layout, and move lists are cached in an array by target archetype id rather than a map: retag 1M 46.5–48.8 → 41.8–44.2 ms.
 
 **Main thread.** Compiled `select` predicates: 18 → ~3.5 ms. `where` tests resolve each archetype's storage once and read plain numbers straight from the view, and tuples of 2–4 adjacent same-typed lanes read as array literals: select 1M 37.5 → 24 ms. Row getters chosen once, and tuple reads and writes in one loop: 50 systems 3.2 → 1.63 ms (vitest).
@@ -200,6 +204,9 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **Fixed costs per run, measured rather than tried:** a run of a system no entity matches costs about 0.8 µs, fifty of them 0.39 µs each, and a run whose sync point applies one spawn 1.5 µs. Kernels at 1K and 10K rows stay within 2–5× of their best, as at 1M, so small systems hide no large cost.
 - **The world's thread spinning up to 50 µs for a joined thread's next run** before waiting on its posted word: `remote run` 12.4 → 66 µs in node, since the spin holds the world's thread and the run it just started waits behind it.
 - **Runs from joined threads, measured rather than tried:** two node threads waking each other through `Atomics.waitAsync` take 9.7 µs a round trip, so `remote run`, 12.4 µs, spends about 2.7 µs beyond the platform's floor; spinning instead would block the joined thread, which is often the window's. A mailbox adds about 20 µs a tick to `mailbox select 10K`, whose 0.75 ms is the ordered selection the world's thread recomputes, as it would for its own observer.
+- **Checking commands' values for a joined thread's objects as they're issued,** in `commands.add` and prepared add sites, behind a check of whether any thread holds claims: `add value` 95–97 → 100–104 ns in node, measured alternating, with the sync point's own additions about 2% of it. Checked when a system's commands are queued instead, dropping the command and failing its system, where the issuing paths stay as they were; spawns are checked as they're issued, in the object columns' writers, which only objects reach.
+- **The structure epoch turned even by a store, notifying only waiting readers, kept at every sync point:** about 24 ns a sync point against 35 ns, and `sync point one spawn` still a timer step (41 ns) above `c4ecbd8d`; kept only while a joined thread holds claims instead.
+- **Replay finding a pair of archetypes' source columns once per run of its moves:** `log replay` 23.7–24 → 24.7 ns a move, no gain; a mirror's archetypes hold few columns. Worth revisiting with many objects per archetype.
 - **Checking eight rows' ticks at every row,** rather than at rows aligned to eight: clustered changes 0.023 → 0.108 ms, since each passing row checked a block again. Aligned checks cost clustered changes about 3 µs.
 
 ## Next
@@ -208,5 +215,6 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - Idle cores clock down: after 5 ms idle, even the main thread runs move 2–4× slower per frame, and keeping one other core busy removes most of it, at 10M too. That's the OS's power policy, not something dispatch can avoid without spending power.
 - Emit and other command-heavy kernels: the sync point dominates.
 - Kernels taking `%` of an f64: a conditional on `resources[clock].tick % 2` costs about 33 ns a row in node, 10K rows 333 µs against 8.5 µs without it.
+- Replaying the move log: `log replay` takes 24 ns a move in node and 38.5 ns in chromium, two entries each, against about 1 ns to move the bytes; the cost is the per-entry dispatch and the scattered rows a swap reads.
 - Ordered selections recomputed every tick: `mailbox select 10K` spends about 0.73 ms a tick sorting 10K entities.
 - Main-thread spawns reserving in blocks too: `spawn bulk` still takes one atomic add per spawn. Finalizers spawn during the sync point, after it materializes the run's reservations, so a world's block would have to end before each materialization.

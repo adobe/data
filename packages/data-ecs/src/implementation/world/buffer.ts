@@ -1,3 +1,4 @@
+import { viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import type { KernelCommands } from './kernel.js';
 import type { Positional, SpawnBatch } from './staging.js';
 
@@ -12,8 +13,9 @@ export type Staged = { batch: SpawnBatch; start: number; end: number };
 /**
  * Commands as parallel arrays with explicit counts, reused between runs, so issuing a command allocates nothing.
  * Command `c` names components `ids[starts[c]]` up to the next command's start, with `values` alongside (unused for
- * `remove`). Workers build the same shape and post it back. A kernel's spawns are staged in batches instead, and its
- * buffer lists their rows in `staged`, which the sync point commits before any command.
+ * `remove`). A buffer drained from a worker's command ring keeps its structs' values as bytes in the ring, in their
+ * storages' layout, at `offsets` into `bytes`. A kernel's spawns are staged in batches instead, and its buffer lists
+ * their rows in `staged`, which the sync point commits before any command.
  */
 export type CommandBuffer = {
     count: number;
@@ -26,6 +28,10 @@ export type CommandBuffer = {
     named: number;
     ids: Int32Array;
     readonly values: unknown[];
+    /** For a drained buffer, where its values' bytes are; null for a buffer of values alone. */
+    bytes: Views | null;
+    /** With `bytes`, by component named: its value's first byte there, or -1 for a value in `values`. */
+    offsets: Int32Array;
     /** The first `stagedCount` entries are this buffer's; the rest are kept for reuse. */
     readonly staged: Staged[];
     stagedCount: number;
@@ -40,6 +46,8 @@ export const createBuffer = (capacity = 16): CommandBuffer => ({
     named: 0,
     ids: new Int32Array(capacity * 4),
     values: [],
+    bytes: null,
+    offsets: new Int32Array(0),
     staged: [],
     stagedCount: 0,
 });
@@ -50,6 +58,7 @@ export const emptyBuffer: CommandBuffer = createBuffer(0);
 export const clearBuffer = (buffer: CommandBuffer): void => {
     // Releases values for collection; the arrays keep their storage for the next run.
     buffer.values.fill(undefined, 0, buffer.named);
+    buffer.bytes = null;
     buffer.count = 0;
     buffer.named = 0;
     buffer.stagedCount = 0;
@@ -93,6 +102,47 @@ export const pushComponent = (buffer: CommandBuffer, id: number, value: unknown)
     buffer.ids[buffer.named] = id;
     buffer.values[buffer.named] = value;
     buffer.named++;
+};
+
+const fitted = <T extends Uint8Array | Float64Array | Int32Array>(array: T, length: number, create: (length: number) => T): T => {
+    if (array.length >= length) return array;
+    const larger = create(Math.max(length, 2 * array.length));
+    larger.set(array);
+    return larger;
+};
+
+/** Grows a buffer to take `commands` more commands naming `components` more components, as a drain writes them straight in. */
+export const fitDrained = (buffer: CommandBuffer, commands: number, components: number): void => {
+    const count = buffer.count + commands;
+    buffer.kinds = fitted(buffer.kinds, count, length => new Uint8Array(length));
+    buffer.shapes = fitted(buffer.shapes, count, length => new Int32Array(length));
+    buffer.entities = fitted(buffer.entities, count, length => new Float64Array(length));
+    buffer.starts = fitted(buffer.starts, count, length => new Int32Array(length));
+    const named = buffer.named + components;
+    buffer.ids = fitted(buffer.ids, named, length => new Int32Array(length));
+    buffer.offsets = fitted(buffer.offsets, named, length => new Int32Array(length));
+};
+
+/** A component value read out of bytes in a general layout, copied to row 0 here first; grown for larger layouts. */
+let scratch = viewsOf(new ArrayBuffer(256), 0, 256);
+
+/** Component `k`'s value: as given, or decoded from its bytes. */
+export const valueAt = (buffer: CommandBuffer, k: number, layouts: readonly Layout[]): unknown => {
+    const { bytes } = buffer;
+    if (bytes === null || buffer.offsets[k] < 0) return buffer.values[k];
+    const layout = layouts[buffer.ids[k]];
+    if (layout.kind !== "linear") return undefined;
+    const { stride } = layout;
+    if (stride > scratch.u8.length) scratch = viewsOf(new ArrayBuffer(stride * 2), 0, stride * 2);
+    const offset = buffer.offsets[k];
+    scratch.u8.set(bytes.u8.subarray(offset, offset + stride));
+    return layout.read(scratch, 0);
+};
+
+/** Component `k`'s value as a reference, an entity: one f64 in its bytes. */
+export const referenceAt = (buffer: CommandBuffer, k: number): number => {
+    const { bytes } = buffer;
+    return bytes === null || buffer.offsets[k] < 0 ? Number(buffer.values[k]) : bytes.f64[buffer.offsets[k] >> 3];
 };
 
 export const endOf = (buffer: CommandBuffer, command: number): number =>

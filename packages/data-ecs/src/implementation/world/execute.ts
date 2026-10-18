@@ -6,8 +6,9 @@ import { idOf, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
 import { applySync, prepareSync } from './synchronize.js';
 import { locate } from './entities.js';
-import { stage } from './buffer.js';
-import { receivedBatch } from './staging.js';
+import { clearBuffer, createBuffer } from './buffer.js';
+import { decodeSegment, type MergeTag, type Segment } from './command-ring.js';
+import { viewsOf } from '../../interface/registry/layout.js';
 import { combine, identityOf, writeReduction, type ReductionTarget } from './reductions.js';
 import type { Failure, Report } from '../../interface/world/report.js';
 import { failureOf } from './failures.js';
@@ -95,14 +96,38 @@ const preparedFor = (context: ExecuteContext, schedule: Schedule): Prepared => {
     return prepared;
 };
 
-/** Queues a settled chunk's commands and spawns, keeps the reservations it left unused, and returns its error, if it failed. */
-const queue = (state: State, { commands, spawns, unused, error }: ChunkResult): unknown => {
-    // A worker's spawns commit in its chunk's place.
-    if (spawns !== undefined) for (const posted of spawns) stage(commands, receivedBatch(state.layouts, posted), 0, posted.count);
-    if (unused !== undefined) for (let k = 0; k < unused.length; k++) state.unused.push(unused[k]);
+/**
+ * Drains one part of a worker's segment into a buffer of its own, queued in its place: commands, spawn blocks staged
+ * to commit in its place, and the reservations it left unused. With `tag`, the part must start with that merge tag.
+ */
+const drainPart = (state: State, bytes: Uint8Array, tag: MergeTag | null): boolean => {
+    if (bytes.byteLength === 0) return true;
+    const buffer = state.drains[state.drained] ??= createBuffer();
+    state.drained++;
+    if (!decodeSegment(buffer, viewsOf(bytes.buffer, bytes.byteOffset, bytes.byteLength), state.layouts, state.starts, state.unused, tag)) return false;
     // Systems can't touch the resource entity; only registration adds resources.
+    if (buffer.count > 0 || buffer.stagedCount > 0) state.queued.push({ buffer, guarded: true });
+    return true;
+};
+
+/** A segment's ring part, then its spill; the first part holding records starts with the task's merge tag. */
+const drain = (state: State, { ring, spill, tag }: Segment): Error | undefined => {
+    const drained = drainPart(state, ring, tag) && (spill === null || drainPart(state, spill, ring.byteLength === 0 ? tag : null));
+    return drained ? undefined : new Error("A worker's commands came back under another task's merge tag.");
+};
+
+/** Queues a settled chunk's commands, a worker's drained from its segment, and returns its error, if it failed. */
+const queue = (state: State, { commands, segment, error }: ChunkResult): unknown => {
+    const drained = segment === undefined ? undefined : drain(state, segment);
     if (commands.count > 0 || commands.stagedCount > 0) state.queued.push({ buffer: commands, guarded: true });
-    return error;
+    return error ?? drained;
+};
+
+/** Once a sync point applied or failed: empties the buffers workers' segments drained into, and their command rings. */
+const rewind = (state: State, workers: Workers | null): void => {
+    for (let k = 0; k < state.drained; k++) clearBuffer(state.drains[k]);
+    state.drained = 0;
+    workers?.pool.rewind();
 };
 
 const firstOf = (first: unknown, next: unknown): unknown => first === undefined ? next : first;
@@ -189,6 +214,7 @@ const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: u
             }
         }
         finally {
+            rewind(state, workers);
             publish();
         }
     }

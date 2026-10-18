@@ -26,8 +26,9 @@ const exactly = (layout: Layout | null, leaves: readonly Path[]): boolean => {
 /**
  * Checks a compiled kernel against its declaration and the registered schemas, which don't depend on a world, so
  * registering the kernel rejects it where it's declared: every column, whole-value write, lookup, `up` read and
- * reduction it uses is declared, and names scalar leaves of its component's schema, and each spawn site names each of
- * its components once, from its keys. Throws with the first mismatch.
+ * reduction it uses is declared, and names scalar leaves of its component's schema, each spawn site names each of its
+ * components once, from its keys, and a tuple or struct a command or spawn gives goes to a component stored in linear
+ * memory. Throws with the first mismatch.
  */
 export const checkKernel = (leaf: Leaf, description: KernelDescription): void => {
     const { lookup, components: query, resources, up, reduce } = leaf.declaration;
@@ -70,6 +71,11 @@ export const checkKernel = (leaf: Leaf, description: KernelDescription): void =>
             if (!Number.isInteger(k) || k < 0 || k >= description.keys.length) fail(`spawns a list naming component ${k} of its ${description.keys.length} keys.`);
             if (list.findIndex(other => description.keys[other] === description.keys[k]) < position) fail(`spawns a list naming "${labelOf(description.keys[k])}" twice.`);
         });
+    }
+    for (const k of description.structuredValues) {
+        const key = description.keys[k];
+        const layout = key === undefined ? null : layoutOfKey(key);
+        if (layout !== null && layout.kind !== "linear") fail(`gives "${labelOf(key)}" a tuple or struct, which only a component stored in linear memory takes.`);
     }
     for (const shape of description.reducedShapes) {
         if (Reflect.get(reduce ?? {}, shape.component) === undefined || !exactly(layoutOfKey(shape.component), shape.leaves)) {

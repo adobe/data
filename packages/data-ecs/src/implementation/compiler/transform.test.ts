@@ -643,6 +643,8 @@ describe("context", () => {
             commands.remove(row.entity, mass);
         });`);
         expect(kernel.keys).toEqual(["position", "alive", "score", "mass"]);
+        // Only position is given a tuple; registration checks such components are stored in linear memory.
+        expect(kernel.structuredValues).toEqual([0]);
         // A component given no value is given undefined, which the runtime writes as the component's start.
         expect(run(kernel, 1, { position: { "[0]": [5] } }, { program: false }).calls).toEqual([
             ["spawn", 999], ["spawn", 999, 0, [5, 1]], ["spawn", 999, 1, undefined],
@@ -663,6 +665,7 @@ describe("context", () => {
             commands.remove(row.entity, unit);
         });`);
         expect(kernel.keys).toEqual(["position", "alive", "score", "mass"]);
+        expect(kernel.structuredValues).toEqual([0]);
         expect(run(kernel, 1, { position: { "[0]": [5] } }, { program: false }).calls).toEqual([
             ["spawn", 999], ["spawn", 999, 0, [5, 1]], ["spawn", 999, 1, undefined], ["spawn", 999, 2, 2],
             [2, 999], [2, 999, 3, 3], [2, 999, 2, undefined],

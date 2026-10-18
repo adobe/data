@@ -4,7 +4,7 @@ import type { Finalizer } from '../../interface/finalizer/created.js';
 import type { ChangeSet } from '../../interface/finalizer/body.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Archetype } from './archetype.js';
-import { createBuffer, type CommandBuffer } from './buffer.js';
+import { createBuffer, valueAt, type CommandBuffer } from './buffer.js';
 import { readCell } from './cells.js';
 import { createCommands } from './commands.js';
 import { asEntity, indexOf, locate } from './entities.js';
@@ -123,10 +123,11 @@ export const commandValue = (state: State, queued: readonly Queued[], entry: num
     const { plan } = state;
     if (plan.start[entry] < 0) return missing;
     const last = (buffer: number, start: number, end: number, found: unknown): unknown => {
-        const { ids, values } = queued[buffer].buffer;
-        let value = found;
-        for (let k = start; k < end; k++) if (ids[k] === id) value = values[k];
-        return value;
+        const commands = queued[buffer].buffer;
+        const { ids } = commands;
+        let at = -1;
+        for (let k = start; k < end; k++) if (ids[k] === id) at = k;
+        return at < 0 ? found : valueAt(commands, at, state.layouts);
     };
     let value = last(plan.buffer[entry], plan.start[entry], plan.end[entry], missing);
     const more = plan.more.size === 0 ? undefined : plan.more.get(entry);

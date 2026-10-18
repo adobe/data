@@ -1,6 +1,7 @@
+import type { Views } from '../../interface/registry/layout.js';
 import { copyValue, ensureCapacity, swapRemove, writeF32, writeF32Lanes, writeF64, writeI32, writeU32, type Archetype, type Storage } from './archetype.js';
 import { chunkShift } from './kernel.js';
-import { clearBuffer, despawnCommand, endOf, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
+import { clearBuffer, despawnCommand, endOf, referenceAt, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { readCell, writeCell } from './cells.js';
 import { commitBatches, commitStaged } from './batches.js';
 import { applyIndexChanges, cascadeReferences, indexChangesOf, type IndexChanges, type Written } from './cascade.js';
@@ -109,7 +110,7 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
     const references = structure.referenceIds.length > 0;
     for (let b = 0; b < queued.length; b++) {
         const { buffer, guarded } = queued[b];
-        const { kinds, entities, starts, ids, values } = buffer;
+        const { kinds, entities, starts, ids } = buffer;
         // Each command adds at most one entry.
         ensurePlanCapacity(state, plan.count + buffer.count);
         for (let command = 0; command < buffer.count; command++) {
@@ -128,7 +129,7 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
                 for (let k = start; k < end; k++) to = withComponent(state, to, ids[k]);
                 plan.to[entry] = to.id;
                 if (end > start) addRange(state, entry, b, start, end);
-                if (references) for (let k = start; k < end; k++) if (structure.references[ids[k]] !== 0) written.push(entity, ids[k], Number(values[k]));
+                if (references) for (let k = start; k < end; k++) if (structure.references[ids[k]] !== 0) written.push(entity, ids[k], referenceAt(buffer, k));
                 continue;
             }
             else {
@@ -184,7 +185,7 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
                     fresh.push(id);
                 }
                 if (known === undefined) to = withComponent(state, to, id);
-                if (references && structure.references[id] !== 0) written.push(entity, id, Number(values[k]));
+                if (references && structure.references[id] !== 0) written.push(entity, id, referenceAt(buffer, k));
             }
             if (known !== undefined) to = archetypes[known];
             else if (shape !== null) shape.adding[source] = to.id;
@@ -194,8 +195,25 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
     }
 };
 
+/** Copies a value's bytes, in its storage's layout, into row `row`: by 32-bit word where its layout has whole words. */
+const copyBytes = (storage: Storage, row: number, bytes: Views, offset: number): void => {
+    const { words } = storage;
+    if (words > 0) {
+        const target = storage.views.u32;
+        const source = bytes.u32;
+        const to = row * words;
+        const from = offset >> 2;
+        for (let i = 0; i < words; i++) target[to + i] = source[from + i];
+        return;
+    }
+    const stride = storage.layout.kind === "linear" ? storage.layout.stride : 0;
+    const target = storage.views.u8;
+    const source = bytes.u8;
+    for (let i = 0; i < stride; i++) target[row * stride + i] = source[offset + i];
+};
+
 const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Archetype, toRow: number, from: Archetype | null, fresh: readonly number[] | undefined, tick: number): void => {
-    const { ids, values } = buffer;
+    const { ids, values, bytes, offsets } = buffer;
     for (let k = start; k < end; k++) {
         const id = ids[k];
         const storage = to.storageById[id];
@@ -204,7 +222,9 @@ const writeRange = (buffer: CommandBuffer, start: number, end: number, to: Arche
         // Inline, not a closure call: common layouts store straight into their view; the rest use the layout's writer.
         const { views } = storage;
         const index = toRow * storage.unitStride + storage.unitOffset;
-        switch (storage.write) {
+        // A worker's structs arrive as bytes in their storage's layout.
+        if (bytes !== null && offsets[k] >= 0) copyBytes(storage, toRow, bytes, offsets[k]);
+        else switch (storage.write) {
             case writeF32: if (typeof value === "number") views.f32[index] = value; else writeCell(storage, toRow, value); break;
             case writeU32: if (typeof value === "number") views.u32[index] = value; else writeCell(storage, toRow, value); break;
             case writeI32: if (typeof value === "number") views.i32[index] = value; else writeCell(storage, toRow, value); break;

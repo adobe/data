@@ -5,7 +5,8 @@ import { readCell } from './cells.js';
 import { createCommands } from './commands.js';
 import { bindKernel, type BoundKernel } from './kernels.js';
 import type { Pool, TaskResult } from './pool.js';
-import { maximumScalars, type KernelSetup, type PostedSpawns } from './protocol.js';
+import { maximumScalars, type KernelSetup } from './protocol.js';
+import type { Segment } from './command-ring.js';
 import { createBuffer, createKernelCommands, emptyBuffer, stage, type CommandBuffer } from './buffer.js';
 import { createBatch, positionalSpawner, type SpawnBatch } from './staging.js';
 import { createBlock, endBlock, reserveFrom } from './entities.js';
@@ -25,10 +26,10 @@ import { createUp, type Run } from './up.js';
 import { labelOf, labelOfItem } from '../../interface/registry/index.js';
 
 /**
- * One unit of a system's work for a run: the commands it issued, the spawns a worker staged for it, plus its error if
- * it failed partway.
+ * One unit of a system's work for a run: the commands it issued, or for a worker's chunk its segment of the worker's
+ * command ring, plus its error if it failed partway.
  */
-export type ChunkResult = { readonly commands: CommandBuffer; readonly spawns?: readonly PostedSpawns[]; readonly unused?: readonly number[]; readonly error?: unknown };
+export type ChunkResult = { readonly commands: CommandBuffer; readonly segment?: Segment; readonly error?: unknown };
 /** An `up` system on workers settles as one chunk, once each depth's pieces have, in turn. */
 export type Chunk = ChunkResult | Promise<ChunkResult> | Promise<readonly ChunkResult[]>;
 
@@ -764,6 +765,8 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
             index,
             url: kernel.description.url,
             ...kernel.setup,
+            // A worker's commands and spawns leave other components' starts to the world, so only data crosses.
+            starts: kernel.setup.starts.map((start, k) => state.layouts[kernel.setup.keys[k]]?.kind === "linear" ? start : null),
             // An `up` kernel is passed only the rows that pass its filters.
             added: up === null ? addedIds : [],
             changed: up === null ? changedIds : [],

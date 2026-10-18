@@ -1,12 +1,12 @@
 import type { Entity } from '../../interface/entity/entity.js';
 import { createBlock, endBlock, locate, reserveFrom, tableLength, type Block } from './entities.js';
-import { createBatch, positionalSpawner, postBatch, type Positional, type SpawnBatch } from './staging.js';
-import type { Kernel, KernelModule } from './kernel.js';
+import { createBatch, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
+import type { Kernel, KernelCommands, KernelModule } from './kernel.js';
 import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../interface/registry/layout.js';
 import { emptyViews } from './arrays.js';
 import { claimPiece } from './claims.js';
-import { controlWords, done, epoch, idleKernel, lineWords, posted, ringSize, signal, taskFields, taskWords, type FromWorker, type KernelSetup, type LookupSetup, type PostedSpawns, type ToWorker, type WorkerError } from './protocol.js';
-import { createBuffer, createKernelCommands, type CommandBuffer } from './buffer.js';
+import { controlWords, done, epoch, idleKernel, lineWords, posted, ringBase, ringCapacity, ringCursor, ringNeeded, ringSize, signal, taskFields, taskWords, type FromWorker, type KernelSetup, type LookupSetup, type ToWorker, type WorkerError } from './protocol.js';
+import { beginCommand, createRingWriter, encoderOf, noExtent, objectStart, putBatch, putComponent, putStart, putUnused, putValue, segmentExtent, startSegment, type Encoder } from './command-ring.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
 import { pageBytes, pagesWord } from './memory.js';
@@ -49,16 +49,28 @@ type LoadedKernel = {
     readonly kernel: Kernel;
     readonly wasm: WasmRun | null;
     readonly lookups: readonly ((entity: Entity) => readonly unknown[] | null)[];
-    /** Where its spawns are staged, one batch per set of components its lists name, with its spawners; made on first run. */
-    staging: { readonly batches: readonly SpawnBatch[]; readonly spawners: readonly Positional[] } | null;
+    /**
+     * Where its spawns are staged, one batch per set of components its lists name, with its spawners, and its commands,
+     * which write into this worker's command ring; made on first run, once its components' layouts are known.
+     */
+    staging: { readonly batches: readonly SpawnBatch[]; readonly spawners: readonly Positional[]; readonly commands: KernelCommands } | null;
     /** By archetype id, what it ran over there, rebuilt when the archetype's record moves on. */
     readonly bound: (Bound | undefined)[];
 };
 
 let memory: WebAssembly.Memory | null = null;
-/** The memory's buffer and a view of it as words, for the layout directory; rebuilt when the memory grows. */
+/**
+ * The memory's buffer, a view of it as words, for the layout directory, and views of all of it, where the command ring
+ * is; rebuilt when the memory grows.
+ */
 let memoryBuffer: ArrayBufferLike = new ArrayBuffer(0);
 let words = new Uint32Array(0);
+let memoryViews: Views = emptyViews;
+/** This worker's control words, its command ring's among them, and where its tasks write their segments. */
+let control = new Int32Array(0);
+const writer = createRingWriter();
+/** By component id, how its values are written into the ring. */
+const encoders: Encoder[] = [];
 /** The memory's length in pages that `buffer` covers, and the header's first word. */
 let pages = -1;
 let header = 0;
@@ -97,6 +109,7 @@ const refreshMemory = (): void => {
     }
     memoryBuffer = latest;
     words = new Uint32Array(latest);
+    memoryViews = viewsOf(latest, 0, latest.byteLength);
     pages = current;
 };
 
@@ -230,39 +243,49 @@ const noPartials = new Float64Array(0);
 /** This worker's reservations for kernel spawns, in blocks, so workers spawning together don't contend; ended by each task. */
 let block: Block | null = null;
 
-/** A kernel's staging, made once its components' layouts are known. */
+const encoderFor = (id: number): Encoder => encoders[id] ??= encoderOf(layouts[id]);
+
+/** A kernel's staging and commands, made once its components' layouts are known. */
 const stagingOf = (loaded: LoadedKernel): NonNullable<LoadedKernel["staging"]> => {
     if (loaded.staging !== null) return loaded.staging;
     const reserving = block ??= createBlock(required(entities, "entity table"));
     const batches: SpawnBatch[] = [];
+    const { keys, starts } = loaded.setup;
     const spawners = loaded.setup.spawns.map(ids => {
         const key = [...ids].sort((a, b) => a - b).join(",");
         let batch = batches.find(candidate => candidate.ids.join(",") === key);
         if (batch === undefined) batches.push(batch = createBatch(layouts, ids));
-        return positionalSpawner(reserving, reserveFrom, batch, ids, ids.map(id => loaded.setup.starts[loaded.setup.keys.indexOf(id)]));
+        // An object component's start is the world's to resolve.
+        return positionalSpawner(reserving, reserveFrom, batch, ids, ids.map(id => layouts[id].kind === "object" ? objectStart : starts[keys.indexOf(id)]));
     });
-    return loaded.staging = { batches, spawners };
+    const valueEncoders = keys.map(encoderFor);
+    const commands: KernelCommands = {
+        spawners,
+        begin: (kind, entity) => beginCommand(writer, kind, entity),
+        value: (key, value) => value === undefined ? putStart(writer, keys[key]) : putValue(writer, keys[key], valueEncoders[key], value),
+        component: key => putComponent(writer, keys[key]),
+    };
+    return loaded.staging = { batches, spawners, commands };
 };
 
-/** Takes the spawns a task staged, in batch order, emptying the batches, and ends its block of reservations. */
-const takeSpawns = (message: ToWorker, transfer: ArrayBuffer[], unused: number[]): readonly PostedSpawns[] => {
-    if (message.kind !== "run") return noSpawns;
+/** Reservation positions this worker's block left unused, reused by each task. */
+const unused: number[] = [];
+
+/** Ends a run's segment: its staged spawn batches, in batch order, emptying them, then the reservations its block left unused. */
+const endSegment = (message: RunMessage): void => {
+    unused.length = 0;
     if (block !== null) endBlock(block, unused);
     const staging = kernels.get(message.kernel)?.staging ?? null;
-    if (staging === null) return noSpawns;
-    const spawns: PostedSpawns[] = [];
-    for (const batch of staging.batches) if (batch.count > 0) spawns.push(postBatch(batch, transfer));
-    return spawns;
+    if (staging !== null) for (const batch of staging.batches) putBatch(writer, batch);
+    putUnused(writer, unused);
 };
 
-const noSpawns: readonly PostedSpawns[] = [];
-
-const run = (message: RunMessage, buffer: CommandBuffer): void => {
+const run = (message: RunMessage): void => {
     const loaded = kernels.get(message.kernel);
     if (loaded === undefined) throw new Error(`Worker has no kernel ${message.kernel}.`);
     refreshEntities();
     const { columns, filters, addresses } = boundOf(loaded, message.archetype);
-    const commands = createKernelCommands({ buffer }, loaded.setup.keys, loaded.setup.starts, stagingOf(loaded).spawners);
+    const { commands } = stagingOf(loaded);
     const { wasm } = loaded;
     if (wasm !== null && loaded.setup.wasm !== null) {
         wasm(message.start, message.end, message.tick, message.lastRun, ...addresses,
@@ -377,6 +400,8 @@ const handle = async (message: ToWorker): Promise<void> => {
         header = message.header >> 2;
         memoryBuffer = memory.buffer;
         words = new Uint32Array(memoryBuffer);
+        memoryViews = viewsOf(memoryBuffer, 0, memoryBuffer.byteLength);
+        control = new Int32Array(memoryBuffer, message.control, controlWords);
         return;
     }
     if (message.kind === "window") {
@@ -392,19 +417,48 @@ const handle = async (message: ToWorker): Promise<void> => {
         }
         return;
     }
-    const buffer = createBuffer();
-    const transfer: ArrayBuffer[] = [];
-    const unused: number[] = [];
+    if (message.kind === "kernels") {
+        try {
+            refreshMemory();
+            await load(message.kernels);
+            channel.post({ kind: "done", task: message.task, start: 0, end: 0, spill: null });
+        }
+        catch (error) {
+            channel.post({ kind: "failed", task: message.task, start: 0, end: 0, spill: null, error: errorOf(error) });
+        }
+        return;
+    }
+    let failure: unknown = undefined;
+    let segment = false;
     try {
         refreshMemory();
-        if (message.kind === "kernels") await load(message.kernels);
-        else run(message, buffer);
-        channel.post({ kind: "done", task: message.task, commands: buffer, spawns: takeSpawns(message, transfer, unused), unused }, transfer);
+        startSegment(writer, memoryViews, Atomics.load(control, ringBase) >>> 0, Atomics.load(control, ringCapacity), Atomics.load(control, ringCursor), message);
+        segment = true;
+        run(message);
     }
     catch (error) {
-        channel.post({ kind: "failed", task: message.task, commands: buffer, spawns: takeSpawns(message, transfer, unused), unused, error: errorOf(error) }, transfer);
+        failure = error;
     }
+    // What a failed task issued before failing still applies, its spawns included.
+    if (segment) {
+        try {
+            endSegment(message);
+        }
+        catch (error) {
+            failure ??= error;
+        }
+    }
+    const { start, end, spill, transfer: spilled } = segment ? segmentExtent(writer) : noExtent;
+    if (segment) {
+        Atomics.store(control, ringCursor, end);
+        Atomics.store(control, ringNeeded, Atomics.load(control, ringNeeded) + end - start + (spill?.length ?? 0));
+    }
+    const transfer = spilled === null ? noTransfer : [spilled];
+    if (failure === undefined) channel.post({ kind: "done", task: message.task, start, end, spill }, transfer);
+    else channel.post({ kind: "failed", task: message.task, start, end, spill, error: errorOf(failure) }, transfer);
 };
+
+const noTransfer: ArrayBuffer[] = [];
 
 /** Handles messages strictly in order, including across a kernel load's `await`. */
 let handled: Promise<void> = Promise.resolve();

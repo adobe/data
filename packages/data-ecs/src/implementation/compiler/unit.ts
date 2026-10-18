@@ -45,6 +45,8 @@ export type Unit = {
     /** The shapes of values contributed to reductions, as source text. */
     readonly reducedShapes: Set<string>;
     readonly keys: string[];
+    /** The components a command or spawn gives a tuple or struct, by name. */
+    readonly structuredValues: Set<string>;
     /** Each list the kernel spawns, as indexes into `keys`, listed once. */
     readonly spawns: (readonly number[])[];
     /** Each leaf a reduction folds into: its resource (an index into `Signature.reduced`), path and accumulator local. */
@@ -71,7 +73,7 @@ export const createUnit = (signature: Signature, module: Module, lists: Lists, e
     const up = signature.up === null ? null : counter++;
     if (up !== null) names.set(up, "up");
     return {
-        signature, module, lists, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], spawns: [], accumulators: [], active: new Set(),
+        signature, module, lists, link, target, columns: [], columnIndex: new Map(), chunks: new Set(), stampedPerCall: new Set(), booleans: new Set(), assignments: new Map(), observed: new Set(), names, shapes: new Set(), reducedShapes: new Set(), keys: [], structuredValues: new Set(), spawns: [], accumulators: [], active: new Set(),
         used: { read: new Set(), write: new Set(), resources: new Set(), lookups: new Map(), up: new Set() },
         up, upColumns: [], upColumnIndex: new Map(), upBooleans: new Set(),
         next: () => counter++, expression, statement,

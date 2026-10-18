@@ -2,7 +2,6 @@ import type { Entity } from '../../interface/entity/entity.js';
 import { viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { writeF32, writeF32Lanes, writeF64, writeI32, writeOf, writeU32, type Archetype } from './archetype.js';
 import type { Reservations } from './entities.js';
-import type { PostedSpawns } from './protocol.js';
 
 // Spawn staging that needs no world: batches, their writers and generated spawners, shared by the main thread and workers.
 
@@ -52,37 +51,6 @@ export const createBatch = (layouts: readonly Layout[], ids: readonly number[]):
     const sorted = [...ids].sort((a, b) => a - b);
     return { ids: sorted, archetype: null, columns: sorted.map(id => columnOf(layouts[id], id, initialCapacity)), entities: new Float64Array(initialCapacity), count: 0, capacity: initialCapacity };
 };
-
-/** The first `count` rows of a batch as a worker posts them, emptying the batch, with the buffers to transfer. */
-export const postBatch = (batch: SpawnBatch, transfer: ArrayBuffer[]): PostedSpawns => {
-    const { count } = batch;
-    const bytes = batch.columns.map(column => column.views.u8.slice(0, count * column.stride));
-    const values = batch.columns.map(column => {
-        if (column.layout.kind !== "object") return [];
-        const taken = column.values.slice(0, count);
-        column.values.fill(undefined, 0, count);
-        return taken;
-    });
-    const entities = batch.entities.slice(0, count);
-    for (const column of bytes) transfer.push(column.buffer);
-    transfer.push(entities.buffer);
-    batch.count = 0;
-    return { ids: batch.ids, count, entities, bytes, values };
-};
-
-/** A batch over the rows a worker posted, to commit as the main thread's own. */
-export const receivedBatch = (layouts: readonly Layout[], posted: PostedSpawns): SpawnBatch => ({
-    ids: posted.ids,
-    archetype: null,
-    columns: posted.ids.map((id, c) => {
-        const layout = layouts[id];
-        const bytes = posted.bytes[c];
-        return { id, layout, ...writeOf(layout), stride: layout.kind === "linear" ? layout.stride : 0, views: viewsOf(bytes.buffer, bytes.byteOffset, bytes.byteLength), values: posted.values[c] };
-    }),
-    entities: posted.entities,
-    count: posted.count,
-    capacity: posted.count,
-});
 
 const grow = (batch: SpawnBatch): void => {
     const capacity = batch.capacity * 2;

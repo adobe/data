@@ -10,7 +10,7 @@ import { chain, churn, emit, fastest, follow, highest, hits, idle, idles, index,
 
 import type { Benchmark } from "./benchmark.js";
 import { loopTickIdle, loopTicks } from "./loop.js";
-import { placed, pooled } from "./placed.js";
+import { main, placed, pooled } from "./placed.js";
 import { wake } from "./wake.js";
 import { createWorld } from "../implementation/index.js";
 import { workers } from "../interface/resources/workers.js";
@@ -86,7 +86,7 @@ const runBest = { bytes: 64, basis: "A run reads at least one cache line of its 
 
 /** Benchmarks shared by vitest (`*.perf-test.ts`) and the bundled node runner (`run.ts`). */
 /** The pool's benchmarks node runs too, on `worker_threads`. */
-const pooledInNode = new Set(["move workers", "follow workers", "spawn bulk kernel workers", "sync point grow 100 archetypes workers"]);
+const pooledInNode = new Set(["move workers", "follow workers", "emit workers", "spawn bulk kernel workers", "sync point grow 100 archetypes workers"]);
 
 export const benchmarks: readonly Benchmark[] = [
     {
@@ -624,6 +624,7 @@ export const benchmarks: readonly Benchmark[] = [
             return best;
         },
     },
+    ...placed([main]).filter(benchmark => benchmark.name === "emit main"),
     ...placed([pooled]).filter(benchmark => pooledInNode.has(benchmark.name)),
     wake,
 ];

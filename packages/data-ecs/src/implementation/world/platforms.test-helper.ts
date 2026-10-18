@@ -11,6 +11,8 @@ export type Counting = {
     readonly terminated: () => number;
     /** Messages of this kind posted to any worker so far. */
     readonly posted: (kind: ToWorker["kind"]) => number;
+    /** Completions so far whose task wrote past its command ring's size. */
+    readonly spilled: () => number;
 };
 
 export const countingWorkers = (base: WorkerPlatform | null = platformWorkers()): Counting => {
@@ -18,6 +20,7 @@ export const countingWorkers = (base: WorkerPlatform | null = platformWorkers())
     const ports: WorkerPort[] = [];
     const posted = new Map<ToWorker["kind"], number>();
     let terminated = 0;
+    let spilled = 0;
     const start = (): WorkerPort | null => {
         const port = base.start();
         if (port === null) return null;
@@ -27,6 +30,10 @@ export const countingWorkers = (base: WorkerPlatform | null = platformWorkers())
                 posted.set(message.kind, (posted.get(message.kind) ?? 0) + 1);
                 port.post(message, transfer);
             },
+            onMessage: handler => port.onMessage(message => {
+                if (message.spill !== null) spilled++;
+                handler(message);
+            }),
             terminate: () => {
                 terminated++;
                 return port.terminate();
@@ -41,6 +48,7 @@ export const countingWorkers = (base: WorkerPlatform | null = platformWorkers())
         started: () => ports.length,
         terminated: () => terminated,
         posted: kind => posted.get(kind) ?? 0,
+        spilled: () => spilled,
     };
 };
 

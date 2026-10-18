@@ -95,6 +95,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             ...up === null ? [] : ["up: true,", `upColumns: [${unit.upColumns.join(", ")}],`],
             `keys: [${keys.join(", ")}],`,
             `spawns: ${JSON.stringify(unit.spawns)},`,
+            `structuredValues: ${JSON.stringify([...unit.structuredValues].map(name => unit.keys.indexOf(name)).sort((a, b) => a - b))},`,
             `url: ${url},`,
             `program: ${serialize(program)},`,
             `reducedShapes: [${[...unit.reducedShapes].join(", ")}],`,

@@ -7,6 +7,7 @@ import { reductionsCases } from "./reductions.cases.js";
 import { observedWorkersCases } from "./observed-workers.cases.js";
 import { upWorkersCases } from "./up-workers.cases.js";
 import { portsCases } from "./ports.cases.js";
+import { commandRingsCases } from "./command-rings.cases.js";
 
 // Real workers in chromium: the cases over the fixtures' sources, as node runs them built.
 workersCases(() => import("./workers.fixture.js"));
@@ -18,3 +19,4 @@ reductionsCases(() => import("./reductions.fixture.js"));
 observedWorkersCases(() => import("./observed-workers.fixture.js"));
 upWorkersCases(() => import("./up-workers.fixture.js"));
 portsCases(() => import("./ports.fixture.js"));
+commandRingsCases(() => import("./command-rings.fixture.js"));

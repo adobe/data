@@ -25,9 +25,10 @@ export const workersCases = (load: () => Promise<typeof Fixture>) => describe("w
         expect(await fixture.scattered(1)).toEqual(await fixture.scattered(0));
     });
 
-    it("merge chunk commands in the same order as the main thread", async () => {
+    it("merge chunk commands in the same order as the main thread, whatever the worker count", async () => {
         const fixture = await load();
-        expect(await fixture.ordered(3)).toEqual(await fixture.ordered(0));
+        const alone = await fixture.ordered(0);
+        for (const count of [1, 2, 7]) expect(await fixture.ordered(count)).toEqual(alone);
     });
 
     it("stage kernel spawns from every worker and the main thread in chunk order, whatever the worker count", async () => {

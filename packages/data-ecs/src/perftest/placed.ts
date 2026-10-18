@@ -4,7 +4,8 @@ import { createWorld } from "../implementation/world/create.js";
 import type { Benchmark, Best } from "./benchmark.js";
 import { forest, propagate } from "./hierarchy.js";
 import { fastest as particlesFastest, move, spawn } from "./particles.js";
-import { chain, fastest, follow, observe, poke, seeded } from "./suite.js";
+import { chain, emit, fastest, follow, hits, observe, poke, seeded } from "./suite.js";
+import { toPromise } from "../interface/observe/to-promise.js";
 import * as structural from "./structural.js";
 import { bumpEach, fillEach, spawnEach } from "./growth.js";
 
@@ -90,6 +91,20 @@ export const placed = (placements: readonly Placement[]): readonly Benchmark[] =
                     await world.run(observe);
                     if (i >= 20) best = Math.min(best, performance.now() - start);
                 }
+                return best;
+            }),
+        },
+        {
+            name: `emit ${placement.label}`,
+            operation: "A kernel issuing an add for a tenth of its rows: hits, events or state changes found by a parallel pass.",
+            per: "rows",
+            n: 1_000_000,
+            typical: [1_000, 100_000],
+            best: { bytes: 34, basis: "Each row reads 16 bytes; each tenth moves to a new archetype, about 180 bytes.", on: placement.on },
+            run: () => measured(placement, async world => {
+                await seeded(() => world, 1_000_000);
+                const best = await fastest(() => world.run(emit));
+                if (await toPromise(world.observe.count({ required: [hits] })) !== 100_000) throw new Error(`emit ${placement.label}: wrong count`);
                 return best;
             }),
         },

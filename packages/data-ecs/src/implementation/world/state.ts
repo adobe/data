@@ -2,6 +2,7 @@ import type { Entity } from '../../interface/entity/entity.js';
 import { declarationOf, firstKeyOf, kindOf, labelOf } from '../../interface/registry/index.js';
 import { createArchetype, startTicks, type Archetype, type Storage } from './archetype.js';
 import type { SpawnBatch } from './staging.js';
+import type { CommandBuffer } from './buffer.js';
 import type { ListShape, Recent } from './lists.js';
 import type { Directory } from './directories.js';
 import type { GpuEngine } from './gpu.js';
@@ -43,6 +44,9 @@ export type State = {
     readonly journal: Journal;
     /** Command buffers for the next sync point, in merge order. */
     readonly queued: Queued[];
+    /** Buffers that workers' command ring segments drain into, the first `drained` in use until the sync point's end. */
+    readonly drains: CommandBuffer[];
+    drained: number;
     resourceEntity: number;
     /** Components some registered system filters on with `changed`, or an entity or query observer watches; only their kernel stamps are kept. */
     readonly observed: Set<number>;
@@ -132,6 +136,8 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         resources: new Set(),
         tick: 0,
         queued: [],
+        drains: [],
+        drained: 0,
         resourceEntity: -1,
         observed: new Set(),
         referencesWritten: [],

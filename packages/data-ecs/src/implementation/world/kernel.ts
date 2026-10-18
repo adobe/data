@@ -186,6 +186,8 @@ export type KernelDescription = {
     readonly keys: readonly Key[];
     /** The components of each list the kernel spawns, as indexes into `keys`, in the order its spawner takes values. */
     readonly spawns: readonly (readonly number[])[];
+    /** Indexes into `keys` of the components a command or spawn gives a tuple or struct, which needs a linear layout. */
+    readonly structuredValues: readonly number[];
     /** A module exporting `create`, importable from the main thread and from workers. */
     readonly url: string;
     /** The same body for WASM, or `null` when it uses what WASM kernels don't support: commands, or non-scalar values. */

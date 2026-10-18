@@ -175,8 +175,8 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
 ### Task rings
 
 The pool's ring (`pool.ts`, `protocol.ts`) generalized to every thread. Today it carries only WASM kernel tasks, all
-numbers, with claimed splits; a JS kernel's task, with its resources, input and commands, is a message, which closes
-the pool's windows; rings for joined threads don't. Pool workers are nested workers of the world's thread by default;
+numbers, with claimed splits; a JS kernel's task, with its resources and input, is a message, which closes the pool's
+windows, and its commands come back through its worker's command ring; rings for joined threads don't. Pool workers are nested workers of the world's thread by default;
 the main thread may create them and pass their ports instead. Each ring has posted, done, epoch and signal words on
 their own cache lines, plus payload words: task kind, system index, tick, `lastRun`, input offset, and **the sync
 number the task needs replayed through**. Workers wait in a window with `Atomics.wait`. The world's thread, and the
@@ -218,28 +218,38 @@ The world's thread keeps its own `CommandBuffer`s, as now. Every other thread ha
 thread as its only writer, drained by the world's thread at the sync point. Commands are `despawn`, and `add` and
 `remove` of one component or a list.
 
-- **Values:** structs are written as bytes in the target storage's layout, through each component's layout writer.
-  The world drains a segment into a `CommandBuffer` whose values for those components are bytes: `writeRange` copies
-  them, and the plan's references, finalizers' `commandValue` and holder-index changes decode only what they read. An
-  object value is a tag: start, `null`, or a slot. A slot names an object of the issuing thread's own logical thread,
-  kept there in a staging array with its entity and component.
+- **Records** (`command-ring.ts`) start on 8 bytes. A task's segment starts with its merge tag, then holds its commands
+  in issue order: kind and component count, the entity, then per component its id, how its value comes and the value.
+  Then its staged spawn batches, as blocks, and the reservation ranges its block left unused.
+- **Values:** structs are written as bytes in the target storage's layout, through each component's layout writer,
+  with numbers and f32 lane tuples written straight in. The world drains a segment into a `CommandBuffer` whose values
+  for those components are bytes, left in the ring at offsets the buffer keeps: `writeRange` copies them, by 32-bit
+  word, and the plan's references, finalizers' `commandValue` and holder-index changes decode only what they read. Any
+  other value is a tag: start, `null`, a number or a boolean, which the world resolves, start to the component's start;
+  a value left out is the start tag, struct or not; from phase 5, a slot, which names an object of the issuing thread's
+  own logical thread, kept there in a staging array with its entity and component.
 - **Kernels:** a pool kernel's values are scalars, tuples, structs, `null` or `undefined` (its start), and kernels read
-  no object component (`compiler/subset.md`). So an object component gets the start or `null` tag, and a tuple or
-  struct value for a component without a linear layout fails at the kernel's registration. `FromWorker` carries only a
-  task's completion, with its ring extent, and its error.
-- **Merge order:** each block carries a merge tag (tier, system index, chunk index). The world consumes blocks in its
-  own schedule order, as it awaits chunks now, and checks each tag rather than sorting, so the order never depends on
-  which thread ran a chunk. WASM kernels issue no commands, so claimed splits don't touch it.
-- **Size:** a thread loads its ring's base, capacity and write cursor from shared words at each task's start; the world
-  resets the cursor, and regrows the ring, at the sync point, when no task runs. A task that fills the ring writes the
-  rest of that chunk's commands and spawns into a private buffer carried in its completion message, after its ring
-  part, and stores what it needed in a high-water word, which the next sync point grows the ring to.
+  no object component (`compiler/subset.md`). So an object component gets a tag, and the compiler lists the components
+  a command or spawn gives a tuple or struct, which fails the kernel's registration for a component without a linear
+  layout; any other value one can't take fails the task. `FromWorker` carries only a task's completion, with its ring
+  extent and its spill, and its error.
+- **Merge order:** each segment carries a merge tag: its system's run, by the tick it took, and its chunk, by archetype
+  and first row. The world consumes segments in its own schedule order, as it awaits chunks now, and checks each tag
+  against the task it posted rather than sorting, so the order never depends on which thread ran a chunk. WASM kernels
+  issue no commands, so claimed splits don't touch it.
+- **Size:** a pool worker's ring words are in its control line: base, capacity, write cursor and the bytes its tasks
+  needed. It loads them at each task's start; the world resets the cursor, and regrows the ring, after the sync point,
+  when no task runs. A task that fills the ring writes the rest of that chunk's commands and spawns, the open command
+  included, into a private buffer carried in its completion message, after its ring part, and stores what its tasks
+  needed in the needed word, which the next sync point grows the ring to, at least doubling it. The ring part and the
+  spill drain into buffers of their own, queued one after the other. A ring starts at 64 KiB; a dead worker's is left
+  to it, since it may still write.
 - **Spawns,** `spawn(components)(values)`, stay staged (`staging.ts`), not commands: each thread stages into private
   batches per component set, in the target storages' layout, as the main thread and pool workers do now, and reserves
-  entities in blocks. At a task's end a worker copies each batch's rows into its ring as a block tagged with its
-  chunk's merge tag, in place of the `PostedSpawns` it posts now, with the reservation ranges its block left unused.
-  The sync point commits blocks in merge order, right after the world thread's own batches and before any command, as
-  it commits posted batches now, and returns the unused ranges to the free list.
+  entities in blocks. At a task's end a worker copies each batch's rows into its ring as a block in the chunk's
+  segment, after its commands, then the reservation ranges its block left unused. The sync point commits blocks in
+  merge order, right after the world thread's own batches and before any command, as batches over the ring, and returns
+  the unused ranges to the free list.
 
 ### Runs from joined threads
 
@@ -392,7 +402,7 @@ then green type tests, then runtime with red then green runtime tests. Each phas
 - The loop, inline: `add`, `cadence` with `maxSteps`, `always`, `wake`, `clock`, `report`, beats on animation frames or
   timers, and the `workers` resource sizing the pool at sync points. `World.Report` has no `"thread"` failure kind.
 - The pool: WASM kernel tasks through per-worker rings with claimed splits, JS kernel tasks by message; kernel spawns
-  staged into batches per component set on the main thread and workers, posted back per chunk and committed in merge
+  staged into batches per component set on the main thread and workers, returned per chunk and committed in merge
   order, with entities reserved in blocks whose unused positions the sync point returns; `terminate` waits for workers
   to leave their windows before releasing the pool's control state to the arena.
 - `share` and `World.join` aren't public yet; they come with joining.
@@ -438,21 +448,23 @@ back, so none finishes after it and leaves workers' kernels behind the main thre
   a waiting worker and back, N = 10,000), node and chromium. Node's other benchmarks pin `workers` to 0, so they go on
   measuring the world's thread.
 
-### Phase 3: command rings for the pool
+### Built: phase 3, command rings for the pool
 
-Worker kernels write commands into their thread's ring, with merge tags, values as bytes, start and `null` tags, and
-their staged spawn batches as tagged blocks with their unused reservation ranges; the spill past the ring's size and
-the high-water word; `CommandBuffer`'s byte values, which `writeRange` copies and the plan's references, finalizers and
-holder-index changes decode. `FromWorker` carries a task's completion, ring extent and error, and a spill. The world's
-own commands, the sync point's commit of staged rows and its plan's order are unchanged.
+Worker kernels write commands into their worker's ring, with merge tags, values as bytes, tags for the rest, and their
+staged spawn batches as blocks with their unused reservation ranges; the spill past the ring's size and the needed
+word; `CommandBuffer`'s byte values, which `writeRange` copies and the plan's references, finalizers and holder-index
+changes decode. `FromWorker` carries a task's completion, ring extent and error, and a spill. The world's own commands,
+the sync point's commit of staged rows and its plan's order are unchanged. Kernel setups carry only linear components'
+starts, the rest being the world's to resolve, and `terminate` waits for every worker that ran a task by message, as
+for windows, since rings are in the control state.
 
 - Interface: none. Contract: a kernel giving a tuple or struct to a component without a linear layout fails at
   registration.
-- Tests: the existing merge tests, commands at 0 and 3 workers and staged spawns at 0, 1, 2 and 7, with commands
-  extended to 0, 1, 2 and 7, in node and chromium; a task that overflows its ring spills in order and the ring grows at
-  the sync point; a failed task's commands and spawns before its failure still apply; unused reservation ranges return
-  to the free list once; object components get their start or `null`; a kernel giving a tuple to an object component
-  fails at registration.
+- Tests: the existing merge tests, commands and staged spawns at 0, 1, 2 and 7 workers, in node and chromium; a task
+  that overflows its ring spills in order, the ring grows at the sync point and the next run doesn't spill; a failed
+  task's commands and spawns before its failure still apply; unused reservation ranges return to the free list once;
+  object components get their start, `null` or a number; a kernel giving a tuple to an object component fails at
+  registration.
 - Must not regress: `emit`, `churn`, `sync point one spawn`, `spawn bulk kernel`, `despawn bulk kernel`, `add tag
   kernel`, `remove tag kernel`, `spawn bulk kernel main`, `spawn bulk kernel workers`.
 - New: `emit main` and `emit workers` (`emit`'s kernel, an add for a tenth of 1M rows), node and chromium.

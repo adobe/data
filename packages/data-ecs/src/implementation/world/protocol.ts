@@ -1,6 +1,4 @@
-import type { Entity } from '../../interface/entity/entity.js';
 import type { Schema } from '../../interface/schema/schema.js';
-import type { CommandBuffer } from './buffer.js';
 import type { Endpoint } from './port.js';
 import type { WasmScalar } from './wasm.js';
 
@@ -22,7 +20,7 @@ export type KernelSetup = {
     readonly lookups: readonly LookupSetup[];
     /** Component ids, used as `keys` so command values name components by id. */
     readonly keys: readonly number[];
-    /** By key index: what each component starts at when a command's value for it is `undefined`. */
+    /** By key index: what each component stored in linear memory starts at, for a spawn leaving it out; null for the rest, whose start the world resolves. */
     readonly starts: readonly unknown[];
     /** The component ids of each list the kernel spawns, in the order its spawner takes values. */
     readonly spawns: readonly (readonly number[])[];
@@ -44,7 +42,8 @@ export type KernelSetup = {
 export type ToWorker =
     /** From a lent worker's owner, first: the port every later message arrives on and every reply goes to. */
     | { readonly kind: "port"; readonly port: Endpoint }
-    | { readonly kind: "memory"; readonly memory: WebAssembly.Memory; readonly header: number }
+    /** The memory, its layout directory's header, and the byte offset of this worker's control words, its command ring's among them. */
+    | { readonly kind: "memory"; readonly memory: WebAssembly.Memory; readonly header: number; readonly control: number }
     /** Wait on this worker's task ring in shared memory until asked to leave. Offsets are bytes into the memory. */
     | { readonly kind: "window"; readonly control: number; readonly statuses: number; readonly payloads: number; readonly claims: number; readonly worker: number; readonly epoch: number }
     /** New components' schemas; none for a value that isn't data. */
@@ -69,24 +68,13 @@ export type ToWorker =
 export type WorkerError = { readonly name: string; readonly message: string; readonly stack?: string };
 
 /**
- * A task's kernel spawns of one set of components, sorted `ids`, in issue order: by column, its rows' bytes in the
- * target storage's layout, or an object column's values; empty for the other kind.
- */
-export type PostedSpawns = {
-    readonly ids: readonly number[];
-    readonly count: number;
-    readonly entities: Float64Array;
-    readonly bytes: readonly Uint8Array[];
-    readonly values: readonly unknown[][];
-};
-
-/**
- * A task's commands, its staged spawns, and the reservation positions its block left unused, as start and end pairs.
- * A failed task still returns what it issued before failing, as the main thread would apply it.
+ * A task's completion: its segment of the worker's command ring, as start and end bytes past the ring's base, and what
+ * it wrote past the ring's size, or null (`command-ring.ts`). A failed task's segment holds what it issued before failing,
+ * which applies, as the main thread's would.
  */
 export type FromWorker =
-    | { readonly kind: "done"; readonly task: number; readonly commands: CommandBuffer; readonly spawns: readonly PostedSpawns[]; readonly unused: readonly number[] }
-    | { readonly kind: "failed"; readonly task: number; readonly commands: CommandBuffer; readonly spawns: readonly PostedSpawns[]; readonly unused: readonly number[]; readonly error: WorkerError };
+    | { readonly kind: "done"; readonly task: number; readonly start: number; readonly end: number; readonly spill: Uint8Array | null }
+    | { readonly kind: "failed"; readonly task: number; readonly start: number; readonly end: number; readonly spill: Uint8Array | null; readonly error: WorkerError };
 
 /**
  * Tasks a worker's ring holds, and f64 words per task: twelve fields, then scalars. The fields are kernel, archetype,
@@ -117,5 +105,14 @@ export const posted = 0;
 export const done = 1;
 export const epoch = 2;
 export const signal = 3;
+/**
+ * The worker's command ring: its base and capacity in bytes, which the world sets at sync points; its write cursor past
+ * the base, which the worker stores at each task's end and the world resets at sync points; and the bytes its tasks
+ * needed since, spills included, which the next sync point grows the ring to. The base reads as unsigned.
+ */
+export const ringBase = 4;
+export const ringCapacity = 5;
+export const ringCursor = 6;
+export const ringNeeded = 7;
 /** Each worker's control words take a whole line. */
 export const controlWords = lineWords;

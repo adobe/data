@@ -23,6 +23,16 @@ const scalarArgument = (node: SourceExpression | SpreadElement, scope: Scope, ou
     return scalar(scope.unit.expression(expression, scope, out), expression, scope);
 };
 
+/**
+ * A command's or spawn's value for the component `name` as data in a temporary, recording a tuple or struct, which only a
+ * component stored in linear memory takes.
+ */
+const commandValue = (name: string, node: Node, scope: Scope, out: Out): Expression => {
+    const data = toData(scope.unit.expression(node, scope, out), node, scope);
+    if (data.kind !== "leaf") scope.unit.structuredValues.add(name);
+    return temporary(scope, out, "value", observe(scope.unit, materialize(data)));
+};
+
 /** A value as a temporary, so command arguments are evaluated in source order before the command starts. */
 const temporary = (scope: Scope, out: Out, hint: string, value: Expression): Expression => {
     if (value.kind === "local" || value.kind === "number" || value.kind === "boolean") return value;
@@ -68,8 +78,7 @@ const listValues = (list: readonly string[], node: SourceExpression | SpreadElem
         if (property.type === "SpreadElement" || !property.computed) return fail(property, "command value keys must be computed component identifiers like [position]");
         const name = commandName(property.key, scope);
         if (!list.includes(name)) return fail(property.key, `${name} isn't one of the command's components`);
-        const value = scope.unit.expression(property.value, scope, out);
-        given.set(name, temporary(scope, out, "value", observe(scope.unit, materialize(toData(value, property.value, scope)))));
+        given.set(name, commandValue(name, property.value, scope, out));
     }
     return list.map(name => given.get(name) ?? undefinedValue);
 };
@@ -129,7 +138,7 @@ const command = (name: string, node: SimpleCallExpression, scope: Scope, out: Ou
                 return none;
             }
             const key = keyIndex(scope.unit, component.key);
-            const value = third === undefined ? undefinedValue : temporary(scope, out, "value", observe(scope.unit, materialize(toData(scope.unit.expression(argument(third), scope, out), third, scope))));
+            const value = third === undefined ? undefinedValue : commandValue(component.key, argument(third), scope, out);
             out.push({ kind: "begin", command: 2, entity: target }, { kind: "value", key, value });
             return none;
         }

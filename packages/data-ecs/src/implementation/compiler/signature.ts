@@ -2,7 +2,7 @@ import type { Expression, ObjectExpression, Property, SpreadElement, Pattern } f
 import type { Reduction } from '../../interface/resource/reduction.js';
 import { isReduction, reductionOperators } from '../../interface/registry/reduction.js';
 import { fail } from './failure.js';
-import { listLiteral } from './lists.js';
+import type { Lists } from './lists.js';
 import type { ModuleScope } from './module-scope.js';
 
 export type Lookup = { readonly name: string; readonly read: readonly string[] };
@@ -13,7 +13,10 @@ export type Up = { readonly through: string; readonly read: readonly string[] };
 /** A resource the kernel reduces into, by its module-scope binding name. */
 export type Reduced = { readonly resource: string; readonly operator: Reduction };
 
-/** The parts of a kernel declaration the compiler needs. Component and resource keys are module-scope binding names. */
+/**
+ * The parts of a kernel declaration the compiler needs. Component and resource keys are expressions of the kernel's
+ * module: its module-scope bindings, or, for a key only another module's list names, that list indexed (`lists.ts`).
+ */
 export type Signature = {
     readonly read: ReadonlySet<string>;
     readonly write: ReadonlySet<string>;
@@ -41,18 +44,15 @@ const properties = (node: Expression | Pattern, what: string): readonly (readonl
         : entry(propertyName(property), property));
 };
 
-/** Keys a kernel declaration lists: in an array literal, or a module-scope `const` holding one or `Archetype.create` of one. */
-const identifiers = (node: Expression | Pattern, module: ModuleScope): readonly string[] => {
-    const list = listLiteral(node, module);
-    if (list === null) return fail(node, "kernel declarations list keys in an array literal, or a const of this module holding one or Archetype.create of one");
-    return list.elements.map(element => element?.type === "Identifier" && module.has(element.name)
-        ? element.name
-        : fail(element ?? node, "kernel declarations list keys as identifiers bound at module scope"));
+/** Keys a kernel declaration lists, as `Lists.names` reads them; `what` names the list in a failure. */
+const identifiers = (node: Expression | Pattern, what: string, lists: Lists): readonly string[] => {
+    const names = lists.names(node);
+    return "error" in names ? fail(node, `${what}: ${names.error}`) : names;
 };
 
-const lists = (node: Expression | Pattern, what: string, allowed: readonly string[], module: ModuleScope): ReadonlyMap<string, readonly string[]> =>
+const keyLists = (node: Expression | Pattern, what: string, allowed: readonly string[], lists: Lists): ReadonlyMap<string, readonly string[]> =>
     new Map(properties(node, what).map(([name, property]) => allowed.includes(name)
-        ? entry(name, identifiers(property.value, module))
+        ? entry(name, identifiers(property.value, `${what}.${name}`, lists))
         : fail(property, `${what}.${name} is not allowed in a kernel declaration`)));
 
 /** `reduce: { [resource]: "operator", ... }`, with resources bound at module scope. */
@@ -81,8 +81,8 @@ export const kernelOf = (declaration: ObjectExpression): "cpu" | "gpu" | null =>
     return null;
 };
 
-/** Reads and validates a kernel declaration. */
-export const signature = (declaration: ObjectExpression, module: ModuleScope): Signature => {
+/** Reads and validates a kernel declaration; `lists` reads its lists of keys. */
+export const signature = (declaration: ObjectExpression, module: ModuleScope, lists: Lists): Signature => {
     let components: ReadonlyMap<string, readonly string[]> | undefined;
     let resources: readonly string[] = [];
     let reduced: readonly Reduced[] = [];
@@ -93,13 +93,13 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
     for (const [name, property] of properties(declaration, "a kernel declaration")) {
         switch (name) {
             case "components":
-                components = lists(property.value, "components", ["read", "write", "has", "not", "added", "changed"], module);
+                components = keyLists(property.value, "components", ["read", "write", "has", "not", "added", "changed"], lists);
                 break;
             case "resources":
                 for (const [list, value] of properties(property.value, "resources")) {
                     // A condition in `is` is readable too; one in `not` is only checked before the kernel runs.
-                    if (list === "read" || list === "is") resources = [...resources, ...identifiers(value.value, module)];
-                    else if (list === "changed") changedResources = identifiers(value.value, module);
+                    if (list === "read" || list === "is") resources = [...resources, ...identifiers(value.value, `resources.${list}`, lists)];
+                    else if (list === "changed") changedResources = identifiers(value.value, "resources.changed", lists);
                     else if (list === "not") continue;
                     else fail(value, `resources.${list} is not allowed in a kernel declaration`);
                 }
@@ -109,7 +109,7 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
                 break;
             case "lookup":
                 for (const [lookup, value] of properties(property.value, "lookup")) {
-                    lookups.push({ name: lookup, read: lists(value.value, `lookup.${lookup}`, ["read", "has", "not"], module).get("read") ?? [] });
+                    lookups.push({ name: lookup, read: keyLists(value.value, `lookup.${lookup}`, ["read", "has", "not"], lists).get("read") ?? [] });
                 }
                 break;
             case "up": {
@@ -120,7 +120,7 @@ export const signature = (declaration: ObjectExpression, module: ModuleScope): S
                         const node = value.value;
                         through = node.type === "Identifier" && module.has(node.name) ? node.name : fail(node, "up.through is an identifier bound at module scope");
                     }
-                    else if (field === "read") read = identifiers(value.value, module);
+                    else if (field === "read") read = identifiers(value.value, "up.read", lists);
                     else fail(value, `up.${field} is not allowed in a kernel declaration`);
                 }
                 up = { through: through ?? fail(property, "up needs through"), read };

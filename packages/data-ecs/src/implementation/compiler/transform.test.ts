@@ -50,13 +50,16 @@ const transform = (source: string, files: { readonly [file: string]: string } = 
 
 type Compiled = KernelDescription & KernelModule;
 
-/** Compiles `source`, which assigns its kernel system to `kernel`: the attached description plus its kernel module's `create`. */
-const compile = async (source: string, files: { readonly [file: string]: string } = {}): Promise<Compiled> => {
+/**
+ * Compiles `source`, which assigns its kernel system to `kernel`: the attached description plus its kernel module's
+ * `create`. `imported` gives the values of the bindings `source` imports, since its imports aren't evaluated.
+ */
+const compile = async (source: string, files: { readonly [file: string]: string } = {}, imported: { readonly [name: string]: unknown } = {}): Promise<Compiled> => {
     const result = await transform(source, files);
     if (result === null || "failure" in result) throw new Error(result === null ? "no kernel" : result.failure.message);
     const module = result.code.split("\n").filter(line => !line.startsWith("import ")).join("\n");
-    const evaluate = new Function("System", "attachKernel$", "Archetype", `${module}\nreturn kernel;`);
-    const description: KernelDescription = evaluate({ create: (declaration: unknown, body: unknown) => ({ declaration, body }) }, (_: unknown, attached: unknown) => attached, { create: (list: unknown) => list });
+    const evaluate = new Function("System", "attachKernel$", "Archetype", ...Object.keys(imported), `${module}\nreturn kernel;`);
+    const description: KernelDescription = evaluate({ create: (declaration: unknown, body: unknown) => ({ declaration, body }) }, (_: unknown, attached: unknown) => attached, { create: (list: unknown) => list }, ...Object.values(imported));
     const index = Number(description.url.slice("kernel:".length));
     const kernelModule: KernelModule = new Function(`${result.kernels[index]?.replace("export const create =", "const create =")}\nreturn { create };`)();
     expect(kernelModule.create.toString()).not.toMatch(/\b(position|velocity|mass|alive|score|delta|target)\b/);
@@ -673,7 +676,7 @@ describe("context", () => {
     test.each([
         ["a value for a component the list doesn't name", "commands.spawn([mass])({ [mass]: 1, [score]: 2 });", "score isn't one of the command's components"],
         ["a spawner kept rather than called", "const spawn = commands.spawn([mass]); spawn({ [mass]: 1 });", "a kernel calls the spawner where it gets it, as commands.spawn(components)(values)"],
-        ["a list holding a spread", "commands.spawn([...pair])({});", "commands list components by identifiers bound at module scope"],
+        ["a list holding a spread", "commands.spawn([...pair])({});", "commands.spawn: lists name keys by identifiers bound at module scope"],
         ["a list that isn't a module constant", "const list = 1; commands.add(row.entity, list, {});", "commands name components by identifiers bound at module scope"],
         ["a component listed twice", "commands.remove(row.entity, [mass, mass]);", "mass is listed twice"],
         ["an add with too many arguments", "commands.add(row.entity, mass, 1, 2);", "an add is commands.add(entity, component, value) or commands.add(entity, components, values)"],
@@ -1049,6 +1052,91 @@ describe("imported functions and constants", () => {
             "/both.js": "export * from './a.js';\nexport * from './b.js';", "/a.js": "export const f = (x) => x;", "/b.js": "export const f = (x) => -x;",
         })).toBe("f is exported by more than one export * of /both.js");
         expect(await failure(kernel(`import { f } from "lodash";`, "row[score] = f(1);"))).toBe("lodash can't be resolved from /test.js");
+    });
+});
+
+describe("imported lists", () => {
+    const files = {
+        "/components.js": `export const health = "health";\nexport const armor = "armor";\nexport const tagged = "tagged";\n`,
+        "/archetypes.js": [
+            `import { Archetype } from "ecs";`,
+            `import { health, armor, tagged } from "./components.js";`,
+            `export const shield = "shield";`,
+            `export const Unit = Archetype.create([health, armor, tagged]);`,
+            `export const Guard = [shield, armor];`,
+            `export const Alias = Unit;`,
+            `export const Computed = [health].concat([armor]);`,
+            `export let Changing = [health];`,
+            `export const Spread = [...Guard];`,
+        ].join("\n"),
+        "/barrel.js": `export { Unit as Soldier } from "./archetypes.js";\nexport * from "./archetypes.js";\nexport * as Kinds from "./archetypes.js";\n`,
+    };
+    /** The values the archetypes' module gives its lists, for evaluating the kernel's module. */
+    const Unit = ["health", "armor", "tagged"];
+    const Guard = ["shield", "armor"];
+    const commanding = (imports: string, body: string) =>
+        `${imports}\nconst kernel = System.create({ name: "a", kernel: "cpu", components: { read: [mass] } }, (row, { commands }) => { ${body} });`;
+
+    test("name the keys of a list imported from another module, by the kernel's bindings or else through the list", async () => {
+        const source = commanding(`import { health, armor } from "./components.js";\nimport { Unit, Guard } from "./archetypes.js";`, `
+            const spawned = commands.spawn(Unit)({ [health]: row[mass], [armor]: 2 });
+            commands.add(spawned, Guard, { [armor]: 3 });
+            commands.remove(row.entity, Unit);`);
+        const result = await transform(source, files);
+        expect(result !== null && "code" in result ? result.code : "").toContain("keys: [health, armor, Unit[2], Guard[0]],");
+        expect(result?.dependencies).toEqual(expect.arrayContaining(["/archetypes.js", "/components.js"]));
+        const kernel = await compile(source, files, { health: "health", armor: "armor", Unit, Guard });
+        expect(kernel.keys).toEqual(["health", "armor", "tagged", "shield"]);
+        expect(run(kernel, 1, { mass: { "[]": [5] } }, { program: false }).calls).toEqual([
+            ["spawn", 999], ["spawn", 999, 0, 5], ["spawn", 999, 1, 2], ["spawn", 999, 2, undefined],
+            [2, 999], [2, 999, 3, undefined], [2, 999, 1, 3],
+            [3, 100], [3, 100, 0], [3, 100, 1], [3, 100, 2],
+        ]);
+    });
+
+    test("follow re-exports, namespace imports and constants naming another list", async () => {
+        const source = commanding(`import { health } from "./components.js";\nimport { Soldier, Alias } from "./barrel.js";\nimport * as Archetypes from "./archetypes.js";\nimport * as Barrel from "./barrel.js";\nconst Local = Alias;`, `
+            commands.spawn(Soldier)({ [health]: row[mass] });
+            commands.spawn(Archetypes.Unit)({ [health]: 2 });
+            commands.add(row.entity, Barrel.Kinds.Guard, {});
+            commands.remove(row.entity, Local);`);
+        const result = await transform(source, files);
+        expect(result !== null && "code" in result ? result.code : result?.failure.message).toContain("keys: [health, Soldier[1], Soldier[2], Barrel.Kinds.Guard[0]],");
+        const kernel = await compile(source, files, { health: "health", Soldier: Unit, Alias: Unit, Archetypes: { Unit, Guard }, Barrel: { Kinds: { Guard } } });
+        expect(kernel.keys).toEqual(["health", "armor", "tagged", "shield"]);
+        expect(run(kernel, 1, { mass: { "[]": [5] } }, { program: false }).calls).toEqual([
+            ["spawn", 999], ["spawn", 999, 0, 5], ["spawn", 999, 1, undefined], ["spawn", 999, 2, undefined],
+            ["spawn", 999], ["spawn", 999, 0, 2], ["spawn", 999, 1, undefined], ["spawn", 999, 2, undefined],
+            [2, 100], [2, 100, 3, undefined], [2, 100, 1, undefined],
+            [3, 100], [3, 100, 0], [3, 100, 1], [3, 100, 2],
+        ]);
+    });
+
+    test("in a declaration, bind keys the list's module defines to the kernel's imports of them, under any name", async () => {
+        const source = `import { shield, Guard } from "./archetypes.js";\nimport { armor as plate } from "./components.js";
+const kernel = System.create({ name: "a", kernel: "cpu", components: { read: Guard, write: [score] } }, (row) => { row[score] = row[shield] * 10 + row[plate]; });`;
+        const kernel = await compile(source, files, { shield: "shield", Guard, plate: "armor" });
+        expect(run(kernel, 2, { shield: { "[]": [1, 2] }, armor: { "[]": [3, 4] } }).field("score")).toEqual([13, 24]);
+        expect(await failure(`import { shield, Guard } from "./archetypes.js";
+const kernel = System.create({ name: "a", kernel: "cpu", components: { read: Guard, write: [score] } }, (row) => { row[score] = row[shield]; });`, files))
+            .toBe("Guard[1] is in components read but never read; remove it, or move it to components has to keep requiring it");
+    });
+
+    test.each([
+        ["computed when its module runs", "commands.spawn(Computed)({});", "commands.spawn: Computed is computed when /archetypes.js runs, so the compiler can't read its components; declare it as an array literal, or Archetype.create of one"],
+        ["not a const", "commands.spawn(Changing)({});", "commands.spawn: Changing isn't a module-scope const, so the compiler can't read its components"],
+        ["holding a spread", "commands.spawn(Spread)({});", "commands.spawn: Spread names a key by something other than an identifier bound at the scope of /archetypes.js"],
+        ["not exported", "commands.spawn(Missing)({});", "commands.spawn: Missing isn't exported by /archetypes.js"],
+        ["a namespace", "commands.spawn(Archetypes)({});", "commands.spawn: Archetypes is a module namespace, not a list of components"],
+        ["a member of a namespace it doesn't export", "commands.remove(row.entity, Archetypes.Missing);", "commands.remove: Missing isn't exported by /archetypes.js"],
+    ])("fail the build for a list %s", async (_, body, message) => {
+        expect(await failure(commanding(`import { Computed, Changing, Spread, Missing } from "./archetypes.js";\nimport * as Archetypes from "./archetypes.js";`, body), files)).toBe(message);
+    });
+
+    test("fail the build for a declaration's list computed when its module runs", async () => {
+        expect(await failure(`import { Computed } from "./archetypes.js";
+const kernel = System.create({ name: "a", kernel: "cpu", components: { read: Computed, write: [score] } }, (row) => { row[score] = 1; });`, files))
+            .toBe("components.read: Computed is computed when /archetypes.js runs, so the compiler can't read its components; declare it as an array literal, or Archetype.create of one");
     });
 });
 

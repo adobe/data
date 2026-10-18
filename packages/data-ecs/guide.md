@@ -336,7 +336,7 @@ Example: [`08-kernels.test.ts`](src/guide/08-kernels.test.ts#L31-L61), with the 
 
 - **The subset** a kernel body may use is in [`src/implementation/compiler/subset.md`](src/implementation/compiler/subset.md). The build rejects anything else, with a message at the code.
 - **Math types:** `Vec2`, `Vec3`, `Vec4` (each F32, with `I32` and `U32`), `Quat`, `Mat4x4`, and the scalars, each with a `schema`, follow WGSL's semantics. See the [`math follows WGSL`](src/interface/math/semantics.test.ts) tests.
-- **Lists in kernels:** a kernel's declaration and commands name components in array literals, or in constants of its own module holding one or `Archetype.create` of one; a kernel calls the spawner where it gets it, as `commands.spawn(components)(values)`.
+- **Lists in kernels:** a kernel's declaration and commands name components in array literals, or in constants holding one or `Archetype.create` of one, of the kernel's module or imported from any other, through re-exports and namespaces too; the build reads an imported list's keys in its own module, and fails, at the call, for a list it can't read, such as one computed when its module runs. Editing a list's module compiles its kernels again. A kernel calls the spawner where it gets it, as `commands.spawn(components)(values)`.
 - **What a kernel compiles to:** JS, WGSL and WASM output for one system, in [`generated-code.md`](src/implementation/world/generated-code.md).
 - **Rejected:** a kernel that wasn't compiled, at registration; a body outside the subset, at build.
 

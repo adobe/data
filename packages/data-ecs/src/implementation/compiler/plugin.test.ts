@@ -43,6 +43,23 @@ import { score } from "./linked-keys.js";
 const kernel = System.create({ name: "linked", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = increment(scaled(row.entity)); });
 export const description = kernelOf(kernel);
 `);
+/** A kernel spawning through a list another module declares, which the test edits. */
+const listing = join(directory, "listing.js");
+const listed = join(directory, "listed.js");
+const writeListed = (keys: string) => writeFileSync(listed, `import { Component } from ${source("../../interface/component/component.ts")};
+import { score } from "./linked-keys.js";
+export const extra = Symbol("extra");
+Component.register(extra, { type: { const: true } });
+export const Listed = [${keys}];
+`);
+writeListed("score");
+writeFileSync(listing, `import { System } from ${source("../../interface/system/system.ts")};
+import { kernelOf } from ${source("../world/attach-kernel.ts")};
+import { score } from "./linked-keys.js";
+import { Listed } from "./listed.js";
+const kernel = System.create({ name: "listing", kernel: "cpu", components: { read: [score] } }, (row, { commands }) => { commands.spawn(Listed)({ [score]: row[score] }); });
+export const description = kernelOf(kernel);
+`);
 /** An application importing a kernel a library ships uncompiled, from its `dist`. */
 const application = join(directory, "application.js");
 mkdirSync(join(directory, "node_modules/@adobe"), { recursive: true });
@@ -205,6 +222,22 @@ test("serve compiles kernels again when a file they inline from changes", async 
         });
     } finally {
         writeHelper(2);
+    }
+});
+
+test("serve compiles kernels again when a list they import changes", async () => {
+    try {
+        await serve(async server => {
+            const before: KernelDescription = (await server.ssrLoadModule(listing)).description;
+            expect(before.keys.map(String)).toEqual(["Symbol(score)"]);
+            writeListed("score, extra");
+            server.watcher.emit("change", listed);
+            const after: KernelDescription = (await server.ssrLoadModule(listing)).description;
+            expect(after.url).not.toBe(before.url);
+            expect(after.keys.map(String)).toEqual(["Symbol(score)", "Symbol(extra)"]);
+        });
+    } finally {
+        writeListed("score");
     }
 });
 

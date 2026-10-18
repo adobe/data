@@ -62,8 +62,10 @@ call        = Math-function | helper | lookup | command | reducer
 - **Commands:** `context.commands.spawn(components)({ [component]: value, ... })`, `despawn(entity)`,
   `add(entity, component, value)` or `add(entity, components, { ... })`, and `remove(entity, component)` or
   `remove(entity, components)`, with component keys bound at module scope. A list of components is an array literal of
-  them, or a constant of the kernel's module holding one or `Archetype.create` of one; a component it lists that a
-  command gives no value starts at its start. The spawner is called where it's made.
+  them, or a constant holding one or `Archetype.create` of one, in the kernel's module or imported, also through
+  re-exports and namespaces, its keys read in the scope of the module that declares it; a component it lists that a
+  command gives no value starts at its start. A list the build can't read, such as one computed when its module runs,
+  fails the build at the command. The spawner is called where it's made.
 
 ## GPU kernels
 

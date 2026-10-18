@@ -9,6 +9,7 @@ import { spawnSites } from './spawns.js';
 import { kernelOf } from './signature.js';
 import { usedBy } from './body-access.js';
 import { requireExact } from './exact.js';
+import { createLists } from './lists.js';
 
 export type Parse = (code: string) => Program;
 /** Whether an import specifier, resolved from the module being transformed, is the package's, which exports `System` and `Finalizer`. */
@@ -133,6 +134,8 @@ export const transformKernels = async (
     const module = createModule(file, program, locateIn(code));
     linker?.add(module);
     const dependencies = new Set<string>();
+    /** Main-thread declarations are checked only against lists of their own module. */
+    const mainThreadLists = createLists(module, null, []);
     const link: Link | null = linker === undefined ? null : {
         module: dependency => {
             if (dependency !== file) dependencies.add(dependency);
@@ -164,7 +167,7 @@ export const transformKernels = async (
             }
             const positions = declaration?.type === "ObjectExpression" ? positionsOf(created, declaration) : null;
             if (declaration?.type === "ObjectExpression" && positions !== null && body !== undefined && body.type !== "SpreadElement") {
-                requireExact(declaration, usedBy(declaration, body, module.bindings, positions), module.bindings);
+                requireExact(declaration, usedBy(declaration, body, module.bindings, positions), module.bindings, mainThreadLists);
             }
             const spawns = positions === null || body === undefined || body.type === "SpreadElement" ? null : spawnSites(body, module.bindings, positions.context);
             if (spawns !== null && spawns.sites.length > 0) {

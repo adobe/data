@@ -4,6 +4,7 @@ import { requireExact } from './exact.js';
 import { expression } from './expression.js';
 import { fail } from './failure.js';
 import type { Link } from './link.js';
+import { createLists } from './lists.js';
 import type { Module } from './module-scope.js';
 import { resolve, type Out } from './out.js';
 import { localName, printStatements } from './print.js';
@@ -45,7 +46,8 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     }
     if (body.async || body.generator) return fail(body, "a kernel body can't be async or a generator");
     if (body.params.length > 2) return fail(body, "a kernel body takes row and context");
-    const unit = createUnit(signature(declaration, module.bindings), module, expression, statement, link, target);
+    const lists = createLists(module, link, [declaration, body]);
+    const unit = createUnit(signature(declaration, module.bindings, lists), module, lists, expression, statement, link, target);
     const scope = rootScope(unit, false);
     const prelude: Out = [];
     const rows: Out = [];
@@ -70,7 +72,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         else if (loops(program.body)) fail(body, "a GPU kernel can't use loops or labeled blocks yet");
     }
     const contributed = new Set(unit.accumulators.flatMap(entry => reduced[entry.reduced]?.resource ?? []));
-    requireExact(declaration, { query: unit.used, resources: { read: unit.used.resources, write: new Set(), reduce: contributed }, lookups: unit.used.lookups, up: unit.used.up }, module.bindings);
+    requireExact(declaration, { query: unit.used, resources: { read: unit.used.resources, write: new Set(), reduce: contributed }, lookups: unit.used.lookups, up: unit.used.up }, module.bindings, lists);
     const strided = columns.flatMap((_, index) => unit.chunks.has(index) ? [] : [index]);
     const locals = [
         ...columns.map((_, index) => `const c${index} = columns[${index}];`),

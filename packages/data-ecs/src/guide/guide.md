@@ -28,6 +28,7 @@ How to use the ECS. Each excerpt comes from a test in this folder; the link unde
 16. [GPU kernels and render systems](#16-gpu-kernels-and-render-systems)
 17. [Hierarchies](#17-hierarchies)
 18. [Identity and ids](#18-identity-and-ids)
+19. [Threads](#19-threads)
 
 ## Basics
 
@@ -370,3 +371,7 @@ Running rows parent first, through a reference. To be written.
 ### 18. Identity and ids
 
 How systems and keys stay the same across reloads. To be written.
+
+### 19. Threads
+
+Sharing a world with another thread, which joins it to run systems and observe. To be written.

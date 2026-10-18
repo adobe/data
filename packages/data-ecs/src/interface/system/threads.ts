@@ -19,7 +19,7 @@ type PlacingResources<D> =
     Listed<Resources<D>, "read"> | Listed<Resources<D>, "write"> | Listed<Resources<D>, "changed"> | Listed<Resources<D>, "is">;
 
 /** The threads of the object components and resources a declaration uses. */
-export type ThreadsOf<D> = ThreadOfComponent<Placing<D> & Component.Name> | ThreadOfResource<PlacingResources<D> & Resource.Name>;
+export type ThreadsOf<D> = ThreadOfComponent<Placing<D> & Component.Key> | ThreadOfResource<PlacingResources<D> & Resource.Key>;
 
 type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
 

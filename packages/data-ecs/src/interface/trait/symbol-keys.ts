@@ -1,6 +1,6 @@
 import type { Components } from '../component/types.js';
 import type { Resources } from '../resource/types.js';
-import type { BuiltIn } from './name.js';
+import type { BuiltIn } from './key.js';
 import type { Traits } from './types.js';
 
 /** A required property naming `problem` and the keys that cause it, or nothing without such keys. */

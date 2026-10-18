@@ -12,11 +12,11 @@ import type { ComponentValues, LookupFunction, ResourceValues, Values } from './
 /** `read` values are read-only, `write` values readable and writable. */
 export type Row<D extends Declaration> =
     { readonly entity: Entity }
-    & Values<Listed<Property<D, "components">, "read">, Listed<Property<D, "components">, "write">, Component.Name, ComponentValues>;
+    & Values<Listed<Property<D, "components">, "read">, Listed<Property<D, "components">, "write">, Component.Key, ComponentValues>;
 
 type Resources<D> = Listed<Property<D, "resources">, "read"> | Listed<Property<D, "resources">, "write"> | Is<D>;
 type Is<D> = Listed<Property<D, "resources">, "is">;
-type Reduced<D> = keyof Property<D, "reduce"> & Resource.Name;
+type Reduced<D> = keyof Property<D, "reduce"> & Resource.Key;
 
 /**
  * What a body uses besides its row, by kind, under the declaration's own keys: each is present only when the
@@ -24,8 +24,8 @@ type Reduced<D> = keyof Property<D, "reduce"> & Resource.Name;
  */
 export type Context<D extends Declaration> =
     ([Resources<D>] extends [never] ? {} : {
-        readonly resources: Values<Listed<Property<D, "resources">, "read">, Listed<Property<D, "resources">, "write">, Resource.Name, ResourceValues>
-            & { readonly [K in Is<D> & Resource.Name]: Holding<K> };
+        readonly resources: Values<Listed<Property<D, "resources">, "read">, Listed<Property<D, "resources">, "write">, Resource.Key, ResourceValues>
+            & { readonly [K in Is<D> & Resource.Key]: Holding<K> };
     })
     & ([keyof Property<D, "lookup">] extends [never] ? {} : {
         readonly lookup: { readonly [K in keyof Property<D, "lookup">]: LookupFunction<Property<D, "lookup">[K]> };
@@ -37,7 +37,7 @@ export type Context<D extends Declaration> =
     & (Property<D, "input"> extends Schema ? { readonly input: Schema.ToType<Property<D, "input">> } : {})
     & (Property<D, "up"> extends object ? {
         /** The parent's `up.read` values, or null for a row without a parent. */
-        readonly up: { readonly [K in Listed<Property<D, "up">, "read"> & Component.Name]: Component.Value<K> } | null;
+        readonly up: { readonly [K in Listed<Property<D, "up">, "read"> & Component.Key]: Component.Value<K> } | null;
     } : {})
     & (D extends { readonly kernel: "gpu" } | { readonly shader: object } ? {} : { readonly commands: Commands });
 

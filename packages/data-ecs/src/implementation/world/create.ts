@@ -324,7 +324,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         [Symbol.asyncDispose]: () => world.dispose(),
         observe: {
             // Stored values match each resource's registered schema, so they have its type.
-            resource: <R extends Resource.Name>(key: R) => observers.resource(key) as Observe<ReadonlyResourceValue<R>>,
+            resource: <R extends Resource.Key>(key: R) => observers.resource(key) as Observe<ReadonlyResourceValue<R>>,
             // Stored values match each component's registered schema, so they have its type.
             entity: ((entity: Entity, options?: EntityOptions) => observers.entity(entity, options)) as World["observe"]["entity"],
             // Selections are entities of this world.

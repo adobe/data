@@ -1,5 +1,5 @@
 import { claimKey, kindOf } from './names.js';
-import type { BuiltIn } from '../trait/name.js';
+import type { BuiltIn } from '../trait/key.js';
 
 const builtIn: ReadonlySet<unknown> = new Set<BuiltIn>(["type", "derived", "within", "reference", "reduce", "thread", "transfer"]);
 

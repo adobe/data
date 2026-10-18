@@ -59,7 +59,7 @@ const structuralBest = async (sources: 1 | 4, before: (world: World) => Promise<
     return best;
 };
 
-const countOf = (world: World, required: readonly Component.Name[]): Promise<number> => toPromise(world.observe.count({ required }));
+const countOf = (world: World, required: readonly Component.Key[]): Promise<number> => toPromise(world.observe.count({ required }));
 
 /** A forest of 100K chains of 10, filtered propagation run once, and its roots. */
 const filteredForest = async (): Promise<{ readonly world: World; readonly roots: readonly Entity[] }> => {

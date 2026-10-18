@@ -37,9 +37,9 @@ export type RenderContext = {
 type RenderDeclaration = {
     readonly name: Name;
     /** It reads the components its accessors name. */
-    readonly components?: { readonly has?: readonly Component.Name[]; readonly not?: readonly Component.Name[] };
+    readonly components?: { readonly has?: readonly Component.Key[]; readonly not?: readonly Component.Key[] };
     /** It runs only while `gpuDevice` is set, as if `is` listed it. */
-    readonly resources?: { readonly read?: readonly Resource.Name[]; readonly is?: readonly Condition[]; readonly not?: readonly Condition[] };
+    readonly resources?: { readonly read?: readonly Resource.Key[]; readonly is?: readonly Condition[]; readonly not?: readonly Condition[] };
     readonly shader: Shader;
     readonly before?: readonly System<unknown>[];
     readonly after?: readonly System<unknown>[];

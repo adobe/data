@@ -16,8 +16,8 @@ const gpuOnly = Symbol("traitTest/gpuOnly");
 const nonPersistent = Symbol("traitTest/nonPersistent");
 declare module '@adobe/data-ecs' {
     export interface Traits<N> {
-        readonly [gpuOnly]: N extends Component.Name ? (IsStruct<Component.Value<N>> extends true ? true : never) : never;
-        readonly [nonPersistent]: N extends Component.Name ? (Components[N] extends { readonly derived: true } ? never : true) : true;
+        readonly [gpuOnly]: N extends Component.Key ? (IsStruct<Component.Value<N>> extends true ? true : never) : never;
+        readonly [nonPersistent]: N extends Component.Key ? (Components[N] extends { readonly derived: true } ? never : true) : true;
     }
 }
 Trait.register(gpuOnly);

@@ -43,7 +43,7 @@ create({ workers: 2 });
 
 // There are no built-in components: none exported, none registered.
 type Removed = "component" | "persistent" | "shared" | "threadPort" | "threadClaims" | "threadStatus";
-check<Equal<Extract<Removed, keyof typeof Ecs | Component.Name>, never>>();
+check<Equal<Extract<Removed, keyof typeof Ecs | Component.Key>, never>>();
 
 // Systems read the loop's state, ask for a wake time and change its cadence.
 System.create({ name: "loopTypeTest/read", resources: { read: [clock, report] } }, ({ resources }) => {

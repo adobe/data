@@ -14,7 +14,7 @@ import type { StructComponent, StructResource } from './struct.js';
 import type { System } from './system.js';
 import type { OneThread, ThreadsOf } from './threads.js';
 
-type Reduced<D extends Declaration> = keyof Property<D, "reduce"> & Resource.Name;
+type Reduced<D extends Declaration> = keyof Property<D, "reduce"> & Resource.Key;
 type Written<D, K extends "components" | "resources"> = Listed<Property<D, K>, "write">;
 type Is<D> = Listed<Property<D, "resources">, "is">;
 
@@ -24,12 +24,12 @@ type Is<D> = Listed<Property<D, "resources">, "is">;
  * written or also in `not`.
  */
 type Lists<D extends Declaration> = {
-    readonly components?: { readonly read?: readonly Exclude<Component.Name, Written<D, "components">>[] };
+    readonly components?: { readonly read?: readonly Exclude<Component.Key, Written<D, "components">>[] };
     readonly resources?: {
-        readonly read?: readonly Exclude<Resource.Name, Written<D, "resources"> | Reduced<D> | Is<D>>[];
-        readonly write?: readonly Exclude<Resource.Name, Is<D>>[];
-        readonly changed?: readonly Exclude<Resource.Name, Reduced<D>>[];
-        readonly not?: readonly Exclude<Resource.Name, Is<D>>[];
+        readonly read?: readonly Exclude<Resource.Key, Written<D, "resources"> | Reduced<D> | Is<D>>[];
+        readonly write?: readonly Exclude<Resource.Key, Is<D>>[];
+        readonly changed?: readonly Exclude<Resource.Key, Reduced<D>>[];
+        readonly not?: readonly Exclude<Resource.Key, Is<D>>[];
     };
 };
 
@@ -45,7 +45,7 @@ type GpuKernel = {
     readonly lookup?: { readonly [name: string]: never };
     readonly components?: { readonly added?: never; readonly changed?: never };
     readonly resources?: { readonly changed?: never };
-    readonly reduce?: { readonly [K in Resource.Name]?: never };
+    readonly reduce?: { readonly [K in Resource.Key]?: never };
 };
 
 type Validate<D extends Declaration> =

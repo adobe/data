@@ -1,10 +1,10 @@
 import type { IsData } from "../schema/is-data.js";
 import type { Schema } from "../schema/schema.js";
-import type { Name as TraitName } from "../trait/name.js";
+import type { Key as TraitKey } from "../trait/key.js";
 import type { Required } from "../trait/required.js";
 import type { Traits } from "../trait/types.js";
 import type { SymbolKeys } from "../trait/symbol-keys.js";
-import type { Name } from "./name.js";
+import type { Key } from "./key.js";
 import type { Components } from "./types.js";
 
 /** A value starts at `default`, which a type that allows `null` may leave out: it's `null` then. */
@@ -17,7 +17,7 @@ type DerivedType<T> = Schema.ForType<T> & ({ readonly const: unknown } | Startin
  * The value type's part of a declaration: `type`, a schema for it, when it's data. A type that isn't data has no
  * `type`, and a derived one starts at the declaration's `default`.
  */
-type TypePart<K extends Name, T> =
+type TypePart<K extends Key, T> =
     IsData<T> extends true
         ? { readonly type: Components[K] extends { readonly derived: true } ? DerivedType<T> : Schema.ForType<T> }
         : { readonly type?: never } & (Components[K] extends { readonly derived: true } ? Starting<T> : { readonly default?: never });
@@ -28,11 +28,11 @@ type TypePart<K extends Name, T> =
  * doesn't, becomes `never`, so registration fails to compile, as every registration does while a component, resource
  * or trait is keyed by a string (`SymbolKeys`).
  */
-export type Declaration<K extends Name> =
+export type Declaration<K extends Key> =
     TypePart<K, Components[K]["type"]>
     & { readonly [T in Exclude<keyof Components[K], "type">]:
-        T extends TraitName ? (Components[K][T] extends Traits<K>[T] ? Components[K][T] : never) :
+        T extends TraitKey ? (Components[K][T] extends Traits<K>[T] ? Components[K][T] : never) :
         never }
-    & { readonly [T in Exclude<TraitName, keyof Components[K]>]?: never }
+    & { readonly [T in Exclude<TraitKey, keyof Components[K]>]?: never }
     & Required<Components[K], Components[K]["type"]>
     & SymbolKeys;

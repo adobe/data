@@ -74,7 +74,7 @@ const at = (world: ReturnType<typeof createWorld>) => async (...run: ((commands:
     await world.run(edit, { step: steps.length - 1 });
 };
 
-const all: readonly Component.Name[] = [source, hidden, sprite, slot, visible, ready, glow, owned, follows, mark];
+const all: readonly Component.Key[] = [source, hidden, sprite, slot, visible, ready, glow, owned, follows, mark];
 const components = async (world: ReturnType<typeof createWorld>, entity: Entity) => {
     const values = await Promise.all(all.map(key => read(world, entity, key)));
     return all.filter((_, i) => values[i] !== null);

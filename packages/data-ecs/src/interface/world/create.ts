@@ -3,7 +3,7 @@ import type { WorldWritten } from '../resource/written.js';
 import type { World } from './world.js';
 
 /** Values resources start at in place of their defaults: any but those only the world writes. */
-export type InitialResources = { readonly [K in Exclude<Resource.Name, WorldWritten>]?: Resource.Value<K> };
+export type InitialResources = { readonly [K in Exclude<Resource.Key, WorldWritten>]?: Resource.Value<K> };
 
 /**
  * Creates a world on this thread, synchronously, with resources starting at the given values in place of their

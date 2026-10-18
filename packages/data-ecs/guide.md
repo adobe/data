@@ -402,7 +402,7 @@ String trait names are the built-in traits'.
 ```ts
 declare module "@adobe/data-ecs" {
     interface Traits<N> {
-        readonly [instanced]: N extends Component.Name ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never;
+        readonly [instanced]: N extends Component.Key ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never;
     }
 }
 Trait.register(instanced);
@@ -589,7 +589,7 @@ Example: [`19-ticks.test.ts`](src/guide/19-ticks.test.ts#L23-L55).
 - **World:** `run(system, input?)` resolves to a report; `add(system)` puts a system in every tick; `observe` has `resource`, `entity`, `select` and `count`; `dispose()` and `[Symbol.asyncDispose]` wait for pending runs, then release the world.
 - **Built-in resources,** in [`src/interface/resources/`](src/interface/resources/): `gpuDevice`, the world's device or `null`, the default; `workers`, the kernel pool's size, `null` by default for the platform's choice; `cadence`, `{ kind: "frame" }` by default or `{ kind: "fixed", step, maxSteps }`; `always`, false by default; `wake`, reduced with `"min"`, Infinity for none; `clock`, `{ now, delta, tick }`; and `report`, the last tick's. Only the world writes `clock` and `report`.
 - **No built-in components,** and no way yet to join a world from another thread: `share` and `World.join` are planned ([`threads.md`](threads.md)).
-- **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Name`, `Value` and `With`; `Resource.Name` and `Value`; `System` and `System.Commands`; `Finalizer`; `Thread`; `Cadence`; `Observe` and `Observers`; and `World`, with `World.Create`, `World.Query` and `World.Report`. Everything else is inferred from the values the API returns.
+- **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Key`, `Value` and `With`; `Resource.Key` and `Value`; `System` and `System.Commands`; `Finalizer`; `Thread`; `Cadence`; `Observe` and `Observers`; and `World`, with `World.Create`, `World.Query` and `World.Report`. Everything else is inferred from the values the API returns.
 - **Emitted declarations:** every type those values carry is named from `@adobe/data-ecs`, such as `Observers` for `world.observe`, so a library that exports them emits declarations naming only the package root.
 - **Code layout:** the interface is [`src/interface/`](src/interface/), a project that imports nothing outside it; the implementation, `createWorld` and the compiler, is [`src/implementation/`](src/implementation/); samples are in [`src/samples/`](src/samples/).
 - **Constructors:** `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Finalizer.create` and `Finalizer.changes` return a finalizer, typed as its `name`. `Rule.create` returns nothing. Rules and finalizers apply in every world.

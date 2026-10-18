@@ -1,5 +1,5 @@
 import type { Schema } from '../schema/schema.js';
-import type { Name as TraitName } from '../trait/name.js';
+import type { Key as TraitKey } from '../trait/key.js';
 import { layoutOf } from './layout.js';
 import { claimKey, declarationOf, failRegistration, kindOf, labelOf, requireKey, sameDeclaration } from './names.js';
 import type { Registry } from './registry.js';
@@ -11,7 +11,7 @@ import { isTrait } from './traits.js';
  * A registered declaration, as any consumer iterating components or resources sees it: its `type` and other traits.
  * Without `type`, the value isn't data, and `default` is what it starts at.
  */
-export type AnyDeclaration = { readonly type?: Schema; readonly default?: unknown } & { readonly [T in TraitName]?: unknown };
+export type AnyDeclaration = { readonly type?: Schema; readonly default?: unknown } & { readonly [T in TraitKey]?: unknown };
 
 /** The value schema of any registered component or resource, or undefined for a value that isn't data. */
 export const schemaOf = (key: unknown): Schema | undefined => declarationOf(key)?.type;

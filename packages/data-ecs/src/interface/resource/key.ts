@@ -1,3 +1,3 @@
 import type { Resources } from './types.js';
 
-export type Name = keyof Resources;
+export type Key = keyof Resources;

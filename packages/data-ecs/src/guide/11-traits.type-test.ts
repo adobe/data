@@ -8,7 +8,7 @@ const check = <_T extends true>() => { };
 export const instanced = Symbol("guide/traits/instanced");
 declare module "@adobe/data-ecs" {
     interface Traits<N> {
-        readonly [instanced]: N extends Component.Name ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never;
+        readonly [instanced]: N extends Component.Key ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never;
     }
 }
 Trait.register(instanced);

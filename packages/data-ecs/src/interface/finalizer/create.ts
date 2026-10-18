@@ -12,7 +12,7 @@ import type { Finalizer } from './finalizer.js';
 
 /** A resource in `write` is readable too, so it isn't also in `read`. */
 type Validate<D extends Declaration | ChangesDeclaration> =
-    { readonly resources?: { readonly read?: readonly Exclude<Resource.Name, Listed<Property<D, "resources">, "write">>[] } };
+    { readonly resources?: { readonly read?: readonly Exclude<Resource.Key, Listed<Property<D, "resources">, "write">>[] } };
 
 type Key = symbol;
 

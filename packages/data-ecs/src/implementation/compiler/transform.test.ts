@@ -829,9 +829,55 @@ describe("subset", () => {
         expect(result !== null && "failure" in result ? result.failure.position : -1).toBe(position);
     });
 
-    test("non-kernel systems and other modules are left untouched", async () => {
-        expect(await transform(`const s = System.create({ name: "a", components: { read: [mass] } }, (row) => { const f = () => row; });`)).toBeNull();
+    test("non-kernel systems that may reach their commands and other modules are left untouched", async () => {
+        expect(await transform(`const s = System.create({ name: "a", components: { read: [mass] } }, (row, context) => { const f = () => [row, context]; });`)).toBeNull();
         expect(await transformKernels(`import { System } from "other";\nSystem.create({ name: "a", kernel: "cpu" }, () => {});`, "/x.js", parse, async () => false, () => "")).toBeNull();
+    });
+});
+
+describe("terminal bodies", () => {
+    /** Whether the transform marks a main-thread system's body as one that never reaches its commands. */
+    const marked = async (parameters: string, body: string, declaration = `{ name: "a" }`): Promise<boolean> => {
+        const result = await transform(`const system = System.create(${declaration}, ${parameters} => { ${body} });`);
+        if (result !== null && "failure" in result) throw new Error(result.failure.message);
+        const code = result?.code ?? "";
+        return code.includes("terminal$((") && code.includes("function terminal$(body)");
+    };
+    test.each([
+        ["no context", "(row)", "console.log(row);", `{ name: "a", components: { has: [mass] } }`],
+        ["a context destructured without commands", "({ resources })", "console.log(resources);", `{ name: "a" }`],
+        ["a context used only through its other properties", "(context)", "console.log(context.input);", `{ name: "a", input: { type: "number" } }`],
+        ["a context reaching resources and lookups", "(row, context)", "console.log(context.resources, context.lookup, row);", `{ name: "a", components: { has: [mass] } }`],
+        ["nested destructuring", "({ resources: { [delta]: d } })", "console.log(d);", `{ name: "a", resources: { read: [delta] } }`],
+    ])("mark a body with %s", async (_, parameters, body, declaration) => {
+        expect(await marked(parameters, body, declaration)).toBe(true);
+    });
+    test.each([
+        ["destructured commands", "({ commands })", "commands.despawn(1);"],
+        ["renamed commands", "({ commands: issue })", "issue.despawn(1);"],
+        ["the context's commands", "(context)", "context.commands.despawn(1);"],
+        ["the context's commands by a computed key", "(context)", `context["commands"].despawn(1);`],
+        ["the context passed on", "(context)", "console.log(context);"],
+        ["the context aliased", "(context)", "const c = context; console.log(c);"],
+        ["a rest of the context", "({ ...rest })", "console.log(rest);"],
+        ["a computed key of the context", "({ [score]: s })", "console.log(s);"],
+        ["the context redeclared", "(context)", "{ const context = 1; console.log(context); }"],
+        ["eval", "(context)", "eval('context.commands');"],
+        ["a rest parameter", "(...parameters)", "console.log(parameters);"],
+    ])("leave a body unmarked that reaches its commands through %s", async (_, parameters, body) => {
+        expect(await marked(parameters, body)).toBe(false);
+    });
+    test("leave a function body unmarked that uses arguments", async () => {
+        const result = await transform(`const system = System.create({ name: "a" }, function () { console.log(arguments); });`);
+        expect(result).toBeNull();
+    });
+    test("mark a system made from its body alone, and no kernel or finalizer", async () => {
+        const alone = await transform("const system = System.create(() => { console.log(1); });");
+        expect(alone !== null && "code" in alone ? alone.code : "").toContain("System.create(terminal$(() =>");
+        const kernel = await transform(`const kernel = System.create({ name: "k", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = 1; });`);
+        expect(kernel !== null && "code" in kernel ? kernel.code : "").not.toContain("terminal$");
+        const finalizer = await transformKernels(`import { Finalizer } from "ecs";\nconst f = Finalizer.create({ components: { read: [] } }, () => {});`, "/x.js", parse, async () => true, () => "");
+        expect(finalizer).toBeNull();
     });
 });
 

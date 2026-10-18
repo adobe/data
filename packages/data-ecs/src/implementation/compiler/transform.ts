@@ -10,6 +10,8 @@ import { kernelOf } from './signature.js';
 import { usedBy } from './body-access.js';
 import { requireExact } from './exact.js';
 import { createLists } from './lists.js';
+import { neverReachesCommands } from './terminal.js';
+import { terminalBodiesName } from '../world/terminal.js';
 
 export type Parse = (code: string) => Program;
 /** Whether an import specifier, resolved from the module being transformed, is the package's, which exports `System` and `Finalizer`. */
@@ -147,6 +149,8 @@ export const transformKernels = async (
     const prepare = uniqueName(code, "prepareSpawn$");
     const prepareAddName = uniqueName(code, "prepareAdd$");
     const spawnName = uniqueName(code, "spawn$");
+    const terminal = uniqueName(code, "terminal$");
+    let terminals = false;
     const edits: Edit[] = [];
     const kernels: string[] = [];
     const sites: KernelSite[] = [];
@@ -174,6 +178,11 @@ export const transformKernels = async (
             const positions = alone ? { row: -1, context: 0 } : declaration?.type === "ObjectExpression" ? positionsOf(created, declaration) : null;
             if (declaration?.type === "ObjectExpression" && positions !== null && body !== undefined && body.type !== "SpreadElement") {
                 requireExact(declaration, usedBy(declaration, body, module.bindings, positions), module.bindings, mainThreadLists);
+            }
+            // A system whose body never reaches its commands is terminal where its declaration allows (`world/tails.ts`).
+            if (created === "system" && positions !== null && body !== undefined && body.type !== "SpreadElement" && neverReachesCommands(body, positions.context)) {
+                terminals = true;
+                edits.push({ start: body.start, end: body.start, text: `${terminal}(` }, { start: body.end, end: body.end, text: ")" });
             }
             const spawns = positions === null || body === undefined || body.type === "SpreadElement" ? null : spawnSites(body, module.bindings, positions.context);
             if (spawns !== null && spawns.sites.length > 0) {
@@ -213,5 +222,6 @@ export const transformKernels = async (
         ...spawning ? [`import { prepareSpawn as ${prepare} } from ${JSON.stringify(prepareSpawnPath)};`] : [],
         ...adding ? [`import { prepareAdd as ${prepareAddName} } from ${JSON.stringify(prepareSpawnPath)};`] : [],
     ];
-    return { code: [...imports, result, ...prepared].join("\n"), kernels, dependencies: [...dependencies] };
+    const marking = terminals ? [`function ${terminal}(body) { const set = Symbol.for(${JSON.stringify(terminalBodiesName)}); (globalThis[set] || (globalThis[set] = new WeakSet())).add(body); return body; }`] : [];
+    return { code: [...imports, result, ...prepared, ...marking].join("\n"), kernels, dependencies: [...dependencies] };
 };

@@ -75,6 +75,13 @@ Sync point fixes for spawns (record `ebde4c9b`, against `bd0dabcc`): `spawn bulk
 - **A spawn batch keeps its archetype,** rather than finding it by its joined ids at every sync point: `spawn singles` 489 → 396 ns.
 - **A batch of at most eight rows commits element by element,** since a subarray to copy from costs more than the rows: `spawn singles` 396 → 292 ns.
 
+Kernel spawns staged as main-thread spawns are (record `2b07c576`, against `ebde4c9b`): `spawn bulk kernel` 121 → 10.3 ns, now below `spawn bulk` from a main-thread system, which went 40.4 → 25.4 ns with it; `spawn sixteen archetypes` 56.5 → 41.1 ns. In chromium, the new `spawn bulk kernel main` and `spawn bulk kernel workers`, measured on `ebde4c9b`'s implementation first: 128 → 11 ns on the main thread, 177 → 7.65 ns on workers. Every other node and chromium benchmark is within noise (`create` reads 58–62 ns from one run to the next on either side, and node `sparse changed` 0.32–0.37 ms, as in records since `c234c41a`). Each step, measured on its own:
+
+- **Kernel spawns are staged in batches,** through a spawner per spawn list generated as main-thread spawners are, rather than issued as commands the sync point plans and writes value by value: 120 → 34 ns; in chromium 128 → 18 ns on the main thread and 177 → 54 ns on workers. A main-thread runner's batches and each chunk's buffer naming the rows it staged keep the row order the same whichever thread ran each chunk.
+- **The reused indexes a sync point reserved are copied as a typed array,** not an array of numbers: `spawn bulk kernel` 34 → 18 ns, `spawn bulk` 41 → 25 ns, `spawn sixteen archetypes` 58 → 41 ns.
+- **Kernel spawners reserve entities in blocks,** so workers spawning together don't contend for one atomic cursor, and the sync point returns the positions a block left unused to the free list: on workers 54 → 7.5 ns, on the main thread 18 → 10.5 ns.
+- **Runners stage only when their kernel spawns:** without the check, `run 50 idle` measured 120 against 110–112 ns per system.
+
 The adobe/data ECS runs move 1M in 0.09 ms, single threaded with WASM SIMD, and creates 100K in 5.8 ms by inserting directly, with no command buffer or sync point.
 
 ## Where the gains came from
@@ -160,6 +167,10 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **Removing the prepared sites,** as the plan for curried spawns proposed once they no longer won: they still win by the values object's cost (above).
 - **A spawn site remembering the last archetype and world it spawned into,** checked before the plans by index: `spawn singles` 390 → 380 ns, within noise, but `create` 58 → 61.5 ns and `create flat` 64 → 70.5 ns. Worth revisiting if a site's plan lookup shows up in a profile again.
 - **Removing rows last first without grouping moves by pair:** `add tag` 114 ns and `retag` +10%; grouping the arrivals by pair took them to 100 ns and −5%.
+- **Main-thread kernels spawning into the world's batches,** as main-thread systems do, rather than their runner's: `spawn bulk kernel` 17.8–18.6 ns against 17.8–19.3 ns, no gain, and the rows of chunks run on workers would land after every main-thread chunk's, so row order would depend on the worker count.
+- **Blocks of reservations whose unused positions the leak scan finds,** rather than returned by position: `spawn bulk kernel` 15.5 against 10.3 ns, and the scan bumps the generations of indexes never handed out, which wears them toward wrapping. Kept for chunks that fail.
+- **A first block of 64 positions:** 10.3 ns against 10.4 ns starting at 8; 8 is kept, since a kernel spawning a few entities a run returns fewer.
+- **Kernel adds and removes staged as spawns are:** not built. A profile of `add tag kernel` (81.5 ns, below `add tag`'s 96 ns) puts issuing in the kernel at 12% and the sync point at the rest: plan 29%, arrive 19%, sort 12%, writes 7%. Staging would have to bypass the plan, which orders adds against despawns and other commands. Worth revisiting with bulk moves in the plan (design.md).
 
 - **Listing symbol keys with `Reflect.ownKeys`, or with `Object.keys` first:** 1–5% slower than `Object.getOwnPropertySymbols` for 1 to 6 keys (table above), and `Object.keys` finds nothing, since keys are symbols. Worth revisiting if engines give symbol keys an enumeration cache.
 - **U32 ticks:** no measurable gain on the non-sparse 1M benchmarks, 10% on uniformly sparse filters, and change filters go wrong past 2³² ticks unless a clamp pass is added. With ticks kept only where observed, it would help only observed components.
@@ -184,3 +195,4 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - Single-tier runs on workers: workers asleep at the start of a run take 60–135 µs to see the task, and 2–4 of 9 find nothing left to claim.
 - Idle cores clock down: after 5 ms idle, even the main thread runs move 2–4× slower per frame, and keeping one other core busy removes most of it, at 10M too. That's the OS's power policy, not something dispatch can avoid without spending power.
 - Emit and other command-heavy kernels: the sync point dominates.
+- Main-thread spawns reserving in blocks too: `spawn bulk` still takes one atomic add per spawn. Finalizers spawn during the sync point, after it materializes the run's reservations, so a world's block would have to end before each materialization.

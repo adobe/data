@@ -812,5 +812,32 @@
             "bytes": 12,
             "basis": "Each row reads its 4-byte value and writes 4 bytes, plus its 4-byte location read."
         }
+    },
+    "spawn bulk kernel main": {
+        "operation": "A kernel spawning an entity per row over 100K rows: spawns found by a parallel pass, such as debris or hits.",
+        "per": "spawns",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 28,
+            "basis": "Each row reads its 4-byte index; each spawn writes its 8 bytes of values, its entity and its location."
+        }
+    },
+    "spawn bulk kernel workers": {
+        "operation": "A kernel spawning an entity per row over 100K rows: spawns found by a parallel pass, such as debris or hits.",
+        "per": "spawns",
+        "n": 100000,
+        "typical": [
+            100,
+            100000
+        ],
+        "best": {
+            "bytes": 28,
+            "basis": "Each row reads its 4-byte index; each spawn writes its 8 bytes of values, its entity and its location.",
+            "on": "threads"
+        }
     }
 }

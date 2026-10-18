@@ -8,7 +8,8 @@ export type InitialResources = { readonly [K in Exclude<Resource.Name, WorldWrit
 /**
  * Creates a world on this thread, synchronously, with resources starting at the given values in place of their
  * defaults. This thread is its `"world"` thread for the world's life: it runs the sync points, the ticks and the GPU
- * device, and fills every logical thread no joined thread claims. Throws for a key that isn't a resource, or is one
- * only the world writes.
+ * device, and fills every logical thread no joined thread claims. Keys are the resources' symbols, built-in ones
+ * included (`{ [workers]: 0 }`); string keys are never a resource's, so they're ignored. Throws for a symbol that isn't
+ * a resource, or is one only the world writes.
  */
 export type Create = (resources?: InitialResources) => World;

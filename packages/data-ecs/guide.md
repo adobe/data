@@ -51,14 +51,14 @@ same resources.
 
 ## 2. Components and resources
 
-A component or resource is an exported key, a string or a symbol, namespaced like `"game/position"`. Its traits,
+A component or resource is an exported key, a plain `Symbol(...)` whose description, namespaced like `"game/position"`, labels it in errors. Its traits,
 `type` first, come from augmenting `Components` or `Resources`; registering it gives the schema for that type. A resource always has a
 value, so its schema has a `default`, which a type that allows `null` may leave out to start at `null`.
 
 ```ts
-export const position = "guide/components/position";
-export const enemy = "guide/components/enemy";
-export const gravity = "guide/components/gravity";
+export const position = Symbol("guide/components/position");
+export const enemy = Symbol("guide/components/enemy");
+export const gravity = Symbol("guide/components/gravity");
 
 declare module "@adobe/data-ecs" {
     interface Components {
@@ -93,12 +93,13 @@ Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L6-L38).
 - **An observer that throws** during a run is an `"observer"` failure in the run's report; one that throws on its first value throws to the subscriber.
 - **Registration must match the declaration**, trait for trait, with `type` a schema for the declared type. Otherwise it doesn't compile.
 - **Values that aren't data,** such as a `Blob`, an `HTMLElement` or a `GPUDevice`, are declared by their type alone: registration leaves `type` out, as `Component.register(element, {})`, and a resource gives its `default` on the declaration unless its type allows `null`. The world stores them as they are, so only main-thread systems use them.
-- **`World.create()` returns the world,** and `await using` disposes it; the TypeScript `lib` needs `ESNext.Disposable`. `World.create({ [gravity]: -1.6 })` starts resources at other values than their defaults, any but `clock` and `report`, which only the world writes.
+- **`World.create()` returns the world,** and `await using` disposes it; the TypeScript `lib` needs `ESNext.Disposable`. `World.create({ [gravity]: -1.6 })` starts resources at other values than their defaults, any but `clock` and `report`, which only the world writes. Built-in resources are imported keys too: `World.create({ [workers]: 0 })`.
 - **Systems are checked when they're created,** against the components and resources they name, which their modules must register first; a world then registers them on their first run there, loading their kernels, and the run rejects if that fails. Rules and finalizers apply in every world (sections 13 and 16).
 - **A system is its name:** what `System.create` returns is typed as its `name` and the input `run` takes with it, nothing more.
-- **Names are program-wide:** a second system, rule or finalizer with a name throws when it's created, unless its declaration is the same, as when a hot reload evaluates its module again. A system declared again is a new system; a finalizer keeps its place in every world, with the new body.
+- **Names are program-wide:** a second system, rule or finalizer with a name throws when it's created, unless its declaration is the same, keys included, as when a module is evaluated again with keys from modules that aren't. A system declared again is a new system; a finalizer keeps its place in every world, with the new body.
 - **`Entity` is a branded number.** `Entity.none` names no entity: it's what zeroed memory and entity defaults hold, and a lookup of it returns null.
-- **Rejected:** a name across components, resources and traits registered again with a different declaration, at registration. The same declaration again is accepted, for hot reload.
+- **Keys are symbols, compared by identity,** so two keys never collide, even with one description. Strings, `Symbol.for` symbols and well-known symbols aren't keys; a string key in a values object is ignored, and one in a literal spawn or add fails the build.
+- **Rejected:** a key registered again as another kind or with a different declaration, at registration; a string key anywhere in `Components`, `Resources` or `Traits` (but the built-in traits), which makes every registration fail to compile. The same declaration again is accepted.
 
 ## 3. Systems
 
@@ -362,7 +363,7 @@ it's notified.
 const move = System.create({ name: "guide/gpu/move", kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
     row[position] = Vec3.add(row[position], row[velocity]);
 });
-const world = createWorld({ gpuDevice: device });
+const world = createWorld({ [gpuDevice]: device });
 ```
 
 Example: [`10-gpu.browser.test.ts`](src/guide/10-gpu.browser.test.ts#L24-L42).
@@ -392,8 +393,9 @@ at registration:
   target, and the entity that has the component is its holder. When the target despawns, `"owner"` despawns the
   holder too, and `"weak"` removes the component from the holder. See [Entity references](#15-entity-references).
 
-A trait is a member of `Traits<N>`, so other packages define traits the same way: the member is the value the
-trait allows on component `N`, or `never` where it doesn't apply. Types then filter components by trait.
+A trait is a member of `Traits<N>`, so other packages define traits the same way, keyed by a symbol: the member is
+the value the trait allows on component `N`, or `never` where it doesn't apply. Types then filter components by trait.
+String trait names are the built-in traits'.
 
 ```ts
 declare module "@adobe/data-ecs" {

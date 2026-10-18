@@ -2,7 +2,10 @@ import type { Component } from '../component/component.js';
 import type { Entity } from '../entity/entity.js';
 import type { Essential } from '../component/value.js';
 
-/** Values for any subset of the components commands may add: every one but those rules derive. */
+/**
+ * Values for any subset of the components commands may add, keyed by their symbols: every one but those rules derive.
+ * String keys are never a component's, so they're ignored.
+ */
 type EssentialValues = { readonly [K in Essential]?: Component.Value<K> };
 
 /** Structural changes and writes to other entities, applied in issue order at the next sync point. */

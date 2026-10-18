@@ -48,6 +48,19 @@ At 1M entities, against commit `d6373560` (claimed splits in place):
 
 Moving the code into `src/interface` and `src/implementation`, with ticks added, measured within noise of the record before it (`f9e8d10a`) on every node and chromium benchmark: run idle 333 ns, run 50 idle 109 ns per system, sync point one spawn 1.04 µs, create 1M 91 ms, churn 19.5 ms, retag 35.7 ms, move 1M 0.090 ms, chain 1.54 ms, select 8.27 ms; in chromium, move on workers 0.015 ms and chain on workers 0.29 ms. A run checks the `workers` resource by its changed tick, allocating nothing, and makes the loop due only while systems are added.
 
+Components, resources and traits are keyed by symbols, and the benchmarks moved to symbol keys with them (record `d4256133`, against `4aa829f4` on string keys): every benchmark is within noise but two. `create flat dynamic`, which builds value objects first and spreads them, went 224 → 434 ns per spawn, since V8 lists an object's symbol keys without the enumeration cache `Object.keys` has for strings. `retag` went 35.8 → 33.6 ms, since its literal `commands.add(entity, { [tag]: true })` is now a prepared site; through value objects it measured 43.9 ms. `create`, whose spawns are prepared sites, stayed at 90–94 ms.
+
+**Key reading** (`perftest/keys.ts`, `node dist/perf/run.js --keys`): nanoseconds per values object built and read, for 1 to 6 keys. Listing dominates: reading the same values by keys known in advance costs 58–73 ns, mostly the reads themselves.
+
+| Method | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| `Object.getOwnPropertySymbols` (kept) | 98.7 | 119 | 141 | 168 | 190 | 214 |
+| `Object.keys`, then `Object.getOwnPropertySymbols` | 106 | 123 | 145 | 175 | 196 | 217 |
+| `Reflect.ownKeys`, symbols only | 104 | 124 | 146 | 171 | 195 | 219 |
+| string keys with `Object.keys`, for comparison | 22.8 | 31.6 | 41.0 | 49.3 | 58.3 | 65.2 |
+
+So literal spawns and adds in main-thread systems are prepared sites, which list no keys and build no object; only values objects built at runtime pay for listing.
+
 The adobe/data ECS runs move 1M in 0.09 ms, single threaded with WASM SIMD, and creates 100K in 5.8 ms by inserting directly, with no command buffer or sync point.
 
 ## Where the gains came from
@@ -128,6 +141,7 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 
 ## Tried and not kept
 
+- **Listing symbol keys with `Reflect.ownKeys`, or with `Object.keys` first:** 1–5% slower than `Object.getOwnPropertySymbols` for 1 to 6 keys (table above), and `Object.keys` finds nothing, since keys are symbols. Worth revisiting if engines give symbol keys an enumeration cache.
 - **U32 ticks:** no measurable gain on the non-sparse 1M benchmarks, 10% on uniformly sparse filters, and change filters go wrong past 2³² ticks unless a clamp pass is added. With ticks kept only where observed, it would help only observed components.
 - **Commands encoded from WASM:** emit 1M 11.2 → 9.2 ms on the main thread and no gain on workers, for about 800 lines across the compiler, code generation, runner, pool, worker and sync point. The sync point is most of emit's time.
 - **Workers spinning 0.15 ms instead of 0.05 ms before waiting:** chain 6×1M on workers 0.83 → 0.525 ms back to back, but only because it bridges the gap between consecutive benchmark runs; per frame it measured the same.

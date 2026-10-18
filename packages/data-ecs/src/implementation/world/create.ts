@@ -29,7 +29,7 @@ import { createPublisher } from './publish.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
 import { ensureResources, findResource, initialOf, setResource } from './resources.js';
-import { ensureProgramResources, activate, finalizerOn } from './activate.js';
+import { ensureProgramResources, activate, finalizerCrossing, placeFinalizers } from './activate.js';
 import { isWorldWritten, kindOf, type Composite } from '../../interface/registry/index.js';
 import { always } from '../../interface/resources/always.js';
 import { cadence, type Cadence } from '../../interface/resources/cadence.js';
@@ -378,8 +378,11 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             void enqueue(syncOwn);
         },
         defer: (failure: Failure) => observers.defer(failure),
-        crossing: (threads, imported) => registrar.crossing(threads, imported) ?? finalizerOn(threads),
-        placed: () => registrar.place(),
+        crossing: (threads, imported) => registrar.crossing(threads, imported) ?? finalizerCrossing(threads, imported),
+        placed: () => {
+            registrar.place();
+            placeFinalizers(state);
+        },
         between: task => void enqueue(async () => {
             if (!disposed) task();
         }),

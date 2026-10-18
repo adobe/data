@@ -134,9 +134,17 @@ export type State = {
     readonly channels: TaskChannel[];
     /** Moves on whenever systems are placed again, as claims are made or released. */
     placement: number;
-    /** Finalizers on claimed threads, which don't activate, with why, for the next sync point to report; and every one found. */
+    /**
+     * Failures of finalizers the next sync point reports: those on claimed threads that can't run there, which don't
+     * activate, with every one found; and stops a thread that's gone never finalized.
+     */
     readonly unplaced: Thrown[];
     readonly unplacedSeen: Set<object>;
+    /**
+     * Indexes of entities despawned with stops of joined threads' finalizers, by index: how many threads haven't
+     * acknowledged them, so they're held apart from `released` until then.
+     */
+    readonly holds: Map<number, number>;
 };
 
 export const createState = (shared?: boolean, wasm = true, simd = true, gpu = false, initial: Map<Key, unknown> = new Map()): State => {
@@ -197,6 +205,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         placement: 0,
         unplaced: [],
         unplacedSeen: new Set(),
+        holds: new Map(),
     };
 };
 

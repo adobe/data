@@ -1,4 +1,5 @@
 import type { Leaf } from '../../interface/system/leaf.js';
+import type { Leaf as FinalizerLeaf } from '../../interface/finalizer/created.js';
 import type { Warning } from '../../interface/world/report.js';
 import { idOfItem, idOfKey, labelOf, labelOfItem, threadOf } from '../../interface/registry/index.js';
 import type { Archetype } from './archetype.js';
@@ -10,6 +11,7 @@ import { reductionTargets, type ReductionTarget } from './reductions.js';
 import type { Runner } from './runner.js';
 import { idOf, type Key, type State } from './state.js';
 import { logSyncWord, type MoveLog } from './move-log.js';
+import { createStopWriter, freeStops, type StopWriter } from './stop-lists.js';
 import {
     completionCapacityWord, completionMessage, completionOffsetWord, completionSystems, completionWords, executedFlag, failedFlag,
     payloadCapacityWord, payloadCount, payloadInput, payloadOffsetWord, payloadSequence, payloadSync, payloadSystems, payloadWords, ranFlag,
@@ -68,6 +70,14 @@ export type TaskChannel = {
     readonly completed: (message: Extract<import('./joining.js').ToWorld, { kind: "completed" }>) => void;
     /** Places a system on the thread, posting its setup; returns its index there. */
     readonly place: (state: State, leaf: Leaf) => number;
+    /** Places a finalizer on the thread, posting its setup; returns its index there. Throws for one the thread can't name. */
+    readonly placeFinalizer: (state: State, finalizer: FinalizerLeaf) => number;
+    /** The finalizer placed at an index there, for its failures there. */
+    readonly finalizerAt: (index: number) => FinalizerLeaf | undefined;
+    /** Its finalizers' stop lists. */
+    readonly stops: StopWriter;
+    /** Wakes the thread, so it runs its finalizers for the stops just published. */
+    readonly wake: () => void;
     /** At a sync point, once segments are drained and no task runs: empties the ring, growing it to what tasks needed. */
     readonly rewind: () => void;
     /** Once the thread is gone: settles a task in flight, which gives back nothing. */
@@ -243,19 +253,34 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         return done;
     };
 
-    const place = (state: State, leaf: Leaf): number => {
-        const index = placed++;
-        const id = idOfItem(leaf);
-        if (id === undefined) throw new Error(`System "${labelOfItem(leaf)}" runs on thread "${label}", which a joined thread fills, and has no id, so that thread can't name it; the build gives top-level systems one.`);
+    /** An item's setup there: its id, and the world's numbers for the keys it names, by their ids. Throws without them. */
+    const setupOf = (state: State, item: Leaf | FinalizerLeaf, what: string, named: readonly symbol[]): { readonly id: string; readonly keys: readonly (readonly [number, string])[] } => {
+        const id = idOfItem(item);
+        if (id === undefined) throw new Error(`${what} "${labelOfItem(item)}" runs on thread "${label}", which a joined thread fills, and has no id, so that thread can't name it; the build gives top-level ${what === "System" ? "systems" : "finalizers"} one.`);
         const keys: (readonly [number, string])[] = [];
-        for (const key of keysOf(leaf)) {
+        for (const key of named) {
             const keyId = idOfKey(key);
-            if (keyId === undefined) throw new Error(`System "${labelOfItem(leaf)}" names "${labelOf(key)}", which has no id, so thread "${label}" can't name it; the build gives top-level keys one.`);
+            if (keyId === undefined) throw new Error(`${what} "${labelOfItem(item)}" names "${labelOf(key)}", which has no id, so thread "${label}" can't name it; the build gives top-level keys one.`);
             keys.push([idOf(state, key), keyId]);
         }
+        return { id, keys };
+    };
+
+    const place = (state: State, leaf: Leaf): number => {
+        const { id, keys } = setupOf(state, leaf, "System", keysOf(leaf));
+        const index = placed++;
         post({ protocol: "@adobe/data-ecs/join@1", kind: "systems", systems: [{ index, id, keys }] });
         return index;
     };
+
+    const finalizers: FinalizerLeaf[] = [];
+    const placeFinalizer = (state: State, finalizer: FinalizerLeaf): number => {
+        const { id, keys } = setupOf(state, finalizer, "Finalizer", finalizerKeysOf(finalizer));
+        const index = finalizers.push(finalizer) - 1;
+        post({ protocol: "@adobe/data-ecs/join@1", kind: "finalizers", finalizers: [{ index, id, keys }] });
+        return index;
+    };
+    const stops = createStopWriter(arena, log);
 
     return {
         log,
@@ -271,6 +296,10 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
             resolve?.(true);
         },
         place,
+        placeFinalizer,
+        finalizerAt: index => finalizers[index],
+        stops,
+        wake,
         rewind: () => {
             if (!wrote || ended) return;
             wrote = false;
@@ -289,6 +318,7 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
             resolve?.(false);
         },
         free: () => {
+            freeStops(stops);
             arena.free(raw, blockBytes);
             arena.free(ring.offset, ring.bytes);
             if (payload.bytes > 0) arena.free(payload.offset, payload.bytes);
@@ -306,6 +336,13 @@ const keysOf = (leaf: Leaf): readonly symbol[] => {
     ]);
     for (const name in lookup) for (const key of [...lookup[name].read ?? [], ...lookup[name].has ?? [], ...lookup[name].not ?? []]) keys.add(key);
     if (reduce !== undefined) for (const key of Object.getOwnPropertySymbols(reduce)) keys.add(key);
+    return [...keys].filter((key): key is symbol => typeof key === "symbol");
+};
+
+/** Every key a finalizer names, so the thread finds the world's numbers for them: it looks up nothing. */
+export const finalizerKeysOf = (finalizer: FinalizerLeaf): readonly symbol[] => {
+    const { components, resources } = finalizer.declaration;
+    const keys = new Set<Key>([...components.read ?? [], ...components.has ?? [], ...components.not ?? [], ...resources?.read ?? []]);
     return [...keys].filter((key): key is symbol => typeof key === "symbol");
 };
 

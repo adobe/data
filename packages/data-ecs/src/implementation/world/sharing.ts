@@ -3,7 +3,7 @@ import type { Port } from '../../interface/world/join.js';
 import type { Failure, Report } from '../../interface/world/report.js';
 import { threadClaims } from '../../interface/components/thread-claims.js';
 import { threadStatus } from '../../interface/components/thread-status.js';
-import { definitionOf, firstKeyOf, idOfKey, itemOfId, keyOfId, labelOf, type Definition } from '../../interface/registry/index.js';
+import { definitionOf, firstKeyOf, idOfKey, itemOfId, keyOfId, labelOf, labelOfItem, type Definition } from '../../interface/registry/index.js';
 import type { Layout, Views } from '../../interface/registry/layout.js';
 import { addCommand, createBuffer, spawnCommand, type CommandBuffer } from './buffer.js';
 import { pushValues } from './commands.js';
@@ -19,6 +19,7 @@ import { createMoveLog, freeMoveLog, type MoveLog } from './move-log.js';
 import { lineWords } from './protocol.js';
 import { claimThreads, releaseThreads } from './remote.js';
 import { createTaskChannel, type TaskChannel } from './remote-systems.js';
+import { endStops } from './stop-lists.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 import { idOf, type Key, type State } from './state.js';
 
@@ -445,6 +446,8 @@ export const createSharing = (host: SharingHost) => {
         // A task in flight settles now, its systems skipped with a "thread" failure; they're placed here between runs.
         tasks?.end();
         if (log !== null) host.between(() => {
+            // Indexes its finalizers held return, and stops it never acknowledged are reported.
+            if (tasks !== null) state.unplaced.push(...endStops(tasks.stops, state.holds, state.entities.released, thread.claims.join(`" and "`)));
             releaseThreads(state, log);
             if (tasks !== null) {
                 for (const [name, channel] of [...state.threadTasks]) if (channel === tasks) state.threadTasks.delete(name);
@@ -462,8 +465,17 @@ export const createSharing = (host: SharingHost) => {
 
     const receive = (thread: Joined, message: ToWorld): void => {
         switch (message.kind) {
-            case "join": return join(thread, message.threads, message.waits, message.lock, message.systems);
+            case "join": return join(thread, message.threads, message.waits, message.lock, message.imported);
             case "completed": return thread.tasks?.completed(message);
+            case "finalized": {
+                const { tasks } = thread;
+                if (tasks === null) return;
+                for (const [index, error] of message.errors) {
+                    const finalizer = tasks.finalizerAt(index);
+                    if (finalizer !== undefined) host.defer(failureOf("finalizer", labelOfItem(finalizer), Object.assign(new Error(error.message), { name: error.name, stack: error.stack })));
+                }
+                return;
+            }
             case "name": {
                 const found = message.item ? itemOfId(message.id) : keyOfId(message.id);
                 const value = found === undefined ? null : typeof found === "symbol" ? found : definitionOf(found) ?? null;

@@ -9,9 +9,10 @@ import { refreshDirectories } from './directories.js';
 import { beginStructure, countChanged, endStructure, flushDirectory } from './layout-directory.js';
 import { beginLog, logAppend, logMove, logSet, logSwap, publishLog, startTag, tagOf } from './move-log.js';
 import { record } from './journal.js';
-import { indexOf, locate, materialize, recycle, release, reserved, unreserve, type Reserved } from './entities.js';
+import { indexOf, kill, locate, materialize, recycle, release, reserved, unreserve, type Reserved } from './entities.js';
 import { activate } from './activate.js';
 import { runFinalizers, type Thrown } from './finalizers.js';
+import { settleStops } from './stop-lists.js';
 import { closureOf, derives, gainsOf } from './structure.js';
 import type { Plan } from './plan.js';
 import type { MoveLog } from './move-log.js';
@@ -307,7 +308,9 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
             if (fromRow >= 0) leaving++;
             if (fromId >= 0) state.touched?.add(archetypes[fromId]);
             if (fromId >= 0 && state.claimed) countChanged(state.counted, archetypes[fromId]);
-            release(entities, index);
+            // Held while a joined thread's finalizers haven't acknowledged its stop.
+            if (state.holds.size > 0 && state.holds.has(index)) kill(entities, index);
+            else release(entities, index);
             continue;
         }
         const toId = plan.to[entry];
@@ -542,6 +545,13 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     for (let k = 0; k < state.logs.length; k++) publishLog(state.logs[k]);
     endStructure(state.directory);
     state.syncing = null;
+    // Threads whose finalizers have new stops run them now, whether or not a task or observer would replay them.
+    for (let k = 0; k < state.channels.length; k++) {
+        const { stops } = state.channels[k];
+        if (!stops.unwoken) continue;
+        stops.unwoken = false;
+        state.channels[k].wake();
+    }
 };
 
 /**
@@ -563,6 +573,8 @@ export const prepareSync = (state: State, isolated = false): boolean => {
     let reservations: Reserved | null = null;
     beginStructure(state.directory);
     try {
+        // Indexes joined threads finalized are released, reusable after this sync point.
+        if (state.claimed) for (let k = 0; k < state.channels.length; k++) settleStops(state.channels[k].stops, state.holds, state.entities.released);
         const made = materialize(state.memory, state.entities);
         // Positions blocks left unused name reservations of this sync point's own.
         const { unused } = state;
@@ -640,7 +652,7 @@ export const applySync = (state: State): readonly Thrown[] => {
     try {
         if (state.unplaced.length > 0 && !isolated) errors = state.unplaced.splice(0);
         if (state.finalizers.length > 0 && !isolated) {
-            const thrown = runFinalizers(state, queued, born);
+            const thrown = runFinalizers(state, queued, born, tick);
             errors = errors.length === 0 ? thrown : [...errors, ...thrown];
             // Finalizers reserve entities for their spawns; the next sync point accounts for them.
             if (reserved(state.entities)) state.carried = materialize(state.memory, state.entities);

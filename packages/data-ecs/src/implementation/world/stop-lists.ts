@@ -1,0 +1,217 @@
+import type { Finalizer } from '../../interface/finalizer/created.js';
+import type { Memory } from './memory.js';
+import { logFinalizedWord, logStopsWord, type MoveLog } from './move-log.js';
+
+// Stop lists (threads.md, "Finalizers on other threads"): what a joined thread's finalizers need of the entities a sync
+// point stops, written by the world's thread before it applies, one block per sync point with stops, which the thread
+// reads as it replays that sync and acknowledges by the sync it finalized through.
+//
+// A block's words: its sync, modulo 2^32; the next block's offset, stored once it's written, 0 until then; its groups;
+// its bytes. Then a group per finalizer with stops, in the world's finalizer order: its index on the thread, its stops,
+// its bytes; then as columns, each on 8 bytes, every stop's entity (f64), its archetype and row before apply (u32), the
+// tag of each object it reads (u32), and the value of each linear struct it reads in that component's layout.
+
+export const blockSyncWord = 0;
+export const blockNextWord = 1;
+export const blockGroupsWord = 2;
+export const blockBytesWord = 3;
+export const blockHeaderBytes = 16;
+export const groupIndexWord = 0;
+export const groupCountWord = 1;
+export const groupBytesWord = 2;
+export const groupHeaderBytes = 16;
+
+const align = (bytes: number): number => (bytes + 7) & ~7;
+
+/** Where a group of `count` stops keeps its entities, archetypes and rows, past its header. */
+export const entitiesAt = (group: number): number => group + groupHeaderBytes;
+export const archetypesAt = (group: number, count: number): number => group + groupHeaderBytes + 8 * count;
+export const rowsAt = (group: number, count: number): number => group + groupHeaderBytes + 12 * count;
+/** Where a group's tags of its `object`th object read start. */
+export const tagsAt = (group: number, count: number, object: number): number => group + groupHeaderBytes + 16 * count + object * align(4 * count);
+/** Where a group's linear values start, after the tags of its `objects` object reads. */
+export const valuesAt = (group: number, count: number, objects: number): number => tagsAt(group, count, objects);
+/** Bytes of one linear read's column of `count` values of `stride` bytes. */
+export const columnBytes = (count: number, stride: number): number => align(count * stride);
+
+/** Bytes of a group of `count` stops of a finalizer reading `objects` objects and linear values of `strides` bytes. */
+const groupBytes = (count: number, objects: number, strides: readonly number[]): number => {
+    let bytes = valuesAt(0, count, objects);
+    for (const stride of strides) bytes += columnBytes(count, stride);
+    return bytes;
+};
+
+/** One of a joined thread's finalizers, as the world writes its stops. */
+export type StopsOf = {
+    readonly finalizer: Finalizer;
+    /** Its index on the thread. */
+    readonly index: number;
+    /** The components of its object reads, then of its linear reads with their strides, in its `read` order. */
+    readonly objects: readonly number[];
+    readonly linear: readonly number[];
+    readonly strides: readonly number[];
+    /** This sync point's stops, as plan entries, reused by every sync point. */
+    readonly entries: number[];
+};
+
+/** A block the thread hasn't acknowledged, or the newest it has, which it still reads the next block's offset from. */
+type Written = {
+    readonly offset: number;
+    readonly bytes: number;
+    readonly sync: number;
+    /** Indexes of despawned entities, held until the thread acknowledges. */
+    readonly held: number[];
+    /** Its finalizers and their stops, reported if the thread is gone before it acknowledges. */
+    readonly stopped: readonly (readonly [Finalizer, number])[];
+    acknowledged: boolean;
+};
+
+/** The world's end of a joined thread's stop lists. */
+export type StopWriter = {
+    readonly memory: Memory;
+    readonly log: MoveLog;
+    /** Finalizers with stops this sync point, in order, whose block is written once every finalizer ran. */
+    readonly staged: StopsOf[];
+    readonly written: Written[];
+    /** Whether a block was written since the thread was last woken. */
+    unwoken: boolean;
+};
+
+export const createStopWriter = (memory: Memory, log: MoveLog): StopWriter => ({ memory, log, staged: [], written: [], unwoken: false });
+
+/** What a sync point's stops come from: entries' entities and archetypes before apply, and the entity table's rows. */
+export type StopSource = {
+    readonly entity: Float64Array;
+    readonly from: Int32Array;
+    readonly despawned: Uint8Array;
+    readonly archetypes: readonly { readonly storageById: readonly ({ readonly tags: Uint32Array; readonly views: { readonly u8: Uint8Array } } | undefined)[] }[];
+    readonly row: Uint32Array;
+    /** Holds of despawned entities' indexes, by index: how many threads still finalize each. */
+    readonly holds: Map<number, number>;
+};
+
+/**
+ * Writes the block of a sync point's staged stops, before it applies: entities, archetypes and rows, tags and linear
+ * values, copied from the rows they're at; despawned entities' indexes held. Links it after the last block.
+ */
+export const writeStops = (writer: StopWriter, sync: number, source: StopSource): void => {
+    const { staged, memory } = writer;
+    if (staged.length === 0) return;
+    let bytes = blockHeaderBytes;
+    for (const stops of staged) bytes += groupBytes(stops.entries.length, stops.objects.length, stops.strides);
+    const offset = memory.allocate(bytes);
+    const buffer = memory.memory.buffer;
+    const u8 = new Uint8Array(buffer);
+    const u32 = new Uint32Array(buffer);
+    const f64 = new Float64Array(buffer);
+    const held: number[] = [];
+    const stopped: (readonly [Finalizer, number])[] = [];
+    u32[(offset >> 2) + blockSyncWord] = sync >>> 0;
+    u32[(offset >> 2) + blockNextWord] = 0;
+    u32[(offset >> 2) + blockGroupsWord] = staged.length;
+    u32[(offset >> 2) + blockBytesWord] = bytes;
+    let group = offset + blockHeaderBytes;
+    const { entity, from, despawned, archetypes, row: rows, holds } = source;
+    for (const stops of staged) {
+        const { entries, objects, linear, strides } = stops;
+        const count = entries.length;
+        u32[(group >> 2) + groupIndexWord] = stops.index;
+        u32[(group >> 2) + groupCountWord] = count;
+        u32[(group >> 2) + groupBytesWord] = groupBytes(count, objects.length, strides);
+        const entityWords = entitiesAt(group) >> 3;
+        const archetypeWords = archetypesAt(group, count) >> 2;
+        const rowWords = rowsAt(group, count) >> 2;
+        for (let i = 0; i < count; i++) {
+            const entry = entries[i];
+            const stoppedEntity = entity[entry];
+            const index = stoppedEntity >>> 0;
+            const archetype = from[entry];
+            const row = rows[index];
+            f64[entityWords + i] = stoppedEntity;
+            u32[archetypeWords + i] = archetype;
+            u32[rowWords + i] = row;
+            const storages = archetypes[archetype].storageById;
+            for (let k = 0; k < objects.length; k++) u32[(tagsAt(group, count, k) >> 2) + i] = storages[objects[k]]?.tags[row] ?? 0;
+            let column = valuesAt(group, count, objects.length);
+            for (let k = 0; k < linear.length; k++) {
+                const stride = strides[k];
+                const values = storages[linear[k]]?.views.u8;
+                if (values !== undefined) u8.copyWithin(column + i * stride, values.byteOffset + row * stride, values.byteOffset + (row + 1) * stride);
+                column += columnBytes(count, stride);
+            }
+            if (despawned[entry] === 1) {
+                holds.set(index, (holds.get(index) ?? 0) + 1);
+                held.push(index);
+            }
+        }
+        stopped.push([stops.finalizer, count]);
+        group += groupBytes(count, objects.length, strides);
+        entries.length = 0;
+    }
+    staged.length = 0;
+    const last = writer.written.at(-1);
+    // Stored last, so the thread reads the block only once it's whole.
+    if (last === undefined) Atomics.store(writer.log.header, logStopsWord, offset);
+    else Atomics.store(u32, (last.offset >> 2) + blockNextWord, offset);
+    writer.written.push({ offset, bytes, sync: sync >>> 0, held, stopped, acknowledged: false });
+    writer.unwoken = true;
+};
+
+/** Returns a held index once no thread finalizes it any more: it's reusable after the sync point. */
+const unhold = (holds: Map<number, number>, released: number[], held: readonly number[]): void => {
+    for (const index of held) {
+        const count = (holds.get(index) ?? 1) - 1;
+        if (count > 0) holds.set(index, count);
+        else {
+            holds.delete(index);
+            released.push(index);
+        }
+    }
+};
+
+/**
+ * Takes up what the thread acknowledged: blocks through the sync it finalized through return their held indexes, and
+ * all but the newest of them are freed, since the thread reads the next block's offset from that one.
+ */
+export const settleStops = (writer: StopWriter, holds: Map<number, number>, released: number[]): void => {
+    const { written, memory } = writer;
+    if (written.length === 0) return;
+    const finalized = Atomics.load(writer.log.header, logFinalizedWord) >>> 0;
+    let newest = -1;
+    for (let k = 0; k < written.length; k++) {
+        const block = written[k];
+        if (((finalized - block.sync) | 0) < 0) break;
+        if (!block.acknowledged) {
+            block.acknowledged = true;
+            unhold(holds, released, block.held);
+        }
+        newest = k;
+    }
+    for (let k = 0; k < newest; k++) memory.free(written[k].offset, written[k].bytes);
+    if (newest > 0) written.splice(0, newest);
+};
+
+/**
+ * Once the thread is gone: every held index returns, and each finalizer with stops it never acknowledged is a `"thread"`
+ * failure, for the next sync point's report.
+ */
+export const endStops = (writer: StopWriter, holds: Map<number, number>, released: number[], label: string): { readonly finalizer: Finalizer; readonly error: Error; readonly kind: "thread" }[] => {
+    settleStops(writer, holds, released);
+    const missed = new Map<Finalizer, number>();
+    for (const block of writer.written) {
+        if (block.acknowledged) continue;
+        block.acknowledged = true;
+        unhold(holds, released, block.held);
+        for (const [finalizer, count] of block.stopped) missed.set(finalizer, (missed.get(finalizer) ?? 0) + count);
+    }
+    return [...missed].map(([finalizer, count]) => ({
+        finalizer, kind: "thread",
+        error: new Error(`Thread "${label}" is gone, so ${count === 1 ? "a stop" : `${count} stops`} of finalizer "${finalizer.name}" didn't run there.`),
+    }));
+};
+
+/** Frees every block once the thread left: one that died may still be reading them. */
+export const freeStops = (writer: StopWriter): void => {
+    for (const block of writer.written) writer.memory.free(block.offset, block.bytes);
+    writer.written.length = 0;
+};

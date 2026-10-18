@@ -359,7 +359,7 @@ const executeTiers = async (context: ExecuteContext, schedule: Schedule, args: u
                     finally {
                         // Applied even when the readback fails, which only a lost device makes it do: the CPU state stays whole.
                         dropped = state.plan.dropped;
-                        for (const { finalizer, error } of applySync(state)) (outcome.failures ??= []).push(failureOf("finalizer", labelOfItem(finalizer), error));
+                        for (const { finalizer, error, kind } of applySync(state)) (outcome.failures ??= []).push(failureOf(kind ?? "finalizer", labelOfItem(finalizer), error));
                     }
                 }
             }

@@ -13,7 +13,9 @@ import { idOf, type Key, type State } from './state.js';
 import type { Queued } from './synchronize.js';
 import type { Essential, ReadonlyValue } from '../../interface/component/value.js';
 import type { Leaf } from '../../interface/finalizer/created.js';
-import { newestKeyOf } from '../../interface/registry/index.js';
+import { newestKeyOf, threadOf } from '../../interface/registry/index.js';
+import type { TaskChannel } from './remote-systems.js';
+import { writeStops, type StopsOf } from './stop-lists.js';
 
 /** A registered finalizer, resolved for a world: what it matches or watches, its context, and the buffer its commands go to. */
 export type FinalizerRunner = {
@@ -29,7 +31,12 @@ export type FinalizerRunner = {
     readonly target: { buffer: CommandBuffer };
     readonly commands: Commands;
     readonly reads: readonly Key[];
+    /** Where a joined thread fills its thread: its stops go to that thread's stop lists, and it runs there. */
+    remote: RemoteFinalizer | null;
 };
+
+/** A finalizer placed on a joined thread: its channel, and what its stop lists hold. */
+export type RemoteFinalizer = StopsOf & { readonly channel: TaskChannel };
 
 export const isFinalizer = (value: { readonly kind: string }): value is Finalizer => value.kind === "finalizer" || value.kind === "changes";
 
@@ -47,17 +54,48 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
     }
     const target = { buffer: createBuffer() };
     const commands = createCommands(state, target);
+    // One on another thread than the world's runs there after the sync point, so it issues none, wherever it runs.
+    const thread = finalizer.kind === "finalizer" ? threadOf(finalizer.declaration, "Finalizer", finalizer.name) : null;
+    const commanding = thread === null || thread === "world";
     return {
         finalizer,
         required: [...new Set([...reads, ...query?.has ?? []])].map(key => idOf(state, key)),
         excluded: (query?.not ?? []).map(key => idOf(state, key)),
         watches,
         matches: [],
-        context: createContext(state, declaration, { commands }),
+        context: createContext(state, declaration, commanding ? { commands } : {}),
         target,
         commands,
         reads,
+        remote: null,
     };
+};
+
+/**
+ * Places a finalizer on a joined thread's channel, posting it there, or back on the world's thread with null. Its reads
+ * are listed as the thread reads them: objects by their tags, linear structs by their bytes. Throws if the thread can't
+ * name it.
+ */
+export const placeFinalizer = (state: State, runner: FinalizerRunner, channel: TaskChannel | null): void => {
+    const { finalizer } = runner;
+    if (channel === null || finalizer.kind !== "finalizer") {
+        runner.remote = null;
+        return;
+    }
+    const objects: number[] = [];
+    const linear: number[] = [];
+    const strides: number[] = [];
+    for (const key of runner.reads) {
+        const id = idOf(state, key);
+        const layout = state.layouts[id];
+        if (layout.kind === "object") objects.push(id);
+        else if (layout.kind === "linear") {
+            linear.push(id);
+            strides.push(layout.stride);
+        }
+    }
+    const index = channel.placeFinalizer(state, finalizer);
+    runner.remote = { finalizer, index, objects, linear, strides, entries: [], channel };
 };
 
 const matches = (runner: FinalizerRunner, archetype: Archetype): boolean => {
@@ -81,8 +119,8 @@ const fromOf = (state: State, entry: number): Archetype | null => {
 
 type Untyped = { body(row: object, context: object): void };
 
-/** What a finalizer threw, kept for after the sync point applies. */
-export type Thrown = { readonly finalizer: Finalizer; readonly error: unknown };
+/** What a finalizer threw, kept for after the sync point applies; `"thread"` for one whose thread is gone. */
+export type Thrown = { readonly finalizer: Finalizer; readonly error: unknown; readonly kind?: "thread" };
 
 /** Calls `body`, keeping what it throws. */
 const guarded = (errors: Thrown[], finalizer: Finalizer, body: () => void): void => {
@@ -90,18 +128,31 @@ const guarded = (errors: Thrown[], finalizer: Finalizer, body: () => void): void
     catch (error) { errors.push({ finalizer, error }); }
 };
 
-/** Each entity that stops matching: it matched before, and is despawned, no longer matches, or had a required component replaced. */
+/** Whether the entity at `entry` stops matching: it matched before, and is despawned, no longer matches, or had a required component replaced. */
+const stops = (state: State, runner: FinalizerRunner, entry: number): Archetype | null => {
+    const { plan, archetypes } = state;
+    const from = fromOf(state, entry);
+    if (from === null || !matches(runner, from)) return null;
+    const stopped = plan.despawned[entry] === 1 || !matches(runner, archetypes[plan.to[entry]])
+        || (plan.fresh.get(entry)?.some(id => runner.required.includes(id)) ?? false);
+    return stopped ? from : null;
+};
+
+/** A finalizer a joined thread runs: its stops, staged for the thread's stop list. */
+const stageStops = (state: State, runner: FinalizerRunner, remote: RemoteFinalizer): void => {
+    for (let entry = 0; entry < state.plan.count; entry++) if (stops(state, runner, entry) !== null) remote.entries.push(entry);
+    if (remote.entries.length > 0) remote.channel.stops.staged.push(remote);
+};
+
+/** Each entity that stops matching, its body run against its row before apply. */
 const finalizeStops = (state: State, runner: FinalizerRunner, leaf: Leaf, errors: Thrown[]): void => {
     // Rows and contexts are built to each finalizer's declaration, so its body accepts them.
     const finalizer: Untyped = leaf;
-    const { plan, archetypes, entities } = state;
+    const { plan, entities } = state;
     const byArchetype = new Map<Archetype, number[]>();
     for (let entry = 0; entry < plan.count; entry++) {
-        const from = fromOf(state, entry);
-        if (from === null || !matches(runner, from)) continue;
-        const stops = plan.despawned[entry] === 1 || !matches(runner, archetypes[plan.to[entry]])
-            || (plan.fresh.get(entry)?.some(id => runner.required.includes(id)) ?? false);
-        if (!stops) continue;
+        const from = stops(state, runner, entry);
+        if (from === null) continue;
         let entries = byArchetype.get(from);
         if (entries === undefined) byArchetype.set(from, entries = []);
         entries.push(entry);
@@ -213,17 +264,28 @@ const changesOf = (state: State, runner: FinalizerRunner, queued: readonly Queue
     };
 };
 
+/** Whether a joined thread's finalizers have stops this sync point. */
+const staged = (state: State): boolean => {
+    for (let k = 0; k < state.channels.length; k++) if (state.channels[k].stops.staged.length > 0) return true;
+    return false;
+};
+
 /**
- * Runs every finalizer against the planned sync point, before it applies, in their order. Their commands queue for the
- * next sync point. Returns the errors they threw, for after the sync point applies.
+ * Runs every finalizer against the planned sync point, before it applies, in their order, and writes the stop lists of
+ * those joined threads run. Their commands queue for the next sync point. Returns the errors they threw, for after
+ * the sync point applies.
  */
-export const runFinalizers = (state: State, queued: readonly Queued[], born: Map<number, number>): Thrown[] => {
+export const runFinalizers = (state: State, queued: readonly Queued[], born: Map<number, number>, tick: number): Thrown[] => {
     const errors: Thrown[] = [];
     state.born = born;
     try {
         for (const runner of state.finalizers) {
+            const { finalizer, remote } = runner;
+            if (remote !== null) {
+                stageStops(state, runner, remote);
+                continue;
+            }
             runner.context.bind();
-            const { finalizer } = runner;
             if (finalizer.kind === "finalizer") finalizeStops(state, runner, finalizer, errors);
             else {
                 // The context is built to the finalizer's declaration, so its body accepts it.
@@ -235,9 +297,19 @@ export const runFinalizers = (state: State, queued: readonly Queued[], born: Map
                 runner.target.buffer = createBuffer();
             }
         }
+        if (state.claimed && staged(state)) {
+            const { plan } = state;
+            const source = { entity: plan.entity, from: plan.from, despawned: plan.despawned, archetypes: state.archetypes, row: state.entities.row, holds: state.holds };
+            for (const channel of state.channels) writeStops(channel.stops, tick, source);
+        }
     }
     finally {
         state.born = null;
+        // Left clean after a throw too, for the next sync point.
+        for (const channel of state.channels) {
+            for (const stops of channel.stops.staged) stops.entries.length = 0;
+            channel.stops.staged.length = 0;
+        }
     }
     return errors;
 };
@@ -247,7 +319,8 @@ export const finalizeAll = (state: State): Thrown[] => {
     const errors: Thrown[] = [];
     for (const runner of state.finalizers) {
         const { finalizer: leaf } = runner;
-        if (leaf.kind !== "finalizer") continue;
+        // A joined thread finalizes its own, once it hears the world is disposed.
+        if (leaf.kind !== "finalizer" || runner.remote !== null) continue;
         const finalizer: Untyped = leaf;
         runner.context.bind();
         const bind = rowBinder(state, runner.reads, []);

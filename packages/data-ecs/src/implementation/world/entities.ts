@@ -163,10 +163,15 @@ export const materialize = (memory: Memory, entities: Entities): Reserved => {
     return { reused, firstNew };
 };
 
-/** Kills an index; it becomes reusable after the current sync point. */
-export const release = (entities: Entities, index: number): void => {
+/** Kills an index, which isn't reusable until it's released: a joined thread's finalizers hold it. */
+export const kill = (entities: Entities, index: number): void => {
     entities.archetype[index] = -1;
     entities.generation[index] = (entities.generation[index] + 1) & generationMask;
+};
+
+/** Kills an index; it becomes reusable after the current sync point. */
+export const release = (entities: Entities, index: number): void => {
+    kill(entities, index);
     entities.released.push(index);
 };
 

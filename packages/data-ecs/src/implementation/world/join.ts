@@ -125,6 +125,7 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
     /** The systems the world places on this thread, once it joined with claims; setups that came before. */
     let systems: ReturnType<typeof createThreadSystems> | null = null;
     const setups: SystemSetup[] = [];
+    const finalizerSetups: SystemSetup[] = [];
 
     let memory: WebAssembly.Memory | null = null;
     let control: Int32Array | null = null;
@@ -291,8 +292,9 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
     const process = (): void => {
         if (control === null) return;
         Atomics.store(control, unreadWord, 0);
-        // A task first: the world waits for it.
+        // A task first: the world waits for it. Then finalizers of stops no task replayed.
         tasked = systems?.process() ?? false;
+        systems?.finalize();
         completed = Atomics.load(control, completedWord);
         settle();
         writeWaiting();
@@ -356,14 +358,19 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
                         post: (sent, transfer) => channel.post(sent, transfer), keyNumber, numbered: () => numbers.size,
                     });
                     systems.setup(setups);
-                    setups.length = 0;
+                    systems.setupFinalizers(finalizerSetups);
+                    setups.length = finalizerSetups.length = 0;
                 }
                 writeWaiting();
                 void listen();
                 return;
             }
             case "refused": return fail(new Error(message.message));
-            case "disposed": return fail(new Error("The world is disposed."));
+            case "disposed": {
+                // Its finalizers release what this thread holds, as the world's do.
+                systems?.disposed();
+                return fail(new Error("The world is disposed."));
+            }
             case "report":
             case "rejected": {
                 const run = runs.get(message.sequence);
@@ -391,6 +398,14 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
                 else systems.setup(message.systems);
                 return systems?.process();
             }
+            case "finalizers": {
+                if (systems === null) finalizerSetups.push(...message.finalizers);
+                else systems.setupFinalizers(message.finalizers);
+                // What waited for them goes on: stops, a task, observers.
+                systems?.finalize();
+                systems?.process();
+                return processObservers();
+            }
             case "task input": return systems?.input(message.sequence, message.input);
             case "wake": return process();
         }
@@ -401,7 +416,7 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
     let release: (() => void) | null = null;
     const joinMessage = (lock: string | null): ToWorld => ({
         protocol: protocolName, kind: "join", threads: options.threads ?? [], waits: hasWaitAsync(), lock,
-        systems: claims.size === 0 ? [] : identifiedItems("system"),
+        imported: claims.size === 0 ? [] : [...identifiedItems("system"), ...identifiedItems("finalizer")],
     });
     const sendHeld = (lock: string | null): void => {
         const messages = held ?? [];
@@ -571,6 +586,8 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
             await last;
             for (const observer of observers.values()) observer.active = false;
             observers.clear();
+            // Stops published so far are finalized here, so the world returns their indexes.
+            if (failure === null) systems?.finalize();
             if (failure === null) post({ protocol: protocolName, kind: "leave" });
             fail(new Error("This thread left the world."));
             channel.close();

@@ -2,7 +2,7 @@ import type { Entity } from '../../interface/entity/entity.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { Lookup } from '../../interface/system/access.js';
-import { declarationOf, definitionOf, firstKeyOf, isLeaf, isWorldWritten, itemOfId, keyOfId, kindOf, labelOf, threadOfDeclaration } from '../../interface/registry/index.js';
+import { declarationOf, definitionOf, firstKeyOf, isLeaf, isWorldWritten, itemOfId, keyOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration } from '../../interface/registry/index.js';
 import { layoutOf, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { stampChanged, writeOf } from './archetype.js';
 import { emptyViews } from './arrays.js';
@@ -29,6 +29,7 @@ import { forEachPassingRange, type Filter } from './ranges.js';
 import { combine, contributed, identityOf, reductionTargetsOf, type ReductionTarget } from './reductions.js';
 import { rowBinderOf, type Row, type RowArchetype, type RowHost, type RowStorage } from './rows.js';
 import { createBatch, positionalSpawner, type Positional, type SpawnBatch } from './staging.js';
+import { createThreadFinalizers } from './thread-finalizers.js';
 import { defaultOf, type Key } from './state.js';
 import {
     completionCapacityWord, completionMessage, completionOffsetWord, completionSystems, executedFlag, failedFlag, payloadCapacityWord, payloadCount,
@@ -404,9 +405,9 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         layoutOf: key => layouts[numbers.get(firstKeyOf(key)) ?? -1],
     };
 
-    /** Records the systems the world places here; one this thread never imported fails each task that names it. */
-    const setup = (systems: readonly SystemSetup[]): void => {
-        for (const { keys: named } of systems) {
+    /** Takes the world's numbers for the keys of systems or finalizers it places here. */
+    const name = (setups: readonly SystemSetup[]): void => {
+        for (const { keys: named } of setups) {
             for (const [number, id] of named) {
                 const key = keyOfId(id);
                 if (key === undefined || keys[number] !== undefined) continue;
@@ -417,6 +418,11 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
                 archetypes.length = 0;
             }
         }
+    };
+
+    /** Records the systems the world places here; one this thread never imported fails each task that names it. */
+    const setup = (systems: readonly SystemSetup[]): void => {
+        name(systems);
         for (const { index, id } of systems) {
             const item = itemOfId(id);
             const definition = item === undefined ? undefined : definitionOf(item);
@@ -424,14 +430,42 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         }
     };
 
+    const finalizers = createThreadFinalizers({
+        mirror,
+        refresh: () => {
+            refreshMemory();
+            return buffer;
+        },
+        rows: rowHost,
+        numberOf: runnerHost.numberOf,
+        layoutOf: runnerHost.layoutOf,
+        archetypeAt, countOf, tableCount, resourceRow,
+        failed: errors => host.post({ protocol: protocolName, kind: "finalized", errors }),
+    });
+    mirror.finalize = finalizers.through;
+
+    /** Records the finalizers the world places here; one this thread never imported fails each group of its stops. */
+    const setupFinalizers = (setups: readonly SystemSetup[]): void => {
+        name(setups);
+        finalizers.setup(setups.map(({ index, id }) => {
+            const item = itemOfId(id);
+            const leaf = programFinalizers().find(finalizer => finalizer === item);
+            return { index, leaf: leaf?.kind === "finalizer" ? leaf : null };
+        }));
+    };
+
+    /** Brings the mirror up to the last published sync, which runs the finalizers of its stops; false while it can't. */
+    const current = (): boolean => {
+        const replayed = replay(mirror);
+        if (replayed === "held") return false;
+        return replayed !== "lapped" || rebuild(mirror);
+    };
+
     /** Whether a task can run: its systems known here, its input arrived, and the mirror through its sync. */
     const ready = (payload: Float64Array, count: number): boolean => {
         for (let k = 0; k < count; k++) if (runners[payload[payloadSystems + k * systemFields + systemIndex]] === undefined) return false;
         if (payload[payloadInput] !== 0 && !inputs.has(payload[payloadSequence])) return false;
-        const replayed = replay(mirror);
-        if (replayed === "held") return false;
-        if (replayed === "lapped" && !rebuild(mirror)) return false;
-        return true;
+        return current();
     };
 
     /** Views of the payload and completion, kept while the world keeps them where they are. */
@@ -554,6 +588,20 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
 
     return {
         setup,
+        setupFinalizers,
+        /** Runs the finalizers of stops published since this thread last replayed, if any, as it replays them. */
+        finalize: (): void => {
+            if (finalizers.pending()) current();
+        },
+        /** Once the world is disposed: finalizers run for the stops published, then for every row they match. */
+        disposed: (): void => {
+            try {
+                if (current()) finalizers.all();
+            }
+            catch (error) {
+                host.post({ protocol: protocolName, kind: "finalized", errors: [[-1, errorOf(error)]] });
+            }
+        },
         /** A task's input, posted by message. */
         input: (sequence: number, input: unknown): void => {
             inputs.set(sequence, input);

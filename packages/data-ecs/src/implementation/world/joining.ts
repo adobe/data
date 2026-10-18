@@ -37,8 +37,8 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
      */
     | {
         readonly kind: "join"; readonly threads: readonly string[]; readonly waits: boolean; readonly lock: string | null;
-        /** With claims: the ids of the systems this thread imported, so the world checks those it places here. */
-        readonly systems: readonly string[];
+        /** With claims: the ids of the systems and finalizers this thread imported, so the world checks those it places here. */
+        readonly imported: readonly string[];
     }
     /** The id of a key or system it numbers `number`, posted before the first use of that number. */
     | { readonly kind: "name"; readonly number: number; readonly id: string; readonly item: boolean }
@@ -57,6 +57,8 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
         readonly kind: "completed"; readonly sequence: number;
         readonly errors: readonly (readonly [number, WorkerError])[]; readonly spills: readonly (readonly [number, Uint8Array])[];
     }
+    /** What its finalizers threw, by their index on this thread, for the world's next report. */
+    | { readonly kind: "finalized"; readonly errors: readonly (readonly [number, WorkerError])[] }
 );
 
 /** From the world's thread to a joined one. */
@@ -72,6 +74,8 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
     }
     /** Systems the world places on the thread, each by its index there and its id, with the world's numbers for its keys. */
     | { readonly kind: "systems"; readonly systems: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] }[] }
+    /** Finalizers the world places on the thread, as systems are: each one's index there, its id, and the world's numbers for its keys. */
+    | { readonly kind: "finalizers"; readonly finalizers: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] }[] }
     /** The input of task `sequence`, which its payload says comes by message. */
     | { readonly kind: "task input"; readonly sequence: number; readonly input: unknown }
     /** A component whose objects the thread fills, by the world's number, with its id: null for one without. */

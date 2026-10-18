@@ -176,7 +176,7 @@ describe("objects a joined thread fills", () => {
         expect((await world.run(readCaptions)).failures).toEqual([]);
         await world.dispose();
     });
-    it("refuse a claim of a thread whose finalizers exist, or whose systems the joined thread can't run, and take one whose systems it imported", async () => {
+    it("refuse a claim of a thread whose finalizers or systems the joined thread can't run, and take one whose systems it imported", async () => {
         const world = createWorld({ [workers]: 0 });
         await world.run(readCaptions);
         const taken = joined();
@@ -194,7 +194,8 @@ describe("objects a joined thread fills", () => {
         await statusOf(world, thread, "gone");
         await remote.dispose();
         const other = joined(["remoteTestFinalized"]);
-        await expect(other.remote.run(idle)).rejects.toThrow('Finalizer "remoteTest/releaseGuarded" runs on thread "remoteTestFinalized", which a joined thread fills');
+        // Declared without a binding, so the build gives it no id.
+        await expect(other.remote.run(idle)).rejects.toThrow('Finalizer "remoteTest/releaseGuarded" runs on thread "remoteTestFinalized" and has no id, so a joined thread can\'t run it');
         await other.remote.dispose();
         await other.world.dispose();
         await world.dispose();

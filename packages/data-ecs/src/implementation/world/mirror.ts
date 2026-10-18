@@ -70,7 +70,17 @@ export type Mirror = {
     nextSlot: number;
     /** Times it rebuilt, for tests. */
     rebuilds: number;
+    /**
+     * Runs this thread's finalizers for the stops of every sync through `sync`, before that sync's entries apply, so
+     * they read its objects at the rows the stops name; after the log lapped, with `old`, which gives an entity's
+     * objects as they were before the rebuild. False while a finalizer the stops name isn't set up here yet, so
+     * replay holds before that sync.
+     */
+    finalize: ((sync: number, old: Previously | null) => boolean) | null;
 };
+
+/** An entity's object before a rebuild, or `start` where it held none there. */
+export type Previously = (entity: number, component: number, start: unknown) => unknown;
 
 /** A mirror of the rows holding thread `thread`'s objects, read from the log at `block`; it rebuilds first. */
 export const createMirror = (memory: WebAssembly.Memory, block: number, thread: number): Mirror => {
@@ -78,7 +88,7 @@ export const createMirror = (memory: WebAssembly.Memory, block: number, thread: 
         memory, thread, block, buffer: memory.buffer, words: new Uint32Array(0), signed: new Int32Array(0), header: new Int32Array(0),
         ring: new Uint32Array(0), ringEntities: new Float64Array(0), version: -1, mask: 0, position: 0, through: 0, tick: 0,
         keys: new Map(), starts: new Map(), archetypes: [], scratch: new Uint32Array(1024), scratchEntities: new Float64Array(0),
-        staged: [], head: 0, nextSlot: 0, rebuilds: 0,
+        staged: [], head: 0, nextSlot: 0, rebuilds: 0, finalize: null,
     };
     refresh(mirror);
     return mirror;
@@ -220,8 +230,11 @@ export const stage = (mirror: Mirror, entity: number, component: number, value: 
     return slot;
 };
 
-/** Applies `count` entries copied into the scratch, in order. */
-const apply = (mirror: Mirror, count: number): void => {
+/**
+ * Applies `count` entries copied into the scratch, in order; returns how many, fewer when a sync's stops can't be
+ * finalized yet, so it stops before that sync.
+ */
+const apply = (mirror: Mirror, count: number): number => {
     const { scratch, scratchEntities, archetypes } = mirror;
     for (let e = 0; e < count; e++) {
         const at = e * entryWords;
@@ -229,6 +242,8 @@ const apply = (mirror: Mirror, count: number): void => {
         const archetype = first >>> archetypeShift;
         switch (first & kindMask) {
             case syncEntry: {
+                // Its stops are finalized against the rows before it applies.
+                if (mirror.finalize !== null && !mirror.finalize(scratch[at + 1], null)) return e;
                 mirror.tick = scratch[at + 1] + scratch[at + 2] * 0x100000000;
                 break;
             }
@@ -289,6 +304,7 @@ const apply = (mirror: Mirror, count: number): void => {
             }
         }
     }
+    return count;
 };
 
 /** Copies entries `from` to `from + count` out of the ring, wrapping, into the scratch. */
@@ -346,8 +362,7 @@ export const replay = (mirror: Mirror): Replayed => {
         // An exchange, so the copy's loads complete before it: the limit then covers whatever the writer overwrote.
         const limit = Atomics.add(header, logLimitWord, 0) >>> 0;
         if (((limit - mirror.position) >>> 0) > mirror.mask + 1 || Atomics.load(header, logVersionWord) !== mirror.version) return "lapped";
-        const applied = heldAt(mirror, count);
-        apply(mirror, applied);
+        const applied = apply(mirror, heldAt(mirror, count));
         mirror.position = (mirror.position + applied) >>> 0;
         if (applied < count) {
             // Through the last sync applied, the one before the held one.
@@ -355,6 +370,12 @@ export const replay = (mirror: Mirror): Replayed => {
             settle(mirror);
             return "held";
         }
+    }
+    // Syncs without entries here may have stops too.
+    if (mirror.finalize !== null && !mirror.finalize(sync, null)) {
+        if (count > 0) mirror.through = mirror.tick >>> 0;
+        settle(mirror);
+        return "held";
     }
     mirror.through = sync;
     settle(mirror);
@@ -448,6 +469,14 @@ export const rebuild = (mirror: Mirror): boolean => {
     const entityLength = new Int32Array(buffer, words[entitiesWord + cursorField], 4)[2];
     /** The old rows, indexed by entity only once a row's value is one this thread gave and kept. */
     let indexed = false;
+    // Stops through the sync it rebuilds to are finalized first, with the objects as they were.
+    if (mirror.finalize !== null && !mirror.finalize(sync, (entity, component, start) => {
+        if (!indexed) {
+            indexPrevious(old, entityLength);
+            indexed = true;
+        }
+        return previousValue(old, entity, component, start);
+    })) return false;
     const archetypes: (Mirrored | null)[] = [];
     /** Staged slots the rebuild takes, settled only once it's complete. */
     const taken: number[] = [];
@@ -521,6 +550,12 @@ const storageOf = (words: Uint32Array, record: number, component: number): numbe
         if (words[base + storageComponent] === component) return base;
     }
     return -1;
+};
+
+/** A staged slot's value while no sync applied it, else `settled`. */
+export const stagedValue = (mirror: Mirror, slot: number, settled: unknown): unknown => {
+    const staged = stagedOf(mirror, slot);
+    return staged === undefined ? settled : staged.value;
 };
 
 /** A live staged slot by its id. */

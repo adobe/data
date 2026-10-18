@@ -1,25 +1,69 @@
 import type { Finalizer } from '../../interface/finalizer/created.js';
 import type { Rule } from '../../interface/rule/created.js';
 import type { RuleFacts } from '../../interface/registry/strata.js';
-import { createFinalizerRunner, type FinalizerRunner } from './finalizers.js';
+import { createFinalizerRunner, placeFinalizer, type FinalizerRunner } from './finalizers.js';
+import { finalizerKeysOf, type TaskChannel } from './remote-systems.js';
 import { programFinalizers, programRules, programVersion } from '../../interface/registry/program.js';
 import { triggersOf } from './program.js';
 import { ensureResources, findResource } from './resources.js';
 import { idOf, metIdOf, type Key, type State } from './state.js';
 import { restratify } from './structure.js';
-import { labelOf, threadOf } from '../../interface/registry/index.js';
+import { idOfItem, idOfKey, labelOf, labelOfItem, threadOf } from '../../interface/registry/index.js';
 
-/** Why a finalizer doesn't run: its thread is one a joined thread claims, where finalizers don't run yet. */
-export const unplacedFinalizer = (name: string, thread: string): string =>
-    `Finalizer "${name}" runs on thread "${thread}", which a joined thread fills; finalizers don't run on joined threads yet.`;
-
-/** A program finalizer on one of `threads`, as the reason a joined thread can't claim them; null for none. */
-export const finalizerOn = (threads: readonly string[]): string | null => {
+/**
+ * Why a joined thread that imported the items of ids `imported` can't claim `threads`: a program finalizer on one that
+ * it never imported, or that has no id or names a key without one, so it can't name it; null when none.
+ */
+export const finalizerCrossing = (threads: readonly string[], imported: ReadonlySet<string>): string | null => {
     for (const finalizer of programFinalizers()) {
+        if (finalizer.kind !== "finalizer") continue;
         const thread = threadOf(finalizer.declaration, "Finalizer", finalizer.name);
-        if (thread !== null && threads.includes(thread)) return unplacedFinalizer(finalizer.name, thread);
+        if (thread === null || !threads.includes(thread)) continue;
+        const label = labelOfItem(finalizer);
+        const id = idOfItem(finalizer);
+        if (id === undefined) return `Finalizer "${label}" runs on thread "${thread}" and has no id, so a joined thread can't run it; the build gives top-level finalizers one.`;
+        if (!imported.has(id)) return `Finalizer "${label}" runs on thread "${thread}", which the joined thread claiming it never imported.`;
+        const unnamed = finalizerKeysOf(finalizer).find(key => idOfKey(key) === undefined);
+        if (unnamed !== undefined) return `Finalizer "${label}" runs on thread "${thread}" and names "${labelOf(unnamed)}", which has no id, so a joined thread can't name it; the build gives top-level keys one.`;
     }
     return null;
+};
+
+/** The channel of the joined thread a finalizer runs on, or null for the world's thread. */
+const channelOf = (state: State, finalizer: Finalizer): TaskChannel | null => {
+    if (!state.claimed || finalizer.kind !== "finalizer") return null;
+    const thread = threadOf(finalizer.declaration, "Finalizer", finalizer.name);
+    const channel = thread === null ? undefined : state.threadTasks.get(thread);
+    return channel === undefined || channel.gone() ? null : channel;
+};
+
+/**
+ * Places a runner on its joined thread, or here: false when that thread can't name it, which the next sync point
+ * reports once.
+ */
+const placed = (state: State, runner: FinalizerRunner): boolean => {
+    try {
+        placeFinalizer(state, runner, channelOf(state, runner.finalizer));
+        return true;
+    }
+    catch (error) {
+        if (!state.unplacedSeen.has(runner.finalizer)) {
+            state.unplacedSeen.add(runner.finalizer);
+            state.unplaced.push({ finalizer: runner.finalizer, error });
+        }
+        return false;
+    }
+};
+
+/**
+ * Between runs, once claims were made or released: each active finalizer runs on the joined thread filling its thread,
+ * or here. One its thread can't name stops being active, and activates again once its thread is released.
+ */
+export const placeFinalizers = (state: State): void => {
+    const kept = state.finalizers.filter(runner => (channelOf(state, runner.finalizer) ?? null) === (runner.remote?.channel ?? null) || placed(state, runner));
+    if (kept.length === state.finalizers.length) return;
+    for (const runner of state.finalizers) if (!kept.includes(runner)) state.activated.delete(runner.finalizer);
+    state.finalizers.splice(0, state.finalizers.length, ...kept);
 };
 
 const resourcesOf = (finalizer: Finalizer): readonly Key[] => [...finalizer.declaration.resources?.read ?? [], ...finalizer.declaration.resources?.write ?? []];
@@ -62,17 +106,12 @@ export const activate = (state: State): void => {
         for (const finalizer of programFinalizers()) {
             // A finalizer added during a run waits for its resources, which are added between runs.
             if (activated.has(finalizer) || !ready(state, finalizer) || resourcesOf(finalizer).some(key => findResource(state, key) === undefined)) continue;
-            // One a joined thread would run doesn't activate while it's claimed; the sync point reports it once.
-            const thread = state.claimed ? threadOf(finalizer.declaration, "Finalizer", finalizer.name) : null;
-            if (thread !== null && state.claims.has(thread)) {
-                if (!state.unplacedSeen.has(finalizer)) {
-                    state.unplacedSeen.add(finalizer);
-                    state.unplaced.push({ finalizer, error: new Error(unplacedFinalizer(finalizer.name, thread)) });
-                }
-                continue;
-            }
+            // One a joined thread runs is placed there; one it can't name doesn't activate, which the sync point reports once.
+            if (state.unplacedSeen.has(finalizer)) continue;
+            const runner = createFinalizerRunner(state, finalizer);
+            if (!placed(state, runner)) continue;
             activated.add(finalizer);
-            runners.set(finalizer, createFinalizerRunner(state, finalizer));
+            runners.set(finalizer, runner);
         }
     }
     if (facts.length > 0) {

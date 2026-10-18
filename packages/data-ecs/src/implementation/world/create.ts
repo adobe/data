@@ -209,8 +209,11 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         await loadOnWorkers();
     };
 
-    /** Runs a registered system or composite, ending in a sync point, then delivers to observers. */
-    const perform = async (definition: Definition, value: unknown): Promise<Report> => {
+    /**
+     * Runs a registered system or composite, ending in a sync point, and reads back the GPU values observers need;
+     * delivers nothing.
+     */
+    const execution = async (definition: Definition, value: unknown): Promise<Report> => {
         ensureProgramResources(state, ensured);
         if (observers.start()) await reloadObserved();
         if (workersChanged()) await followWorkers();
@@ -227,9 +230,17 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         // Observers get values a GPU kernel wrote, read back for them.
         const reading = observers.readback();
         if (reading !== null) await reading;
+        return report;
+    };
+
+    /** Delivers to observers, giving `report` with their failures. */
+    const delivered = (report: Report): Report => {
         const failed = observers.deliver();
         return failed === null ? report : { ...report, failures: [...report.failures, ...failed] };
     };
+
+    /** Runs a registered system or composite, ending in a sync point, then delivers to observers. */
+    const perform = async (definition: Definition, value: unknown): Promise<Report> => delivered(await execution(definition, value));
 
     /** Writes a resource only the world writes, stamped with a tick of its own so systems and observers see it. */
     const writeOwn = (key: Key, value: unknown): void => {
@@ -239,7 +250,11 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         stampChanged(cell.storage, cell.row, ++state.tick);
     };
 
-    /** One tick: the clock, the added systems as one composite, then the tick's report. */
+    /**
+     * One tick: the clock, the added systems as one composite, then the tick's report, delivered to observers with the
+     * tick's values. The report then holds the failures of observers that delivery notified, its own included, without
+     * notifying them again.
+     */
     const tick = (composite: Composite, clockValue: Clock): Promise<void> => enqueue(async () => {
         if (disposed) return;
         let report: Report;
@@ -249,16 +264,16 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 await complete(registrar.register(composite));
             }
             writeOwn(clock, clockValue);
-            report = await perform(composite, undefined);
+            report = await execution(composite, undefined);
         }
         catch (error) {
             report = { failures: [failureOf("system", labelOfItem(composite), error)], skipped: [], dropped: 0 };
         }
-        if (readResource(reportResource) === report) return;
-        writeOwn(reportResource, report);
-        // Observers of the report see it now; one that throws here is reported by the next tick's report.
-        const failed = observers.deliver();
-        if (failed !== null) observers.defer(failed);
+        if (readResource(reportResource) !== report) writeOwn(reportResource, report);
+        const observed = delivered(report);
+        if (observed === report) return;
+        const cell = findResource(state, reportResource);
+        if (cell !== undefined) writeCell(cell.storage, cell.row, observed);
     });
 
     const loop = createLoop({

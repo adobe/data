@@ -99,6 +99,28 @@ describe("ticks", () => {
         expect(last.failures.map(({ kind, name, message }) => [kind, name, message])).toEqual([["system", "ticksTest/fail", "tick failed"]]);
     });
 
+    it("report an observer that throws on a tick's values, the tick's report among them, in that tick's report", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        world.add(count);
+        let reports = 0;
+        const stop = world.observe.resource(report)(() => {
+            // The first call is the current value, during subscribing; the second is the tick's report.
+            if (++reports === 2) throw new Error("report observer failed");
+        });
+        let counts = 0;
+        const stopFrames = world.observe.resource(frames)(() => {
+            if (++counts === 2) throw new Error("frames observer failed");
+        });
+        await world.run(nothing);
+        await until(world.observe.resource(frames), value => value === 1);
+        const ticked = await toPromise(world.observe.resource(report));
+        expect(ticked.failures.map(({ kind, message }) => [kind, message]).sort()).toEqual([["observer", "frames observer failed"], ["observer", "report observer failed"]]);
+        // Nothing of the tick's is left for the next run's report.
+        expect((await world.run(nothing)).failures).toEqual([]);
+        stop();
+        stopFrames();
+    });
+
     it("reject a system that conflicts with one added with no order between them, and one with input", async () => {
         const other = System.create({ name: "ticksTest/other", resources: { write: [frames] } }, ({ resources }) => { resources[frames] = 0; });
         const withInput = System.create({ name: "ticksTest/withInput", input: { type: "object", properties: { by: { type: "number" } } } }, () => {});

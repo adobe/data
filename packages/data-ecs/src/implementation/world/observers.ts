@@ -605,8 +605,5 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
         }
     };
 
-    /** Failures found outside a run, reported with the next run's. */
-    const defer = (failures: readonly Failure[]): void => { deferred.push(...failures); };
-
-    return { resource, entity, query, readback, deliver, defer, start, reassert };
+    return { resource, entity, query, readback, deliver, start, reassert };
 };

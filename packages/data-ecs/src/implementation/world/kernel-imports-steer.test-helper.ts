@@ -1,4 +1,4 @@
-import { Vec3 } from "../index.js";
+import { Vec3 } from "../../index.js";
 
 /** A pure helper a kernel imports: the build inlines it, and it still runs as written everywhere else. */
 export const steer = (velocity: Vec3, toward: Vec3, limit: number): Vec3 => {

@@ -1,7 +1,7 @@
-import { Archetype, Component, Vec3 } from "../index.js";
+import { Archetype, Component, Vec3 } from "../../index.js";
 
-export const position = Symbol("guide/kernels/position");
-export const spark = Symbol("guide/kernels/spark");
+export const position = Symbol("kernelImports/position");
+export const spark = Symbol("kernelImports/spark");
 
 declare module "@adobe/data-ecs" {
     interface Components {

@@ -1,14 +1,14 @@
 import { expect, it } from "vitest";
-import { Component, Entity, Finalizer, Resource, Rule, System, World } from "../index.js";
-import { toPromise } from "../interface/observe/to-promise.js";
-import { createWorld } from "../implementation/index.js";
+import { Component, Entity, Finalizer, Resource, Rule, System, World } from "../../index.js";
+import { toPromise } from "../../interface/observe/to-promise.js";
+import { createWorld } from "../index.js";
 
-const meshSource = Symbol("guide/loading/meshSource");
-const hidden = Symbol("guide/loading/hidden");
-const meshSlot = Symbol("guide/loading/meshSlot");
-const meshReady = Symbol("guide/loading/meshReady");
-const nextToken = Symbol("guide/loading/nextToken");
-const requests = Symbol("guide/loading/requests");
+const meshSource = Symbol("asyncLoading/meshSource");
+const hidden = Symbol("asyncLoading/hidden");
+const meshSlot = Symbol("asyncLoading/meshSlot");
+const meshReady = Symbol("asyncLoading/meshReady");
+const nextToken = Symbol("asyncLoading/nextToken");
+const requests = Symbol("asyncLoading/requests");
 
 type Request = { readonly entity: Entity; readonly token: number; readonly path: string };
 
@@ -49,11 +49,11 @@ const load = async (path: string): Promise<number> => {
 };
 
 // 1. A rule derives a slot for every visible entity with a mesh source.
-Rule.create({ name: "guide/loading/slots", components: { has: [meshSource], not: [hidden] }, derive: [meshSlot] });
+Rule.create({ name: "asyncLoading/slots", components: { has: [meshSource], not: [hidden] }, derive: [meshSlot] });
 
 // 2. Each new slot gets a fresh token, and its load is requested; the application starts requested loads.
 const request = System.create({
-    name: "guide/loading/request",
+    name: "asyncLoading/request",
     components: { read: [meshSource], write: [meshSlot], added: [meshSlot] },
     resources: { write: [nextToken, requests] },
 }, (row, { resources }) => {
@@ -65,7 +65,7 @@ const request = System.create({
 
 // 3. A completed load arrives as a run of its own. A slot whose token still matches gets the mesh; a stale one releases it.
 const apply = System.create({
-    name: "guide/loading/apply",
+    name: "asyncLoading/apply",
     input: { type: "object", properties: { entity: Entity.schema, token: { type: "integer" }, handle: { type: "integer" } } },
     lookup: { slots: { read: [meshSlot] } },
 }, ({ input, lookup, commands }) => {
@@ -74,13 +74,13 @@ const apply = System.create({
 });
 
 // 4. When the slot goes, its mesh goes with it, and the finalizer releases what was loaded.
-Finalizer.create({ name: "guide/loading/release", components: { read: [meshReady] } }, row => { loaded.delete(row[meshReady]); });
+Finalizer.create({ name: "asyncLoading/release", components: { read: [meshReady] } }, row => { loaded.delete(row[meshReady]); });
 
-const spawn = System.create({ name: "guide/loading/spawn" }, ({ commands }) => {
+const spawn = System.create({ name: "asyncLoading/spawn" }, ({ commands }) => {
     commands.spawn([meshSource])({ [meshSource]: "ship.glb" });
     commands.spawn([meshSource])({ [meshSource]: "rock.glb" });
 });
-const hide = System.create({ name: "guide/loading/hide", input: { type: "object", properties: { entity: Entity.schema } } }, ({ input, commands }) => {
+const hide = System.create({ name: "asyncLoading/hide", input: { type: "object", properties: { entity: Entity.schema } } }, ({ input, commands }) => {
     commands.add(input.entity, hidden);
 });
 

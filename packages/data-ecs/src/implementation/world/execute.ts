@@ -6,6 +6,7 @@ import { idOf, type State } from './state.js';
 import type { GpuEngine } from './gpu.js';
 import { applySync, prepareSync, syncPending } from './synchronize.js';
 import { activate } from './activate.js';
+import { markRun } from './move-log.js';
 import { postTails, settleAll, settleKeys, settleRunners, tailsOf, type TailOutcome } from './tails.js';
 import { locate } from './entities.js';
 import { clearBuffer, createBuffer } from './buffer.js';
@@ -431,6 +432,8 @@ const executeTiers = async (context: ExecuteContext, whole: Schedule, args: unkn
         finally {
             rewind(state, workers);
             publish();
+            // This run's tasks on joined threads are done, which return to their event loops.
+            for (let k = 0; k < state.logs.length; k++) markRun(state.logs[k]);
         }
     }
     if (tailing !== null) {

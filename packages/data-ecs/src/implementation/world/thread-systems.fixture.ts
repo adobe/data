@@ -6,7 +6,7 @@ import { System } from "../../interface/system/system.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import { backToBack } from "./loop.js";
 import type { FromThreadSystemsWorker, ToThreadSystemsWorker } from "./thread-systems-worker.fixture.js";
-import { caption, changes, count, countThere, scenario, stall } from "./thread-systems.test-helper.js";
+import { caption, changes, count, countThere, counted, scenario, stall } from "./thread-systems.test-helper.js";
 
 /**
  * Scenarios of systems on a joined worker, run built in node and from source in chromium: the same runs as an inline
@@ -16,33 +16,48 @@ import { caption, changes, count, countThere, scenario, stall } from "./thread-s
 /** A system on the worker's thread, which only this module declares, so the worker never imported it. */
 const onlyHere = System.create({ name: "threadSystemsTest/onlyHere", components: { read: [caption] } }, row => { void row[caption]; });
 
-type Worker = { readonly ask: (message: ToThreadSystemsWorker, transfer?: readonly unknown[]) => Promise<FromThreadSystemsWorker>; readonly terminate: () => Promise<void> };
+type Worker = {
+    readonly ask: (message: ToThreadSystemsWorker, transfer?: readonly unknown[]) => Promise<FromThreadSystemsWorker>;
+    /** The worker's next reply, asking nothing. */
+    readonly next: () => Promise<FromThreadSystemsWorker>;
+    readonly terminate: () => Promise<void>;
+};
 
 const workerFile = "./thread-systems-worker.fixture.js";
 
 const start = (): Worker => {
     if (typeof globalThis.Worker === "function") {
         const worker = new globalThis.Worker(new URL("./thread-systems-worker.fixture.js", import.meta.url), { type: "module" });
+        const next = (): Promise<FromThreadSystemsWorker> => new Promise(resolve => {
+            worker.onmessage = (event: MessageEvent<FromThreadSystemsWorker>) => { if (!("protocol" in event.data)) resolve(event.data); };
+        });
         return {
-            ask: (message, transfer = []) => new Promise(resolve => {
-                worker.onmessage = (event: MessageEvent<FromThreadSystemsWorker>) => { if (!("protocol" in event.data)) resolve(event.data); };
+            ask: (message, transfer = []) => {
+                const reply = next();
                 worker.postMessage(message, { transfer: transfer.filter(port => port instanceof MessagePort) });
-            }),
+                return reply;
+            },
+            next,
             terminate: async () => worker.terminate(),
         };
     }
     const threads = globalThis.process.getBuiltinModule("node:worker_threads");
     const worker = new threads.Worker(new URL(workerFile, import.meta.url));
+    const next = (): Promise<FromThreadSystemsWorker> => new Promise(resolve => {
+        const reply = (data: FromThreadSystemsWorker): void => {
+            if ("protocol" in data) return;
+            worker.off("message", reply);
+            resolve(data);
+        };
+        worker.on("message", reply);
+    });
     return {
-        ask: (message, transfer = []) => new Promise(resolve => {
-            const reply = (data: FromThreadSystemsWorker): void => {
-                if ("protocol" in data) return;
-                worker.off("message", reply);
-                resolve(data);
-            };
-            worker.on("message", reply);
+        ask: (message, transfer = []) => {
+            const reply = next();
             worker.postMessage(message, transfer.filter(port => port instanceof threads.MessagePort));
-        }),
+            return reply;
+        },
+        next,
         terminate: async () => { await worker.terminate(); },
     };
 };
@@ -145,4 +160,23 @@ export const ticksThere = async (ticks: number) => {
     await world.dispose();
     driver.close();
     return counted;
+};
+
+/**
+ * Ticks of a system on the joined worker, back to back, while timers it queued one after another wait for it to return
+ * to its event loop: the latest any ran, in milliseconds, and the most tasks the worker ran once one was due before it
+ * ran; null when they didn't all run within 5 s.
+ */
+export const timerWhileTicking = async () => {
+    const driver = backToBack();
+    const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
+    const { worker } = await joined(world);
+    await worker.ask({ kind: "timers" });
+    const fired = worker.next();
+    world.add(counted);
+    const reply = await within(fired, 5000, null);
+    await worker.terminate();
+    await world.dispose();
+    driver.close();
+    return { late: reply?.kind === "timers fired" ? reply.late : null, runs: reply?.kind === "timers fired" ? reply.runs : null };
 };

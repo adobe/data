@@ -4,11 +4,11 @@ import { asEntity } from "./entities.js";
 import { join } from "./create.js";
 import { scopeChannel } from "./port.js";
 import { idle } from "./joining.test-helper.js";
-import { objectsThere } from "./thread-systems.test-helper.js";
+import { objectsThere, ranHere } from "./thread-systems.test-helper.js";
 
 /**
  * A thread joining a world through the port it's sent, claiming "threadSystemsTest", whose systems it imports: it reads
- * its objects when asked, spins without yielding, or tells why the world refused it.
+ * its objects when asked, spins without yielding, tells how late timers it queued ran, or tells why the world refused it.
  */
 
 type Port = MessagePort | NodeMessagePort;
@@ -16,11 +16,14 @@ export type ToThreadSystemsWorker =
     | { readonly kind: "join"; readonly port: Port }
     | { readonly kind: "objects"; readonly entities: readonly number[] }
     | { readonly kind: "spin" }
+    | { readonly kind: "timers" }
     | { readonly kind: "refused"; readonly port: Port };
 export type FromThreadSystemsWorker =
     | { readonly kind: "joined" }
     | { readonly kind: "objects"; readonly objects: readonly { readonly [name: string]: unknown }[] }
     | { readonly kind: "spinning" }
+    | { readonly kind: "timers queued" }
+    | { readonly kind: "timers fired"; readonly late: number; readonly runs: number }
     | { readonly kind: "refused"; readonly message: string };
 
 const channel = scopeChannel<FromThreadSystemsWorker, ToThreadSystemsWorker>();
@@ -34,6 +37,26 @@ channel.onMessage(async message => {
     else if (message.kind === "objects") {
         const objects = remote === null ? [] : await objectsThere(remote)(message.entities.map(asEntity));
         channel.post({ kind: "objects", objects });
+    }
+    else if (message.kind === "timers") {
+        // Timers, one after another, each running only once this thread returns to its event loop: the latest any ran,
+        // and the most tasks that ran on this thread once one was due before it ran.
+        let late = 0;
+        let runs = 0;
+        const next = (left: number): void => {
+            const delay = 5;
+            ranHere.due = performance.now() + delay;
+            ranHere.atDue = -1;
+            setTimeout(() => {
+                late = Math.max(late, performance.now() - ranHere.due);
+                runs = Math.max(runs, ranHere.atDue < 0 ? 0 : ranHere.runs - ranHere.atDue + 1);
+                ranHere.due = Infinity;
+                if (left > 1) next(left - 1);
+                else channel.post({ kind: "timers fired", late, runs });
+            }, delay);
+        };
+        next(40);
+        channel.post({ kind: "timers queued" });
     }
     else if (message.kind === "spin") {
         channel.post({ kind: "spinning" });

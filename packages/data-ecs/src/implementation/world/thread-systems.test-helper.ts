@@ -269,7 +269,17 @@ export const stall = System.create({ name: "threadSystemsTest/stall", resources:
 export const count = System.create({ name: "threadSystemsTest/count", resources: { write: [changes] } }, ({ resources }) => {
     resources[changes] += 1;
 });
+/** Runs of `counted` on this thread, and how many had run once `due`, a time in `performance.now()`, passed. */
+export const ranHere = { runs: 0, due: Infinity, atDue: -1 };
 /** On the thread: counts its runs, so the world's ticks post it a task each. */
 export const countThere = System.create({ name: "threadSystemsTest/countThere", resources: { read: [paint], write: [changes] } }, ({ resources }) => {
     if (resources[paint] !== "never") resources[changes] += 1;
+});
+
+/** On the thread: counts its runs there in `ranHere`; it reaches its commands, so it blocks its tier, a task a tick. */
+export const counted = System.create({ name: "threadSystemsTest/counted", resources: { read: [paint] } }, ({ resources, commands }) => {
+    void resources[paint];
+    void commands;
+    ranHere.runs++;
+    if (ranHere.atDue < 0 && performance.now() >= ranHere.due) ranHere.atDue = ranHere.runs;
 });

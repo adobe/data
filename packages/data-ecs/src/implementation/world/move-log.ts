@@ -9,7 +9,7 @@ import type { Memory } from './memory.js';
  * The log's header, a block of its own that never moves: the ring's version, bumped when it's replaced, its offset
  * and capacity in entries, a power of two; the position the writer may have written up to; the position published
  * through, and the sync published through, modulo 2^32; then the sync observers were delivered through; then the
- * thread's first stop list and the sync it finalized through. Positions count entries from the start, modulo 2^32.
+ * thread's first stop list and the sync it finalized through; a tail's bound; then the runs finished. Positions count entries from the start, modulo 2^32.
  */
 export const logVersionWord = 0;
 export const logOffsetWord = 1;
@@ -29,6 +29,8 @@ export const logFinalizedWord = 8;
  */
 export const logBoundedWord = 9;
 export const logBoundWord = 10;
+/** The runs and ticks the world finished, modulo 2^32: a joined thread returns to its event loop once each. */
+export const logRunWord = 11;
 export const logHeaderBytes = 64;
 
 /** An entry is four words; its first holds its kind in the low four bits, the added flag, and an archetype from bit 8. */
@@ -207,6 +209,11 @@ export const publishLog = (log: MoveLog): void => {
     Atomics.store(log.header, logSyncWord, log.tick >>> 0);
     log.tick = -1;
     log.headed = false;
+};
+
+/** Once a run's or tick's sync point is done, before its tails are posted. */
+export const markRun = (log: MoveLog): void => {
+    Atomics.add(log.header, logRunWord, 1);
 };
 
 /** Once observers were delivered: through the sync last published, waking a thread waiting for it. */

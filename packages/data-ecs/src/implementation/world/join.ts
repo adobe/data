@@ -14,6 +14,7 @@ import {
 } from './joining.js';
 import { entityPlanOf, hasFresh, mailboxReader, readSlot, readValue, type MailboxReader } from './mailbox.js';
 import { sharedMemoryAvailable } from './memory.js';
+import { logRunWord } from './move-log.js';
 import { componentsAt, createMirror, locate, nameComponent, objectAt, waitDelivered, waitStructure, type Location, type Mirror } from './mirror.js';
 import { defaultOf } from './state.js';
 import { createThreadSystems, type SystemSetup } from './thread-systems.js';
@@ -54,6 +55,24 @@ const hasWaitAsync = (): boolean => typeof Atomics.waitAsync === "function";
 
 /** How long a joined thread spins for the world's next task after finishing one: about one wake-up's latency. */
 const taskSpinMilliseconds = 0.02;
+
+/** The most a joined thread works without returning to its event loop, where it can't be cut short: a task. */
+const busyMilliseconds = 2;
+
+/**
+ * Resolves on a later turn of this thread's event loop, after what was queued before it: node's `setImmediate`, which
+ * runs after the turn's timers and I/O, or else a message to itself, a task as a timer's is.
+ */
+const createTurn = (): (() => Promise<void>) => {
+    if (typeof globalThis.setImmediate === "function") return () => new Promise(resolve => { setImmediate(resolve); });
+    const { port1, port2 } = new MessageChannel();
+    const waiting: (() => void)[] = [];
+    port1.onmessage = () => waiting.shift()?.();
+    return () => new Promise(resolve => {
+        waiting.push(resolve);
+        port2.postMessage(null);
+    });
+};
 
 /** Whether a key's values are objects of one of `claims`, which this thread fills. */
 const ownObject = (key: symbol, claims: ReadonlySet<string>): boolean => {
@@ -310,10 +329,33 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
 
     let listening = false;
     const active = (): boolean => control !== null && failure === null && (runs.size > 0 || observers.size > 0 || systems !== null);
-    /** Waits on the signal word without blocking while a run or observer is active, so a quiet thread does no work. */
+    let turn: (() => Promise<void>) | null = null;
+    /** The runs the world had finished when this thread last returned to its event loop, and when it did. */
+    let turnedRun = 0;
+    let turnedAt = 0;
+    const runNow = (): number => mirror === null ? turnedRun : Atomics.load(mirror.header, logRunWord);
+    const turned = (): void => {
+        turnedRun = runNow();
+        turnedAt = performance.now();
+    };
+    /**
+     * Whether to return to the event loop before going on: once a run or tick finished since it last did, which is
+     * after the tick's last task here or its tails, after a wake that wasn't a task, or after `busyMilliseconds`.
+     */
+    const due = (tasked: boolean): boolean => !tasked || runNow() !== turnedRun || performance.now() - turnedAt > busyMilliseconds;
+    const nextTurn = async (): Promise<void> => {
+        turn ??= createTurn();
+        await turn();
+        turned();
+    };
+    /**
+     * Waits on the signal word without blocking while a run or observer is active, so a quiet thread does no work. It
+     * returns to its event loop at least once a tick, so its timers, rendering and promises' callbacks run.
+     */
     const listen = async (): Promise<void> => {
         if (listening || !hasWaitAsync()) return;
         listening = true;
+        turned();
         try {
             while (active() && control !== null) {
                 // Read before what's new, so a wake after it isn't missed.
@@ -321,16 +363,28 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 const seen = Atomics.load(control, signalWord);
                 process();
                 if (!active()) break;
-                // A tick's next task follows its last closely: spin briefly before paying for a wait's wake-up.
+                // A tick's next task follows its last closely: spin briefly before paying for a wait's wake-up, with a
+                // turn of the event loop once the tick finished, as the world starts the next.
                 if (tasked) {
-                    const deadline = performance.now() + taskSpinMilliseconds;
-                    while (Atomics.load(control, signalWord) === seen && performance.now() < deadline);
+                    let deadline = performance.now() + taskSpinMilliseconds;
+                    while (Atomics.load(control, signalWord) === seen && performance.now() < deadline) {
+                        if (!due(true)) continue;
+                        await nextTurn();
+                        deadline = performance.now() + taskSpinMilliseconds;
+                    }
                 }
                 // A wake since this thread cleared the word may have notified no one, and the next wake won't notify
                 // while the word says this thread hasn't read it, so it reads again rather than wait.
-                if (Atomics.load(control, unreadWord) !== 0) continue;
+                if (Atomics.load(control, unreadWord) !== 0) {
+                    if (due(tasked)) await nextTurn();
+                    continue;
+                }
                 const waited = Atomics.waitAsync(control, signalWord, seen);
-                if (waited.async) await waited.value;
+                if (waited.async) {
+                    await waited.value;
+                    turned();
+                }
+                else if (due(tasked)) await nextTurn();
             }
         }
         finally {

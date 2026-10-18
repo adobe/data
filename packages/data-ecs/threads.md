@@ -204,6 +204,13 @@ world can always reach it. The world spins about 20 µs for a task before it wai
 spins as long for the next, each about one wake-up's latency, since a tick's tasks follow each other closely.
 Consecutive tiers whose systems are all on one joined thread go as one task, with no barrier between them.
 
+**A joined thread returns to its event loop at least once a tick,** so its timers, rendering and promises' callbacks
+run however fast the world ticks: the world bumps a run word in the log header once each run's or tick's sync point is
+done, before its tails are posted, and the thread takes a turn of its event loop (`setImmediate` in node, a message to
+itself in a browser) instead of going on synchronously once that word moved since its last turn, which is after the
+tick's last task there or its tails, after a wake that wasn't a task, and after at most 2 ms of work, a task's own
+length aside. A wait that resolves asynchronously is a turn already.
+
 ### Thread ports
 
 A port is `{ post, onMessage, onDeath, terminate }` (`port.ts`) over a browser `Worker`, a node `worker_threads`

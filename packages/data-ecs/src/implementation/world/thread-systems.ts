@@ -471,16 +471,20 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         Atomics.notify(control, taskDoneWord);
     };
 
-    /** Runs the posted task, if any and it can run; else it waits for what it needs, and `process` runs it then. */
-    const process = (): void => {
+    /**
+     * Runs the posted task, if any and it can run; else it waits for what it needs, and `process` runs it then. Returns
+     * whether it finished one.
+     */
+    const process = (): boolean => {
         const posted = Atomics.load(control, taskPostedWord);
-        if (posted === Atomics.load(control, taskDoneWord)) return;
+        if (posted === Atomics.load(control, taskDoneWord)) return false;
         try {
             runTask(posted);
         }
         catch (error) {
             failTask(posted, error);
         }
+        return Atomics.load(control, taskDoneWord) === posted;
     };
 
     const runTask = (posted: number): void => {

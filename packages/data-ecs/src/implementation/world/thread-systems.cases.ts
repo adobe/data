@@ -25,4 +25,8 @@ export const threadSystemsCases = (load: () => Promise<typeof Fixture>) => descr
         const fixture = await load();
         expect(await fixture.neverYields(200)).toBeGreaterThanOrEqual(200);
     }, 30000);
+    it("keep waking the joined worker for tasks that follow each other closely", async () => {
+        const fixture = await load();
+        expect(await fixture.ticksThere(30000)).toBeGreaterThanOrEqual(30000);
+    }, 30000);
 });

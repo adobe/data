@@ -14,6 +14,7 @@ import { main, placed, pooled } from "./placed.js";
 import { wake } from "./wake.js";
 import { remoteBenchmarks } from "./remote.js";
 import { logBenchmarks } from "./log.js";
+import { handoffBenchmarks } from "./handoff.js";
 import { createWorld } from "../implementation/index.js";
 import { workers } from "../interface/resources/workers.js";
 
@@ -631,4 +632,5 @@ export const benchmarks: readonly Benchmark[] = [
     wake,
     ...remoteBenchmarks,
     ...logBenchmarks,
+    ...handoffBenchmarks,
 ];

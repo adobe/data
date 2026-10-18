@@ -269,3 +269,7 @@ export const stall = System.create({ name: "threadSystemsTest/stall", resources:
 export const count = System.create({ name: "threadSystemsTest/count", resources: { write: [changes] } }, ({ resources }) => {
     resources[changes] += 1;
 });
+/** On the thread: counts its runs, so the world's ticks post it a task each. */
+export const countThere = System.create({ name: "threadSystemsTest/countThere", resources: { read: [paint], write: [changes] } }, ({ resources }) => {
+    if (resources[paint] !== "never") resources[changes] += 1;
+});

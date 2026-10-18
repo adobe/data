@@ -52,6 +52,9 @@ type Observer = {
 
 const hasWaitAsync = (): boolean => typeof Atomics.waitAsync === "function";
 
+/** How long a joined thread spins for the world's next task after finishing one: about one wake-up's latency. */
+const taskSpinMilliseconds = 0.02;
+
 /** Whether a key's values are objects of one of `claims`, which this thread fills. */
 const ownObject = (key: symbol, claims: ReadonlySet<string>): boolean => {
     const declaration = declarationOf(key);
@@ -283,11 +286,13 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
         if (key !== null) components.set(firstKeyOf(key), component);
     };
 
+    /** Whether the last `process` finished a task, so the next of a tick's tasks may follow it closely. */
+    let tasked = false;
     const process = (): void => {
         if (control === null) return;
         Atomics.store(control, unreadWord, 0);
         // A task first: the world waits for it.
-        systems?.process();
+        tasked = systems?.process() ?? false;
         completed = Atomics.load(control, completedWord);
         settle();
         writeWaiting();
@@ -307,6 +312,14 @@ export const joinWorld = (port: Port, options: JoinOptions = {}): World => {
                 const seen = Atomics.load(control, signalWord);
                 process();
                 if (!active()) break;
+                // A tick's next task follows its last closely: spin briefly before paying for a wait's wake-up.
+                if (tasked) {
+                    const deadline = performance.now() + taskSpinMilliseconds;
+                    while (Atomics.load(control, signalWord) === seen && performance.now() < deadline);
+                }
+                // A wake since this thread cleared the word may have notified no one, and the next wake won't notify
+                // while the word says this thread hasn't read it, so it reads again rather than wait.
+                if (Atomics.load(control, unreadWord) !== 0) continue;
                 const waited = Atomics.waitAsync(control, signalWord, seen);
                 if (waited.async) await waited.value;
             }

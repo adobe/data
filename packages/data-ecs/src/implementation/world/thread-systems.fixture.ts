@@ -9,7 +9,7 @@ import type { World } from "../../interface/world/world.js";
 import { createWorld } from "./create.js";
 import { backToBack } from "./loop.js";
 import type { FromThreadSystemsWorker, ToThreadSystemsWorker } from "./thread-systems-worker.fixture.js";
-import { caption, changes, count, scenario, stall } from "./thread-systems.test-helper.js";
+import { caption, changes, count, countThere, scenario, stall } from "./thread-systems.test-helper.js";
 
 /**
  * Scenarios of systems on a joined worker, run built in node and from source in chromium: the same runs as an inline
@@ -127,6 +127,22 @@ export const neverYields = async (ticks: number) => {
     const { worker } = await joined(world);
     await worker.ask({ kind: "spin" });
     world.add(count);
+    const counted = await within(until(world.observe.resource(changes), value => value >= ticks), 10000, -1);
+    await worker.terminate();
+    await world.dispose();
+    driver.close();
+    return counted;
+};
+
+/**
+ * Ticks of a system on the joined worker, back to back, each a task that follows the last closely: how many ran, or -1
+ * once they stopped, as when a wake notified no one.
+ */
+export const ticksThere = async (ticks: number) => {
+    const driver = backToBack();
+    const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
+    const { worker } = await joined(world);
+    world.add(countThere);
     const counted = await within(until(world.observe.resource(changes), value => value >= ticks), 10000, -1);
     await worker.terminate();
     await world.dispose();

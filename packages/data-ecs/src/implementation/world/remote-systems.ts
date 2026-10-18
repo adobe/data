@@ -76,6 +76,9 @@ export type TaskChannel = {
     readonly free: () => void;
 };
 
+/** How long the world spins for a task before it waits: about one wake-up's latency. */
+const spinMilliseconds = 0.02;
+
 /** A command ring's first size in bytes; a sync point grows it to what a task's systems needed. */
 const initialRingBytes = 1 << 16;
 
@@ -166,21 +169,31 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         }
     };
 
-    /** Resolves once the thread stored task `expected` done, or is gone; waits without blocking. */
-    const whenDone = async (expected: number): Promise<boolean> => {
-        const gone = new Promise<boolean>(resolve => { settle = resolve; });
-        while (Atomics.load(control, taskDoneWord) < expected) {
-            if (ended) return false;
-            if (typeof Atomics.waitAsync !== "function") {
-                if (!await gone) return false;
-                continue;
-            }
-            const current = Atomics.load(control, taskDoneWord);
-            if (current >= expected) break;
-            const waited = Atomics.waitAsync(control, taskDoneWord, current);
-            if (waited.async && !await Promise.race([waited.value.then(() => true), gone])) return false;
-        }
+    /** Settles a wait for the task in flight once the thread stored it done. */
+    const doneNow = (): void => {
+        const resolve = settle;
         settle = null;
+        resolve?.(true);
+    };
+    /** Waits without blocking for the done word to move past `current`, or for the thread's message, or its end. */
+    const changed = (current: number): Promise<boolean> => new Promise<boolean>(resolve => {
+        settle = resolve;
+        if (typeof Atomics.waitAsync !== "function") return;
+        const waited = Atomics.waitAsync(control, taskDoneWord, current);
+        if (waited.async) void waited.value.then(doneNow);
+        else doneNow();
+    });
+
+    /**
+     * Resolves once the thread stored task `expected` done, and its message arrived when one follows, or once it's
+     * gone. Spins briefly first: a short task finishes before a wait's wake-up would arrive.
+     */
+    const whenDone = async (expected: number): Promise<boolean> => {
+        const deadline = performance.now() + spinMilliseconds;
+        while (Atomics.load(control, taskDoneWord) < expected && performance.now() < deadline);
+        for (let current = Atomics.load(control, taskDoneWord); current < expected; current = Atomics.load(control, taskDoneWord)) {
+            if (ended || !await changed(current)) return false;
+        }
         if (completionView[completionMessage] !== 0 && (message === null || message.sequence !== expected)) {
             const arrived = new Promise<boolean>(resolve => { settle = resolve; });
             if (!await arrived) return false;

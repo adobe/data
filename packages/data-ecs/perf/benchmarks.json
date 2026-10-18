@@ -958,5 +958,31 @@
             "bytes": 240000,
             "basis": "Each tick writes 10K 8-byte values, reads them to sort, and writes 10K 8-byte entities."
         }
+    },
+    "log replay": {
+        "operation": "A joined thread replaying a sync point's move log: 10K entities holding its objects moving archetype, each leaving a row the last swaps into, as when a tag on DOM-backed entities toggles.",
+        "per": "moves",
+        "n": 10000,
+        "typical": [
+            1,
+            10000
+        ],
+        "best": {
+            "bytes": 128,
+            "basis": "Each move copies out and reads two 16-byte entries, and copies its object, ticks and entity twice, 32 bytes read and written each."
+        }
+    },
+    "log rebuild 100K": {
+        "operation": "A joined thread rebuilding its object columns over 100K rows from the layout directory, as when it fell further behind than its log holds.",
+        "per": "rows",
+        "n": 100000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 60,
+            "basis": "Each row reads its 8-byte entity, 4-byte tag and 16 bytes of ticks, and writes its entity, object and ticks."
+        }
     }
 }

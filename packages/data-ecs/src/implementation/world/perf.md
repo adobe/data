@@ -215,6 +215,6 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - Idle cores clock down: after 5 ms idle, even the main thread runs move 2–4× slower per frame, and keeping one other core busy removes most of it, at 10M too. That's the OS's power policy, not something dispatch can avoid without spending power.
 - Emit and other command-heavy kernels: the sync point dominates.
 - Kernels taking `%` of an f64: a conditional on `resources[clock].tick % 2` costs about 33 ns a row in node, 10K rows 333 µs against 8.5 µs without it.
-- Replaying the move log: `log replay` takes 24 ns a move in node and 38.5 ns in chromium, two entries each, against about 1 ns to move the bytes; the cost is the per-entry dispatch and the scattered rows a swap reads.
+- Replaying the move log: `log replay` takes 24 ns a move in node and 36.5 ns in chromium, two entries each, against about 1 ns to move the bytes; the cost is the per-entry dispatch and the scattered rows a swap reads.
 - Ordered selections recomputed every tick: `mailbox select 10K` spends about 0.73 ms a tick sorting 10K entities.
 - Main-thread spawns reserving in blocks too: `spawn bulk` still takes one atomic add per spawn. Finalizers spawn during the sync point, after it materializes the run's reservations, so a world's block would have to end before each materialization.

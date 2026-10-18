@@ -44,6 +44,21 @@ const reset = (): void => {
 };
 
 describe("finalizers on a joined thread", () => {
+    it("leave a joined thread's objects out of a changes finalizer watching everything here, as whole-entity observers do", async () => {
+        reset();
+        const seen: (readonly symbol[] | null)[][] = [];
+        let watching = false;
+        Finalizer.changes({ name: "remoteFinalizersTest/everything" }, changes => {
+            if (watching) for (const group of changes.groups) seen.push([group.to, group.added]);
+        });
+        const { world, remote } = await joined();
+        watching = true;
+        await world.run(spawn, { from: 0, count: 1 });
+        watching = false;
+        expect(seen).toEqual([[[serial, place, marked], [serial, place, marked]]]);
+        await remote.dispose();
+        await world.dispose();
+    });
     it("run once per stop there, as an inline world's do: structs before the sync point applies, the thread's objects at their starts, null, written or staged, after its log lapped too", async () => {
         reset();
         const inline = createWorld({ [workers]: 0 });

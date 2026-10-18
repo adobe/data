@@ -22,5 +22,8 @@ export type Declaration = Shared & {
     readonly components: { readonly read?: readonly Component.Key[]; readonly has?: readonly Component.Key[]; readonly not?: readonly Component.Key[] };
 };
 
-/** A finalizer that sees each sync point's structural changes to the components it watches: every one that isn't derived, by default. */
+/**
+ * A finalizer that sees each sync point's structural changes to the components it watches: by default, every one that
+ * isn't derived or an object a joined thread fills.
+ */
 export type ChangesDeclaration = Shared & { readonly watch?: readonly Essential[] };

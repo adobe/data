@@ -44,8 +44,9 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
     const { declaration } = finalizer;
     const query = finalizer.kind === "finalizer" ? finalizer.declaration.components : undefined;
     const reads = query?.read ?? [];
-    // By default every component that isn't derived, including ones a world first meets later; never resources.
-    let watches = (id: number): boolean => !state.derived[id] && !state.resources.has(id);
+    // By default every component that isn't derived, including ones a world first meets later; never resources, nor
+    // the objects a joined thread fills, whose storage here holds only tags.
+    let watches = (id: number): boolean => !state.derived[id] && !state.resources.has(id) && state.remote[id] === undefined;
     const watch = finalizer.kind === "changes" ? finalizer.declaration.watch : undefined;
     if (watch !== undefined) {
         // `Finalizer.changes` rejected derived components.

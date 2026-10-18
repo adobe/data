@@ -187,12 +187,30 @@ thread go as one task, with no barrier between them.
 
 ### Thread ports
 
-A port is `{ post, onMessage, onDeath, terminate }` over a browser `Worker`, a node `worker_threads` worker, a
-`MessagePort`, or a worker's own scope, with `terminate` async. The node side is imported only on node, so browser
-bundles never load it. For a port the main thread passed, its owner forwards the worker's error and exit as messages,
-and `terminate` asks the owner. Death is a `Worker`'s `error`, a node worker's `exit`, or a `MessagePort`'s `close`
-where the platform has it; nothing polls, so a quiet world does no work. Worker counts come from the port's platform:
-`navigator.hardwareConcurrency` or `os.availableParallelism()`.
+A port is `{ post, onMessage, onDeath, terminate }` (`port.ts`) over a browser `Worker`, a node `worker_threads`
+worker, or a `MessagePort` another thread lent; a worker talks over its own scope, `self` or node's `parentPort`, as a
+channel, `{ post, onMessage }`. `terminate` is async. Node's modules are loaded through `process.getBuiltinModule`,
+only on node, so browser bundles never load them, and the node worker's url isn't written as `new Worker(new URL(...))`,
+so a browser build bundles one worker (`worker-platform.ts`). Death is a `Worker`'s `error` or `messageerror`, a node
+worker's `error`, `messageerror` or `exit`, or, for a lent worker, what its owner reports or either `MessagePort`'s
+`close` where the platform has it, whichever comes first; nothing polls, so a quiet world does no work. A browser
+`Worker` ended from outside its port reports nothing, so a lent worker's owner reports the end of one it ends.
+
+- **Platforms:** a world's pool comes from a platform, `{ count, start }`: `count` is what the `workers` resource's
+  `null` resolves to, its hardware threads, `navigator.hardwareConcurrency` or `os.availableParallelism()`, minus the
+  world's thread, and `start` starts one worker, or returns null when it has no more, so a pool takes as many as it
+  gets. The platform's own is browser workers where `Worker` exists, nested ones on a worker, else `worker_threads`, else
+  none. `WorldOptions`' `pool` gives another, or null for none: `lentWorkers(lent)` for workers another thread lent.
+- **Lending:** the owning thread starts each worker, posts it the `MessagePort` it talks on as its first message, and
+  keeps a second channel to the thread it's lent to, on which it reports the worker's death and ends it when asked; a
+  lent worker is started once, so a pool resized past what was lent gets fewer workers. `terminate` asks the owner and
+  closes both ports once it answers, or once the owner's port closes.
+- **Tests:** a Vitest global setup (`vitest.fixtures.ts`) builds every `*.fixture.ts` with the plugin, as `pnpm perf`
+  bundles benchmarks, and `worker.ts` as a second entry, `worker.js`, in one directory, since a `worker_threads` worker
+  doesn't go through Vitest's module runner. A fixture holds its cases' keys and systems, since a built fixture has its
+  own registry, and exports scenarios that return data; `*.cases.ts` asserts on them, over the built fixture in node
+  (`threads.test.ts`) and the source in chromium (`threads.browser.test.ts`). Other node tests run under the module
+  runner, where workers can't load the sources, so those with kernels pin `workers` to 0.
 
 ### Command rings
 
@@ -399,25 +417,26 @@ entity-table layout from it, and `publish.ts` posts only new components. WASM lo
 - New, in node and chromium: `loop tick idle`: ticks with nothing changed, driven back to back by the `MessageChannel`
   loop host with `always` set, counted through `observe.resource(clock)`; N = 10,000 ticks.
 
-### Phase 2: thread ports and node workers
+### Built: phase 2, thread ports and node workers
 
-`pool.ts` and `worker.ts` take the port abstraction, so real-thread tests run in node, and pool workers can be nested
-workers of a world on a worker, or ports the main thread passes. A port's terminate is async, as `pool.terminate` is,
-which still releases control state only once every windowed worker has left. Worker counts come from the port's
-platform, not `typeof Worker`.
+`pool.ts` takes ports and `worker.ts` its scope's channel, as above, so real-thread tests and benchmarks run in node,
+and pool workers can be nested workers of a world on a worker, or workers the main thread lent. A port's terminate is
+async, as `pool.terminate` is, which still releases control state only once every windowed worker has left. Worker
+counts come from the port's platform, not `typeof Worker`. A ring task naming the idle kernel, -1, runs nothing: the
+`wake` benchmark's round trip. A registration that fails waits for its other kernels' loads to settle before it rolls
+back, so none finishes after it and leaves workers' kernels behind the main thread's.
 
 - Interface: none. Contract: none.
-- Harness: a Vitest global setup runs one `vite build` with the plugin, as `pnpm perf` bundles (`ssr`, `noExternal`),
-  of fixture modules and of `worker.ts` as a second entry, emitted as `worker.js` beside the chunk that references it,
-  since a `worker_threads` worker doesn't go through Vitest 5's module runner. A built fixture has its own copy of the
-  registry, so the cases' keys and systems live in the fixtures, which export scenarios; node tests import the built
-  fixtures and assert; browser tests run the same fixtures.
-- Tests: the worker browser tests' cases, moved into fixtures, in node and chromium; the pool tests (a worker that
-  can't load, control state released on terminate) in both; a worker that dies mid-task, killed from outside, in
-  both.
+- Tests: the worker browser tests' cases (workers, the layout directory, the pool and its size, dispatch, reductions,
+  observed stamps, `up`), moved into fixtures, in node and chromium; a worker killed mid-task from outside, by ending it
+  in node and by its owner in both, fails that run and every later task on it, and `dispose` finishes; a world on a
+  worker gives the main thread's results with nested workers and with workers main lent it; a failed registration
+  keeps workers' kernels in step whichever of its kernels fails to compile.
 - Must not regress: every `workers` benchmark.
 - New: in node, `move workers`, `follow workers`, `spawn bulk kernel workers` and `sync point grow 100 archetypes
-  workers`; `wake` (a notify from the world's thread to a waiting worker and back, N = 10,000), node and chromium.
+  workers`, with node's environment measuring every worker's copy bandwidth; `wake` (a notify from the world's thread to
+  a waiting worker and back, N = 10,000), node and chromium. Node's other benchmarks pin `workers` to 0, so they go on
+  measuring the world's thread.
 
 ### Phase 3: command rings for the pool
 

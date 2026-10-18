@@ -486,7 +486,11 @@ its tails before it resolves, with their failures in its report.
   linear resources, into a tail buffer, a column at a time; exchanges the progress word for a sentinel; and waits until
   the tail is done through what it had claimed, at most one chunk, spinning briefly before it waits. A claim that
   returns the sentinel reads the rest from the copy, rows from its own position on. The values are the same either
-  way, so this stays deterministic. A prompt main never copies.
+  way, so this stays deterministic. A prompt main never copies. The copy lets the world's work after its writer
+  overlap the tail: where main's tail and that work together outlast a frame or a fixed step though each fits, ticks
+  keep the cadence, 16.7 ms a tick at 60 Hz in node and chromium against 20.2 with the writer waiting for the tail, and
+  back to back `tail overlap` takes 2.53 ms a tick against 4.70 for `tail overlap waiting`, in node. Where the
+  world's work comes before its writer, or the two fit a beat, waiting costs the same (perf.md, "Tried and not kept").
 - **The tail's own objects** are read where they are: while a tail is in flight, the thread's replay stops at the sync
   it names, which the world stores in the log header as it posts it, so the next sync point's moves wait in the log until the tail finishes. Rows read from the copy take their
   objects from the mirror at the copy's rows, or, once its log lapped and it rebuilt past that sync, by entity. Objects
@@ -523,6 +527,7 @@ Memory isn't shared, so the world runs inline, and `share` and `join` throw.
 | A blocking tier on main | main's event-loop latency, which the report warns about |
 | A terminal tail on main, prompt | one post; nothing copied; the next tick waits only if main is late at a conflict: `tail prompt` 18.4 µs a tick of a 1,000-row tail, in node |
 | A terminal tail on main, late at a conflict | a copy of the declared struct reads of its unclaimed passing rows, a run of rows at a time, and a wait of at most one chunk: `tail late snapshot 10K` 6.7 ns a row of a vec3 and a mat4, in node |
+| A late tail and the world's work after its writer, together over a beat | the two overlap: `tail overlap` 2.53 ms a tick of a 2.5 ms tail and 2 ms of work, against 4.70 for `tail overlap waiting`, in node |
 | Commands and staged spawns from a worker kernel or joined thread | ring writes; the private spill and its message only past the ring's size |
 | `run` from a joined thread | one slot and notify; resolves through a word |
 | Struct observers on a joined thread, per tick | candidate check on the world's thread, a mailbox write of changed results, at most one notify |
@@ -774,7 +779,9 @@ in two steps.
 - Must not regress: `run idle`, `move main`, `main thread`, `loop tick idle`.
 - New: `tail prompt` (ticks of a world system and a 1,000-row tail on a joined worker that keeps up, N = 1,000 ticks),
   18.4 µs a tick in node; `tail late snapshot 10K` (a run writing what a late tail of 10,000 rows of a vec3 and a mat4
-  reads, the copy's cost), 6.7 ns a row in node.
+  reads, the copy's cost), 6.7 ns a row in node; `tail overlap` and `tail overlap waiting` (ticks writing what the last
+  tick's 2.5 ms tail of 10,000 rows reads, then working 2 ms, with snapshots and with the writer waiting for the tail),
+  2.53 and 4.70 ms a tick in node.
 
 ### Phase 7: transfers
 
@@ -801,6 +808,8 @@ OffscreenCanvas and the DOM on main, and a loader worker transferring decoded te
 - **A seqlock over whole runs for observers:** back-to-back ticks starve readers, and every reader thread would evaluate queries again.
 - **Double-buffered columns:** twice the memory and a copy of every written column per tick, or front and back swaps per tier.
 - **Snapshots on every tail:** a prompt main would copy every tick for nothing.
+- **Writers waiting for tails instead of snapshots, or choosing between the two by a tail's progress:** measured
+  against snapshots, no better anywhere, and 1.2 to 1.5× slower a tick at a cadence where they overlap, 1.9× back to back (perf.md, "Tried and not kept").
 - **Objects by entity index,** dense or as a sparse set: memory by index space, or a load per row.
 - **A shared heap for asset payloads:** `WebAssembly.Memory` never shrinks, `TextDecoder` rejects shared views, and an `ImageBitmap` isn't bytes.
 - **Several world threads, or moving one:** merges stop being deterministic, and plan and finalizer state would have to migrate.

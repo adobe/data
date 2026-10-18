@@ -131,7 +131,7 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 
 **Finalizers on joined threads.** Stop lists are written a column at a time, the linear structs copied by 32-bit word and each column's storage found once per run of an archetype, and despawned entities' held indexes counted in an array by index: `despawn objects 10K` 176 → 83 ns a despawn in node, against 77 ns with the same finalizer run inline on the world's thread. A `Map` of holds, and a `copyWithin` per stop and struct, cost most of the difference.
 
-**Tails.** A tail's snapshot is laid out for the rows it found passing and copied a run of consecutive rows at a time, its entities and each linear read one `set` each, its positions, archetypes and rows written in place, and tags marked only for a tail that writes objects: `tail late snapshot 10K` 29.8 → 6.7 ns a row in node, from a row at a time through a scratch list, whose tag pass alone cost 3.3 ns a row for a tail that writes nothing.
+**Tails.** A tail's snapshot is laid out for the rows it found passing and copied a run of consecutive rows at a time, its entities and each linear read one `set` each, its positions, archetypes and rows written in place, and tags marked only for a tail that writes objects: `tail late snapshot 10K` 29.8 → 6.7 ns a row in node, from a row at a time through a scratch list, whose tag pass alone cost 3.3 ns a row for a tail that writes nothing. The copy is what lets the world's work after its writer overlap a late tail: `tail overlap` 2.53 ms a tick against 4.70 for `tail overlap waiting` in node (below).
 
 **Hot helpers kept small.** TurboFan inlines what a system's body calls into its runner's loop up to a cumulative bytecode budget, so what's left for the row getters depends on everything else the body reaches. `pushCommand`'s growth, a prepared spawn site's plan lookup past the one kept by archetype index, and a list's shape and spawner past the cached ones are outlined: churn 15 → 18 ms in node had come from code elsewhere in the bundle, a dead function placed before `finalizers.ts`'s runner reproducing it on `fe36a99f`, and with `--max-inlined-bytecode-size-cumulative=2000` both measured 14 ms; outlined, churn is 14.9 ms on `fe36a99f` and 15.0 ms here.
 
@@ -217,6 +217,20 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **Replay finding a pair of archetypes' source columns once per run of its moves:** `log replay` 23.7–24 → 24.7 ns a move, no gain; a mirror's archetypes hold few columns. Worth revisiting with many objects per archetype.
 - **Emptying a run's list of warnings by setting its length to 0** each run: `run idle` 375 → 416 ns in node, measured alternating; the list is counted instead, and the report of warnings alone reused while they're the same.
 - **Moving `placeFinalizer`,** to the end of `finalizers.ts` or into `activate.ts`, its one caller: churn 17.6–18.6 ms either way, since the budget above, not that function, set it.
+- **Writers waiting for a tail to finish instead of snapshotting it,** and **choosing between the two by the tail's rate** (rows read over time since posted, waiting when finishing looked cheaper than copying the rest). Ticks of a world writing every row's place, then working W ms, while the last tick's tail on a joined worker spends T ms on 10,000 rows of a place and a pose, after B ms of other work there; ms a tick, snapshot / waiting / by rate, node then chromium (node's frame is a timer set after each tick):
+
+  | Case | node | chromium |
+  |---|---|---|
+  | frame, typical: T 2.5, W 2 | 20.1 / 20.2 / 20.2 | 16.7 / 16.7 / 16.7 |
+  | frame, B 8 + T 2.5 and W 9: together over a frame | 26.5 / 26.8 / 26.9 | 16.7 / 20.7 (p95 25.5) / 16.7 |
+  | the same, W before the writer | 26.7 / 26.8 / 26.8 | 16.7 / 16.7 / 16.7 |
+  | frame, B 20 + T 2.5, W 3: tail longer than a frame | 23.3 / 26.2 / 22.7 | 22.6 / 26.2 / 22.7 |
+  | fixed 16.7 ms, B 8 + T 2.5, W 9 | 16.7 / 20.2 / 16.7 | 16.7 / 20.2 / 16.7 |
+  | the same, W before the writer | 16.7 / 16.7 / 16.7 | 16.7 / 16.7 / 16.7 |
+  | fixed 4 ms, T 2.5, W 3 | 4.0 / 6.1 / 4.0 | 4.0 / 6.1 / 4.0 |
+  | the same, W before the writer | 4.0 / 4.0 / 4.0 | 4.0 / 4.0 / 4.0 |
+
+  A writer arriving as the tail of 2.6 ms had read 0, about half, 85% and 95% of its rows, chromium, its run in ms: snapshot 0.175 / 0.165 / 0.115 / 0.125, waiting 2.72 / 1.56 / 0.42 / 0.23, by rate 0.2 / 0.205 / 0.155 / 0.13; node alike. The snapshot holds the world's thread 20–72 µs a writer for the copy, waiting 22–27 µs for its spin; the joined thread's time is the same either way, but for one body (Next). By rate never chose to wait in any tick case: a row copies in 6–8 ns, less than any tail's work on it, so finishing is cheaper only within about the last chunk, which the writer waits for anyway. Waiting is worth revisiting if a tick could no longer run ahead of its last tail at all, and by rate if copies grew costly against tails' work per row, as with wide struct reads and light bodies.
 - **Checking eight rows' ticks at every row,** rather than at rows aligned to eight: clustered changes 0.023 → 0.108 ms, since each passing row checked a block again. Aligned checks cost clustered changes about 3 µs.
 
 ## Next
@@ -227,4 +241,5 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - Kernels taking `%` of an f64: a conditional on `resources[clock].tick % 2` costs about 33 ns a row in node, 10K rows 333 µs against 8.5 µs without it.
 - Replaying the move log: `log replay` takes 24 ns a move in node and 36.5 ns in chromium, two entries each, against about 1 ns to move the bytes; the cost is the per-entry dispatch and the scattered rows a swap reads.
 - Ordered selections recomputed every tick: `mailbox select 10K` spends about 0.73 ms a tick sorting 10K entities.
+- A tail's body reading from a snapshot ran slower in one case: a loop counted down from an unbounded integer resource (an f64) took 13.6 ms against 11.2 in place over 10,000 rows of 200 steps, in node, while counted as an i32 it took 10.8 against 11.2; deopts didn't account for it.
 - Main-thread spawns reserving in blocks too: `spawn bulk` still takes one atomic add per spawn. Finalizers spawn during the sync point, after it materializes the run's reservations, so a world's block would have to end before each materialization.

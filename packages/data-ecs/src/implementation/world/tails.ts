@@ -209,6 +209,12 @@ const outcomeOf = async (tasks: readonly Promise<{ readonly done: boolean; reado
     return { failures, skipped };
 };
 
+/**
+ * For benchmarks and tests: a writer of what a tail still reads waits until the tail is done instead of copying the
+ * rest, the alternative `tail overlap waiting` measures snapshots against.
+ */
+export const tailWriters = { wait: false };
+
 /** How long the world spins for a tail's chunk before it waits: about one wake-up's latency. */
 const spinMilliseconds = 0.02;
 
@@ -377,6 +383,7 @@ const resolve = (state: State, tail: Tail): Promise<void> | null => {
     settledTail(state, tail);
     const { control, end } = tail;
     if (Atomics.load(control, doneWord) >= end) return null;
+    if (tailWriters.wait) return waitDone(tail, end);
     const from = Atomics.load(control, progressWord);
     runs.length = 0;
     if (from < end) writeSnapshot(state, tail, from);

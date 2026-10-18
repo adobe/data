@@ -6,6 +6,7 @@ import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import { backToBack } from "./loop.js";
+import { tailWriters } from "./tails.js";
 import type { FromTailsWorker, ToTailsWorker } from "./tails-worker.fixture.js";
 import { counter, noStall, seed, setSpawning, setStall, stallAtChunk, stallBefore, tallied, ticked } from "./tails.test-helper.js";
 
@@ -123,6 +124,17 @@ export const continuous = async () => {
     await worker.terminate();
     driver.close();
     return seen;
+};
+
+/** As `continuous`, with writers waiting until each tail is done rather than copying what it hasn't read. */
+export const waiting = async () => {
+    tailWriters.wait = true;
+    try {
+        return await continuous();
+    }
+    finally {
+        tailWriters.wait = false;
+    }
 };
 
 /** 1,000 rows each tick of a fixed cadence with time to spare: the tail finishes before the next tick writes. */

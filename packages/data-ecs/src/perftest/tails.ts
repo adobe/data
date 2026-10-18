@@ -7,6 +7,7 @@ import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import type { World } from "../interface/world/world.js";
 import { backToBack, createWorld, type CreatedWorld } from "../implementation/index.js";
+import { tailWriters } from "../implementation/world/tails.js";
 import type { Benchmark } from "./benchmark.js";
 
 // Tails: terminal systems on a joined worker, which claims "tailsBenchmark", running after their tick's sync point
@@ -16,6 +17,8 @@ const place = Symbol("tails/place");
 const pose = Symbol("tails/pose");
 const surface = Symbol("tails/surface");
 const poked = Symbol("tails/poked");
+const rowWork = Symbol("tails/rowWork");
+const worldWork = Symbol("tails/worldWork");
 declare module "@adobe/data-ecs" {
     export interface Threads {
         tailsBenchmark: true;
@@ -27,6 +30,8 @@ declare module "@adobe/data-ecs" {
     export interface Resources {
         [surface]: typeof surfaceTraits;
         [poked]: typeof pokedTraits;
+        [rowWork]: typeof rowWorkTraits;
+        [worldWork]: typeof worldWorkTraits;
     }
 }
 const placeTraits = Component.register(place, { type: { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 } });
@@ -34,6 +39,8 @@ const poseTraits = Component.register(pose, { type: { type: "array", items: { ty
 /** An object of the joined thread, as a canvas or the DOM is, which places the systems reading it there. */
 const surfaceTraits = Resource.register(surface, { type: { type: "string", default: "surface" }, thread: "tailsBenchmark" });
 const pokedTraits = Resource.register(poked, { type: { type: "integer", default: 0 } });
+const rowWorkTraits = Resource.register(rowWork, { type: { type: "integer", minimum: 0, maximum: 1_000_000, default: 0 } });
+const worldWorkTraits = Resource.register(worldWork, { type: { type: "number", default: 0 } });
 
 /** What the tails read, so their reads aren't dead. */
 export const drawn = { sum: 0 };
@@ -75,8 +82,36 @@ const poke = System.create({ name: "tails/poke", resources: { write: [poked] } }
 });
 const nothing = System.create({ name: "tails/nothing" }, () => {});
 
+/** Steps of work each row of the overlapping tail does, about 2.5 ms over 10,000 rows; the world's work after its writer. */
+export const overlapWork = 40;
+export const overlapWorldMilliseconds = 2;
+/** Ticks in each timed stretch of the overlapping tail. */
+export const overlapTicks = 100;
+
+/** On the world's thread: writes every row's place, which the last tick's tail still reads. */
+const overlapWrite = System.create({ name: "tails/overlapWrite", components: { write: [place] } }, row => {
+    row[place] = [row[place][0], 1, 0];
+});
+/** On the world's thread, after the writer: the rest of the tick's work, as systems reading what it wrote do. */
+const overlapSimulate = System.create({ name: "tails/overlapSimulate", resources: { read: [worldWork] }, after: [overlapWrite] }, ({ resources }) => {
+    const until = performance.now() + resources[worldWork];
+    while (performance.now() < until);
+});
+/** On the joined thread, terminal: works on every row's place and pose, as a DOM-writing system on main does. */
+const overlapDraw = System.create({ name: "tails/overlapDraw", components: { read: [place, pose] }, resources: { read: [surface, rowWork] }, after: [overlapWrite] }, (row, { resources }) => {
+    if (resources[surface] !== "surface") return;
+    let sum = row[place][0] + row[pose][15];
+    for (let k = resources[rowWork]; k > 0; k--) sum = Math.sqrt(sum + k);
+    drawn.sum += sum;
+});
+export const overlapTick = System.create({ name: "tails/overlapTick", systems: [overlapWrite, overlapSimulate, overlapDraw] });
+const setOverlap = System.create({ name: "tails/setOverlap", resources: { write: [rowWork, worldWork] } }, ({ resources }) => {
+    resources[rowWork] = overlapWork;
+    resources[worldWork] = overlapWorldMilliseconds;
+});
+
 /** Every system the joined thread runs, which it imports so the world can place them there. */
-export const tailSystems: readonly System<void>[] = [promptTick, lateTick];
+export const tailSystems: readonly System<void>[] = [promptTick, lateTick, overlapTick];
 
 const joinedFile = "./joined.js";
 
@@ -197,6 +232,48 @@ const late = async (rounds = 30): Promise<number> => {
     return best;
 };
 
+/**
+ * The fastest of `stretches` stretches of `overlapTicks` ticks writing what the last tick's tail reads, driven back to
+ * back: with snapshots, or with the writer waiting for the tail to finish.
+ */
+const overlap = async (waiting: boolean, stretches = 5): Promise<number> => {
+    const driver = backToBack();
+    const world = createWorld({ [workers]: 0, [always]: true }, { loop: driver });
+    const joined = await startClaiming(world);
+    let best = Infinity;
+    tailWriters.wait = waiting;
+    try {
+        await world.run(spawnPoses);
+        await world.run(setOverlap);
+        const report = await world.run(overlapTick);
+        if (report.failures.length > 0 || report.warnings.length > 0) throw new Error(`tail overlap: the tail didn't run as one: ${report.failures[0]?.message ?? report.warnings[0]?.message}.`);
+        await new Promise<void>(resolve => {
+            let ticks = 0;
+            let stretch = 0;
+            let start = 0;
+            const unobserve = world.observe.resource(clock)(() => {
+                if (ticks++ % overlapTicks !== 0) return;
+                const now = performance.now();
+                if (stretch > 1) best = Math.min(best, now - start);
+                start = now;
+                if (stretch++ <= stretches) return;
+                unobserve();
+                resolve();
+            });
+            world.add(overlapTick);
+        });
+    }
+    finally {
+        tailWriters.wait = false;
+        await joined.terminate();
+        await world.dispose();
+        driver.close();
+    }
+    return best;
+};
+
+const overlapOperation = "Ticks writing every row's place, which the last tick's tail on a joined worker still reads, then working 2 ms, while the tail works about 2.5 ms over 10,000 rows of a place and a pose: main's DOM work and the world's work after its writer that together outlast a frame or a fixed step, though each fits.";
+
 export const tailBenchmarks: readonly Benchmark[] = [
     {
         name: "tail prompt",
@@ -215,5 +292,23 @@ export const tailBenchmarks: readonly Benchmark[] = [
         typical: [100, 10_000],
         best: { bytes: 2 * (12 + 64) + 20, basis: "Each row's 12-byte vec3 and 64-byte mat4 are read and written, and its position, archetype, row and entity, 20 bytes, written." },
         run: () => late(),
+    },
+    {
+        name: "tail overlap",
+        operation: `${overlapOperation} The writer copies the rows the tail hasn't read, so the tick and the tail overlap.`,
+        per: "ticks",
+        n: overlapTicks,
+        typical: [1, 1],
+        best: { bytes: 2 * lateRows * (12 + 64), basis: "The world copies each row's 12-byte vec3 and 64-byte mat4 the tail hasn't read, and the tail reads them, beyond the work each side does." },
+        run: () => overlap(false),
+    },
+    {
+        name: "tail overlap waiting",
+        operation: `${overlapOperation} The writer waits for the tail to finish instead, the alternative \`tail overlap\` is measured against.`,
+        per: "ticks",
+        n: overlapTicks,
+        typical: [1, 1],
+        best: { bytes: lateRows * (12 + 64), basis: "The tail reads each row's 12-byte vec3 and 64-byte mat4, beyond the work each side does." },
+        run: () => overlap(true),
     },
 ];

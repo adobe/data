@@ -10,6 +10,11 @@ export const tailsCases = (load: () => Promise<typeof Fixture>) => describe("tai
         expect(seen.late).toBeGreaterThan(0);
         expect(seen.switched).toBeGreaterThan(0);
     }, 30000);
+    it("see one tick's values in every run, never from a snapshot, when writers wait for them instead", async () => {
+        const fixture = await load();
+        const seen = await fixture.waiting();
+        expect({ wrong: seen.wrong, labels: seen.labels, fewest: seen.fewest, most: seen.most, late: seen.late, switched: seen.switched }).toEqual({ wrong: 0, labels: 0, fewest: 1000, most: 1000, late: 0, switched: 0 });
+    }, 30000);
     it("never snapshot when prompt", async () => {
         const fixture = await load();
         const seen = await fixture.prompt();

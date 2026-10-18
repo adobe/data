@@ -11,6 +11,7 @@ import { commandRingsCases } from "./command-rings.cases.js";
 import { joiningCases } from "./joining.cases.js";
 import { remoteObjectsCases } from "./remote-objects.cases.js";
 import { threadSystemsCases } from "./thread-systems.cases.js";
+import { remoteFinalizersCases } from "./remote-finalizers.cases.js";
 
 // Real workers in chromium: the cases over the fixtures' sources, as node runs them built.
 workersCases(() => import("./workers.fixture.js"));
@@ -26,3 +27,4 @@ commandRingsCases(() => import("./command-rings.fixture.js"));
 joiningCases(() => import("./joining.fixture.js"));
 remoteObjectsCases(() => import("./remote-objects.fixture.js"));
 threadSystemsCases(() => import("./thread-systems.fixture.js"));
+remoteFinalizersCases(() => import("./remote-finalizers.fixture.js"));

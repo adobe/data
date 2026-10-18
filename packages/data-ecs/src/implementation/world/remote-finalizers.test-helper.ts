@@ -96,9 +96,9 @@ export const unflag = System.create({ name: "remoteFinalizersTest/unflag", compo
 });
 
 /** Waits until `done` holds, letting other tasks run, for at most `milliseconds`. */
-export const eventually = async (done: () => boolean, milliseconds = 5000): Promise<boolean> => {
+export const eventually = async (done: () => boolean | Promise<boolean>, milliseconds = 5000): Promise<boolean> => {
     const deadline = performance.now() + milliseconds;
-    while (!done() && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 1));
+    while (!await done() && performance.now() < deadline) await new Promise(resolve => setTimeout(resolve, 1));
     return done();
 };
 
@@ -111,13 +111,13 @@ export const sorted = (stops: readonly Released[]): readonly Released[] => stops
  * its despawns, and its object resource changed. `stops` is how many stops the finalizer has seen, wherever it runs;
  * each step waits until it saw `expected` of them, with what an inline world saw first.
  */
-export const scenario = async (world: World, stops: () => number, expected: readonly number[] = []): Promise<readonly number[]> => {
+export const scenario = async (world: World, stops: () => number | Promise<number>, expected: readonly number[] = []): Promise<readonly number[]> => {
     const seen: number[] = [];
     const step = async (run: Promise<unknown>): Promise<void> => {
         await run;
         const wanted = expected[seen.length];
-        if (wanted !== undefined) await eventually(() => stops() >= wanted);
-        seen.push(stops());
+        if (wanted !== undefined) await eventually(async () => await stops() >= wanted);
+        seen.push(await stops());
     };
     await step(world.run(spawn, { from: 0, count: 12 }));
     await step(world.run(attach));

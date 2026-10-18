@@ -13,6 +13,7 @@ import { remoteObjectsCases } from "./remote-objects.cases.js";
 import { threadSystemsCases } from "./thread-systems.cases.js";
 import { remoteFinalizersCases } from "./remote-finalizers.cases.js";
 import { tailsCases } from "./tails.cases.js";
+import { transfersCases } from "./transfers.cases.js";
 
 // Real workers in chromium: the cases over the fixtures' sources, as node runs them built.
 workersCases(() => import("./workers.fixture.js"));
@@ -30,3 +31,4 @@ remoteObjectsCases(() => import("./remote-objects.fixture.js"));
 threadSystemsCases(() => import("./thread-systems.fixture.js"));
 remoteFinalizersCases(() => import("./remote-finalizers.fixture.js"));
 tailsCases(() => import("./tails.fixture.js"));
+transfersCases(() => import("./transfers.fixture.js"));

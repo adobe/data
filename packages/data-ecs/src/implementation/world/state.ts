@@ -40,6 +40,9 @@ export type State = {
     readonly layouts: Layout[];
     /** Whether each component is derived, so only rules add and remove it. */
     readonly derived: boolean[];
+    /** Whether each component is declared `transfer`, so a value whose command drops is released; and whether any is. */
+    readonly transfers: boolean[];
+    transferring: boolean;
     readonly resources: Set<number>;
     /** The newest tick handed out. Systems and sync points each take the next one. */
     tick: number;
@@ -164,6 +167,8 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         keys: [],
         layouts: [],
         derived: [],
+        transfers: [],
+        transferring: false,
         resources: new Set(),
         tick: 0,
         queued: [],
@@ -260,6 +265,8 @@ export const idOf = (state: State, key: Key): number => {
     state.starts.push(layout.kind === "constant" ? layout.value : defaultOf(key));
     state.commandable.push(false);
     state.derived.push(declaration.derived === true);
+    state.transfers.push(declaration.transfer === true);
+    if (declaration.transfer === true) state.transferring = true;
     structure.hosts[id] = host;
     structure.dependents[id] = [];
     if (host >= 0) structure.dependents[host].push(id);

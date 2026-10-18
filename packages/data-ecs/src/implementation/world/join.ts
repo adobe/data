@@ -5,12 +5,12 @@ import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/res
 import type { Thread } from '../../interface/thread/thread.js';
 import type { Report } from '../../interface/world/report.js';
 import type { World } from '../../interface/world/world.js';
-import { declarationOf, firstKeyOf, identifiedItems, idOfItem, idOfKey, identifiedKeys, keyOfId, kindOf, labelOf, labelOfItem, requireDefinition, threadOfDeclaration, type Definition } from '../../interface/registry/index.js';
+import { declarationOf, firstKeyOf, identifiedItems, idOfItem, idOfKey, identifiedKeys, keyOfId, kindOf, labelOf, labelOfItem, requireDefinition, threadOf, threadOfDeclaration, type Definition } from '../../interface/registry/index.js';
 import { layoutOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import { asEntity } from './entities.js';
 import {
-    clean, completedWord, fitsInline, inputByMessage, inputLayoutOf, noInput, pending, platformLocks, postedWord, protocolName, runSlots, signalWord, unposted, unreadWord,
-    slotInput, slotNumber, slotSequence, slotStatus, slotViews, slotWords, slotsWord, threadChannel, type Subscription, type ToJoined, type ToWorld,
+    clean, completedWord, fitsInline, inputByMessage, inputLayoutOf, inputMoved, noInput, pending, platformLocks, postedWord, protocolName, runSlots, signalWord, unposted, unreadWord,
+    slotInput, slotNumber, slotPayload, slotSequence, slotStatus, slotViews, slotWords, slotsWord, threadChannel, type Subscription, type ThreadChannel, type ToJoined, type ToPeer, type ToWorld,
 } from './joining.js';
 import { entityPlanOf, hasFresh, mailboxReader, readSlot, readValue, type MailboxReader } from './mailbox.js';
 import { sharedMemoryAvailable } from './memory.js';
@@ -19,6 +19,7 @@ import { componentsAt, createMirror, locate, nameComponent, objectAt, waitDelive
 import { defaultOf } from './state.js';
 import { createThreadSystems, type SystemSetup } from './thread-systems.js';
 import { taskBlockWords } from './thread-tasks.js';
+import { releaseInput, transferablesOf } from './transfers.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 
 type Notify = (value: unknown) => void;
@@ -108,6 +109,34 @@ const symbolOf = (key: unknown): symbol => {
     return key;
 };
 
+/** Lets a node `MessagePort` close without keeping its thread alive: another joined thread's channel is no reason to. */
+const unref = (port: object): void => {
+    const method: unknown = Reflect.get(port, "unref");
+    if (typeof method === "function") Reflect.apply(method, port, []);
+};
+
+/** The logical thread a system runs on when a joined thread claims it, by its objects; null for one that runs on `world`. */
+const placements = new WeakMap<Definition, string | null>();
+const placementOf = (definition: Definition): string | null => {
+    let thread = placements.get(definition);
+    if (thread !== undefined) return thread;
+    thread = null;
+    // Render systems and GPU kernels run with the world's device; a composite's members, wherever the world runs them.
+    if (definition.kind === "system" && definition.declaration.kernel !== "gpu") {
+        try {
+            thread = threadOf(definition.declaration, "System", definition.name);
+        }
+        catch {
+            thread = null;
+        }
+    }
+    placements.set(definition, thread);
+    return thread;
+};
+
+/** For tests: how many joined threads a joined world has a channel to, to move runs' inputs through. */
+export const peersOf = new WeakMap<World, () => number>();
+
 /** Reports an error thrown by an observer's notify, as an event listener's would be. */
 const rethrow = (error: unknown): void => queueMicrotask(() => { throw error; });
 
@@ -128,9 +157,43 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
     const channel = threadChannel<ToWorld, ToJoined>(port);
     /** Messages posted before the join message is, which waits for this thread's lock. */
     let held: ToWorld[] | null = [];
-    const post = (message: ToWorld): void => {
-        if (held === null) channel.post(message);
+    const post = (message: ToWorld, transfer?: readonly object[]): void => {
+        if (held === null) channel.post(message, transfer);
         else held.push(message);
+    };
+
+    /** This thread's number, as the world gave it. */
+    let own = 0;
+    /** Channels to other joined threads, by number, with the threads each claims; and those threads' joined threads. */
+    const peers = new Map<number, { readonly channel: ThreadChannel<ToPeer, ToPeer>; readonly threads: readonly string[] }>();
+    const fillers = new Map<string, number>();
+    /** Inputs moved here, by the number of the joined thread whose run they're of, then by that run's sequence. */
+    const received = new Map<number, Map<number, unknown>>();
+    const keep = (from: number, sequence: number, input: unknown): void => {
+        let runs = received.get(from);
+        if (runs === undefined) received.set(from, runs = new Map());
+        runs.set(sequence, input);
+    };
+    /** Takes a moved input, once: undefined once a task took it. */
+    const take = (from: number, sequence: number): unknown => {
+        const runs = received.get(from);
+        const input = runs?.get(sequence);
+        runs?.delete(sequence);
+        return input;
+    };
+    /** Where a run's moved input goes: the joined thread, this one included, filling its system's thread; null for the world's. */
+    const destinationOf = (definition: Definition): number | null => {
+        const thread = placementOf(definition);
+        if (thread === null) return null;
+        if (claims.has(thread)) return own;
+        return fillers.get(thread) ?? null;
+    };
+    const unpeer = (thread: number): void => {
+        const peer = peers.get(thread);
+        if (peer === undefined) return;
+        peers.delete(thread);
+        peer.channel.close();
+        for (const name of peer.threads) if (fillers.get(name) === thread) fillers.delete(name);
     };
 
     /** This thread's numbers, by id, for the keys and systems it names; each id is posted once. */
@@ -199,8 +262,20 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         else if (input === undefined) control[base + slotInput] = noInput;
         else {
             try {
-                post({ protocol: protocolName, kind: "input", sequence, input });
-                control[base + slotInput] = inputByMessage;
+                // Transferable values move to the thread the system runs on: through the world's, or straight to the
+                // joined thread filling it, which tells the world once they're there.
+                const transfer = transferablesOf(input);
+                const destination = transfer === null ? null : destinationOf(definition);
+                if (destination === null) {
+                    post({ protocol: protocolName, kind: "input", sequence, input }, transfer ?? undefined);
+                    control[base + slotInput] = inputByMessage;
+                }
+                else {
+                    if (destination === own) keep(own, sequence, input);
+                    else peers.get(destination)?.channel.post({ protocol: protocolName, kind: "transfer", sequence, input }, transfer ?? undefined);
+                    control[base + slotPayload] = destination;
+                    control[base + slotInput] = inputMoved;
+                }
             }
             catch (error) {
                 // An input that can't be posted, as one holding a function: the world completes the run without running it.
@@ -403,12 +478,15 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         }
     };
 
-    /** Rejects every run not yet settled, and every later one. */
+    /** Rejects every run not yet settled, and every later one; releases inputs moved here, and closes channels to other threads. */
     const fail = (error: Error): void => {
         failure ??= error;
         for (const run of runs.values()) run.reject(failure);
         runs.clear();
         waiting.length = 0;
+        for (const inputs of received.values()) for (const input of inputs.values()) releaseInput(input);
+        received.clear();
+        for (const thread of [...peers.keys()]) unpeer(thread);
         if (control !== null) Atomics.notify(control, signalWord);
     };
 
@@ -416,6 +494,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         switch (message.kind) {
             case "joined": {
                 memory = message.memory;
+                own = message.thread;
                 control = new Int32Array(memory.buffer, message.control, (slotsWord + runSlots * slotWords));
                 views = slotViews(memory.buffer, message.control);
                 worldWaits = message.waits;
@@ -478,7 +557,24 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 systems?.process();
                 return processObservers();
             }
-            case "task input": return systems?.input(message.sequence, message.input);
+            case "task input": return systems?.input(message.sequence, message.held === undefined ? message.input : take(message.held[0], message.held[1]));
+            case "release": return releaseInput(take(message.from, message.sequence));
+            case "peer": {
+                const from = message.thread;
+                unpeer(from);
+                const peer = threadChannel<ToPeer, ToPeer>(message.port);
+                peers.set(from, { channel: peer, threads: message.threads });
+                for (const name of message.threads) fillers.set(name, from);
+                peer.onMessage(sent => {
+                    if (sent.kind !== "transfer") return;
+                    if (failure !== null) return releaseInput(sent.input);
+                    keep(from, sent.sequence, sent.input);
+                    post({ protocol: protocolName, kind: "received", from, sequence: sent.sequence });
+                });
+                unref(message.port);
+                return;
+            }
+            case "unpeer": return unpeer(message.thread);
             case "wake": return process();
         }
     });
@@ -667,5 +763,6 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         },
         [Symbol.asyncDispose]: () => world.dispose(),
     };
+    peersOf.set(world, () => peers.size);
     return world;
 };

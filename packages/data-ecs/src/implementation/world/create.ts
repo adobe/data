@@ -39,6 +39,7 @@ import { failureOf } from './failures.js';
 import { createLoop, platformFrame, platformTimer, type Clock, type LoopPlatform } from './loop.js';
 import { createState, idOf, startTicking, type Key } from './state.js';
 import { indexOf } from './entities.js';
+import { isHeld } from './transfers.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/resource/value.js';
 import { labelOf, labelOfItem } from '../../interface/registry/index.js';
 
@@ -274,6 +275,10 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (deviceChanged()) await followDevice();
         const schedule = registrar.registered(definition);
         if (schedule === undefined) throw new Error(`System "${labelOfItem(definition)}" didn't register.`);
+        // An input that moved to a joined thread runs only there: that thread went since, its claims with it.
+        if (isHeld(value) && (definition.kind === "composite" || registrar.runnerOf(definition).remote?.channel !== value.channel)) {
+            throw new Error(`System "${labelOfItem(definition)}": the run's input moved to a joined thread that's gone.`);
+        }
         let report: Report;
         let tails: Promise<TailOutcome> | null = null;
         try {

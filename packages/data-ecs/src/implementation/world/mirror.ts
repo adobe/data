@@ -8,6 +8,7 @@ import {
     appendEntry, archetypeShift, entryWords, kindMask, logCapacityWord, logDeliveredWord, logHeaderBytes, logLimitWord, logOffsetWord,
     logPublishedWord, logSyncWord, logVersionWord, logBoundWord, logBoundedWord, moveEntry, nullTag, ownTag, rangeEntry, setEntry, slotTags, startTag, swapEntry, syncEntry,
 } from './move-log.js';
+import { releaseValue } from './transfers.js';
 
 // A joined thread's object columns: by row, as the world's are, following the world's rows through the move log
 // (`move-log.ts`), replayed lazily, or rebuilt from the layout directory when the log lapped it. Their ticks are the
@@ -30,7 +31,8 @@ export type Mirrored = {
 };
 
 /** A value this thread gave one of its objects, staged until a sync point applies it or drops its command. */
-type Staged = { readonly slot: number; readonly entity: number; readonly component: number; readonly value: unknown; readonly sync: number; live: boolean };
+/** A staged value: of a component declared `transfer`, it's released if its command drops. */
+type Staged = { readonly slot: number; readonly entity: number; readonly component: number; readonly value: unknown; readonly sync: number; readonly transfer: boolean; live: boolean };
 
 /** Whether replaying is done, waits for a component's key to be named, or found the log lapped or replaced. */
 export type Replayed = "current" | "held" | "lapped";
@@ -71,6 +73,11 @@ export type Mirror = {
     /** Times it rebuilt, for tests. */
     rebuilds: number;
     /**
+     * How many values of components declared `transfer` are staged and not yet settled, so the thread replays to
+     * release those whose commands dropped once it's woken.
+     */
+    stagedTransfers: number;
+    /**
      * Runs this thread's finalizers for the stops of every sync through `sync`, before that sync's entries apply, so
      * they read its objects at the rows the stops name; after the log lapped, with `old`, which gives an entity's
      * objects as they were before the rebuild. False while a finalizer the stops name isn't set up here yet, so
@@ -88,7 +95,7 @@ export const createMirror = (memory: WebAssembly.Memory, block: number, thread: 
         memory, thread, block, buffer: memory.buffer, words: new Uint32Array(0), signed: new Int32Array(0), header: new Int32Array(0),
         ring: new Uint32Array(0), ringEntities: new Float64Array(0), version: -1, mask: 0, position: 0, through: 0, tick: 0,
         keys: new Map(), starts: new Map(), archetypes: [], scratch: new Uint32Array(1024), scratchEntities: new Float64Array(0),
-        staged: [], head: 0, nextSlot: 0, rebuilds: 0, finalize: null,
+        staged: [], head: 0, nextSlot: 0, rebuilds: 0, stagedTransfers: 0, finalize: null,
     };
     refresh(mirror);
     return mirror;
@@ -204,10 +211,18 @@ const take = (mirror: Mirror, slot: number, start: unknown): unknown => {
 /** Settles staged slots whose sync applied without naming them: their commands dropped, so their values are released. */
 const settle = (mirror: Mirror): void => {
     const { staged } = mirror;
+    let stagedTransfers = 0;
     for (let k = mirror.head; k < staged.length; k++) {
         const entry = staged[k];
-        if (entry.live && ((mirror.through - entry.sync) | 0) >= 0) entry.live = false;
+        if (!entry.live) continue;
+        if (((mirror.through - entry.sync) | 0) < 0) {
+            if (entry.transfer) stagedTransfers++;
+            continue;
+        }
+        entry.live = false;
+        if (entry.transfer) releaseValue(entry.value);
     }
+    mirror.stagedTransfers = stagedTransfers;
     while (mirror.head < staged.length && !staged[mirror.head].live) mirror.head++;
     if (mirror.head === staged.length) {
         staged.length = 0;
@@ -223,10 +238,11 @@ const settle = (mirror: Mirror): void => {
  * Stages a value this thread gives one of its objects, for the command that names its slot, applied at sync `sync`;
  * returns the slot's id.
  */
-export const stage = (mirror: Mirror, entity: number, component: number, value: unknown, sync: number): number => {
+export const stage = (mirror: Mirror, entity: number, component: number, value: unknown, sync: number, transfer = false): number => {
     const slot = mirror.nextSlot;
     mirror.nextSlot = (slot + 1) >>> 0;
-    mirror.staged.push({ slot, entity, component, value, sync: sync >>> 0, live: true });
+    mirror.staged.push({ slot, entity, component, value, sync: sync >>> 0, transfer, live: true });
+    if (transfer) mirror.stagedTransfers++;
     return slot;
 };
 

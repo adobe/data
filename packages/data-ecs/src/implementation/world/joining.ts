@@ -44,6 +44,11 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
     | { readonly kind: "name"; readonly number: number; readonly id: string; readonly item: boolean }
     /** The input of run `sequence`, which its slot says comes by message. */
     | { readonly kind: "input"; readonly sequence: number; readonly input: unknown }
+    /**
+     * The input of run `sequence` of joined thread `from`, which its slot says moved to this thread, arrived here: the
+     * world starts that run once this arrives.
+     */
+    | { readonly kind: "received"; readonly from: number; readonly sequence: number }
     | { readonly kind: "observe"; readonly observer: number; readonly subscription: Subscription }
     | { readonly kind: "unobserve"; readonly observer: number }
     /** Where the world can't wait without blocking: runs were posted. */
@@ -79,8 +84,20 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
     | { readonly kind: "systems"; readonly systems: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] }[] }
     /** Finalizers the world places on the thread, as systems are: each one's index there, its id, and the world's numbers for its keys. */
     | { readonly kind: "finalizers"; readonly finalizers: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] }[] }
-    /** The input of task `sequence`, which its payload says comes by message. */
-    | { readonly kind: "task input"; readonly sequence: number; readonly input: unknown }
+    /**
+     * The input of task `sequence`, which its payload says comes by message; or, with `held`, the input of run
+     * `held[1]` of joined thread `held[0]`, which moved here when it was run.
+     */
+    | { readonly kind: "task input"; readonly sequence: number; readonly input: unknown; readonly held?: readonly [number, number] }
+    /**
+     * A channel to joined thread `thread`, claiming `threads`, through `port`: a run there of a system on one of them
+     * moves the Transferable values of its input here through it, and one here moves them there.
+     */
+    | { readonly kind: "peer"; readonly thread: number; readonly threads: readonly string[]; readonly port: Parameters<World["share"]>[0] }
+    /** Joined thread `thread` is gone: its channel closes, and its threads are the world's again. */
+    | { readonly kind: "unpeer"; readonly thread: number }
+    /** Run `sequence` of joined thread `from`, whose input moved here, finished: what of it no task took is released. */
+    | { readonly kind: "release"; readonly from: number; readonly sequence: number }
     /** A component whose objects the thread fills, by the world's number, with its id: null for one without. */
     | { readonly kind: "component"; readonly component: number; readonly id: string | null }
     | { readonly kind: "refused"; readonly message: string }
@@ -94,9 +111,13 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
     | { readonly kind: "disposed" }
 );
 
-/** A joined thread's channel to the world, or the world's to it, over the port it was given. */
+/** From a joined thread to another, through their channel: the input of run `sequence`, moved from that thread. */
+export type ToPeer = { readonly protocol: typeof protocolName; readonly kind: "transfer"; readonly sequence: number; readonly input: unknown };
+
+/** A joined thread's channel to the world, or the world's to it, over the port it was given; or a joined thread's to another. */
 export type ThreadChannel<Send, Receive> = {
-    readonly post: (message: Send, transfer?: readonly ArrayBuffer[]) => void;
+    /** Posts a message, moving the Transferable values `transfer` lists; throws for a value that can't be posted. */
+    readonly post: (message: Send, transfer?: readonly object[]) => void;
     /** Sets the one handler for this protocol's messages; others are ignored. */
     readonly onMessage: (handler: (message: Receive) => void) => void;
     /** Sets the one handler for the other end's end: a `MessagePort`'s close, or a node worker's exit. */
@@ -180,9 +201,13 @@ export const slotPayload = 4;
 export const controlBytes = (slotsWord + runSlots * slotWords) * 4;
 /** Input written in its slot, at most this many bytes. */
 export const inlineInputBytes = (slotWords - slotPayload) * 4;
-/** A slot's input length for none, and for an input posted as a message. */
+/**
+ * A slot's input length for none, for an input posted as a message, and for one moved to the joined thread its system
+ * runs on, whose number is the slot's first payload word.
+ */
 export const noInput = -1;
 export const inputByMessage = -2;
+export const inputMoved = -3;
 /** A slot's system number for a run whose input couldn't be posted, which the world completes without running. */
 export const unposted = -1;
 /** Slot statuses: in flight; done with a clean report; done with a report or a rejection, posted. */

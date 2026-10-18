@@ -7,8 +7,8 @@ import type { Layout, Views } from '../../interface/registry/layout.js';
 import { asEntity } from './entities.js';
 import { failureOf } from './failures.js';
 import {
-    clean, completedWord, controlBytes, inputByMessage, inputLayoutOf, platformLocks, postedWord, protocolName, rejected, reported, runSlots,
-    signalWord, unreadWord, slotInput, slotNumber, slotStatus, slotViews, slotWords, slotsWord, threadChannel, unposted,
+    clean, completedWord, controlBytes, inputByMessage, inputLayoutOf, inputMoved, platformLocks, postedWord, protocolName, rejected, reported, runSlots,
+    signalWord, unreadWord, slotInput, slotNumber, slotPayload, slotStatus, slotViews, slotWords, slotsWord, threadChannel, unposted,
     type Subscription, type ThreadChannel, type ToJoined, type ToWorld,
 } from './joining.js';
 import { alignFor, createMailbox, entityPlanOf, freeMailbox, publishSlot, writeSlot, writeValue, type MailboxWriter } from './mailbox.js';
@@ -19,6 +19,7 @@ import { createTaskChannel, type TaskChannel } from './remote-systems.js';
 import { endStops } from './stop-lists.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 import { idOf, type Key, type State } from './state.js';
+import { heldInput } from './transfers.js';
 
 type Notify = (value: unknown) => void;
 type Subscribe = (notify: Notify) => () => void;
@@ -76,6 +77,10 @@ type Joined = {
     readonly finished: Set<number>;
     /** Inputs posted for runs not yet started. */
     readonly inputs: Map<number, unknown>;
+    /** For runs not yet started whose input moved to the joined thread their system runs on: that thread, once it has it. */
+    readonly moved: Map<number, Joined>;
+    /** The joined threads it has a channel to, to move inputs through. */
+    readonly peers: Set<Joined>;
     readonly watching: Map<number, Watching>;
     /** Whether a wake is queued for it. */
     woken: boolean;
@@ -113,10 +118,11 @@ export const createSharing = (host: SharingHost) => {
     const waking: Joined[] = [];
     /** Each joined thread's block of control words, as allocated. */
     const controlBlocks = new Map<Joined, number>();
-    /** Joined threads' numbers, never reused, so a thread that died never reads another's flags as its own. */
+    /** Joined threads' numbers, never reused, so a thread that died never reads another's flags as its own; those not gone, by number. */
     let numbered = 0;
+    const byNumber = new Map<number, Joined>();
 
-    const post = (thread: Joined, message: ToJoined): void => thread.channel.post(message);
+    const post = (thread: Joined, message: ToJoined, transfer?: readonly object[]): void => thread.channel.post(message, transfer);
 
     /** Every shared thread's progress, by its number, and those observing it. */
     let progress: readonly ThreadProgress[] = [];
@@ -176,6 +182,17 @@ export const createSharing = (host: SharingHost) => {
     const reject = (thread: Joined, sequence: number, text: string): void =>
         finish(thread, sequence, rejected, { protocol: protocolName, kind: "rejected", sequence, message: text });
 
+    /** Run `sequence` of `thread`, whose input moved to `holder`, finished: what of it no task took is released there. */
+    const released = (holder: Joined | null, thread: Joined, sequence: number): void => {
+        if (holder !== null && holder.status === "joined") post(holder, { protocol: protocolName, kind: "release", from: thread.number, sequence });
+    };
+
+    /** The joined thread holding a run's moved input, its claims made, by the number its slot names; null once it's gone. */
+    const holderOf = (thread: Joined, number: number): Joined | null => {
+        const holder = number === thread.number ? thread : byNumber.get(number);
+        return holder !== undefined && holder.status === "joined" && holder.tasks !== null ? holder : null;
+    };
+
     /**
      * Starts the runs posted in its slots, in order, through `run`, so they land in call order with the world's own; a
      * run whose system's id or input hasn't arrived yet waits, with the runs after it.
@@ -198,28 +215,40 @@ export const createSharing = (host: SharingHost) => {
             if (named === undefined) return;
             const bytes = control[base + slotInput];
             if (bytes === inputByMessage && !thread.inputs.has(sequence)) return;
+            // A moved input waits until the thread it moved to has it; this thread's own has it already.
+            const holder = bytes === inputMoved ? holderOf(thread, control[base + slotPayload]) : null;
+            if (holder !== null && holder !== thread && thread.moved.get(sequence) !== holder) return;
             thread.next++;
             const input = bytes === inputByMessage ? thread.inputs.get(sequence) : undefined;
             thread.inputs.delete(sequence);
+            thread.moved.delete(sequence);
+            if (bytes === inputMoved && holder === null) {
+                reject(thread, sequence, "The run's input moved to a joined thread that's gone.");
+                continue;
+            }
             const definition = typeof named.value === "object" && named.value !== null ? named.value : null;
             if (definition === null) {
                 reject(thread, sequence, `System "${named.id}" isn't one this world imported, so it can't run here.`);
+                released(holder, thread, sequence);
                 continue;
             }
             const layout = bytes >= 0 && definition.kind !== "composite" ? inputLayoutOf(definition, definition.declaration.input) : null;
-            const value = layout !== null && layout.kind === "linear" ? layout.read(thread.views[slot], 0) : input;
+            const value = holder !== null && holder.tasks !== null ? heldInput(thread.number, sequence, holder.tasks)
+                : layout !== null && layout.kind === "linear" ? layout.read(thread.views[slot], 0) : input;
             let ran: Promise<Report>;
             try {
                 ran = host.run(definition, value);
             }
             catch (error) {
                 reject(thread, sequence, messageOf(error));
+                released(holder, thread, sequence);
                 continue;
             }
-            ran.then(
+            const settled = ran.then(
                 report => isClean(report) ? finish(thread, sequence, clean, null) : finish(thread, sequence, reported, { protocol: protocolName, kind: "report", sequence, report }),
                 error => reject(thread, sequence, messageOf(error)),
             );
+            if (holder !== null) void settled.then(() => released(holder, thread, sequence));
         }
     };
 
@@ -374,6 +403,27 @@ export const createSharing = (host: SharingHost) => {
         freeMailbox(watching.mailbox);
     };
 
+    /**
+     * Gives a thread that just joined a channel to each joined thread it may move a run's input to, or that may move
+     * one to it: every pair one of which fills objects, its claims made. A thread whose claims are pending is paired
+     * once they're made.
+     */
+    const pair = (thread: Joined): void => {
+        if (typeof globalThis.MessageChannel !== "function") return;
+        const fills = thread.tasks !== null;
+        for (const other of threads) {
+            if (other === thread || other.status !== "joined" || other.peers.has(thread)) continue;
+            const otherFills = other.tasks !== null;
+            if (other.claims.length > 0 && !otherFills) continue;
+            if (!fills && !otherFills) continue;
+            const { port1, port2 } = new MessageChannel();
+            thread.peers.add(other);
+            other.peers.add(thread);
+            post(thread, { protocol: protocolName, kind: "peer", thread: other.number, threads: other.claims, port: port1 }, [port1]);
+            post(other, { protocol: protocolName, kind: "peer", thread: thread.number, threads: thread.claims, port: port2 }, [port2]);
+        }
+    };
+
     /** Tells a thread a component whose objects it fills, by its id. */
     const announce = (thread: Joined, component: number): void => {
         const key = state.keys[component];
@@ -413,6 +463,7 @@ export const createSharing = (host: SharingHost) => {
         });
         if (threads.length === 0) {
             joined();
+            pair(thread);
             show(thread, "joined");
         }
         else host.between(() => {
@@ -431,6 +482,7 @@ export const createSharing = (host: SharingHost) => {
             for (const name of threads) state.threadTasks.set(name, tasks);
             state.channels.push(tasks);
             joined();
+            pair(thread);
             host.placed();
             show(thread, "joined");
         });
@@ -454,6 +506,14 @@ export const createSharing = (host: SharingHost) => {
         const { control, log, tasks } = thread;
         thread.status = "gone";
         threads.delete(thread);
+        byNumber.delete(thread.number);
+        // Its channels close; runs whose input moved to it can't run, and reject.
+        for (const peer of thread.peers) {
+            peer.peers.delete(thread);
+            if (peer.status === "joined") post(peer, { protocol: protocolName, kind: "unpeer", thread: thread.number });
+        }
+        thread.peers.clear();
+        if (!closed) for (const other of threads) drain(other);
         for (const name of thread.claims) if (claimed.get(name) === thread) claimed.delete(name);
         // A task in flight settles now, its systems skipped with a "thread" failure; they're placed here between runs.
         tasks?.end();
@@ -499,6 +559,13 @@ export const createSharing = (host: SharingHost) => {
                 thread.inputs.set(message.sequence, message.input);
                 return drain(thread);
             }
+            case "received": {
+                const from = byNumber.get(message.from);
+                // The run's thread is gone: its input is of no use.
+                if (from === undefined) return post(thread, { protocol: protocolName, kind: "release", from: message.from, sequence: message.sequence });
+                from.moved.set(message.sequence, thread);
+                return drain(from);
+            }
             case "observe": return observe(thread, message.observer, message.subscription);
             case "unobserve": return unobserve(thread, message.observer);
             case "wake": return drain(thread);
@@ -513,10 +580,11 @@ export const createSharing = (host: SharingHost) => {
     const share = (port: Parameters<World["share"]>[0]): void => {
         const thread: Joined = {
             channel: threadChannel<ToJoined, ToWorld>(port), status: "joining", claims: [], control: null, views: [], waits: true,
-            names: new Map(), next: 1, completed: 0, finished: new Set(), inputs: new Map(), watching: new Map(), woken: false,
+            names: new Map(), next: 1, completed: 0, finished: new Set(), inputs: new Map(), moved: new Map(), peers: new Set(), watching: new Map(), woken: false,
             abort: new AbortController(), log: null, number: ++numbered, imported: new Set(), tasks: null,
         };
         threads.add(thread);
+        byNumber.set(thread.number, thread);
         show(thread, "joining");
         thread.channel.onMessage(message => { if (thread.status !== "gone" || message.kind === "leave") receive(thread, message); });
         thread.channel.onClose(() => gone(thread));

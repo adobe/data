@@ -1,7 +1,7 @@
 import type { Views } from '../../interface/registry/layout.js';
 import { copyValue, ensureCapacity, swapRemove, writeF32, writeF32Lanes, writeF64, writeI32, writeU32, type Archetype, type Storage } from './archetype.js';
 import { chunkShift } from './kernel.js';
-import { clearBuffer, despawnCommand, endOf, referenceAt, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
+import { addCommand, clearBuffer, despawnCommand, endOf, referenceAt, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
 import { readCell, writeCell } from './cells.js';
 import { commitBatches, commitStaged } from './batches.js';
 import { applyIndexChanges, cascadeReferences, indexChangesOf, type IndexChanges, type Written } from './cascade.js';
@@ -17,6 +17,7 @@ import { closureOf, derives, gainsOf } from './structure.js';
 import type { Plan } from './plan.js';
 import type { MoveLog } from './move-log.js';
 import { archetypeOf, defaultOf, movesOf, withComponent, withoutComponent, type State } from './state.js';
+import { releaseValue } from './transfers.js';
 
 /** Buffers queued for the next sync point, in merge order. Commands in guarded buffers can't touch the resource entity. */
 export type Queued = { readonly buffer: CommandBuffer; readonly guarded: boolean };
@@ -100,6 +101,25 @@ const withoutDependents = (state: State, to: Archetype, id: number): Archetype =
 };
 
 /**
+ * Releases the values a dropped add gives `transfer` components, which no component will hold: here, or on the joined
+ * thread filling them, which staged them. A drained buffer's values here are tags.
+ */
+const releaseDropped = (state: State, buffer: CommandBuffer, command: number): void => {
+    if (buffer.kinds[command] !== addCommand) return;
+    const end = endOf(buffer, command);
+    for (let k = buffer.starts[command]; k < end; k++) {
+        const id = buffer.ids[k];
+        if (!state.transfers[id]) continue;
+        const log = state.remote[id];
+        // A joined thread's own are staged there, released once it replays this sync point, which it's woken for.
+        if (log !== undefined) {
+            for (const channel of state.channels) if (channel.log === log) channel.dropped = true;
+        }
+        else if (buffer.bytes === null && buffer.values[k] !== state.starts[id]) releaseValue(buffer.values[k]);
+    }
+};
+
+/**
  * Plan: the net change for each entity, in issue order. Commands against dead entities do nothing. Reference values
  * written by commands go to `written`, to check once despawns are known.
  */
@@ -140,12 +160,14 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
                 if (entry >= 0) {
                     if (plan.entity[entry] !== entity || plan.despawned[entry] === 1) {
                         plan.dropped++;
+                        if (state.transferring) releaseDropped(state, buffer, command);
                         continue;
                     }
                 }
                 else {
                     if (locate(state.entities, entity) < 0) {
                         plan.dropped++;
+                        if (state.transferring) releaseDropped(state, buffer, command);
                         continue;
                     }
                     const from = state.entities.archetype[index];
@@ -547,12 +569,14 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     for (let k = 0; k < state.logs.length; k++) publishLog(state.logs[k]);
     endStructure(state.directory);
     state.syncing = null;
-    // Threads whose finalizers have new stops run them now, whether or not a task or observer would replay them.
+    // Threads whose finalizers have new stops run them now, whether or not a task or observer would replay them, as
+    // do threads with staged values to release.
     for (let k = 0; k < state.channels.length; k++) {
-        const { stops } = state.channels[k];
-        if (!stops.unwoken) continue;
-        stops.unwoken = false;
-        state.channels[k].wake();
+        const channel = state.channels[k];
+        if (!channel.stops.unwoken && !channel.dropped) continue;
+        channel.stops.unwoken = false;
+        channel.dropped = false;
+        channel.wake();
     }
 };
 

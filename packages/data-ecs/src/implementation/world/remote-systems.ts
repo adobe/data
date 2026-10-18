@@ -13,6 +13,7 @@ import { idOf, type Key, type State } from './state.js';
 import { logBoundedWord, logBoundWord, logSyncWord, type MoveLog } from './move-log.js';
 import { createStopWriter, freeStops, type StopWriter } from './stop-lists.js';
 import { freeTail, stampWritten, type Tail } from './tails.js';
+import { isHeld } from './transfers.js';
 import {
     completionCapacityWord, completionMessage, completionOffsetWord, completionSystems, completionWords, executedFlag, failedFlag,
     payloadCapacityWord, payloadCount, payloadInput, payloadOffsetWord, payloadSequence, payloadSync, payloadSystems, payloadWords, ranFlag,
@@ -85,6 +86,8 @@ export type TaskChannel = {
     readonly finalizerAt: (index: number) => FinalizerLeaf | undefined;
     /** Its finalizers' stop lists. */
     readonly stops: StopWriter;
+    /** Whether a command giving one of its staged `transfer` values dropped this sync point, so it's woken to release it. */
+    dropped: boolean;
     /** Wakes the thread, so it runs its finalizers for the stops just published. */
     readonly wake: () => void;
     /** At a sync point, once segments are drained and no task runs: empties the ring, growing it to what tasks needed. */
@@ -265,7 +268,10 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
             payloadView[base + systemTail] = tails ? system.tail?.block ?? 0 : 0;
             folds += system.foldCount;
         }
-        if (input) post({ protocol: "@adobe/data-ecs/join@1", kind: "task input", sequence: next, input: args });
+        // An input that moved to the thread is there already: the message names it.
+        if (input) post(isHeld(args)
+            ? { protocol: "@adobe/data-ecs/join@1", kind: "task input", sequence: next, input: undefined, held: [args.from, args.sequence] }
+            : { protocol: "@adobe/data-ecs/join@1", kind: "task input", sequence: next, input: args });
         completionView[completionMessage] = 0;
         if (tails) {
             Atomics.store(log.header, logBoundWord, payloadView[payloadSync]);
@@ -330,6 +336,7 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         placeFinalizer,
         finalizerAt: index => finalizers[index],
         stops,
+        dropped: false,
         wake,
         rewind: () => {
             if (!wrote || ended) return;

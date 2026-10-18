@@ -102,6 +102,8 @@ type CommandKey = {
     readonly own: boolean;
     readonly elsewhere: string | null;
     readonly start: unknown;
+    /** Whether it's declared `transfer`, so a staged value whose command drops is released. */
+    readonly transfer: boolean;
 };
 
 /** The system that ran a task's commands, for their checks' errors. */
@@ -278,6 +280,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
             number, layout, encoder: encoderOf(layout), own,
             elsewhere: layout.kind === "object" && !own ? `"${labelOf(key)}" lives on thread "${thread ?? "world"}", so a command on another thread gives it only its start or null.` : null,
             start: layout.kind === "constant" ? layout.value : defaultOf(key),
+            transfer: declaration.transfer === true,
         };
         commandKeys.set(first, entry);
         commandKeys.set(key, entry);
@@ -300,7 +303,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         }
         if (value === undefined || value === key.start) putStart(writer, number);
         else if (value === null) putNull(writer, number);
-        else if (key.own) putSlot(writer, number, stage(mirror, entity, number, value, sync));
+        else if (key.own) putSlot(writer, number, stage(mirror, entity, number, value, sync, key.transfer));
         else {
             running.error ??= new Error(key.elsewhere ?? "");
             return false;
@@ -385,7 +388,8 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
     /** Stages a value a spawn gives this thread's object, as its segment is written. */
     const slots: Slots = (component, entity, value) => {
         if (value === undefined || value === null || value === objectStart) return -1;
-        return commandKeysByNumber.get(component)?.own === true ? stage(mirror, entity, component, value, sync) : -1;
+        const key = commandKeysByNumber.get(component);
+        return key?.own === true ? stage(mirror, entity, component, value, sync, key.transfer) : -1;
     };
 
     /** Writes the running system's segment: its commands, its spawns, and the reservations it left unused. */
@@ -638,9 +642,12 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
     return {
         setup,
         setupFinalizers,
-        /** Runs the finalizers of stops published since this thread last replayed, if any, as it replays them. */
+        /**
+         * Runs the finalizers of stops published since this thread last replayed, if any, as it replays them; and
+         * releases staged `transfer` values whose commands dropped.
+         */
         finalize: (): void => {
-            if (finalizers.pending()) current();
+            if (finalizers.pending() || mirror.stagedTransfers > 0) current();
         },
         /** Once the world is disposed: finalizers run for the stops published, then for every row they match. */
         disposed: (): void => {

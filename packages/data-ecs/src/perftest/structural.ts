@@ -141,7 +141,7 @@ export const addFlagKernel = System.create({ name: "structural/addFlagKernel", k
     commands.add(row.entity, { [flag]: true });
 });
 
-export const removeFlagKernel = System.create({ name: "structural/removeFlagKernel", kernel: "cpu", components: { has: [index], has: [flag] } }, (row, { commands }) => {
+export const removeFlagKernel = System.create({ name: "structural/removeFlagKernel", kernel: "cpu", components: { has: [flag] } }, (row, { commands }) => {
     commands.remove(row.entity, flag);
 });
 

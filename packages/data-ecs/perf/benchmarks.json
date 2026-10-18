@@ -892,5 +892,32 @@
             "bytes": 128,
             "basis": "A round trip moves at least the two cache lines of the ring's posted and done words between cores."
         }
+    },
+    "emit main": {
+        "operation": "A kernel issuing an add for a tenth of its rows: hits, events or state changes found by a parallel pass.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 34,
+            "basis": "Each row reads 16 bytes; each tenth moves to a new archetype, about 180 bytes."
+        }
+    },
+    "emit workers": {
+        "operation": "A kernel issuing an add for a tenth of its rows: hits, events or state changes found by a parallel pass.",
+        "per": "rows",
+        "n": 1000000,
+        "typical": [
+            1000,
+            100000
+        ],
+        "best": {
+            "bytes": 34,
+            "basis": "Each row reads 16 bytes; each tenth moves to a new archetype, about 180 bytes.",
+            "on": "threads"
+        }
     }
 }

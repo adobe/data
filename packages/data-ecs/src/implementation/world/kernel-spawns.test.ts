@@ -86,7 +86,7 @@ describe("kernel spawns", () => {
     it("join main-thread spawns of the same archetype: the main thread's first, then the kernel's in row order", async () => {
         const world = createWorld({ [workers]: 0 });
         await world.run(seed, { count: 4 });
-        const frame = System.composite({ name: "kernelSpawnsTest/mixed", systems: [fromKernel, fromMain] });
+        const frame = System.create({ name: "kernelSpawnsTest/mixed", systems: [fromKernel, fromMain] });
         await world.run(frame);
         expect(await valuesOf(world)).toEqual([100, 101, 102, 0, 1, 2, 3]);
         await world.run(frame);

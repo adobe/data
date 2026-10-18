@@ -156,8 +156,10 @@ export const transformKernels = async (
     let spawning = false;
     const visit = (node: Node, nested: boolean): void => {
         const created = node.type === "CallExpression" ? createdBy(node, locals) : null;
-        if (node.type === "CallExpression" && created !== null) {
-            const [first, second] = node.arguments;
+        const [first, second] = node.type === "CallExpression" ? node.arguments : [];
+        // One argument that isn't a body makes a composite, of a list or a declaration: never a kernel, nor checked.
+        const composite = created === "system" && first !== undefined && second === undefined && !isFunction(first);
+        if (node.type === "CallExpression" && created !== null && !composite) {
             // A system that declares nothing is made from its body alone, which takes only its context.
             const alone = created === "system" && first !== undefined && isFunction(first) && second === undefined;
             const declaration = alone ? undefined : first;

@@ -97,7 +97,7 @@ describe("worker dispatch", () => {
         const original = WebAssembly.compile;
         let calls = 0;
         WebAssembly.compile = (bytes: BufferSource) => (++calls === 2 ? Promise.reject(new Error("injected")) : original(bytes));
-        await expect(world.run(System.composite({ name: "dispatchTest/tier/2", systems: [watch, later] }))).rejects.toThrow("injected");
+        await expect(world.run(System.create({ name: "dispatchTest/tier/2", systems: [watch, later] }))).rejects.toThrow("injected");
         WebAssembly.compile = original;
         await world.run(watch);
         observedRows = 0;
@@ -122,7 +122,7 @@ describe("worker dispatch", () => {
         expect(results).toEqual([0, 0, 0, 0, 0, 0]);
     }, 200000);
     for (const [name, systems] of [["dispatchTest/tier", [fastA, slowB]], ["dispatchTest/tier/3", [fastA, fastC]], ["dispatchTest/tier/4", [slowB, fastC]]] as const) it(`runs tiers of ${systems.map(s => s.name).join(",")}`, async () => {
-        const tier = System.composite({ name, systems: [...systems] });
+        const tier = System.create({ name, systems: [...systems] });
         const world = createWorld({ [workers]: 2 }, { minimumChunk: 64 });
         await world.run(seed);
         let result: unknown = "ok";
@@ -130,7 +130,7 @@ describe("worker dispatch", () => {
         expect(result).not.toBe("timeout");
     }, 200000);
     it("fast, message, fast kernels in one tier don't hang", async () => {
-        const tier = System.composite({ name: "dispatchTest/tier/5", systems: [fastA, slowB, fastC] });
+        const tier = System.create({ name: "dispatchTest/tier/5", systems: [fastA, slowB, fastC] });
         const world = createWorld({ [workers]: 2 }, { minimumChunk: 64 });
         await world.run(seed);
         let result: unknown = "ok";
@@ -139,7 +139,7 @@ describe("worker dispatch", () => {
     }, 200000);
 
     it("ring overflow followed by a message task in the same tier doesn't hang", async () => {
-        const tier = System.composite({ name: "dispatchTest/tier/6", systems: [fastA, slowB] });
+        const tier = System.create({ name: "dispatchTest/tier/6", systems: [fastA, slowB] });
         const world = createWorld({ [workers]: 1 }, { minimumChunk: 64 });
         await world.run(scatter);
         let result: unknown = "ok";

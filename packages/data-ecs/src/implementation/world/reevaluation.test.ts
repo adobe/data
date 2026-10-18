@@ -25,7 +25,7 @@ it("matches the keys and systems of a module evaluated again by id", async () =>
     const path = "./reevaluation.test-helper.js?again";
     const again: typeof import("./reevaluation.test-helper.js") = await import(/* @vite-ignore */ path);
     // Its key is the same component, and its system the same system, so a composite holds it once.
-    await world.run(System.composite({ name: "reevaluation/both", systems: [bump, again.bump] }));
+    await world.run(System.create({ name: "reevaluation/both", systems: [bump, again.bump] }));
     const [entity] = await toPromise(world.observe.select({ required: [again.score] }));
     expect((await toPromise(world.observe.entity(entity, { required: [again.score] })))?.[again.score]).toBe(2);
 });

@@ -37,7 +37,7 @@ declare module "@adobe/data-ecs" {
     interface Components { [position]: typeof positionTraits; [element]: typeof elementTraits }
 }
 export const move = System.create({ name: "exportsTest/move", components: { write: [position] } }, row => { row[position] += 1; });
-export const all = System.composite({ name: "exportsTest/all", systems: [move] });
+export const all = System.create({ name: "exportsTest/all", systems: [move] });
 export const draw = System.render({ name: "exportsTest/draw", shader: { accessors: {} } }, () => {});
 // How a world is created is the implementation's; the interface gives its type.
 declare const create: World.Create;
@@ -100,6 +100,21 @@ declare module "@adobe/data-ecs" {
 ${registration}
 `;
 
+/** A consumer with a system whose declaration lists a key in both read and write, and composites of conflicting inputs. */
+const misdeclared = `
+import { Component, System } from "@adobe/data-ecs";
+export const health = Symbol("exportsTest/health");
+const healthTraits = Component.register(health, { type: { type: "number" } });
+declare module "@adobe/data-ecs" {
+    interface Components { [health]: typeof healthTraits }
+}
+export const both = System.create({ components: { read: [health], write: [health] } }, () => {});
+const near = System.create({ input: { type: "object", properties: { distance: { type: "number" } } } }, () => {});
+const far = System.create({ input: { type: "object", properties: { distance: { type: "string" } } } }, () => {});
+export const listed = System.create([near, far]);
+export const declared = System.create({ systems: [near, far], after: [both] });
+`;
+
 describe("package exports", () => {
     beforeAll(() => {
         install();
@@ -108,6 +123,12 @@ describe("package exports", () => {
     it("let a consumer emit declarations for the values it makes from the public API", () => {
         expect(compile(consumer).messages).toEqual([]);
         expect(reachable(join(installed, "dist"), "index.d.ts").filter(internal)).toEqual([]);
+    }, 60_000);
+    it("report a misdeclared system, and a composite of conflicting members, at the mistake rather than as no overload matching", () => {
+        const reported = compile(misdeclared).messages;
+        expect(reported.some(message => message.includes("No overload matches"))).toBe(false);
+        expect(reported.filter(message => message.includes(`has a different type in another member of this composite.`))).toHaveLength(4);
+        expect(reported.some(message => message.startsWith("Type '[unique symbol]' is not assignable"))).toBe(true);
     }, 60_000);
     it("fail every registration to compile while a component, resource or trait is keyed by a string, naming the keys", () => {
         expect(compile(stringKeyed(`interface Components { "exportsTest/named": { type: number } }`)).messages.join("\n"))

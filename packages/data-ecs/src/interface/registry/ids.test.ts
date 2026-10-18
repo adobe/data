@@ -119,6 +119,6 @@ describe("declarations evaluated again", () => {
     it("schedule symbols of one id as one key", () => {
         const write = System.create({ name: "idsTest/write", components: { write: [score] } }, row => { row[score] = 1; });
         const read = System.create({ name: "idsTest/read", components: { read: [scoreAgain] } }, row => { void row[scoreAgain]; });
-        expect(() => scheduleOf(requireDefinition(System.composite({ name: "idsTest/unordered", systems: [write, read] })))).toThrow("both access");
+        expect(() => scheduleOf(requireDefinition(System.create({ name: "idsTest/unordered", systems: [write, read] })))).toThrow("both access");
     });
 });

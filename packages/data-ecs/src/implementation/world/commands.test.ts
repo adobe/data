@@ -242,7 +242,7 @@ describe("add and remove", () => {
         const changed: Entity[] = [];
         const watchAdded = System.create({ name: "commandsTest/watchAdded", components: { has: [score], added: [tag] } }, row => { added.push(row.entity); });
         const watchChanged = System.create({ name: "commandsTest/watchChanged", components: { has: [score], changed: [position] } }, row => { changed.push(row.entity); });
-        const watch = System.composite({ name: "commandsTest/watch", systems: [watchAdded, watchChanged] });
+        const watch = System.create({ name: "commandsTest/watch", systems: [watchAdded, watchChanged] });
         await world.run(watch);
         added.length = changed.length = 0;
         await run(commands => {

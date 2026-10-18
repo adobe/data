@@ -712,6 +712,15 @@ describe("program", () => {
     });
 });
 
+describe("composites", () => {
+    test("one argument to System.create that isn't a body is a composite, never a kernel", async () => {
+        const result = await transform(`const a = System.create({ name: "a" }, () => {});
+const listed = System.create([a]);
+const declared = System.create({ kernel: "cpu", systems: [a], components: { write: [score] } });`);
+        expect(result !== null && "failure" in result ? result.failure.message : result?.kernels ?? []).toEqual([]);
+    });
+});
+
 describe("lookups in the program", () => {
     const targets = (entity: number) => entity === 1 ? [3, [10, 20, 30]] : entity === 2 ? [4, [40, 50, 60]] : null;
     const declaration = (body: string, read = "[target]", lookup = "targets: { read: [mass, position] }") => `const kernel = System.create({ name: "a", kernel: "cpu",

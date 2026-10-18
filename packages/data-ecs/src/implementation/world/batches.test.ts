@@ -41,7 +41,7 @@ describe("staged spawns", () => {
         });
         const same = System.create({ name: "batchesTest/same", components: { added: [score] }, after: [early] }, () => { seen.same++; });
         const late = System.create({ name: "batchesTest/late", components: { added: [score] }, after: [spawn, same] }, () => { seen.late++; });
-        const frame = System.composite({ name: "batchesTest/edit", systems: [early, spawn, same, late] });
+        const frame = System.create({ name: "batchesTest/edit", systems: [early, spawn, same, late] });
         const world = createWorld({ [workers]: 0 });
         await world.run(frame);
         // Nothing saw the spawns during their own run.

@@ -179,11 +179,12 @@ const hit = System.create({ components: { read: [damage], write: [health] } }, r
 const heal = System.create({ components: { write: [health] }, after: [hit] }, row => {
     row[health] = Math.min(row[health] * 2, 10);
 });
-// Runs its members as one system, in their order; members with no order between them may run in parallel.
-const frame = System.composite({ systems: [heal, hit] });
+// A list of systems is a composite: it runs its members as one system, in their order; members without an order
+// between them may run in parallel. { systems, after, ... } declares one with a name or constraints.
+const frame = System.create([heal, hit]);
 ```
 
-[`06-scheduling.test.ts`](06-scheduling.test.ts#L18-L36)
+[`06-scheduling.test.ts`](06-scheduling.test.ts#L18-L37)
 
 ```ts
 // Phases are systems that do nothing; a system during one runs after what the phase follows and before what follows it.
@@ -195,10 +196,10 @@ const poison = System.create({ components: { write: [health] }, during: [update]
 const report = System.create({ components: { read: [health] }, during: [render] }, row => {
     seen.push(row[health]);
 });
-const phased = System.composite({ systems: [report, poison, update, render] });
+const phased = System.create([report, poison, update, render]);
 ```
 
-[`06-scheduling.test.ts`](06-scheduling.test.ts#L38-L55)
+[`06-scheduling.test.ts`](06-scheduling.test.ts#L39-L56)
 
 ### 7. Sync points
 
@@ -215,7 +216,7 @@ const spawn = System.create(({ commands }) => {
 const count = System.create({ components: { has: [health] }, resources: { write: [seen] }, after: [spawn] }, (row, { resources }) => {
     resources[seen] += 1;
 });
-const frame = System.composite({ systems: [spawn, count] });
+const frame = System.create([spawn, count]);
 ```
 
 [`07-sync-points.test.ts`](07-sync-points.test.ts#L20-L42)

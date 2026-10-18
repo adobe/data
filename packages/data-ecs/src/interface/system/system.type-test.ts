@@ -143,8 +143,8 @@ System.create({
     components: { changed: [position] },
 }, () => {});
 
-export const main = System.composite({ name: "test/main", systems: [integrate, follow, tally] });
-const moving = System.composite({ name: "test/moving", systems: [move] });
+export const main = System.create({ name: "test/main", systems: [integrate, follow, tally] });
+const moving = System.create({ name: "test/moving", systems: [move] });
 
 // A composite takes its members' input.
 check<Equal<typeof moving, System<{ readonly distance: number }>>>();
@@ -333,6 +333,6 @@ check<Equal<typeof bodyOnly, System>>();
 System.create(({ resources }) => { void resources; });
 // @ts-expect-error a body alone runs once per run, so it has no row
 System.create((row: { readonly entity: Entity }) => { void row; });
-export const unnamedAll = System.composite({ systems: [unnamed, bodyOnly] });
+export const unnamedAll = System.create([unnamed, bodyOnly]);
 check<Equal<typeof unnamedAll, System>>();
 System.render({ shader: { accessors: { place: position } } }, gpu => { void gpu.encoder; });

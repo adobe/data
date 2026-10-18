@@ -63,7 +63,7 @@ describe("System.create", () => {
         const other = System.create({ name: "typesSystemTest/twice", components: { write: [position] } }, row => { row[position] = 0; });
         expect(sameItem(first, again)).toBe(false);
         expect([first, again, other].map(labelOfItem)).toEqual(["typesSystemTest/twice", "typesSystemTest/twice#2", "typesSystemTest/twice#3"]);
-        expect(scheduleOf(requireDefinition(System.composite({ name: "typesSystemTest/twice", systems: [first, again] }))).tiers.flat()).toEqual([first, again]);
+        expect(scheduleOf(requireDefinition(System.create({ name: "typesSystemTest/twice", systems: [first, again] }))).tiers.flat()).toEqual([first, again]);
     });
     it("labels systems of one name by name and id, and takes a declaration of a registered id, the same, as the same system", () => {
         const declare = (id: string, write: boolean) => System.create(identify({ name: "typesSystemTest/linked", components: write ? { write: [position] } : { read: [position] } }, id), () => {});
@@ -75,10 +75,10 @@ describe("System.create", () => {
         expect([sameItem(first, again), sameItem(first, elsewhere), firstItemOf(again)]).toEqual([true, false, first]);
         expect(labelOfItem(again)).toBe("typesSystemTest/linked (a.ts#linked)");
         const write = System.create({ name: "typesSystemTest/afterLinked", components: { write: [position] }, after: [again] }, row => { row[position] = 0; });
-        const tiers = scheduleOf(requireDefinition(System.composite({ name: "typesSystemTest/linkedFrame", systems: [write, first, again] }))).tiers;
+        const tiers = scheduleOf(requireDefinition(System.create({ name: "typesSystemTest/linkedFrame", systems: [write, first, again] }))).tiers;
         expect(tiers).toEqual([[first], [write]]);
         expect(() => declare("a.ts#linked", true)).toThrow('Cannot declare "typesSystemTest/linked" (a.ts#linked): its id is another item\'s, with another declaration; if a module was evaluated again with a changed declaration, reload the page.');
-        expect(() => System.composite(identify({ name: "typesSystemTest/linked", systems: [first] }, "a.ts#linked"))).toThrow("its id is a system's");
+        expect(() => System.create(identify({ name: "typesSystemTest/linked", systems: [first] }, "a.ts#linked"))).toThrow("its id is a system's");
         expect(labelOfItem(declare("c.ts#linked", false))).toBe("typesSystemTest/linked (c.ts#linked)");
     });
     it("names a system declared without a name by its binding and id, or else by its kind numbered", () => {
@@ -89,7 +89,7 @@ describe("System.create", () => {
         expect(sameItem(System.create(identify(body, "setup.ts#spawnOnce")), alone)).toBe(true);
         const show = System.create(identify({ components: { read: [position] } }, "show.ts#show"), row => { void row[position]; });
         expect(labelOfItem(show)).toBe("show (show.ts#show)");
-        const [first, second] = [System.create(() => {}), System.composite({ systems: [show] })].map(labelOfItem);
+        const [first, second] = [System.create(() => {}), System.create({ systems: [show] })].map(labelOfItem);
         const number = Number(first?.slice("system #".length));
         expect([first, second]).toEqual([`system #${number}`, `system #${number + 1}`]);
         expect(labelOfItem(System.render({ shader: { accessors: {} } }, () => {}))).toBe(`system #${number + 2}`);
@@ -144,32 +144,43 @@ describe("System.create", () => {
     });
 });
 
-describe("System.composite", () => {
-    it("records a composite whose members may live on different threads", () => {
+describe("System.create of a composite", () => {
+    it("records a composite whose members may live on different threads, from its list or its declaration", () => {
         const show = System.create({ name: "typesSystemTest/showMember", components: { read: [node] } }, row => { row[node].hidden = true; });
         const name = System.create({ name: "typesSystemTest/nameMember", components: { write: [label] } }, row => { row[label] = ""; });
-        const frame = System.composite({ name: "typesSystemTest/frame", systems: [show, name] });
+        const frame = System.create({ name: "typesSystemTest/frame", systems: [show, name] });
         expect(definitionOf(frame)?.kind).toBe("composite");
-        expect(definitionOf(System.composite({ name: "typesSystemTest/frame", systems: [show] }))).not.toBe(definitionOf(frame));
+        expect(definitionOf(System.create({ name: "typesSystemTest/frame", systems: [show] }))).not.toBe(definitionOf(frame));
+        const listed = System.create([show, name]);
+        const listedDefinition = definitionOf(listed);
+        expect(listedDefinition?.kind === "composite" ? listedDefinition.declaration.systems : undefined).toEqual([show, name]);
+        expect(listed.name).toMatch(/^system #\d+$/);
+    });
+    it("tells a composite's declaration from a system's by its body", () => {
+        const untyped: (...parameters: never[]) => unknown = System.create;
+        expect(() => Reflect.apply(untyped, undefined, [{ name: "typesSystemTest/bodiless" }])).toThrow("A system needs a body, and a composite its systems.");
+        const leaf = Reflect.apply(untyped, undefined, [{ name: "typesSystemTest/leafWithSystems", systems: [] }, () => {}]);
+        expect(definitionOf(leaf)?.kind).toBe("system");
     });
     it("rejects members ordered in a cycle, and conflicting members with no order between them", () => {
         const first = System.create({ name: "typesSystemTest/first", components: { write: [position] } }, row => { row[position] += 1; });
         const second = System.create({ name: "typesSystemTest/second", components: { read: [position] }, after: [first] }, row => { void row[position]; });
         const third = System.create({ name: "typesSystemTest/third", components: { read: [position] } }, row => { void row[position]; });
-        expect(scheduleOf(requireDefinition(System.composite({ name: "typesSystemTest/ordered", systems: [second, first] }))).tiers.map(tier => tier.map(leaf => leaf.name))).toEqual([["typesSystemTest/first"], ["typesSystemTest/second"]]);
-        expect(() => System.composite({ name: "typesSystemTest/unordered", systems: [first, third] })).toThrow('Systems "typesSystemTest/first" and "typesSystemTest/third" both access "typesSystemTest/position" and one writes it');
+        expect(scheduleOf(requireDefinition(System.create({ name: "typesSystemTest/ordered", systems: [second, first] }))).tiers.map(tier => tier.map(leaf => leaf.name))).toEqual([["typesSystemTest/first"], ["typesSystemTest/second"]]);
+        expect(() => System.create({ name: "typesSystemTest/unordered", systems: [first, third] })).toThrow('Systems "typesSystemTest/first" and "typesSystemTest/third" both access "typesSystemTest/position" and one writes it');
         const looped = System.create({ name: "typesSystemTest/looped", before: [first], after: [second] }, () => {});
-        expect(() => System.composite({ name: "typesSystemTest/cycle", systems: [first, second, looped] })).toThrow("Ordering cycle");
-        expect(labelOfItem(System.composite({ name: "typesSystemTest/unordered", systems: [first] }))).toBe("typesSystemTest/unordered");
+        expect(() => System.create({ name: "typesSystemTest/cycle", systems: [first, second, looped] })).toThrow("Ordering cycle");
+        expect(labelOfItem(System.create({ name: "typesSystemTest/unordered", systems: [first] }))).toBe("typesSystemTest/unordered");
     });
     it("rejects a member no constructor returned, and an input field two members declare differently", () => {
-        expect(() => System.composite({ name: "typesSystemTest/forged", systems: [{ name: "typesSystemTest/showMember" }] })).toThrow('member "typesSystemTest/showMember" isn\'t a system a System constructor returned');
+        expect(() => System.create({ name: "typesSystemTest/forged", systems: [{ name: "typesSystemTest/showMember" }] })).toThrow('member "typesSystemTest/showMember" isn\'t a system a System constructor returned');
         const move = System.create({ name: "typesSystemTest/moveBy", input: { type: "object", properties: { distance: { type: "number" } } } }, () => {});
         const tag = System.create({ name: "typesSystemTest/tagBy", input: { type: "object", properties: { distance: { type: "string" } } } }, () => {});
-        const nested = System.composite({ name: "typesSystemTest/nested", systems: [tag] });
-        const composite: (declaration: object) => unknown = declaration => Reflect.apply(System.composite, undefined, [declaration]);
+        const nested = System.create({ name: "typesSystemTest/nested", systems: [tag] });
+        const untyped: (...parameters: never[]) => unknown = System.create;
+        const composite = (declaration: object): unknown => Reflect.apply(untyped, undefined, [declaration]);
         expect(() => composite({ name: "typesSystemTest/conflict", systems: [move, nested] })).toThrow('Systems "typesSystemTest/moveBy" and "typesSystemTest/tagBy" declare input field "distance" with different schemas.');
-        expect(labelOfItem(System.composite({ name: "typesSystemTest/conflict", systems: [move] }))).toBe("typesSystemTest/conflict");
+        expect(labelOfItem(System.create({ name: "typesSystemTest/conflict", systems: [move] }))).toBe("typesSystemTest/conflict");
     });
 });
 

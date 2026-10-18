@@ -90,7 +90,7 @@ const moveLater = System.create({ name: "gpuTest/moveLater", kernel: "gpu", comp
     row[position] = [px + vx, py + vy, pz + vz];
 });
 
-const turning = System.composite({ name: "gpuTest/turning", systems: [move, turn, moveLater] });
+const turning = System.create({ name: "gpuTest/turning", systems: [move, turn, moveLater] });
 
 const spawnNumbers = System.create({ name: "gpuTest/spawnNumbers" }, ({ commands }) => {
     for (const [c, a] of [[0, 0], [3, -2.5], [0xff00ff00, 2.5], [0xffffff00, 7], [0x80000000, -0.25]]) commands.spawn([code, amount])({ [code]: c, [amount]: a });
@@ -128,7 +128,7 @@ const follow = System.create({
     row[score] = leader(row[followed])?.[position][0] ?? -1;
 });
 
-const following = System.composite({ name: "gpuTest/following", systems: [move, follow] });
+const following = System.create({ name: "gpuTest/following", systems: [move, follow] });
 
 /** Despawns the first entity, moving the last into its row, then makes the sync point throw. */
 const poison = System.create({ name: "gpuTest/poison", components: { read: [position] } }, (row, { commands }) => {
@@ -152,7 +152,7 @@ const fail = System.render({ name: "gpuTest/fail", shader: { accessors: { place:
     throw new Error("draw failed");
 });
 
-const failing = System.composite({ name: "gpuTest/failing", systems: [move, fail] });
+const failing = System.create({ name: "gpuTest/failing", systems: [move, fail] });
 
 /** Math from three namespaces, inlined into a compute shader. */
 const transform = System.create({ name: "gpuTest/transform", kernel: "gpu", components: { read: [velocity], write: [position] } }, row => {
@@ -202,7 +202,7 @@ const entityScore = System.create({ name: "gpuTest/entityScore", kernel: "gpu", 
 let watched = 0;
 const watch = System.create({ name: "gpuTest/watch", components: { changed: [position] } }, () => { watched++; });
 
-const frame = System.composite({ name: "gpuTest/frame", systems: [move, reset, moveAgain] });
+const frame = System.create({ name: "gpuTest/frame", systems: [move, reset, moveAgain] });
 
 const device = async (): Promise<GPUDevice> => {
     const adapter = await navigator.gpu.requestAdapter();
@@ -575,7 +575,7 @@ describe("render systems", () => {
 }`,
         });
         const pipeline = own.createComputePipeline({ layout: own.createPipelineLayout({ bindGroupLayouts: [Gpu.layout(own), outputLayout] }), compute: { module, entryPoint: "main" } });
-        const frameWithCopy = System.composite({ name: "gpuTest/frame/2", systems: [move, copy] });
+        const frameWithCopy = System.create({ name: "gpuTest/frame/2", systems: [move, copy] });
         await world.run(spawn);
         await world.run(frameWithCopy);
         const staging = own.createBuffer({ size: output.size, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST });

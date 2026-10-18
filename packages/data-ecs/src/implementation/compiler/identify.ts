@@ -55,7 +55,7 @@ const isSymbolCall = (node: Expression | null | undefined): node is Expression =
 export type Namespace = "System" | "Rule" | "Finalizer";
 
 const constructors: { readonly [N in Namespace]: ReadonlySet<string> } = {
-    System: new Set(["create", "render", "composite"]),
+    System: new Set(["create", "render"]),
     Rule: new Set(["create"]),
     Finalizer: new Set(["create", "changes"]),
 };
@@ -106,7 +106,7 @@ const uniqueName = (code: string, base: string): string => {
 };
 
 /** Whether code may hold a constructor call worth resolving its imports for. */
-const mayDeclare = /\.(create|render|composite|changes)\(/;
+const mayDeclare = /\.(create|render|changes)\(/;
 
 /**
  * Gives each top-level `Symbol(...)` declaration an id, its module's id and its binding (`src/keys.ts#position`, or

@@ -21,7 +21,7 @@ const elementTraits = Component.register(element, { type: Component.object<HTMLE
 const scaleTraits = Resource.register(scale, { type: { type: "number", default: 1 } });
 export const move = System.create({ name: "indexTypeTest/move", components: { write: [position] }, resources: { read: [scale] } }, (row, { resources }) => { row[position] += resources[scale]; });
 export const show = System.create({ name: "indexTypeTest/show", components: { read: [position], write: [element] } }, row => { row[element].textContent = String(row[position]); });
-export const all = System.composite({ name: "indexTypeTest/all", systems: [move, show] });
+export const all = System.create({ name: "indexTypeTest/all", systems: [move, show] });
 export const draw = System.render({ name: "indexTypeTest/draw", shader: { accessors: { place: position } } }, () => {});
 export const release = Finalizer.create({ name: "indexTypeTest/release", components: { read: [element] } }, row => { row[element].remove(); });
 Rule.create({ name: "indexTypeTest/slots", components: { has: [position] }, derive: [slot] });

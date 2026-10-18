@@ -268,7 +268,7 @@ describe("observing entities", () => {
             world.observe.entity(target, { required: [weight] })(value => seen.push(value));
         });
         const later = System.create({ name: "observersTest/laterWeigh", components: { write: [weight] }, after: [subscribe] }, row => { row[weight] += 2; });
-        await world.run(System.composite({ name: "observersTest/subscribeThenWeigh", systems: [subscribe, later] }));
+        await world.run(System.create({ name: "observersTest/subscribeThenWeigh", systems: [subscribe, later] }));
         await world.run(warm);
         expect(seen).toEqual([{ [weight]: 1 }, { [weight]: 3 }]);
     });
@@ -445,7 +445,7 @@ describe("observing queries", () => {
             world.observe.count({ required: [score], where: { [score]: { "<": 0 } } })(count => seen.push(count));
         });
         const later = System.create({ name: "observersTest/later", components: { write: [score] }, after: [subscribe] }, row => { row[score] = -row[score]; });
-        await world.run(System.composite({ name: "observersTest/subscribeThenWrite", systems: [subscribe, later] }));
+        await world.run(System.create({ name: "observersTest/subscribeThenWrite", systems: [subscribe, later] }));
         expect(seen).toEqual([0, 3]);
     });
 

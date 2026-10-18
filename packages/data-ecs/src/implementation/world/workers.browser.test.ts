@@ -122,7 +122,7 @@ const follow = System.create({
     row[offset] = other === null ? -1 : x - other[position][0];
 }, );
 
-const main = System.composite({ name: "workersTest/main", systems: [integrate, split, follow] });
+const main = System.create({ name: "workersTest/main", systems: [integrate, split, follow] });
 
 /** Every row writes the same entity, so only merge order decides which value survives. */
 const stamp = System.create({

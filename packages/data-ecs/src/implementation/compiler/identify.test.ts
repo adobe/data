@@ -82,15 +82,18 @@ describe("identify, for systems, rules and finalizers", () => {
         const result = await identify([
             `import { System as S, Rule, Finalizer } from "@adobe/data-ecs";`,
             `const move = S.create({ name: "move" }, () => {});`,
-            `export const draw = S.render({ name: "draw" }, () => {}), main = S.composite({ name: "main" });`,
+            `export const draw = S.render({ name: "draw" }, () => {}), main = S.create({ name: "main", systems: [move] });`,
+            `const all = S.create([move]);`,
             `let shown = Rule.create({ name: "shown" });`,
             `var release = Finalizer.create({ name: "release" }, () => {});`,
             `export default Finalizer.changes({ name: "save" }, () => {});`,
         ].join("\n"));
         expect(declared(result?.code)).toEqual([
-            [`{ name: "move" }`, "src/keys.ts#move"], [`{ name: "draw" }`, "src/keys.ts#draw"], [`{ name: "main" }`, "src/keys.ts#main"],
+            [`{ name: "move" }`, "src/keys.ts#move"], [`{ name: "draw" }`, "src/keys.ts#draw"], [`{ name: "main", systems: [move] }`, "src/keys.ts#main"],
             [`{ name: "shown" }`, "src/keys.ts#shown"], [`{ name: "release" }`, "src/keys.ts#release"], [`{ name: "save" }`, "src/keys.ts#default"],
         ]);
+        // A composite's list of members takes its id as a declaration does.
+        expect(result?.code).toContain(`identify$([move], "src/keys.ts#all")`);
     });
     test("records each id where the registry takes it, passing the same declaration", async () => {
         const result = await identify(`import { System } from "@adobe/data-ecs";\nconst move = System.create({ name: "move" });`);

@@ -63,33 +63,51 @@ type Validate<D extends Declaration> =
 /** The body of a system that declares nothing, which runs once per run with its commands. */
 type Alone = (context: { readonly commands: Commands }) => void;
 
+/** A composite: its list of members, or its declaration. */
+type Composition = readonly System<unknown>[] | CompositeDeclaration;
+
+/** A composite's members. */
+type MembersOf<C> = C extends CompositeDeclaration ? C["systems"] : C;
+
+/** A member whose input has a field of a different type than another member's becomes the error saying so. */
+type Checked<C> = C extends Alone ? unknown : C extends CompositeDeclaration ? { readonly systems: CheckMembers<C["systems"]> } : CheckMembers<C>;
+
 /**
- * Declares a system and returns it; nothing runs. A system that declares nothing is created from its body alone, which
- * runs once per run with its commands. Throws if it names a key that isn't registered as its kind, lists a key in both
- * `read` and `write`, writes a reference, a lookup reads a component it writes, its object components and resources
- * live on different threads, or its reductions, conditions, `up` or placement can't hold.
+ * Declares a system and returns it; nothing runs. The arguments tell the forms apart:
+ * - `create(body)`: a system that declares nothing, whose body runs once per run with its commands.
+ * - `create(declaration, body)`: a system.
+ * - `create([move, collide])`: a composite of the systems listed, which may live on different threads.
+ * - `create({ systems: [move, collide], after: [input] })`: a composite with a name or constraints.
+ *
+ * Each run passes a composite's members one input, with every field of theirs. Throws if a system names a key that
+ * isn't registered as its kind, lists a key in both `read` and `write`, writes a reference, a lookup reads a component
+ * it writes, its object components and resources live on different threads, or its reductions, conditions, `up` or
+ * placement can't hold; or if a composite's member isn't a system a constructor returned, or two members declare an
+ * input field with different schemas.
+ *
+ * One argument, a body or a composite, is one overload, so a mistake in it is reported where it is rather than as no
+ * overload matching.
  */
-export function create(body: Alone): System;
 export function create<const D extends Declaration>(declaration: D & Validate<D> & OneThread<ThreadsOf<D>>, body: Body<D>): System<InputOf<D>>;
-export function create(first: Declaration | Leaf["body"], second?: Leaf["body"]): System<unknown> {
+export function create<const C extends Alone | Composition>(only: C & Checked<C>): C extends Alone ? System : System<CompositeInputOf<MembersOf<C>>>;
+export function create(first: Declaration | Leaf["body"] | readonly System<unknown>[] | CompositeDeclaration, second?: Leaf["body"]): System<unknown> {
+    // The plugin gives its id to the call's first argument: the declaration, the members, or the body made into a system alone.
+    const id = takeIdOfDeclaration(first);
+    if (isList(first)) return compose({ systems: first }, id);
+    if (typeof first !== "function" && second === undefined && "systems" in first) return compose(first, id);
     const declaration: Declaration = typeof first === "function" ? {} : first;
     const body = typeof first === "function" ? first : second;
-    if (body === undefined) throw new Error("A system needs a body.");
-    // The plugin gives its id to the call's first argument: the declaration, or the body made into a system alone.
-    const id = takeIdOfDeclaration(first);
+    if (body === undefined) throw new Error("A system needs a body, and a composite its systems.");
     const system: Leaf & System<unknown> = { kind: "system", name: nameOf(declaration.name, id, "system"), declaration, body };
     checkLeaf(system);
     claimSystem(system, id);
     return system;
 }
 
-/**
- * Declares a system made of subsystems, which may live on different threads, and returns it. Throws if a member isn't
- * a system a constructor returned, or two members declare an input field with different schemas.
- */
-export const composite = <const D extends CompositeDeclaration>(declaration: D & { readonly systems: CheckMembers<D["systems"]> }): System<CompositeInputOf<D["systems"]>> => {
-    const id = takeIdOfDeclaration(declaration);
-    const system: Composite & System<CompositeInputOf<D["systems"]>> = { kind: "composite", name: nameOf(declaration.name, id, "system"), declaration };
+const isList = (value: unknown): value is readonly System<unknown>[] => Array.isArray(value);
+
+const compose = (declaration: CompositeDeclaration, id: string | undefined): System<unknown> => {
+    const system: Composite & System<unknown> = { kind: "composite", name: nameOf(declaration.name, id, "system"), declaration };
     checkComposite(system);
     claimSystem(system, id);
     return system;

@@ -74,7 +74,7 @@ const missing = attachKernel(
     { columns: [], shapes: [], resources: [], lookups: [], keys: [], spawns: [], url: "/@missing/kernel.js", program: null, reductions: [], reducedShapes: [] },
 );
 
-const main = System.composite({ name: "createTest/main", systems: [spawn, move, watch] });
+const main = System.create({ name: "createTest/main", systems: [spawn, move, watch] });
 
 const positions = async (world: World): Promise<Vec2[]> =>
     (await readEach(world, await select(world, { required: [position], order: { [position]: true } }), position)).map(value => value ?? [NaN, NaN]);
@@ -187,8 +187,8 @@ describe("World.create", () => {
 
     it("throws at creating a composite with an unordered conflict, naming nothing", () => {
         const push = System.create({ name: "createTest/push", components: { write: [position] } }, row => { row[position] = [0, 0]; });
-        expect(() => System.composite({ name: "createTest/conflicted", systems: [move, push] })).toThrow('"createTest/move" and "createTest/push"');
-        expect(() => System.composite({ name: "createTest/conflicted", systems: [move] })).not.toThrow();
+        expect(() => System.create({ name: "createTest/conflicted", systems: [move, push] })).toThrow('"createTest/move" and "createTest/push"');
+        expect(() => System.create({ name: "createTest/conflicted", systems: [move] })).not.toThrow();
     });
 
     it("gives a body's context only the kinds its declaration declares", async () => {
@@ -248,7 +248,7 @@ describe("World.create", () => {
         const later = System.create({ name: "createTest/later", after: [fails] }, () => {});
         await using world = createWorld();
         expect(await world.run(doomed)).toEqual({ failures: [], skipped: [], dropped: 2 });
-        const report = await world.run(System.composite({ name: "createTest/failedTier", systems: [fails, later] }));
+        const report = await world.run(System.create({ name: "createTest/failedTier", systems: [fails, later] }));
         expect(report.skipped).toEqual(["createTest/later"]);
         expect(report.failures.map(failure => failure.name)).toEqual(["createTest/failsFirst"]);
     });

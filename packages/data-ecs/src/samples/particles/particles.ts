@@ -71,7 +71,7 @@ export const setDelta = System.create({
     resources[delta] = input.seconds;
 });
 
-export const main = System.composite({ name: "particles/main", systems: [spawn, gravity, integrate] });
+export const main = System.create({ name: "particles/main", systems: [spawn, gravity, integrate] });
 
 export const frame = async (world: World, seconds: number): Promise<readonly Vec3[]> => {
     await world.run(setDelta, { seconds });

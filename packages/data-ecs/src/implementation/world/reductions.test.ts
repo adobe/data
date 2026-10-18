@@ -105,7 +105,7 @@ const lightMass = System.create({ name: "reductionsTest/light", components: { re
 const reader = System.create({ name: "reductionsTest/reader", resources: { read: [total], write: [seen] } }, ({ resources }) => {
     resources[seen] = resources[total];
 });
-const frame = System.composite({ name: "reductionsTest/frame", systems: [reader, heavyMass, lightMass] });
+const frame = System.create({ name: "reductionsTest/frame", systems: [reader, heavyMass, lightMass] });
 
 const weigh = System.create({ name: "reductionsTest/weigh", components: { write: [mass], has: [heavy] } }, row => { row[mass] = 1; });
 const kernelChanged = System.create({ name: "reductionsTest/changed", kernel: "cpu", components: { read: [mass], changed: [mass] }, reduce: { [total]: "+" } }, (row, { reduce }) => {
@@ -264,7 +264,7 @@ describe("reductions", () => {
         const registrar = createRegistrar(state);
         // A declaration the build doesn't see is a kernel it didn't compile, which only a world's registration finds.
         const uncompiled = { name: "reductionsTest/other/6", kernel: "cpu", components: { read: [mass] } } as const;
-        const both = System.composite({ name: "reductionsTest/both", systems: [kernel, System.create(uncompiled, row => { void row[mass]; })] });
+        const both = System.create({ name: "reductionsTest/both", systems: [kernel, System.create(uncompiled, row => { void row[mass]; })] });
         const definition = (system: System<unknown>) => {
             const found = definitionOf(system);
             if (found === undefined) throw new Error("not a system");

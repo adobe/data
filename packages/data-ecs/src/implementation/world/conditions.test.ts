@@ -42,7 +42,7 @@ const valueTraits = Component.register(value, { type: { type: "number" } });
 const pause = System.create({ name: "conditionsTest/pause", resources: { write: [paused] } }, ({ resources }) => { resources[paused] = true; });
 const tick = System.create({ name: "conditionsTest/tick", resources: { not: [paused], write: [ticks] } }, ({ resources }) => { resources[ticks] += 1; });
 const afterTick = System.create({ name: "conditionsTest/afterTick", resources: { write: [after] }, after: [tick] }, ({ resources }) => { resources[after] += 1; });
-const frame = System.composite({ name: "conditionsTest/frame", systems: [tick, afterTick] });
+const frame = System.create({ name: "conditionsTest/frame", systems: [tick, afterTick] });
 const grow = System.create({ name: "conditionsTest/grow", kernel: "cpu", components: { write: [value] }, resources: { not: [paused] } }, row => {
     row[value] = row[value] + 1;
 });

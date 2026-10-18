@@ -29,7 +29,7 @@ const spawn = System.create(({ commands }) => {
 const count = System.create({ components: { has: [health] }, resources: { write: [seen] }, after: [spawn] }, (row, { resources }) => {
     resources[seen] += 1;
 });
-const frame = System.composite({ systems: [spawn, count] });
+const frame = System.create([spawn, count]);
 
 it("applies commands at the sync point that ends each run", async () => {
     await using world = createWorld();

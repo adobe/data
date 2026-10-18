@@ -62,7 +62,7 @@ System.render({ name: "threadsTypeTest/drawNode", resources: { read: [document] 
 // A composite's members may live on different threads.
 const render = System.create({ name: "threadsTypeTest/renderMember", components: { write: [node] } }, () => {});
 const play = System.create({ name: "threadsTypeTest/playMember", components: { write: [audio] } }, () => {});
-export const frame = System.composite({ name: "threadsTypeTest/frame", systems: [render, play] });
+export const frame = System.create({ name: "threadsTypeTest/frame", systems: [render, play] });
 
 // Finalizers too run on one thread.
 Finalizer.create({ name: "threadsTypeTest/release", components: { read: [node] }, resources: { write: [document] } }, () => {});

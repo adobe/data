@@ -47,7 +47,7 @@ describe("systems, rules and finalizers of one name", () => {
         const c = System.create({ name: "namesTest/linked", components: { read: [value] }, after: [b] }, row => { ran.push(`c${row[value]}`); });
         await using world = createWorld({ [workers]: 0 });
         await world.run(spawn);
-        const report = await world.run(System.composite({ name: "namesTest/frame", systems: [c, b, a] }));
+        const report = await world.run(System.create({ name: "namesTest/frame", systems: [c, b, a] }));
         expect(ran).toEqual(["a", "b"]);
         expect(report.failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "system", name: "namesTest/linked#6", message: "b failed" }]);
         expect(report.skipped).toEqual(["namesTest/linked#7"]);

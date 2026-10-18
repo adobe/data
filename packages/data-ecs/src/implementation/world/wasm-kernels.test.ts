@@ -164,7 +164,7 @@ const chase = System.create({
     row[score] = row[score] + (other[flipped] ? x : y);
 });
 
-const main = System.composite({ name: "wasmTest/main", systems: [integrate, bounce, tally, drift, react, chase] });
+const main = System.create({ name: "wasmTest/main", systems: [integrate, bounce, tally, drift, react, chase] });
 
 const snapshotted = [position, velocity, bounces, flipped, score] as const;
 

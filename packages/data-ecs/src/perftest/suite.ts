@@ -164,11 +164,11 @@ export const chain6 = System.create({ name: "suite/chain6", kernel: "cpu", compo
     const [x, y, z] = row[velocity];
     row[velocity] = [x * 0.99, y * 0.99, z * 0.99];
 });
-export const chain = System.composite({ name: "suite/chain", systems: [chain1, chain2, chain3, chain4, chain5, chain6] });
+export const chain = System.create({ name: "suite/chain", systems: [chain1, chain2, chain3, chain4, chain5, chain6] });
 
 /** Fifty small main-thread systems in one tier, each reading every row. */
 let total = 0;
-export const smalls = System.composite({
+export const smalls = System.create({
     name: "suite/smalls",
     systems: Array.from({ length: 50 }, (_, i) => System.create({ name: `suite/small${i}`, components: { read: [position] } }, row => {
         total += row[position][0];
@@ -211,7 +211,7 @@ export const reduce = System.create({ name: "suite/reduce", kernel: "cpu", compo
 export const idle = System.create({ name: "suite/idle", components: { has: [unused] } }, () => {});
 
 /** Fifty systems no entity matches, in one tier. */
-export const idles = System.composite({
+export const idles = System.create({
     name: "suite/idles",
     systems: Array.from({ length: 50 }, (_, i) => System.create({ name: `suite/idle${i}`, components: { has: [unused] } }, () => {})),
 });

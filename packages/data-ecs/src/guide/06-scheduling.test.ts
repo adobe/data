@@ -23,8 +23,9 @@ const hit = System.create({ components: { read: [damage], write: [health] } }, r
 const heal = System.create({ components: { write: [health] }, after: [hit] }, row => {
     row[health] = Math.min(row[health] * 2, 10);
 });
-// A composite runs its members as one system, in their order; members without an order between them may run in parallel.
-const frame = System.composite({ systems: [heal, hit] });
+// A list of systems is a composite: it runs its members as one system, in their order; members without an order
+// between them may run in parallel. { systems, after, ... } declares one with a name or constraints.
+const frame = System.create([heal, hit]);
 
 it("orders a composite's members by their constraints", async () => {
     await using world = createWorld();
@@ -45,7 +46,7 @@ const seen: number[] = [];
 const report = System.create({ components: { read: [health] }, during: [render] }, row => {
     seen.push(row[health]);
 });
-const phased = System.composite({ systems: [report, poison, update, render] });
+const phased = System.create([report, poison, update, render]);
 
 it("orders systems during phases by the order of the phases", async () => {
     await using world = createWorld();

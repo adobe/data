@@ -13,7 +13,7 @@ declare module "@adobe/data-ecs" {
 
 Component.register(position, { type: Vec3.schema });
 
-// `input` is a schema for a read-only value passed to each run, so `(name, input)` is a replicable transaction.
+// `input` is a schema for a read-only value passed to each run, so a system and its input are a replicable transaction.
 const place = System.create({
     name: "guide/input/place",
     input: { type: "object", properties: { x: { type: "number" }, count: { type: "integer" } } },

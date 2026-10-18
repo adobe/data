@@ -25,13 +25,15 @@ with the reasoning behind each rule.
 18. [Changes finalizers](#18-changes-finalizers)
 19. [Loading resources asynchronously](#19-loading-resources-asynchronously)
 20. [Ticks](#20-ticks)
-21. [Reference](#21-reference)
+21. [Identity and ids](#21-identity-and-ids)
+22. [Reference](#22-reference)
 
 ## 1. Setup
 
 The Vite plugin compiles kernel systems at build time and checks that every system's declaration lists exactly what
-its body uses: a listed key the body never uses fails the build. It also gives every top-level `Symbol(...)` declaration
-an id (section 2), and adds itself to worker bundles. Workers share memory, so pages need cross-origin isolation.
+its body uses: a listed key the body never uses fails the build. It also gives ids to top-level `Symbol(...)`
+declarations (section 2) and to top-level systems, rules and finalizers (section 21), and adds itself to worker
+bundles. Workers share memory, so pages need cross-origin isolation.
 
 ```ts
 import { kernelPlugin } from "@adobe/data-ecs/compiler";
@@ -110,12 +112,12 @@ Example: [`01-components.test.ts`](src/guide/01-components.test.ts#L6-L42).
 - **Registration must match the declaration**, trait for trait, with `type` a schema for the declared type. Otherwise it doesn't compile.
 - **Values that aren't data,** such as a `Blob`, an `HTMLElement` or a `GPUDevice`, are declared by their type alone: registration leaves `type` out, as `Component.register(element, {})`, and a resource gives its `default` on the declaration unless its type allows `null`. The world stores them as they are, so only main-thread systems use them.
 - **`World.create()` returns the world,** and `await using` disposes it; the TypeScript `lib` needs `ESNext.Disposable`. `World.create({ [gravity]: -1.6 })` starts resources at other values than their defaults, any but `clock` and `report`, which only the world writes. Built-in resources are imported keys too: `World.create({ [workers]: 0 })`.
-- **Systems are checked when they're created,** against the components and resources they name, which their modules must register first; a world then registers them on their first run there, loading their kernels, and the run rejects if that fails. Rules and finalizers apply in every world (sections 13 and 16).
-- **A system is its name:** what `System.create` returns is typed as its `name` and the input `run` takes with it, nothing more.
-- **Names are program-wide:** a second system, rule or finalizer with a name throws when it's created, unless its declaration is the same, its keys matching by id, as when a module is evaluated again. A system declared again is a new system; a rule declared again is the one already recorded; a finalizer keeps its place in every world, with the new body.
+- **Systems are checked when they're created,** against the components and resources they name, which their modules must register first; a world then registers them on their first run there, loading their kernels, and the run rejects if that fails. Rules and finalizers apply in every world (sections 13 and 17).
+- **A system is the value `System.create` returns,** typed as its `name` and the input `run` takes with it, nothing more.
+- **Names are labels,** required and not unique: two systems, rules or finalizers may share one and are still two (section 21).
 - **`Entity` is a branded number.** `Entity.none` names no entity: it's what zeroed memory and entity defaults hold, and a lookup of it returns null.
-- **Keys are symbols,** so two keys never collide, even with one description. Strings, `Symbol.for` symbols and well-known symbols aren't keys; a command reads values only by its components' keys, so others are ignored, and a string key in a literal spawn or add fails the build.
-- **Ids:** the plugin gives each top-level `Symbol(...)` declaration (`const`, `let`, `var`, exported or not, and `export default Symbol()`) an id: the name of the nearest `package.json` above its module, the module's path in that package, and its binding, as `my-app/src/keys.ts#position`, so a workspace-linked package names no directory outside it; without a named package, a dependency's package name and path, or the path from the project root. A module evaluated again makes new symbols with the same ids; each, registered with the same kind and declaration, is the key already registered, so worlds store both as one component, and give values by the newest. Errors and reports name a key by its description while no other registered key has it, else by its id, and without one by its description numbered by registration. Symbols made elsewhere (in functions, blocks, TypeScript namespaces, class fields or CommonJS), or where `Symbol` isn't the global, have no id, and are compared by identity alone.
+- **Keys are plain symbols,** typed `Component.Key`, `Resource.Key` and `Trait.Key`, so two keys never collide, even with one description. Strings, `Symbol.for` symbols and well-known symbols aren't keys; a command reads values only by its components' keys, so others are ignored, and a string key in a literal spawn or add fails the build.
+- **Ids:** the plugin gives each top-level `Symbol(...)` declaration (`const`, `let`, `var`, exported or not, and `export default Symbol()`) an id: the name of the nearest `package.json` above its module, the module's path in that package, and its binding, as `my-app/src/keys.ts#position`, so a workspace-linked package names no directory outside it; without a named package, a dependency's package name and path, or the path from the project root. A module evaluated again makes new symbols with the same ids; each, registered with the same kind and declaration, is the key already registered, so worlds store both as one component, and give values by the newest. Errors and reports name a key by its description while no other registered key has it, else by its id, and without one by its description numbered by registration. Symbols made elsewhere (in functions, blocks, TypeScript namespaces, class fields or CommonJS), or where `Symbol` isn't the global, have no id, and are compared by identity alone. Systems, rules and finalizers get ids the same way (section 21).
 - **Rejected:** a key registered again as another kind or with a different declaration, and a symbol whose id is a key's of another kind or declaration, as a module evaluated again after its declaration changed makes it, at registration; a string key anywhere in `Components`, `Resources` or `Traits` (but the built-in traits), which makes every registration fail to compile. The same declaration again is accepted.
 
 ## 3. Systems
@@ -185,6 +187,7 @@ const phased = System.composite({ name: "guide/scheduling/phased", systems: [rep
 Example: [`03-scheduling.test.ts`](src/guide/03-scheduling.test.ts#L42-L60).
 
 - **Constraints take systems:** `before`, `after` and `during` list the systems themselves, imported from their modules. When two modules import each other, one of them declares the order.
+- **Members flatten:** a system listed twice, as one value or as values of one id (section 21), is one member, the first reached. Systems that only share a name are different systems.
 - **During a composite:** a system runs after what the composite follows and before what follows it, not between its members.
 - **Rejected:** two members that both write a component or resource, or where one reads what the other writes, with no ordering path between them, at `System.composite`. That includes two such systems during the same phase, which need an order between them. A `during` that contradicts `before` or `after` is an ordering cycle.
 - **Reductions are the exception:** contributors to one resource need no order between them, and its readers run after all of them (section 10).
@@ -248,7 +251,7 @@ Example: [`05-lookups.test.ts`](src/guide/05-lookups.test.ts#L22-L45).
 ## 7. Input
 
 `input` is an object schema of named fields for a read-only value passed to each run, as
-`world.run(system, input)`, and read as the context's `input`. A system name and its input make a replicable
+`world.run(system, input)`, and read as the context's `input`. A system and its input make a replicable
 transaction.
 
 ```ts
@@ -306,7 +309,7 @@ Example: [`07-sync-points.test.ts`](src/guide/07-sync-points.test.ts#L24-L55).
 - **`add` and `remove`** take one component, with its value for an add (none for a tag), or one list, with its values for an add as a spawn takes them. An add replaces a value the entity has, marking it changed. Commands never name a derived component; a key that isn't a component they may name, or one listed twice, throws in the issuing system before anything is queued.
 - **Literal values pass positionally:** the plugin rewrites `commands.spawn(components)({ ... })` and `commands.add(entity, components, { ... })` with literal keys in a main-thread system into code that builds no values object.
 - **Commands against dead entities do nothing;** the run's report counts them as `dropped`.
-- **`run()` resolves to a report:** `failures` lists each system, finalizer, GPU work, observer or thread that failed, with its `kind`, `name`, `message` and `stack`, and `skipped` the systems of tiers after a failure. It rejects only when the run can't happen or finish: registration fails, the world is disposed, its GPU device is lost, or the sync point can't apply a command's value.
+- **`run()` resolves to a report:** `failures` lists each system, finalizer, GPU work or observer that failed, with its `kind` (`"system"`, `"finalizer"`, `"gpu"` or `"observer"`), `name`, its label (section 21), `message` and `stack`, and `skipped` the labels of the systems of tiers after a failure. It rejects only when the run can't happen or finish: registration fails, the world is disposed, its GPU device is lost, or the sync point can't apply a command's value.
 
 ## 9. Kernels
 
@@ -327,16 +330,22 @@ const chase = System.create({
     row[velocity] = steer(row[velocity], Vec3.subtract(other[position], row[position]), 2);
     // A kernel builds tuple values from their leaves.
     const [x, y, z] = row[position];
-    if (Vec3.distance(other[position], row[position]) < 1) commands.spawn([position, spark])({ [position]: [x, y, z] });
+    if (Vec3.distance(other[position], row[position]) < 1) commands.spawn(sparks)({ [position]: [x, y, z] });
 });
 ```
 
-Example: [`08-kernels.test.ts`](src/guide/08-kernels.test.ts#L31-L61), with the inlined helper in
-[`08-steer.ts`](src/guide/08-steer.ts).
+`sparks` is a list imported from another module, which the build reads there:
+
+```ts
+export const sparks = Archetype.create([position, spark]);
+```
+
+Example: [`08-kernels.test.ts`](src/guide/08-kernels.test.ts#L26-L56), with the inlined helper in
+[`08-steer.ts`](src/guide/08-steer.ts) and the list in [`08-sparks.ts`](src/guide/08-sparks.ts#L16-L17).
 
 - **The subset** a kernel body may use is in [`src/implementation/compiler/subset.md`](src/implementation/compiler/subset.md). The build rejects anything else, with a message at the code.
 - **Math types:** `Vec2`, `Vec3`, `Vec4` (each F32, with `I32` and `U32`), `Quat`, `Mat4x4`, and the scalars, each with a `schema`, follow WGSL's semantics. See the [`math follows WGSL`](src/interface/math/semantics.test.ts) tests.
-- **Lists in kernels:** a kernel's declaration and commands name components in array literals, or in constants holding one or `Archetype.create` of one, of the kernel's module or imported from any other, through re-exports and namespaces too; the build reads an imported list's keys in its own module, and fails, at the call, for a list it can't read, such as one computed when its module runs. Editing a list's module compiles its kernels again. A kernel calls the spawner where it gets it, as `commands.spawn(components)(values)`.
+- **Lists in kernels:** a kernel's declaration and commands name components in array literals, or in constants holding one or `Archetype.create` of one, of the kernel's module or imported from any other, through re-exports and namespaces too; the build reads an imported list's keys in its own module. A list it can't read fails the build at the call or declaration naming it: one computed when its module runs, one that isn't a module-scope `const`, and a module namespace. Editing a list's module compiles its kernels again. A kernel calls the spawner where it gets it, as `commands.spawn(components)(values)`.
 - **What a kernel compiles to:** JS, WGSL and WASM output for one system, in [`generated-code.md`](src/implementation/world/generated-code.md).
 - **Rejected:** a kernel that wasn't compiled, at registration; a body outside the subset, at build.
 
@@ -448,6 +457,7 @@ Rule.create({ name: "guide/rules/layers", components: { has: [drawn] }, derive: 
 
 Example: [`12-rules.test.ts`](src/guide/12-rules.test.ts#L25-L54).
 
+- **`Rule.create` returns the rule,** typed `Rule`, its `name`. Nothing needs to hold it: it applies from when it's created.
 - **The result depends only on which components an entity has,** so it's computed once per archetype, and a change is still a single move.
 - **Rules apply in every world** from when they're created: a world starts using one once it has met every component in its `has`, before any entity can match it.
 - **A rule created after entities exist,** by a module imported later, applies at the next sync point.
@@ -602,15 +612,57 @@ Example: [`19-ticks.test.ts`](src/guide/19-ticks.test.ts#L23-L55).
 - **Workers:** the `workers` resource is the kernel pool's size, `null` by default for the platform's choice; the pool follows it at sync points.
 - **Not yet:** running one world across threads is planned, not public ([`threads.md`](threads.md)).
 
-## 21. Reference
+## 21. Identity and ids
+
+A system, rule or finalizer is the value its constructor returns; no name is ever looked up. Its `name` is a label,
+required and not unique, so separately written code can't collide by name, and namespacing it keeps labels short.
+Errors and reports give the label: the name while no other registered system, rule or finalizer has it, else the name
+with its id, and without an id the name numbered by registration (`#2`).
+
+```ts
+const broken = System.create({ name: "guide/identity/bump" }, () => {
+    throw new Error("offline");
+});
+
+const { failures } = await world.run(broken);
+expect(failures.map(({ name }) => name)).toEqual(["guide/identity/bump (@adobe/data-ecs/src/guide/20-identity.test.ts#broken)"]);
+```
+
+Example: [`20-identity.test.ts`](src/guide/20-identity.test.ts#L9-L18), where `bump` of
+[`20-score.ts`](src/guide/20-score.ts) has the same name.
+
+The plugin gives each top-level `const` initialized by `System.create`, `System.render`, `System.composite`,
+`Rule.create`, `Finalizer.create` or `Finalizer.changes`, and `export default` of one, an id named as a key's is, its
+module and binding: `my-app/src/link.ts#linked`. A module evaluated again, as a dev server does after an edit, declares
+its keys and items again under the same ids, and each with the same kind and declaration, its keys and the systems and
+finalizers it lists matching by id, is the one already there:
+
+```ts
+// A query makes the module evaluate again, under the same ids, as an edit on a dev server does.
+const path = "./20-score.js?again";
+const again: typeof import("./20-score.js") = await import(/* @vite-ignore */ path);
+// Its key is the same component, and its system the same system, so a composite holds it once.
+await world.run(System.composite({ name: "guide/identity/both", systems: [bump, again.bump] }));
+```
+
+Example: [`20-identity.test.ts`](src/guide/20-identity.test.ts#L20-L31).
+
+- **A system** declared again is a new value with the new body, which schedules compare as the first, so constraints from modules not evaluated again still order it.
+- **A rule** declared again is the one already recorded, which `Rule.create` returns.
+- **A finalizer** declared again keeps its place in every world with the new body, and `Finalizer.create` or `Finalizer.changes` returns it.
+- **Without an id,** as when made in a function, an item is only itself: declared again, it's a new item.
+- **Ids keep no state:** they match declarations alone, so a module evaluated again that creates a world creates a new one.
+- **Rejected:** the same id with another kind or declaration, which throws, telling to reload the page, since replacing a rule or finalizer would have to undo what worlds derived or finalized under the old one.
+
+## 22. Reference
 
 - **World:** `run(system, input?)` resolves to a report; `add(system)` puts a system in every tick; `observe` has `resource`, `entity`, `select` and `count`; `dispose()` and `[Symbol.asyncDispose]` wait for pending runs, then release the world.
 - **Built-in resources,** in [`src/interface/resources/`](src/interface/resources/): `gpuDevice`, the world's device or `null`, the default; `workers`, the kernel pool's size, `null` by default for the platform's choice; `cadence`, `{ kind: "frame" }` by default or `{ kind: "fixed", step, maxSteps }`; `always`, false by default; `wake`, reduced with `"min"`, Infinity for none; `clock`, `{ now, delta, tick }`; and `report`, the last tick's. Only the world writes `clock` and `report`.
 - **No built-in components,** and no way yet to join a world from another thread: `share` and `World.join` are planned ([`threads.md`](threads.md)).
-- **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Key`, `Value` and `With`; `Resource.Key` and `Value`; `Trait.Key`; `Archetype`; `System` and `System.Commands`; `Finalizer`; `Thread`; `Cadence`; `Observe` and `Observers`; and `World`, with `World.Create`, `World.Query` and `World.Report`. Everything else is inferred from the values the API returns.
+- **Public types:** the interfaces to augment; `Entity`, `Schema` and the math types; `Component.Key`, `Value` and `With`; `Resource.Key` and `Value`; `Trait.Key`; `Archetype`; `System` and `System.Commands`; `Rule`; `Finalizer`; `Thread`; `Cadence`; `Observe` and `Observers`; and `World`, with `World.Create`, `World.Query` and `World.Report`. Everything else is inferred from the values the API returns.
 - **Emitted declarations:** every type those values carry is named from `@adobe/data-ecs`, such as `Observers` for `world.observe`, so a library that exports them emits declarations naming only the package root.
 - **Code layout:** the interface is [`src/interface/`](src/interface/), a project that imports nothing outside it; the implementation, `createWorld` and the compiler, is [`src/implementation/`](src/implementation/); samples are in [`src/samples/`](src/samples/).
-- **Constructors:** `Archetype.create` returns the list it's given. `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Finalizer.create` and `Finalizer.changes` return a finalizer, typed as its `name`. `Rule.create` returns nothing. Rules and finalizers apply in every world.
+- **Constructors:** `Archetype.create` returns the list it's given. `System.create`, `System.render` and `System.composite` return a system, typed as its `name` and input. `Finalizer.create` and `Finalizer.changes` return a finalizer, and `Rule.create` a rule, each typed as its `name`. Each is identified by that value and labeled by its name. Rules and finalizers apply in every world.
 - **What the types reject:** the type tests pin the contract, and read as contract tests, not samples: [`system.type-test.ts`](src/interface/system/system.type-test.ts), [`commands.type-test.ts`](src/interface/system/commands.type-test.ts), [`archetype.type-test.ts`](src/interface/archetype/archetype.type-test.ts), [`world.type-test.ts`](src/interface/world/world.type-test.ts), [`loop.type-test.ts`](src/interface/world/loop.type-test.ts), [`gpu.type-test.ts`](src/interface/gpu/gpu.type-test.ts), [`thread.type-test.ts`](src/interface/thread/thread.type-test.ts), [`rule.type-test.ts`](src/interface/rule/rule.type-test.ts), [`trait.type-test.ts`](src/interface/trait/trait.type-test.ts).
 - **The contract and its reasoning:** [`design.md`](design.md).
 - **A complete application:** the [particle sample](src/samples/particles/particles.ts), run by [`particles.test.ts`](src/samples/particles/particles.test.ts), and its [GPU version](src/samples/particles/gpu/).

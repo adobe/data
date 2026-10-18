@@ -1,27 +1,22 @@
 import { expect, it } from "vitest";
 import { Component, Entity, System, Vec3, World } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
+import { position, spark, sparks } from "./08-sparks.js";
 import { steer } from "./08-steer.js";
 import { createWorld } from "../implementation/index.js";
 
-const position = Symbol("guide/kernels/position");
 const velocity = Symbol("guide/kernels/velocity");
 const target = Symbol("guide/kernels/target");
-const spark = Symbol("guide/kernels/spark");
 
 declare module "@adobe/data-ecs" {
     interface Components {
-        [position]: { type: Vec3 };
         [velocity]: { type: Vec3 };
         [target]: { type: Entity };
-        [spark]: { type: true };
     }
 }
 
-Component.register(position, { type: Vec3.schema });
 Component.register(velocity, { type: Vec3.schema });
 Component.register(target, { type: Entity.schema });
-Component.register(spark, { type: { const: true } });
 
 const spawn = System.create({ name: "guide/kernels/spawn" }, ({ commands }) => {
     const leader = commands.spawn([position, velocity])({ [position]: [10, 0, 0], [velocity]: [0, 0, 0] });
@@ -33,7 +28,7 @@ const integrate = System.create({ name: "guide/kernels/integrate", kernel: "cpu"
     row[position] = Vec3.add(row[position], row[velocity]);
 });
 
-// Kernels use lookups, imported pure functions and commands too.
+// Kernels use lookups, imported pure functions, commands and imported lists too.
 const chase = System.create({
     name: "guide/kernels/chase",
     kernel: "cpu",
@@ -45,7 +40,7 @@ const chase = System.create({
     row[velocity] = steer(row[velocity], Vec3.subtract(other[position], row[position]), 2);
     // A kernel builds tuple values from their leaves.
     const [x, y, z] = row[position];
-    if (Vec3.distance(other[position], row[position]) < 1) commands.spawn([position, spark])({ [position]: [x, y, z] });
+    if (Vec3.distance(other[position], row[position]) < 1) commands.spawn(sparks)({ [position]: [x, y, z] });
 });
 
 it("runs systems compiled as kernels", async () => {

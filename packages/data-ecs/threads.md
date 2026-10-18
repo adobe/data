@@ -9,8 +9,8 @@ Referenced from `design.md`.
 - **Struct:** numbers, booleans, entities, fixed-length tuples and structs of those. A struct has a fixed size and
   lives in shared memory: columns, ticks, the entity table and resource cells of struct type, all in the arena
   (`memory.ts`), readable and writable from any thread the schedule gives them to. A struct has no thread.
-- **Object:** every other value: strings, variable-length arrays, plain objects, and values that aren't data, declared
-  with `Component.object<T>()` (DOM nodes, GPU objects, functions). Each object component and object resource lives on
+- **Object:** every other value: strings, variable-length arrays, plain objects, sets and maps, and values that aren't
+  data, registered without a schema (DOM nodes, GPU objects, functions). Each object component and object resource lives on
   one logical thread, and only the thread filling it reads or writes it. Objects are never copied between threads; one
   declared `transfer: true` may be moved, never copied.
 - **Logical thread:** a name in the augmentable `Threads` interface. `world` and `main` are built in. A joined thread
@@ -63,19 +63,20 @@ export interface Threads {
     main: true;    // the window's thread, where the DOM is
 }
 
-// A value that isn't data states its type. A DOM Node lives on "main", and says so; the check resolves to no
-// requirement where the DOM library isn't loaded.
-const domNodeTraits = Component.register(domNode, { type: Component.object<HTMLElement>(), thread: "main" });
-// `transfer: true` requires a Transferable type: ArrayBuffer, ImageBitmap, VideoFrame, OffscreenCanvas, MessagePort.
-// It lives on `world`, where the GPU uploads it; a loader thread sets it by moving the value there.
-const textureSourceTraits = Component.register(textureSource, { type: Component.object<ImageBitmap>(), transfer: true });
 // `thread` only on objects: a struct with `thread` fails in types and at registration.
 declare module "@adobe/data-ecs" {
     interface Components {
-        [domNode]: typeof domNodeTraits;
-        [textureSource]: typeof textureSourceTraits;
+        // A DOM Node lives on "main", and says so; the check resolves to no requirement where the DOM library isn't
+        // loaded.
+        [domNode]: { type: HTMLElement; thread: "main" };
+        // `transfer: true` requires a Transferable type: ArrayBuffer, ImageBitmap, VideoFrame, OffscreenCanvas,
+        // MessagePort. It lives on `world`, where the GPU uploads it; a loader thread sets it by moving the value there.
+        [textureSource]: { type: ImageBitmap; transfer: true };
     }
 }
+// A value that isn't data is registered without a schema.
+Component.register(domNode, { thread: "main" });
+Component.register(textureSource, { transfer: true });
 
 // On the thread that holds the world:
 const world = createWorld(resources?);

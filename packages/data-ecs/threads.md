@@ -823,9 +823,9 @@ to it, main showing its state in the DOM, and a loader worker moving each textur
   world's thread, and kept by the thread running its own system; a run whose input moved to a thread that left
   rejecting, later ones going to the world's thread; dropped values released there and here (red without each
   release), and what moved for a run that never ran (red without the release). In node and chromium against joined
-  workers, ten 1 MB buffers and a port moved in order; a run held while its filler's event loop is blocked, the world's
-  own run going on (red without the hold: the world's run waited out the block); dropped ports, and in chromium bitmaps,
-  released there and here.
+  workers, ten 1 MB buffers and a port moved in order; a run held while its filler's event loop is blocked until the
+  test releases it, the world's own run finishing meanwhile (red without the hold: the world's run waits for the
+  filler); dropped ports, and in chromium bitmaps, released there and here.
 - Must not regress: `up depth 10 gpu`, `up depth 1000 gpu`.
 - New, in chromium: `transfer` (a 1 MB ArrayBuffer and a 1024 by 1024 ImageBitmap, loader to its thread, N = 100),
   134 µs a transfer.

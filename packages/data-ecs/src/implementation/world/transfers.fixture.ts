@@ -83,20 +83,35 @@ export const moves = async (count: number, bytes: number) => {
     return { moved, received };
 };
 
+/** Resolves with what `promise` does, or `otherwise` after `milliseconds`. */
+const within = <T>(promise: Promise<T>, milliseconds: number, otherwise: T): Promise<T> => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(otherwise), milliseconds);
+    promise.then(value => {
+        clearTimeout(timer);
+        resolve(value);
+    }, (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+    });
+});
+
 /**
- * The loader's run moving a buffer to the filler while the filler's event loop is blocked for `milliseconds`, then
- * three runs of a system on the world's thread: what the world's own run took meanwhile, the order while the filler
- * was blocked, and the order each of the loader's runs saw once it wasn't.
+ * The loader's run moving a buffer to the filler while the filler's event loop is blocked, until this releases it,
+ * then three runs of a system on the world's thread: whether the world's own run finished while the filler was
+ * blocked, rather than waiting for it, the order then, and the order each of the loader's runs saw once it wasn't.
  */
-export const late = async (milliseconds: number) => {
+export const late = async () => {
     const { world, filler, loader, end } = await joined();
-    await filler.ask({ kind: "block", milliseconds });
+    const block = new Int32Array(new SharedArrayBuffer(4));
+    await filler.ask({ kind: "block", word: block });
     const posted = await loader.ask({ kind: "late" });
-    const begin = performance.now();
-    await world.run(idle);
-    const worldRun = performance.now() - begin;
-    await new Promise(resolve => setTimeout(resolve, milliseconds / 4));
+    // The filler stays blocked until it's released, so a world that waited for it never finishes this run in time.
+    const worldRun = await within(world.run(idle).then(() => "finished"), 10000, "waited");
+    // Time for the loader's held runs to run, wrongly, while the filler can't take its input.
+    await new Promise(resolve => setTimeout(resolve, 100));
     const orderWhileBlocked = await Observe.toPromise(world.observe.resource(order));
+    Atomics.store(block, 0, 1);
+    Atomics.notify(block, 0);
     const settled = await loader.ask({ kind: "settled" });
     const { stored: received } = await storedOf(filler);
     await end();

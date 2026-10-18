@@ -11,13 +11,13 @@ import { attachHere, attachThere, greetThere, kept, mark, storeThere, stored, tr
 /**
  * A thread joining a world through the port it's sent: the filler claims "transfersTest", whose systems run here, and
  * the loader claims nothing and runs systems with Transferable input, moving it to their threads. The filler blocks
- * its event loop when asked, so what the loader moves there waits to be received.
+ * its event loop when asked, until the asker sets the word it gave, so what the loader moves there waits to be received.
  */
 
 type Port = MessagePort | NodeMessagePort;
 export type ToTransfersWorker =
     | { readonly kind: "join"; readonly port: Port; readonly threads: readonly "transfersTest"[] }
-    | { readonly kind: "block"; readonly milliseconds: number }
+    | { readonly kind: "block"; readonly word: Int32Array<SharedArrayBuffer> }
     | { readonly kind: "stored" }
     | { readonly kind: "moves"; readonly count: number; readonly bytes: number }
     | { readonly kind: "late" }
@@ -110,8 +110,7 @@ const respond = async (message: Exclude<ToTransfersWorker, { readonly kind: "blo
 channel.onMessage(async message => {
     if ("protocol" in message) return;
     if (message.kind !== "block") return channel.post(await respond(message));
-    // The reply goes out first; then this thread's event loop is blocked.
+    // The reply goes out first; then this thread's event loop is blocked until the asker sets the word.
     channel.post({ kind: "blocking" });
-    const until = performance.now() + message.milliseconds;
-    while (performance.now() < until);
+    Atomics.wait(message.word, 0, 0);
 });

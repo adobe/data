@@ -18,8 +18,7 @@ export const tailsCases = (load: () => Promise<typeof Fixture>) => describe("tai
     it("never snapshot when prompt", async () => {
         const fixture = await load();
         const seen = await fixture.prompt();
-        expect({ wrong: seen.wrong, labels: seen.labels, late: seen.late, switched: seen.switched }).toEqual({ wrong: 0, labels: 0, late: 0, switched: 0 });
-        expect(seen.runs).toBeGreaterThan(25);
+        expect({ runs: seen.runs, wrong: seen.wrong, labels: seen.labels, late: seen.late, switched: seen.switched }).toEqual({ runs: 30, wrong: 0, labels: 0, late: 0, switched: 0 });
     }, 30000);
     it("read a snapshot taken before a sync point grows what they read, what they write from it stamped as changed", async () => {
         const fixture = await load();

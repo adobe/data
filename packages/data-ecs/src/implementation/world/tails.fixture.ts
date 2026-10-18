@@ -1,7 +1,6 @@
 /// <reference types="node" />
 import type { Observe } from "../../interface/observe/observe.js";
 import { always } from "../../interface/resources/always.js";
-import { cadence } from "../../interface/resources/cadence.js";
 import { workers } from "../../interface/resources/workers.js";
 import type { World } from "../../interface/world/world.js";
 import { createWorld, type CreatedWorld } from "./create.js";
@@ -137,13 +136,54 @@ export const waiting = async () => {
     }
 };
 
-/** 1,000 rows each tick of a fixed cadence with time to spare: the tail finishes before the next tick writes. */
+/**
+ * Frames the caller gives one at a time: `next` resolves once the loop asked for its next beat and runs it, so a tick
+ * starts only when the caller says, however slowly the machine runs.
+ */
+const gatedFrames = () => {
+    let pending: ((time: number) => void) | null = null;
+    let requested: (() => void) | null = null;
+    return {
+        frame: (callback: (time: number) => void): (() => void) => {
+            pending = callback;
+            requested?.();
+            requested = null;
+            return () => {
+                if (pending === callback) pending = null;
+            };
+        },
+        next: async (): Promise<void> => {
+            if (pending === null) await new Promise<void>(resolve => { requested = resolve; });
+            const callback = pending;
+            pending = null;
+            callback?.(performance.now());
+        },
+    };
+};
+
+/** Asks what the worker's tails saw until the watcher's run for `value` read every one of `rows` rows. */
+const watched = async (worker: Worker, value: number, rows: number): Promise<void> => {
+    for (;;) {
+        const reply = await worker.ask({ kind: "seen" });
+        if (reply.kind === "seen" && reply.seen.some(run => run.counter === value && run.rows === rows)) return;
+    }
+};
+
+/**
+ * 1,000 rows, each tick starting only once the last one's tail on the worker read them all: the tail finished before
+ * the next tick writes, however slowly either thread runs.
+ */
 export const prompt = async () => {
-    const world = createWorld({ [workers]: 0, [always]: true, [cadence]: { kind: "fixed", step: 10 } });
+    const frames = gatedFrames();
+    const world = createWorld({ [workers]: 0, [always]: true }, { loop: frames });
     const { worker } = await joined(world);
     await world.run(seed, { count: 1000 });
     world.add(ticked);
-    await ticks(world, 30);
+    for (let tick = 1; tick <= 30; tick++) {
+        await frames.next();
+        await until(world.observe.resource(counter), value => value >= tick);
+        await watched(worker, tick, 1000);
+    }
     await world.dispose();
     const seen = await summary(worker);
     await worker.terminate();

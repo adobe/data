@@ -129,6 +129,10 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 
 **Systems on joined threads.** A tier, or consecutive tiers, on a joined thread is a task through its task block. The world spins about 20 µs for it before it waits, and the thread that finished one spins as long for the next, each about one wake-up's latency: `handoff` (five tasks a tick) 68 → 11.5 µs a tick and `fused tiers` (one) 19.3 → 7.5 µs in node, 13.2 and 9.4 µs in chromium. Ten tiers fused into one task cost about what one tier's does.
 
+**Finalizers on joined threads.** Stop lists are written a column at a time, the linear structs copied by 32-bit word and each column's storage found once per run of an archetype, and despawned entities' held indexes counted in an array by index: `despawn objects 10K` 176 → 83 ns a despawn in node, against 77 ns with the same finalizer run inline on the world's thread. A `Map` of holds, and a `copyWithin` per stop and struct, cost most of the difference.
+
+**Hot helpers kept small.** TurboFan inlines what a system's body calls into its runner's loop up to a cumulative bytecode budget, so what's left for the row getters depends on everything else the body reaches. `pushCommand`'s growth, a prepared spawn site's plan lookup past the one kept by archetype index, and a list's shape and spawner past the cached ones are outlined: churn 15 → 18 ms in node had come from code elsewhere in the bundle, a dead function placed before `finalizers.ts`'s runner reproducing it on `fe36a99f`, and with `--max-inlined-bytecode-size-cumulative=2000` both measured 14 ms; outlined, churn is 14.9 ms on `fe36a99f` and 15.0 ms here.
+
 **Archetype moves.** Each storage knows its element size in 32-bit words, so a cell copy doesn't dispatch on the layout, and move lists are cached in an array by target archetype id rather than a map: retag 1M 46.5–48.8 → 41.8–44.2 ms.
 
 **Main thread.** Compiled `select` predicates: 18 → ~3.5 ms. `where` tests resolve each archetype's storage once and read plain numbers straight from the view, and tuples of 2–4 adjacent same-typed lanes read as array literals: select 1M 37.5 → 24 ms. Row getters chosen once, and tuple reads and writes in one loop: 50 systems 3.2 → 1.63 ms (vitest).
@@ -210,6 +214,7 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **The structure epoch turned even by a store, notifying only waiting readers, kept at every sync point:** about 24 ns a sync point against 35 ns, and `sync point one spawn` still a timer step (41 ns) above `c4ecbd8d`; kept only while a joined thread holds claims instead.
 - **Replay finding a pair of archetypes' source columns once per run of its moves:** `log replay` 23.7–24 → 24.7 ns a move, no gain; a mirror's archetypes hold few columns. Worth revisiting with many objects per archetype.
 - **Emptying a run's list of warnings by setting its length to 0** each run: `run idle` 375 → 416 ns in node, measured alternating; the list is counted instead, and the report of warnings alone reused while they're the same.
+- **Moving `placeFinalizer`,** to the end of `finalizers.ts` or into `activate.ts`, its one caller: churn 17.6–18.6 ms either way, since the budget above, not that function, set it.
 - **Checking eight rows' ticks at every row,** rather than at rows aligned to eight: clustered changes 0.023 → 0.108 ms, since each passing row checked a block again. Aligned checks cost clustered changes about 3 µs.
 
 ## Next

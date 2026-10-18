@@ -32,10 +32,13 @@ const createPlans = <P>(): Plans<P> => ({ byIndex: [], byShape: new WeakMap() })
  */
 const planFor = <P extends Planned>(plans: Plans<P>, state: State, list: readonly unknown[], site: readonly Key[], make: (state: State, shape: ListShape, site: readonly Key[]) => P): P => {
     const index = archetypeIndexOf(list);
-    if (index >= 0) {
-        const indexed = plans.byIndex[index];
-        if (indexed !== undefined && indexed.state === state) return indexed;
-    }
+    const indexed = index >= 0 ? plans.byIndex[index] : undefined;
+    // Kept small, so it inlines into the systems spawning and adding: the rest is outlined.
+    return indexed !== undefined && indexed.state === state ? indexed : planned(plans, state, list, site, make, index);
+};
+
+/** A site's plan other than one kept by archetype index for this world. */
+const planned = <P extends Planned>(plans: Plans<P>, state: State, list: readonly unknown[], site: readonly Key[], make: (state: State, shape: ListShape, site: readonly Key[]) => P, index: number): P => {
     const shape = listShapeOf(state, list);
     let plan = plans.byShape.get(shape);
     if (plan === undefined) {

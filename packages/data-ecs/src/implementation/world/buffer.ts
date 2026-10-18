@@ -83,13 +83,16 @@ const grown = <T extends Uint8Array | Float64Array | Int32Array>(array: T, creat
 };
 
 /** Starts a command; name its components with `pushComponent` right after. */
+/** Room for more commands: outlined, so `pushCommand` stays small enough to inline into the systems issuing them. */
+const growCommands = (buffer: CommandBuffer): void => {
+    buffer.kinds = grown(buffer.kinds, length => new Uint8Array(length));
+    buffer.shapes = grown(buffer.shapes, length => new Int32Array(length));
+    buffer.entities = grown(buffer.entities, length => new Float64Array(length));
+    buffer.starts = grown(buffer.starts, length => new Int32Array(length));
+};
+
 export const pushCommand = (buffer: CommandBuffer, kind: number, entity: number): void => {
-    if (buffer.count === buffer.kinds.length) {
-        buffer.kinds = grown(buffer.kinds, length => new Uint8Array(length));
-        buffer.shapes = grown(buffer.shapes, length => new Int32Array(length));
-        buffer.entities = grown(buffer.entities, length => new Float64Array(length));
-        buffer.starts = grown(buffer.starts, length => new Int32Array(length));
-    }
+    if (buffer.count === buffer.kinds.length) growCommands(buffer);
     buffer.kinds[buffer.count] = kind;
     buffer.shapes[buffer.count] = -1;
     buffer.entities[buffer.count] = entity;

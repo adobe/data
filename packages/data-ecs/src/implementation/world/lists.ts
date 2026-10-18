@@ -66,9 +66,13 @@ const resolve = (state: State, list: readonly unknown[]): ListShape => {
  */
 export const listShapeOf = (state: State, list: readonly unknown[]): ListShape => {
     const index = archetypeIndexOf(list);
+    // Kept small, so it inlines into the systems spawning and adding: the rest is outlined.
+    return (index >= 0 ? state.byIndex[index] : undefined) ?? shapeOfList(state, list, index);
+};
+
+/** A list's shape, other than an archetype's already resolved. */
+const shapeOfList = (state: State, list: readonly unknown[], index: number): ListShape => {
     if (index >= 0) {
-        const indexed = state.byIndex[index];
-        if (indexed !== undefined) return indexed;
         const shape = resolve(state, list);
         state.byIndex[index] = shape;
         return shape;
@@ -137,8 +141,10 @@ export const positionalOf = (state: State, shape: ListShape, order: readonly unk
  * The spawner of a shape, made once: it writes each value it reads by key into the shape's batch, a tag or `undefined`
  * as the component's start, then reserves the entity, so a value that throws leaves nothing behind.
  */
-export const spawnerOf = (state: State, shape: ListShape): Spawner => {
-    if (shape.spawner !== null) return shape.spawner;
+export const spawnerOf = (state: State, shape: ListShape): Spawner => shape.spawner ?? makeSpawner(state, shape);
+
+/** Makes a shape's spawner, the first time it spawns. */
+const makeSpawner = (state: State, shape: ListShape): Spawner => {
     const written = writtenOf(state, shape);
     const { batch, keys, columns, writers } = written;
     shape.spawner = generated<Spawner>(state.entities, reserve, batch, ["values"], keys, columns, writers, k => `values[k${k}]`) ?? loopSpawner(state, written);

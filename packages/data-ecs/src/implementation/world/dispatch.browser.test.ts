@@ -4,20 +4,28 @@ import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
 
 type Vec2 = readonly [number, number];
 const vec2: Schema.ForType<Vec2> = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 };
-const position = "dispatchTest/position";
-const velocity = "dispatchTest/velocity";
-const offset = "dispatchTest/offset";
-const tags = ["dispatchTest/a", "dispatchTest/b", "dispatchTest/c", "dispatchTest/d", "dispatchTest/e", "dispatchTest/f", "dispatchTest/g"] as const;
+const position = Symbol("dispatchTest/position");
+const velocity = Symbol("dispatchTest/velocity");
+const offset = Symbol("dispatchTest/offset");
+const tagA = Symbol("dispatchTest/a");
+const tagB = Symbol("dispatchTest/b");
+const tagC = Symbol("dispatchTest/c");
+const tagD = Symbol("dispatchTest/d");
+const tagE = Symbol("dispatchTest/e");
+const tagF = Symbol("dispatchTest/f");
+const tagG = Symbol("dispatchTest/g");
+const tags = [tagA, tagB, tagC, tagD, tagE, tagF, tagG] as const;
 declare module "@adobe/data-ecs" {
     export interface Components {
         [position]: { type: Vec2 };
         [velocity]: { type: Vec2 };
         [offset]: { type: number };
-        "dispatchTest/a": { type: true }; "dispatchTest/b": { type: true }; "dispatchTest/c": { type: true }; "dispatchTest/d": { type: true };
-        "dispatchTest/e": { type: true }; "dispatchTest/f": { type: true }; "dispatchTest/g": { type: true };
+        [tagA]: { type: true }; [tagB]: { type: true }; [tagC]: { type: true }; [tagD]: { type: true };
+        [tagE]: { type: true }; [tagF]: { type: true }; [tagG]: { type: true };
     }
 }
 Component.register(position, { type: vec2 });
@@ -27,7 +35,7 @@ for (const tag of tags) Component.register(tag, { type: { const: true } });
 
 const scatter = System.create({ name: "dispatchTest/scatter" }, ({ commands }) => {
     for (let i = 0; i < 128 * 64; i++) {
-        const values: { [key: string]: unknown } = { [position]: [i, 0], [velocity]: [1, i % 5], [offset]: 0 };
+        const values: { [key: symbol]: unknown } = { [position]: [i, 0], [velocity]: [1, i % 5], [offset]: 0 };
         tags.forEach((tag, bit) => { if (((i >> 6) & (1 << bit)) !== 0) values[tag] = true; });
         commands.spawn(values);
     }
@@ -67,7 +75,7 @@ const later = System.create({ name: "dispatchTest/fastC/2", kernel: "cpu", compo
 });
 describe("worker dispatch", () => {
     it("reloads kernels on workers when an observer registers", async () => {
-        const world = createWorld({ workers: 2 }, { minimumChunk: 64 });
+        const world = createWorld({ [workers]: 2 }, { minimumChunk: 64 });
         await world.run(seed);
         await world.run(bump);
         await world.run(watch);
@@ -77,7 +85,7 @@ describe("worker dispatch", () => {
         expect(observedRows).toBe(4096);
     }, 200000);
     it("keeps worker kernels in step after a failed registration", async () => {
-        const world = createWorld({ workers: 2 }, { minimumChunk: 64 });
+        const world = createWorld({ [workers]: 2 }, { minimumChunk: 64 });
         await world.run(seed);
         await world.run(bump);
         const original = WebAssembly.compile;
@@ -92,8 +100,8 @@ describe("worker dispatch", () => {
         expect(observedRows).toBe(4096);
     }, 200000);
     it("delivers layouts between back-to-back runs", async () => {
-        const go = async (workers: number, wasm = true, delay = false) => {
-            const world = createWorld({ workers }, { minimumChunk: 64, wasm });
+        const go = async (count: number, wasm = true, delay = false) => {
+            const world = createWorld({ [workers]: count }, { minimumChunk: 64, wasm });
             for (let frame = 0; frame < 12; frame++) {
                 const r = await withTimeout((async () => { await world.run(grow); if (delay) await new Promise(r => setTimeout(r, 30)); await world.run(fastA); })(), 3000);
                 if (r === "timeout") return "timeout";
@@ -109,7 +117,7 @@ describe("worker dispatch", () => {
     }, 200000);
     for (const [name, systems] of [["dispatchTest/tier", [fastA, slowB]], ["dispatchTest/tier/3", [fastA, fastC]], ["dispatchTest/tier/4", [slowB, fastC]]] as const) it(`runs tiers of ${systems.map(s => s.name).join(",")}`, async () => {
         const tier = System.composite({ name, systems: [...systems] });
-        const world = createWorld({ workers: 2 }, { minimumChunk: 64 });
+        const world = createWorld({ [workers]: 2 }, { minimumChunk: 64 });
         await world.run(seed);
         let result: unknown = "ok";
         for (let frame = 0; frame < 50 && result !== "timeout"; frame++) result = await withTimeout(world.run(tier), 3000);
@@ -117,7 +125,7 @@ describe("worker dispatch", () => {
     }, 200000);
     it("fast, message, fast kernels in one tier don't hang", async () => {
         const tier = System.composite({ name: "dispatchTest/tier/5", systems: [fastA, slowB, fastC] });
-        const world = createWorld({ workers: 2 }, { minimumChunk: 64 });
+        const world = createWorld({ [workers]: 2 }, { minimumChunk: 64 });
         await world.run(seed);
         let result: unknown = "ok";
         for (let frame = 0; frame < 50 && result !== "timeout"; frame++) result = await withTimeout(world.run(tier), 3000);
@@ -126,7 +134,7 @@ describe("worker dispatch", () => {
 
     it("ring overflow followed by a message task in the same tier doesn't hang", async () => {
         const tier = System.composite({ name: "dispatchTest/tier/6", systems: [fastA, slowB] });
-        const world = createWorld({ workers: 1 }, { minimumChunk: 64 });
+        const world = createWorld({ [workers]: 1 }, { minimumChunk: 64 });
         await world.run(scatter);
         let result: unknown = "ok";
         for (let frame = 0; frame < 5 && result !== "timeout"; frame++) result = await withTimeout(world.run(tier), 3000);

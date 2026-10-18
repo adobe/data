@@ -1,5 +1,5 @@
-import { declarationOf, threadOfDeclaration } from './declarations.js';
-import { kindOf } from './names.js';
+import { threadOfDeclaration } from './declarations.js';
+import { declarationOf, kindOf, labelOf } from './names.js';
 
 type Key = string | symbol;
 type Lists = {
@@ -29,7 +29,7 @@ export const threadOf = (declaration: Placed, what: "System" | "Finalizer"): str
         for (const key of keys ?? []) {
             const found = declarationOf(key);
             if (found === undefined || kindOf(key) !== kind) {
-                throw new Error(`${what} "${declaration.name}" uses ${kind} "${String(key)}", which isn't a registered ${kind}; import the module that registers it.`);
+                throw new Error(`${what} "${declaration.name}" uses ${kind} "${labelOf(key)}", which isn't a registered ${kind}; import the module that registers it.`);
             }
             const thread = threadOfDeclaration(found);
             if (thread !== null) threads.add(thread);

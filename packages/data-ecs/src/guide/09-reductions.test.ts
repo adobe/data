@@ -3,12 +3,12 @@ import { Component, Resource, System, Vec3, World } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const position = "guide/reductions/position";
-const mass = "guide/reductions/mass";
-const total = "guide/reductions/total";
-const lowest = "guide/reductions/lowest";
-const seen = "guide/reductions/seen";
-const cargo = "guide/reductions/cargo";
+const position = Symbol("guide/reductions/position");
+const mass = Symbol("guide/reductions/mass");
+const total = Symbol("guide/reductions/total");
+const lowest = Symbol("guide/reductions/lowest");
+const seen = Symbol("guide/reductions/seen");
+const cargo = Symbol("guide/reductions/cargo");
 
 declare module "@adobe/data-ecs" {
     interface Components {

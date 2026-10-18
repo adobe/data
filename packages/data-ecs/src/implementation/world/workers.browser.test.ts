@@ -7,18 +7,28 @@ import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { read, readEach, readResource, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
 
 type Vec2 = readonly [number, number];
 const vec2: Schema.ForType<Vec2> = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 };
 
-const position = "workersTest/position";
-const velocity = "workersTest/velocity";
-const target = "workersTest/target";
-const offset = "workersTest/offset";
-const spawned = "workersTest/spawned";
-const label = "workersTest/label";
-const tags = ["workersTest/tag-a", "workersTest/tag-b", "workersTest/tag-c", "workersTest/tag-d", "workersTest/tag-e", "workersTest/tag-f", "workersTest/tag-g", "workersTest/tag-h", "workersTest/tag-i"] as const;
-const seconds = "workersTest/seconds";
+const position = Symbol("workersTest/position");
+const velocity = Symbol("workersTest/velocity");
+const target = Symbol("workersTest/target");
+const offset = Symbol("workersTest/offset");
+const spawned = Symbol("workersTest/spawned");
+const label = Symbol("workersTest/label");
+const tagA = Symbol("workersTest/tag-a");
+const tagB = Symbol("workersTest/tag-b");
+const tagC = Symbol("workersTest/tag-c");
+const tagD = Symbol("workersTest/tag-d");
+const tagE = Symbol("workersTest/tag-e");
+const tagF = Symbol("workersTest/tag-f");
+const tagG = Symbol("workersTest/tag-g");
+const tagH = Symbol("workersTest/tag-h");
+const tagI = Symbol("workersTest/tag-i");
+const tags = [tagA, tagB, tagC, tagD, tagE, tagF, tagG, tagH, tagI] as const;
+const seconds = Symbol("workersTest/seconds");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -28,15 +38,15 @@ declare module "@adobe/data-ecs" {
         [offset]: { type: number };
         [spawned]: { type: true };
         [label]: { type: string };
-        "workersTest/tag-a": { type: true };
-        "workersTest/tag-b": { type: true };
-        "workersTest/tag-c": { type: true };
-        "workersTest/tag-d": { type: true };
-        "workersTest/tag-e": { type: true };
-        "workersTest/tag-f": { type: true };
-        "workersTest/tag-g": { type: true };
-        "workersTest/tag-h": { type: true };
-        "workersTest/tag-i": { type: true };
+        [tagA]: { type: true };
+        [tagB]: { type: true };
+        [tagC]: { type: true };
+        [tagD]: { type: true };
+        [tagE]: { type: true };
+        [tagF]: { type: true };
+        [tagG]: { type: true };
+        [tagH]: { type: true };
+        [tagI]: { type: true };
     }
     export interface Resources {
         [seconds]: { type: number };
@@ -54,7 +64,7 @@ for (const tag of tags) Component.register(tag, { type: { const: true } });
 /** 64 entities in each of the 512 archetypes the tags combine into. */
 const scatter = System.create({ name: "workersTest/scatter" }, ({ commands }) => {
     for (let i = 0; i < 512 * 64; i++) {
-        const values: { [key: string]: unknown } = { [position]: [i, 0], [velocity]: [1, i % 5] };
+        const values: { [key: symbol]: unknown } = { [position]: [i, 0], [velocity]: [1, i % 5] };
         tags.forEach((tag, bit) => { if (((i >> 6) & (1 << bit)) !== 0) values[tag] = true; });
         commands.spawn(values);
     }
@@ -157,8 +167,8 @@ const snapshot = async (world: World): Promise<unknown[]> => {
     return rows.map(row => JSON.stringify(row)).sort();
 };
 
-const simulate = async (workers: number, wasm = true, simd = false): Promise<unknown[]> => {
-    const world = createWorld({ workers }, { minimumChunk: 64, wasm, simd });
+const simulate = async (count: number, wasm = true, simd = false): Promise<unknown[]> => {
+    const world = createWorld({ [workers]: count }, { minimumChunk: 64, wasm, simd });
     disposals.push(world);
     await world.run(seed, { count: 2000 });
     for (let frame = 0; frame < 12; frame++) await world.run(main);
@@ -191,8 +201,8 @@ describe("workers", () => {
     });
 
     it("keep tasks in order when a worker's ring overflows, and split evenly once every claim counter is in flight", async () => {
-        const run = async (workers: number): Promise<unknown[]> => {
-            const world = createWorld({ workers }, { minimumChunk: 64 });
+        const run = async (count: number): Promise<unknown[]> => {
+            const world = createWorld({ [workers]: count }, { minimumChunk: 64 });
             disposals.push(world);
             await world.run(scatter);
             for (let frame = 0; frame < 3; frame++) await world.run(integrate);
@@ -203,8 +213,8 @@ describe("workers", () => {
     });
 
     it("merge chunk commands in the same order as the main thread", async () => {
-        const ordered = async (workers: number): Promise<unknown[]> => {
-            const world = createWorld({ workers }, { minimumChunk: 64 });
+        const ordered = async (count: number): Promise<unknown[]> => {
+            const world = createWorld({ [workers]: count }, { minimumChunk: 64 });
             disposals.push(world);
             await world.run(seed, { count: 2000 });
             for (let frame = 0; frame < 4; frame++) await world.run(main);
@@ -216,7 +226,7 @@ describe("workers", () => {
     });
 
     it("can't touch the resource entity", async () => {
-        const world = createWorld({ workers: 2 }, { minimumChunk: 64 });
+        const world = createWorld({ [workers]: 2 }, { minimumChunk: 64 });
         disposals.push(world);
         await world.run(seed, { count: 500 });
         await world.run(unlink);
@@ -225,7 +235,7 @@ describe("workers", () => {
     });
 
     it("rejects kernel lookups of components outside linear memory", async () => {
-        await expect(createWorld({ workers: 2 }).run(labels)).rejects.toThrow('"workersTest/label", which isn\'t stored in linear memory');
+        await expect(createWorld({ [workers]: 2 }).run(labels)).rejects.toThrow('"workersTest/label", which isn\'t stored in linear memory');
     });
 
     it("are terminated by dispose", async () => {
@@ -236,7 +246,7 @@ describe("workers", () => {
             original.call(this);
         };
         try {
-            const world = createWorld({ workers: 2 });
+            const world = createWorld({ [workers]: 2 });
             // Workers start with the first kernel.
             await world.run(main);
             await world.dispose();

@@ -4,6 +4,7 @@ import type { Schema } from "../schema/schema.js";
 import type { Name as TraitName } from "../trait/name.js";
 import type { Required } from "../trait/required.js";
 import type { Traits } from "../trait/types.js";
+import type { SymbolKeys } from "../trait/symbol-keys.js";
 import type { Name } from "./name.js";
 import type { Resources } from "./types.js";
 
@@ -17,4 +18,5 @@ export type Declaration<K extends Name> =
         T extends TraitName ? (Resources[K][T] extends Traits<K>[T] ? Resources[K][T] : never) :
         never }
     & { readonly [T in Exclude<TraitName, keyof Resources[K]>]?: never }
-    & Required<Resources[K], Resources[K]["type"]>;
+    & Required<Resources[K], Resources[K]["type"]>
+    & SymbolKeys;

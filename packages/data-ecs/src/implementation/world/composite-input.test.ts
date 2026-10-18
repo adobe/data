@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
 
 const seen: { readonly system: string; readonly input: unknown }[] = [];
 const move = System.create({
@@ -19,7 +20,7 @@ const label = System.create({
 
 describe("composite input", () => {
     it("passes each member the fields of the run's input that it declares", async () => {
-        await using world = createWorld({ workers: 0 });
+        await using world = createWorld({ [workers]: 0 });
         await world.run(System.composite({ name: "compositeInputTest/frame", systems: [move, step, idle] }), { distance: 1, dt: 0.5 });
         expect(seen).toEqual([{ system: "move", input: { distance: 1 } }, { system: "step", input: { distance: 1, dt: 0.5 } }]);
     });

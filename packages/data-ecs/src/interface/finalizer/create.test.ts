@@ -6,13 +6,13 @@ import { Rule } from "../rule/rule.js";
 import { clock } from "../resources/index.js";
 import { Finalizer } from "./finalizer.js";
 
-const node = "typesFinalizerTest/node";
-const label = "typesFinalizerTest/label";
-const slot = "typesFinalizerTest/slot";
-const total = "typesFinalizerTest/total";
-const time = "typesFinalizerTest/time";
-const mark = "typesFinalizerTest/mark";
-const other = "typesFinalizerTest/other";
+const node = Symbol("typesFinalizerTest/node");
+const label = Symbol("typesFinalizerTest/label");
+const slot = Symbol("typesFinalizerTest/slot");
+const total = Symbol("typesFinalizerTest/total");
+const time = Symbol("typesFinalizerTest/time");
+const mark = Symbol("typesFinalizerTest/mark");
+const other = Symbol("typesFinalizerTest/other");
 
 declare module "@adobe/data-ecs" {
     export interface Components {

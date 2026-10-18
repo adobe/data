@@ -6,13 +6,14 @@ import { System } from "../../interface/system/system.js";
 import { count, read, readEach, readEntity } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import type { Values } from '../../interface/component/values.js';
+import { workers } from "../../interface/resources/workers.js";
 
 type Vec3 = readonly [number, number, number];
 const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
-const position = "batchesTest/position";
-const score = "batchesTest/score";
-const name = "batchesTest/name";
-const tag = "batchesTest/tag";
+const position = Symbol("batchesTest/position");
+const score = Symbol("batchesTest/score");
+const name = Symbol("batchesTest/name");
+const tag = Symbol("batchesTest/tag");
 declare module "@adobe/data-ecs" {
     export interface Components {
         [position]: { type: Vec3 };
@@ -38,7 +39,7 @@ describe("staged spawns", () => {
         const same = System.create({ name: "batchesTest/same", components: { added: [score] }, after: [early] }, () => { seen.same++; });
         const late = System.create({ name: "batchesTest/late", components: { added: [score] }, after: [spawn, same] }, () => { seen.late++; });
         const frame = System.composite({ name: "batchesTest/edit", systems: [early, spawn, same, late] });
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         await world.run(frame);
         // Nothing saw the spawns during their own run.
         expect(seen).toEqual({ early: 0, same: 0, late: 0 });
@@ -60,7 +61,7 @@ describe("staged spawns", () => {
             commands.add(spawned[2], { [name]: "again" });
             commands.despawn(spawned[3]);
         });
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         await world.run(edit);
         expect(await Promise.all(spawned.map(async entity => [await read(world, entity, score), await read(world, entity, name)]))).toEqual([[10, "0"], [1, null], [2, "again"], [null, null]]);
         expect(await count(world, { required: [score] })).toBe(3);
@@ -75,7 +76,7 @@ describe("staged spawns", () => {
             // A symbol can't convert to a number, so writing it throws.
             if (poison) commands.spawn({ [position]: [0, 0, 0], [score]: Symbol("x") as unknown as number });
         });
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         expect((await world.run(spawn)).failures).toHaveLength(1);
         expect(await readEach(world, spawned, score)).toEqual([0, 1, 2]);
         poison = false;
@@ -92,7 +93,7 @@ describe("staged spawns", () => {
             // Leaving a component out goes through commands, so the entity has only what it names.
             spawned.push(commands.spawn({ [position]: [9, 9, 9], [score]: undefined, [tag]: true }));
         });
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         expect(await Promise.all(spawned.slice(0, 50).map(entity => readEntity(world, entity, [position, score, tag])))).toEqual(
             spawned.slice(0, 50).map((_, i) => ({ [position]: [i, i, i], [score]: i, [tag]: true })));
@@ -108,7 +109,7 @@ describe("staged spawns", () => {
                 spawned.push(commands.spawn(values));
             }
         });
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         expect(await Promise.all(spawned.map(entity => readEntity(world, entity, [position, score, name])))).toEqual(
             spawned.map((_, i) => ({ [position]: [i, 0, 1], [score]: i, [name]: `${i}` })));

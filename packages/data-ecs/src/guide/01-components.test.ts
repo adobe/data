@@ -4,9 +4,9 @@ import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
 // A component or resource is an exported key: `Components` or `Resources` give its type, `register` its schema.
-export const position = "guide/components/position";
-export const enemy = "guide/components/enemy";
-export const gravity = "guide/components/gravity";
+export const position = Symbol("guide/components/position");
+export const enemy = Symbol("guide/components/enemy");
+export const gravity = Symbol("guide/components/gravity");
 
 declare module "@adobe/data-ecs" {
     interface Components {

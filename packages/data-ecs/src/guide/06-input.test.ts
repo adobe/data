@@ -3,7 +3,7 @@ import { Component, System, Vec3, World } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const position = "guide/input/position";
+const position = Symbol("guide/input/position");
 
 declare module "@adobe/data-ecs" {
     interface Components {

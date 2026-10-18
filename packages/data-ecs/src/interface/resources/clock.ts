@@ -4,7 +4,7 @@ import { Resource } from '../resource/resource.js';
  * The current tick, written only by the world before each tick: `now`, the beat's time in milliseconds, `delta`, the
  * milliseconds since the previous tick (`step` under a fixed cadence), and `tick`, how many ticks ran before.
  */
-export const clock = 'clock';
+export const clock = Symbol("clock");
 
 declare module '@adobe/data-ecs' {
     export interface Resources {

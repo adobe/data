@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const temporary = mkdtempSync(join(tmpdir(), "data-ecs-exports-"));
@@ -29,7 +29,7 @@ const install = (): void => {
 
 const consumer = `
 import { Component, System, World, gpuDevice } from "@adobe/data-ecs";
-export const position = "exportsTest/position";
+export const position = Symbol("exportsTest/position");
 declare module "@adobe/data-ecs" {
     interface Components { [position]: { type: number } }
 }
@@ -68,24 +68,53 @@ const internal = (path: string): boolean =>
     || path === "interface/system/composite.d.ts" || path === "interface/system/leaf.d.ts" || path === "interface/system/definition.d.ts"
     || path.startsWith("interface/gpu/record");
 
+/** Compiles a consumer's `index.ts` against the installed package, emitting its declarations. */
+const compile = (source: string): { readonly messages: string[] } => {
+    writeFileSync(join(temporary, "index.ts"), source);
+    const program = ts.createProgram([join(temporary, "index.ts")], {
+        target: ts.ScriptTarget.ESNext,
+        module: ts.ModuleKind.NodeNext,
+        moduleResolution: ts.ModuleResolutionKind.NodeNext,
+        lib: ["lib.esnext.d.ts", "lib.dom.d.ts"],
+        types: ["@webgpu/types"],
+        strict: true,
+        declaration: true,
+        emitDeclarationOnly: true,
+        outDir: join(temporary, "out"),
+    });
+    const result = program.emit();
+    return { messages: messages([...ts.getPreEmitDiagnostics(program), ...result.diagnostics]) };
+};
+
+/** A consumer that registers a symbol-keyed component beside the augmentation given. */
+const stringKeyed = (augmentation: string, registration = ""): string => `
+import { Component, Trait } from "@adobe/data-ecs";
+export const keyed = Symbol("exportsTest/keyed");
+declare module "@adobe/data-ecs" {
+    interface Components { [keyed]: { type: number } }
+    ${augmentation}
+}
+Component.register(keyed, { type: { type: "number" } });
+${registration}
+`;
+
 describe("package exports", () => {
-    it("let a consumer emit declarations for the values it makes from the public API", () => {
+    beforeAll(() => {
         install();
         writeFileSync(join(temporary, "package.json"), JSON.stringify({ name: "consumer", type: "module", private: true }));
-        writeFileSync(join(temporary, "index.ts"), consumer);
-        const program = ts.createProgram([join(temporary, "index.ts")], {
-            target: ts.ScriptTarget.ESNext,
-            module: ts.ModuleKind.NodeNext,
-            moduleResolution: ts.ModuleResolutionKind.NodeNext,
-            lib: ["lib.esnext.d.ts", "lib.dom.d.ts"],
-            types: ["@webgpu/types"],
-            strict: true,
-            declaration: true,
-            emitDeclarationOnly: true,
-            outDir: join(temporary, "out"),
-        });
-        const result = program.emit();
-        expect(messages([...ts.getPreEmitDiagnostics(program), ...result.diagnostics])).toEqual([]);
+    }, 60_000);
+    it("let a consumer emit declarations for the values it makes from the public API", () => {
+        expect(compile(consumer).messages).toEqual([]);
         expect(reachable(join(installed, "dist"), "index.d.ts").filter(internal)).toEqual([]);
+    }, 60_000);
+    it("fail every registration to compile while a component, resource or trait is keyed by a string, naming the keys", () => {
+        expect(compile(stringKeyed(`interface Components { "exportsTest/named": { type: number } }`)).messages.join("\n"))
+            .toContain(`'{ readonly "component keys must be symbols": "exportsTest/named"; }'`);
+        expect(compile(stringKeyed(`interface Resources { "exportsTest/time": { type: number } }`)).messages.join("\n"))
+            .toContain(`'{ readonly "resource keys must be symbols": "exportsTest/time"; }'`);
+        const trait = compile(stringKeyed(`interface Traits<N> { readonly persisted: true }`, `Trait.register("persisted");`)).messages.join("\n");
+        expect(trait).toContain(`'{ readonly "trait keys must be symbols": "persisted"; }'`);
+        // Registration takes only symbol keys, so a string-keyed trait can't be registered either.
+        expect(trait).toContain(`Argument of type '"persisted"' is not assignable`);
     }, 60_000);
 });

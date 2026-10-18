@@ -17,26 +17,26 @@ check<Equal<Extract<Thread, "world" | "main" | "threadTypeTest">, "world" | "mai
 const undeclared: Thread = "elsewhere";
 void undeclared;
 
-const label = 'threadTypeTest/label';
-const path = 'threadTypeTest/path';
-const handle = 'threadTypeTest/handle';
-const placedLabel = 'threadTypeTest/placedLabel';
-const unknownThread = 'threadTypeTest/unknownThread';
-const position = 'threadTypeTest/position';
-const placedPosition = 'threadTypeTest/placedPosition';
-const placedTag = 'threadTypeTest/placedTag';
-const element = 'threadTypeTest/element';
-const unplacedElement = 'threadTypeTest/unplacedElement';
-const workerElement = 'threadTypeTest/workerElement';
-const maybeElement = 'threadTypeTest/maybeElement';
-const bitmap = 'threadTypeTest/bitmap';
-const buffer = 'threadTypeTest/buffer';
-const notTransferable = 'threadTypeTest/notTransferable';
-const canvas = 'threadTypeTest/canvas';
-const cache = 'threadTypeTest/cache';
-const count = 'threadTypeTest/count';
-const port = 'threadTypeTest/port';
-const text = 'threadTypeTest/text';
+const label = Symbol("threadTypeTest/label");
+const path = Symbol("threadTypeTest/path");
+const handle = Symbol("threadTypeTest/handle");
+const placedLabel = Symbol("threadTypeTest/placedLabel");
+const unknownThread = Symbol("threadTypeTest/unknownThread");
+const position = Symbol("threadTypeTest/position");
+const placedPosition = Symbol("threadTypeTest/placedPosition");
+const placedTag = Symbol("threadTypeTest/placedTag");
+const element = Symbol("threadTypeTest/element");
+const unplacedElement = Symbol("threadTypeTest/unplacedElement");
+const workerElement = Symbol("threadTypeTest/workerElement");
+const maybeElement = Symbol("threadTypeTest/maybeElement");
+const bitmap = Symbol("threadTypeTest/bitmap");
+const buffer = Symbol("threadTypeTest/buffer");
+const notTransferable = Symbol("threadTypeTest/notTransferable");
+const canvas = Symbol("threadTypeTest/canvas");
+const cache = Symbol("threadTypeTest/cache");
+const count = Symbol("threadTypeTest/count");
+const port = Symbol("threadTypeTest/port");
+const text = Symbol("threadTypeTest/text");
 
 declare module '@adobe/data-ecs' {
     export interface Components {

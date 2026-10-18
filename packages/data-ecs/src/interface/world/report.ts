@@ -12,7 +12,8 @@ export type Failure = {
     readonly kind: "system" | "finalizer" | "gpu" | "observer" | "thread";
     /**
      * The system or finalizer that failed; for GPU work, the system whose run submitted it; for an observer, what it
-     * observes; for a thread, its name, when the run needed it and it was gone.
+     * observes, by the labels of its keys or the entity's number; for a thread, its name, when the run needed it and it
+     * was gone. A key's label is for display: its description, numbered when another key's label has it.
      */
     readonly name: string;
     /** An Error's message, or String() of anything else thrown. */

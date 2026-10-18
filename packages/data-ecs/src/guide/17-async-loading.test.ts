@@ -3,12 +3,12 @@ import { Component, Entity, Finalizer, Resource, Rule, System, World } from "../
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const meshSource = "guide/loading/meshSource";
-const hidden = "guide/loading/hidden";
-const meshSlot = "guide/loading/meshSlot";
-const meshReady = "guide/loading/meshReady";
-const nextToken = "guide/loading/nextToken";
-const requests = "guide/loading/requests";
+const meshSource = Symbol("guide/loading/meshSource");
+const hidden = Symbol("guide/loading/hidden");
+const meshSlot = Symbol("guide/loading/meshSlot");
+const meshReady = Symbol("guide/loading/meshReady");
+const nextToken = Symbol("guide/loading/nextToken");
+const requests = Symbol("guide/loading/requests");
 
 type Request = { readonly entity: Entity; readonly token: number; readonly path: string };
 

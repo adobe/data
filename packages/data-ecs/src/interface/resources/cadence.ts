@@ -7,7 +7,7 @@ import { Resource } from '../resource/resource.js';
 export type Cadence = { readonly kind: "frame" } | { readonly kind: "fixed"; readonly step: number; readonly maxSteps?: number };
 
 /** The world's cadence: `{ kind: "frame" }` by default. */
-export const cadence = 'cadence';
+export const cadence = Symbol("cadence");
 
 declare module '@adobe/data-ecs' {
     export interface Resources {

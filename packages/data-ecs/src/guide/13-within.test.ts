@@ -3,8 +3,8 @@ import { Component, System, World } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const body = "guide/within/body";
-const glow = "guide/within/glow";
+const body = Symbol("guide/within/body");
+const glow = Symbol("guide/within/glow");
 
 declare module "@adobe/data-ecs" {
     interface Components {

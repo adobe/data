@@ -6,6 +6,7 @@ import { calibrationSizes, copyBandwidth, environmentLine, resultLine, type Benc
 import { forest, gpuForest, place, propagate } from "./hierarchy.js";
 import { fastest as particlesFastest, move, spawn } from "./particles.js";
 import { chain, fastest, follow, observe, poke, seeded } from "./suite.js";
+import { workers } from "../interface/resources/workers.js";
 
 const threads = navigator.hardwareConcurrency - 1;
 
@@ -99,11 +100,11 @@ const gpuFastest = async (device: GPUDevice, run: () => Promise<unknown>, batch 
 
 type Placement = { readonly label: string; readonly workers: number; readonly on?: Best["on"] };
 const main: Placement = { label: "main", workers: 0 };
-const workers: Placement = { label: "workers", workers: threads, on: "threads" };
+const pooled: Placement = { label: "workers", workers: threads, on: "threads" };
 
 /** A world of the placement, measured, then disposed. */
 const measured = async (placement: Placement, run: (world: World) => Promise<number>): Promise<number> => {
-    const world = createWorld({ workers: placement.workers });
+    const world = createWorld({ [workers]: placement.workers });
     try {
         return await run(world);
     } finally {
@@ -115,7 +116,7 @@ const upOperation = (chains: string): string => `A kernel with \`up\` computing 
 const upBest = { bytes: 28, basis: "Each row reads its 8-byte value, its parent's 8-byte result and 4-byte row, and writes its 8-byte result." };
 
 const benchmarks = (device: GPUDevice): readonly Benchmark[] => [
-    ...[main, workers].flatMap((placement): readonly Benchmark[] => [
+    ...[main, pooled].flatMap((placement): readonly Benchmark[] => [
         {
             name: `move ${placement.label}`,
             operation: "A kernel adding a vec3 to another for the rows with two tags: integration, animation, any per-row update.",
@@ -193,7 +194,7 @@ const benchmarks = (device: GPUDevice): readonly Benchmark[] => [
         typical: [1_000, 100_000],
         best: { bytes: 16, basis: "Each row reads its 4-byte value, its parent's 4-byte result and 4-byte row, and writes its 4-byte result.", on: "gpu" },
         run: async () => {
-            const world = createWorld({ workers: 0, [gpuDevice]: device });
+            const world = createWorld({ [workers]: 0, [gpuDevice]: device });
             try {
                 await world.run(gpuForest, { roots: Number(roots), depth: Number(depth) });
                 return await gpuFastest(device, () => world.run(place));

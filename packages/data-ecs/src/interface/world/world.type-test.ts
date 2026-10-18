@@ -1,7 +1,7 @@
 import type { Entity } from '../entity/entity.js';
 import type { Observe, Observers } from '../index.js';
 import { System } from '../system/system.js';
-import { main, move } from '../system/system.type-test.js';
+import { main, move, position, time, total } from '../system/system.type-test.js';
 import type { World } from './world.js';
 
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
@@ -14,9 +14,9 @@ declare const create: World.Create;
 // What `observe` holds is named from the package root, so a consumer's declarations can name it.
 check<Equal<World["observe"], Observers>>();
 
-const point = 'worldTypeTest/point';
-const persistent = 'worldTypeTest/persistent';
-const shared = 'worldTypeTest/shared';
+const point = Symbol("worldTypeTest/point");
+const persistent = Symbol("worldTypeTest/persistent");
+const shared = Symbol("worldTypeTest/shared");
 declare module '@adobe/data-ecs' {
     export interface Components {
         [point]: { type: { x: number } };
@@ -48,7 +48,7 @@ world.observe.select({ required: [persistent], page: { limit: 10 } });
 // @ts-expect-error count has no page
 world.observe.count({ required: [persistent], page: { offset: 0, limit: 10 } });
 // @ts-expect-error queries list only components
-world.observe.select({ required: ["systemTest/time"] });
+world.observe.select({ required: [time] });
 // @ts-expect-error synchronous reads are gone: observing is the way to read
 void world.query;
 // @ts-expect-error synchronous reads are gone: observing is the way to read
@@ -95,7 +95,7 @@ world.observe.entity(entity)((value: object) => { void value; });
 // @ts-expect-error a component's value has its type
 world.observe.entity(entity, { required: [point] })((value: { readonly [point]: string } | null) => { void value; });
 // @ts-expect-error options list only components
-world.observe.entity(entity, { optional: ["systemTest/time"] });
+world.observe.entity(entity, { optional: [time] });
 void [observedWhole, observedBoth, stopEntity];
 
 const ran: Promise<World.Report> = world.run(main);
@@ -123,19 +123,21 @@ world.run(main, {});
 
 // The same shape as @adobe/data's Observe, without depending on it.
 type AdobeObserve<T> = (notify: (value: T) => void) => () => void;
-const observed: AdobeObserve<number> = world.observe.resource("systemTest/time");
-const typed: Observe<number> = world.observe.resource("systemTest/time");
+const observed: AdobeObserve<number> = world.observe.resource(time);
+const typed: Observe<number> = world.observe.resource(time);
 const stop: () => void = typed(value => { const time: number = value; void time; });
 // @ts-expect-error a resource's value has its type
-world.observe.resource("systemTest/time")((value: string) => { void value; });
+world.observe.resource(time)((value: string) => { void value; });
 // @ts-expect-error only resources are observed by name
-world.observe.resource("systemTest/position");
+world.observe.resource(position);
 const created: World = create();
-const withResources: World = create({ "systemTest/time": 1, "systemTest/total": 0 });
+const withResources: World = create({ [time]: 1, [total]: 0 });
 // @ts-expect-error a resource's initial value has its type
-create({ "systemTest/time": "now" });
-// @ts-expect-error resources takes only resource names
-create({ "systemTest/position": 0 });
+create({ [time]: "now" });
+// @ts-expect-error resources takes only resource keys
+create({ [position]: 0 });
+// @ts-expect-error a key is its symbol, never its description
+create({ "systemTest/time": 1 });
 // @ts-expect-error systems register on their first run
 void world.systems;
 const disposed: Promise<void> = world.dispose();

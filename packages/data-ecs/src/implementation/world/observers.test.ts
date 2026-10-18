@@ -8,10 +8,10 @@ import { createObservers } from "./observers.js";
 import { createState } from "./state.js";
 import { createWorld } from "../index.js";
 
-const level = "observersTest/level";
-const other = "observersTest/other";
-const total = "observersTest/total";
-const weight = "observersTest/weight";
+const level = Symbol("observersTest/level");
+const other = Symbol("observersTest/other");
+const total = Symbol("observersTest/total");
+const weight = Symbol("observersTest/weight");
 
 declare module "@adobe/data-ecs" {
     interface Resources {
@@ -95,15 +95,15 @@ describe("observing resources", () => {
         });
         world.observe.resource(level)(value => seen.push(value));
         const { failures } = await world.run(raise, { by: 1 });
-        expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "observer", name: level, message: "observer failed" }]);
+        expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "observer", name: "observersTest/level", message: "observer failed" }]);
         expect(seen).toEqual([0, 2]);
     });
 });
 
-const heat = "observersTest/heat";
-const tag = "observersTest/tag";
-const flag = "observersTest/flag";
-const filler = "observersTest/filler";
+const heat = Symbol("observersTest/heat");
+const tag = Symbol("observersTest/tag");
+const flag = Symbol("observersTest/flag");
+const filler = Symbol("observersTest/filler");
 
 declare module "@adobe/data-ecs" {
     interface Components {
@@ -284,9 +284,9 @@ describe("entity observers' structural changes", () => {
     });
 });
 
-const score = "observersTest/score";
-const benched = "observersTest/benched";
-const marker = "observersTest/marker";
+const score = Symbol("observersTest/score");
+const benched = Symbol("observersTest/benched");
+const marker = Symbol("observersTest/marker");
 
 declare module "@adobe/data-ecs" {
     interface Components {
@@ -459,7 +459,7 @@ describe("observing queries", () => {
         const seen: number[] = [];
         const stop = world.observe.count({ required: [score, benched] })(count => seen.push(count));
         const { failures } = await world.run(bench);
-        expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "observer", name: `${score}, ${benched}`, message: "observer failed" }]);
+        expect(failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "observer", name: `observersTest/score, observersTest/benched`, message: "observer failed" }]);
         stop();
         await world.run(join);
         await world.run(leave);
@@ -467,8 +467,8 @@ describe("observing queries", () => {
     });
 });
 
-const rank = "observersTest/rank";
-const second = "observersTest/second";
+const rank = Symbol("observersTest/rank");
+const second = Symbol("observersTest/second");
 
 declare module "@adobe/data-ecs" {
     interface Components {

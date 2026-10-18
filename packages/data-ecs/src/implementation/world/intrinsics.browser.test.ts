@@ -4,46 +4,48 @@ import { F32, Mat4x4, Quat, U32, Vec2, Vec3, Vec4 } from "../../interface/math/i
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { gpuDevice } from "../../interface/resources/gpu-device.js";
+import { workers } from "../../interface/resources/workers.js";
 
-const f2a = "intrinsicsTest/f2a";
-const f2b = "intrinsicsTest/f2b";
-const f2p = "intrinsicsTest/f2p";
-const f2o = "intrinsicsTest/f2o";
-const i2a = "intrinsicsTest/i2a";
-const u2a = "intrinsicsTest/u2a";
-const i2b = "intrinsicsTest/i2b";
-const u2b = "intrinsicsTest/u2b";
-const i2o = "intrinsicsTest/i2o";
-const u2o = "intrinsicsTest/u2o";
-const f3a = "intrinsicsTest/f3a";
-const f3b = "intrinsicsTest/f3b";
-const f3p = "intrinsicsTest/f3p";
-const f3o = "intrinsicsTest/f3o";
-const i3a = "intrinsicsTest/i3a";
-const u3a = "intrinsicsTest/u3a";
-const i3b = "intrinsicsTest/i3b";
-const u3b = "intrinsicsTest/u3b";
-const i3o = "intrinsicsTest/i3o";
-const u3o = "intrinsicsTest/u3o";
-const f4a = "intrinsicsTest/f4a";
-const f4b = "intrinsicsTest/f4b";
-const f4p = "intrinsicsTest/f4p";
-const f4o = "intrinsicsTest/f4o";
-const i4a = "intrinsicsTest/i4a";
-const u4a = "intrinsicsTest/u4a";
-const i4b = "intrinsicsTest/i4b";
-const u4b = "intrinsicsTest/u4b";
-const i4o = "intrinsicsTest/i4o";
-const u4o = "intrinsicsTest/u4o";
-const fo = "intrinsicsTest/fo";
-const ma = "intrinsicsTest/ma";
-const mb = "intrinsicsTest/mb";
-const mo = "intrinsicsTest/mo";
-const qa = "intrinsicsTest/qa";
-const qb = "intrinsicsTest/qb";
-const qo = "intrinsicsTest/qo";
-const ua = "intrinsicsTest/ua";
-const uo = "intrinsicsTest/uo";
+const f2a = Symbol("intrinsicsTest/f2a");
+const f2b = Symbol("intrinsicsTest/f2b");
+const f2p = Symbol("intrinsicsTest/f2p");
+const f2o = Symbol("intrinsicsTest/f2o");
+const i2a = Symbol("intrinsicsTest/i2a");
+const u2a = Symbol("intrinsicsTest/u2a");
+const i2b = Symbol("intrinsicsTest/i2b");
+const u2b = Symbol("intrinsicsTest/u2b");
+const i2o = Symbol("intrinsicsTest/i2o");
+const u2o = Symbol("intrinsicsTest/u2o");
+const f3a = Symbol("intrinsicsTest/f3a");
+const f3b = Symbol("intrinsicsTest/f3b");
+const f3p = Symbol("intrinsicsTest/f3p");
+const f3o = Symbol("intrinsicsTest/f3o");
+const i3a = Symbol("intrinsicsTest/i3a");
+const u3a = Symbol("intrinsicsTest/u3a");
+const i3b = Symbol("intrinsicsTest/i3b");
+const u3b = Symbol("intrinsicsTest/u3b");
+const i3o = Symbol("intrinsicsTest/i3o");
+const u3o = Symbol("intrinsicsTest/u3o");
+const f4a = Symbol("intrinsicsTest/f4a");
+const f4b = Symbol("intrinsicsTest/f4b");
+const f4p = Symbol("intrinsicsTest/f4p");
+const f4o = Symbol("intrinsicsTest/f4o");
+const i4a = Symbol("intrinsicsTest/i4a");
+const u4a = Symbol("intrinsicsTest/u4a");
+const i4b = Symbol("intrinsicsTest/i4b");
+const u4b = Symbol("intrinsicsTest/u4b");
+const i4o = Symbol("intrinsicsTest/i4o");
+const u4o = Symbol("intrinsicsTest/u4o");
+const fo = Symbol("intrinsicsTest/fo");
+const ma = Symbol("intrinsicsTest/ma");
+const mb = Symbol("intrinsicsTest/mb");
+const mo = Symbol("intrinsicsTest/mo");
+const qa = Symbol("intrinsicsTest/qa");
+const qb = Symbol("intrinsicsTest/qb");
+const qo = Symbol("intrinsicsTest/qo");
+const ua = Symbol("intrinsicsTest/ua");
+const uo = Symbol("intrinsicsTest/uo");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -520,7 +522,7 @@ const u32 = System.create({ name: "intrinsicsTest/u32", kernel: "gpu", input: op
 });
 
 /** A class of declared builtins: its kernel, the functions it selects between by `op`, and what it writes. */
-const testCase = <S, O extends string>(system: S, operations: readonly string[], output: O, exact: boolean) => ({ system, operations, output, exact });
+const testCase = <S, O extends symbol>(system: S, operations: readonly string[], output: O, exact: boolean) => ({ system, operations, output, exact });
 
 const cases = [
     testCase(vec2f, ["Vec2.abs", "Vec2.acos", "Vec2.asin", "Vec2.asinh", "Vec2.atan", "Vec2.atanh", "Vec2.ceil", "Vec2.cos", "Vec2.cosh", "Vec2.exp", "Vec2.exp2", "Vec2.floor", "Vec2.fract", "Vec2.negate", "Vec2.normalize", "Vec2.round", "Vec2.sign", "Vec2.sin", "Vec2.sinh", "Vec2.tan", "Vec2.tanh", "Vec2.trunc", "Vec2.acosh", "Vec2.log", "Vec2.log2", "Vec2.sqrt", "Vec2.add", "Vec2.subtract", "Vec2.min", "Vec2.max", "Vec2.reflect", "Vec2.step", "Vec2.pow", "Vec2.scale", "Vec2.mix", "Vec2.refract", "Vec2.clamp", "Vec2.smoothstep", "Vec2.faceforward"], f2o, false),
@@ -551,8 +553,8 @@ const device = async (): Promise<GPUDevice> => {
 
 describe("declared WGSL builtins", () => {
     it("give on the GPU what their functions give on the CPU", async () => {
-        const gpuWorld = createWorld({ gpuDevice: await device() });
-        const cpuWorld = createWorld({ workers: 0 });
+        const gpuWorld = createWorld({ [gpuDevice]: await device() });
+        const cpuWorld = createWorld({ [workers]: 0 });
         for (const world of [gpuWorld, cpuWorld]) {
             await world.run(spawn);
         }

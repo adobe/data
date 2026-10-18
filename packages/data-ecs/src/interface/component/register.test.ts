@@ -4,15 +4,15 @@ import { declarationOf, kindOf, threadOfDeclaration } from "../registry/index.js
 import { Trait } from "../trait/trait.js";
 import { Component } from "./component.js";
 
-const parent = "typesComponentTest/parent";
-const count = "typesComponentTest/count";
-const label = "typesComponentTest/label";
-const placed = "typesComponentTest/placed";
-const position = "typesComponentTest/position";
-const bitmap = "typesComponentTest/bitmap";
-const marked = "typesComponentTest/marked";
-const mark = "typesComponentTest/mark";
-const slot = "typesComponentTest/slot";
+const parent = Symbol("typesComponentTest/parent");
+const count = Symbol("typesComponentTest/count");
+const label = Symbol("typesComponentTest/label");
+const placed = Symbol("typesComponentTest/placed");
+const position = Symbol("typesComponentTest/position");
+const bitmap = Symbol("typesComponentTest/bitmap");
+const marked = Symbol("typesComponentTest/marked");
+const mark = Symbol("typesComponentTest/mark");
+const slot = Symbol("typesComponentTest/slot");
 
 declare module "@adobe/data-ecs" {
     export interface Threads {
@@ -34,7 +34,7 @@ declare module "@adobe/data-ecs" {
 }
 
 /** Registers as an untyped caller would, bypassing the types' checks. */
-const register = (name: string | symbol, declaration: object): void => Reflect.apply(Component.register, undefined, [name, declaration]);
+const register = (key: unknown, declaration: object): void => Reflect.apply(Component.register, undefined, [key, declaration]);
 
 describe("Component.register", () => {
     it("records the declaration, and its thread: none for a struct, else its own or \"world\"", () => {
@@ -51,37 +51,47 @@ describe("Component.register", () => {
         expect(threadOfDeclaration({ type: { type: "object", properties: { at: { type: "number" } }, required: [] } })).toBe("world");
         expect([parent, label, placed, position].map(name => threadOfDeclaration(declarationOf(name) ?? {}))).toEqual([null, "world", "typesComponentTest", null]);
     });
-    it("accepts the same declaration again, as a module evaluated again makes it, and rejects a different one or a name of another kind", () => {
+    it("accepts the same declaration again, as a module evaluated again makes it, and rejects a different one or a key of another kind", () => {
         Component.register(count, { type: { type: "number" } });
         expect(() => Component.register(count, { type: { type: "number" } })).not.toThrow();
-        expect(() => register(count, { type: { type: "integer" } })).toThrow(`Cannot declare component "${count}": already declared as a component.`);
+        expect(() => register(count, { type: { type: "integer" } })).toThrow(`Cannot register component "typesComponentTest/count": already registered as a component, with another declaration.`);
         expect(declarationOf(count)).toEqual({ type: { type: "number" } });
-        // @ts-expect-error derived names a trait, not a component
-        expect(() => Component.register("derived", { type: { const: true } })).toThrow("already declared as a trait");
+        const claimed = Symbol("typesComponentTest/claimed");
+        register(claimed, { type: { const: true } });
+        expect(() => Reflect.apply(Trait.register, undefined, [claimed])).toThrow(`Cannot register trait "typesComponentTest/claimed": already registered as a component.`);
         expect(kindOf(count)).toBe("component");
     });
+    it("takes only plain symbols as keys, so built-in traits' string names are no component's", () => {
+        // @ts-expect-error a key is a symbol, and derived is a built-in trait's name
+        expect(() => Component.register("derived", { type: { const: true } })).toThrow(`Cannot register component "derived": a key is a plain Symbol(...), not a string.`);
+        expect(() => register(Symbol.for("typesComponentTest/shared"), { type: { const: true } })).toThrow("a Symbol.for key is shared across the program");
+        expect(() => register(Symbol.asyncIterator, { type: { const: true } })).toThrow("Symbol.asyncIterator is a well-known symbol.");
+        expect(kindOf("derived")).toBe(undefined);
+    });
     it("rejects what types reject, for untyped callers, recording nothing", () => {
-        expect(() => register("typesComponentTest/strayTrait", { type: { type: "number" }, unknown: true })).toThrow("unknown isn't a registered trait");
-        expect(() => register("typesComponentTest/badReference", { type: { type: "number" }, reference: "weak" })).toThrow("a reference's type is Entity.schema");
-        expect(() => register("typesComponentTest/badSlot", { type: { type: "number" }, derived: true })).toThrow("a derived component's type has a default");
-        expect(() => register("typesComponentTest/reduced", { type: { type: "number" }, reduce: "+" })).toThrow("only a resource is reduced");
-        expect(declarationOf("typesComponentTest/badReference")).toBe(undefined);
-        expect(kindOf("typesComponentTest/badReference")).toBe(undefined);
+        expect(() => register(Symbol("typesComponentTest/strayTrait"), { type: { type: "number" }, unknown: true })).toThrow("unknown isn't a registered trait");
+        expect(() => register(Symbol("typesComponentTest/badReference"), { type: { type: "number" }, reference: "weak" })).toThrow("a reference's type is Entity.schema");
+        expect(() => register(Symbol("typesComponentTest/badSlot"), { type: { type: "number" }, derived: true })).toThrow("a derived component's type has a default");
+        expect(() => register(Symbol("typesComponentTest/reduced"), { type: { type: "number" }, reduce: "+" })).toThrow("only a resource is reduced");
+        const badReference = Symbol("typesComponentTest/badReference");
+        expect(() => register(badReference, { type: { type: "number" }, reference: "weak" })).toThrow("a reference's type is Entity.schema");
+        expect(declarationOf(badReference)).toBe(undefined);
+        expect(kindOf(badReference)).toBe(undefined);
     });
     it("rejects a schema whose GPU layout can't hold it", () => {
-        expect(() => register("typesComponentTest/storageText", { type: { type: "array", items: { type: "string" }, layout: "storage" } })).toThrow("layout needs numbers");
+        expect(() => register(Symbol("typesComponentTest/storageText"), { type: { type: "array", items: { type: "string" }, layout: "storage" } })).toThrow("layout needs numbers");
     });
     it("checks thread and transfer as far as values tell", () => {
-        expect(() => register("typesComponentTest/placedStruct", { type: { type: "number" }, thread: "main" })).toThrow("a struct lives in shared memory, so it has no thread");
-        expect(() => register("typesComponentTest/placedTag", { type: { const: true }, thread: "main" })).toThrow("a struct lives in shared memory");
-        expect(() => register("typesComponentTest/emptyThread", { thread: "" })).toThrow("thread is a thread's name");
-        expect(() => register("typesComponentTest/dataTransfer", { type: { type: "string" }, transfer: true })).toThrow("a value with a schema is data, which isn't Transferable");
-        expect(() => register("typesComponentTest/falseTransfer", { transfer: false })).toThrow("transfer is true");
+        expect(() => register(Symbol("typesComponentTest/placedStruct"), { type: { type: "number" }, thread: "main" })).toThrow("a struct lives in shared memory, so it has no thread");
+        expect(() => register(Symbol("typesComponentTest/placedTag"), { type: { const: true }, thread: "main" })).toThrow("a struct lives in shared memory");
+        expect(() => register(Symbol("typesComponentTest/emptyThread"), { thread: "" })).toThrow("thread is a thread's name");
+        expect(() => register(Symbol("typesComponentTest/dataTransfer"), { type: { type: "string" }, transfer: true })).toThrow("a value with a schema is data, which isn't Transferable");
+        expect(() => register(Symbol("typesComponentTest/falseTransfer"), { transfer: false })).toThrow("transfer is true");
         Component.register(bitmap, { transfer: true });
         expect(declarationOf(bitmap)).toEqual({ transfer: true });
     });
     it("takes traits other packages register, in the namespace components share", () => {
-        expect(() => register(marked, { type: { const: true }, [mark]: true })).toThrow(`${mark} isn't a registered trait`);
+        expect(() => register(marked, { type: { const: true }, [mark]: true })).toThrow(`typesComponentTest/mark isn't a registered trait`);
         Trait.register(mark);
         Component.register(marked, { type: { const: true }, [mark]: true });
         expect(() => Trait.register(mark)).not.toThrow();

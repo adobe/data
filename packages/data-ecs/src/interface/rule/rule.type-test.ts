@@ -10,11 +10,11 @@ import type { ChangeSet } from '../finalizer/body.js';
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };
 
-const source = "ruleTypeTest/source";
-const hidden = "ruleTypeTest/hidden";
-const slot = "ruleTypeTest/slot";
-const parent = "ruleTypeTest/parent";
-const time = "ruleTypeTest/time";
+const source = Symbol("ruleTypeTest/source");
+const hidden = Symbol("ruleTypeTest/hidden");
+const slot = Symbol("ruleTypeTest/slot");
+const parent = Symbol("ruleTypeTest/parent");
+const time = Symbol("ruleTypeTest/time");
 
 declare module '@adobe/data-ecs' {
     export interface Components {

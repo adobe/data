@@ -1,4 +1,5 @@
 import type { Finalizer } from '../finalizer/created.js';
+import { labelOf } from './names.js';
 
 /**
  * Finalizers in run order: `before` and `after` first, then registration order. Throws for a cycle, and for two that
@@ -43,7 +44,7 @@ export const orderFinalizers = <T extends { readonly name: string; readonly fina
     for (let a = 0; a < runners.length; a++) for (let b = a + 1; b < runners.length; b++) {
         const conflict = [...writes[a]].find(key => writes[b].has(key) || reads[b].has(key)) ?? [...writes[b]].find(key => reads[a].has(key));
         if (conflict !== undefined && !reaches(a, b) && !reaches(b, a)) {
-            throw new Error(`Finalizers "${runners[a].name}" and "${runners[b].name}" both access "${String(conflict)}", one writing it; order them with before or after.`);
+            throw new Error(`Finalizers "${runners[a].name}" and "${runners[b].name}" both access "${labelOf(conflict)}", one writing it; order them with before or after.`);
         }
     }
     return order.map(index => runners[index]);

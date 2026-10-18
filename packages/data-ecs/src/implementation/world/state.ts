@@ -1,6 +1,5 @@
 import type { Entity } from '../../interface/entity/entity.js';
-import { declarationOf } from '../../interface/registry/index.js';
-import { kindOf } from '../../interface/registry/index.js';
+import { declarationOf, kindOf, labelOf } from '../../interface/registry/index.js';
 import { createArchetype, startTicks, type Archetype, type Storage } from './archetype.js';
 import type { Shape, SpawnBatch } from './batches.js';
 import type { Directory } from './directories.js';
@@ -144,13 +143,13 @@ export const idOf = (state: State, key: Key): number => {
     const existing = state.ids.get(key);
     if (existing !== undefined) return existing;
     const declaration = declarationOf(key);
-    if (declaration === undefined) throw new Error(`"${String(key)}" has no registered schema; import the module that registers it.`);
+    if (declaration === undefined) throw new Error(`"${labelOf(key)}" has no registered schema; import the module that registers it.`);
     const { structure } = state;
     // A host gets its id first, so stratifying with the new edge can name it; a cycle throws before anything is recorded.
     const within = declaration.within;
     let host = -1;
     if (typeof within === "string" || typeof within === "symbol") {
-        if (resolving.has(key)) throw new Error(`Components are within each other in a cycle: ${[...resolving].map(String).sort().join(", ")}.`);
+        if (resolving.has(key)) throw new Error(`Components are within each other in a cycle: ${[...resolving].map(labelOf).sort().join(", ")}.`);
         resolving.add(key);
         try {
             host = idOf(state, within);
@@ -163,7 +162,7 @@ export const idOf = (state: State, key: Key): number => {
     if (host >= 0) {
         const hosts = [...structure.hosts];
         hosts[id] = host;
-        restratify(structure, structure.rules, hosts, other => String(other === id ? key : state.keys[other]));
+        restratify(structure, structure.rules, hosts, other => labelOf(other === id ? key : state.keys[other]));
     }
     state.ids.set(key, id);
     state.keys.push(key);
@@ -182,7 +181,7 @@ export const idOf = (state: State, key: Key): number => {
 /** The id of a component a command names. Throws for a derived one, which only rules add and remove. */
 export const commandIdOf = (state: State, key: Key): number => {
     const id = idOf(state, key);
-    if (state.derived[id]) throw new Error(`"${String(key)}" is derived, so only rules add and remove it.`);
+    if (state.derived[id]) throw new Error(`"${labelOf(key)}" is derived, so only rules add and remove it.`);
     return id;
 };
 

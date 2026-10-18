@@ -1,7 +1,7 @@
 import type { Finalizer } from '../finalizer/created.js';
 import type { Rule } from '../rule/created.js';
 import type { Definition } from '../system/definition.js';
-import { declarationOf } from './declarations.js';
+import { declarationOf, labelOf } from './names.js';
 import { orderFinalizers } from './finalizer-order.js';
 import { sameDeclaration } from './same-declaration.js';
 import { strataOf, type RuleFacts } from './strata.js';
@@ -57,7 +57,7 @@ const checkStrata = (all: readonly Rule[]): void => {
         const { name, components, derive } = rule.declaration;
         return { name, has: (components.has ?? []).map(idOf), not: (components.not ?? []).map(idOf), derives: derive.map(idOf) };
     });
-    strataOf(facts, hosts, id => String(keys[id]));
+    strataOf(facts, hosts, id => labelOf(keys[id]));
 };
 
 /** Records a rule, which applies in every world; the same rule again is already recorded. Throws for a cycle through a negation. */

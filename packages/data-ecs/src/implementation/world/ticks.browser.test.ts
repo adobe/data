@@ -5,8 +5,9 @@ import { clock } from "../../interface/resources/clock.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { readResource } from "./reads.test-helper.js";
+import { workers } from "../../interface/resources/workers.js";
 
-const frames = "ticksBrowserTest/frames";
+const frames = Symbol("ticksBrowserTest/frames");
 declare module "@adobe/data-ecs" {
     export interface Resources {
         [frames]: { type: number };
@@ -25,7 +26,7 @@ describe("a frame cadence", () => {
             requested++;
             return original(callback);
         };
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         try {
             world.add(count);
             await world.run(start);

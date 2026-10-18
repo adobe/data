@@ -5,6 +5,7 @@ import { idOf, type Key, type State } from './state.js';
 import { synchronizeAlone } from './synchronize.js';
 import { addCommand, createBuffer, spawnCommand } from './buffer.js';
 import { pushValues } from './commands.js';
+import { labelOf } from '../../interface/registry/index.js';
 
 /** Resources are components on one entity, so they share storage, ticks and sync with every other component. */
 export type ResourceCell = { readonly storage: Storage; readonly row: number };
@@ -67,6 +68,6 @@ export const resourceCell = (state: State, key: Key): ResourceCell => {
     const index = indexOf(state.resourceEntity);
     const archetype = state.archetypes[state.entities.archetype[index]];
     const storage = archetype?.storageOf.get(idOf(state, key));
-    if (storage === undefined) throw new Error(`Resource "${String(key)}" isn't in this world.`);
+    if (storage === undefined) throw new Error(`Resource "${labelOf(key)}" isn't in this world.`);
     return { storage, row: state.entities.row[index] };
 };

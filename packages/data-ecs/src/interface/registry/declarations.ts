@@ -1,7 +1,7 @@
 import type { Schema } from '../schema/schema.js';
 import type { Name as TraitName } from '../trait/name.js';
 import { layoutOf } from './layout.js';
-import { declareName, kindOf } from './names.js';
+import { claimKey, declarationOf, failRegistration, kindOf, labelOf, requireKey } from './names.js';
 import type { Registry } from './registry.js';
 import { isReduction } from './reduction.js';
 import { sameDeclaration } from './same-declaration.js';
@@ -14,18 +14,11 @@ import { isTrait } from './traits.js';
  */
 export type AnyDeclaration = { readonly type?: Schema; readonly default?: unknown } & { readonly [T in TraitName]?: unknown };
 
-
-const registered = new Map<string | symbol, AnyDeclaration>();
-let symbolNames = false;
-
-/** The declaration of any registered component or resource. */
-export const declarationOf = (name: string | symbol): AnyDeclaration | undefined => registered.get(name);
-
 /** The value schema of any registered component or resource, or undefined for a value that isn't data. */
-export const schemaOf = (name: string | symbol): Schema | undefined => registered.get(name)?.type;
+export const schemaOf = (key: unknown): Schema | undefined => declarationOf(key)?.type;
 
-/** Whether any component or resource is named by a symbol, so value objects need their symbol keys read too. */
-export const hasSymbolNames = (): boolean => symbolNames;
+/** Whether any component or resource is named by a symbol: every one is. */
+export const hasSymbolNames = (): boolean => true;
 
 /** Global constructors of Transferable values, where the platform has them. */
 const transferables: readonly string[] = [
@@ -49,10 +42,10 @@ export const threadOfDeclaration = (declaration: AnyDeclaration): string | null 
 };
 
 /** Throws for a declaration whose traits can't hold, so far as values tell: types check the rest. */
-const check = (kind: "component" | "resource", name: string | symbol, declaration: AnyDeclaration): void => {
-    const fail = (message: string): never => { throw new Error(`Cannot declare ${kind} ${String(name)}: ${message}`); };
+const check = (kind: "component" | "resource", key: symbol, declaration: AnyDeclaration): void => {
+    const fail = (message: string): never => failRegistration(kind, key, message);
     for (const trait of Reflect.ownKeys(declaration)) {
-        if (trait !== "default" && !isTrait(trait)) fail(`${String(trait)} isn't a registered trait.`);
+        if (trait !== "default" && !isTrait(trait)) fail(`${labelOf(trait)} isn't a registered trait.`);
     }
     const { type } = declaration;
     if (type !== undefined && "default" in declaration) fail("its schema holds its default.");
@@ -91,13 +84,12 @@ const check = (kind: "component" | "resource", name: string | symbol, declaratio
 
 /** The constraint makes each `D[K]` an `AnyDeclaration` without evaluating `D`'s generic declaration type. */
 export const createRegistry = <D extends { readonly [K in keyof D]: AnyDeclaration }>(kind: "component" | "resource"): Registry<D> => {
-    const register = <K extends keyof D & (string | symbol)>(name: K, declaration: D[K]): void => {
-        const existing = registered.get(name);
-        if (existing !== undefined && kindOf(name) === kind && sameDeclaration(existing, declaration)) return;
-        check(kind, name, declaration);
-        declareName(name, kind);
-        registered.set(name, declaration);
-        if (typeof name === "symbol") symbolNames = true;
+    const register = <K extends keyof D & symbol>(key: K, declaration: D[K]): void => {
+        const symbol = requireKey(kind, key);
+        const existing = kindOf(symbol);
+        if (existing === kind && sameDeclaration(declarationOf(symbol), declaration)) return;
+        if (existing === undefined) check(kind, symbol, declaration);
+        claimKey(symbol, kind, declaration);
     };
     return { register };
 };

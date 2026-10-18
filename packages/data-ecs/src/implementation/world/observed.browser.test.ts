@@ -3,9 +3,10 @@ import { Component } from "../../interface/component/component.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
 
-const value = "observedWorkersTest/value";
-const seen = "observedWorkersTest/seen";
+const value = Symbol("observedWorkersTest/value");
+const seen = Symbol("observedWorkersTest/seen");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -33,7 +34,7 @@ const watch = System.create({ name: "observedWorkersTest/watch", kernel: "cpu", 
 describe("tick stamps only where observed, on workers", () => {
     for (const wasm of [false, true]) {
         it(`start once an observer registers (${wasm ? "WASM" : "JS"} kernels)`, async () => {
-            const world = createWorld({ workers: 2 }, { wasm, minimumChunk: 64 });
+            const world = createWorld({ [workers]: 2 }, { wasm, minimumChunk: 64 });
             await world.run(seed);
             await world.run(bump);
             // New observers see everything once.

@@ -6,8 +6,8 @@ import type { Definition } from "../../interface/registry/index.js";
 import type { Leaf } from "../../interface/system/leaf.js";
 import { scheduleOf } from "../../interface/registry/schedule.js";
 
-const value = "scheduleTest/value";
-const other = "scheduleTest/other";
+const value = Symbol("scheduleTest/value");
+const other = Symbol("scheduleTest/other");
 
 declare module "@adobe/data-ecs" {
     export interface Components {

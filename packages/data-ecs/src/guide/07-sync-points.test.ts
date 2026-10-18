@@ -3,9 +3,9 @@ import { Component, Resource, System, World } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const unit = "guide/sync/unit";
-const shield = "guide/sync/shield";
-const counted = "guide/sync/counted";
+const unit = Symbol("guide/sync/unit");
+const shield = Symbol("guide/sync/shield");
+const counted = Symbol("guide/sync/counted");
 
 declare module "@adobe/data-ecs" {
     interface Components {

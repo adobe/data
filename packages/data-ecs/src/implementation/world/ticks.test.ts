@@ -3,8 +3,8 @@ import { Resource, System, always, cadence, clock, report, wake, workers } from 
 import { toPromise } from "../../interface/observe/to-promise.js";
 import { createWorld } from "./create.js";
 
-const frames = "ticksTest/frames";
-const seen = "ticksTest/seen";
+const frames = Symbol("ticksTest/frames");
+const seen = Symbol("ticksTest/seen");
 declare module "@adobe/data-ecs" {
     interface Resources {
         [frames]: { type: number };
@@ -44,7 +44,7 @@ const pause = (milliseconds: number): Promise<void> => new Promise(resolve => se
 
 describe("ticks", () => {
     it("run the added systems on the beat after a run arrives, with the clock, and only while one is added", async () => {
-        await using world = createWorld({ workers: 0 });
+        await using world = createWorld({ [workers]: 0 });
         await world.run(nothing);
         await pause(40);
         expect(await toPromise(world.observe.resource(frames))).toBe(0);
@@ -63,7 +63,7 @@ describe("ticks", () => {
     });
 
     it("keep ticking while always is set, at the cadence's step, and stop when it's cleared or the world is disposed", async () => {
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         world.add(count);
         await world.run(fast);
         expect(await until(world.observe.resource(frames), value => value >= 5)).toBeGreaterThanOrEqual(5);
@@ -82,7 +82,7 @@ describe("ticks", () => {
     });
 
     it("tick again at the wake time a system asks for", async () => {
-        await using world = createWorld({ workers: 0 });
+        await using world = createWorld({ [workers]: 0 });
         world.add(later);
         world.add(count);
         await world.run(nothing);
@@ -92,7 +92,7 @@ describe("ticks", () => {
     });
 
     it("keep the last tick's report in the report resource", async () => {
-        await using world = createWorld({ workers: 0 });
+        await using world = createWorld({ [workers]: 0 });
         world.add(fail);
         await world.run(nothing);
         const last = await until(world.observe.resource(report), value => value.failures.length > 0);
@@ -102,7 +102,7 @@ describe("ticks", () => {
     it("reject a system that conflicts with one added with no order between them, and one with input", async () => {
         const other = System.create({ name: "ticksTest/other", resources: { write: [frames] } }, ({ resources }) => { resources[frames] = 0; });
         const withInput = System.create({ name: "ticksTest/withInput", input: { type: "object", properties: { by: { type: "number" } } } }, () => {});
-        await using world = createWorld({ workers: 0 });
+        await using world = createWorld({ [workers]: 0 });
         world.add(count);
         expect(() => world.add(other)).toThrow('both access "ticksTest/frames"');
         // @ts-expect-error a system with input can't be added

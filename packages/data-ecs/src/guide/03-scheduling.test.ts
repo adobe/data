@@ -3,8 +3,8 @@ import { Component, System, World } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const health = "guide/scheduling/health";
-const damage = "guide/scheduling/damage";
+const health = Symbol("guide/scheduling/health");
+const damage = Symbol("guide/scheduling/damage");
 
 declare module "@adobe/data-ecs" {
     interface Components {

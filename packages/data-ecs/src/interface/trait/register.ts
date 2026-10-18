@@ -1,13 +1,9 @@
-import { declareName } from '../registry/names.js';
-import { addTrait, isTrait } from '../registry/traits.js';
-import type { Name } from './name.js';
+import { addTrait } from '../registry/traits.js';
+import type { BuiltIn, Name } from './name.js';
 
 /**
- * Claims a trait's name, in the namespace components and resources share. The same trait again, as a module evaluated
- * again registers it, is accepted. Throws for a name claimed otherwise.
+ * Registers a trait under `key`, a plain `Symbol(...)`: string trait names are the core's built-in traits. The same
+ * trait again, as a module evaluated again registers it, is accepted. Throws for a key that isn't a plain symbol, or
+ * one registered as a component or resource.
  */
-export const register = (name: Exclude<Name, "type"> & (string | symbol)): void => {
-    if (isTrait(name)) return;
-    declareName(name, "trait");
-    addTrait(name);
-};
+export const register = (key: Exclude<Name, BuiltIn> & symbol): void => addTrait(key);

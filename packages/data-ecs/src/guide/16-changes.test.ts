@@ -3,9 +3,9 @@ import { Component, Finalizer, Resource, System, World } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const name = "guide/changes/name";
-const score = "guide/changes/score";
-const journal = "guide/changes/journal";
+const name = Symbol("guide/changes/name");
+const score = Symbol("guide/changes/score");
+const journal = Symbol("guide/changes/journal");
 
 declare module "@adobe/data-ecs" {
     interface Components {

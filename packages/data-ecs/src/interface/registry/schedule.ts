@@ -3,6 +3,7 @@ import type { Definition } from '../system/definition.js';
 import type { Leaf } from '../system/leaf.js';
 import { requireDefinition } from './program.js';
 import { sameDeclaration } from './same-declaration.js';
+import { labelOf } from './names.js';
 
 type Key = string | symbol;
 
@@ -188,7 +189,7 @@ const createSchedule = (system: Definition): Schedule => {
         for (let b = a + 1; b < leaves.length; b++) {
             const key = conflictOf(accesses[a], accesses[b]);
             if (key !== undefined && !ordered(reach, leaves[a].unit, leaves[b].unit)) {
-                throw new Error(`Systems "${leaves[a].leaf.declaration.name}" and "${leaves[b].leaf.declaration.name}" both access "${String(key)}" and one writes it; order them with before or after.`);
+                throw new Error(`Systems "${leaves[a].leaf.declaration.name}" and "${leaves[b].leaf.declaration.name}" both access "${labelOf(key)}" and one writes it; order them with before or after.`);
             }
         }
     }

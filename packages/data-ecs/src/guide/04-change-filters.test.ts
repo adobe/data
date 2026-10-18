@@ -3,13 +3,13 @@ import { Component, Entity, Resource, System, World } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const score = "guide/filters/score";
-const shown = "guide/filters/shown";
-const level = "guide/filters/level";
-const enemy = "guide/filters/enemy";
-const paused = "guide/filters/paused";
-const map = "guide/filters/map";
-const steps = "guide/filters/steps";
+const score = Symbol("guide/filters/score");
+const shown = Symbol("guide/filters/shown");
+const level = Symbol("guide/filters/level");
+const enemy = Symbol("guide/filters/enemy");
+const paused = Symbol("guide/filters/paused");
+const map = Symbol("guide/filters/map");
+const steps = Symbol("guide/filters/steps");
 
 declare module "@adobe/data-ecs" {
     interface Components {

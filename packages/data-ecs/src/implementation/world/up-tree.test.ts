@@ -6,11 +6,11 @@ import type { World } from "../../interface/world/world.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 
-const local = "upTreeTest/local";
-const full = "upTreeTest/full";
-const filtered = "upTreeTest/filtered";
-const parent = "upTreeTest/parent";
-const hidden = "upTreeTest/hidden";
+const local = Symbol("upTreeTest/local");
+const full = Symbol("upTreeTest/full");
+const filtered = Symbol("upTreeTest/filtered");
+const parent = Symbol("upTreeTest/parent");
+const hidden = Symbol("upTreeTest/hidden");
 
 declare module "@adobe/data-ecs" {
     interface Components {
@@ -145,7 +145,7 @@ it.each([true, false])("keeps its tree current across spawns, despawns, reparent
         await ecs.run(propagateFiltered);
         for (const key of [full, filtered] as const) {
             const want = await expected(ecs, key);
-            expect(await actual(ecs, key, want.keys()), `${key}, frame ${frame}`).toEqual(want);
+            expect(await actual(ecs, key, want.keys()), `${String(key)}, frame ${frame}`).toEqual(want);
         }
     }
 });

@@ -4,11 +4,12 @@ import { Entity } from "../../interface/entity/entity.js";
 import { System } from "../../interface/system/system.js";
 import { count, read } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
 
-const score = "traitsTest/score";
-const slot = "traitsTest/slot";
-const ready = "traitsTest/ready";
-const parent = "traitsTest/parent";
+const score = Symbol("traitsTest/score");
+const slot = Symbol("traitsTest/slot");
+const ready = Symbol("traitsTest/ready");
+const parent = Symbol("traitsTest/parent");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -42,9 +43,9 @@ describe("traits", () => {
                 catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
             }
         });
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         await world.run(derived);
-        expect(errors).toEqual(Array.from({ length: 3 }, () => `"${slot}" is derived, so only rules add and remove it.`));
+        expect(errors).toEqual(Array.from({ length: 3 }, () => `"traitsTest/slot" is derived, so only rules add and remove it.`));
         expect(await count(world, { required: [score] })).toBe(1);
         await world.dispose();
     });
@@ -54,7 +55,7 @@ describe("traits", () => {
         let found: unknown = undefined;
         const spawn = System.create({ name: "traitsTest/spawn" }, ({ commands }) => { first = commands.spawn({ [score]: 1 }); });
         const lookup = System.create({ name: "traitsTest/lookup", lookup: { scores: { read: [score] } } }, ({ lookup: { scores } }) => { found = scores(Entity.none); });
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         await world.run(lookup);
         expect(first).not.toBe(Entity.none);

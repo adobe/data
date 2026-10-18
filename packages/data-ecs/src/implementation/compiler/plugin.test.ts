@@ -14,7 +14,7 @@ const fixture = join(directory, "fixture.js");
 writeFileSync(fixture, `import { System } from ${source("../../interface/system/system.ts")};
 import { Component } from ${source("../../interface/component/component.ts")};
 import { kernelOf } from ${source("../world/attach-kernel.ts")};
-const score = "score";
+const score = Symbol("score");
 Component.register(score, { type: { type: "number" } });
 const kernel = System.create({ name: "fixture", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
 export const description = kernelOf(kernel);
@@ -27,14 +27,17 @@ writeHelper(2);
 mkdirSync(join(directory, "node_modules/fake-math/dist"), { recursive: true });
 writeFileSync(join(directory, "node_modules/fake-math/package.json"), JSON.stringify({ name: "fake-math", type: "module", exports: "./dist/index.js" }));
 writeFileSync(join(directory, "node_modules/fake-math/dist/index.js"), "export const increment = (x) => x + 1;\n");
+/** The linked kernel's keys, in a module of their own that the edit doesn't evaluate again. */
+writeFileSync(join(directory, "linked-keys.js"), `import { Component } from ${source("../../interface/component/component.ts")};
+export const score = Symbol("score");
+Component.register(score, { type: { type: "number" } });
+`);
 writeFileSync(linked, `import { System } from ${source("../../interface/system/system.ts")};
-import { Component } from ${source("../../interface/component/component.ts")};
 import { kernelOf } from ${source("../world/attach-kernel.ts")};
 import { scaled } from "./helper.ts";
 import { increment } from "fake-math";
-const score = "score";
-Component.register(score, { type: { type: "number" } });
-// Serving evaluates this module again after an edit, declaring the same system again.
+import { score } from "./linked-keys.js";
+// Serving evaluates this module again after an edit, declaring the same system again with the same keys.
 const kernel = System.create({ name: "linked", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = increment(scaled(row.entity)); });
 export const description = kernelOf(kernel);
 `);
@@ -45,7 +48,7 @@ symlinkSync(fileURLToPath(new URL("../../..", import.meta.url)), join(directory,
 mkdirSync(join(directory, "node_modules/kernel-library/dist"), { recursive: true });
 writeFileSync(join(directory, "node_modules/kernel-library/package.json"), JSON.stringify({ name: "kernel-library", type: "module", exports: "./dist/index.js" }));
 writeFileSync(join(directory, "node_modules/kernel-library/dist/index.js"), `import { Component, System } from "@adobe/data-ecs";
-const score = "score";
+const score = Symbol("score");
 Component.register(score, { type: { type: "number" } });
 export const kernel = System.create({ name: "library", kernel: "cpu", components: { write: [score] } }, (row) => { row[score] = row.entity * 2; });
 `);

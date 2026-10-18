@@ -3,8 +3,8 @@ import { Component, System, Vec3, World, gpuDevice } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const position = "guide/gpu/position";
-const velocity = "guide/gpu/velocity";
+const position = Symbol("guide/gpu/position");
+const velocity = Symbol("guide/gpu/velocity");
 
 declare module "@adobe/data-ecs" {
     interface Components {
@@ -30,7 +30,7 @@ it("runs GPU kernels on the world's device, and reads their writes back for obse
     const adapter = await navigator.gpu.requestAdapter();
     const device = await adapter?.requestDevice();
     if (device === undefined) throw new Error("No WebGPU device.");
-    const world = createWorld({ gpuDevice: device });
+    const world = createWorld({ [gpuDevice]: device });
     expect(await toPromise(world.observe.resource(gpuDevice))).toBe(device);
     await world.run(spawn);
     await world.run(move);

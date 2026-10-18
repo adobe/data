@@ -36,6 +36,10 @@ check<Equal<Resource.Value<typeof wake>, number>>();
 check<Equal<Resource.Value<typeof clock>, { readonly now: number; readonly delta: number; readonly tick: number }>>();
 check<Equal<Resource.Value<typeof report>, World.Report>>();
 check<Equal<Cadence, { readonly kind: "frame" } | { readonly kind: "fixed"; readonly step: number; readonly maxSteps?: number }>>();
+// Built-in resources are symbols, so worlds start them at other values through their imported keys.
+check<Equal<[typeof gpuDevice, typeof workers, typeof cadence, typeof always, typeof wake, typeof clock, typeof report] extends readonly symbol[] ? true : false, true>>();
+// @ts-expect-error a resource key is its imported symbol, never its description
+create({ workers: 2 });
 
 // There are no built-in components: none exported, none registered.
 type Removed = "component" | "persistent" | "shared" | "threadPort" | "threadClaims" | "threadStatus";

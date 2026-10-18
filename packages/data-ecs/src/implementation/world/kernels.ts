@@ -8,6 +8,7 @@ import { commandIdOf, idOf, type Key, type State } from './state.js';
 import { generateWasm, instantiateWasm, type Type, type WasmColumn, type WasmKernel, type WasmLookup, type WasmRun, type WasmScalar } from './wasm.js';
 import { createDirectory, lookupParameters } from './directories.js';
 import { generateWgsl, type WgslKernel } from './wgsl.js';
+import { labelOf } from '../../interface/registry/index.js';
 
 /** A kernel without lookups passes no lookup parameters; read-only, so one is shared. */
 const noParameters: readonly number[] = [];
@@ -68,7 +69,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     const queried = new Set<Key>([...query?.read ?? [], ...query?.write ?? []]);
     const written = new Set<Key>(query?.write);
     const readable = new Set<Key>(resources?.read);
-    for (const key of description.resources) if (!readable.has(key)) fail(`reads resource "${String(key)}", which isn't in resources.read.`);
+    for (const key of description.resources) if (!readable.has(key)) fail(`reads resource "${labelOf(key)}", which isn't in resources.read.`);
     const booleans: boolean[] = [];
     // Per column, in elements of its view: entity and tick columns are dense.
     const strides: number[] = [];
@@ -85,17 +86,17 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
             dense();
             return column;
         }
-        if (!queried.has(column.component)) return fail(`"${String(column.component)}" isn't in its components' read or write.`);
+        if (!queried.has(column.component)) return fail(`"${labelOf(column.component)}" isn't in its components' read or write.`);
         const id = idOf(state, column.component);
         if (column.kind === "changed" || column.kind === "chunks") {
-            if (!written.has(column.component)) return fail(`writes "${String(column.component)}", which isn't in its components' write.`);
+            if (!written.has(column.component)) return fail(`writes "${labelOf(column.component)}", which isn't in its components' write.`);
             dense();
             return { kind: column.kind, id, leaf: 0 };
         }
         const layout = state.layouts[id];
-        if (layout.kind !== "linear") return fail(`"${String(column.component)}" isn't stored in linear memory.`);
+        if (layout.kind !== "linear") return fail(`"${labelOf(column.component)}" isn't stored in linear memory.`);
         const index = layout.leaves.findIndex(leaf => samePath(leaf.path, column.path));
-        if (index < 0) return fail(`"${String(column.component)}" has no scalar at [${column.path.join(", ")}]; destructure tuples and structs or index their fields.`);
+        if (index < 0) return fail(`"${labelOf(column.component)}" has no scalar at [${column.path.join(", ")}]; destructure tuples and structs or index their fields.`);
         const found = layout.leaves[index];
         booleans.push(found.scalar === "boolean");
         strides.push(found.unitStride);
@@ -104,17 +105,17 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         return { kind: "field", id, leaf: index };
     });
     for (const shape of description.shapes) {
-        if (!written.has(shape.component)) fail(`writes "${String(shape.component)}", which isn't in its components' write.`);
+        if (!written.has(shape.component)) fail(`writes "${labelOf(shape.component)}", which isn't in its components' write.`);
         const layout = state.layouts[idOf(state, shape.component)];
         const leaves = layout.kind === "linear" ? layout.leaves : [];
         const exact = leaves.length === shape.leaves.length && leaves.every(leaf => shape.leaves.some(path => samePath(path, leaf.path)));
-        if (!exact) fail(`a whole-value write of "${String(shape.component)}" doesn't match its schema.`);
+        if (!exact) fail(`a whole-value write of "${labelOf(shape.component)}" doesn't match its schema.`);
     }
     const declaredLookups = description.lookups.map(lookupName => lookup?.[lookupName] ?? fail(`unknown lookup "${lookupName}".`));
     // Workers read lookups from shared memory, so their values must be linear there too.
     for (const declared of declaredLookups) {
         for (const key of declared.read ?? []) {
-            if (state.layouts[idOf(state, key)].kind === "object") fail(`a lookup reads "${String(key)}", which isn't stored in linear memory.`);
+            if (state.layouts[idOf(state, key)].kind === "object") fail(`a lookup reads "${labelOf(key)}", which isn't stored in linear memory.`);
         }
     }
     const { up } = leaf.declaration;
@@ -137,7 +138,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         const columns = sources.map(source => {
             if (source.kind === "entity") return archetype.entities;
             const storage = archetype.storageOf.get(source.id);
-            if (storage === undefined) return fail(`column of "${String(state.keys[source.id])}" isn't in its components.`);
+            if (storage === undefined) return fail(`column of "${labelOf(state.keys[source.id])}" isn't in its components.`);
             if (source.kind === "changed") return storage.changed;
             if (source.kind === "chunks") return storage.chunkChanged;
             const layout = state.layouts[source.id];
@@ -149,12 +150,12 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     // A leaf's stride and offset depend only on its component's layout, so they're the same in every parent archetype.
     const upReadable = new Set<Key>(up?.read);
     const upSources = (description.upColumns ?? []).map(column => {
-        if (column.kind !== "field" || !upReadable.has(column.component)) return fail(`reads "${String(column.kind === "field" ? column.component : column.kind)}" through up, which isn't in up.read.`);
+        if (column.kind !== "field" || !upReadable.has(column.component)) return fail(`reads "${labelOf(column.kind === "field" ? column.component : column.kind)}" through up, which isn't in up.read.`);
         const id = idOf(state, column.component);
         const layout = state.layouts[id];
-        if (layout.kind !== "linear") return fail(`up reads "${String(column.component)}", which isn't stored in linear memory.`);
+        if (layout.kind !== "linear") return fail(`up reads "${labelOf(column.component)}", which isn't stored in linear memory.`);
         const found = layout.leaves.find(candidate => samePath(candidate.path, column.path));
-        if (found === undefined) return fail(`"${String(column.component)}" has no scalar at [${column.path.join(", ")}]; destructure tuples and structs or index their fields.`);
+        if (found === undefined) return fail(`"${labelOf(column.component)}" has no scalar at [${column.path.join(", ")}]; destructure tuples and structs or index their fields.`);
         return { id, leaf: found };
     });
     const upSetup: KernelSetup["up"] = {
@@ -168,7 +169,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         if (cached !== undefined && cached.version === archetype.version) return cached.columns;
         const columns = upSources.map(source => {
             const storage = archetype.storageById[source.id];
-            return storage === undefined ? fail(`a parent's archetype has no "${String(state.keys[source.id])}".`) : storage.views[source.leaf.view];
+            return storage === undefined ? fail(`a parent's archetype has no "${labelOf(state.keys[source.id])}".`) : storage.views[source.leaf.view];
         });
         upCache.set(archetype, { version: archetype.version, columns });
         return columns;

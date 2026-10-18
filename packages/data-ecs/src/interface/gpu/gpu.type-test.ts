@@ -4,7 +4,7 @@ import { System } from '../system/system.js';
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };
 
-const tint = 'gpuTypeTest/tint';
+const tint = Symbol("gpuTypeTest/tint");
 declare module '@adobe/data-ecs' {
     export interface Components {
         [tint]: { type: number };

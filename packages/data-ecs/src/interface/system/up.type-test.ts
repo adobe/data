@@ -4,10 +4,10 @@ import { System } from './system.js';
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };
 
-const local = 'upTypeTest/local';
-const world = 'upTypeTest/world';
-const parent = 'upTypeTest/parent';
-const name = 'upTypeTest/name';
+const local = Symbol("upTypeTest/local");
+const world = Symbol("upTypeTest/world");
+const parent = Symbol("upTypeTest/parent");
+const name = Symbol("upTypeTest/name");
 
 declare module '@adobe/data-ecs' {
     export interface Components {

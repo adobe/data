@@ -3,6 +3,7 @@ import type { Schema } from "../schema/schema.js";
 import type { Name as TraitName } from "../trait/name.js";
 import type { Required } from "../trait/required.js";
 import type { Traits } from "../trait/types.js";
+import type { SymbolKeys } from "../trait/symbol-keys.js";
 import type { Name } from "./name.js";
 import type { Components } from "./types.js";
 
@@ -24,7 +25,8 @@ type TypePart<K extends Name, T> =
 /**
  * What `register(K, ...)` takes: exactly the traits `Components[K]` declares, `type` as a schema for the declared type.
  * A trait whose declared value its definition doesn't allow on `K`, or one a value of its type must declare and
- * doesn't, becomes `never`, so registration fails to compile.
+ * doesn't, becomes `never`, so registration fails to compile, as every registration does while a component, resource
+ * or trait is keyed by a string (`SymbolKeys`).
  */
 export type Declaration<K extends Name> =
     TypePart<K, Components[K]["type"]>
@@ -32,4 +34,5 @@ export type Declaration<K extends Name> =
         T extends TraitName ? (Components[K][T] extends Traits<K>[T] ? Components[K][T] : never) :
         never }
     & { readonly [T in Exclude<TraitName, keyof Components[K]>]?: never }
-    & Required<Components[K], Components[K]["type"]>;
+    & Required<Components[K], Components[K]["type"]>
+    & SymbolKeys;

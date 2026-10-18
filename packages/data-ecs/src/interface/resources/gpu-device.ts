@@ -5,7 +5,7 @@ import { Resource } from '../resource/resource.js';
  * without one. It lives on `"world"`, with the world. The world moves its GPU storage to whatever this is set to, and
  * never destroys a device.
  */
-export const gpuDevice = 'gpuDevice';
+export const gpuDevice = Symbol("gpuDevice");
 
 declare module '@adobe/data-ecs' {
     export interface Resources {

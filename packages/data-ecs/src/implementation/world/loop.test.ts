@@ -4,7 +4,7 @@ import { requireDefinition, type Composite } from "../../interface/registry/inde
 import type { Cadence } from "../../interface/resources/cadence.js";
 import { createLoop, type Clock, type LoopSettings } from "./loop.js";
 
-const count = "loopTest/count";
+const count = Symbol("loopTest/count");
 declare module "@adobe/data-ecs" {
     interface Components {
         [count]: { type: number };

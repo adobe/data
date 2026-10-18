@@ -8,19 +8,20 @@ import { gpuDevice } from "../../interface/resources/gpu-device.js";
 import { System } from "../../interface/system/system.js";
 import { read, readEach, readEntity, readResource, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
 
 const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
-const position = "gpuTest/position";
-const velocity = "gpuTest/velocity";
-const score = "gpuTest/score";
-const tag = "gpuTest/tag";
-const code = "gpuTest/code";
-const amount = "gpuTest/amount";
-const flag = "gpuTest/flag";
-const followed = "gpuTest/followed";
-const bits = "gpuTest/bits";
-const sums = "gpuTest/sums";
-const ownedBy = "gpuTest/ownedBy";
+const position = Symbol("gpuTest/position");
+const velocity = Symbol("gpuTest/velocity");
+const score = Symbol("gpuTest/score");
+const tag = Symbol("gpuTest/tag");
+const code = Symbol("gpuTest/code");
+const amount = Symbol("gpuTest/amount");
+const flag = Symbol("gpuTest/flag");
+const followed = Symbol("gpuTest/followed");
+const bits = Symbol("gpuTest/bits");
+const sums = Symbol("gpuTest/sums");
+const ownedBy = Symbol("gpuTest/ownedBy");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -217,7 +218,7 @@ const setDevice = System.create({ name: "gpuTest/setDevice", resources: { write:
 
 describe("the gpuDevice resource", () => {
     it("moves GPU kernels onto the device once a system sets it", async () => {
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         await world.run(move);
         // On the CPU, reads see the write at once.
@@ -232,8 +233,8 @@ describe("the gpuDevice resource", () => {
 
     it("sets itself to null once the device is lost, so the world goes on without it until a new one is set", async () => {
         const lost = await device();
-        const world = createWorld({ workers: 0, gpuDevice: lost });
-        const cpuWorld = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0, [gpuDevice]: lost });
+        const cpuWorld = createWorld({ [workers]: 0 });
         let changes = 0;
         const watchDevice = System.create({ name: "gpuTest/watchDevice", resources: { read: [gpuDevice], changed: [gpuDevice] } }, ({ resources }) => {
             void resources[gpuDevice];
@@ -266,8 +267,8 @@ describe("the gpuDevice resource", () => {
     });
 
     it("moves to another device, reading back what's ahead on the one it leaves", async () => {
-        const world = createWorld({ workers: 0, gpuDevice: await device() });
-        const cpuWorld = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
+        const cpuWorld = createWorld({ [workers]: 0 });
         for (const each of [world, cpuWorld]) await each.run(spawn);
         await world.run(move);
         nextDevice = await device();
@@ -280,8 +281,8 @@ describe("the gpuDevice resource", () => {
     });
 
     it("runs GPU kernels on the CPU again when set to null, and skips render systems", async () => {
-        const world = createWorld({ workers: 2, gpuDevice: await device() }, { minimumChunk: 1 });
-        const cpuWorld = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 2, [gpuDevice]: await device() }, { minimumChunk: 1 });
+        const cpuWorld = createWorld({ [workers]: 0 });
         let drawn = 0;
         const draw = System.render({ name: "gpuTest/drawUntilNull", shader: { accessors: { place: position } } }, () => { drawn++; });
         for (const each of [world, cpuWorld]) await each.run(spawn);
@@ -303,8 +304,8 @@ describe("the gpuDevice resource", () => {
 describe("GPU kernels", () => {
     // Each comparison runs the same GPU kernels in a world without a GPU, where they run on the CPU.
     it("write values that observers see, as the CPU kernel's do", async () => {
-        const gpuWorld = createWorld({ gpuDevice: await device() });
-        const cpuWorld = createWorld({ workers: 0 });
+        const gpuWorld = createWorld({ [gpuDevice]: await device() });
+        const cpuWorld = createWorld({ [workers]: 0 });
         for (const world of [gpuWorld, cpuWorld]) {
             await world.run(spawn);
             for (let i = 0; i < 3; i++) await world.run(move);
@@ -317,8 +318,8 @@ describe("GPU kernels", () => {
     });
 
     it("see main-thread writes made between them in the same run, and the main thread sees theirs", async () => {
-        const gpuWorld = createWorld({ gpuDevice: await device() });
-        const cpuWorld = createWorld({ workers: 0 });
+        const gpuWorld = createWorld({ [gpuDevice]: await device() });
+        const cpuWorld = createWorld({ [workers]: 0 });
         for (const world of [gpuWorld, cpuWorld]) {
             await world.run(spawn);
             await world.run(frame);
@@ -330,8 +331,8 @@ describe("GPU kernels", () => {
     });
 
     it("see main-thread writes to what they only read, made between them in the same run", async () => {
-        const gpuWorld = createWorld({ gpuDevice: await device() });
-        const cpuWorld = createWorld({ workers: 0 });
+        const gpuWorld = createWorld({ [gpuDevice]: await device() });
+        const cpuWorld = createWorld({ [workers]: 0 });
         for (const world of [gpuWorld, cpuWorld]) {
             await world.run(spawn);
             await world.run(turning);
@@ -345,7 +346,7 @@ describe("GPU kernels", () => {
         const spawnOne = System.create({ name: "gpuTest/spawnOne" }, ({ commands }) => {
             commands.spawn({ [position]: [-1, -1, -1], [velocity]: [0, 0, 0] });
         });
-        const world = createWorld({ gpuDevice: await device() });
+        const world = createWorld({ [gpuDevice]: await device() });
         await world.run(spawn);
         await world.run(move);
         await world.run(spawnOne);
@@ -369,7 +370,7 @@ describe("GPU kernels", () => {
             const [owner] = owners;
             if (owner !== undefined) commands.despawn(owner);
         });
-        const world = createWorld({ gpuDevice: await device() });
+        const world = createWorld({ [gpuDevice]: await device() });
         await world.run(spawnOwned);
         await world.run(move);
         await world.run(despawnOwner);
@@ -379,8 +380,8 @@ describe("GPU kernels", () => {
     });
 
     it("keep JS semantics for u32 values, bitwise operators and infinities", async () => {
-        const gpuWorld = createWorld({ gpuDevice: await device() });
-        const cpuWorld = createWorld({ workers: 0 });
+        const gpuWorld = createWorld({ [gpuDevice]: await device() });
+        const cpuWorld = createWorld({ [workers]: 0 });
         const values = async (world: ReturnType<typeof createWorld>): Promise<unknown[]> =>
             Promise.all((await select(world, { required: [code] })).map(entity => readEntity(world, entity, [code, amount])));
         for (const world of [gpuWorld, cpuWorld]) {
@@ -393,7 +394,7 @@ describe("GPU kernels", () => {
     });
 
     it("are read back for CPU systems that look them up", async () => {
-        const world = createWorld({ gpuDevice: await device() });
+        const world = createWorld({ [gpuDevice]: await device() });
         await world.run(spawnFollower);
         await world.run(following);
         await world.run(following);
@@ -403,8 +404,8 @@ describe("GPU kernels", () => {
     });
 
     it("keep their copies current when a sync point fails partway", async () => {
-        const gpuWorld = createWorld({ gpuDevice: await device() });
-        const cpuWorld = createWorld({ workers: 0 });
+        const gpuWorld = createWorld({ [gpuDevice]: await device() });
+        const cpuWorld = createWorld({ [workers]: 0 });
         for (const world of [gpuWorld, cpuWorld]) {
             await world.run(spawn);
             await world.run(move);
@@ -417,8 +418,8 @@ describe("GPU kernels", () => {
     });
 
     it("keep their writes as spawns grow their archetypes and despawns move rows", async () => {
-        const gpuWorld = createWorld({ gpuDevice: await device() });
-        const cpuWorld = createWorld({ workers: 0 });
+        const gpuWorld = createWorld({ [gpuDevice]: await device() });
+        const cpuWorld = createWorld({ [workers]: 0 });
         for (const world of [gpuWorld, cpuWorld]) {
             spawnedNow.length = 0;
             for (frameNumber = 0; frameNumber < 40; frameNumber++) {
@@ -434,7 +435,7 @@ describe("GPU kernels", () => {
 
     it("pass change filters on what they write, once per write", async () => {
         const counts: number[][] = [];
-        for (const world of [createWorld({ gpuDevice: await device() }), createWorld({ workers: 0 })]) {
+        for (const world of [createWorld({ [gpuDevice]: await device() }), createWorld({ [workers]: 0 })]) {
             watched = 0;
             const seen: number[] = [];
             await world.run(spawn);
@@ -450,8 +451,8 @@ describe("GPU kernels", () => {
     });
 
     it("inline math functions as the CPU does, at f32 precision", async () => {
-        const gpuWorld = createWorld({ gpuDevice: await device() });
-        const cpuWorld = createWorld({ workers: 0 });
+        const gpuWorld = createWorld({ [gpuDevice]: await device() });
+        const cpuWorld = createWorld({ [workers]: 0 });
         for (const world of [gpuWorld, cpuWorld]) {
             await world.run(spawn);
             await world.run(transform);
@@ -466,8 +467,8 @@ describe("GPU kernels", () => {
     });
 
     it("emit WGSL builtins for integer math, which wraps and counts bits as the CPU does", async () => {
-        const gpuWorld = createWorld({ gpuDevice: await device() });
-        const cpuWorld = createWorld({ workers: 0 });
+        const gpuWorld = createWorld({ [gpuDevice]: await device() });
+        const cpuWorld = createWorld({ [workers]: 0 });
         for (const world of [gpuWorld, cpuWorld]) {
             await world.run(spawnIntegers);
             await world.run(integers);
@@ -480,8 +481,8 @@ describe("GPU kernels", () => {
     });
 
     it("emit WGSL builtins for float math, within f32 precision of the CPU", async () => {
-        const gpuWorld = createWorld({ gpuDevice: await device() });
-        const cpuWorld = createWorld({ workers: 0 });
+        const gpuWorld = createWorld({ [gpuDevice]: await device() });
+        const cpuWorld = createWorld({ [workers]: 0 });
         for (const world of [gpuWorld, cpuWorld]) {
             await world.run(spawn);
             await world.run(shading);
@@ -496,11 +497,11 @@ describe("GPU kernels", () => {
     });
 
     it("refuse what they can't run, with the reason", async () => {
-        const world = createWorld({ gpuDevice: await device() });
+        const world = createWorld({ [gpuDevice]: await device() });
         await expect(world.run(entityScore)).rejects.toThrow(/can't run on the GPU: it reads an f64 value/);
         await expect(world.run(flagScore)).rejects.toThrow(/reads a byte value/);
         // In a world without a GPU too: the declaration can never hold.
-        const cpuWorld = createWorld({ workers: 0 });
+        const cpuWorld = createWorld({ [workers]: 0 });
         await expect(cpuWorld.run(flagScore)).rejects.toThrow(/reads a byte value/);
         await cpuWorld.dispose();
         await world.dispose();
@@ -509,7 +510,7 @@ describe("GPU kernels", () => {
 
 describe("render systems", () => {
     it("that fail lose only their own work", async () => {
-        const world = createWorld({ gpuDevice: await device() });
+        const world = createWorld({ [gpuDevice]: await device() });
         await world.run(spawn);
         expect((await world.run(failing)).failures.map(failure => failure.message)).toEqual(["draw failed"]);
         expect((await positions(world))[0]).toEqual([1, 0, 0.5]);
@@ -524,7 +525,7 @@ describe("render systems", () => {
             pass.end();
         });
         const own = await device();
-        const world = createWorld({ gpuDevice: own });
+        const world = createWorld({ [gpuDevice]: own });
         await world.run(spawn);
         await world.run(invalid);
         // The device reports the error once it has processed the run's work.
@@ -562,7 +563,7 @@ describe("render systems", () => {
             }
             pass.end();
         });
-        const world = createWorld({ gpuDevice: own });
+        const world = createWorld({ [gpuDevice]: own });
         const outputLayout = own.createBindGroupLayout({ entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: "storage" } }] });
         const outputGroup = own.createBindGroup({ layout: outputLayout, entries: [{ binding: 0, resource: { buffer: output } }] });
         const module = own.createShaderModule({

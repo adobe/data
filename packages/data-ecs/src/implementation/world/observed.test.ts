@@ -4,9 +4,9 @@ import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 
-const value = "observedTest/value";
-const seen = "observedTest/seen";
-const flag = "observedTest/flag";
+const value = Symbol("observedTest/value");
+const seen = Symbol("observedTest/seen");
+const flag = Symbol("observedTest/flag");
 
 declare module "@adobe/data-ecs" {
     export interface Components {

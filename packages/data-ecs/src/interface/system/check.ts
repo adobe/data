@@ -6,6 +6,7 @@ import type { Schema } from '../schema/schema.js';
 import type { Composite } from './composite.js';
 import type { Definition } from './definition.js';
 import type { Leaf } from './leaf.js';
+import { labelOf } from '../registry/names.js';
 
 type Key = string | symbol;
 
@@ -13,7 +14,7 @@ type Key = string | symbol;
 const checkLists = (name: string, what: string, lists: { readonly read?: readonly Key[]; readonly write?: readonly Key[] } | undefined): void => {
     const writes = new Set(lists?.write);
     const both = (lists?.read ?? []).find(key => writes.has(key));
-    if (both !== undefined) throw new Error(`System "${name}" lists "${String(both)}" in both ${what} read and write; write already makes it readable.`);
+    if (both !== undefined) throw new Error(`System "${name}" lists "${labelOf(both)}" in both ${what} read and write; write already makes it readable.`);
 };
 
 /**
@@ -29,7 +30,7 @@ export const checkLeaf = (leaf: Leaf): void => {
     const writes = new Set<Key>(components?.write);
     for (const lookupName in lookup) {
         for (const key of lookup[lookupName].read ?? []) {
-            if (writes.has(key)) throw new Error(`System "${name}": lookup "${lookupName}" reads "${String(key)}", which the system writes.`);
+            if (writes.has(key)) throw new Error(`System "${name}": lookup "${lookupName}" reads "${labelOf(key)}", which the system writes.`);
         }
     }
     if (input !== undefined) {

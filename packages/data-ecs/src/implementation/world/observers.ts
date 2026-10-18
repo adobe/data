@@ -7,6 +7,7 @@ import { journalEnd } from './journal.js';
 import { chunkShift } from './kernel.js';
 import { compileQuery, countOf, createSelectScratch, matchesArchetype, readEntity, selectInto, type CompiledQuery, type EntityOptions, type QueryOptions } from './reads.js';
 import { idOf, startTicking, type Key, type State } from './state.js';
+import { labelOf } from '../../interface/registry/index.js';
 
 type Notify = (value: unknown) => void;
 
@@ -347,7 +348,7 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
         const compiled = compileQuery(state, options);
         const watched = [...new Set([...compiled.where.map(({ id }) => id), ...compiled.order.map(({ id }) => id)])];
         const observer: QueryObserver = {
-            notify, primed: false, name: (options.required ?? []).map(String).join(", "), counting, query: compiled, watched,
+            notify, primed: false, name: (options.required ?? []).map(labelOf).join(", "), counting, query: compiled, watched,
             matching: [], matchingById: [], classified: 0, total: 0, seen: state.tick, watching: true, selected: [], counted: 0,
         };
         for (const id of watched) request(id);
@@ -591,7 +592,7 @@ export const createObservers = (state: State, read: (key: Key) => unknown, enque
                     notify(value);
                 }
                 catch (error) {
-                    (failures ??= []).push(failureOf("observer", String(entry.key), error));
+                    (failures ??= []).push(failureOf("observer", labelOf(entry.key), error));
                 }
             }
         }

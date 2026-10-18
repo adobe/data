@@ -1,10 +1,10 @@
 import { Component, Entity, Finalizer, Resource, Rule, System, gpuDevice, workers, type Gpu, type Thread, type World } from "@adobe/data-ecs";
 
 // A consumer emits declarations for the values it makes from the public interface, naming no internal module.
-export const position = "indexTypeTest/position";
-export const slot = "indexTypeTest/slot";
-export const element = "indexTypeTest/element";
-export const scale = "indexTypeTest/scale";
+export const position = Symbol("indexTypeTest/position");
+export const slot = Symbol("indexTypeTest/slot");
+export const element = Symbol("indexTypeTest/element");
+export const scale = Symbol("indexTypeTest/scale");
 declare module "@adobe/data-ecs" {
     interface Components {
         [position]: { type: number };

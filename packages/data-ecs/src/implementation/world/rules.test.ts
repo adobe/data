@@ -5,22 +5,23 @@ import { Rule } from "../../interface/rule/rule.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { count, read } from "./reads.test-helper.js";
+import { workers } from "../../interface/resources/workers.js";
 
-const source = "rulesTest/source";
-const hidden = "rulesTest/hidden";
-const sprite = "rulesTest/sprite";
-const slot = "rulesTest/slot";
-const visible = "rulesTest/visible";
-const ready = "rulesTest/ready";
-const glow = "rulesTest/glow";
-const owned = "rulesTest/owned";
-const follows = "rulesTest/follows";
-const mark = "rulesTest/mark";
-const left = "rulesTest/left";
-const right = "rulesTest/right";
-const late = "rulesTest/late";
-const tagged = "rulesTest/tagged";
-const tag = "rulesTest/tag";
+const source = Symbol("rulesTest/source");
+const hidden = Symbol("rulesTest/hidden");
+const sprite = Symbol("rulesTest/sprite");
+const slot = Symbol("rulesTest/slot");
+const visible = Symbol("rulesTest/visible");
+const ready = Symbol("rulesTest/ready");
+const glow = Symbol("rulesTest/glow");
+const owned = Symbol("rulesTest/owned");
+const follows = Symbol("rulesTest/follows");
+const mark = Symbol("rulesTest/mark");
+const left = Symbol("rulesTest/left");
+const right = Symbol("rulesTest/right");
+const late = Symbol("rulesTest/late");
+const tagged = Symbol("rulesTest/tagged");
+const tag = Symbol("rulesTest/tag");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -85,7 +86,7 @@ describe("rules", () => {
         expect(() => Rule.create({ name: "rulesTest/slots", components: { has: [source] }, derive: [slot] })).toThrow("already exists");
     });
     it("derive components where they match, from the schema default, and remove them where they stop", async () => {
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         const step = at(world);
         let a = Entity.none, b = Entity.none, c = Entity.none;
         await step(commands => {
@@ -106,7 +107,7 @@ describe("rules", () => {
 
     it("write the default again where a derived component starts over, on a reused row", async () => {
         const write = System.create({ name: "rulesTest/write", components: { write: [slot] } }, row => { row[slot] = 99; });
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         const step = at(world);
         let a = Entity.none;
         await step(commands => { a = commands.spawn({ [source]: 1 }); commands.spawn({ [source]: 2 }); });
@@ -120,7 +121,7 @@ describe("rules", () => {
 
     it("apply in a world from the first sync point after it meets their components, deriving on the first spawn", async () => {
         const spawn = System.create({ name: "rulesTest/tagged" }, ({ commands }) => { commands.spawn({ [tagged]: true }); });
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         await world.run(edit, { step: -1 });
         expect(await count(world, { required: [tag] })).toBe(0);
         await world.run(spawn);
@@ -132,7 +133,7 @@ describe("rules", () => {
         let added = 0;
         const observe = System.create({ name: "rulesTest/added", components: { added: [late] } }, () => { added++; });
         const spawn = System.create({ name: "rulesTest/spawn" }, ({ commands }) => { for (let i = 0; i < 3; i++) commands.spawn({ [mark]: i }); });
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         await world.run(observe);
         expect(await count(world, { required: [late] })).toBe(0);
@@ -146,12 +147,12 @@ describe("rules", () => {
 
     it("are rejected when they can't hold", async () => {
         // @ts-expect-error a rule derives only derived components
-        expect(() => Rule.create({ name: "rulesTest/bad", components: { has: [source] }, derive: [mark] })).toThrow(`derives "${mark}", which isn't declared derived`);
+        expect(() => Rule.create({ name: "rulesTest/bad", components: { has: [source] }, derive: [mark] })).toThrow(`derives "rulesTest/mark", which isn't declared derived`);
         expect(() => Rule.create({ name: "rulesTest/bad", components: { has: [source], not: [visible] }, derive: [slot] })).toThrow("cycle through a negation, which could oscillate");
         // A rejected rule records nothing, so its name is still free; a taken one isn't.
         expect(() => Rule.create({ name: "rulesTest/bad", components: { has: [tagged] }, derive: [late] })).not.toThrow();
         expect(() => System.create({ name: "rulesTest/visible" }, () => {})).toThrow('A different system, rule or finalizer named "rulesTest/visible"');
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         // @ts-expect-error a reference changes only through commands
         const writes = System.create({ name: "rulesTest/writeReference", components: { write: [owned] } }, row => { row[owned] = Entity.none; });
         await expect(world.run(writes)).rejects.toThrow("a reference, which changes only through commands");
@@ -163,7 +164,7 @@ describe("rules", () => {
 
 describe("within", () => {
     it("removes a dependent with its host, by any cause, transitively, and in command order", async () => {
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         const step = at(world);
         let a = Entity.none, b = Entity.none, c = Entity.none;
         await step(commands => {
@@ -187,7 +188,7 @@ describe("within", () => {
 
 describe("references", () => {
     it("despawn owned holders and drop weak references when their target despawns, transitively", async () => {
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         const step = at(world);
         let root = Entity.none, child = Entity.none, grandchild = Entity.none, watcher = Entity.none, other = Entity.none, moved = Entity.none;
         await step(commands => {
@@ -208,7 +209,7 @@ describe("references", () => {
     });
 
     it("leave references to Entity.none alone, since they name no entity", async () => {
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         const step = at(world);
         let holder = Entity.none, cleared = Entity.none;
         await step(commands => {
@@ -223,7 +224,7 @@ describe("references", () => {
     });
 
     it("cascade at once for a reference to an entity that won't be alive, but not to one spawned with it", async () => {
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         const step = at(world);
         let gone = Entity.none, parent = Entity.none, child = Entity.none, orphan = Entity.none, weakly = Entity.none;
         await step(commands => { gone = commands.spawn({ [mark]: 0 }); });

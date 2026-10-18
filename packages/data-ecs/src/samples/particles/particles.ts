@@ -7,10 +7,10 @@ import { System } from '../../interface/system/system.js';
 import { World } from '../../interface/world/world.js';
 import { createWorld } from '../../implementation/index.js';
 
-export const position = 'particles/position';
-export const velocity = 'particles/velocity';
-export const delta = 'particles/delta';
-export const count = 'particles/count';
+export const position = Symbol("particles/position");
+export const velocity = Symbol("particles/velocity");
+export const delta = Symbol("particles/delta");
+export const count = Symbol("particles/count");
 
 declare module '@adobe/data-ecs' {
     export interface Components {

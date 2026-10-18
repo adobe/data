@@ -5,12 +5,12 @@ import { Resource } from "../resource/resource.js";
 import { clock, gpuDevice, report } from "../resources/index.js";
 import { System } from "./system.js";
 
-const position = "typesSystemTest/position";
-const label = "typesSystemTest/label";
-const node = "typesSystemTest/node";
-const document = "typesSystemTest/document";
-const time = "typesSystemTest/time";
-const unregistered = "typesSystemTest/unregistered";
+const position = Symbol("typesSystemTest/position");
+const label = Symbol("typesSystemTest/label");
+const node = Symbol("typesSystemTest/node");
+const document = Symbol("typesSystemTest/document");
+const time = Symbol("typesSystemTest/time");
+const unregistered = Symbol("typesSystemTest/unregistered");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -70,8 +70,8 @@ describe("System.create", () => {
         expect(leaves.map(leaf => leaf === undefined || leaf.kind === "composite" ? undefined : threadOf(leaf.declaration, "System"))).toEqual(["main", "world", null]);
         expect(() => create({ name: "typesSystemTest/span", components: { read: [label], write: [node] } })).toThrow('System "typesSystemTest/span" uses values on threads "world" and "main"');
         expect(() => create({ name: "typesSystemTest/spanResource", components: { read: [label] }, resources: { is: [document] } })).toThrow('uses values on threads "world" and "main"');
-        expect(() => create({ name: "typesSystemTest/unregistered", components: { read: [unregistered] } })).toThrow(`uses component "${unregistered}", which isn't a registered component`);
-        expect(() => create({ name: "typesSystemTest/wrongKind", components: { read: [time] } })).toThrow(`uses component "${time}", which isn't a registered component`);
+        expect(() => create({ name: "typesSystemTest/unregistered", components: { read: [unregistered] } })).toThrow(`uses component "typesSystemTest/unregistered", which isn't a registered component`);
+        expect(() => create({ name: "typesSystemTest/wrongKind", components: { read: [time] } })).toThrow(`uses component "typesSystemTest/time", which isn't a registered component`);
     });
 });
 

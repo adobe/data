@@ -1,13 +1,13 @@
 import { Finalizer } from '../finalizer/finalizer.js';
 import { System } from './system.js';
 
-const node = 'threadsTypeTest/node';
-const label = 'threadsTypeTest/label';
-const audio = 'threadsTypeTest/audio';
-const position = 'threadsTypeTest/position';
-const document = 'threadsTypeTest/document';
-const settings = 'threadsTypeTest/settings';
-const time = 'threadsTypeTest/time';
+const node = Symbol("threadsTypeTest/node");
+const label = Symbol("threadsTypeTest/label");
+const audio = Symbol("threadsTypeTest/audio");
+const position = Symbol("threadsTypeTest/position");
+const document = Symbol("threadsTypeTest/document");
+const settings = Symbol("threadsTypeTest/settings");
+const time = Symbol("threadsTypeTest/time");
 
 declare module '@adobe/data-ecs' {
     export interface Threads {

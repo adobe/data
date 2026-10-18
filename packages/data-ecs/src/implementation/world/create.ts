@@ -33,6 +33,7 @@ import { createLoop, platformFrame, platformTimer, type Clock } from './loop.js'
 import { createState, idOf, startTicking, type Key } from './state.js';
 import { indexOf } from './entities.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../../interface/resource/value.js';
+import { labelOf } from '../../interface/registry/index.js';
 
 type Queue = <T>(task: () => T | Promise<T>) => Promise<T>;
 
@@ -68,8 +69,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     const shared = sharedMemoryAvailable();
     const initial = new Map<Key, unknown>();
     for (const key of Reflect.ownKeys(resources)) {
-        if (kindOf(key) !== "resource") throw new Error(`"${String(key)}" isn't a registered resource.`);
-        if (isWorldWritten(key)) throw new Error(`"${String(key)}" is written only by the world.`);
+        if (kindOf(key) !== "resource") throw new Error(`"${labelOf(key)}" isn't a registered resource.`);
+        if (isWorldWritten(key)) throw new Error(`"${labelOf(key)}" is written only by the world.`);
         initial.set(key, Reflect.get(resources, key));
     }
     const device = resources[gpuDevice] ?? null;

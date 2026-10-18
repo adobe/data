@@ -4,12 +4,13 @@ import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import { readResource } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
 
-const weight = "reductionsBrowserTest/weight";
-const sized = "reductionsBrowserTest/sized";
-const count = "reductionsBrowserTest/count";
-const sum = "reductionsBrowserTest/sum";
-const largest = "reductionsBrowserTest/largest";
+const weight = Symbol("reductionsBrowserTest/weight");
+const sized = Symbol("reductionsBrowserTest/sized");
+const count = Symbol("reductionsBrowserTest/count");
+const sum = Symbol("reductionsBrowserTest/sum");
+const largest = Symbol("reductionsBrowserTest/largest");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -48,7 +49,7 @@ const reduce = System.create({ name: "reductionsBrowserTest/reduce", kernel: "cp
 describe("reductions across workers", () => {
     for (const wasm of [true, false]) {
         it(`fold every row exactly once, in the same order each run (${wasm ? "WASM" : "JS"})`, async () => {
-            const world = createWorld({ workers: 4 }, { minimumChunk: 64, wasm });
+            const world = createWorld({ [workers]: 4 }, { minimumChunk: 64, wasm });
             await world.run(spawn);
             const sums: number[] = [];
             for (let run = 0; run < 4; run++) {

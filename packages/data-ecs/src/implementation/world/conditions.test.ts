@@ -4,15 +4,16 @@ import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import { read, readResource, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
 
-const paused = "conditionsTest/paused";
-const level = "conditionsTest/level";
-const ticks = "conditionsTest/ticks";
-const after = "conditionsTest/after";
-const sizes = "conditionsTest/sizes";
-const total = "conditionsTest/total";
-const count = "conditionsTest/count";
-const value = "conditionsTest/value";
+const paused = Symbol("conditionsTest/paused");
+const level = Symbol("conditionsTest/level");
+const ticks = Symbol("conditionsTest/ticks");
+const after = Symbol("conditionsTest/after");
+const sizes = Symbol("conditionsTest/sizes");
+const total = Symbol("conditionsTest/total");
+const count = Symbol("conditionsTest/count");
+const value = Symbol("conditionsTest/value");
 
 declare module "@adobe/data-ecs" {
     interface Resources {
@@ -45,7 +46,7 @@ const grow = System.create({ name: "conditionsTest/grow", kernel: "cpu", compone
 
 describe("resource conditions", () => {
     it("skip a system while they don't hold, successfully, so systems after it still run", async () => {
-        await using world = createWorld({ workers: 0 });
+        await using world = createWorld({ [workers]: 0 });
         await world.run(frame);
         await world.run(pause);
         await world.run(frame);
@@ -54,7 +55,7 @@ describe("resource conditions", () => {
     });
 
     it("read an `is` condition as holding", async () => {
-        await using world = createWorld({ workers: 0 });
+        await using world = createWorld({ [workers]: 0 });
         const measure = System.create({ name: "conditionsTest/measure", resources: { is: [level], write: [sizes] } }, ({ resources }) => { resources[sizes] = resources[level].size; });
         await world.run(measure);
         expect(await readResource(world, sizes)).toBe(0);
@@ -65,7 +66,7 @@ describe("resource conditions", () => {
     });
 
     it("keep a skipped system's lastRun, so it sees every change once it runs again", async () => {
-        await using world = createWorld({ workers: 0 });
+        await using world = createWorld({ [workers]: 0 });
         const seen: number[] = [];
         const watch = System.create({ name: "conditionsTest/watch", components: { read: [value], changed: [value] }, resources: { is: [level] } }, row => { seen.push(row[value]); });
         const spawn = System.create({ name: "conditionsTest/spawn" }, ({ commands }) => { commands.spawn({ [value]: 7 }); });
@@ -78,7 +79,7 @@ describe("resource conditions", () => {
     });
 
     it("leave a reduced resource as it was when every contributor is skipped", async () => {
-        await using world = createWorld({ workers: 0 });
+        await using world = createWorld({ [workers]: 0 });
         let next = 5;
         const add = System.create({ name: "conditionsTest/add", reduce: { [total]: "+" }, resources: { not: [paused] } }, ({ reduce }) => { reduce[total](next++); });
         await world.run(add);
@@ -89,7 +90,7 @@ describe("resource conditions", () => {
     });
 
     it("reject conditions that are never null or false, or listed twice, for untyped declarations", async () => {
-        await using world = createWorld({ workers: 0 });
+        await using world = createWorld({ [workers]: 0 });
         // @ts-expect-error a number is never null or false
         await expect(world.run(System.create({ name: "conditionsTest/number", resources: { is: [count] } }, () => {}))).rejects.toThrow("which is never null or false");
         // @ts-expect-error both is and not
@@ -98,7 +99,7 @@ describe("resource conditions", () => {
         await expect(world.run(System.create({ name: "conditionsTest/read", resources: { is: [level], read: [level] } }, ({ resources }) => { void resources[level]; }))).rejects.toThrow("is already makes it readable");
     });
     it("skip a kernel the same way", async () => {
-        await using world = createWorld({ workers: 0 });
+        await using world = createWorld({ [workers]: 0 });
         await world.run(System.create({ name: "conditionsTest/seed" }, ({ commands }) => { commands.spawn({ [value]: 1 }); }));
         await world.run(grow);
         await world.run(pause);

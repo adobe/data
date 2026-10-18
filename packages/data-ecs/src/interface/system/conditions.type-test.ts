@@ -3,12 +3,12 @@ import { System } from './system.js';
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };
 
-const paused = 'conditionsTypeTest/paused';
-const level = 'conditionsTypeTest/level';
-const cache = 'conditionsTypeTest/cache';
-const count = 'conditionsTypeTest/count';
-const handle = 'conditionsTypeTest/handle';
-const position = 'conditionsTypeTest/position';
+const paused = Symbol("conditionsTypeTest/paused");
+const level = Symbol("conditionsTypeTest/level");
+const cache = Symbol("conditionsTypeTest/cache");
+const count = Symbol("conditionsTypeTest/count");
+const handle = Symbol("conditionsTypeTest/handle");
+const position = Symbol("conditionsTypeTest/position");
 
 declare module '@adobe/data-ecs' {
     export interface Resources {

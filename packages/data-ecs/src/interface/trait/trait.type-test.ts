@@ -12,7 +12,7 @@ type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y 
 const check = <_T extends true>() => { };
 
 // Traits other packages define: one only linear components take, one derived components don't need.
-const gpuOnly = "traitTest/gpuOnly";
+const gpuOnly = Symbol("traitTest/gpuOnly");
 const nonPersistent = Symbol("traitTest/nonPersistent");
 declare module '@adobe/data-ecs' {
     export interface Traits<N> {
@@ -22,27 +22,29 @@ declare module '@adobe/data-ecs' {
 }
 Trait.register(gpuOnly);
 Trait.register(nonPersistent);
+// @ts-expect-error string trait names are the core's built-in traits
+Trait.register("derived");
 
-const parent = "traitTest/parent";
-const follows = "traitTest/follows";
-const slot = "traitTest/slot";
-const ready = "traitTest/ready";
-const score = "traitTest/score";
-const link = "traitTest/link";
-const pair = "traitTest/pair";
-const cache = "traitTest/cache";
-const badReference = "traitTest/badReference";
-const selfWithin = "traitTest/selfWithin";
-const derivedWithin = "traitTest/derivedWithin";
-const derivedReference = "traitTest/derivedReference";
-const gpuString = "traitTest/gpuString";
-const derivedNonPersistent = "traitTest/derivedNonPersistent";
-const time = "traitTest/time";
-const derivedResource = "traitTest/derivedResource";
-const sum = "traitTest/sum";
-const anyFlag = "traitTest/anyFlag";
-const named = "traitTest/named";
-const reducedComponent = "traitTest/reducedComponent";
+const parent = Symbol("traitTest/parent");
+const follows = Symbol("traitTest/follows");
+const slot = Symbol("traitTest/slot");
+const ready = Symbol("traitTest/ready");
+const score = Symbol("traitTest/score");
+const link = Symbol("traitTest/link");
+const pair = Symbol("traitTest/pair");
+const cache = Symbol("traitTest/cache");
+const badReference = Symbol("traitTest/badReference");
+const selfWithin = Symbol("traitTest/selfWithin");
+const derivedWithin = Symbol("traitTest/derivedWithin");
+const derivedReference = Symbol("traitTest/derivedReference");
+const gpuString = Symbol("traitTest/gpuString");
+const derivedNonPersistent = Symbol("traitTest/derivedNonPersistent");
+const time = Symbol("traitTest/time");
+const derivedResource = Symbol("traitTest/derivedResource");
+const sum = Symbol("traitTest/sum");
+const anyFlag = Symbol("traitTest/anyFlag");
+const named = Symbol("traitTest/named");
+const reducedComponent = Symbol("traitTest/reducedComponent");
 
 declare module '@adobe/data-ecs' {
     export interface Components {

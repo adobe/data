@@ -2,10 +2,10 @@ import { Component } from "../interface/component/component.js";
 import { Entity } from "../interface/entity/entity.js";
 import { System } from "../interface/system/system.js";
 
-export const local = "hierarchy/local";
-export const world = "hierarchy/world";
-export const parent = "hierarchy/parent";
-export const leaf = "hierarchy/leaf";
+export const local = Symbol("hierarchy/local");
+export const world = Symbol("hierarchy/world");
+export const parent = Symbol("hierarchy/parent");
+export const leaf = Symbol("hierarchy/leaf");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -89,8 +89,8 @@ export const reparent = System.create({
     commands.add(input.entity, { [parent]: input.to });
 });
 
-export const offset = "hierarchy/offset";
-export const placed = "hierarchy/placed";
+export const offset = Symbol("hierarchy/offset");
+export const placed = Symbol("hierarchy/placed");
 
 declare module "@adobe/data-ecs" {
     export interface Components {

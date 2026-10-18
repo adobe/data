@@ -6,6 +6,7 @@ import { stampChanged } from './archetype.js';
 import { readCell, writeCell } from './cells.js';
 import { resourceCell } from './resources.js';
 import { idOf, type Key, type State } from './state.js';
+import { labelOf } from '../../interface/registry/index.js';
 
 /** A resource a system reduces into: its operator, and the scalar leaves of its value. */
 export type ReductionTarget = {
@@ -24,13 +25,13 @@ export const reductionTargets = (state: State, { name, reduce, resources }: Pick
     return Reflect.ownKeys(reduce).flatMap((key): ReductionTarget[] => {
         const operator: unknown = Reflect.get(reduce, key);
         if (operator === undefined) return [];
-        if (!isReduction(operator)) throw new Error(`System "${name}" reduces "${String(key)}" with "${String(operator)}", which isn't an operator.`);
-        if (others.has(key)) throw new Error(`System "${name}" reduces "${String(key)}", so it can't also read, write or filter on it.`);
+        if (!isReduction(operator)) throw new Error(`System "${name}" reduces "${labelOf(key)}" with "${labelOf(operator)}", which isn't an operator.`);
+        if (others.has(key)) throw new Error(`System "${name}" reduces "${labelOf(key)}", so it can't also read, write or filter on it.`);
         const layout = state.layouts[idOf(state, key)];
-        if (layout?.kind !== "linear") throw new Error(`System "${name}" reduces "${String(key)}", which isn't stored in linear memory.`);
+        if (layout?.kind !== "linear") throw new Error(`System "${name}" reduces "${labelOf(key)}", which isn't stored in linear memory.`);
         const leaves = layout.leaves.map(leaf => ({ path: leaf.path, view: leaf.view, boolean: leaf.scalar === "boolean" }));
         if (leaves.some(leaf => leaf.boolean) && !bitwise.has(operator)) {
-            throw new Error(`System "${name}" reduces "${String(key)}", which has boolean values, with "${operator}"; booleans reduce with "&", "|" or "^".`);
+            throw new Error(`System "${name}" reduces "${labelOf(key)}", which has boolean values, with "${operator}"; booleans reduce with "&", "|" or "^".`);
         }
         return [{ key, operator, leaves }];
     });

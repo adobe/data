@@ -1,4 +1,5 @@
 import type { Component } from '../component/component.js';
+import type { Components } from '../component/types.js';
 import type { ReadonlyValue } from '../component/value.js';
 import type { Entity } from '../entity/entity.js';
 import type { Observe } from '../observe/observe.js';
@@ -6,7 +7,10 @@ import type { Resource } from '../resource/resource.js';
 import type { ReadonlyValue as ReadonlyResourceValue } from '../resource/value.js';
 import type { Query } from './query.js';
 
-/** What `world.observe` holds, named so declarations a consumer emits for it name only the package root. */
+/**
+ * What `world.observe` holds, named so declarations a consumer emits for it name only the package root. Values map
+ * over `Pick<Components, ...>`, so their symbol keys keep the declarations a consumer's emitted types name them by.
+ */
 export interface Observers {
     /** A resource's value, then a new one after each run or tick that changed it. */
     resource<R extends Resource.Name>(name: R): Observe<ReadonlyResourceValue<R>>;
@@ -23,7 +27,7 @@ export interface Observers {
     entity<const R extends readonly Component.Name[] = [], const O extends readonly Component.Name[] = []>(
         entity: Entity,
         options: { readonly required?: R; readonly optional?: O },
-    ): Observe<({ readonly [K in R[number]]: ReadonlyValue<K> } & { readonly [K in O[number]]?: ReadonlyValue<K> }) | null>;
+    ): Observe<({ readonly [K in keyof Pick<Components, R[number]>]: ReadonlyValue<K> } & { readonly [K in keyof Pick<Components, O[number]>]?: ReadonlyValue<K> }) | null>;
     /**
      * The entities a query matches, sorted by `order` if given, and with a `page`, at most `limit` of them from
      * `offset`; then a new value after each run or tick whose result differs, a different set of entities or, with `order`,

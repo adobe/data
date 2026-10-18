@@ -11,18 +11,19 @@ import { readEach, readEntity, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { bindKernel } from "./kernels.js";
 import { createState } from "./state.js";
+import { workers } from "../../interface/resources/workers.js";
 
 type Vec2 = readonly [number, number];
 const vec2: Schema.ForType<Vec2> = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 };
 
-const position = "wasmTest/position";
-const velocity = "wasmTest/velocity";
-const bounces = "wasmTest/bounces";
-const flipped = "wasmTest/flipped";
-const score = "wasmTest/score";
-const seconds = "wasmTest/seconds";
-const floor = "wasmTest/floor";
-const target = "wasmTest/target";
+const position = Symbol("wasmTest/position");
+const velocity = Symbol("wasmTest/velocity");
+const bounces = Symbol("wasmTest/bounces");
+const flipped = Symbol("wasmTest/flipped");
+const score = Symbol("wasmTest/score");
+const seconds = Symbol("wasmTest/seconds");
+const floor = Symbol("wasmTest/floor");
+const target = Symbol("wasmTest/target");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -165,8 +166,14 @@ const chase = System.create({
 
 const main = System.composite({ name: "wasmTest/main", systems: [integrate, bounce, tally, drift, react, chase] });
 
+const snapshotted = [position, velocity, bounces, flipped, score] as const;
+
+/** Each entity's values in `snapshotted` order, as arrays, since JSON leaves out symbol keys. */
 const snapshot = async (world: World): Promise<unknown[]> =>
-    Promise.all((await select(world, { required: [position] })).map(entity => readEntity(world, entity, [position, velocity, bounces, flipped, score])));
+    Promise.all((await select(world, { required: [position] })).map(async entity => {
+        const values = await readEntity(world, entity, snapshotted);
+        return snapshotted.map(key => values?.[key]);
+    }));
 
 
 const simulate = async (wasm: boolean, simd = false): Promise<unknown[]> => {
@@ -195,7 +202,7 @@ describe("WASM kernels", () => {
     it("pass exactly the rows a change filter passes, across blocks of rows and their edges", async () => {
         const rows = [0, 3, 7, 8, 15, 16, 40, 41, 42, 43, 44, 45, 46, 47, 63, 64, 98, 99];
         for (const [wasm, simd] of [[true, true], [true, false], [false, false]] as const) {
-            await using ecs = createWorld({ workers: 0 }, { wasm, simd });
+            await using ecs = createWorld({ [workers]: 0 }, { wasm, simd });
             await ecs.run(seed, { count: 100 });
             await ecs.run(recount);
             const entities = await select(ecs, { required: [score] });

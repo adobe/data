@@ -1,6 +1,7 @@
 import { layoutOf, type Leaf } from '../registry/layout.js';
 import { declarationOf } from '../registry/index.js';
 import type { Shader } from '../system/render.js';
+import { labelOf } from '../registry/names.js';
 
 /** A WGSL function reading one component of a row from the GPU copy of a render system's table. */
 export type Accessor = { readonly name: string; readonly component: string | symbol; readonly code: string };
@@ -34,7 +35,7 @@ export const accessorsOf = (shader: Shader): readonly Accessor[] | string => {
     // A table record is a row count, then a word address per accessor.
     if (entries.length > 63) return "it names more than 63 accessors";
     for (const [name, key] of entries) {
-        const component = String(key);
+        const component = labelOf(key);
         if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || name.startsWith("ecs_") || reserved.has(name)) return `"${name}" isn't usable as a WGSL function name`;
         const declaration = declarationOf(key);
         if (declaration === undefined) return `"${component}" has no registered schema`;

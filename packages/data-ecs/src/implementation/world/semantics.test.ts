@@ -5,13 +5,14 @@ import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
 import { count, readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
 
 type Vec2 = readonly [number, number];
 const vec2: Schema.ForType<Vec2> = { type: "array", items: { type: "number", precision: 1 }, minItems: 2, maxItems: 2 };
-const position = "semanticsTest/position";
-const target = "semanticsTest/target";
-const score = "semanticsTest/score";
-const tag = "semanticsTest/tag";
+const position = Symbol("semanticsTest/position");
+const target = Symbol("semanticsTest/target");
+const score = Symbol("semanticsTest/score");
+const tag = Symbol("semanticsTest/tag");
 declare module "@adobe/data-ecs" {
     export interface Components {
         [position]: { type: Vec2 };
@@ -47,7 +48,7 @@ const chase = System.create({
 });
 
 const run = async (wasm: boolean) => {
-    const world = createWorld({ workers: 0 }, { wasm });
+    const world = createWorld({ [workers]: 0 }, { wasm });
     await world.run(seed);
     await world.run(chase);
     const result = await readEach(world, await select(world, { required: [score] }), score);
@@ -62,8 +63,8 @@ describe("semantics", () => {
             commands.spawn({ [score]: 1 });
             commands.spawn({ [score]: poison ? Symbol("x") as unknown as number : 2 });
         });
-        const a = createWorld({ workers: 0 });
-        const b = createWorld({ workers: 0 });
+        const a = createWorld({ [workers]: 0 });
+        const b = createWorld({ [workers]: 0 });
         await b.run(spawn);
         poison = true;
         expect((await a.run(spawn)).failures).toHaveLength(1);
@@ -87,7 +88,7 @@ describe("semantics", () => {
         const spawn = System.create({ name: "semanticsTest/seed/3" }, ({ commands }) => { entity = commands.spawn({ [tag]: true, [score]: 0 }); });
         const retag = System.create({ name: "semanticsTest/retag" }, ({ commands }) => { commands.add(entity, { [tag]: true }); });
         const watch = System.create({ name: "semanticsTest/watch", components: { has: [score], added: [tag] } }, row => { seen.push(row.entity); });
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         await world.run(spawn);
         await world.run(watch);
         await world.run(retag);

@@ -5,6 +5,7 @@ import { requireDefinition, type Definition } from '../../interface/registry/ind
 import { createRunner, type Runner } from './runner.js';
 import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
 import { idOf, type Key, type State } from './state.js';
+import { labelOf } from '../../interface/registry/index.js';
 
 /** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */
 /** `ticked`: components the new systems filter on, which must keep ticks before they run. */
@@ -51,7 +52,7 @@ const checkUp = (leaf: Leaf): void => {
     const { name, up } = leaf.declaration;
     if (up === undefined) return;
     if (kindOf(up.through) !== "component" || declarationOf(up.through)?.reference === undefined) {
-        throw new Error(`System "${name}": up.through "${String(up.through)}" isn't a reference component.`);
+        throw new Error(`System "${name}": up.through "${labelOf(up.through)}" isn't a reference component.`);
     }
 };
 
@@ -73,7 +74,7 @@ const observedBy = (leaf: Leaf): readonly Key[] => [...leaf.declaration.componen
 const checkLists = (kind: string, name: string, what: string, lists: { readonly read?: readonly Key[]; readonly write?: readonly Key[] } | undefined): void => {
     const writes = new Set(lists?.write);
     const both = (lists?.read ?? []).find(key => writes.has(key));
-    if (both !== undefined) throw new Error(`${kind} "${name}" lists "${String(both)}" in both ${what} read and write; write already makes it readable.`);
+    if (both !== undefined) throw new Error(`${kind} "${name}" lists "${labelOf(both)}" in both ${what} read and write; write already makes it readable.`);
 };
 
 /**
@@ -85,11 +86,11 @@ const checkReductions = (leaf: Leaf): void => {
     for (const key of reducedBy(leaf)) {
         const declared = declarationOf(key)?.reduce;
         const operator: unknown = Reflect.get(reduce ?? {}, key);
-        if (declared === undefined) throw new Error(`System "${name}" reduces "${String(key)}", which has no reduce trait.`);
-        if (declared !== operator) throw new Error(`System "${name}" reduces "${String(key)}" with "${String(operator)}", but it's declared reduce: "${String(declared)}".`);
+        if (declared === undefined) throw new Error(`System "${name}" reduces "${labelOf(key)}", which has no reduce trait.`);
+        if (declared !== operator) throw new Error(`System "${name}" reduces "${labelOf(key)}" with "${labelOf(operator)}", but it's declared reduce: "${labelOf(declared)}".`);
     }
     for (const key of resources?.write ?? []) {
-        if (declarationOf(key)?.reduce !== undefined) throw new Error(`System "${name}" writes "${String(key)}", which is reduced; only its contributors' fold sets it.`);
+        if (declarationOf(key)?.reduce !== undefined) throw new Error(`System "${name}" writes "${labelOf(key)}", which is reduced; only its contributors' fold sets it.`);
     }
 };
 
@@ -104,13 +105,13 @@ const checkConditions = (leaf: Leaf): void => {
     const listed = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? []]);
     for (const key of [...is, ...not]) {
         const declaration = declarationOf(key);
-        if (kindOf(key) !== "resource" || declaration === undefined) throw new Error(`System "${name}" runs on the condition of "${String(key)}", which isn't a registered resource.`);
+        if (kindOf(key) !== "resource" || declaration === undefined) throw new Error(`System "${name}" runs on the condition of "${labelOf(key)}", which isn't a registered resource.`);
         const { type } = declaration;
-        if (type !== undefined && !conditional(type)) throw new Error(`System "${name}" runs on the condition of "${String(key)}", which is never null or false.`);
+        if (type !== undefined && !conditional(type)) throw new Error(`System "${name}" runs on the condition of "${labelOf(key)}", which is never null or false.`);
     }
     for (const key of is) {
-        if (not.includes(key)) throw new Error(`System "${name}" lists "${String(key)}" in both resources is and not.`);
-        if (listed.has(key)) throw new Error(`System "${name}" lists "${String(key)}" in resources is and in read or write; is already makes it readable.`);
+        if (not.includes(key)) throw new Error(`System "${name}" lists "${labelOf(key)}" in both resources is and not.`);
+        if (listed.has(key)) throw new Error(`System "${name}" lists "${labelOf(key)}" in resources is and in read or write; is already makes it readable.`);
     }
 };
 
@@ -133,7 +134,7 @@ export const createRegistrar = (state: State): Registrar => {
                 checkLists("System", name, "components", system.declaration.components);
                 checkLists("System", name, "resources", system.declaration.resources);
                 for (const key of system.declaration.components?.write ?? []) {
-                    if (declarationOf(key)?.reference !== undefined) throw new Error(`System "${name}" writes "${String(key)}", a reference, which changes only through commands.`);
+                    if (declarationOf(key)?.reference !== undefined) throw new Error(`System "${name}" writes "${labelOf(key)}", a reference, which changes only through commands.`);
                 }
                 checkReductions(system);
                 checkConditions(system);

@@ -21,6 +21,7 @@ import { combine, identityOf, reductionTargets, type ReductionTarget } from './r
 import { samePath, type TypedArray } from '../../interface/registry/layout.js';
 import { inputFor } from './input.js';
 import { createUp, type Run } from './up.js';
+import { labelOf } from '../../interface/registry/index.js';
 
 /** One unit of a system's work for a run: the commands it issued, plus its error if it failed partway. */
 export type ChunkResult = { readonly commands: CommandBuffer; readonly error?: unknown };
@@ -107,16 +108,16 @@ export const createRunner = (state: State, leaf: Leaf): Runner => {
         const index = targets.findIndex(target => target.key === reduced.resource);
         const target = targets[index];
         if (target === undefined || target.operator !== reduced.operator) {
-            return failPlacement(`reduces "${String(reduced.resource)}" with "${reduced.operator}", which its reduce doesn't declare`);
+            return failPlacement(`reduces "${labelOf(reduced.resource)}" with "${reduced.operator}", which its reduce doesn't declare`);
         }
         const leaf = target.leaves.findIndex(candidate => samePath(candidate.path, reduced.path));
-        if (leaf < 0) return failPlacement(`contributes to "${String(reduced.resource)}" at [${reduced.path.join(", ")}], which isn't a scalar of its value; destructure tuples and structs or build them`);
+        if (leaf < 0) return failPlacement(`contributes to "${labelOf(reduced.resource)}" at [${reduced.path.join(", ")}], which isn't a scalar of its value; destructure tuples and structs or build them`);
         return { target: index, leaf };
     });
     for (const shape of kernel?.description.reducedShapes ?? []) {
         const target = targets.find(candidate => candidate.key === shape.component);
         const exact = target !== undefined && target.leaves.length === shape.leaves.length && target.leaves.every(leaf => shape.leaves.some(path => samePath(path, leaf.path)));
-        if (!exact) failPlacement(`contributes a value to "${String(shape.component)}" that doesn't match its schema`);
+        if (!exact) failPlacement(`contributes a value to "${labelOf(shape.component)}" that doesn't match its schema`);
     }
     const accessors = declaration.shader === undefined ? [] : accessorsOf(declaration.shader);
     if (typeof accessors === "string") return failPlacement(`can't render: ${accessors}`);

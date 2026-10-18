@@ -3,8 +3,8 @@ import { Resource, System, always, cadence, clock, report, wake } from "../index
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const elapsed = "guide/ticks/elapsed";
-const alarm = "guide/ticks/alarm";
+const elapsed = Symbol("guide/ticks/elapsed");
+const alarm = Symbol("guide/ticks/alarm");
 
 declare module "@adobe/data-ecs" {
     interface Resources {

@@ -5,16 +5,16 @@ import type { Values } from '../interface/component/values.js';
 // Mirrors adobe/data's ecs2 `create` perftest (packages/data/src/perftest/ecs2-perf.ts): 1M particles of eight scalar
 // components, interleaved over four archetypes by visible/enabled, each with its own values.
 
-const color = "flat/color";
-const mass = "flat/mass";
-const positionX = "flat/positionX";
-const positionY = "flat/positionY";
-const positionZ = "flat/positionZ";
-const velocityX = "flat/velocityX";
-const velocityY = "flat/velocityY";
-const velocityZ = "flat/velocityZ";
-export const visible = "flat/visible";
-export const enabled = "flat/enabled";
+const color = Symbol("flat/color");
+const mass = Symbol("flat/mass");
+const positionX = Symbol("flat/positionX");
+const positionY = Symbol("flat/positionY");
+const positionZ = Symbol("flat/positionZ");
+const velocityX = Symbol("flat/velocityX");
+const velocityY = Symbol("flat/velocityY");
+const velocityZ = Symbol("flat/velocityZ");
+export const visible = Symbol("flat/visible");
+export const enabled = Symbol("flat/enabled");
 
 declare module "@adobe/data-ecs" {
     export interface Components {

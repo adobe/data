@@ -4,12 +4,12 @@ import { System } from './system.js';
 type Equal<X, Y> = (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2) ? true : false;
 const check = <_T extends true>() => { };
 
-const position = 'systemTest/position';
-const velocity = 'systemTest/velocity';
-const target = 'systemTest/target';
+export const position = Symbol("systemTest/position");
+const velocity = Symbol("systemTest/velocity");
+const target = Symbol("systemTest/target");
 const player = Symbol('systemTest/player');
-const time = 'systemTest/time';
-const score = 'systemTest/score';
+export const time = Symbol("systemTest/time");
+const score = Symbol("systemTest/score");
 
 declare module '@adobe/data-ecs' {
     export interface Components {
@@ -19,9 +19,9 @@ declare module '@adobe/data-ecs' {
         [player]: { type: true };
     }
 }
-const flagged = 'systemTest/flagged';
-const bounds = 'systemTest/bounds';
-const total = 'systemTest/total';
+const flagged = Symbol("systemTest/flagged");
+const bounds = Symbol("systemTest/bounds");
+export const total = Symbol("systemTest/total");
 declare module '@adobe/data-ecs' {
     export interface Resources {
         [time]: { type: number };
@@ -143,9 +143,9 @@ check<Equal<typeof integrate, System>>();
 check<Equal<typeof move, System<{ readonly distance: number }>>>();
 check<Equal<typeof main, System>>();
 
-const label = 'systemTest/label';
-const path = 'systemTest/path';
-const vector = 'systemTest/vector';
+const label = Symbol("systemTest/label");
+const path = Symbol("systemTest/path");
+const vector = Symbol("systemTest/vector");
 declare module '@adobe/data-ecs' {
     export interface Components {
         [label]: { type: string };

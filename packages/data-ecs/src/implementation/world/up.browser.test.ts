@@ -6,12 +6,12 @@ import type { World } from "../../interface/world/world.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 
-const local = "upBrowserTest/local";
-const world = "upBrowserTest/world";
-const parent = "upBrowserTest/parent";
-const offset = "upBrowserTest/offset";
-const placed = "upBrowserTest/placed";
-const marked = "upBrowserTest/marked";
+const local = Symbol("upBrowserTest/local");
+const world = Symbol("upBrowserTest/world");
+const parent = Symbol("upBrowserTest/parent");
+const offset = Symbol("upBrowserTest/offset");
+const placed = Symbol("upBrowserTest/placed");
+const marked = Symbol("upBrowserTest/marked");
 
 declare module "@adobe/data-ecs" {
     interface Components {
@@ -31,6 +31,7 @@ Component.register(offset, { type: { type: "number", precision: 1 } });
 Component.register(placed, { type: { type: "number", precision: 1 } });
 Component.register(marked, { type: { const: true } });
 import { gpuDevice } from "../../interface/resources/gpu-device.js";
+import { workers } from "../../interface/resources/workers.js";
 
 const place = System.create({
     name: "upBrowserTest/place",
@@ -82,8 +83,8 @@ afterEach(async () => {
     await Promise.all(disposals.splice(0).map(item => item.dispose()));
 });
 
-const simulate = async (workers: number, wasm: boolean): Promise<{ readonly values: readonly (number | null)[]; readonly windows: number }> => {
-    const ecs = createWorld({ workers }, { minimumChunk: 64, wasm });
+const simulate = async (count: number, wasm: boolean): Promise<{ readonly values: readonly (number | null)[]; readonly windows: number }> => {
+    const ecs = createWorld({ [workers]: count }, { minimumChunk: 64, wasm });
     disposals.push(ecs);
     await ecs.run(grow);
     let windows = 0;
@@ -121,7 +122,7 @@ const device = async (): Promise<GPUDevice> => {
 };
 
 const placements = async (gpu: GPUDevice | null): Promise<readonly (number | null)[]> => {
-    const ecs = createWorld({ workers: 0, [gpuDevice]: gpu });
+    const ecs = createWorld({ [workers]: 0, [gpuDevice]: gpu });
     disposals.push(ecs);
     await ecs.run(plant);
     await ecs.run(place);

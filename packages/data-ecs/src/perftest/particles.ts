@@ -8,12 +8,12 @@ import { System } from "../interface/system/system.js";
 type Vec3 = readonly [number, number, number];
 const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
 
-const color = "perf/color";
-const mass = "perf/mass";
-export const position = "perf/position";
-const velocity = "perf/velocity";
-export const visible = "perf/visible";
-export const enabled = "perf/enabled";
+const color = Symbol("perf/color");
+const mass = Symbol("perf/mass");
+export const position = Symbol("perf/position");
+const velocity = Symbol("perf/velocity");
+export const visible = Symbol("perf/visible");
+export const enabled = Symbol("perf/enabled");
 
 declare module "@adobe/data-ecs" {
     export interface Components {

@@ -5,13 +5,14 @@ import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
 
 type Vec3 = readonly [number, number, number];
 const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
-const position = "rowsTest/position";
-const count = "rowsTest/count";
-const flag = "rowsTest/flag";
-const tag = "rowsTest/tag";
+const position = Symbol("rowsTest/position");
+const count = Symbol("rowsTest/count");
+const flag = Symbol("rowsTest/flag");
+const tag = Symbol("rowsTest/tag");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -50,7 +51,7 @@ describe("accessor rows", () => {
             seen.push({ entity: row.entity, position: row[position], count: row[count], flag: row[flag] });
             row[count] = row[count] + 1;
         });
-        const world = createWorld({ workers: 0 });
+        const world = createWorld({ [workers]: 0 });
         await world.run(seed);
         await world.run(first);
         await world.run(other);

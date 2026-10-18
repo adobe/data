@@ -10,13 +10,13 @@ import type { World } from "../interface/world/world.js";
 type Vec3 = readonly [number, number, number];
 const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
 
-export const position = "suite/position";
-export const velocity = "suite/velocity";
-export const target = "suite/target";
-export const index = "suite/index";
-export const tag = "suite/tag";
-export const unused = "suite/unused";
-export const hits = "suite/hits";
+export const position = Symbol("suite/position");
+export const velocity = Symbol("suite/velocity");
+export const target = Symbol("suite/target");
+export const index = Symbol("suite/index");
+export const tag = Symbol("suite/tag");
+export const unused = Symbol("suite/unused");
+export const hits = Symbol("suite/hits");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -30,8 +30,8 @@ declare module "@adobe/data-ecs" {
     }
 }
 
-export const indexSum = "suite/indexSum";
-export const highest = "suite/highest";
+export const indexSum = Symbol("suite/indexSum");
+export const highest = Symbol("suite/highest");
 declare module "@adobe/data-ecs" {
     export interface Resources {
         [indexSum]: { type: number; reduce: "+" };

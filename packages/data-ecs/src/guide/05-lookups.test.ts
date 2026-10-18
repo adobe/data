@@ -3,9 +3,9 @@ import { Component, Entity, System, Vec3, World } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const position = "guide/lookups/position";
-const velocity = "guide/lookups/velocity";
-const target = "guide/lookups/target";
+const position = Symbol("guide/lookups/position");
+const velocity = Symbol("guide/lookups/velocity");
+const target = Symbol("guide/lookups/target");
 
 declare module "@adobe/data-ecs" {
     interface Components {

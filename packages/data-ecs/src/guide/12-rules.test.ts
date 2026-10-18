@@ -3,11 +3,11 @@ import { Component, Rule, System, World } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const mesh = "guide/rules/mesh";
-const sprite = "guide/rules/sprite";
-const hidden = "guide/rules/hidden";
-const drawn = "guide/rules/drawn";
-const layer = "guide/rules/layer";
+const mesh = Symbol("guide/rules/mesh");
+const sprite = Symbol("guide/rules/sprite");
+const hidden = Symbol("guide/rules/hidden");
+const drawn = Symbol("guide/rules/drawn");
+const layer = Symbol("guide/rules/layer");
 
 declare module "@adobe/data-ecs" {
     interface Components {

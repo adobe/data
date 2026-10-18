@@ -4,10 +4,10 @@ import { toPromise } from "../interface/observe/to-promise.js";
 import { steer } from "./08-steer.js";
 import { createWorld } from "../implementation/index.js";
 
-const position = "guide/kernels/position";
-const velocity = "guide/kernels/velocity";
-const target = "guide/kernels/target";
-const spark = "guide/kernels/spark";
+const position = Symbol("guide/kernels/position");
+const velocity = Symbol("guide/kernels/velocity");
+const target = Symbol("guide/kernels/target");
+const spark = Symbol("guide/kernels/spark");
 
 declare module "@adobe/data-ecs" {
     interface Components {

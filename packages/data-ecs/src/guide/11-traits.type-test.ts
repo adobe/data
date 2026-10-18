@@ -5,7 +5,7 @@ const check = <_T extends true>() => { };
 
 // A trait is a member of `Traits<N>`: the value it allows on component `N`, or `never` where it doesn't apply.
 // It is declared by augmenting `Traits`, and claims the name with `Trait.register`.
-export const instanced = "guide/traits/instanced";
+export const instanced = Symbol("guide/traits/instanced");
 declare module "@adobe/data-ecs" {
     interface Traits<N> {
         readonly [instanced]: N extends Component.Name ? ([Component.Value<N>] extends [readonly number[]] ? true : never) : never;
@@ -13,11 +13,11 @@ declare module "@adobe/data-ecs" {
 }
 Trait.register(instanced);
 
-const transform = "guide/traits/transform";
-const label = "guide/traits/label";
-const meshSlot = "guide/traits/meshSlot";
-const meshReady = "guide/traits/meshReady";
-const parent = "guide/traits/parent";
+const transform = Symbol("guide/traits/transform");
+const label = Symbol("guide/traits/label");
+const meshSlot = Symbol("guide/traits/meshSlot");
+const meshReady = Symbol("guide/traits/meshReady");
+const parent = Symbol("guide/traits/parent");
 
 // Each component's record lists all its traits, `type` among them.
 declare module "@adobe/data-ecs" {

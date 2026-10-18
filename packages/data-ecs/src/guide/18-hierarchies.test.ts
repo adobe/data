@@ -3,9 +3,9 @@ import { Component, Entity, System, World } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const offset = "guide/hierarchies/offset";
-const position = "guide/hierarchies/position";
-const parent = "guide/hierarchies/parent";
+const offset = Symbol("guide/hierarchies/offset");
+const position = Symbol("guide/hierarchies/position");
+const parent = Symbol("guide/hierarchies/parent");
 
 declare module "@adobe/data-ecs" {
     interface Components {

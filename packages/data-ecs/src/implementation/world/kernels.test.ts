@@ -9,9 +9,9 @@ import { bindKernel } from "./kernels.js";
 import type { KernelDescription } from "./kernel.js";
 import { createState } from "./state.js";
 
-const value = "kernelsTest/value";
-const other = "kernelsTest/other";
-const scale = "kernelsTest/scale";
+const value = Symbol("kernelsTest/value");
+const other = Symbol("kernelsTest/other");
+const scale = Symbol("kernelsTest/scale");
 
 declare module "@adobe/data-ecs" {
     export interface Components {

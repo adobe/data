@@ -6,7 +6,7 @@ import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { toPromise } from "../../interface/observe/to-promise.js";
 
-const value = "poolSizeTest/value";
+const value = Symbol("poolSizeTest/value");
 declare module "@adobe/data-ecs" {
     export interface Components {
         [value]: { type: number };
@@ -52,7 +52,7 @@ describe("the workers resource", () => {
         await world.dispose();
     });
     it("sizes the kernel pool at the next sync point, with the same results", async () => {
-        const world = createWorld({ workers: 2 }, { minimumChunk: 64 });
+        const world = createWorld({ [workers]: 2 }, { minimumChunk: 64 });
         await world.run(seed);
         await world.run(double);
         expect(started).toBe(2);

@@ -4,12 +4,13 @@ import { Mat4x4, Quat, Vec3 } from "../../interface/math/index.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
 
-const position = "builtinsTest/position";
-const velocity = "builtinsTest/velocity";
-const bits = "builtinsTest/bits";
-const counts = "builtinsTest/counts";
-const sums = "builtinsTest/sums";
+const position = Symbol("builtinsTest/position");
+const velocity = Symbol("builtinsTest/velocity");
+const bits = Symbol("builtinsTest/bits");
+const counts = Symbol("builtinsTest/counts");
+const sums = Symbol("builtinsTest/sums");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -66,7 +67,7 @@ const integers = System.create({ name: "builtinsTest/integers", kernel: "cpu", c
 describe("math in kernels", () => {
     for (const wasm of [false, true]) {
         it(`matches the functions called directly (${wasm ? "WASM" : "JS"})`, async () => {
-            const world = createWorld({ workers: 0 }, { wasm });
+            const world = createWorld({ [workers]: 0 }, { wasm });
             await world.run(spawn);
             await world.run(transform);
             const read = await readEach(world, await select(world, { required: [position] }), position);
@@ -78,7 +79,7 @@ describe("math in kernels", () => {
     }
     for (const wasm of [false, true]) {
         it(`wraps integers and counts bits as the functions do (${wasm ? "WASM" : "JS"})`, async () => {
-            const world = createWorld({ workers: 0 }, { wasm });
+            const world = createWorld({ [workers]: 0 }, { wasm });
             await world.run(spawnBits);
             await world.run(integers);
             const entities = await select(world, { required: [bits] });

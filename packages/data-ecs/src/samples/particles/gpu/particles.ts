@@ -6,12 +6,12 @@ import { System } from '../../../interface/system/system.js';
 // The perf particles (src/perftest/particles.ts) on screen: 1M particles over four archetypes by visible and
 // enabled, with screen-space positions and velocities in pixels per frame. `move` is the perf move kernel, on the GPU.
 
-export const position = "gpuParticles/position";
-export const velocity = "gpuParticles/velocity";
-export const color = "gpuParticles/color";
-export const mass = "gpuParticles/mass";
-export const visible = "gpuParticles/visible";
-export const enabled = "gpuParticles/enabled";
+export const position = Symbol("gpuParticles/position");
+export const velocity = Symbol("gpuParticles/velocity");
+export const color = Symbol("gpuParticles/color");
+export const mass = Symbol("gpuParticles/mass");
+export const visible = Symbol("gpuParticles/visible");
+export const enabled = Symbol("gpuParticles/enabled");
 
 declare module '@adobe/data-ecs' {
     export interface Components {

@@ -1,8 +1,8 @@
 /** What registration recorded, for the implementation to read. Not part of the public interface. */
 export type { AnyDeclaration } from './declarations.js';
-export { declarationOf, hasSymbolNames, schemaOf, threadOfDeclaration } from './declarations.js';
+export { hasSymbolNames, schemaOf, threadOfDeclaration } from './declarations.js';
 export type { Kind } from './names.js';
-export { kindOf } from './names.js';
+export { declarationOf, kindOf, labelOf } from './names.js';
 export type { Item } from './program.js';
 export { definitionOf, itemNamed, programFinalizers, programRules, programVersion, requireDefinition } from './program.js';
 export type { Schedule } from './schedule.js';

@@ -4,9 +4,11 @@ import type { Entity } from "../../interface/entity/entity.js";
 import { toPromise } from "../../interface/observe/to-promise.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
+import { gpuDevice } from "../../interface/resources/gpu-device.js";
+import { workers } from "../../interface/resources/workers.js";
 
-const heat = "observersGpuTest/heat";
-const rate = "observersGpuTest/rate";
+const heat = Symbol("observersGpuTest/heat");
+const rate = Symbol("observersGpuTest/rate");
 
 declare module "@adobe/data-ecs" {
     export interface Components {
@@ -37,7 +39,7 @@ const device = async (): Promise<GPUDevice> => {
 
 describe("observers of GPU kernels' writes", () => {
     it("give an entity's values the GPU wrote, read back after each run, and a first value once read back", async () => {
-        const world = createWorld({ workers: 0, gpuDevice: await device() });
+        const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
         await world.run(spawn);
         const seen: unknown[] = [];
         const stop = world.observe.entity(spawned[1], { required: [heat] })(value => seen.push(value));
@@ -56,7 +58,7 @@ describe("observers of GPU kernels' writes", () => {
     });
 
     it("give a query's result over values the GPU wrote", async () => {
-        const world = createWorld({ workers: 0, gpuDevice: await device() });
+        const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
         await world.run(spawn);
         const counts: number[] = [];
         world.observe.count({ required: [heat], where: { [heat]: { ">=": 100 } } })(count => counts.push(count));
@@ -69,7 +71,7 @@ describe("observers of GPU kernels' writes", () => {
     });
 
     it("give an observer waiting for its first value nothing from a run queued before it", async () => {
-        const world = createWorld({ workers: 0, gpuDevice: await device() });
+        const world = createWorld({ [workers]: 0, [gpuDevice]: await device() });
         await world.run(spawn);
         await world.run(warm);
         const running = world.run(warm);

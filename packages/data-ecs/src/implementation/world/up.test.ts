@@ -8,14 +8,15 @@ import { createWorld } from "./create.js";
 import { read, readEach } from "./reads.test-helper.js";
 import { bindKernel } from "./kernels.js";
 import { createState } from "./state.js";
+import { workers } from "../../interface/resources/workers.js";
 
-const local = "upTest/local";
-const world = "upTest/world";
-const parent = "upTest/parent";
-const label = "upTest/label";
-const visible = "upTest/visible";
-const shown = "upTest/shown";
-const anchor = "upTest/anchor";
+const local = Symbol("upTest/local");
+const world = Symbol("upTest/world");
+const parent = Symbol("upTest/parent");
+const label = Symbol("upTest/label");
+const visible = Symbol("upTest/visible");
+const shown = Symbol("upTest/shown");
+const anchor = Symbol("upTest/anchor");
 
 declare module "@adobe/data-ecs" {
     interface Components {
@@ -132,7 +133,7 @@ const shift = System.create({ name: "upTest/shift", components: { write: [local]
 describe("up", () => {
     for (const [kind, system] of [["main-thread", propagate], ["kernel", propagateKernel]] as const) {
         it(`runs parents before children, so each reads its parent's value from the same run, for a ${kind} system`, async () => {
-            await using ecs = createWorld({ workers: 0 });
+            await using ecs = createWorld({ [workers]: 0 });
             await ecs.run(spawn);
             await ecs.run(nest);
             await ecs.run(system);
@@ -141,7 +142,7 @@ describe("up", () => {
     }
 
     it("passes a row whose parent changed since the system last ran, with change filters", async () => {
-        await using ecs = createWorld({ workers: 0 });
+        await using ecs = createWorld({ [workers]: 0 });
         await ecs.run(spawn);
         await ecs.run(nest);
         await ecs.run(propagateChanged);
@@ -153,7 +154,7 @@ describe("up", () => {
     });
 
     it("doesn't pass a row whose component an added filter names only changed", async () => {
-        await using ecs = createWorld({ workers: 0 });
+        await using ecs = createWorld({ [workers]: 0 });
         await ecs.run(spawn);
         await ecs.run(nest);
         await ecs.run(propagateAdded);
@@ -164,7 +165,7 @@ describe("up", () => {
     });
 
     it("passes a row whose parent a kernel wrote earlier in the run, with change filters", async () => {
-        await using ecs = createWorld({ workers: 0 });
+        await using ecs = createWorld({ [workers]: 0 });
         await ecs.run(spawn);
         await ecs.run(nest);
         await ecs.run(propagateChangedKernel);
@@ -174,7 +175,7 @@ describe("up", () => {
     });
 
     it("passes a row whose parent reference changed, with change filters", async () => {
-        await using ecs = createWorld({ workers: 0 });
+        await using ecs = createWorld({ [workers]: 0 });
         await ecs.run(spawn);
         await ecs.run(propagateChanged);
         ran.length = 0;
@@ -185,7 +186,7 @@ describe("up", () => {
     });
 
     it("passes a row whose parent reference was removed, with change filters", async () => {
-        await using ecs = createWorld({ workers: 0 });
+        await using ecs = createWorld({ [workers]: 0 });
         await ecs.run(spawn);
         await ecs.run(nest);
         await ecs.run(propagateChanged);
@@ -197,7 +198,7 @@ describe("up", () => {
     });
 
     it("finds a cycle a reparent closes after the tree was built, and runs its rows again once it opens", async () => {
-        await using ecs = createWorld({ workers: 0 });
+        await using ecs = createWorld({ [workers]: 0 });
         await ecs.run(spawn);
         await ecs.run(nest);
         await ecs.run(propagateKernel);
@@ -210,7 +211,7 @@ describe("up", () => {
     });
 
     it("doesn't run rows on or under a parent cycle", async () => {
-        await using ecs = createWorld({ workers: 0 });
+        await using ecs = createWorld({ [workers]: 0 });
         await ecs.run(spawn);
         await ecs.run(nest);
         await ecs.run(loop);
@@ -220,7 +221,7 @@ describe("up", () => {
     });
 
     it("reads parents in several archetypes, including ones the query doesn't match, and null for one without what up reads", async () => {
-        await using ecs = createWorld({ workers: 0 });
+        await using ecs = createWorld({ [workers]: 0 });
         await ecs.run(spawnMixed);
         await ecs.run(propagateKernel);
         const values = Object.fromEntries(await Promise.all(Object.entries(mixed).map(async ([name, entity]) => [name, await read(ecs, entity, world)])));
@@ -228,7 +229,7 @@ describe("up", () => {
     });
 
     it("reads a parent's archetype again after it grows", async () => {
-        await using ecs = createWorld({ workers: 0 });
+        await using ecs = createWorld({ [workers]: 0 });
         await ecs.run(spawnMixed);
         await ecs.run(propagateKernel);
         await ecs.run(growParents);
@@ -238,7 +239,7 @@ describe("up", () => {
     });
 
     it("reads a parent the query doesn't match again after it moves to another archetype", async () => {
-        await using ecs = createWorld({ workers: 0 });
+        await using ecs = createWorld({ [workers]: 0 });
         await ecs.run(spawnMixed);
         await ecs.run(propagateKernel);
         await ecs.run(System.create({ name: "upTest/moveUnmatched" }, ({ commands }) => { commands.add(mixed.unmatched, { [anchor]: true, [world]: 80 }); }));
@@ -247,7 +248,7 @@ describe("up", () => {
     });
 
     it("reads booleans through up", async () => {
-        await using ecs = createWorld({ workers: 0 });
+        await using ecs = createWorld({ [workers]: 0 });
         const tree: Entity[] = [];
         await ecs.run(System.create({ name: "upTest/spawnShown" }, ({ commands }) => {
             const top = commands.spawn({ [visible]: false, [shown]: true });
@@ -265,7 +266,7 @@ describe("up", () => {
         if (definition === undefined || definition.kind === "composite" || description === undefined) throw new Error("not a compiled leaf");
         expect(bindKernel(createState(), definition, description).wasm).not.toBeNull();
         const results = await Promise.all([true, false].map(async wasm => {
-            await using ecs = createWorld({ workers: 0 }, { wasm });
+            await using ecs = createWorld({ [workers]: 0 }, { wasm });
             await ecs.run(spawnMixed);
             await ecs.run(propagateKernel);
             await ecs.run(growParents);
@@ -277,7 +278,7 @@ describe("up", () => {
     });
 
     it("rejects a through that isn't a reference, for untyped declarations", async () => {
-        await using ecs = createWorld({ workers: 0 });
+        await using ecs = createWorld({ [workers]: 0 });
         // @ts-expect-error through is a reference component
         const untyped = System.create({ name: "upTest/untyped", components: { write: [world] }, up: { through: local, read: [world] } }, row => { row[world] = 0; });
         await expect(ecs.run(untyped)).rejects.toThrow('System "upTest/untyped": up.through "upTest/local" isn\'t a reference component.');

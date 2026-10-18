@@ -7,6 +7,7 @@ import { triggersOf } from './program.js';
 import { ensureResources, findResource } from './resources.js';
 import { idOf, type Key, type State } from './state.js';
 import { restratify } from './structure.js';
+import { labelOf } from '../../interface/registry/index.js';
 
 const resourcesOf = (finalizer: Finalizer): readonly Key[] => [...finalizer.declaration.resources?.read ?? [], ...finalizer.declaration.resources?.write ?? []];
 
@@ -53,7 +54,7 @@ export const activate = (state: State): void => {
         }
     }
     if (facts.length > 0) {
-        restratify(structure, [...structure.rules, ...facts], structure.hosts, id => String(state.keys[id]));
+        restratify(structure, [...structure.rules, ...facts], structure.hosts, id => labelOf(state.keys[id]));
         // Entities may already match a rule added to the program after the world met its components.
         structure.rederive = true;
     }

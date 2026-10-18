@@ -11,12 +11,12 @@ import { createWorld } from "../index.js";
 
 type Vec2 = readonly [number, number];
 
-const position = "createTest/position";
-const velocity = "createTest/velocity";
-const label = "createTest/label";
-const frozen = "createTest/frozen";
-const spawnCount = "createTest/spawnCount";
-const seen = "createTest/seen";
+const position = Symbol("createTest/position");
+const velocity = Symbol("createTest/velocity");
+const label = Symbol("createTest/label");
+const frozen = Symbol("createTest/frozen");
+const spawnCount = Symbol("createTest/spawnCount");
+const seen = Symbol("createTest/seen");
 const marker = Symbol("createTest/marker");
 
 declare module "@adobe/data-ecs" {

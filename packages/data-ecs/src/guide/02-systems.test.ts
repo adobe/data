@@ -3,11 +3,11 @@ import { Component, Resource, System, Vec3, World } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const position = "guide/systems/position";
-const velocity = "guide/systems/velocity";
-const frozen = "guide/systems/frozen";
-const delta = "guide/systems/delta";
-const frames = "guide/systems/frames";
+const position = Symbol("guide/systems/position");
+const velocity = Symbol("guide/systems/velocity");
+const frozen = Symbol("guide/systems/frozen");
+const delta = Symbol("guide/systems/delta");
+const frames = Symbol("guide/systems/frames");
 
 declare module "@adobe/data-ecs" {
     interface Components {

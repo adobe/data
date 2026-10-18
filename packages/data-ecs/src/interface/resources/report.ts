@@ -2,7 +2,7 @@ import { Resource } from '../resource/resource.js';
 import type { Report } from '../world/report.js';
 
 /** The last tick's report, written only by the world after each tick. */
-export const report = 'report';
+export const report = Symbol("report");
 
 declare module '@adobe/data-ecs' {
     export interface Resources {

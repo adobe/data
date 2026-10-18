@@ -3,9 +3,9 @@ import { Component, Finalizer, System, Vec3, World } from "../index.js";
 import { toPromise } from "../interface/observe/to-promise.js";
 import { createWorld } from "../implementation/index.js";
 
-const position = "guide/finalizers/position";
-const handle = "guide/finalizers/handle";
-const debris = "guide/finalizers/debris";
+const position = Symbol("guide/finalizers/position");
+const handle = Symbol("guide/finalizers/handle");
+const debris = Symbol("guide/finalizers/debris");
 
 declare module "@adobe/data-ecs" {
     interface Components {

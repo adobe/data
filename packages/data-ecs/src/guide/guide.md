@@ -2,40 +2,36 @@
 
 How to use the ECS. Each excerpt comes from a test in this folder; the link under it opens the whole file.
 
+[Setup](#setup)
+
 **Basics**
 
-1. [Setup](#1-setup)
-2. [Resources](#2-resources)
-3. [Entities, components and archetypes](#3-entities-components-and-archetypes)
-4. [Systems](#4-systems)
-5. [Ticks and cadence](#5-ticks-and-cadence)
+1. [Resources](#1-resources)
+2. [Entities, components and archetypes](#2-entities-components-and-archetypes)
+3. [Systems](#3-systems)
+4. [Ticks and cadence](#4-ticks-and-cadence)
 
 **Intermediate**
 
-6. [Scheduling and composites](#6-scheduling-and-composites)
-7. [Sync points](#7-sync-points)
-8. [Change filters and conditions](#8-change-filters-and-conditions)
-9. [Input](#9-input)
-10. [Rules](#10-rules)
-11. [Finalizers and change sets](#11-finalizers-and-change-sets)
-12. [Traits, within and references](#12-traits-within-and-references)
+5. [Scheduling and composites](#5-scheduling-and-composites)
+6. [Sync points](#6-sync-points)
+7. [Change filters and conditions](#7-change-filters-and-conditions)
+8. [Input](#8-input)
+9. [Rules](#9-rules)
+10. [Finalizers and change sets](#10-finalizers-and-change-sets)
+11. [Traits, within and references](#11-traits-within-and-references)
 
 **Advanced**
 
-13. [Lookups](#13-lookups)
-14. [Kernels](#14-kernels)
-15. [Reductions](#15-reductions)
-16. [GPU kernels and render systems](#16-gpu-kernels-and-render-systems)
-17. [Hierarchies](#17-hierarchies)
-18. [Identity and ids](#18-identity-and-ids)
-19. [Threads](#19-threads)
+12. [Lookups](#12-lookups)
+13. [Kernels](#13-kernels)
+14. [Reductions](#14-reductions)
+15. [GPU kernels and render systems](#15-gpu-kernels-and-render-systems)
+16. [Hierarchies](#16-hierarchies)
+17. [Identity and ids](#17-identity-and-ids)
+18. [Threads](#18-threads)
 
-## Basics
-
-Resources, values a world holds once, and entities, each holding a set of components, are the whole data model.
-Systems change that data, once per run or on every tick.
-
-### 1. Setup
+## Setup
 
 ```ts
 // vite.config.ts: compiles kernels, checks each system's declaration against its body, and gives keys and systems ids.
@@ -47,7 +43,12 @@ Each component and resource is registered once, and its type is declared by augm
 in `@adobe/data-ecs` with what registration returns; traits of your own augment `Traits`. The examples create worlds
 with `createWorld()`.
 
-### 2. Resources
+## Basics
+
+Resources, values a world holds once, and entities, each holding a set of components, are the whole data model.
+Systems change that data, once per run or on every tick.
+
+### 1. Resources
 
 ```ts
 export const gravity = Symbol("gravity");
@@ -72,9 +73,9 @@ await using moon = createWorld({ [gravity]: -1.6 });
 expect(await Observe.toPromise(moon.observe.resource(gravity))).toBe(-1.6);
 ```
 
-[`02-resources.test.ts`](02-resources.test.ts#L5-L31)
+[`01-resources.test.ts`](01-resources.test.ts#L5-L31)
 
-### 3. Entities, components and archetypes
+### 2. Entities, components and archetypes
 
 ```ts
 export const position = Symbol("position");
@@ -122,9 +123,9 @@ expect(values?.[position]).toEqual([0, 10, 0]);
 expect(await Observe.toPromise(world.observe.count({ required: Particle }))).toBe(1);
 ```
 
-[`03-entities.test.ts`](03-entities.test.ts#L5-L46)
+[`02-entities.test.ts`](02-entities.test.ts#L5-L46)
 
-### 4. Systems
+### 3. Systems
 
 ```ts
 // Runs once per entity with every component in read and write, and none in not.
@@ -147,9 +148,9 @@ const count = System.create({ resources: { write: [frames] } }, ({ resources }) 
 await world.run(move);
 ```
 
-[`04-systems.test.ts`](04-systems.test.ts#L34-L59)
+[`03-systems.test.ts`](03-systems.test.ts#L34-L59)
 
-### 5. Ticks and cadence
+### 4. Ticks and cadence
 
 ```ts
 // clock is the current tick's: delta is the milliseconds since the last one.
@@ -166,11 +167,11 @@ world.add(advance);
 const ticked = new Promise<number>(resolve => world.observe.resource(elapsed)(value => { if (value >= 30) resolve(value); }));
 ```
 
-[`05-ticks.test.ts`](05-ticks.test.ts#L15-L30)
+[`04-ticks.test.ts`](04-ticks.test.ts#L15-L30)
 
 ## Intermediate
 
-### 6. Scheduling and composites
+### 5. Scheduling and composites
 
 ```ts
 const hit = System.create({ components: { read: [damage], write: [health] } }, row => {
@@ -185,7 +186,7 @@ const heal = System.create({ components: { write: [health] }, after: [hit] }, ro
 const frame = System.create([heal, hit]);
 ```
 
-[`06-scheduling.test.ts`](06-scheduling.test.ts#L18-L37)
+[`05-scheduling.test.ts`](05-scheduling.test.ts#L18-L37)
 
 ```ts
 // Phases are systems that do nothing; a system during one runs after what the phase follows and before what follows it.
@@ -200,9 +201,9 @@ const report = System.create({ components: { read: [health] }, during: [render] 
 const phased = System.create([report, poison, update, render]);
 ```
 
-[`06-scheduling.test.ts`](06-scheduling.test.ts#L39-L56)
+[`05-scheduling.test.ts`](05-scheduling.test.ts#L39-L56)
 
-### 7. Sync points
+### 6. Sync points
 
 ```ts
 // Value writes apply at once; commands wait for the sync point that ends each run, then apply in the order issued.
@@ -220,9 +221,9 @@ const count = System.create({ components: { has: [health] }, resources: { write:
 const frame = System.create([spawn, count]);
 ```
 
-[`07-sync-points.test.ts`](07-sync-points.test.ts#L20-L42)
+[`06-sync-points.test.ts`](06-sync-points.test.ts#L20-L42)
 
-### 8. Change filters and conditions
+### 7. Change filters and conditions
 
 ```ts
 // A resource in changed passes the first run and each run after it changes: no run-once flag needed.
@@ -236,7 +237,7 @@ const show = System.create({ components: { read: [score], write: [shown], change
 });
 ```
 
-[`08-change-filters.test.ts`](08-change-filters.test.ts#L35-L58)
+[`07-change-filters.test.ts`](07-change-filters.test.ts#L35-L58)
 
 ```ts
 // Runs only while each resource in is is neither null nor false, and each in not is; is reads it narrowed.
@@ -245,9 +246,9 @@ const step = System.create({ resources: { is: [map], not: [paused], write: [step
 });
 ```
 
-[`08-change-filters.test.ts`](08-change-filters.test.ts#L60-L75)
+[`07-change-filters.test.ts`](07-change-filters.test.ts#L60-L75)
 
-### 9. Input
+### 8. Input
 
 ```ts
 // input is an object schema of named fields; each run passes a value of it.
@@ -262,9 +263,9 @@ const hit = System.create({
 await world.run(hit, { amount: 3 });
 ```
 
-[`09-input.test.ts`](09-input.test.ts#L17-L32)
+[`08-input.test.ts`](08-input.test.ts#L17-L32)
 
-### 10. Rules
+### 9. Rules
 
 ```ts
 // Only rules add derived components, starting at their default.
@@ -279,9 +280,9 @@ Rule.create({ components: { has: [sprite], not: [hidden] }, derive: [drawn] });
 Rule.create({ components: { has: [drawn] }, derive: [layer] });
 ```
 
-[`10-rules.test.ts`](10-rules.test.ts#L14-L50)
+[`09-rules.test.ts`](09-rules.test.ts#L14-L50)
 
-### 11. Finalizers and change sets
+### 10. Finalizers and change sets
 
 ```ts
 // Runs for each entity that stops matching, whatever the cause, reading its values from before.
@@ -293,7 +294,7 @@ Finalizer.create({ components: { read: [handle] } }, row => {
 await world.dispose();
 ```
 
-[`11-finalizers.test.ts`](11-finalizers.test.ts#L15-L47)
+[`10-finalizers.test.ts`](10-finalizers.test.ts#L15-L47)
 
 ```ts
 // Sees each sync point's structural changes to the components it watches, grouped by how entities changed, with
@@ -305,9 +306,9 @@ Finalizer.changes({ watch: [handle] }, changes => {
 });
 ```
 
-[`11-finalizers.test.ts`](11-finalizers.test.ts#L49-L65)
+[`10-finalizers.test.ts`](10-finalizers.test.ts#L49-L65)
 
-### 12. Traits, within and references
+### 11. Traits, within and references
 
 ```ts
 // Traits are the fields of a key's declaration; type is one.
@@ -327,7 +328,7 @@ const spawn = System.create(({ commands }) => {
 });
 ```
 
-[`12-traits.test.ts`](12-traits.test.ts#L11-L53)
+[`11-traits.test.ts`](11-traits.test.ts#L11-L53)
 
 ```ts
 // A trait of your own is a member of Traits<N, E>: the value it allows on key N, whose traits are E, or never where
@@ -344,34 +345,34 @@ Trait.register(instanced);
 check<Equal<Extract<Component.With<typeof instanced>, typeof transform | typeof name>, typeof transform>>();
 ```
 
-[`12-traits.type-test.ts`](12-traits.type-test.ts#L6-L28)
+[`11-traits.type-test.ts`](11-traits.type-test.ts#L6-L28)
 
 ## Advanced
 
-### 13. Lookups
+### 12. Lookups
 
 Reading another entity's components by id, from a system. To be written.
 
-### 14. Kernels
+### 13. Kernels
 
 Systems compiled to run across workers. To be written.
 
-### 15. Reductions
+### 14. Reductions
 
 One value computed from many rows. To be written.
 
-### 16. GPU kernels and render systems
+### 15. GPU kernels and render systems
 
 Systems that run or draw on the GPU. To be written.
 
-### 17. Hierarchies
+### 16. Hierarchies
 
 Running rows parent first, through a reference. To be written.
 
-### 18. Identity and ids
+### 17. Identity and ids
 
 How systems and keys stay the same across reloads. To be written.
 
-### 19. Threads
+### 18. Threads
 
 Sharing a world with another thread, which joins it to run systems and observe. To be written.

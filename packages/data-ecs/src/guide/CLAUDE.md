@@ -18,6 +18,7 @@ code it shows: every excerpt comes from a file here that runs as a test, so the 
 
 ## Structure
 
+- **Setup:** its own short section before the basics: the build plugin and how keys are registered and declared.
 - **Basics:** resources, then entities, components and archetypes, which together are the whole data model, then
   systems, and ticks and cadence: everything needed to build and run a world and its loop. Topics that belong together
   share a section; entities are taught with components, and archetypes, named lists of components, with them.

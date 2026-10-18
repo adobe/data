@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
 import { Resource } from "../../interface/resource/resource.js";
 import { System } from "../../interface/system/system.js";
 import { readResource } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
+
+/** Scenarios of reductions across workers, run built in node and from source in chromium. */
 
 const weight = Symbol("reductionsBrowserTest/weight");
 const sized = Symbol("reductionsBrowserTest/sized");
@@ -30,8 +31,8 @@ const countTraits = Resource.register(count, { type: { type: "number", default: 
 const sumTraits = Resource.register(sum, { type: { type: "number", default: 0 }, reduce: "+" });
 const largestTraits = Resource.register(largest, { type: { type: "number", default: 0 }, reduce: "max" });
 
-const rows = 100_000;
-const weightAt = (i: number): number => Math.fround(Math.sin(i * 0.37) * 1000);
+export const rows = 100_000;
+export const weightAt = (i: number): number => Math.fround(Math.sin(i * 0.37) * 1000);
 
 const spawn = System.create({ name: "reductionsBrowserTest/spawn" }, ({ commands }) => {
     for (let i = 0; i < rows; i++) {
@@ -46,23 +47,19 @@ const reduce = System.create({ name: "reductionsBrowserTest/reduce", kernel: "cp
     reduce[largest](row[weight]);
 });
 
-describe("reductions across workers", () => {
-    for (const wasm of [true, false]) {
-        it(`fold every row exactly once, in the same order each run (${wasm ? "WASM" : "JS"})`, async () => {
-            const world = createWorld({ [workers]: 4 }, { minimumChunk: 64, wasm });
-            await world.run(spawn);
-            const sums: number[] = [];
-            for (let run = 0; run < 4; run++) {
-                await world.run(reduce);
-                expect(await readResource(world, count)).toBe(rows);
-                expect(await readResource(world, largest)).toBe(Math.max(...Array.from({ length: rows }, (_, i) => weightAt(i))));
-                sums.push(await readResource(world, sum));
-            }
-            // Each piece folds into its own partial, combined in piece order, so float sums repeat bit for bit.
-            expect(new Set(sums).size).toBe(1);
-            const direct = Array.from({ length: rows }, (_, i) => weightAt(i)).reduce((total, value) => total + value, 0);
-            expect(Math.abs((sums[0] ?? NaN) - direct)).toBeLessThan(1e-6 * rows);
-            await world.dispose();
-        });
+/** Four runs of the reduction on four workers: each run's count, largest and sum. */
+export const reduced = async (wasm: boolean): Promise<readonly (readonly [number, number, number])[]> => {
+    const world = createWorld({ [workers]: 4 }, { minimumChunk: 64, wasm });
+    try {
+        await world.run(spawn);
+        const runs: [number, number, number][] = [];
+        for (let run = 0; run < 4; run++) {
+            await world.run(reduce);
+            runs.push([await readResource(world, count), await readResource(world, largest), await readResource(world, sum)]);
+        }
+        return runs;
     }
-});
+    finally {
+        await world.dispose();
+    }
+};

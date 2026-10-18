@@ -15,7 +15,9 @@ import type { Observe } from '../../interface/observe/observe.js';
 import type { Report } from '../../interface/world/report.js';
 import { execute, type ExecuteContext } from './execute.js';
 import { sharedMemoryAvailable } from './memory.js';
-import { createPool, platformWorkerCount, type Pool } from './pool.js';
+import { createPool, type Pool } from './pool.js';
+import type { Runner } from './runner.js';
+import { platformWorkers, type WorkerPlatform, type WorkerPort } from './worker-platform.js';
 import { createPublisher } from './publish.js';
 import type { EntityOptions, QueryOptions } from './reads.js';
 import { createRegistrar, type Registration } from './register.js';
@@ -48,22 +50,33 @@ const createQueue = (): Queue => {
 };
 
 /**
- * For tests and benchmarks: the chunk size kernels split at, whether kernels may use WASM and SIMD, and the loop's
- * platform, such as `backToBack()` for ticks as fast as tasks run.
+ * For tests and benchmarks: the chunk size kernels split at, whether kernels may use WASM and SIMD, the loop's
+ * platform, such as `backToBack()` for ticks as fast as tasks run, and where pool workers come from, such as
+ * `lentWorkers(...)` for workers another thread lent, or null for none; the platform's by default.
  */
 export type WorldOptions = {
     readonly minimumChunk?: number;
     readonly wasm?: boolean;
     readonly simd?: boolean;
     readonly loop?: Partial<LoopPlatform>;
+    readonly pool?: WorkerPlatform | null;
 };
 
 /** The loop's state, added to a world when its first tick runs. */
 const loopResources: readonly Key[] = [cadence, always, wake, clock, reportResource];
 
+/**
+ * Loads kernels, rejecting with the first failure only once every load has settled, so none finishes after the
+ * registration it belonged to rolled back.
+ */
+const loadAll = async (runners: readonly Runner[]): Promise<void> => {
+    const settled = await Promise.allSettled(runners.map(runner => runner.load()));
+    for (const result of settled) if (result.status === "rejected") throw result.reason;
+};
+
 /** A pool size from the `workers` resource: the platform's for null, else a whole number, at least 0. */
-const workersOf = (value: unknown): number =>
-    value === null ? platformWorkerCount() : typeof value === "number" && value > 0 ? Math.floor(value) : 0;
+const workersOf = (platform: WorkerPlatform, value: unknown): number =>
+    value === null ? platform.count : typeof value === "number" && value > 0 ? Math.floor(value) : 0;
 
 /** Rows below which a kernel's archetype runs on the main thread rather than paying for a round trip. */
 const defaultMinimumChunk = 16384;
@@ -83,7 +96,9 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     if (device !== null) state.gpu = createGpu(device);
     const registrar = createRegistrar(state);
     const enqueue = createQueue();
-    let workerCount = shared && typeof Worker === "function" ? workersOf(initialOf(state, workers)) : 0;
+    /** Where pool workers come from; none without shared memory. */
+    const platform = shared ? options.pool === undefined ? platformWorkers() : options.pool : null;
+    let workerCount = platform === null ? 0 : workersOf(platform, initialOf(state, workers));
     state.workers = workerCount;
     /** Workers start with the first kernel, so worlds without kernels never spawn any. */
     let pool: Pool | null = null;
@@ -93,8 +108,17 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     let disposed = false;
     const ensured = { version: -1 };
 
-    const startPool = (): Pool => {
-        const started = createPool(workerCount, state.memory);
+    /** Starts the pool with as many of the wanted workers as the platform has, or none: then kernels run here. */
+    const startPool = (): Pool | null => {
+        const ports: WorkerPort[] = [];
+        while (platform !== null && ports.length < workerCount) {
+            const port = platform.start();
+            if (port === null) break;
+            ports.push(port);
+        }
+        workerCount = state.workers = ports.length;
+        if (ports.length === 0) return null;
+        const started = createPool(ports, state.memory);
         pool = started;
         context.workers = { pool: started, minimumChunk: options.minimumChunk ?? defaultMinimumChunk, next: 0 };
         context.publish = createPublisher(state, started);
@@ -106,6 +130,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         const behind = registrar.kernels().filter(runner => runner.kernel?.staleOnWorkers() === true);
         if (workerCount === 0 || behind.length === 0) return;
         const workers = pool ?? startPool();
+        if (workers === null) return;
         context.publish();
         const setups = behind.flatMap(runner => runner.setup(registrar.kernelIndexOf(runner)) ?? []);
         const results = await Promise.all(Array.from({ length: workers.size }, (_, worker) => workers.request(worker, { kind: "kernels", kernels: setups })));
@@ -123,7 +148,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             startTicking(state, ticked);
             // Workers see the new tick arrays before the next run's tasks.
             context.publish();
-            await Promise.all(kernels.map(runner => runner.load()));
+            await loadAll(kernels);
             await loadOnWorkers();
         }
         catch (error) {
@@ -137,7 +162,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     const reloadObserved = async (): Promise<void> => {
         // Workers see the new tick arrays before the next run's tasks.
         context.publish();
-        await Promise.all(registrar.kernels().filter(runner => runner.kernel?.stale() === true).map(runner => runner.load()));
+        await loadAll(registrar.kernels().filter(runner => runner.kernel?.stale() === true));
         await loadOnWorkers();
     };
 
@@ -177,7 +202,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         }
         state.gpu = device === null ? null : createGpu(device);
         state.touched = device === null ? null : new Set();
-        await Promise.all(registrar.placeGpuKernels().map(runner => runner.load()));
+        await loadAll(registrar.placeGpuKernels());
         await loadOnWorkers();
     };
 
@@ -199,7 +224,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
 
     /** Sizes the kernel pool to the `workers` resource: a new size starts a new pool, with the next kernel. */
     const followWorkers = async (): Promise<void> => {
-        const wanted = shared && typeof Worker === "function" ? workersOf(readResource(workers)) : 0;
+        const wanted = platform === null ? 0 : workersOf(platform, readResource(workers));
         if (wanted === workerCount) return;
         workerCount = wanted;
         state.workers = wanted;

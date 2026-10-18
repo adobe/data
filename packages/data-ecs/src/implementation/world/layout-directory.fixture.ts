@@ -1,0 +1,186 @@
+import { Component } from "../../interface/component/component.js";
+import { Entity } from "../../interface/entity/entity.js";
+import { System } from "../../interface/system/system.js";
+import type { World } from "../../interface/world/world.js";
+import { workers } from "../../interface/resources/workers.js";
+import { readEach, select } from "./reads.test-helper.js";
+import { createWorld } from "./create.js";
+import { countingWorkers } from "./platforms.test-helper.js";
+
+/** Scenarios of workers reading layouts from the directory, run built in node and from source in chromium. */
+
+const value = Symbol("layoutDirectoryTest/value");
+const target = Symbol("layoutDirectoryTest/target");
+const seen = Symbol("layoutDirectoryTest/seen");
+const child = Symbol("layoutDirectoryTest/child");
+const tag0 = Symbol("layoutDirectoryTest/tag0");
+const tag1 = Symbol("layoutDirectoryTest/tag1");
+const tag2 = Symbol("layoutDirectoryTest/tag2");
+const tag3 = Symbol("layoutDirectoryTest/tag3");
+const tag4 = Symbol("layoutDirectoryTest/tag4");
+const tag5 = Symbol("layoutDirectoryTest/tag5");
+const tag6 = Symbol("layoutDirectoryTest/tag6");
+const tags = [tag0, tag1, tag2, tag3, tag4, tag5, tag6] as const;
+
+declare module "@adobe/data-ecs" {
+    export interface Components {
+        [value]: typeof valueTraits;
+        [target]: typeof targetTraits;
+        [seen]: typeof seenTraits;
+        [child]: typeof childTraits;
+        [tag0]: typeof tag0Traits;
+        [tag1]: typeof tag1Traits;
+        [tag2]: typeof tag2Traits;
+        [tag3]: typeof tag3Traits;
+        [tag4]: typeof tag4Traits;
+        [tag5]: typeof tag5Traits;
+        [tag6]: typeof tag6Traits;
+    }
+}
+
+const valueTraits = Component.register(value, { type: { type: "number", precision: 1 } });
+const targetTraits = Component.register(target, { type: Entity.schema });
+const seenTraits = Component.register(seen, { type: { type: "number", precision: 1 } });
+const childTraits = Component.register(child, { type: { const: true } });
+const tag0Traits = Component.register(tag0, { type: { const: true } });
+const tag1Traits = Component.register(tag1, { type: { const: true } });
+const tag2Traits = Component.register(tag2, { type: { const: true } });
+const tag3Traits = Component.register(tag3, { type: { const: true } });
+const tag4Traits = Component.register(tag4, { type: { const: true } });
+const tag5Traits = Component.register(tag5, { type: { const: true } });
+const tag6Traits = Component.register(tag6, { type: { const: true } });
+
+/** The component lists of 100 archetypes: `value` with each of the first 100 combinations of the tags. */
+const lists = Array.from({ length: 100 }, (_, i): (typeof value | (typeof tags)[number])[] => [value, ...tags.filter((_, bit) => (i & (1 << bit)) !== 0)]);
+
+/** Spawns `count` entities into each of the 100 archetypes. */
+const fill = System.create({ name: "layoutDirectoryTest/fill", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+    for (const list of lists) for (let i = 0; i < input.count; i++) commands.spawn(list)({ [value]: 0 });
+});
+
+const bump = System.create({ name: "layoutDirectoryTest/bump", kernel: "cpu", components: { write: [value] } }, row => {
+    row[value] = row[value] + 1;
+});
+
+const total = { sum: 0, count: 0 };
+/** Sums every value on the world's thread, so it reads what workers wrote. */
+const sum = System.create({ name: "layoutDirectoryTest/sum", components: { read: [value] } }, row => {
+    total.sum += row[value];
+    total.count++;
+});
+
+/** Entities whose values the lookups read, recorded as they spawn. */
+const spawned: Entity[] = [];
+const make = System.create({ name: "layoutDirectoryTest/make" }, ({ commands }) => {
+    for (let i = 0; i < 64; i++) commands.spawn([target, seen])({ [target]: Entity.none, [seen]: 0 });
+    commands.spawn([value])({ [value]: -1 });
+});
+const spawnMany = System.create({ name: "layoutDirectoryTest/spawnMany", input: { type: "object", properties: { count: { type: "integer" } } } }, ({ input, commands }) => {
+    for (let i = 0; i < input.count; i++) spawned.push(commands.spawn([value])({ [value]: i }));
+});
+/** Aims each looker at one of the last spawned entities. */
+let aimed = 0;
+const aim = System.create({ name: "layoutDirectoryTest/aim", components: { write: [target] } }, row => {
+    row[target] = spawned[spawned.length - 1 - aimed++];
+});
+const despawnValues = System.create({ name: "layoutDirectoryTest/despawnValues", components: { has: [value], not: [child] } }, (row, { commands }) => {
+    commands.despawn(row.entity);
+});
+/** Lookups from workers. */
+const look = System.create({
+    name: "layoutDirectoryTest/look",
+    kernel: "cpu",
+    components: { read: [target], write: [seen] },
+    lookup: { targets: { read: [value] } },
+}, (row, { lookup: { targets } }) => {
+    const other = targets(row[target]);
+    row[seen] = other === null ? -1 : other[value];
+});
+/** Spawns from workers: a child per looker. */
+const breed = System.create({ name: "layoutDirectoryTest/breed", kernel: "cpu", components: { read: [seen] } }, (row, { commands }) => {
+    commands.spawn([value, child])({ [value]: row[seen] });
+});
+
+/** Runs `use` with a world, then disposes it. */
+const using = async <T>(world: World, use: (world: World) => Promise<T>): Promise<T> => {
+    try {
+        return await use(world);
+    }
+    finally {
+        await world.dispose();
+    }
+};
+
+const totals = async (world: World): Promise<{ sum: number; count: number }> => {
+    total.sum = total.count = 0;
+    await world.run(sum);
+    return { ...total };
+};
+
+/** Rows that spawn into each of the 100 archetypes in each round after the first, which spawns 1. */
+export const rounds: readonly number[] = [16, 32, 64, 128, 256];
+
+/** 100 archetypes grown over `rounds`, each round bumped by workers: layout messages after the first round, and the totals. */
+export const grown = async (wasm: boolean): Promise<{ readonly messages: number; readonly totals: { sum: number; count: number } }> => {
+    const counting = countingWorkers();
+    return using(createWorld({ [workers]: 3 }, { minimumChunk: 16, wasm, pool: counting.platform }), async world => {
+        await world.run(fill, { count: 1 });
+        await world.run(bump);
+        const before = counting.posted("layout");
+        for (const count of rounds) {
+            await world.run(fill, { count });
+            await world.run(bump);
+        }
+        return { messages: counting.posted("layout") - before, totals: await totals(world) };
+    });
+};
+
+/**
+ * Lookups and spawns from workers once the entity table grows from 64 entities past 10,000 and its free list past
+ * 10,000 indexes: layout messages meanwhile, what the lookers saw, and the children workers spawned.
+ */
+export const tableGrown = async (): Promise<{ readonly messages: number; readonly seen: readonly (number | null)[]; readonly children: number; readonly values: readonly (number | null)[] }> => {
+    spawned.length = 0;
+    aimed = 0;
+    const counting = countingWorkers();
+    return using(createWorld({ [workers]: 2 }, { minimumChunk: 16, wasm: false, pool: counting.platform }), async world => {
+        await world.run(make);
+        await world.run(look);
+        await world.run(breed);
+        const lookers = await select(world, { required: [seen] });
+        const before = counting.posted("layout");
+        await world.run(spawnMany, { count: 10_000 });
+        await world.run(aim);
+        await world.run(look);
+        const seenValues = await readEach(world, lookers, seen);
+        await world.run(despawnValues);
+        await world.run(breed);
+        const messages = counting.posted("layout") - before;
+        const children = await select(world, { required: [child] });
+        return { messages, seen: seenValues, children: new Set(children).size, values: await readEach(world, children, value) };
+    });
+};
+
+/** Workers' kernels once memory grows between runs: how often it grew, layout messages meanwhile, and the totals. */
+export const memoryGrown = async (wasm: boolean): Promise<{ readonly grows: number; readonly messages: number; readonly totals: { sum: number; count: number } }> => {
+    const counting = countingWorkers();
+    return using(createWorld({ [workers]: 2 }, { minimumChunk: 16, wasm, pool: counting.platform }), async world => {
+        await world.run(fill, { count: 1 });
+        await world.run(bump);
+        let grows = 0;
+        const original = WebAssembly.Memory.prototype.grow;
+        WebAssembly.Memory.prototype.grow = function (this: WebAssembly.Memory, delta: number) {
+            grows++;
+            return original.call(this, delta);
+        };
+        const before = counting.posted("layout");
+        try {
+            await world.run(fill, { count: 2_000 });
+            await world.run(bump);
+        }
+        finally {
+            WebAssembly.Memory.prototype.grow = original;
+        }
+        return { grows, messages: counting.posted("layout") - before, totals: await totals(world) };
+    });
+};

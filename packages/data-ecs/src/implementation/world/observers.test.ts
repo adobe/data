@@ -7,6 +7,7 @@ import { World } from "../../interface/world/world.js";
 import { createObservers } from "./observers.js";
 import { createState } from "./state.js";
 import { createWorld } from "../index.js";
+import { workers } from "../../interface/resources/workers.js";
 
 const level = Symbol("observersTest/level");
 const other = Symbol("observersTest/other");
@@ -209,7 +210,7 @@ describe("observing entities", () => {
     });
 
     it("notifies after a kernel writes an observed component whose stamps it had dropped", async () => {
-        await using world = createWorld();
+        await using world = createWorld({ [workers]: 0 });
         await world.run(create);
         await world.run(double);
         const seen: unknown[] = [];
@@ -394,7 +395,7 @@ describe("observing queries", () => {
     });
 
     it("notifies after a kernel writes a where component whose stamps it had dropped", async () => {
-        await using world = createWorld();
+        await using world = createWorld({ [workers]: 0 });
         await world.run(players);
         await world.run(invertKernel);
         const seen: number[] = [];

@@ -5,11 +5,12 @@ import type { Kernel, KernelModule } from './kernel.js';
 import { layoutOf, viewsOf, type Layout, type TypedArray, type Views } from '../../interface/registry/layout.js';
 import { emptyViews } from './arrays.js';
 import { claimPiece } from './claims.js';
-import { controlWords, done, epoch, lineWords, posted, ringSize, signal, taskFields, taskWords, type FromWorker, type KernelSetup, type LookupSetup, type PostedSpawns, type ToWorker, type WorkerError } from './protocol.js';
+import { controlWords, done, epoch, idleKernel, lineWords, posted, ringSize, signal, taskFields, taskWords, type FromWorker, type KernelSetup, type LookupSetup, type PostedSpawns, type ToWorker, type WorkerError } from './protocol.js';
 import { createBuffer, createKernelCommands, type CommandBuffer } from './buffer.js';
 import { forEachPassingRange, type Filter } from './ranges.js';
 import { instantiateWasm, scalarValues, type WasmRun } from './wasm.js';
 import { pageBytes, pagesWord } from './memory.js';
+import { endpointChannel, scopeChannel } from './port.js';
 import {
     archetypeField, capacityField, cursorField, entitiesVersionField, entitiesWord, freeCapacityField, freeField, generationField, linearFlag,
     recordCapacity, recordEntities, recordStorages, recordVersion, recordWords, rowField, storageAdded, storageChanged, storageChunkAdded,
@@ -330,17 +331,20 @@ const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
             let status = next + 1;
             try {
                 refreshMemory();
-                const loaded = kernels.get(payloads[base]);
-                if (loaded === undefined) throw new Error("Worker can't run this task.");
-                const line = payloads[base + 8];
-                const participants = payloads[base + 11];
-                const scalarCount = payloads[base + 7];
-                const partials = loaded.setup.reduces ? payloads[base + taskFields + scalarCount] : -1;
-                const partialBytes = loaded.setup.reduces ? payloads[base + taskFields + scalarCount + 1] : 0;
-                runWasm(loaded, payloads[base + 1], payloads[base + 2], payloads[base + 3], payloads[base + 4], payloads[base + 5],
-                    Array.from(payloads.subarray(base + taskFields, base + taskFields + scalarCount)),
-                    line < 0 ? null : { words: new Int32Array(buffer, message.claims + line * lineWords * 4, participants * lineWords), self: payloads[base + 10], participants },
-                    payloads[base + 9], partials ?? -1, partialBytes ?? 0);
+                const kernel = payloads[base];
+                if (kernel !== idleKernel) {
+                    const loaded = kernels.get(kernel);
+                    if (loaded === undefined) throw new Error("Worker can't run this task.");
+                    const line = payloads[base + 8];
+                    const participants = payloads[base + 11];
+                    const scalarCount = payloads[base + 7];
+                    const partials = loaded.setup.reduces ? payloads[base + taskFields + scalarCount] : -1;
+                    const partialBytes = loaded.setup.reduces ? payloads[base + taskFields + scalarCount + 1] : 0;
+                    runWasm(loaded, payloads[base + 1], payloads[base + 2], payloads[base + 3], payloads[base + 4], payloads[base + 5],
+                        Array.from(payloads.subarray(base + taskFields, base + taskFields + scalarCount)),
+                        line < 0 ? null : { words: new Int32Array(buffer, message.claims + line * lineWords * 4, participants * lineWords), self: payloads[base + 10], participants },
+                        payloads[base + 9], partials ?? -1, partialBytes ?? 0);
+                }
             }
             catch {
                 status = -status;
@@ -359,7 +363,15 @@ const runWindow = (message: Extract<ToWorker, { kind: "window" }>): void => {
     }
 };
 
+/** Where messages come from and replies go: this worker's own scope, until a lent worker's owner gives it a port. */
+let channel = scopeChannel<FromWorker, ToWorker>();
+
 const handle = async (message: ToWorker): Promise<void> => {
+    if (message.kind === "port") {
+        channel = endpointChannel(message.port);
+        channel.onMessage(receive);
+        return;
+    }
     if (message.kind === "memory") {
         memory = message.memory;
         header = message.header >> 2;
@@ -387,15 +399,16 @@ const handle = async (message: ToWorker): Promise<void> => {
         refreshMemory();
         if (message.kind === "kernels") await load(message.kernels);
         else run(message, buffer);
-        self.postMessage({ kind: "done", task: message.task, commands: buffer, spawns: takeSpawns(message, transfer, unused), unused } satisfies FromWorker, { transfer });
+        channel.post({ kind: "done", task: message.task, commands: buffer, spawns: takeSpawns(message, transfer, unused), unused }, transfer);
     }
     catch (error) {
-        self.postMessage({ kind: "failed", task: message.task, commands: buffer, spawns: takeSpawns(message, transfer, unused), unused, error: errorOf(error) } satisfies FromWorker, { transfer });
+        channel.post({ kind: "failed", task: message.task, commands: buffer, spawns: takeSpawns(message, transfer, unused), unused, error: errorOf(error) }, transfer);
     }
 };
 
 /** Handles messages strictly in order, including across a kernel load's `await`. */
 let handled: Promise<void> = Promise.resolve();
-self.onmessage = (event: MessageEvent<ToWorker>): void => {
-    handled = handled.then(() => handle(event.data));
+const receive = (message: ToWorker): void => {
+    handled = handled.then(() => handle(message));
 };
+channel.onMessage(receive);

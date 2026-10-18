@@ -177,7 +177,7 @@ const snapshot = async (world: World): Promise<unknown[]> =>
 
 
 const simulate = async (wasm: boolean, simd = false): Promise<unknown[]> => {
-    const world = createWorld({}, { wasm, simd });
+    const world = createWorld({ [workers]: 0 }, { wasm, simd });
     await world.run(seed, { count: 300 });
     for (let frame = 0; frame < 120; frame++) {
         await world.run(main);

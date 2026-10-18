@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { workers } from "../../interface/resources/workers.js";
+
+/** Scenarios of tick stamps on workers, run built in node and from source in chromium. */
 
 const value = Symbol("observedWorkersTest/value");
 const seen = Symbol("observedWorkersTest/seen");
@@ -31,23 +32,24 @@ const watch = System.create({ name: "observedWorkersTest/watch", kernel: "cpu", 
     row[seen] = row[seen] + 1;
 });
 
-describe("tick stamps only where observed, on workers", () => {
-    for (const wasm of [false, true]) {
-        it(`start once an observer registers (${wasm ? "WASM" : "JS"} kernels)`, async () => {
-            const world = createWorld({ [workers]: 2 }, { wasm, minimumChunk: 64 });
-            await world.run(seed);
-            await world.run(bump);
-            // New observers see everything once.
-            await world.run(watch);
-            await world.run(watch);
-            const seenAll = async (): Promise<number[]> => (await readEach(world, await select(world, { required: [seen] }), seen)).map(each => each ?? -1);
-            expect(new Set(await seenAll())).toEqual(new Set([1]));
-            // Writes after registering are stamped, so the observer sees each exactly once.
-            await world.run(bump);
-            await world.run(watch);
-            await world.run(watch);
-            expect(new Set(await seenAll())).toEqual(new Set([2]));
-            await world.dispose();
-        });
+/** The distinct counts each row's observer saw: after it registered, and after one more write. */
+export const observedOnWorkers = async (wasm: boolean): Promise<readonly (readonly number[])[]> => {
+    const world = createWorld({ [workers]: 2 }, { wasm, minimumChunk: 64 });
+    try {
+        await world.run(seed);
+        await world.run(bump);
+        const seenAll = async (): Promise<number[]> => [...new Set((await readEach(world, await select(world, { required: [seen] }), seen)).map(each => each ?? -1))];
+        // New observers see everything once.
+        await world.run(watch);
+        await world.run(watch);
+        const first = await seenAll();
+        // Writes after registering are stamped, so the observer sees each exactly once.
+        await world.run(bump);
+        await world.run(watch);
+        await world.run(watch);
+        return [first, await seenAll()];
     }
-});
+    finally {
+        await world.dispose();
+    }
+};

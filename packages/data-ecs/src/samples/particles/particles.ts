@@ -6,6 +6,7 @@ import { Vec3 } from '../../interface/math/index.js';
 import { System } from '../../interface/system/system.js';
 import { World } from '../../interface/world/world.js';
 import { createWorld } from '../../implementation/index.js';
+import type { InitialResources } from '../../interface/world/create.js';
 
 export const position = Symbol("particles/position");
 export const velocity = Symbol("particles/velocity");
@@ -81,4 +82,5 @@ export const frame = async (world: World, seconds: number): Promise<readonly Vec
     return Promise.all(particles.map(async (entity: Entity) => (await toPromise(world.observe.entity(entity, { required: [position] })))?.[position] ?? [0, 0, 0]));
 };
 
-export const start = async (): Promise<World> => createWorld();
+/** A world of the sample's particles; initial resources such as `workers` start at the given values. */
+export const start = async (resources: InitialResources = {}): Promise<World> => createWorld(resources);

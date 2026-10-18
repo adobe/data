@@ -5,6 +5,7 @@ import { count, read, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import { ember, marked, Spark } from "./imported-lists.test-helper.js";
 import * as Lists from "./imported-lists.test-helper.js";
+import { workers } from "../../interface/resources/workers.js";
 
 const heat = Symbol("importedListsTest/heat");
 declare module "@adobe/data-ecs" {
@@ -31,7 +32,8 @@ const cool = System.create({ name: "importedListsTest/cool", kernel: "cpu", comp
 });
 
 it("kernels spawn, add, remove and declare through lists imported from another module", async () => {
-    await using world = createWorld();
+    // Kernels run here: under Vitest's module runner, node workers can't load the sources.
+    await using world = createWorld({ [workers]: 0 });
     await world.run(seed);
     await world.run(ignite);
     const sparks = await select(world, { required: Spark });

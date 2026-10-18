@@ -6,8 +6,6 @@ import type { World } from "../../interface/world/world.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 
-const local = Symbol("upBrowserTest/local");
-const world = Symbol("upBrowserTest/world");
 const parent = Symbol("upBrowserTest/parent");
 const offset = Symbol("upBrowserTest/offset");
 const placed = Symbol("upBrowserTest/placed");
@@ -15,8 +13,6 @@ const marked = Symbol("upBrowserTest/marked");
 
 declare module "@adobe/data-ecs" {
     interface Components {
-        [local]: typeof localTraits;
-        [world]: typeof worldTraits;
         [parent]: typeof parentTraits;
         [offset]: typeof offsetTraits;
         [placed]: typeof placedTraits;
@@ -24,8 +20,6 @@ declare module "@adobe/data-ecs" {
     }
 }
 
-const localTraits = Component.register(local, { type: { type: "number" } });
-const worldTraits = Component.register(world, { type: { type: "number" } });
 const parentTraits = Component.register(parent, { type: Entity.schema, reference: "owner" });
 const offsetTraits = Component.register(offset, { type: { type: "number", precision: 1 } });
 const placedTraits = Component.register(placed, { type: { type: "number", precision: 1 } });
@@ -56,63 +50,9 @@ const plant = System.create({ name: "upBrowserTest/plant" }, ({ commands }) => {
     }
 });
 
-const propagate = System.create({
-    name: "upBrowserTest/propagate",
-    kernel: "cpu",
-    components: { read: [local], write: [world], changed: [local] },
-    up: { through: parent, read: [world] },
-}, (row, { up }) => {
-    row[world] = (up === null ? 0 : up[world]) + row[local] * 2;
-});
-/** 100 trees, each a root with 40 levels of two children, ordered so storage order isn't depth order. */
-const grow = System.create({ name: "upBrowserTest/grow" }, ({ commands }) => {
-    for (let tree = 0; tree < 100; tree++) {
-        let level = [commands.spawn([local, world])({ [local]: tree, [world]: 0 })];
-        for (let depth = 1; depth < 40; depth++) {
-            const at = level[depth % level.length];
-            level = [commands.spawn([local, world, parent])({ [local]: depth, [world]: 0, [parent]: at }), commands.spawn([local, world, parent])({ [local]: -depth, [world]: 0, [parent]: at })];
-        }
-    }
-});
-const nudge = System.create({ name: "upBrowserTest/nudge", components: { write: [local] } }, row => {
-    if (row[local] === 7) row[local] = 70;
-});
-
 const disposals: World[] = [];
 afterEach(async () => {
     await Promise.all(disposals.splice(0).map(item => item.dispose()));
-});
-
-const simulate = async (count: number, wasm: boolean): Promise<{ readonly values: readonly (number | null)[]; readonly windows: number }> => {
-    const ecs = createWorld({ [workers]: count }, { minimumChunk: 64, wasm });
-    disposals.push(ecs);
-    await ecs.run(grow);
-    let windows = 0;
-    const original = Worker.prototype.postMessage;
-    Worker.prototype.postMessage = function (this: Worker, message: unknown, transfer?: Transferable[] | StructuredSerializeOptions) {
-        if (typeof message === "object" && message !== null && Reflect.get(message, "kind") === "window") windows++;
-        return Reflect.apply(original, this, transfer === undefined ? [message] : [message, transfer]);
-    };
-    try {
-        await ecs.run(propagate);
-        await ecs.run(nudge);
-        await ecs.run(propagate);
-        await ecs.run(propagate);
-    }
-    finally {
-        Worker.prototype.postMessage = original;
-    }
-    const values = (await readEach(ecs, await select(ecs, { required: [world] }), world)).sort((a, b) => (a ?? 0) - (b ?? 0));
-    return { values, windows };
-};
-
-describe("up", () => {
-    it("runs depth by depth across workers, as on the main thread alone", async () => {
-        const alone = await simulate(0, false);
-        const parallel = await simulate(2, true);
-        expect(parallel.values).toEqual(alone.values);
-        expect(parallel.windows).toBeGreaterThan(0);
-    });
 });
 
 const device = async (): Promise<GPUDevice> => {

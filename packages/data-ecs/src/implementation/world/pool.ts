@@ -2,7 +2,8 @@ import { allocateArray, freeArray } from './arrays.js';
 import { emptyBuffer, type CommandBuffer } from './buffer.js';
 import type { Memory } from './memory.js';
 import { maximumPieces, startRanges } from './claims.js';
-import { controlWords, splitCount, done, epoch, lineWords, posted, ringSize, signal, taskFields, taskWords, type FromWorker, type PostedSpawns, type ToWorker, type WorkerError } from './protocol.js';
+import { controlWords, splitCount, done, epoch, lineWords, posted, ringSize, signal, taskFields, taskWords, type PostedSpawns, type ToWorker, type WorkerError } from './protocol.js';
+import type { WorkerPort } from './worker-platform.js';
 
 type Task = Extract<ToWorker, { task: number }>;
 type Request = Task extends infer T ? T extends Task ? Omit<T, "task"> : never : never;
@@ -28,7 +29,7 @@ export type FastTask = {
 };
 
 /**
- * Workers sharing the world's memory. Messages to one worker are handled in the order they're posted.
+ * Workers sharing the world's memory, one per port. Messages to one worker are handled in the order they're posted.
  * `claimed` tasks go through a ring in shared memory while workers wait on it in a window, which costs one message to
  * open; a message, a broadcast or `close` ends the window, after the tasks already posted.
  */
@@ -45,7 +46,7 @@ export type Pool = {
     readonly claimed: (first: number, workers: number, task: FastTask, grain: number) => Promise<TaskResult>[];
     readonly close: () => void;
     /**
-     * Stops the workers, then releases the pool's control state to the arena once every worker that waited on it has
+     * Ends the workers, through their ports, then releases the pool's control state to the arena once every worker that waited on it has
      * left its window, as each acknowledges a message. One that doesn't within `releaseTimeout`, or that died with a
      * window open, may still touch it, so it's kept.
      */
@@ -55,17 +56,12 @@ export type Pool = {
 /** How long `terminate` waits for workers to leave their windows before keeping the control state. */
 const releaseTimeout = 1000;
 
-
-
-/** The platform's pool size, where workers can share memory: one worker per hardware thread but the world's. */
-export const platformWorkerCount = (): number => Math.max(1, (globalThis.navigator?.hardwareConcurrency ?? 2) - 1);
-
 const errorOf = ({ name, message, stack }: WorkerError): Error => Object.assign(new Error(message), { name, stack });
 
 type Slot = {
-    readonly worker: Worker;
+    readonly port: WorkerPort;
     readonly pending: Map<number, (result: TaskResult) => void>;
-    /** Set once the worker fails to load or crashes; it gets no more tasks. */
+    /** Set once the worker fails to load, crashes or exits; it gets no more tasks. */
     dead: Error | null;
 };
 
@@ -80,8 +76,9 @@ const allocateLines = (arena: Memory, words: number, blocks: Block[]): Int32Arra
     return new Int32Array(arena.memory.buffer, Math.ceil(offset / lineBytes) * lineBytes, words).fill(0);
 };
 
-export const createPool = (size: number, arena: Memory): Pool => {
+export const createPool = (ports: readonly WorkerPort[], arena: Memory): Pool => {
     const { memory } = arena;
+    const size = ports.length;
     let nextTask = 0;
     const lines: Block[] = [];
     const control = allocateLines(arena, size * controlWords, lines);
@@ -102,17 +99,15 @@ export const createPool = (size: number, arena: Memory): Pool => {
         for (const settle of slot.pending.values()) settle({ commands: emptyBuffer, error: slot.dead });
         slot.pending.clear();
     };
-    const slots: Slot[] = Array.from({ length: size }, () => {
-        const slot: Slot = { worker: new Worker(new URL("./worker.js", import.meta.url), { type: "module" }), pending: new Map(), dead: null };
-        slot.worker.onmessage = (event: MessageEvent<FromWorker>) => {
-            const message = event.data;
+    const slots: Slot[] = ports.map(port => {
+        const slot: Slot = { port, pending: new Map(), dead: null };
+        port.onMessage(message => {
             const settle = slot.pending.get(message.task);
             slot.pending.delete(message.task);
             settle?.(message.kind === "done" ? { commands: message.commands, spawns: message.spawns, unused: message.unused } : { commands: message.commands, spawns: message.spawns, unused: message.unused, error: errorOf(message.error) });
-        };
-        slot.worker.onerror = event => kill(slot, new Error(`A world worker failed: ${event.message || "it couldn't load"}.`));
-        slot.worker.onmessageerror = () => kill(slot, new Error("A world worker received a message it couldn't read."));
-        slot.worker.postMessage({ kind: "memory", memory, header: arena.header.byteOffset } satisfies ToWorker);
+        });
+        port.onDeath(error => kill(slot, error));
+        port.post({ kind: "memory", memory, header: arena.header.byteOffset });
         return slot;
     });
     const wake = (worker: number): void => {
@@ -135,7 +130,7 @@ export const createPool = (size: number, arena: Memory): Pool => {
         open[worker] = true;
         windowed[worker] = true;
         const current = Atomics.load(control, worker * controlWords + epoch);
-        slots[worker].worker.postMessage({ kind: "window", control: control.byteOffset, statuses: statuses.byteOffset, payloads: payloads.byteOffset, claims: claims.byteOffset, worker, epoch: current } satisfies ToWorker);
+        slots[worker].port.post({ kind: "window", control: control.byteOffset, statuses: statuses.byteOffset, payloads: payloads.byteOffset, claims: claims.byteOffset, worker, epoch: current });
     };
 
     /** One brief spin for all waiters of a batch of tasks, which are short, before waiting without blocking. */
@@ -217,7 +212,7 @@ export const createPool = (size: number, arena: Memory): Pool => {
         claimed,
         broadcast: message => {
             close();
-            for (const slot of slots) if (slot.dead === null) slot.worker.postMessage(message);
+            for (const slot of slots) if (slot.dead === null) slot.port.post(message);
         },
         close,
         request: (worker, message) => new Promise(settle => {
@@ -226,7 +221,7 @@ export const createPool = (size: number, arena: Memory): Pool => {
             if (slot.dead !== null) return settle({ commands: emptyBuffer, error: slot.dead });
             const task = nextTask++;
             slot.pending.set(task, settle);
-            slot.worker.postMessage({ ...message, task });
+            slot.port.post({ ...message, task });
         }),
         terminate: async () => {
             close();
@@ -236,16 +231,15 @@ export const createPool = (size: number, arena: Memory): Pool => {
                 : new Promise<boolean>(settle => {
                     const task = nextTask++;
                     slot.pending.set(task, result => settle(result.error === undefined));
-                    slot.worker.postMessage({ kind: "kernels", kernels: [], task } satisfies ToWorker);
+                    slot.port.post({ kind: "kernels", kernels: [], task });
                 }));
             let timer: ReturnType<typeof setTimeout> | undefined;
             const timeout = new Promise<boolean>(settle => { timer = setTimeout(() => settle(false), releaseTimeout); });
             const released = await Promise.race([Promise.all(left).then(all => all.every(Boolean)), timeout]);
             clearTimeout(timer);
-            for (const slot of slots) {
-                slot.worker.terminate();
-                kill(slot, new Error("The world is disposed."));
-            }
+            const disposed = new Error("The world is disposed.");
+            for (const slot of slots) kill(slot, disposed);
+            await Promise.all(slots.map(slot => slot.port.terminate()));
             if (!released) return;
             for (const { offset, bytes } of lines) arena.free(offset, bytes);
             freeArray(arena, payloads);

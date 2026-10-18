@@ -1,6 +1,7 @@
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Schema } from '../../interface/schema/schema.js';
 import type { CommandBuffer } from './buffer.js';
+import type { Endpoint } from './port.js';
 import type { WasmScalar } from './wasm.js';
 
 /** Where a kernel column comes from in any archetype it matches. */
@@ -41,6 +42,8 @@ export type KernelSetup = {
  * `header` (`layout-directory.ts`).
  */
 export type ToWorker =
+    /** From a lent worker's owner, first: the port every later message arrives on and every reply goes to. */
+    | { readonly kind: "port"; readonly port: Endpoint }
     | { readonly kind: "memory"; readonly memory: WebAssembly.Memory; readonly header: number }
     /** Wait on this worker's task ring in shared memory until asked to leave. Offsets are bytes into the memory. */
     | { readonly kind: "window"; readonly control: number; readonly statuses: number; readonly payloads: number; readonly claims: number; readonly worker: number; readonly epoch: number }
@@ -92,6 +95,8 @@ export type FromWorker =
  * runs `start` to `end`; with them it runs the `grain`-row pieces it claims (`claims.ts`).
  */
 export const ringSize = 64;
+/** A ring task's kernel that runs nothing: a round trip to the worker and back, as the `wake` benchmark measures. */
+export const idleKernel = -1;
 export const taskWords = 32;
 export const taskFields = 12;
 export const maximumScalars = taskWords - taskFields;

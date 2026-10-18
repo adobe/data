@@ -5,6 +5,7 @@ import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
 
 const local = Symbol("upTreeTest/local");
 const full = Symbol("upTreeTest/full");
@@ -123,7 +124,7 @@ const actual = async (ecs: World, key: typeof full | typeof filtered, rows: Iter
 };
 
 it.each([true, false])("keeps its tree current across spawns, despawns, reparents, cycles and matching changes, with WASM %s", async wasm => {
-    await using ecs = createWorld({}, { wasm });
+    await using ecs = createWorld({ [workers]: 0 }, { wasm });
     const random = generator(7);
     for (let k = 0; k < 30; k++) operations.push({ kind: "spawn", local: random(10), parent: null });
     await ecs.run(apply);

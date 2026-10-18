@@ -4,6 +4,7 @@ import { toPromise } from "../../interface/observe/to-promise.js";
 import { position, spark, sparks } from "./kernel-imports-sparks.test-helper.js";
 import { steer } from "./kernel-imports-steer.test-helper.js";
 import { createWorld } from "../index.js";
+import { workers } from "../../interface/resources/workers.js";
 
 const velocity = Symbol("kernelImports/velocity");
 const target = Symbol("kernelImports/target");
@@ -44,7 +45,7 @@ const chase = System.create({
 });
 
 it("runs systems compiled as kernels", async () => {
-    await using world = createWorld();
+    await using world = createWorld({ [workers]: 0 });
     await world.run(spawn);
     for (let step = 0; step < 6; step++) {
         await world.run(chase);
@@ -64,7 +65,7 @@ const settle = System.create({ name: "kernelImports/settle", kernel: "cpu", comp
 });
 
 it("removes an imported key in a kernel", async () => {
-    await using world = createWorld();
+    await using world = createWorld({ [workers]: 0 });
     await world.run(ignite);
     await world.run(settle);
     expect(await toPromise(world.observe.count({ required: [spark] }))).toBe(0);

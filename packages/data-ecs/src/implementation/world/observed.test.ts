@@ -3,6 +3,7 @@ import { Component } from "../../interface/component/component.js";
 import { System } from "../../interface/system/system.js";
 import { readEach, select } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
+import { workers } from "../../interface/resources/workers.js";
 
 const value = Symbol("observedTest/value");
 const seen = Symbol("observedTest/seen");
@@ -64,7 +65,7 @@ describe("tick stamps only where observed", () => {
 
     for (const wasm of [false, true]) {
         it(`start once an observer registers (${wasm ? "WASM" : "JS"} kernels)`, async () => {
-            const world = createWorld({}, { wasm });
+            const world = createWorld({ [workers]: 0 }, { wasm });
             await world.run(seed);
             await world.run(bump);
             // New observers see everything once.

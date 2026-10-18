@@ -1,0 +1,30 @@
+import { builtFixture } from "./fixtures.test-helper.js";
+import type * as Workers from "./workers.fixture.js";
+import { workersCases } from "./workers.cases.js";
+import type * as LayoutDirectory from "./layout-directory.fixture.js";
+import { layoutDirectoryCases } from "./layout-directory.cases.js";
+import type * as Pool from "./pool.fixture.js";
+import { poolCases } from "./pool.cases.js";
+import type * as PoolSize from "./pool-size.fixture.js";
+import { poolSizeCases } from "./pool-size.cases.js";
+import type * as Dispatch from "./dispatch.fixture.js";
+import { dispatchCases } from "./dispatch.cases.js";
+import type * as Reductions from "./reductions.fixture.js";
+import { reductionsCases } from "./reductions.cases.js";
+import type * as ObservedWorkers from "./observed-workers.fixture.js";
+import { observedWorkersCases } from "./observed-workers.cases.js";
+import type * as UpWorkers from "./up-workers.fixture.js";
+import { upWorkersCases } from "./up-workers.cases.js";
+import type * as Ports from "./ports.fixture.js";
+import { portsCases } from "./ports.cases.js";
+
+// Real worker threads in node: the cases over fixtures `vitest.fixtures.ts` built, each typed as its source, which it's built from.
+workersCases((): Promise<typeof Workers> => builtFixture("workers"));
+layoutDirectoryCases((): Promise<typeof LayoutDirectory> => builtFixture("layout-directory"));
+poolCases((): Promise<typeof Pool> => builtFixture("pool"));
+poolSizeCases((): Promise<typeof PoolSize> => builtFixture("pool-size"));
+dispatchCases((): Promise<typeof Dispatch> => builtFixture("dispatch"));
+reductionsCases((): Promise<typeof Reductions> => builtFixture("reductions"));
+observedWorkersCases((): Promise<typeof ObservedWorkers> => builtFixture("observed-workers"));
+upWorkersCases((): Promise<typeof UpWorkers> => builtFixture("up-workers"));
+portsCases((): Promise<typeof Ports> => builtFixture("ports"));

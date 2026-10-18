@@ -768,8 +768,8 @@ describe("subset", () => {
     });
 });
 
-describe("spawns in main-thread systems", () => {
-    /** Runs the transformed system's body once, recording each spawn's keys and values as the runtime hook receives them. */
+describe("commands in main-thread systems", () => {
+    /** Runs the transformed system's body once, recording each spawn's and add's keys and values as the runtime hooks receive them. */
     const spawned = async (body: string, parameters = "({ commands })", declaration = `{ name: "a" }`): Promise<{ readonly code: string; readonly calls: readonly unknown[] }> => {
         const source = `const system = System.create(${declaration}, ${parameters} => { ${body} });`;
         const result = await transform(source);
@@ -785,16 +785,35 @@ describe("spawns in main-thread systems", () => {
                 fallback: () => 0,
             };
         };
-        const system = new Function("System", "prepareSpawn$", `${module}\nreturn system;`)({ create: (declaration: unknown, run: unknown) => ({ declaration, run }) }, prepare);
-        const context = { commands: { spawn: (values: unknown) => { calls.push(["spawn", values]); } } };
+        const prepareAdd = (keys: () => readonly unknown[]) => {
+            let entity: unknown = undefined;
+            let values: unknown[] = [];
+            return {
+                begin: (_: unknown, target: unknown) => { entity = target; values = []; return true; },
+                value: (k: number, value: unknown) => { values[k] = value; calls.push(["prepared add", keys(), entity, values]); },
+                fallback: () => {},
+            };
+        };
+        const system = new Function("System", "prepareSpawn$", "prepareAdd$", `${module}\nreturn system;`)({ create: (declaration: unknown, run: unknown) => ({ declaration, run }) }, prepare, prepareAdd);
+        const context = { commands: { spawn: (values: unknown) => { calls.push(["spawn", values]); }, add: (entity: unknown, values: unknown) => { calls.push(["add", entity, values]); } } };
         if (parameters.startsWith("(row")) system.run({}, context);
         else system.run(context);
         return { code: result?.code ?? source, calls };
     };
 
     test("pass literal values positionally, in source order", async () => {
-        const { calls } = await spawned(`let i = 0; commands.spawn({ [position]: [++i, 0, 0], [score]: ++i, "mass": 3 }); commands.spawn({});`);
+        const { calls } = await spawned(`let i = 0; commands.spawn({ [position]: [++i, 0, 0], [score]: ++i, [mass]: 3 }); commands.spawn({});`);
         expect(calls).toEqual([["prepared", ["position", "score", "mass"], [[1, 0, 0], 2, 3]], ["prepared", [], []]]);
+    });
+
+    test.each([
+        ["a string literal key", `commands.spawn({ [score]: 1, "mass": 3 });`],
+        ["a plain key", "commands.spawn({ [score]: 1, mass: 3 });"],
+        ["a number key", "commands.spawn({ 1: 3 });"],
+    ])("fail the build for %s, since component keys are symbols", async (_, body) => {
+        const { code, calls } = await spawned(body);
+        expect(code).toBe("a command's keys are its components' symbols, as [key]; a plain or string key is never a component's");
+        expect(calls).toEqual([]);
     });
 
     test.each([
@@ -817,6 +836,25 @@ describe("spawns in main-thread systems", () => {
         const { calls } = await spawned(body);
         expect(calls.every(call => Array.isArray(call) && call[0] === "spawn")).toBe(true);
         expect(calls.length).toBe(1);
+    });
+    describe("adds", () => {
+        test("pass literal values positionally, after the entity, in source order", async () => {
+            const { code, calls } = await spawned("let i = 0; commands.add(++i, { [score]: ++i, [mass]: ++i });");
+            expect(code).toContain("prepareAdd$");
+            // The mock records the values so far at each one.
+            expect(calls.at(-1)).toEqual(["prepared add", ["score", "mass"], 1, [2, 3]]);
+        });
+        test.each([
+            ["a value object built first", "const values = { [score]: 1 }; commands.add(1, values);"],
+            ["a spread", "const values = { [score]: 1 }; commands.add(1, { ...values, [mass]: 2 });"],
+            ["a key that isn't a module constant", "const key = score; commands.add(1, { [key]: 1 });"],
+        ])("leave %s as written", async (_, body) => {
+            const { calls } = await spawned(body);
+            expect(calls).toEqual([["add", 1, expect.anything()]]);
+        });
+        test("fail the build for a plain or string key", async () => {
+            expect((await spawned(`commands.add(1, { [score]: 1, "mass": 3 });`)).code).toBe("a command's keys are its components' symbols, as [key]; a plain or string key is never a component's");
+        });
     });
 });
 

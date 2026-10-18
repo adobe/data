@@ -345,6 +345,9 @@ describe("World.create", () => {
         expect(await readResource(createWorld(), spawnCount)).toBe(3);
         // @ts-expect-error resources takes only resource names
         expect(() => createWorld({ [velocity]: 1 })).toThrow(`"createTest/velocity" isn't a registered resource`);
+        // A string key is never a resource's, so it's ignored, as in commands.
+        const untyped: World = Reflect.apply(createWorld, undefined, [{ "createTest/spawnCount": 5, [spawnCount]: 2 }]);
+        expect(await readResource(untyped, spawnCount)).toBe(2);
     });
 
     it("has the gpuDevice resource, null without a device", async () => {

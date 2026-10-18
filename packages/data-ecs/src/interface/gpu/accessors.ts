@@ -4,7 +4,7 @@ import type { Shader } from '../system/render.js';
 import { labelOf } from '../registry/names.js';
 
 /** A WGSL function reading one component of a row from the GPU copy of a render system's table. */
-export type Accessor = { readonly name: string; readonly component: string | symbol; readonly code: string };
+export type Accessor = { readonly name: string; readonly component: symbol; readonly code: string };
 
 const typeOf = (leaf: Leaf): string | null => {
     if (leaf.scalar === "boolean") return leaf.view === "u32" ? "bool" : null;

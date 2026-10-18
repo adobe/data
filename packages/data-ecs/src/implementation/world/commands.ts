@@ -1,6 +1,5 @@
 import type { Commands } from '../../interface/system/commands.js';
 import { addCommand, despawnCommand, pushCommand, pushComponent, removeCommand, spawnCommand, type CommandBuffer } from './buffer.js';
-import { hasSymbolNames } from '../../interface/registry/index.js';
 import { stageSpawn } from './batches.js';
 import { reserve } from './entities.js';
 import { commandIdOf, type Key, type State } from './state.js';
@@ -15,16 +14,17 @@ const collect = (state: State, buffer: CommandBuffer, key: Key, value: unknown):
 };
 
 /**
- * Appends a command naming each own key of `values` that isn't `undefined`. Ids are resolved first, so an unregistered
- * component throws before anything is appended. Values are immutable by convention, so they aren't copied.
+ * Appends a command naming each own symbol key of `values` whose value isn't `undefined`; string keys are never a
+ * component's, so they're ignored. Ids are resolved first, so an unregistered component throws before anything is
+ * appended. Values are immutable by convention, so they aren't copied.
  */
 export const pushValues = (state: State, buffer: CommandBuffer, kind: number, entity: number, values: object): void => {
     const { count, named } = buffer;
     pushCommand(buffer, kind, entity);
     try {
-        // `Object.keys` uses the engine's cached key list; symbol keys are read only when a symbol name exists.
-        for (const key of Object.keys(values)) collect(state, buffer, key, Reflect.get(values, key));
-        if (hasSymbolNames()) for (const key of Object.getOwnPropertySymbols(values)) collect(state, buffer, key, Reflect.get(values, key));
+        // The fastest way to list symbol keys (`perftest/keys.ts`).
+        const keys = Object.getOwnPropertySymbols(values);
+        for (let k = 0; k < keys.length; k++) collect(state, buffer, keys[k], Reflect.get(values, keys[k]));
     }
     catch (error) {
         // An unregistered component: the command is dropped whole.

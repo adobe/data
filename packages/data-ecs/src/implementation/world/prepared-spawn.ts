@@ -1,10 +1,10 @@
 import type { Commands } from '../../interface/system/commands.js';
 import type { Entity } from '../../interface/entity/entity.js';
 import { claim, openRow, spawnShapeOf, type Shape, type SpawnBatch, type Writer } from './batches.js';
-import { spawnCommand } from './buffer.js';
+import { addCommand, pushCommand, pushComponent, spawnCommand, type CommandBuffer } from './buffer.js';
 import { commandsTarget, pushValues, type CommandsTarget } from './commands.js';
 import { reserve } from './entities.js';
-import type { Key, State } from './state.js';
+import { commandIdOf, type Key, type State } from './state.js';
 
 type TargetedCommands = Commands & { readonly [commandsTarget]: CommandsTarget };
 
@@ -77,4 +77,51 @@ export const prepareSpawn = (keys: () => readonly Key[]): PreparedSpawn => {
         },
     };
     return prepared;
+};
+
+/**
+ * One add site's command, for code the compiler emits per site with the entity and one parameter per value:
+ * `begin(commands, entity)` appends the add command and returns true, or false when the add must go through
+ * `fallback`; then `value(k, value)` appends value `k` unless it's `undefined`.
+ */
+export type PreparedAdd = {
+    readonly begin: (commands: Commands, entity: Entity) => boolean;
+    readonly value: (k: number, value: unknown) => void;
+    readonly fallback: (commands: Commands, entity: Entity, values: readonly unknown[]) => void;
+};
+
+/**
+ * The compiler's hook for `commands.add(entity, { ... })` with literal keys in a system body: the call becomes a
+ * per-site function taking the entity and values in key order, so no value object is built and no keys are listed.
+ * Ids are resolved once per world, so an unregistered or derived component throws before anything is appended, as
+ * `commands.add` does. Commands it didn't make go through `commands.add` as written.
+ */
+export const prepareAdd = (keys: () => readonly Key[]): PreparedAdd => {
+    let resolved: readonly Key[] | null = null;
+    /** A key named twice means the later value wins, as in the object literal: such sites use `commands.add`. */
+    let distinct = false;
+    let last: State | null = null;
+    let ids: readonly number[] = [];
+    let buffer: CommandBuffer | null = null;
+    return {
+        begin: (commands, entity) => {
+            if (resolved === null) {
+                resolved = keys();
+                distinct = new Set(resolved).size === resolved.length;
+            }
+            if (!distinct || !isTargeted(commands)) return false;
+            const { state, target } = commands[commandsTarget];
+            if (state !== last) {
+                ids = resolved.map(key => commandIdOf(state, key));
+                last = state;
+            }
+            buffer = target.buffer;
+            pushCommand(buffer, addCommand, entity);
+            return true;
+        },
+        value: (k, value) => {
+            if (value !== undefined && buffer !== null) pushComponent(buffer, ids[k], value);
+        },
+        fallback: (commands, entity, values) => commands.add(entity, valuesOf(resolved ?? keys(), values)),
+    };
 };

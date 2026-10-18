@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
-import type { Entity } from "../../interface/entity/entity.js";
+import { Entity } from "../../interface/entity/entity.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import { System } from "../../interface/system/system.js";
 import { count, read, readEach, readEntity } from "./reads.test-helper.js";
 import { createWorld } from "./create.js";
 import type { Values } from '../../interface/component/values.js';
 import { workers } from "../../interface/resources/workers.js";
+import { toPromise } from "../../interface/observe/to-promise.js";
+import { createBuffer } from "./buffer.js";
+import { createCommands } from "./commands.js";
+import { createState } from "./state.js";
 
 type Vec3 = readonly [number, number, number];
 const vec3: Schema.ForType<Vec3> = { type: "array", items: { type: "number", precision: 1 }, minItems: 3, maxItems: 3 };
@@ -114,5 +118,31 @@ describe("staged spawns", () => {
         expect(await Promise.all(spawned.map(entity => readEntity(world, entity, [position, score, name])))).toEqual(
             spawned.map((_, i) => ({ [position]: [i, 0, 1], [score]: i, [name]: `${i}` })));
         await world.dispose();
+    });
+});
+
+describe("spawns keyed by symbols", () => {
+    it("are staged into a batch, not queued as commands", () => {
+        const state = createState();
+        const buffer = createBuffer();
+        const commands = createCommands(state, { buffer });
+        // A values object built at runtime, so no prepared site stages it.
+        const values: { [key: symbol]: unknown } = {};
+        values[score] = 1;
+        values[tag] = true;
+        commands.spawn(values);
+        expect(buffer.count).toBe(0);
+        expect(state.batches.map(batch => batch.count)).toEqual([1]);
+    });
+    it("ignore string keys, as add does", async () => {
+        let spawned = Entity.none;
+        const edit = System.create({ name: "batchesTest/stringKeys" }, ({ commands }) => {
+            const values: { [key: string | symbol]: unknown } = { [score]: 1, "batchesTest/score": 2 };
+            spawned = commands.spawn(values);
+            commands.add(spawned, values);
+        });
+        await using world = createWorld({ [workers]: 0 });
+        await world.run(edit);
+        expect(await toPromise(world.observe.entity(spawned))).toEqual({ [score]: 1 });
     });
 });

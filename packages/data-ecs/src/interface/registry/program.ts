@@ -9,7 +9,7 @@ import { strataOf, type RuleFacts } from './strata.js';
 /** What a system, rule or finalizer constructor recorded. */
 export type Item = Definition | Rule | Finalizer;
 
-type Key = string | symbol;
+type Key = symbol;
 
 /** The program's systems, rules and finalizers, by name: names are unique across all three. */
 const named = new Map<string, Item>();
@@ -50,7 +50,7 @@ const checkStrata = (all: readonly Rule[]): void => {
         keys.push(key);
         hosts.push(-1);
         const within = declarationOf(key)?.within;
-        if (typeof within === "string" || typeof within === "symbol") hosts[id] = idOf(within);
+        if (typeof within === "symbol") hosts[id] = idOf(within);
         return id;
     };
     const facts = all.map((rule): RuleFacts => {

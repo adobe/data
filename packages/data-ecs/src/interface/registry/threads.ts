@@ -1,7 +1,7 @@
 import { threadOfDeclaration } from './declarations.js';
 import { declarationOf, kindOf, labelOf } from './names.js';
 
-type Key = string | symbol;
+type Key = symbol;
 type Lists = {
     readonly read?: readonly Key[];
     readonly write?: readonly Key[];

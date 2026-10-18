@@ -68,7 +68,8 @@ const defaultMinimumChunk = 16384;
 export const createWorld = (resources: InitialResources = {}, options: WorldOptions = {}): World => {
     const shared = sharedMemoryAvailable();
     const initial = new Map<Key, unknown>();
-    for (const key of Reflect.ownKeys(resources)) {
+    // String keys are never a resource's, so they're ignored, as commands ignore them.
+    for (const key of Object.getOwnPropertySymbols(resources)) {
         if (kindOf(key) !== "resource") throw new Error(`"${labelOf(key)}" isn't a registered resource.`);
         if (isWorldWritten(key)) throw new Error(`"${labelOf(key)}" is written only by the world.`);
         initial.set(key, Reflect.get(resources, key));

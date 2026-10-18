@@ -14,7 +14,7 @@ import type { Finalizer } from './finalizer.js';
 type Validate<D extends Declaration | ChangesDeclaration> =
     { readonly resources?: { readonly read?: readonly Exclude<Resource.Name, Listed<Property<D, "resources">, "write">>[] } };
 
-type Key = string | symbol;
+type Key = symbol;
 
 /** Throws if a resource is in both `read` and `write`, or a reduced one is written. */
 const checkResources = (name: string, resources: { readonly read?: readonly Key[]; readonly write?: readonly Key[] } | undefined): void => {

@@ -8,7 +8,7 @@ import type { Definition } from './definition.js';
 import type { Leaf } from './leaf.js';
 import { labelOf } from '../registry/names.js';
 
-type Key = string | symbol;
+type Key = symbol;
 
 /** Throws if a key is in both `read` and `write`: `write` already makes it readable. */
 const checkLists = (name: string, what: string, lists: { readonly read?: readonly Key[]; readonly write?: readonly Key[] } | undefined): void => {

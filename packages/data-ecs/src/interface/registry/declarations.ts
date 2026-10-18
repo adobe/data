@@ -17,9 +17,6 @@ export type AnyDeclaration = { readonly type?: Schema; readonly default?: unknow
 /** The value schema of any registered component or resource, or undefined for a value that isn't data. */
 export const schemaOf = (key: unknown): Schema | undefined => declarationOf(key)?.type;
 
-/** Whether any component or resource is named by a symbol: every one is. */
-export const hasSymbolNames = (): boolean => true;
-
 /** Global constructors of Transferable values, where the platform has them. */
 const transferables: readonly string[] = [
     "ArrayBuffer", "ImageBitmap", "OffscreenCanvas", "MessagePort", "VideoFrame", "AudioData",

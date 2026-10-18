@@ -148,7 +148,7 @@ export const idOf = (state: State, key: Key): number => {
     // A host gets its id first, so stratifying with the new edge can name it; a cycle throws before anything is recorded.
     const within = declaration.within;
     let host = -1;
-    if (typeof within === "string" || typeof within === "symbol") {
+    if (typeof within === "symbol") {
         if (resolving.has(key)) throw new Error(`Components are within each other in a cycle: ${[...resolving].map(labelOf).sort().join(", ")}.`);
         resolving.add(key);
         try {
@@ -242,10 +242,10 @@ export const movesOf = (from: Archetype, to: Archetype): readonly Storage[] => {
     return moves;
 };
 
-/** Own string and symbol keys whose value isn't `undefined`. */
+/** Own symbol keys whose value isn't `undefined`: string keys are never a component's. */
 export const entriesOf = (values: object): [Key, unknown][] => {
     const entries: [Key, unknown][] = [];
-    for (const key of Reflect.ownKeys(values)) {
+    for (const key of Object.getOwnPropertySymbols(values)) {
         const value: unknown = Reflect.get(values, key);
         if (value !== undefined) entries.push([key, value]);
     }

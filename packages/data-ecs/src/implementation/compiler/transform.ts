@@ -80,6 +80,24 @@ const spawnFunction = (name: string, prepare: string, keys: readonly string[]): 
     ].join("\n");
 };
 
+/**
+ * An add site's function: the entity and one parameter per value, each appended straight to the commands' buffer
+ * (`PreparedAdd` in `world/prepared-spawn.ts`).
+ */
+const addFunction = (name: string, prepare: string, keys: readonly string[]): string => {
+    const values = keys.map((_, k) => `v${k}`);
+    const writes = values.map((value, k) => `p.value(${k}, ${value})`);
+    return [
+        `const ${name} = (() => {`,
+        `const p = ${prepare}(() => [${keys.join(", ")}]);`,
+        `return (c, e${values.map(value => `, ${value}`).join("")}) => {`,
+        `if (p.begin(c, e)) { ${writes.map(write => `${write}; `).join("")}}`,
+        `else p.fallback(c, e, [${values.join(", ")}]);`,
+        "};",
+        "})();",
+    ].join("\n");
+};
+
 const uniqueName = (code: string, base: string): string => {
     let name = base;
     for (let n = 1; code.includes(name); n++) name = `${base}${n}`;
@@ -104,7 +122,7 @@ type KernelSite = { readonly node: SimpleCallExpression; readonly declaration: O
  * Wraps each kernel `System.create(declaration, body)` call as `attachKernel(call, description)`, and returns each
  * kernel's `create` as its own module, referenced by `description.url`. Functions and constants kernels import are
  * inlined through `linker`.
- * Also passes the values of main-thread spawns of literal keys positionally (`spawns.ts`).
+ * Also passes the values of main-thread spawns and adds of literal keys positionally (`spawns.ts`).
  * Returns null when the module has neither, and a `Failure` when a kernel leaves the subset.
  */
 export const transformKernels = async (
@@ -127,12 +145,15 @@ export const transformKernels = async (
     };
     const attach = uniqueName(code, "attachKernel$");
     const prepare = uniqueName(code, "prepareSpawn$");
+    const prepareAddName = uniqueName(code, "prepareAdd$");
     const spawnName = uniqueName(code, "spawn$");
     const edits: Edit[] = [];
     const kernels: string[] = [];
     const sites: KernelSite[] = [];
     /** Module-scope declarations of prepared spawns, appended after everything they name is declared. */
     const prepared: string[] = [];
+    let adding = false;
+    let spawning = false;
     const visit = (node: Node, nested: boolean): void => {
         const created = node.type === "CallExpression" ? createdBy(node, locals) : null;
         if (node.type === "CallExpression" && created !== null) {
@@ -152,8 +173,10 @@ export const transformKernels = async (
             if (spawns !== null && spawns.sites.length > 0) {
                 for (const site of spawns.sites) {
                     const name = `${spawnName}${prepared.length}`;
-                    prepared.push(spawnFunction(name, prepare, site.keys));
-                    const values = site.values.map(value => code.slice(value.start, value.end));
+                    prepared.push(site.kind === "spawn" ? spawnFunction(name, prepare, site.keys) : addFunction(name, prepareAddName, site.keys));
+                    if (site.kind === "add") adding = true;
+                    else spawning = true;
+                    const values = [...site.entity === null ? [] : [site.entity], ...site.values].map(value => code.slice(value.start, value.end));
                     edits.push({ start: site.start, end: site.end, text: `${name}(${[spawns.commands, ...values].join(", ")})` });
                 }
                 return;
@@ -181,7 +204,8 @@ export const transformKernels = async (
     for (const edit of [...edits].sort((a, b) => b.start - a.start)) result = result.slice(0, edit.start) + edit.text + result.slice(edit.end);
     const imports = [
         ...kernels.length > 0 ? [`import { attachKernel as ${attach} } from ${JSON.stringify(attachKernelPath)};`] : [],
-        ...prepared.length > 0 ? [`import { prepareSpawn as ${prepare} } from ${JSON.stringify(prepareSpawnPath)};`] : [],
+        ...spawning ? [`import { prepareSpawn as ${prepare} } from ${JSON.stringify(prepareSpawnPath)};`] : [],
+        ...adding ? [`import { prepareAdd as ${prepareAddName} } from ${JSON.stringify(prepareSpawnPath)};`] : [],
     ];
     return { code: [...imports, result, ...prepared].join("\n"), kernels, dependencies: [...dependencies] };
 };

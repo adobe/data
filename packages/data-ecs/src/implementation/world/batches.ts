@@ -1,10 +1,9 @@
 import type { Entity } from '../../interface/entity/entity.js';
 import { viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
-import { hasSymbolNames } from '../../interface/registry/index.js';
 import { ensureCapacity, type Archetype, writeF32, writeF32Lanes, writeF64, writeI32, writeOf, writeU32 } from './archetype.js';
 import { indexOf } from './entities.js';
 import { chunkShift } from './kernel.js';
-import { archetypeOf, commandIdOf, type State } from './state.js';
+import { archetypeOf, commandIdOf, type Key, type State } from './state.js';
 import { gainsOf } from './structure.js';
 import { writeDefault } from './synchronize.js';
 
@@ -41,7 +40,7 @@ export type SpawnBatch = {
 export type Writer = (row: number, value: unknown) => boolean;
 
 /** A spawn's own key order, resolved to a writer per key into its batch; `batch` is null when spawns of these keys use commands. */
-export type Shape = { readonly keys: readonly (string | symbol)[]; readonly batch: SpawnBatch | null; readonly writers: readonly Writer[] };
+export type Shape = { readonly keys: readonly Key[]; readonly batch: SpawnBatch | null; readonly writers: readonly Writer[] };
 
 const initialCapacity = 64;
 
@@ -64,7 +63,7 @@ const batchOf = (state: State, ids: readonly number[]): SpawnBatch => {
 };
 
 /** Resolves a key list to a shape. Throws for an unregistered key, as a command would. */
-const shapeOf = (state: State, keys: readonly (string | symbol)[]): Shape => {
+const shapeOf = (state: State, keys: readonly Key[]): Shape => {
     const ids = keys.map(key => commandIdOf(state, key));
     // The resource entity's components never take part in spawns.
     if (ids.some(id => state.resources.has(id))) return { keys, batch: null, writers: [] };
@@ -73,7 +72,7 @@ const shapeOf = (state: State, keys: readonly (string | symbol)[]): Shape => {
 };
 
 /** The last eight key lists spawned, replaced round-robin: spawn sites name the same keys in the same order. */
-const shapeFor = (state: State, keys: readonly (string | symbol)[]): Shape => {
+const shapeFor = (state: State, keys: readonly Key[]): Shape => {
     const { spawnShapes } = state;
     const last = keys.length - 1;
     for (let s = 0; s < spawnShapes.length; s++) {
@@ -154,18 +153,16 @@ const writeColumn = (column: Column, row: number, value: unknown): void => {
 };
 
 /**
- * Adds a spawn to its batch. Returns false, having claimed nothing, when it must go through commands instead: a
- * symbol key, a resource component, or an `undefined` value, which leaves the component out. A row is claimed only
- * once every value is written, so a value that throws leaves nothing behind.
+ * Adds a spawn to its batch, by its own symbol keys; string keys are ignored, as commands ignore them. Returns false,
+ * having claimed nothing, when it must go through commands instead: a resource component, or an `undefined` value,
+ * which leaves the component out. A row is claimed only once every value is written, so a value that throws leaves
+ * nothing behind.
  */
-export const stageSpawn = (state: State, entity: number, values: { readonly [key: string]: unknown }): boolean => {
-    if (hasSymbolNames()) return false;
-    const keys = Object.keys(values);
-    return stageShape(shapeFor(state, keys), entity, values);
-};
+export const stageSpawn = (state: State, entity: number, values: object): boolean =>
+    stageShape(shapeFor(state, Object.getOwnPropertySymbols(values)), entity, values);
 
 /** The shape of spawns of exactly `keys`, resolved now. */
-export const spawnShapeOf = (state: State, keys: readonly (string | symbol)[]): Shape => shapeFor(state, keys);
+export const spawnShapeOf = (state: State, keys: readonly Key[]): Shape => shapeFor(state, keys);
 
 /** The row the batch's next spawn writes, growing it first if it's full. */
 export const openRow = (batch: SpawnBatch): number => {
@@ -180,7 +177,7 @@ export const claim = (batch: SpawnBatch, entity: number): void => {
 };
 
 /** Adds a spawn of a resolved shape to its batch, reading values by key; false, having claimed nothing, when it must use commands. */
-export const stageShape = (shape: Shape, entity: number, values: { readonly [key: string]: unknown }): boolean => {
+export const stageShape = (shape: Shape, entity: number, values: object): boolean => {
     const { batch, keys, writers } = shape;
     if (batch === null) return false;
     const row = openRow(batch);

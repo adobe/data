@@ -5,7 +5,7 @@ import { requireDefinition } from './program.js';
 import { sameDeclaration } from './same-declaration.js';
 import { labelOf } from './names.js';
 
-type Key = string | symbol;
+type Key = symbol;
 
 /** Throws unless each leaf's input is an object schema of named fields, and a field several declare has one schema. */
 const checkInputs = (leaves: readonly Leaf[]): void => {
@@ -135,7 +135,7 @@ type Access = { readonly reads: ReadonlySet<Key>; readonly writes: ReadonlySet<K
 /** The resources a leaf reduces into. */
 export const reducedBy = (leaf: Leaf): readonly Key[] => {
     const { reduce } = leaf.declaration;
-    return reduce === undefined ? [] : Reflect.ownKeys(reduce).filter(key => Reflect.get(reduce, key) !== undefined);
+    return reduce === undefined ? [] : Object.getOwnPropertySymbols(reduce).filter(key => Reflect.get(reduce, key) !== undefined);
 };
 
 /** Reads include change filters, since they observe writers' ticks. Presence-only lists don't conflict. */

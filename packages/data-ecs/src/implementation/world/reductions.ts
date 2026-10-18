@@ -22,7 +22,7 @@ const bitwise: ReadonlySet<Reduction> = new Set(["&", "|", "^"]);
 export const reductionTargets = (state: State, { name, reduce, resources }: Pick<Declaration, "name" | "reduce" | "resources">): readonly ReductionTarget[] => {
     if (reduce === undefined) return [];
     const others = new Set<Key>([...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? []]);
-    return Reflect.ownKeys(reduce).flatMap((key): ReductionTarget[] => {
+    return Object.getOwnPropertySymbols(reduce).flatMap((key): ReductionTarget[] => {
         const operator: unknown = Reflect.get(reduce, key);
         if (operator === undefined) return [];
         if (!isReduction(operator)) throw new Error(`System "${name}" reduces "${labelOf(key)}" with "${labelOf(operator)}", which isn't an operator.`);

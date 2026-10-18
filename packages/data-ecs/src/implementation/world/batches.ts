@@ -27,6 +27,8 @@ export type Column = {
 export type SpawnBatch = {
     /** Sorted component ids. */
     readonly ids: readonly number[];
+    /** The archetype of `ids`, found at the first sync point the batch commits at. */
+    archetype: Archetype | null;
     readonly columns: readonly Column[];
     entities: Float64Array;
     count: number;
@@ -50,7 +52,7 @@ export const batchOf = (state: State, ids: readonly number[]): SpawnBatch => {
     const key = sorted.join(",");
     let batch = state.batchByKey.get(key);
     if (batch === undefined) {
-        batch = { ids: sorted, columns: sorted.map(id => columnOf(state, id, initialCapacity)), entities: new Float64Array(initialCapacity), count: 0, capacity: initialCapacity };
+        batch = { ids: sorted, archetype: null, columns: sorted.map(id => columnOf(state, id, initialCapacity)), entities: new Float64Array(initialCapacity), count: 0, capacity: initialCapacity };
         state.batchByKey.set(key, batch);
         state.batches.push(batch);
     }
@@ -141,7 +143,7 @@ export const commitBatches = (state: State, tick: number, born: Map<number, numb
     for (const batch of state.batches) {
         const n = batch.count;
         if (n === 0) continue;
-        const spawned = archetypeOf(state, batch.ids);
+        const spawned = batch.archetype ?? (batch.archetype = archetypeOf(state, batch.ids));
         const target = close === null ? spawned : close(spawned);
         ensureCapacity(state.memory, target, target.count + n);
         const start = target.count;

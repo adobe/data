@@ -22,10 +22,12 @@ const grownInt32 = (array: Int32Array<ArrayBuffer>, length: number): Int32Array<
     return grown;
 };
 
-const ensurePlanCapacity = (state: State): void => {
+/** Grows the plan to hold `needed` entries. */
+const ensurePlanCapacity = (state: State, needed: number): void => {
     const { plan } = state;
-    if (plan.count < plan.entity.length) return;
-    const length = plan.entity.length * 2;
+    if (needed <= plan.entity.length) return;
+    let length = plan.entity.length * 2;
+    while (length < needed) length *= 2;
     const entity = new Float64Array(length);
     entity.set(plan.entity);
     plan.entity = entity;
@@ -42,7 +44,12 @@ const ensurePlanCapacity = (state: State): void => {
 };
 
 const addEntry = (state: State, entity: number, index: number, from: number, to: number): number => {
-    ensurePlanCapacity(state);
+    ensurePlanCapacity(state, state.plan.count + 1);
+    return addPlanned(state, entity, index, from, to);
+};
+
+/** Adds an entry to a plan already grown to hold it. */
+const addPlanned = (state: State, entity: number, index: number, from: number, to: number): number => {
     const { plan } = state;
     const entry = plan.count++;
     plan.entity[entry] = entity;
@@ -104,6 +111,8 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
     for (let b = 0; b < queued.length; b++) {
         const { buffer, guarded } = queued[b];
         const { kinds, entities, starts, ids, values } = buffer;
+        // Each command adds at most one entry.
+        ensurePlanCapacity(state, plan.count + buffer.count);
         for (let command = 0; command < buffer.count; command++) {
             const kind = kinds[command];
             const entity = entities[command];
@@ -111,7 +120,7 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
             const index = indexOf(entity);
             let entry: number;
             if (kind === spawnCommand) {
-                entry = addEntry(state, entity, index, -1, empty);
+                entry = addPlanned(state, entity, index, -1, empty);
                 plan.spawned++;
                 const start = starts[command];
                 const end = endOf(buffer, command);
@@ -155,7 +164,7 @@ const planOf = (state: State, queued: readonly Queued[], written: Written): void
                         continue;
                     }
                     const from = state.entities.archetype[index];
-                    entry = addEntry(state, entity, index, from, from);
+                    entry = addPlanned(state, entity, index, from, from);
                 }
             }
             if (kind === despawnCommand) {
@@ -268,6 +277,10 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
     const width = archetypes.length + 1;
     let lastKey = -1;
     let lastPair = -1;
+    /** The last entry that joined a pair, to tell whether each pair's entries are consecutive. */
+    let lastJoined = -2;
+    let ranges = true;
+    let leaving = 0;
     for (let entry = 0; entry < plan.count; entry++) {
         const index = indexOf(plan.entity[entry]);
         const fromId = plan.from[entry];
@@ -276,6 +289,7 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
         if (plan.despawned[entry] === 1) {
             record(state.journal, index, entities.length);
             plan.row[entry] = fromRow;
+            if (fromRow >= 0) leaving++;
             if (fromId >= 0) state.touched?.add(archetypes[fromId]);
             release(entities, index);
             continue;
@@ -290,6 +304,7 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
         }
         record(state.journal, index, entities.length);
         plan.row[entry] = fromRow;
+        if (fromRow >= 0) leaving++;
         const key = (fromId + 1) * width + toId;
         // Entries of one pair usually come together, as a system's commands over one archetype do.
         let pair = key === lastKey ? lastPair : pairs.byKey.get(key);
@@ -299,26 +314,36 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
             pairs.from.push(fromId);
             pairs.to.push(toId);
             pairs.count.push(0);
+            pairs.start.push(entry);
         }
+        else if (pair !== lastPair || entry !== lastJoined + 1) ranges = false;
         lastKey = key;
         lastPair = pair;
+        lastJoined = entry;
         plan.pair[entry] = pair;
         pairs.count[pair]++;
     }
+    pairs.leaving = leaving;
+    if (pairs.order.length < plan.count) pairs.order = new Int32Array(Math.max(plan.count, pairs.order.length * 2));
+    const { order } = pairs;
+    // Each pair's block is its own range of entries.
+    if (ranges) {
+        for (let entry = 0; entry < plan.count; entry++) order[entry] = entry;
+        return;
+    }
     let start = 0;
     for (let pair = 0; pair < pairs.count.length; pair++) {
-        pairs.start.push(start);
+        pairs.start[pair] = start;
         start += pairs.count[pair];
         pairs.count[pair] = 0;
     }
-    if (pairs.order.length < start) pairs.order = new Int32Array(Math.max(start, pairs.order.length * 2));
     for (let entry = 0; entry < plan.count; entry++) {
         const pair = plan.pair[entry];
-        if (pair >= 0) pairs.order[pairs.start[pair] + pairs.count[pair]++] = entry;
+        if (pair >= 0) order[pairs.start[pair] + pairs.count[pair]++] = entry;
     }
 };
 
-/** Copies one column's cells for a block of moving rows, `fromRows[k]` to `toStart + k`, values and ticks. */
+/** Copies one column's cells for a block of moving rows, the row entry `order[first + k]` leaves to `toStart + k`, values and ticks. */
 const copyColumn = (from: Storage, to: Storage, plan: Plan, order: Int32Array, first: number, count: number, toStart: number): void => {
     const { words } = from;
     if (words > 0) {
@@ -552,7 +577,7 @@ export const applySync = (state: State): readonly Thrown[] => {
         }
         sort(state, queued, tick);
         arrive(state, queued, tick, deriving);
-        for (let entry = plan.count - 1; entry >= 0; entry--) leave(state, entry);
+        if (plan.pairs.leaving > 0) for (let entry = plan.count - 1; entry >= 0; entry--) leave(state, entry);
         if (index !== null) applyIndexChanges(state, index);
         // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its index.
         // Every spawn consumes one reservation, so only a shortfall needs the scan.

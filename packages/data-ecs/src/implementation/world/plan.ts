@@ -40,6 +40,8 @@ export type Plan = {
 /**
  * Source and target archetype pairs, reused across sync points: `from[p]` (-1 for spawns) and `to[p]`, the number of
  * entries moving between them, and where they start in `order`, which lists every moving entry by pair, in entry order.
+ * When each pair's entries are consecutive entries, as a system's spawns or moves from one archetype are, each pair
+ * starts at its first entry and `order` lists entries in order.
  */
 export type Pairs = {
     readonly byKey: Map<number, number>;
@@ -47,6 +49,8 @@ export type Pairs = {
     readonly to: number[];
     readonly count: number[];
     readonly start: number[];
+    /** Entries that leave a row, which is removed after the pairs arrive. */
+    leaving: number;
     order: Int32Array<ArrayBuffer>;
 };
 
@@ -62,7 +66,7 @@ export const createPlan = (): Plan => ({
     despawned: new Uint8Array(initialEntries),
     row: new Int32Array(initialEntries),
     pair: new Int32Array(initialEntries),
-    pairs: { byKey: new Map(), from: [], to: [], count: [], start: [], order: new Int32Array(initialEntries) },
+    pairs: { byKey: new Map(), from: [], to: [], count: [], start: [], leaving: 0, order: new Int32Array(initialEntries) },
     buffer: new Int32Array(initialEntries),
     start: new Int32Array(initialEntries),
     end: new Int32Array(initialEntries),
